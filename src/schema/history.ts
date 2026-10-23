@@ -6,6 +6,8 @@ export const History = entity({
   op: z.enum(["create", "update", "delete", "merge", "restore"]),
   /** field -> {before, after}. (Blueprint says [before, after]; Firestore forbids nested arrays.) */
   diff: z.record(z.string(), z.strictObject({ before: z.unknown(), after: z.unknown() })),
+  /** Order of this change inside one transaction (undo replays a run newest-first). */
+  seq: z.number().int().optional(),
   actor: z.strictObject({ uid: z.string(), via: z.enum(["app", "mcp", "import"]) }),
 });
 export const HistoryInput = History.omit(serverMask);

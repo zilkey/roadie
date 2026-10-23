@@ -1,0 +1,67 @@
+# Nightly backup: dump every Firestore collection to JSON and commit it to a PRIVATE backup repo.
+# Not run by the app build. Needs the secrets/variables listed in docs/BACKUP.md.
+name: Nightly backup
+
+on:
+  schedule:
+    - cron: "17 9 * * *" # 09:17 UTC, a quiet hour for a Colorado band
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GCLOUD_PROJECT: band-tracker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Write service account key
+        run: |
+          umask 077
+          printf '%s' "$SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/sa.json"
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Check out the private backup repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.BACKUP_REPO }} # e.g. your-org/band-tracker-backups
+          token: ${{ secrets.BACKUP_REPO_TOKEN }} # fine-grained PAT, contents: read+write on that repo only
+          path: backup-repo
+
+      - name: Dump Firestore
+        run: npx tsx scripts/backup.ts --out backup-repo/backups
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+
+      - name: Commit and push
+        working-directory: backup-repo
+        run: |
+          git config user.name "band-tracker backup"
+          git config user.email "backup@users.noreply.github.com"
+          git add backups
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "Backup $(date -u +%F)"
+            git push
+          fi
+
+      - name: Remove key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

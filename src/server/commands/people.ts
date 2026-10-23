@@ -102,14 +102,14 @@ export const usersRemove = defineCommand({
 
 export const musiciansCreate = defineCommand({
   name: "musicians.create",
-  roles: ["admin", "mcp"],
+  roles: ["admin"],
   description: "Add a musician (member or sub). No login needed.",
   input: MusicianInput.omit({ userId: true }).extend({ active: z.boolean().default(true) }),
   run: (ctx, input) => db.create(ctx, "musicians", input),
 });
 export const musiciansUpdate = defineCommand({
   name: "musicians.update",
-  roles: ["admin", "mcp"],
+  roles: ["admin"],
   description: "Edit a musician.",
   input: patchInput(MusicianInput.omit({ userId: true })),
   run: (ctx, { id, patch }) => db.update(ctx, "musicians", id, patch as Record<string, unknown>),

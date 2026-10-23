@@ -130,3 +130,24 @@ Each slice appends its section below.
 
 **Known gaps**
 - No UI to enter a payout to someone for a show after it is settled except Record form; no per-person payout history for admins beyond the ledger list. Receipt is a link only (no upload). Show page does not display the settled money.
+
+## Slice 7: MCP + safety net
+
+**Done**
+- **MCP server** (`mcp/`): `npm run mcp` = Streamable HTTP on :3300 (`/mcp`, `/health`), `npm run mcp:stdio` = stdio (key in `MCP_TOKEN`). Uses the SDK's low-level `Server` so tool schemas are the JSON Schema of each command's Zod input (`z.toJSONSchema`). Tools = every registry command with `mcp` in `roles` (`mcp/tools.ts`). Auth (`mcp/auth.ts`): bearer token -> sha256 -> `mcpTokens/{hash}`; rejects unknown/revoked tokens and users that are gone or lack `mcpAccess`; stamps `lastUsedAt`. The token is re-checked on every tool call, so revoking works inside a live session. One session = one `runId` (`ctx = {role: "mcp", via: "mcp"}`). Errors (Zod issues, AppError) come back as tool results with `isError` and `{error:{code,message,issues}}`.
+- **Registry audit** against the MCP column: removed `mcp` from `musicians.create/update` and `availability.mark`; added it to `pitches.comment`, `emailTemplates.create/update`. New `pitches.draftEmail` (creates a fake-gmail draft, logs a `note` on the pitch timeline; `pitches.sendEmail` stays admin-only). `availability.ask/remind` through MCP create drafts instead of sending (`drafted` in the result). Removes/archives of places, songs, shows stay app-only.
+- **Read tools** (`src/server/commands/ai.ts`, roles admin+mcp): `search`, `records.get`, `records.list` (no users/history/keys; musicians trimmed to id/name/instruments/active; link tokens stripped), `pitches.needingFollowUp`, `songs.missingFiles` (no files, no chart/demo, sharing problems), `availability.check`, `bandsintown.reconcile`, `stats.movement` (pure part `statsMovement` in `src/lib/stats.ts`; there is no release entity, so releases are passed in), plus `history.undoRun`, `history.myRuns`. `stats.current` already existed.
+- **Undo** (`src/server/undo.ts`, `Writer.revert` in db.ts): history entries of a run are replayed newest first (history now has `seq` for ordering inside one transaction). create -> archive (append-only `activity` docs too), update/merge -> `before` values (denorm hooks run, later unrelated edits survive), delete -> restore. Reversals are history under a NEW runId. Ledger and statSnapshots are skipped and returned as `needsManualCorrection`. Chunks of 100 entries per transaction, falling back to one transaction per entry if a chunk fails. MCP callers may only undo runs whose every entry has their uid.
+- **UI** (admin only, in the sidebar and the Home "Band setup" card): `/admin/history` (filters: run id, via, record type; diffs; click a run id to filter; "Undo this run" with a report), `/admin/ai-keys` (`mcpTokens.create` shows the key once, list with last used, revoke). Commands `mcpTokens.create/revoke` are admin-only and not MCP tools.
+- **Backup** (`scripts/backup.ts`, `src/server/backup.ts`): dated JSON per collection incl. subcollections. `scripts/restore.ts` validates every doc with the Zod schemas (and common fields) before writing anything. `.github/workflows/backup.yml` (nightly, never run) and `docs/BACKUP.md`. `docs/MCP.md` explains connecting Claude Code over HTTP and stdio.
+- Tests: `tests/unit/mcp.test.ts` (10: token auth/revocation, tool list vs the MCP column, structured errors, draft-only email, HTTP and stdio sessions, read tools), `undo.test.ts` (3: mixed run restores state, denorm, own-runs-only), `backup.test.ts` (2: round trip on the emulator, validation), `tests/e2e/history.spec.ts` (2: AI key -> MCP session -> History -> Undo this run -> revoke; app change undone). 
+
+**Deviations / gotchas**
+- `mcpTokens.lastUsedAt` is stamped directly by `touchLastUsed` in db.ts (no history, at most once a minute): telemetry should not show up in, or be undone with, an AI run. Restore also writes raw on purpose. Those are the only two writes outside the normal door.
+- History page reads with the client SDK and sorts client-side (shows the newest 100, "Show more"); fine for a band, would want `orderBy` + limit + an index at scale.
+- Undo only covers Firestore. Sent mail, Calendar events, Bandsintown listings and Drive copies stay.
+- Token format `btk_<43 chars>`. Doc id is the hash, so a token can be revoked but never read back.
+- The restore script does not delete documents missing from the backup.
+
+**Known gaps**
+- `pitches.checkReplies` is app-only (it only reads Gmail, but writes the timeline). No "redo" button; undo the undo run instead.

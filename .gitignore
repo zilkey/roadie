@@ -8,3 +8,6 @@ playwright-report
 .env*.local
 next-env.d.ts
 tsconfig.tsbuildinfo
+backups
+backup-out
+backup-repo

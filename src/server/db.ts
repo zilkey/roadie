@@ -97,6 +97,7 @@ export class Writer {
   private pending: ((tx: Transaction) => void)[] = [];
   private overlay = new Map<string, DocumentData | null>();
   readonly now = Timestamp.now();
+  private seq = 0;
   constructor(private tx: Transaction, readonly ctx: Ctx) {}
 
   private fs = firestore();
@@ -144,13 +145,14 @@ export class Writer {
   private commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff) {
     const ref = this.fs.collection(path).doc(id);
     const hist = this.fs.collection("history").doc();
+    const seq = this.seq++;
     this.overlay.set(`${path}/${id}`, doc);
     this.pending.push((tx) => {
       tx.set(ref, doc);
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.ctx.runId, deletedAt: null,
-        entity: { kind: path, id }, op, diff, actor: { uid: this.ctx.uid, via: this.ctx.via },
+        entity: { kind: path, id }, op, diff, seq, actor: { uid: this.ctx.uid, via: this.ctx.via },
       });
     });
   }
@@ -241,6 +243,43 @@ export class Writer {
     return { id, changed: true };
   }
 
+  /**
+   * Reverse one history entry (used by undo only). create -> soft delete, delete -> restore, restore -> soft delete,
+   * update/merge -> put the `before` values back. Works on append-only docs too (activity); never on immutable ones.
+   */
+  async revert(path: string, id: string, op: string, diff: Diff): Promise<{ changed: boolean; as: "delete" | "restore" | "update" }> {
+    const kind = kindOf(path);
+    const d = def(kind);
+    if (d.immutable) throw new AppError("immutable", `${kind} documents are never edited`, 409);
+    const existing = await this.get(path, id);
+    if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    if (op === "create" || op === "restore") {
+      if (existing.deletedAt) return { changed: false, as: "delete" };
+      const next = clean(this.stampUpdate(existing, writable(existing), this.now));
+      this.commit(path, id, next, "delete", diffDocs(existing, next));
+      return { changed: true, as: "delete" };
+    }
+    if (op === "delete") {
+      if (!existing.deletedAt) return { changed: false, as: "restore" };
+      const next = clean(this.stampUpdate(existing, writable(existing), null));
+      this.commit(path, id, next, "restore", diffDocs(existing, next));
+      return { changed: true, as: "restore" };
+    }
+    const computed = new Set(computedFields[kind] ?? []);
+    const merged: Record<string, unknown> = { ...writable(existing) };
+    for (const [k, v] of Object.entries(diff)) {
+      if (COMMON.has(k) || computed.has(k)) continue;
+      if (v.before === null || v.before === undefined) delete merged[k]; else merged[k] = v.before;
+    }
+    const { data, computed: comp } = prepare(kind, merged);
+    const next = clean(this.stampUpdate(existing, { ...data, ...comp }, existing.deletedAt ?? null));
+    const changes = diffDocs(existing, next);
+    if (!Object.keys(changes).length) return { changed: false, as: "update" };
+    this.commit(path, id, next, "update", changes);
+    await this.afterChange(path, existing, next);
+    return { changed: true, as: "update" };
+  }
+
   /** Denormalization hooks: refresh copies of display fields when the source doc changes. */
   private async afterChange(path: string, before: Doc, after: DocumentData) {
     const kind = kindOf(path);
@@ -260,6 +299,18 @@ export async function run<T>(ctx: Ctx, fn: (w: Writer) => Promise<T>): Promise<T
     w.flush();
     return out;
   });
+}
+
+/**
+ * The one write outside history: `mcpTokens.lastUsedAt` is telemetry, not business data, so it is stamped directly
+ * (no history entry, so undoing an AI run never blanks it) and at most once a minute per token.
+ */
+export async function touchLastUsed(hash: string, now = new Date()): Promise<void> {
+  const ref = firestore().collection("mcpTokens").doc(hash);
+  const snap = await ref.get();
+  const last = snap.data()?.lastUsedAt as Timestamp | undefined;
+  if (last && now.getTime() - last.toMillis() < 60_000) return;
+  await ref.update({ lastUsedAt: Timestamp.fromDate(now) });
 }
 
 export const db = {

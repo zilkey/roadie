@@ -41,3 +41,8 @@ Each client in `src/server/integrations/<svc>.ts` reads `<SVC>_BASE_URL` (GMAIL,
 - Deploy the updated `firestore.rules` (members read their own ledger rows: payouts, reimbursements, corrections with `payeeUserId == uid`). Member queries use `payeeUserId ==`, `kind in [...]`, `deletedAt ==` together; no composite index file changes were needed on the emulator, but Firestore in production may ask for an index for that combination: create it from the link in the console error.
 - Daily Spotify pull: schedule `scripts/stats-pull.ts` (or call `stats.pull`) once a day, e.g. Cloud Scheduler / GitHub Actions cron, with real `SPOTIFY_BASE_URL` credentials (client-credentials). Spotify for Artists has no API: export the audience CSV by hand and import it on /stats.
 - Receipts are Drive links; the real Drive client must let members search (`receipts.search` runs as the app's Drive account).
+
+### Slice 7 (MCP + safety net)
+- MCP server: runs wherever the Node app can reach Firestore (`npm run mcp`, port 3300). For the real project give it a service account (`GOOGLE_APPLICATION_CREDENTIALS`) and `GCLOUD_PROJECT=band-tracker`. Put it behind HTTPS (Cloud Run, or a tunnel) before exposing it beyond localhost; the bearer token is the only credential. See `docs/MCP.md`.
+- Deploy the updated `firestore.rules` is not needed (history and mcpTokens were already admin-read). History queries use equality filters only (`runId`, `actor.via`, `entity.kind`, `deletedAt`), so no composite indexes; `history.myRuns` uses `actor.uid ==`.
+- Backup: create the private backup repo, a read-only service account, and the GitHub secrets listed in `docs/BACKUP.md`.

@@ -14,9 +14,14 @@
     "e2e": "firebase emulators:exec --only firestore,auth --project demo-band-tracker \"npm run seed && playwright test\"",
     "stats:pull": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/stats-pull.ts",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "mcp": "tsx mcp/server.ts",
+    "mcp:stdio": "tsx mcp/server.ts --stdio",
+    "backup": "tsx scripts/backup.ts",
+    "restore": "tsx scripts/restore.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "firebase": "^13.1.0",
     "firebase-admin": "^14.5.0",
     "next": "^16.4.2",

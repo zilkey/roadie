@@ -27,6 +27,8 @@ export const ADMIN_LINKS = [
   { href: "/admin/users", label: "Users", testid: "admin-users" },
   { href: "/admin/musicians", label: "Musicians", testid: "admin-musicians" },
   { href: "/admin/artist", label: "Artist & gear", testid: "admin-artist" },
+  { href: "/admin/ai-keys", label: "AI keys", testid: "admin-ai-keys" },
+  { href: "/admin/history", label: "History", testid: "admin-history" },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {

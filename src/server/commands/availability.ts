@@ -22,11 +22,13 @@ export interface AskResult {
   /** Answer links by musician id. Shown once: only a hash is stored. Use these for people with no email. */
   links: Record<string, string>;
   emailed: string[];
+  /** MCP callers never send: each person's message is left as a Gmail draft for an admin to send. */
+  drafted?: string[];
   notEmailed: { musicianId: string; name: string; reason: string }[];
 }
 
 /** Email each musician their personal link. A failure for one person never blocks the rest. */
-async function sendLinks(ctx: { uid: string }, av: { id: string; label: string }, tokens: Record<string, string>, message: string, reminder: boolean): Promise<AskResult> {
+async function sendLinks(ctx: { uid: string; via?: string }, av: { id: string; label: string }, tokens: Record<string, string>, message: string, reminder: boolean): Promise<AskResult> {
   const user = await db.get("users", ctx.uid);
   if (!user) throw new AppError("forbidden", "No user for this account", 403);
   const out: AskResult = { id: av.id, links: {}, emailed: [], notEmailed: [] };
@@ -37,12 +39,12 @@ async function sendLinks(ctx: { uid: string }, av: { id: string; label: string }
     const name = (m?.name as string | undefined) ?? "Someone";
     if (!m?.email) { out.notEmailed.push({ musicianId, name, reason: "No email on file. Send them their link." }); continue; }
     try {
-      await gmailClient().send({
+      const mail = {
         account: user.email, to: [m.email],
         subject: `${reminder ? "Reminder: " : ""}Can you play ${av.label}?`,
         body: `${message}\n\nAnswer here: ${url}\n\nThanks,\n${user.name}`,
-      });
-      out.emailed.push(name);
+      };
+      if (ctx.via === "mcp") { await gmailClient().createDraft(mail); (out.drafted ??= []).push(name); } else { await gmailClient().send(mail); out.emailed.push(name); }
     } catch (e) {
       out.notEmailed.push({ musicianId, name, reason: e instanceof IntegrationError ? e.message : "Email failed" });
     }
@@ -53,7 +55,7 @@ async function sendLinks(ctx: { uid: string }, av: { id: string; label: string }
 export const availabilityAsk = defineCommand({
   name: "availability.ask", roles: [...ROLES],
   description:
-    "Ask musicians if they can play a date, from a pitch (pitchId) or show (showId). Emails each one a personal answer link (works without login) with the message. " +
+    "Ask musicians if they can play a date, from a pitch (pitchId) or show (showId). Each one gets a personal answer link (works without login): emailed when an admin asks in the app, left as a Gmail draft (not sent) when asked through MCP. " +
     "Returns links for anyone without an email so you can text it.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), showId: z.string().min(1).optional(), date: dateStr, label: z.string().min(1).optional(),
@@ -101,7 +103,7 @@ export const availabilityRemind = defineCommand({
 });
 
 export const availabilityMark = defineCommand({
-  name: "availability.mark", roles: [...ROLES],
+  name: "availability.mark", roles: ["admin"],
   description: "Set someone's answer for them (given in person or by text), or clear it with answer:null. Shown as set by admin.",
   input: z.strictObject({ id: z.string().min(1), musicianId: z.string().min(1), answer: answer.nullable(), note: z.string().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {

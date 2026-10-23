@@ -111,3 +111,36 @@ export function parseSpotifyCsv(text: string): CsvParseResult {
   });
   return { rows: [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1)), errors };
 }
+
+// ---------- movement around events ----------
+
+export type Metric = "followers" | "monthlyListeners" | "streams" | "popularity";
+export const METRICS: Metric[] = ["followers", "monthlyListeners", "streams", "popularity"];
+export interface Movement { metric: Metric; before?: { value: number; date: string }; after?: { value: number; date: string }; delta?: number; pct?: number }
+
+const addDays = (date: string, n: number) => {
+  const d = new Date(date + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Latest value of `metric` on or before `date` (never newer than `date`). */
+function valueOn(snaps: StatLike[], metric: Metric, date: string) {
+  let best: StatLike | undefined;
+  for (const s of snaps) if (typeof s[metric] === "number" && s.date <= date && (!best || s.date > best.date)) best = s;
+  return best ? { value: best[metric] as number, date: best.date } : undefined;
+}
+
+/** How each number moved from the day of an event to `windowDays` after it. Nothing is guessed when a snapshot is missing. */
+export function statsMovement(snaps: StatLike[], eventDate: string, windowDays = 14): Movement[] {
+  return METRICS.map((metric) => {
+    const before = valueOn(snaps, metric, eventDate);
+    const after = valueOn(snaps, metric, addDays(eventDate, windowDays));
+    const m: Movement = { metric, before, after };
+    if (before && after && after.date > before.date) {
+      m.delta = after.value - before.value;
+      if (before.value) m.pct = Math.round(((after.value - before.value) / before.value) * 1000) / 10;
+    }
+    return m;
+  });
+}

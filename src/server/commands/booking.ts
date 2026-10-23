@@ -235,7 +235,7 @@ export const pitchesMove = defineCommand({
 });
 
 export const pitchesComment = defineCommand({
-  name: "pitches.comment", roles: ["admin"], description: "Comment on a pitch.",
+  name: "pitches.comment", roles: ["admin", "mcp"], description: "Comment on a pitch.",
   input: z.strictObject({ id: z.string().min(1), body: z.string().min(1) }),
   run: (ctx, i) => run(ctx, async (w) => { await requirePitch(w, i.id); return w.create(`pitches/${i.id}/comments`, { authorId: ctx.uid, body: i.body }); }),
 });
@@ -257,12 +257,12 @@ export const pitchesRemove = defineCommand({
 // ---------- email ----------
 
 export const templatesCreate = defineCommand({
-  name: "emailTemplates.create", roles: ["admin"], input: EmailTemplateInput.extend({ targetKinds: arr(EmailTemplateInput.shape.targetKinds) }),
+  name: "emailTemplates.create", roles: ["admin", "mcp"], input: EmailTemplateInput.extend({ targetKinds: arr(EmailTemplateInput.shape.targetKinds) }),
   description: "Add an email template. Use {{venue.name}}, {{contact.firstName}}, {{user.name}}, {{artist.name}} etc.",
   run: (ctx, input) => db.create(ctx, "emailTemplates", input),
 });
 export const templatesUpdate = defineCommand({
-  name: "emailTemplates.update", roles: ["admin"], input: patchInput(EmailTemplateInput), description: "Edit an email template.",
+  name: "emailTemplates.update", roles: ["admin", "mcp"], input: patchInput(EmailTemplateInput), description: "Edit an email template.",
   run: (ctx, { id, patch }) => db.update(ctx, "emailTemplates", id, patch as Record<string, unknown>),
 });
 export const templatesRemove = defineCommand({
@@ -305,6 +305,30 @@ export const pitchesSendEmail = defineCommand({
   },
 });
 
+export const pitchesDraftEmail = defineCommand({
+  name: "pitches.draftEmail", roles: ["admin", "mcp"],
+  description:
+    "Write an email as a DRAFT in the caller's Gmail (never sends) and note it on the pitch timeline. A person reviews and sends it from the app. " +
+    "Refuses text that still has {{fields}}.",
+  input: z.strictObject({
+    id: z.string().min(1), to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(),
+    subject: z.string().min(1), body: z.string().min(1), threadId: z.string().optional(),
+  }),
+  async run(ctx, i) {
+    const missing = unfilledFields(`${i.subject}\n${i.body}`);
+    if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before drafting`, 400);
+    const pitch = await db.get("pitches", i.id);
+    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
+    const user = await db.get("users", ctx.uid);
+    if (!user) throw new AppError("forbidden", "No user for this account", 403);
+    const draft = await gmailClient().createDraft({ account: user.email, to: i.to, cc: i.cc, subject: i.subject, body: i.body, threadId: i.threadId }).catch(gmailFail);
+    const act = await db.create(ctx, `pitches/${i.id}/activity`, {
+      type: "note", text: `Email drafted (not sent) to ${i.to.join(", ")}: ${i.subject}\n\n${i.body}`,
+    });
+    return { id: act.id, draftId: draft.id, sent: false };
+  },
+});
+
 export const pitchesCheckReplies = defineCommand({
   name: "pitches.checkReplies", roles: ["admin"],
   description: "Look in the Gmail threads of this pitch's sent emails and add new replies to the timeline as emailReply.",
@@ -339,5 +363,5 @@ export const bookingCommands = [
   festivalsCreate, festivalsUpdate, festivalsRemove, editionsCreate, editionsUpdate, editionsRemove,
   contactsCreate, contactsUpdate, contactsRemove, contactsAttach, contactsDetach,
   pitchesFlag, pitchesUpdate, pitchesMove, pitchesComment, pitchesLog, pitchesRemove,
-  templatesCreate, templatesUpdate, templatesRemove, pitchesSendEmail, pitchesCheckReplies,
+  templatesCreate, templatesUpdate, templatesRemove, pitchesSendEmail, pitchesDraftEmail, pitchesCheckReplies,
 ];
