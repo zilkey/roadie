@@ -1,10 +1,23 @@
 import { z } from "zod";
 import { entity, serverMask, id, dateStr, timeStr, sound, cents } from "./common";
 
+export const showKind = z.enum(["venue", "house", "festival", "radio", "other"]);
+export type ShowKind = z.infer<typeof showKind>;
+
 export const Show = entity({
   date: dateStr,
   status: z.enum(["hold", "confirmed", "played", "canceled"]),
-  venue: z.strictObject({ id, name: z.string(), address: z.string().optional(), city: z.string().optional() }),
+  /** What kind of show. Missing = "venue" (documents written before this existed). */
+  kind: showKind.optional(),
+  /** Copy of the venue. Optional: a house concert has hosts and a place instead. A show has a venue or a place. */
+  venue: z.strictObject({ id, name: z.string(), address: z.string().optional(), city: z.string().optional() }).optional(),
+  /** Where a show with no venue happens (a home). The address is for the band only, never listed publicly. */
+  place: z.strictObject({ city: z.string().min(1), address: z.string().optional() }).optional(),
+  /** House concert hosts (contacts, admin-only) and a copy of their names that the whole band can read. */
+  hostContactIds: z.array(id).optional(),
+  hostName: z.string().optional(),
+  /** The festival year this show is part of; editionName is its display copy. */
+  editionId: id.optional(),
   editionName: z.string().optional(),
   times: z.strictObject({
     loadIn: timeStr.optional(), soundcheck: timeStr.optional(), doors: timeStr.optional(), set: timeStr.optional(),

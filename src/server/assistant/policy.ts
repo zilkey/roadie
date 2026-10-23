@@ -35,7 +35,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklist", "shows.setGear", "setlists.update", "setlists.create", "artists.update", "rehearsals.create", "rehearsals.update", "songs.create", "files.attach"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["records.get", "records.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search"]);
+const READ_ONLY = new Set(["records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search"]);
 
 /** True when `name` with this input must not run without the person's yes. TODO: count touched records after a dry run instead of guessing from the input. */
 export function needsConfirm(name: string, input: unknown): boolean {

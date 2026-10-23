@@ -18,7 +18,8 @@ const WHAT = `Drum heads ${Date.now()}`;
 test("enter money after the played seeded show: ledger entries, payouts, settled", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto("/shows");
-  await page.getByTestId("shows-past").getByText("Dairy Arts Center").click();
+  await page.getByTestId("shows-filter-played").click();
+  await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
   await page.getByTestId("after-show").click();
   const id = page.url().split("/shows/")[1].split("/")[0];
 

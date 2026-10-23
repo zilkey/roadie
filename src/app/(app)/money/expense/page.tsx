@@ -9,7 +9,7 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, dollarsToCents } from "@/lib/money";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName } from "@/lib/shows";
 import type { Show } from "@/schema";
 
 const CATS = ["gear", "travel", "space", "marketing", "fees", "other"] as const;
@@ -68,7 +68,7 @@ function AddExpense() {
         <label className="grid gap-1"><span className="lbl">For a show?</span>
           <select className="select" value={showId} onChange={(e) => setShowId(e.target.value)} data-testid="expense-show">
             <option value="">Pick a show (optional)</option>
-            {sorted.map((s) => <option key={s.id} value={s.id}>{fmtLong(s.date)} · {s.venue.name}</option>)}
+            {sorted.map((s) => <option key={s.id} value={s.id}>{fmtLong(s.date)} · {showName(s)}</option>)}
           </select></label>
         <span className="lbl">Receipt</span>
         <input className="input" placeholder="Paste a Drive link" value={link} onChange={(e) => setLink(e.target.value)} data-testid="expense-receipt" />

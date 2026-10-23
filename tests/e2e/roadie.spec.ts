@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { FIRESTORE } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -45,7 +46,7 @@ test("admin: narrowing persists across reload, and expands back", async ({ page 
   await expect(page.getByTestId("roadie-panel")).toHaveAttribute("data-width", "narrow");
   await expect(page.getByTestId("roadie-input")).toHaveCount(0);
   // saved in the users doc, not just the browser: wait for it, then drop local storage
-  await expect.poll(async () => (await page.request.get("http://127.0.0.1:8280/v1/projects/demo-band-tracker/databases/(default)/documents/users", { headers: { authorization: "Bearer owner" } })).text()).toContain("narrow");
+  await expect.poll(async () => (await page.request.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/users`, { headers: { authorization: "Bearer owner" } })).text()).toContain("narrow");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.getByTestId("roadie-panel")).toHaveAttribute("data-width", "narrow");

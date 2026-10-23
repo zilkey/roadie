@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
-import { buildChecklist, buildGear, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime } from "@/lib/shows";
+import { buildChecklist, buildGear, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -377,4 +377,88 @@ test("shows.remove archives the show and its deal and clears the listings", asyn
   assert.equal(await db.list("shows").then((l) => l.length), 0);
   assert.equal((await bandsintownClient().list()).length, 0);
   assert.equal((await calendarClient().list()).length, 0);
+});
+
+test("showFilter: every show is upcoming, played, canceled or dropped", () => {
+  const today = "2026-10-23";
+  const f = (status: "hold" | "confirmed" | "played" | "canceled", date: string) => showFilter({ id: "x", status, date }, today);
+  assert.equal(f("confirmed", "2026-11-01"), "upcoming");
+  assert.equal(f("hold", "2026-10-23"), "upcoming");
+  assert.equal(f("played", "2026-10-01"), "played");
+  assert.equal(f("confirmed", "2026-10-01"), "played");
+  assert.equal(f("canceled", "2026-11-01"), "canceled");
+  assert.equal(f("hold", "2026-10-22"), "dropped");
+});
+
+test("house concert: no venue, hosts + place; name, kind and band-PA default; validation", async () => {
+  const host = (await cmd("contacts.create", { name: "Jennifer McCarthy", emails: ["jen@example.com"], phones: [] })).id;
+  const co = (await cmd("contacts.create", { name: "Tom McCarthy", emails: [], phones: [] })).id;
+  const r = await cmd("shows.create", { date: "2027-03-06", hostContactIds: [host, co], place: { city: "Longmont", address: "12 Pine St" }, addToCalendar: true, billedAs: "duo" });
+  const s = (await db.get("shows", r.id))!;
+  assert.equal(s.kind, "house");
+  assert.equal(s.venue, undefined);
+  assert.deepEqual(s.place, { city: "Longmont", address: "12 Pine St" });
+  assert.deepEqual(s.hostContactIds, [host, co]);
+  assert.equal(s.hostName, "Jennifer McCarthy & Tom McCarthy");
+  assert.equal(s.sound.provider, "bandProvided", "house concerts default to our PA");
+  assert.deepEqual((await db.get("showDeals", r.id))!.contactIds, [host, co], "the deal's contacts are the hosts");
+  const ev = (await calendarClient().list())[0];
+  assert.match(ev.title, /at House concert · Jennifer McCarthy & Tom McCarthy$/);
+  assert.equal(ev.location, "12 Pine St");
+
+  await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: [host] }), /venue, or give the city/);
+  await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: ["nope"], place: { city: "Lyons" } }), /Host contact not found/);
+});
+
+test("house concert: renaming a host updates the show; Bandsintown never sees the host or address", async () => {
+  const host = (await cmd("contacts.create", { name: "Laura", emails: [], phones: [] })).id;
+  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, public: true, addToCalendar: false });
+  await cmd("contacts.update", { id: host, patch: { name: "Laura Brandt" } });
+  assert.equal((await db.get("shows", r.id))!.hostName, "Laura Brandt");
+  const [ev] = await bandsintownClient().list();
+  assert.equal(ev.venueName, "House concert");
+  assert.equal(ev.city, "Longmont");
+  assert.doesNotMatch(JSON.stringify(ev), /Laura|Elm/);
+});
+
+test("switching a show between a venue and a house; it always keeps a place", async () => {
+  const host = (await cmd("contacts.create", { name: "Polly", emails: [], phones: [] })).id;
+  const r = await create({ addToCalendar: false });
+  await assert.rejects(cmd("shows.update", { id: r.id, patch: { venueId: null } }), /venue, or give the city/);
+  await cmd("shows.update", { id: r.id, patch: { venueId: null, kind: "house", place: { city: "Gunbarrel" }, hostContactIds: [host] } });
+  let s = (await db.get("shows", r.id))!;
+  assert.equal(s.venue, undefined);
+  assert.equal(s.hostName, "Polly");
+  await cmd("shows.update", { id: r.id, patch: { venueId, place: null, hostContactIds: [], kind: "venue" } });
+  s = (await db.get("shows", r.id))!;
+  assert.equal(s.venue.name, "Hi-Dive");
+  assert.equal(s.place, undefined);
+  assert.equal(s.hostContactIds, undefined);
+  assert.equal(s.hostName, undefined);
+});
+
+test("festival link: editionId sets editionName and kind, follows a rename, and can be unlinked", async () => {
+  const f = (await db.create(ctx, "festivals", { name: "FoCoMX", type: "festival", region: "north", contactIds: [] })).id;
+  const e = (await db.create(ctx, "editions", { festivalId: f, festivalName: "FoCoMX", year: 2027, label: "2027", venueIds: [] })).id;
+  const r = await create({ editionId: e, addToCalendar: false });
+  let s = (await db.get("shows", r.id))!;
+  assert.equal(s.kind, "festival");
+  assert.equal(s.editionId, e);
+  assert.equal(s.editionName, "FoCoMX 2027");
+  assert.equal((await db.get("showDeals", r.id))!.editionId, e);
+  await db.update(ctx, "festivals", f, { name: "FoCoMX Fest" });
+  assert.equal((await db.get("shows", r.id))!.editionName, "FoCoMX Fest 2027");
+  await cmd("shows.update", { id: r.id, patch: { editionId: null } });
+  s = (await db.get("shows", r.id))!;
+  assert.equal(s.editionId, undefined);
+  assert.equal(s.editionName, undefined);
+});
+
+test("showName / publicShowName / showCity", () => {
+  assert.equal(showName({ venue: { id: "v", name: "Hi-Dive", city: "Denver" } }), "Hi-Dive");
+  assert.equal(showName({ kind: "house", hostName: "Mary", place: { city: "Boulder" } }), "House concert · Mary");
+  assert.equal(showName({ kind: "house", place: { city: "Boulder" } }), "House concert");
+  assert.equal(showName({ kind: "festival", editionName: "Hygiene Festival 2025", place: { city: "Hygiene" } }), "Hygiene Festival 2025");
+  assert.equal(publicShowName({ kind: "house", hostName: "Mary", place: { city: "Boulder" } }), "House concert");
+  assert.equal(showCity({ kind: "house", place: { city: "Boulder" } }), "Boulder");
 });

@@ -10,7 +10,7 @@ import { useDoc, type Row } from "@/lib/firestore-hooks";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName } from "@/lib/shows";
 import { EnterMoney } from "@/components/money/EnterMoney";
 import type { Show, ShowDeal } from "@/schema";
 
@@ -47,7 +47,7 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   const { call, error, busy } = useCommand();
   const r = deal?.rating;
   const blank: Rating = { show: r?.show ?? 0, venue: r?.venue ?? 0, crowd: r?.crowd != null ? String(r.crowd) : "", paid: deal?.paidAttendance != null ? String(deal.paidAttendance) : "", notes: r?.notes ?? "" };
-  const draft = useDraft(draftPath.newUnder("shows", id, "after"), blank, { title: () => `How'd it go? · ${show.venue.name}` });
+  const draft = useDraft(draftPath.newUnder("shows", id, "after"), blank, { title: () => `How'd it go? · ${showName(show)}` });
   const mutationId = useRef(newMutationId());
   const [saved, setSaved] = useState(false);
   const v = draft.value;
@@ -62,8 +62,8 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   const rated = saved || !!r;
   return (
     <div className="grid gap-3" data-testid="after-page">
-      <BackLink href={`/shows/${id}`} label={show.venue.name} />
-      <PageTitle title="How'd it go?" sub={`${show.venue.name} · ${fmtLong(show.date)}`} />
+      <BackLink href={`/shows/${id}`} label={showName(show)} />
+      <PageTitle title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
       <ErrorBox error={error} />
       {!draft.ready ? <span className="s">Loading…</span> : (
         <div className="card">

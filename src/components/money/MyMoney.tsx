@@ -5,7 +5,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { PageTitle } from "@/components/ui";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import { CATEGORY_LABEL, formatCents, reimbursementFor, reversedIds, type LedgerLike } from "@/lib/money";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import type { Expense, Show } from "@/schema";
 
 /** Members: their own expenses (and whether paid back) and every payment made to them. Rules allow only their own rows. */
@@ -18,7 +18,7 @@ export function MyMoney() {
   const rev = reversedIds(led);
   const mine = [...(expenses.rows ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1));
   const payments = led.filter((e) => e.kind === "payout" || e.kind === "reimbursement").sort((a, b) => (a.date < b.date ? 1 : -1));
-  const showName = (id?: string) => shows.rows?.find((s) => s.id === id)?.venue.name;
+  const showName = (id?: string) => ((x) => x && nameOfShow(x))(shows.rows?.find((s) => s.id === id));
   // Nothing of theirs yet (no expenses, no payments or entries): a welcome card with no hide button, since Money is how they get paid back.
   const nothingYet = expenses.rows !== null && ledger.rows !== null && mine.length === 0 && led.length === 0;
   if (nothingYet) {

@@ -27,6 +27,8 @@ npm run dev:all     # emulators + the five fakes + Next, in one terminal (Ctrl-C
 npm run seed        # in a second terminal, once the emulators are up: demo data
 ```
 
+For the band's real booking data instead of the demo: `npm run seed -- --reset --people` (people, artist, templates only), then `npm run import:booking`. That reads the Venue Book, Festival Run 2027 and Support Slots snapshots in `.booking-kit/` (gitignored: real contacts). It's safe to re-run, and Admin → History can undo it as one run.
+
 | What | URL |
 | --- | --- |
 | The app | http://127.0.0.1:3100 |

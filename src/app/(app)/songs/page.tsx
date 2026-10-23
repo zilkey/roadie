@@ -7,7 +7,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Seg } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { fmtLen, mimeGroup } from "@/lib/music";
-import { fmtDur } from "@/lib/shows";
+import { fmtDur, showName } from "@/lib/shows";
 import { fmtDay, useMusic } from "@/components/music/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
@@ -99,7 +99,7 @@ function Songs() {
             return (
               <Link key={s.id} href={`/songs/setlists/${s.id}`} className="card" data-testid={`setlist-${s.id}`}>
                 <div className="flex items-center justify-between"><b>{s.name}</b><span className="s font-semibold">Open ›</span></div>
-                <span className="s">{s.items.filter((i) => i.type === "song").length} songs · {fmtDur(s.totalSec)}{show ? ` · ${fmtDay(show.date)} ${show.venue.name}` : ""}</span>
+                <span className="s">{s.items.filter((i) => i.type === "song").length} songs · {fmtDur(s.totalSec)}{show ? ` · ${fmtDay(show.date)} ${showName(show)}` : ""}</span>
               </Link>
             );
           })}

@@ -1,6 +1,6 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
-import { addDays, isPlayed } from "@/lib/shows";
+import { addDays, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
 import { reimbursementFor } from "@/lib/money";
 import type { Ctx } from "../ctx";
 import { runAs, type Session } from "./run";
@@ -8,7 +8,7 @@ import { runAs, type Session } from "./run";
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const list = async (ctx: Ctx, kind: string): Promise<Row[]> =>
   ((await runAs(ctx, "records.list", { kind, limit: 200 })).result as { rows: Row[] }).rows;
-const showLine = (s: Row) => ({ id: s.id, venue: s.venue?.name, city: s.venue?.city, date: s.date, status: s.status, times: s.times });
+const showLine = (s: Row) => ({ id: s.id, venue: showName(s as ShowPlaceLike), city: showCity(s as ShowPlaceLike), kind: s.kind, date: s.date, status: s.status, times: s.times });
 
 /** Until 6:00 the next morning, "tonight" is still the show that just happened. */
 export function tonightDate(now: Date): string {
@@ -46,7 +46,7 @@ export async function searchAll(ctx: Ctx, i: { q: string; kinds?: string[]; limi
   const out: { kind: string; id: string; name: string; sub?: string }[] = [];
   if (want.has("show")) {
     for (const s of await list(ctx, "shows")) {
-      if (hit(`${s.venue?.name} ${s.venue?.city} ${s.date} ${s.status} ${s.editionName ?? ""} show`)) out.push({ kind: "show", id: s.id, name: `${s.venue?.name} · ${s.date}`, sub: `Show · ${s.status}` });
+      if (hit(`${showName(s as ShowPlaceLike)} ${showCity(s as ShowPlaceLike) ?? ""} ${s.date} ${s.status} ${s.editionName ?? ""} show`)) out.push({ kind: "show", id: s.id, name: `${showName(s as ShowPlaceLike)} · ${s.date}`, sub: `Show · ${s.status}` });
     }
   }
   const booking = [...want].filter((k) => BOOKING.has(k));

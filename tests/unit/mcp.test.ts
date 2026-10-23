@@ -95,7 +95,7 @@ const EXPECTED = [
   // money, stats
   "ledger.record", "ledger.correct", "shows.settle", "payouts.pay", "expenses.reimburse", "stats.pull", "stats.importCsv", "stats.current",
   // read tools and undo
-  "search", "records.get", "records.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
+  "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
   "history.undoRun", "history.myRuns",
 ].sort();
 

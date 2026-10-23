@@ -55,6 +55,17 @@ test("script: greeting, off-topic, can't-do, navigation", () => {
   assert.deepEqual(script({ text: "go to money" }).calls, [{ name: "ui.navigate", input: { route: "money" } }]);
 });
 
+test("script: show questions use shows.list with the filter, and answer from its rows", () => {
+  assert.deepEqual(script({ text: "how many shows were canceled?" }).calls, [{ name: "shows.list", input: { filter: "canceled" } }]);
+  assert.deepEqual(script({ text: "Which gigs got dropped" }).calls, [{ name: "shows.list", input: { filter: "dropped" } }]);
+  assert.deepEqual(script({ text: "what shows are coming up" }).calls, [{ name: "shows.list", input: { filter: "upcoming" } }]);
+  assert.deepEqual(script({ text: "cancel the Hi-Dive show" }).calls, [{ name: "search", input: { q: "hi-dive", kinds: ["show"] } }]);
+  const out = (shows: { name: string; date: string }[]) => ({ untrustedContent: { filter: "canceled", count: shows.length, shows } });
+  const steps = (o: unknown) => [{ name: "shows.list", input: { filter: "canceled" }, output: o }];
+  assert.equal(script({ text: "how many shows were canceled?", steps: steps(out([{ name: "Hi-Dive", date: "2026-09-01" }])) }).text, "1 show canceled: Hi-Dive · 2026-09-01.");
+  assert.equal(script({ text: "how many shows were canceled?", steps: steps(out([])) }).text, "No shows canceled.");
+});
+
 test("flow: greeting streams text word by word", async () => {
   const { events, out } = await run("hi");
   assert.ok(events.filter((e) => e.type === "text").length > 2);

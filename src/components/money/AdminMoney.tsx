@@ -13,7 +13,7 @@ import { todayStr } from "@/lib/booking";
 import {
   CATEGORY_LABEL, KIND_LABEL, byCategory, byMonth, byShow, dollarsToCents, formatCents, indexLedger, netOf, owedLines, reversedIds, totals, type LedgerLike,
 } from "@/lib/money";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import type { Expense, Musician, Show, ShowDeal, User } from "@/schema";
@@ -38,7 +38,7 @@ function Admin() {
 
   const led = useMemo(() => ledger.rows ?? [], [ledger.rows]);
   const showById = useMemo(() => new Map((shows.rows ?? []).map((s) => [s.id, s])), [shows.rows]);
-  const showName = (id: string) => showById.get(id)?.venue.name ?? "Show";
+  const showName = (id: string) => ((x) => (x ? nameOfShow(x) : "Show"))(showById.get(id));
   const person = (userId?: string, musicianId?: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.id === musicianId || m.userId === userId)?.name ?? "Someone";
   const t = totals(led);
@@ -202,7 +202,7 @@ function RecordForm({ shows, musicians }: { shows: Row<Show>[]; musicians: Row<M
           </select></label>
         <label className="grid gap-1"><span className="lbl">Show</span>
           <select className="select" value={f.showId} onChange={(e) => set("showId", e.target.value)} data-testid="rec-show">
-            <option value="">None</option>{shows.map((s) => <option key={s.id} value={s.id}>{s.date} · {s.venue.name}</option>)}
+            <option value="">None</option>{shows.map((s) => <option key={s.id} value={s.id}>{s.date} · {nameOfShow(s)}</option>)}
           </select></label>
       </div>
       {f.kind === "payout" && (

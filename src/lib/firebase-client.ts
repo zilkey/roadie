@@ -20,13 +20,13 @@ let _db: Firestore | undefined;
 export function clientAuth(): Auth {
   if (_auth) return _auth;
   _auth = getAuth(app());
-  if (useEmulators) connectAuthEmulator(_auth, "http://127.0.0.1:9319", { disableWarnings: true });
+  if (useEmulators) connectAuthEmulator(_auth, `http://127.0.0.1:${process.env.NEXT_PUBLIC_AUTH_EMULATOR_PORT || "9319"}`, { disableWarnings: true });
   return _auth;
 }
 export function clientDb(): Firestore {
   if (_db) return _db;
   _db = getFirestore(app());
-  if (useEmulators) connectFirestoreEmulator(_db, "127.0.0.1", 8280);
+  if (useEmulators) connectFirestoreEmulator(_db, "127.0.0.1", Number(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT || 8280));
   return _db;
 }
 export const usingEmulators = useEmulators;

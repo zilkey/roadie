@@ -1,18 +1,19 @@
 "use client";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { PageTitle, ErrorBox, useCommand } from "@/components/ui";
 import { BackLink, useNotFound } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { fmtLongYear } from "@/lib/shows";
+import { fmtLongYear, showName, showCity, showAddress } from "@/lib/shows";
 import { billingName, configName, nameOf, ShowStatusChip, Times, useBand, type ShowRow } from "@/components/shows/common";
 import { ChecklistPanel, DealPanel, DocsPanel, GearPanel, ListingsPanel, SetlistPanel } from "@/components/shows/ShowParts";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { ShowForm, showPatch, type ShowFormState } from "@/components/shows/ShowForm";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
-import type { Show, Venue } from "@/schema";
+import type { Contact, Edition, Show, Venue } from "@/schema";
 
 export default function ShowPage() {
   const { id } = useParams<{ id: string }>();
@@ -25,7 +26,8 @@ export default function ShowPage() {
 function formOf(s: ShowRow): ShowFormState {
   const t = s.times;
   return {
-    venueId: s.venue.id, date: s.date, status: s.status, loadIn: t.loadIn ?? "", soundcheck: t.soundcheck ?? "", doors: t.doors ?? "", set: t.set ?? "", setLength: t.setLength != null ? String(t.setLength) : "",
+    where: s.venue || !s.place ? "venue" : "house", venueId: s.venue?.id ?? "", hostContactIds: s.hostContactIds ?? [],
+    city: s.place?.city ?? "", address: s.place?.address ?? "", editionId: s.editionId ?? "", date: s.date, status: s.status, loadIn: t.loadIn ?? "", soundcheck: t.soundcheck ?? "", doors: t.doors ?? "", set: t.set ?? "", setLength: t.setLength != null ? String(t.setLength) : "",
     billedAs: s.billedAs ?? "", personnel: s.personnel, soundProvider: s.sound.provider, soundNotes: s.sound.notes ?? "",
     poster: s.needs.poster, backline: s.needs.backline, merch: s.needs.merch, calendar: false, public: s.public, ticketUrl: s.ticketUrl ?? "", bandNotes: s.bandNotes ?? "",
     dealType: "guarantee", guarantee: "", doorSplitPct: "", ticketPrice: "",
@@ -41,20 +43,24 @@ function ShowView({ show }: { show: ShowRow }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ShowFormState>(() => formOf(show));
   // Existing record = autosave: no Save button, each field is a patch through shows.update, "Saved" + Undo toast after.
-  const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, title: `${show.venue.name} · ${show.date}`, onUseTheirs: () => setForm(formOf(show)) });
+  const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, title: `${showName(show)} · ${show.date}`, onUseTheirs: () => setForm(formOf(show)) });
   const edit = (next: ShowFormState) => { as.patch(showPatch(form, next)); setForm(next); };
   const venues = useCollection<Venue>("venues", { skip: !admin }).rows ?? [];
+  const contacts = useCollection<Contact>("contacts", { skip: !admin || !editing }).rows ?? [];
+  const editions = useCollection<Edition>("editions", { skip: !admin || !editing }).rows ?? [];
   const cfg = configName(b.artist, show.billedAs);
   const playing = !!p.musicianId && show.personnel.includes(p.musicianId);
 
   return (
     <div className="grid gap-3" data-testid="show-page" data-show-id={show.id}>
       <BackLink href="/shows" label="Shows" />
-      <PageTitle title={show.venue.name} sub={fmtLongYear(show.date)} />
+      <PageTitle title={showName(show)} sub={fmtLongYear(show.date)} />
       <ErrorBox error={error} />
       <div className="flex flex-wrap items-center gap-2">
         <ShowStatusChip status={show.status} />
-        {show.editionName && <span className="chip m">{show.editionName}</span>}
+        {show.editionName && (admin && show.editionId
+          ? <Link href={`/booking/editions/${show.editionId}`} className="chip m" data-testid="show-edition-link">{show.editionName}</Link>
+          : <span className="chip m">{show.editionName}</span>)}
         {!admin && p.musicianId && <span className={`chip ${playing ? "m" : ""}`}>{playing ? "You're playing" : "Not playing"}</span>}
         {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
         {admin && <SaveStatus {...as.statusProps} />}
@@ -66,13 +72,13 @@ function ShowView({ show }: { show: ShowRow }) {
       </div>
 
       {editing && admin ? (
-        <ShowForm mode="edit" value={form} onChange={edit} onBlur={() => void as.flush()} venues={venues} artist={b.artist} musicians={b.musicians} error={null} busy={busy} />
+        <ShowForm mode="edit" value={form} onChange={edit} onBlur={() => void as.flush()} venues={venues} contacts={contacts} editions={editions} artist={b.artist} musicians={b.musicians} error={null} busy={busy} />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid content-start gap-3">
             <div className="card" data-testid="show-info">
-              <b>{show.venue.name}</b>
-              {show.venue.address ? <span className="font-mono text-sm" data-testid="show-address">{show.venue.address}</span> : show.venue.city && <span className="font-mono text-sm">{show.venue.city}</span>}
+              <b>{showName(show)}</b>
+              {showAddress(show) ? <span className="font-mono text-sm" data-testid="show-address">{showAddress(show)}</span> : showCity(show) && <span className="font-mono text-sm">{showCity(show)}</span>}
               <Times times={show.times} />
             </div>
             <div className="grid gap-1">
@@ -103,7 +109,7 @@ function ShowView({ show }: { show: ShowRow }) {
             {admin && (
               <>
                 <WhosFree showId={show.id} musicians={b.musicians} extraIds={show.personnel} />
-                <AskWhoIsFree showId={show.id} date={show.date} defaultIds={show.personnel} place={show.venue.name} musicians={b.musicians} />
+                <AskWhoIsFree showId={show.id} date={show.date} defaultIds={show.personnel} place={showName(show)} musicians={b.musicians} />
                 <DealPanel show={show} />
               </>
             )}

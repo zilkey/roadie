@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
+import { DRIVE } from "./env";
 
-const DRIVE = "http://127.0.0.1:3202";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");

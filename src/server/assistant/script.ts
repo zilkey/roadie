@@ -39,6 +39,11 @@ const category = (what: string) =>
 
 type Page = { kind?: string; id?: string };
 
+// "How many shows were canceled?" -> shows.list with that filter. Checked before the cancel command.
+const FILTER_WORDS: [RegExp, string][] = [[/\bcancel(?:l?ed)?\b/, "canceled"], [/\bplayed\b/, "played"], [/\bdropped\b/, "dropped"], [/\b(upcoming|coming up)\b/, "upcoming"]];
+const ASKS_LIST = /^(how many|which|what|list|any)\b/;
+const FILTER_SAID: Record<string, string> = { upcoming: "coming up", played: "played", canceled: "canceled", dropped: "dropped (holds that never confirmed)" };
+
 export function script(input: { text: string; steps?: Step[]; page?: Page }): Scripted {
   const t = input.text.toLowerCase().trim();
   const steps = input.steps ?? [];
@@ -48,6 +53,8 @@ export function script(input: { text: string; steps?: Step[]; page?: Page }): Sc
 function first(t: string, page?: Page): Scripted {
   if (/^(hi|hey|hello|yo|sup|howdy|good (morning|evening))\b/.test(t)) return { text: "Hey. Roadie here. Shows, tours, money: what do you need?" };
   if (FORBIDDEN.test(t)) return { text: NO_PEOPLE }; // no tool call at all
+  const listed = ASKS_LIST.test(t) && /\b(shows?|gigs?)\b/.test(t) ? FILTER_WORDS.find(([re]) => re.test(t)) : undefined;
+  if (listed) return { calls: [{ name: "shows.list", input: { filter: listed[1] } }] };
   if (/\bundo\b/.test(t)) return { text: "On it.", calls: [{ name: "history.undoRun", input: /\b(everything|all|tonight|conversation)\b/.test(t) ? { all: true } : {} }] };
 
   const exp = /\badd\s+(?:\$\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:dollars?|bucks))\s*(?:for |of |in |on )?(.*)$/.exec(t);
@@ -121,6 +128,16 @@ function followUp(t: string, steps: Step[], page?: Page): Scripted {
     const route = routeForRecord(COLLECTION[h.kind] ?? "");
     if (!route) return { text: `Found ${h.name}, but there's no page for it.` };
     return { text: `Found ${h.name}.`, calls: [{ name: "ui.navigate", input: { route, params: { id: h.id } } }] };
+  }
+
+  if (last.name === "shows.list") {
+    if (err) return { text: `Couldn't do that: ${err}` };
+    const rows = (out?.shows ?? []) as { name: string; date: string }[];
+    const n = out?.count ?? rows.length;
+    const said = FILTER_SAID[out?.filter] ?? "";
+    if (!n) return { text: `No shows ${said}.` };
+    const named = rows.slice(0, 5).map((r) => `${r.name} · ${r.date}`).join(", ");
+    return { text: `${n} show${n === 1 ? "" : "s"} ${said}: ${named}${n > 5 ? `, and ${n - 5} more` : ""}.` };
   }
 
   if (last.name === "context.now") {

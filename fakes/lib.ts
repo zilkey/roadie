@@ -98,7 +98,7 @@ export function defineFake<S>(def: FakeDef<S>) {
         send(status, "application/json", JSON.stringify({ error: { code: status, message: (e as Error).message } }));
       }
     });
-    await new Promise<void>((ok, fail) => { server.once("error", fail); server.listen(opts.port ?? def.defaultPort, opts.host ?? "127.0.0.1", ok); });
+    await new Promise<void>((ok, fail) => { server.once("error", fail); server.listen(opts.port ?? def.defaultPort + Number(process.env.FAKE_PORT_OFFSET ?? 0), opts.host ?? "127.0.0.1", ok); });
     const port = (server.address() as { port: number }).port;
     return { port, url: `http://127.0.0.1:${port}`, close: () => new Promise((ok) => { server.closeAllConnections(); server.close(() => ok()); }) };
   }

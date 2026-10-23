@@ -8,6 +8,7 @@ import { newMutationId } from "@/lib/commands";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, dollarsToCents, formatCents, splitEvenly, indexLedger, netOf, type LedgerLike } from "@/lib/money";
 import type { Show, ShowDeal, Musician } from "@/schema";
+import { showName } from "@/lib/shows";
 
 const LINES = [["door", "Tickets / door"], ["guarantee", "Guarantee"], ["merch", "Merch"], ["tips", "Cash tips"], ["venmo", "Venmo"]] as const;
 type Cat = (typeof LINES)[number][0];
@@ -22,7 +23,7 @@ export function EnterMoney({ show, deal }: { show: Row<Show>; deal: Row<ShowDeal
   const draft = useDraft(draftPath.newUnder("shows", show.id, "settlement"), {
     inc: { door: "", guarantee: deal?.guarantee ? String(deal.guarantee / 100) : "", merch: "", tips: "", venmo: "" } as Record<Cat, string>,
     pay: null as Record<string, string> | null, skip: {} as Record<string, boolean>, unpaid: {} as Record<string, boolean>,
-  }, { title: () => `Settle show · ${show.venue.name} · ${show.date}` });
+  }, { title: () => `Settle show · ${showName(show)} · ${show.date}` });
   const { inc, pay, skip, unpaid } = draft.value;
   const setInc = (v: Record<Cat, string>) => draft.setValue({ ...draft.value, inc: v });
   const setPay = (v: Record<string, string> | null) => draft.setValue({ ...draft.value, pay: v });

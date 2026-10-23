@@ -15,3 +15,13 @@ backup-repo
 # Service-account keys and other secrets: never committed (public repo)
 .secrets/
 *firebase-adminsdk*.json
+
+# Real booking data pulled from the claude.ai trackers (contacts: never committed, public repo)
+.booking-kit/
+firebase-export-*
+# Test runs keep their own Next build and fake-service state (never dev's)
+.next-test
+.fake-data-test
+
+# Local notes
+TODO.md

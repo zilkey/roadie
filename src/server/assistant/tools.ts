@@ -13,6 +13,7 @@ import { contextNow, searchAll, SEARCH_KINDS } from "./context";
 import { eligibleCommands, isEligible, needsConfirm, summarize } from "./policy";
 import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
+import { showName, type ShowPlaceLike } from "@/lib/shows";
 
 export const MAX_RESULT_CHARS = 20_000;
 /** Tool results are wrapped so the model reads them as content, never as instructions. */
@@ -110,7 +111,7 @@ async function labelFor(s: Session, name: string, input: unknown): Promise<strin
   if (typeof id !== "string" || !(Object.values(RECORD_ROUTES) as string[]).includes(kind)) return undefined;
   try {
     const d = (await runAs(makeCtx(s), "records.get", { kind, id })).result as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-    return kind === "shows" ? `${d.venue?.name} · ${d.date}` : (d.name ?? d.title ?? undefined);
+    return kind === "shows" ? `${showName(d as ShowPlaceLike)} · ${d.date}` : (d.name ?? d.title ?? undefined);
   } catch { return undefined; }
 }
 

@@ -11,6 +11,33 @@ export interface ArtistLike {
   soundGear: { bandProvided: GearSpec[]; venueProvided: GearSpec[] };
 }
 
+// ---------- where a show is ----------
+
+/** The fields that say where a show is. A show has a venue, or (house concerts) hosts and a place. */
+export interface ShowPlaceLike {
+  kind?: "venue" | "house" | "festival" | "radio" | "other";
+  venue?: { id: string; name: string; address?: string; city?: string };
+  place?: { city: string; address?: string };
+  hostName?: string;
+  editionName?: string;
+}
+export const KIND_LABEL: Record<NonNullable<ShowPlaceLike["kind"]>, string> = {
+  venue: "Venue", house: "House concert", festival: "Festival", radio: "Radio", other: "Other",
+};
+export const kindOf = (s: ShowPlaceLike) => s.kind ?? (s.venue ? "venue" : s.hostName ? "house" : "other");
+/** The show's name everywhere in the app: the venue, else "House concert · <hosts>", else the festival. */
+export function showName(s: ShowPlaceLike): string {
+  if (s.venue) return s.venue.name;
+  if (kindOf(s) === "house") return s.hostName ? `House concert · ${s.hostName}` : "House concert";
+  return s.editionName ?? KIND_LABEL[kindOf(s)];
+}
+/** What the outside world sees (Bandsintown): never a host's name or a home address. */
+export const publicShowName = (s: ShowPlaceLike) => (s.venue ? s.venue.name : kindOf(s) === "house" ? "House concert" : showName(s));
+export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
+export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
+/** "Jerry Champlin & Tania McEvoy" */
+export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
+
 /** A sensible starting set; scripts/seed.ts creates these as checklistTemplates. */
 export const DEFAULT_CHECKLIST_TEMPLATES: TemplateLike[] = [
   { label: "Confirm load-in and set times", when: "always", daysBefore: 7 },
@@ -95,6 +122,16 @@ interface ShowLike { id: string; date: string; status: "hold" | "confirmed" | "p
 export const RECENT_DAYS = 3;
 /** A show whose date has passed counts as played even if nobody has rated it yet. */
 export const isPlayed = (s: ShowLike, today: string) => s.status === "played" || (s.status === "confirmed" && s.date < today);
+
+/** The Shows filter. Every show is in exactly one: dropped is a hold whose date passed without being confirmed. */
+export const SHOW_FILTERS = ["upcoming", "played", "canceled", "dropped"] as const;
+export type ShowFilter = (typeof SHOW_FILTERS)[number];
+export const SHOW_FILTER_LABEL: Record<ShowFilter, string> = { upcoming: "Upcoming", played: "Played", canceled: "Canceled", dropped: "Dropped" };
+export function showFilter(s: ShowLike, today: string): ShowFilter {
+  if (s.status === "canceled") return "canceled";
+  if (isPlayed(s, today)) return "played";
+  return s.status === "hold" && s.date < today ? "dropped" : "upcoming";
+}
 
 export interface HomePlan<S extends ShowLike, A> {
   today: S[];

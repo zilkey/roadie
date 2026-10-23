@@ -1,10 +1,8 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { dateInBandZone } from "../../src/lib/timezone";
 import { addDays } from "../../src/lib/shows";
+import { CAL, BIT, GMAIL } from "./env";
 
-const CAL = "http://127.0.0.1:3203";
-const BIT = "http://127.0.0.1:3204";
-const GMAIL = "http://127.0.0.1:3201";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -297,7 +295,8 @@ test("after the show: rating and attendance saved", async ({ page }) => {
   await signInAs(page, "jeff");
   // the seeded played show (Dairy Arts, Oct 10) is unsettled
   await page.goto("/shows");
-  await page.getByTestId("shows-past").getByText("Dairy Arts Center").click();
+  await page.getByTestId("shows-filter-played").click();
+  await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
   await page.getByTestId("after-show").click();
   await page.getByTestId("rate-show-4").click();
   await page.getByTestId("rate-venue-5").click();

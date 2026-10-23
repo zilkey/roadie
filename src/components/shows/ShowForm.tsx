@@ -4,10 +4,14 @@ import { ErrorBox } from "@/components/ui";
 import { Seg } from "@/components/booking/common";
 import { dollarsToCents } from "@/lib/money";
 import type { Row } from "@/lib/firestore-hooks";
-import type { Artist, Musician, Venue } from "@/schema";
+import type { Artist, Contact, Edition, Musician, Venue } from "@/schema";
 
 export interface ShowFormState {
-  venueId: string; date: string; status: "hold" | "confirmed" | "played" | "canceled";
+  /** A venue, or a house concert: hosts (contacts) + city and address, no venue. */
+  where: "venue" | "house"; venueId: string; hostContactIds: string[]; city: string; address: string;
+  /** The festival year this show is part of ("" = none). */
+  editionId: string;
+  date: string; status: "hold" | "confirmed" | "played" | "canceled";
   loadIn: string; soundcheck: string; doors: string; set: string; setLength: string;
   billedAs: string; personnel: string[]; soundProvider: "venueProvided" | "bandProvided"; soundNotes: string;
   poster: boolean; backline: boolean; merch: boolean; calendar: boolean; public: boolean; ticketUrl: string; bandNotes: string;
@@ -30,6 +34,15 @@ export function dealOf(s: ShowFormState) {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** The form has somewhere to put the show: a venue, or a city for a house concert. */
+export const hasPlace = (s: ShowFormState) => (s.where === "venue" ? !!s.venueId : !!s.city.trim());
+export const placeOf = (s: ShowFormState) => ({ city: s.city.trim(), ...(s.address.trim() ? { address: s.address.trim() } : {}) });
+/** The where-fields of `shows.create`. */
+export function whereInput(s: ShowFormState) {
+  return s.where === "venue"
+    ? { venueId: s.venueId, ...(s.editionId ? { kind: "festival" as const } : {}) }
+    : { kind: "house" as const, place: placeOf(s), hostContactIds: s.hostContactIds };
+}
 /**
  * The `shows.update` patch for ONE edit: only the fields that differ between the form before (`a`) and after (`b`).
  * Diffing consecutive form states (not form vs. the live show) is what makes A -> B -> A save correctly while the
@@ -38,7 +51,19 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, unknown> {
   const p: Record<string, unknown> = {};
   const ne = (x: unknown, y: unknown) => JSON.stringify(x) !== JSON.stringify(y);
-  if (b.venueId !== a.venueId && b.venueId) p.venueId = b.venueId;
+  // Where: only send a switch once it is complete (a venue picked, or a city typed), so the show always has a place.
+  if (b.where === "venue" && b.venueId && (a.where !== "venue" || a.venueId !== b.venueId)) {
+    p.venueId = b.venueId;
+    if (a.where !== "venue") Object.assign(p, { place: null, hostContactIds: [], kind: b.editionId ? "festival" : "venue" });
+  }
+  if (b.where === "house" && hasPlace(b)) {
+    if (a.where !== "house" || !hasPlace(a)) Object.assign(p, { venueId: null, kind: "house", place: placeOf(b), hostContactIds: b.hostContactIds });
+    else {
+      if (ne(placeOf(a), placeOf(b))) p.place = placeOf(b);
+      if (ne(a.hostContactIds, b.hostContactIds)) p.hostContactIds = b.hostContactIds;
+    }
+  }
+  if (b.editionId !== a.editionId) p.editionId = b.editionId || null;
   if (b.date !== a.date && DATE.test(b.date)) p.date = b.date;
   if (b.status !== a.status) p.status = b.status;
   if (ne(timesOf(a), timesOf(b))) p.times = timesOf(b);
@@ -56,8 +81,11 @@ export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, un
 const L = ({ children }: { children: React.ReactNode }) => <span className="lbl">{children}</span>;
 
 /** Shared by "New show" (Booked it) and editing a show. Controlled by the parent so it can diff what changed. */
-export function ShowForm({ mode, value, onChange, onBlur, venues, artist, musicians, error, busy, submitLabel, onSubmit, onCancel }: {
-  mode: "create" | "edit"; value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[]; artist?: Row<Artist>; musicians: Row<Musician>[];
+export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, editions, artist, musicians, error, busy, submitLabel, onSubmit, onCancel }: {
+  mode: "create" | "edit"; value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[];
+  /** House concert hosts are picked from contacts; festival years from editions. */
+  contacts: Row<Contact>[]; editions: Row<Edition>[];
+  artist?: Row<Artist>; musicians: Row<Musician>[];
   error: string | null; busy: boolean;
   /** Edit mode (autosave): leave out onSubmit, there is no Save button. Called when focus leaves a field. */
   onBlur?(): void;
@@ -75,14 +103,28 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, artist, musici
   return (
     <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }} onBlur={onBlur}>
       <div className="card">
-        <label className="grid gap-1"><L>Venue</L>
-          <select className="select" value={value.venueId} data-testid="show-venue" required
-            onChange={(e) => {
-              const v = venues.find((x) => x.id === e.target.value);
-              set({ venueId: e.target.value, ...(!soundTouched && v?.sound ? { soundProvider: v.sound.provider, soundNotes: v.sound.notes ?? "" } : {}) });
-            }}>
-            <option value="">Choose a venue…</option>
-            {[...venues].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.address.city}</option>)}
+        <Seg testid="show-where" value={value.where}
+          onChange={(w) => set({ where: w, ...(!soundTouched && w === "house" ? { soundProvider: "bandProvided" } : {}) })}
+          options={[["venue", "Venue"], ["house", "House concert"]]} />
+        {value.where === "venue" ? (
+          <label className="grid gap-1"><L>Venue</L>
+            <select className="select" value={value.venueId} data-testid="show-venue" required
+              onChange={(e) => {
+                const v = venues.find((x) => x.id === e.target.value);
+                set({ venueId: e.target.value, ...(!soundTouched && v?.sound ? { soundProvider: v.sound.provider, soundNotes: v.sound.notes ?? "" } : {}) });
+              }}>
+              <option value="">Choose a venue…</option>
+              {[...venues].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.address.city}</option>)}
+            </select>
+          </label>
+        ) : (
+          <HostFields value={value} set={set} contacts={contacts} />
+        )}
+        <label className="grid gap-1"><L>Part of a festival</L>
+          <select className="select" value={value.editionId} data-testid="show-edition" onChange={(e) => set({ editionId: e.target.value })}>
+            <option value="">No</option>
+            {[...editions].sort((a, b) => `${a.festivalName} ${a.label}`.localeCompare(`${b.festivalName} ${b.label}`))
+              .map((e) => <option key={e.id} value={e.id}>{e.festivalName} {e.label}</option>)}
           </select>
         </label>
         {field("date", "Date", "date")}
@@ -156,10 +198,38 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, artist, musici
       <ErrorBox error={error} />
       {onSubmit && (
         <div className="flex gap-2">
-          <button className="btn acc" disabled={busy || !value.venueId || !value.date} data-testid="show-save">{submitLabel ?? "Save"}</button>
+          <button className="btn acc" disabled={busy || !hasPlace(value) || !value.date} data-testid="show-save">{submitLabel ?? "Save"}</button>
           {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
         </div>
       )}
     </form>
+  );
+}
+
+/** House concert: who hosts (contacts) and where. The address stays with the band; it's never listed publicly. */
+function HostFields({ value, set, contacts }: { value: ShowFormState; set(p: Partial<ShowFormState>): void; contacts: Row<Contact>[] }) {
+  const hosts = value.hostContactIds.map((id) => contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
+  const others = contacts.filter((c) => !value.hostContactIds.includes(c.id)).sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <>
+      <L>Hosts</L>
+      <div className="flex flex-wrap gap-1.5" data-testid="show-hosts">
+        {hosts.map((c) => (
+          <button key={c.id} type="button" className="btn sm acc" data-testid={`host-${c.id}`} aria-label={`Remove ${c.name}`}
+            onClick={() => set({ hostContactIds: value.hostContactIds.filter((x) => x !== c.id) })}>{c.name} ×</button>
+        ))}
+        {!hosts.length && <span className="s">No host yet.</span>}
+      </div>
+      <select className="select" value="" data-testid="show-host-add" onChange={(e) => e.target.value && set({ hostContactIds: [...value.hostContactIds, e.target.value] })}>
+        <option value="">Add a host from contacts…</option>
+        {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1"><L>City</L>
+          <input className="input" value={value.city} onChange={(e) => set({ city: e.target.value })} data-testid="show-city" required /></label>
+        <label className="grid gap-1"><L>Address (band only)</L>
+          <input className="input" value={value.address} onChange={(e) => set({ address: e.target.value })} data-testid="show-address-input" /></label>
+      </div>
+    </>
   );
 }

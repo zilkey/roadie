@@ -6,7 +6,7 @@ import { AppError } from "../errors";
 import { gmailClient, IntegrationError } from "../integrations";
 import { answerLink, hashToken, newToken } from "../availability";
 import { dateStr } from "@/schema";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const answer = z.enum(["yes", "no", "maybe"]);
 const ROLES = ["admin", "mcp"] as const;
@@ -65,7 +65,7 @@ export const availabilityAsk = defineCommand({
     const [pitch, show] = await Promise.all([i.pitchId ? db.get("pitches", i.pitchId) : null, i.showId ? db.get("shows", i.showId) : null]);
     if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
     if (i.showId && (!show || show.deletedAt)) throw new AppError("not_found", "Show not found", 404);
-    const place = (show?.venue?.name ?? pitch?.target?.name) as string | undefined;
+    const place = ((show ? showName(show as ShowPlaceLike) : undefined) ?? pitch?.target?.name) as string | undefined;
     const label = i.label ?? `${place ? `${place} · ` : ""}${fmtLong(i.date)}`;
     const ids = [...new Set(i.musicianIds)];
     for (const m of ids) { const d = await db.get("musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); }

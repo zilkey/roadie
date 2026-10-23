@@ -7,6 +7,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
 import { BackLink, EntityForm, FlagButton, PitchLinks, editionForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
+import { ShowLinks } from "@/components/shows/common";
 import type { Edition } from "@/schema";
 
 export default function Page() { return <AdminOnly><EditionPage /></AdminOnly>; }
@@ -44,6 +45,8 @@ function EditionPage() {
           {!e.appOpens && !e.appDeadline && !e.applyUrl && <span className="s">No application dates yet.</span>}
         </div>
       )}
+      <span className="lbl">Our shows</span>
+      <ShowLinks where={["editionId", "==", id]} empty="None yet." testid="edition-shows" />
       <span className="lbl">Pitches</span>
       <PitchLinks pitches={b.pitches.filter((p) => p.target.kind === "edition" && p.target.id === id)} />
       <Link href={hrefFor("festival", e.festivalId)} className="btn ghost sm justify-self-start">All years of {e.festivalName}</Link>

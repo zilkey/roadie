@@ -11,6 +11,7 @@ import { useAutosave } from "@/lib/autosave";
 import { BackTo, Missing, fmtDay, useMusic } from "@/components/music/common";
 import type { SetlistItem } from "@/schema";
 import type { z } from "zod";
+import { showName } from "@/lib/shows";
 
 type Item = z.infer<typeof SetlistItem>;
 
@@ -120,10 +121,10 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
         {admin ? (
           <select className="select" value={show?.id ?? ""} onChange={(e) => e.target.value ? call("setlists.attach", { showId: e.target.value, setlistId: sl.id }) : show && call("setlists.attach", { showId: show.id, setlistId: null })} data-testid="attach-show" aria-label="Attach to a show">
             <option value="">No show</option>
-            {candidates.map((s) => <option key={s.id} value={s.id}>{fmtDay(s.date)} · {s.venue.name}{s.times.setLength ? ` · ${s.times.setLength} min` : ""}</option>)}
+            {candidates.map((s) => <option key={s.id} value={s.id}>{fmtDay(s.date)} · {showName(s)}{s.times.setLength ? ` · ${s.times.setLength} min` : ""}</option>)}
           </select>
         ) : null}
-        {show ? <Link href={`/shows/${show.id}`} className="s font-semibold" data-testid="show-link">{fmtDay(show.date)} · {show.venue.name}</Link> : !admin && <span className="s">No show yet.</span>}
+        {show ? <Link href={`/shows/${show.id}`} className="s font-semibold" data-testid="show-link">{fmtDay(show.date)} · {showName(show)}</Link> : !admin && <span className="s">No show yet.</span>}
       </div>
       {admin && (
         <button className="btn ghost justify-self-start" disabled={busy} data-testid="setlist-archive" onClick={async () => { if (confirm(`Archive ${sl.name}?`) && (await call("setlists.remove", { id: sl.id }))) router.push("/songs"); }}>Archive setlist</button>

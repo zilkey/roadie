@@ -1,11 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
+import { GMAIL } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
   await expect(page).toHaveURL(/\/home$/);
 }
-const GMAIL = "http://127.0.0.1:3201";
 
 test("flag a venue, move the pitch along, search finds it", async ({ page }) => {
   await signInAs(page, "jeff");

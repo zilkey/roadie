@@ -4,6 +4,7 @@
  * song titles in setlists) never drift. Add new copies here.
  */
 import type { Doc, Writer } from "./db";
+import { joinNames } from "@/lib/shows";
 
 export interface Denormalizer {
   source: string;
@@ -41,7 +42,25 @@ export const denormalizers: Denormalizer[] = [
   },
   {
     source: "editions", watch: ["festivalName", "label"],
-    refresh: (w, id, after) => retarget("edition")(w, id, `${after.festivalName} ${after.label}`),
+    async refresh(w, id, after) {
+      const name = `${after.festivalName} ${after.label}`;
+      await retarget("edition")(w, id, name);
+      for (const s of await w.query("shows", (q) => q.where("editionId", "==", id))) {
+        if (s.editionName !== name) await w.update("shows", s.id, { editionName: name });
+      }
+    },
+  },
+  {
+    // House concert hosts: the band reads the names off the show, never the (admin-only) contacts.
+    source: "contacts", watch: ["name"],
+    async refresh(w, id) {
+      for (const s of await w.query("shows", (q) => q.where("hostContactIds", "array-contains", id))) {
+        const names: string[] = [];
+        for (const cid of s.hostContactIds as string[]) names.push(String((await w.get("contacts", cid))?.name ?? ""));
+        const hostName = joinNames(names);
+        if (s.hostName !== hostName) await w.update("shows", s.id, { hostName });
+      }
+    },
   },
   {
     source: "songs", watch: ["title", "lengthSec", "key"],

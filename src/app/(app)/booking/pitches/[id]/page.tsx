@@ -16,7 +16,7 @@ import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, Seg, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
-import { fmtLong } from "@/lib/shows";
+import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
 import type { Activity, Artist, Comment, Contact, EmailTemplate, Musician, Show, StatSnapshot, User } from "@/schema";
 
@@ -153,7 +153,7 @@ function PitchPage() {
       <div className="grid gap-2" data-testid="pitch-shows">
         <span className="lbl">Shows</span>
         {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
-          <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {x.venue.name}</b><span className="s">{x.status}</span></Link>
+          <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {showName(x)}</b><span className="s">{x.status}</span></Link>
         ))}
         {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc justify-self-start" data-testid="booked-it">Booked it</Link>}
         <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />

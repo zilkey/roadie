@@ -23,8 +23,8 @@ function Icon({ d }: { d: string }) {
 export function navFor(role: "admin" | "member") {
   return [
     { key: "home", href: "/home", label: "Home", icon: I.home },
-    { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
     ...(role === "admin" ? [{ key: "booking", href: "/booking", label: "Booking", icon: I.booking }] : []),
+    { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
     { key: "songs", href: "/songs", label: "Songs", icon: I.songs },
     { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
   ];

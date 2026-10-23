@@ -6,6 +6,7 @@ import { defineCommand } from "./types";
 import { driveClient } from "../integrations";
 import { LedgerInput, ledgerCategory, driveRef } from "@/schema";
 import { reversedIds, reimbursementFor, owedLines, type LedgerLike } from "@/lib/money";
+import { showName, type ShowPlaceLike } from "@/lib/shows";
 
 const todayServer = () => dateInBandZone();
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -114,7 +115,7 @@ export const showsSettle = defineCommand({
       if (p.paid) {
         ids.push((await addLedgerEntry(w, {
           date: todayServer(), kind: "payout", amount: p.amount, category: "other", method: p.method, showId: i.id, payeeMusicianId: p.musicianId,
-          ...(userId ? { payeeUserId: userId } : {}), memo: `${show.venue.name} payout`,
+          ...(userId ? { payeeUserId: userId } : {}), memo: `${showName(show as ShowPlaceLike)} payout`,
         })).id);
       } else owed.push({ musicianId: p.musicianId, amount: p.amount });
     }
@@ -139,7 +140,7 @@ export const payoutsPay = defineCommand({
     const userId = await userIdForMusician(w, i.musicianId);
     return addLedgerEntry(w, {
       date: todayServer(), kind: "payout", amount, category: "other", method: i.method, showId: i.showId, payeeMusicianId: i.musicianId,
-      ...(userId ? { payeeUserId: userId } : {}), memo: `${show.venue.name} payout`,
+      ...(userId ? { payeeUserId: userId } : {}), memo: `${showName(show as ShowPlaceLike)} payout`,
     });
   }),
 });

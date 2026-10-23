@@ -3,6 +3,8 @@
  * All writes go through src/server/db.ts with via 'import'. Idempotent: skips if already seeded.
  *   npm run seed            (emulators must be running)
  *   npm run seed -- --reset (wipe emulator data first)
+ *   npm run seed -- --people (only people, the artist and templates: no demo venues, shows, songs or money;
+ *                             for real data from `npm run import:booking`)
  */
 import { adminAuth } from "../src/server/admin";
 import { db } from "../src/server/db";
@@ -60,6 +62,12 @@ async function main() {
     driveFolderId: "fake-band-folder",
   });
 
+  if (process.argv.includes("--people")) {
+    await seedTemplates(create);
+    console.log("Seeded: 6 musicians, 5 users, artist with 4 configurations, email and checklist templates (no demo data).");
+    return;
+  }
+
   // --- booking data ---
   const haylee = await create("contacts", { name: "Haylee Jackson", title: "Talent buyer", emails: ["haylee@lostlake.example"], phones: ["+13035550101"], instagram: "hayleebooks", sources: src("https://lostlake.example/contact") });
   const marcus = await create("contacts", { name: "Marcus Webb", title: "Booking manager", emails: ["marcus@foxtheatre.example"], phones: [], sources: src("https://foxtheatre.example/booking") });
@@ -101,10 +109,7 @@ async function main() {
   await create(`pitches/${pLost}/comments`, { authorId: uid.ingrid, body: "Mention the Roots show that drew 95." });
   await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
   await create(`pitches/${pLost}/activity`, { type: "note", text: "Haylee said to check back mid-November." });
-  await create("emailTemplates", { name: "First pitch", subject: "{{venue.name}} · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nWe're a Denver band... Live video: {{artist.video}}\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter"] });
-  await create("emailTemplates", { name: "Follow up", subject: "Following up · {{artist.name}}", body: "Hi {{contact.firstName}},\n\nChecking back on {{target.name}}. Live video: {{artist.video}}\n\nThanks,\n{{user.firstName}}", targetKinds: [] });
-  await create("emailTemplates", { name: "Follow up", subject: "Following up · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nChecking back on {{venue.name}}.\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter", "edition"] });
-  for (const t of DEFAULT_CHECKLIST_TEMPLATES) await create("checklistTemplates", { ...t });
+  await seedTemplates(create);
 
   // --- music ---
   const songSpecs: [string, string, number, number][] = [
@@ -172,6 +177,13 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
   console.log("Seeded: 6 musicians, 5 users, artist with 4 configurations, 6 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 setlist.");
+}
+
+async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>) {
+  await create("emailTemplates", { name: "First pitch", subject: "{{venue.name}} · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nWe're a Denver band... Live video: {{artist.video}}\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter"] });
+  await create("emailTemplates", { name: "Follow up", subject: "Following up · {{artist.name}}", body: "Hi {{contact.firstName}},\n\nChecking back on {{target.name}}. Live video: {{artist.video}}\n\nThanks,\n{{user.firstName}}", targetKinds: [] });
+  await create("emailTemplates", { name: "Follow up", subject: "Following up · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nChecking back on {{venue.name}}.\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter", "edition"] });
+  for (const t of DEFAULT_CHECKLIST_TEMPLATES) await create("checklistTemplates", { ...t });
 }
 
 main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });

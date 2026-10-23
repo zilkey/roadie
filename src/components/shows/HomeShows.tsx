@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
-import { addDays, fmtDur, fmtLong, fmtTime, planHome, type Answer } from "@/lib/shows";
+import { addDays, fmtDur, fmtLong, fmtTime, planHome, type Answer, showName, showCity, showAddress } from "@/lib/shows";
 import { GearChecklist, Times, billingName, configName, packedCount, useBand, type ShowRow } from "./common";
 import type { Availability, Contact, ShowDeal } from "@/schema";
 
@@ -36,7 +36,7 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
       {plan.asks.map((a) => <AskCard key={a.id} av={a} />)}
       {plan.recent.map((s) => (
         <div key={s.id} className="card hi" data-testid={`recent-${s.id}`}>
-          <span className="lbl">{s.date === addDays(today, -1) ? "Last night" : fmtLong(s.date)} · {s.venue.name}</span>
+          <span className="lbl">{s.date === addDays(today, -1) ? "Last night" : fmtLong(s.date)} · {showName(s)}</span>
           {admin ? (
             <>
               <b>How&apos;d it go?</b>
@@ -71,8 +71,8 @@ function TodayCard({ show: s, b, onPack, deal, contacts }: { show: ShowRow; b: R
     <div className="grid gap-3" data-testid={`today-${s.id}`}>
       <div className="card hi">
         <span className="lbl">Today</span>
-        <b>{s.venue.name}{s.venue.city ? ` · ${s.venue.city}` : ""}</b>
-        <span className="font-mono text-sm">{[s.venue.address, configName(b.artist, s.billedAs) ?? billingName(b.artist, s.billedAs)].filter(Boolean).join(" · ")}</span>
+        <b>{showName(s)}{showCity(s) ? ` · ${showCity(s)}` : ""}</b>
+        <span className="font-mono text-sm">{[showAddress(s), configName(b.artist, s.billedAs) ?? billingName(b.artist, s.billedAs)].filter(Boolean).join(" · ")}</span>
         <Times times={s.times} />
         <Link href={`/shows/${s.id}`} className="s font-semibold underline" data-testid={`today-open-${s.id}`}>Open show ›</Link>
       </div>
@@ -132,8 +132,8 @@ function NextShow({ next, upcoming, b, onPack }: { next?: ShowRow; upcoming: Sho
       <div className="grid gap-1.5" data-testid="next-show">
         <span className="lbl">Next show</span>
         <Link href={`/shows/${next.id}`} className="card" data-testid={`next-show-${next.id}`}>
-          <b>{fmtLong(next.date)} · {next.venue.name}</b>
-          <span className="font-mono text-sm">{[next.venue.city, next.times.loadIn && `Load in ${fmtTime(next.times.loadIn)}`, next.times.set && `Set ${fmtTime(next.times.set)}`, configName(b.artist, next.billedAs)].filter(Boolean).join(" · ")}</span>
+          <b>{fmtLong(next.date)} · {showName(next)}</b>
+          <span className="font-mono text-sm">{[showCity(next), next.times.loadIn && `Load in ${fmtTime(next.times.loadIn)}`, next.times.set && `Set ${fmtTime(next.times.set)}`, configName(b.artist, next.billedAs)].filter(Boolean).join(" · ")}</span>
           {total > 0 && <>
             <div className="h-1.5 overflow-hidden rounded-full bg-soft"><div className="h-full bg-accent" style={{ width: `${(done / total) * 100}%` }} /></div>
             <span className="s">Checklist {done} of {total}</span>
@@ -151,7 +151,7 @@ function NextShow({ next, upcoming, b, onPack }: { next?: ShowRow; upcoming: Sho
           <span className="lbl">Coming up</span>
           {rest.map((s) => (
             <Link key={s.id} href={`/shows/${s.id}`} className="card" data-testid={`coming-${s.id}`}>
-              <div className="flex items-center justify-between"><b>{s.venue.name}</b><span className="s">{fmtLong(s.date)}{p.musicianId && !s.personnel.includes(p.musicianId) ? " · not playing" : ""}</span></div>
+              <div className="flex items-center justify-between"><b>{showName(s)}</b><span className="s">{fmtLong(s.date)}{p.musicianId && !s.personnel.includes(p.musicianId) ? " · not playing" : ""}</span></div>
             </Link>
           ))}
         </div>

@@ -16,6 +16,7 @@ import { statsMovement, type StatLike } from "@/lib/stats";
 import { bandsintownEligible } from "../showSync";
 import { bandmates } from "../music";
 import { dateStr } from "@/schema";
+import { publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
 const strict = z.strictObject;
@@ -169,7 +170,7 @@ export const availabilityCheck = defineCommand({
         const conflict = onDay.some((s) => s.status === "confirmed" || s.status === "hold" || s.status === "played");
         return {
           date, verdict: conflict ? "conflict" : qs.some((q) => !q.closed) ? "asked" : "free",
-          shows: onDay.map((s) => ({ id: s.id, venue: s.venue.name, status: s.status })), asks: qs,
+          shows: onDay.map((s) => ({ id: s.id, venue: showName(s as ShowPlaceLike), status: s.status })), asks: qs,
         };
       }),
     };
@@ -194,7 +195,7 @@ export const bandsintownReconcile = defineCommand({
     const upcoming = shows.filter((s) => s.date >= today);
     for (const s of upcoming.filter(bandsintownEligible)) {
       const t = s.times as { set?: string; doors?: string };
-      const want = { datetime: `${s.date}T${t.set ?? t.doors ?? "20:00"}:00`, venueName: s.venue.name as string, ticketUrl: (s.ticketUrl as string | undefined) ?? undefined };
+      const want = { datetime: `${s.date}T${t.set ?? t.doors ?? "20:00"}:00`, venueName: publicShowName(s as ShowPlaceLike), ticketUrl: (s.ticketUrl as string | undefined) ?? undefined };
       const linked = s.listings?.bandsintown?.eventId as string | undefined;
       const ev = (linked && byId.get(linked)) || events.find((e) => !matched.has(e.id) && e.datetime.slice(0, 10) === s.date && e.venueName === want.venueName);
       if (!ev) { missing.push({ showId: s.id, date: s.date, venue: want.venueName, state: s.listings?.bandsintown?.state ?? "not listed" }); continue; }
@@ -206,7 +207,7 @@ export const bandsintownReconcile = defineCommand({
       if (Object.keys(diffs).length) mismatches.push({ showId: s.id, eventId: ev.id, diffs }); else ok++;
     }
     const unexpected = events.filter((e) => !matched.has(e.id)).map((e) => {
-      const s = shows.find((x) => x.listings?.bandsintown?.eventId === e.id) ?? shows.find((x) => x.date === e.datetime.slice(0, 10) && x.venue.name === e.venueName);
+      const s = shows.find((x) => x.listings?.bandsintown?.eventId === e.id) ?? shows.find((x) => x.date === e.datetime.slice(0, 10) && publicShowName(x as ShowPlaceLike) === e.venueName);
       return { eventId: e.id, datetime: e.datetime, venue: e.venueName, showId: s?.id ?? null, why: !s ? "No show matches" : s.deletedAt ? "Show is archived" : s.status === "played" ? "Played show (history)" : !s.public ? "Show is private" : s.status !== "confirmed" ? `Show is ${s.status}` : "Show is eligible but this listing does not match it" };
     }).filter((u) => u.why !== "Played show (history)");
     return { today, ok, missingOnBandsintown: missing, notExpected: unexpected, mismatches };
@@ -231,7 +232,7 @@ export const statsMovementCmd = defineCommand({
     const s = snaps as unknown as StatLike[];
     const events = [
       ...i.releases.map((r) => ({ type: "release", name: r.name, date: r.date })),
-      ...(i.includeShows ? shows.filter((x) => x.date <= today && (x.status === "played" || x.status === "confirmed")).map((x) => ({ type: "show", name: x.venue.name as string, date: x.date as string, id: x.id as string })) : []),
+      ...(i.includeShows ? shows.filter((x) => x.date <= today && (x.status === "played" || x.status === "confirmed")).map((x) => ({ type: "show", name: showName(x as ShowPlaceLike), date: x.date as string, id: x.id as string })) : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
     return { windowDays: i.windowDays, events: events.map((e) => ({ ...e, movement: statsMovement(s, e.date, i.windowDays) })) };
   },

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
-import { fmtLong, fmtTime } from "@/lib/shows";
+import { fmtLong, fmtTime, showName, showCity } from "@/lib/shows";
 import type { Show, Artist, Musician, Setlist, Availability } from "@/schema";
 
 export type ShowRow = Row<Show>;
@@ -51,10 +51,10 @@ export function ShowRowLink({ show, artist, note }: { show: ShowRow; artist?: Ro
   return (
     <Link href={`/shows/${show.id}`} className="card" data-testid={`show-${show.id}`}>
       <div className="flex items-center justify-between gap-2">
-        <b>{fmtLong(show.date)} · {show.venue.name}</b>
+        <b>{fmtLong(show.date)} · {showName(show)}</b>
         <span className="flex items-center gap-1.5">{note}{show.status !== "confirmed" && <span className={`chip ${show.status === "hold" ? "a" : ""}`}>{STATUS_CHIP[show.status]?.[0]}</span>}</span>
       </div>
-      <span className="s">{[show.venue.city, show.times.set && `Set ${fmtTime(show.times.set)}`, configName(artist, show.billedAs)].filter(Boolean).join(" · ")}</span>
+      <span className="s">{[showCity(show), show.times.set && `Set ${fmtTime(show.times.set)}`, configName(artist, show.billedAs)].filter(Boolean).join(" · ")}</span>
     </Link>
   );
 }
@@ -83,3 +83,20 @@ export function GearChecklist({ show, musicians, onPack, mineOnly, testidPrefix 
   );
 }
 export const packedCount = (show: ShowRow) => `${show.gear.filter((g) => g.packed).length} of ${show.gear.length} packed`;
+
+/** Shows matching one Firestore filter (a venue's, a festival year's, a host's), newest first, as links. */
+export function ShowLinks({ where, empty, testid }: { where: [string, "==" | "array-contains", string]; empty: string; testid?: string }) {
+  const shows = useCollection<Show>("shows", { where: [where] });
+  const rows = [...(shows.rows ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+  if (shows.loading) return null;
+  if (!rows.length) return <span className="s">{empty}</span>;
+  return (
+    <div className="grid gap-2" data-testid={testid}>
+      {rows.map((s) => (
+        <Link key={s.id} href={`/shows/${s.id}`} className="card">
+          <b>{fmtLong(s.date)} {s.date.slice(0, 4)} · {showName(s)}</b><span className="s">{[showCity(s), STATUS_CHIP[s.status]?.[0]].filter(Boolean).join(" · ")}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}

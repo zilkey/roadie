@@ -6,6 +6,7 @@ import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
 import { BackLink, CopyButton, EntityForm, contactForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { ShowLinks } from "@/components/shows/common";
 import type { Contact } from "@/schema";
 
 export default function Page() { return <AdminOnly><ContactPage /></AdminOnly>; }
@@ -44,6 +45,8 @@ function ContactPage() {
       {at.length === 0 ? <span className="s">Not linked to anything yet.</span> : at.map((a) => (
         <Link key={a.kind + a.id} href={hrefFor(a.kind, a.id)} className="card"><b>{a.name}</b><span className="s">{a.kind}</span></Link>
       ))}
+      <span className="lbl">House concerts hosted</span>
+      <ShowLinks where={["hostContactIds", "array-contains", id]} empty="None." testid="hosted-shows" />
       <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm(`Archive ${c.name}?`) && (await call("contacts.remove", { id }))) router.replace("/booking"); }}>Archive contact</button>
     </div>
   );
