@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, toPatch, useBooking, useNotFound, venueForm } from "@/components/booking/common";
+import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, useBooking, useNotFound, venueForm } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
 import type { Show, Venue } from "@/schema";
 
@@ -33,11 +33,11 @@ function VenuePage() {
       <ErrorBox error={error} />
       <div className="flex flex-wrap gap-2">
         <FlagButton kind="venue" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Close" : "Edit"}</button>
+        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
       </div>
       {edit && (
-        <EntityForm testid="venue-edit" fields={venueForm.fields} initial={venueForm.initial(v)} build={venueForm.build} submitLabel="Save"
-          onSubmit={async (d) => { const r = await call("venues.update", { id, patch: toPatch(d) }); if (r) setEdit(false); }} />
+        <EntityForm testid="venue-edit" fields={venueForm.fields} initial={venueForm.initial(v)} build={venueForm.build}
+          autosave={{ command: "venues.update", id, rev: v.rev }} />
       )}
       {!edit && (v.notes || v.loadInNotes || v.website) && (
         <div className="card">

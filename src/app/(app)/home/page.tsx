@@ -5,12 +5,14 @@ import { PageTitle } from "@/components/ui";
 import { ADMIN_LINKS } from "@/components/Shell";
 import { BookingHome } from "@/components/booking/BookingHome";
 import { HomeShows } from "@/components/shows/HomeShows";
+import { UnfinishedCard } from "@/components/drafts/UnfinishedCard";
 
 export default function Home() {
   const p = useProfile();
   return (
     <div className="grid gap-3">
       <PageTitle title={`Hi, ${p.name}`} sub={p.role === "admin" ? "Here's what needs you." : "Your upcoming shows."} />
+      <UnfinishedCard />
       <HomeShows regular={<BookingHome />} />
       {p.role === "admin" && (
         <div className="card" data-testid="band-setup">

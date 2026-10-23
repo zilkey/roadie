@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, EntityForm, FlagButton, PitchLinks, editionForm, hrefFor, toPatch, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, EntityForm, FlagButton, PitchLinks, editionForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
 import type { Edition } from "@/schema";
 
@@ -28,11 +28,11 @@ function EditionPage() {
       <ErrorBox error={error} />
       <div className="flex flex-wrap gap-2">
         <FlagButton kind="edition" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Close" : "Edit"}</button>
+        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
       </div>
       {edit ? (
-        <EntityForm testid="edition-edit" fields={editionForm.fields} initial={editionForm.initial(e)} build={editionForm.build} submitLabel="Save"
-          onSubmit={async (d) => { const r = await call("editions.update", { id, patch: toPatch(d) }); if (r) setEdit(false); }} />
+        <EntityForm testid="edition-edit" fields={editionForm.fields} initial={editionForm.initial(e)} build={editionForm.build}
+          autosave={{ command: "editions.update", id, rev: e.rev }} />
       ) : (
         <div className="card" data-testid="edition-facts">
           {e.appOpens && <span>Applications open <b>{fmtDate(e.appOpens.date)}</b>{sure(e.appOpens.sure)}</span>}

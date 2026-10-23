@@ -1,0 +1,252 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Band App Later</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an ideas board in the band-app family; one card per idea, each with the same parts so they compare at a glance */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7; --warn:#B07A00; --warn-soft:#FBEFD2;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; --warn-soft:#3B3117; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; --warn-soft:#3B3117; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15.5px/1.55 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:980px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:26px 90px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(36px,7vw,60px);font-weight:800;line-height:.95}
+h2{font-size:26px;font-weight:800;line-height:1.1}
+h4{font-size:12px;font-family:var(--f-body);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+p{margin:0;max-width:70ch}
+code{font-family:var(--f-mono);font-size:12.5px;color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted);margin-top:12px;font-size:16.5px;max-width:64ch}
+.summary{margin-top:22px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+.summary table{border-collapse:collapse;width:100%;min-width:600px;font-size:14px}
+.summary th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line)}
+.summary td{padding:9px 14px;border-top:1px solid var(--soft)}
+.summary a{color:var(--ink);font-weight:600;text-decoration:none}
+.summary a:hover{text-decoration:underline}
+.chip{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.chip.soon{background:var(--ok-soft);color:var(--ok)}
+.chip.later{background:var(--blue-soft);color:var(--blue)}
+.chip.someday{background:var(--accent-soft);color:var(--accent)}
+.ideas{display:grid;gap:22px;margin-top:34px}
+.idea{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;display:grid;gap:14px;scroll-margin-top:20px}
+.idea-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.idea-h .chips{display:flex;gap:6px;flex-wrap:wrap}
+.pitch{font-size:17px;max-width:62ch}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:14px 22px}
+.col{display:grid;gap:6px;align-content:start;min-width:0}
+.col ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:14.5px}
+.col li{padding-left:16px;position:relative}
+.col li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--accent)}
+.col.q li::before{background:var(--warn)}
+.check{font-size:14px;background:var(--soft);border-radius:10px;padding:9px 12px}
+.check b{color:var(--accent)}
+/* good-vibes dashboard sketch */
+.dash{border:1.5px dashed var(--line);border-radius:14px;padding:14px;display:grid;gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.tile{border-radius:12px;padding:10px 12px;background:var(--soft);display:grid;gap:2px}
+.tile span{font-size:12px;color:var(--muted);font-weight:600}
+.tile b{font-family:var(--f-display);font-size:26px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile em{font-style:normal;font-size:12.5px;color:var(--ok);font-weight:600}
+.spark{width:100%;height:auto;display:block}
+.spark .ln{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linejoin:round}
+.spark .ar{fill:var(--accent-soft)}
+.spark .gl{stroke:var(--soft);stroke-width:1}
+.spark text{fill:var(--muted);font:11px var(--f-mono)}
+.spark .end{fill:var(--accent)}
+.note-line{font-size:14.5px;background:var(--ok-soft);border-radius:10px;padding:8px 12px}
+.posts{display:grid;gap:6px;font-size:13.5px}
+.post{display:grid;grid-template-columns:92px 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+.post .when{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mode{border-radius:12px;padding:12px;display:grid;gap:4px;font-size:13px;border:1.5px solid var(--line)}
+.mode b{font-family:var(--f-display);font-size:16px}
+.mode.day{background:#FFFFFF;color:#1B2140;border-color:#D5DAE8}
+.mode.night{background:#12162B;color:#EEF1FB;border-color:#2E355A}
+.mode.stage{background:#000;color:#FFD84A;border-color:#000}
+.mode.stage b{font-size:22px}
+@media (max-width:560px){.modes{grid-template-columns:1fr}.post{grid-template-columns:1fr}}
+footer{margin-top:50px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+/* module switcher shared by every module page */
+.modnav{position:relative;margin:0 0 16px;z-index:20}
+.modnav summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body,system-ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.modnav summary::-webkit-details-marker{display:none}
+.modnav summary b{font-weight:800}
+.modnav summary .car{color:var(--muted);font-size:11px}
+.modnav[open] summary{border-color:var(--ink)}
+.modnav .menu{position:absolute;top:calc(100% + 6px);left:0;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgb(0 0 0 / .18);padding:6px;display:grid}
+.modnav .menu a{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none;font:500 14px/1.3 var(--f-body,system-ui)}
+.modnav .menu a:hover{background:var(--soft)}
+.modnav .menu a.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.modnav .menu a span{color:var(--muted);font-size:12px}
+.modnav .menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+</style>
+
+<div class="wrap">
+  <details class="modnav"><summary>Band App · <b>Later</b> <span class="car">▼ modules</span></summary><div class="menu"><a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy" class="">Vision & principles<span>1</span></a><a href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" class="">Roadie & MCP<span>2</span></a><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" class="">Definition of done<span>3</span></a><a href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" class="">Account<span>4</span></a><a href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" class="">Booking<span>5</span></a><a href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" class="">Shows<span>6</span></a><a href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" class="">Money<span>7</span></a><a href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" class="">Set lists<span>8</span></a><a href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" class="">Touring<span>9</span></a><a href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" class="">Promotion<span>10</span></a><hr><a href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" class="">Business plan<span>11</span></a><a href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" class="on">Later<span>12</span></a><hr><a href="https://claude.ai/code/artifact/553a7d8e-f2c2-40aa-9bb9-5ab7ce1a26e3">Original blueprint<span>archive</span></a></div></details>
+  <header>
+    <p class="eyebrow">Band App · ideas for later · Oct 2026</p>
+    <h1 style="margin-top:8px">Later</h1>
+    <p class="lede">Ideas we want, parked until the core is solid. Each one has the problem, the idea, a rough shape, how it fits the principles, and what we'd need to figure out. Nothing here is promised; the order is a guess.</p>
+  </header>
+
+  <div class="summary"><table>
+    <thead><tr><th>Idea</th><th>When</th><th>Size</th><th>Leans on</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#modes">Night, day and stage mode</a></td><td><span class="chip soon">Soon</span></td><td>Small</td><td>Theme tokens already in place</td></tr>
+      <tr><td><a href="#vibes">Dashboards with good vibes</a></td><td><span class="chip soon">Soon</span></td><td>Medium</td><td>Shows, ledger, stats snapshots</td></tr>
+      <tr><td><a href="#media">Show media folders</a></td><td><span class="chip soon">Soon</span></td><td>Small</td><td>Drive, shows, then Posting</td></tr>
+      <tr><td><a href="#ingest">Songs from Drive, and Roadie with Sheets</a></td><td><span class="chip soon">Soon</span></td><td>Medium</td><td>Songs, files, Roadie</td></tr>
+      <tr><td><a href="#royalties">Live performance royalties (ASCAP, BMI)</a></td><td><span class="chip later">Later</span></td><td>Medium</td><td>Songs with writers, setlists, shows</td></tr>
+      <tr><td><a href="#calendars">Venue calendars for opener slots</a></td><td><span class="chip later">Later</span></td><td>Medium</td><td>Venues, Pitch List, a calendar feed source</td></tr>
+      <tr><td><a href="#posts">Posting, our Buffer</a></td><td><span class="chip later">Later</span></td><td>Large</td><td>Shows, tours, Roadie, platform APIs</td></tr>
+      <tr><td><a href="#pitching">Seeing who else is pitching</a></td><td><span class="chip someday">Someday</span></td><td>Medium</td><td>Many bands in one app, opt-in sharing</td></tr>
+      <tr><td><a href="#gear">Gear lists and a gear-sharing economy</a></td><td><span class="chip someday">Someday</span></td><td>Large</td><td>Gear lists, many bands, trust</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="ideas">
+
+    <article class="idea" id="modes">
+      <div class="idea-h"><h2>Night, day and stage mode</h2><div class="chips"><span class="chip soon">Soon</span><span class="chip">Small</span></div></div>
+      <p class="pitch">The app gets used at noon in the sun and at 1am in a dark van. It should look right in both, and have a third look for reading a setlist on stage.</p>
+      <div class="modes">
+        <div class="mode day"><b>Day</b><span>Default in daylight. Light paper, dark ink.</span></div>
+        <div class="mode night"><b>Night</b><span>Dark, low glare, dimmed accents. Follows the phone, or switches at sunset.</span></div>
+        <div class="mode stage"><b>Stage</b><span>Black and yellow, huge type, screen stays awake. Setlist and run of show only.</span></div>
+      </div>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>Follow the phone's setting by default; override per person.</li><li>Optional "sunset" auto-switch using the show's city.</li><li>Stage mode opens from today's setlist, keeps the screen on, and blocks accidental edits.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Does stage mode need a foot-pedal page turn (Bluetooth pedals send arrow keys)?</li><li>Big-type setlist for a music stand vs. a phone on a mic stand.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> saves time and squinting (2). Cheap, since every color is already a token.</p>
+    </article>
+
+    <article class="idea" id="vibes">
+      <div class="idea-h"><h2>Dashboards with good vibes</h2><div class="chips"><span class="chip soon">Soon</span><span class="chip">Medium</span></div></div>
+      <p class="pitch">Most band stats feel like a report card. Ours tells the story of a band that's growing: more rooms, bigger crowds, better nights, and what to do next. Honest numbers, warm framing.</p>
+      <div class="dash" aria-label="Example dashboard">
+        <div class="tiles">
+          <div class="tile"><span>Shows this year</span><b>41</b><em>12 more than last year</em></div>
+          <div class="tile"><span>Average crowd</span><b>68</b><em>up from 44</em></div>
+          <div class="tile"><span>New cities</span><b>7</b><em>Missoula was the biggest</em></div>
+          <div class="tile"><span>Paid to players</span><b>$9,840</b><em>everyone got paid, every time</em></div>
+        </div>
+        <svg class="spark" viewBox="0 0 640 150" role="img" aria-label="Average crowd per month, rising from about 40 to about 90 over the year">
+          <line class="gl" x1="40" x2="630" y1="20" y2="20"/><line class="gl" x1="40" x2="630" y1="70" y2="70"/><line class="gl" x1="40" x2="630" y1="120" y2="120"/>
+          <text x="34" y="24" text-anchor="end">100</text><text x="34" y="74" text-anchor="end">50</text><text x="34" y="124" text-anchor="end">0</text>
+          <path class="ar" d="M40,100 L94,96 L147,90 L201,92 L255,84 L308,80 L362,74 L415,70 L469,62 L523,58 L576,46 L630,38 L630,120 L40,120 Z"/>
+          <path class="ln" d="M40,100 L94,96 L147,90 L201,92 L255,84 L308,80 L362,74 L415,70 L469,62 L523,58 L576,46 L630,38"/>
+          <circle class="end" cx="630" cy="38" r="5"/>
+          <text x="40" y="142">Jan</text><text x="630" y="142" text-anchor="end">Dec</text>
+        </svg>
+        <p class="note-line">Your Denver crowds doubled since spring. Lost Lake and Globe Hall both drew 80+. Worth pitching a headline night at Larimer Lounge?</p>
+      </div>
+      <div class="cols">
+        <div class="col"><h4>What it shows</h4><ul><li>Shows, crowds and money per show over time, by city and by room.</li><li>Best rooms: pay, crowd, ratings together.</li><li>Listeners and followers from stat snapshots, next to when shows happened.</li><li>Milestones: 100th show, first sellout, first tour in the black.</li><li>A year-in-review card the band can share.</li></ul></div>
+        <div class="col"><h4>The vibe rules</h4><ul><li>Lead with what's growing; never shame a slow month.</li><li>Every number links to the shows behind it.</li><li>One suggestion at a time, and it's a next step, not a lecture.</li><li>Members see the non-money version: shows, crowds, cities, songs played most.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>How honest is "good vibes" when a tour loses money? Plan: say it plainly, then what would change it.</li><li>Comparing to other bands: probably never.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> serves musicians (1) by showing progress they earned. Roadie can answer "how are we doing?" from the same numbers.</p>
+    </article>
+
+    <article class="idea" id="media">
+      <div class="idea-h"><h2>Show media folders</h2><div class="chips"><span class="chip soon">Soon</span><span class="chip">Small</span></div></div>
+      <p class="pitch">Photos and videos from a show end up on six phones and nowhere else. Every show gets an Upload media button that makes a Drive folder for it and drops you right in.</p>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>First tap creates <code>Band folder / Shows / 2027-03-12 Top Hat</code>, shares it with everyone on the show, and opens it in Drive.</li><li>After that the button just opens the folder, with a count of what's in it.</li><li>Anyone on the show can use it, members and subs with the link included.</li><li>The post-show interview ends with "Got photos? Here's the folder."</li></ul></div>
+        <div class="col"><h4>Later, with Posting</h4><ul><li>The thank-you post picks its photo from this folder.</li><li>Roadie suggests the best few to post; a person picks.</li><li>Tour folders roll up every show on the tour.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Big phone videos and Drive storage: it's the band's own Drive, so it's their space, not our bill.</li><li>Shows get <code>media: {driveFolderId, url, count}</code>.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> one tap instead of a group-text scramble (2), and the files stay in the band's own Drive (1).</p>
+    </article>
+
+    <article class="idea" id="ingest">
+      <div class="idea-h"><h2>Songs from Drive, and Roadie with Sheets</h2><div class="chips"><span class="chip soon">Soon</span><span class="chip">Medium</span></div></div>
+      <p class="pitch">Most bands already have their songs as Word docs in a folder and their history in spreadsheets. Point the app at them and it brings everything in, instead of typing it all again.</p>
+      <div class="cols">
+        <div class="col"><h4>Songs from a Drive folder</h4><ul><li>Point Songs at a folder of Word docs or Google Docs.</li><li>Each doc becomes a song: title from the file name or first line, key and tempo if the doc says them, the doc linked as its lyrics or chart.</li><li>Matches existing songs by title instead of duplicating them; shows a list to confirm before saving.</li><li>Re-run any time to pick up new docs.</li></ul></div>
+        <div class="col"><h4>Point Roadie at a Sheet</h4><ul><li>"Here's our old booking spreadsheet" with a Google Sheets link: Roadie reads it and offers to bring in venues, contacts and past shows.</li><li>"Update this sheet with this year's shows" writes back into a sheet you point it at.</li><li>Setlists from a sheet become setlists in the app.</li><li>Only the sheets you point at, picked with Google's file picker, so the app never sees the rest of your Drive.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Messy sheets: Roadie proposes a column mapping and asks before importing.</li><li>A sheet you point at is data you handed over, like a pasted screenshot; it doesn't loosen Roadie's no-internet rule.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> never make someone retype what they already have (2). The import goes through the normal commands, so it's signed and undoable.</p>
+    </article>
+
+    <article class="idea" id="royalties">
+      <div class="idea-h"><h2>Live performance royalties</h2><div class="chips"><span class="chip later">Later</span><span class="chip">Medium</span></div></div>
+      <p class="pitch">Songwriters can get paid when their songs are played live, but only if someone reports the setlist to their performing rights organization. Most bands never get around to it. We already know every song, every show and every setlist.</p>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>Songs get writers, their splits, each writer's organization (ASCAP, BMI, SESAC…) and the work ID once it's registered.</li><li>After each show, the setlist we actually played becomes a performance report: venue, date, songs.</li><li>A "Royalties" list shows which played shows haven't been reported yet, by organization.</li><li>Each report is prepared in the format the organization asks for, ready to submit through ASCAP OnStage or BMI Live.</li><li>The post-show interview asks "played the planned set?" so the report is right.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Whether either organization offers a way to submit programmatically, or whether we prepare it and a person submits.</li><li>Each organization's deadlines and rules for which venues and shows qualify.</li><li>Registering new songs (works) as well, or just reporting performances.</li><li>Royalty amounts are the writers' business; the app tracks reported, not paid.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> money musicians are owed and usually leave on the table (1), from data they already entered (2).</p>
+    </article>
+
+    <article class="idea" id="calendars">
+      <div class="idea-h"><h2>Venue calendars for opener slots</h2><div class="chips"><span class="chip later">Later</span><span class="chip">Medium</span></div></div>
+      <p class="pitch">The best support slots get booked months ahead. Pull in what's coming to the rooms we care about, three to six months out, and flag headliners we'd fit with, so we pitch before the bill is full.</p>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>A nightly server job reads each venue's public calendar feed (iCal, a listing API like Bandsintown's or Songkick's, or the venue's own feed).</li><li>Shows land in <code>artists/{a}/venueEvents</code>, linked to the venue.</li><li>Matching on genre, draw and how many openers the room usually books.</li><li>One tap makes a pitch for "support for {headliner}", aimed at the headliner's agent or the venue.</li><li>Home: "3 shows in the next 90 days you'd fit."</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Which sources allow this. Use official feeds and APIs, never scraping against a site's terms.</li><li>Roadie still can't browse the web; this is a server job with fixed sources, not an AI tool.</li><li>Shared with the Tenor venue list, if that happens.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> saves hours of checking venue sites (2). Data comes in through one job we control, keeping Roadie's limits intact.</p>
+    </article>
+
+    <article class="idea" id="posts">
+      <div class="idea-h"><h2>Posting: our Buffer</h2><div class="chips"><span class="chip later">Later</span><span class="chip">Large</span></div></div>
+      <p class="pitch">Every show already has the date, room, time, ticket link and poster. Turn that into a posting schedule for every account, written in the band's voice, so promotion happens without a second app.</p>
+      <div class="posts" aria-label="Example posting schedule for one show">
+        <div class="post"><span class="when">Feb 12</span><span><b>Announce</b> · Top Hat, Fri Mar 12, with Mae Sellers · poster + tickets</span><span class="chip">Instagram, Facebook, Bluesky</span></div>
+        <div class="post"><span class="when">Mar 5</span><span><b>Week of</b> · "Missoula, one week" · rehearsal clip</span><span class="chip">Instagram story</span></div>
+        <div class="post"><span class="when">Mar 12</span><span><b>Day of</b> · doors 7, Mae at 8, us at 9</span><span class="chip">All</span></div>
+        <div class="post"><span class="when">Mar 13</span><span><b>Thank you</b> · crowd photo, "112 of you!"</span><span class="chip">Instagram, Facebook</span></div>
+      </div>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>A schedule template per show and per tour: announce, week of, day of, thank you.</li><li>Roadie drafts the copy from the show's details; a person approves every post.</li><li>A queue and calendar across accounts, with the poster and clips from Drive.</li><li>Posts publish through each platform's official API where allowed; otherwise a reminder with the copy ready to paste.</li><li>Changes to the show (time moved, canceled) flag the posts that mention it.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Platform APIs differ a lot in what they allow and cost; some need business accounts or app review.</li><li>Who connects accounts: each band, with tokens only that band's admins can use.</li><li>Post performance back into the dashboards.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> one less paid subscription (1) and promotion from data you already entered (2). Sending stays with a person (3).</p>
+    </article>
+
+    <article class="idea" id="pitching">
+      <div class="idea-h"><h2>Seeing who else is pitching</h2><div class="chips"><span class="chip someday">Someday</span><span class="chip">Medium</span></div></div>
+      <p class="pitch">Bands pitch the same rooms in the dark. If you choose to, let other bands see that you're going after a room or a weekend, so you can team up on a bill instead of competing for one.</p>
+      <div class="cols">
+        <div class="col"><h4>How it works</h4><ul><li>Off by default. Per pitch, choose to share: band name, room, and the month, never notes, deal or contacts.</li><li>"Also pitching Lost Lake in January: The Low Tides. Want to pitch a shared bill?"</li><li>A board for "looking for an opener" and "looking for a headliner" by city and month.</li><li>Shared bills become one pitch with two bands on it.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Bookers may not love it; frame it as better-built bills.</li><li>Abuse: a band claiming every date. Limits, and sharing ends when the pitch closes.</li><li>Needs enough bands in one city to be useful.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> serves musicians as a community (1). Strictly opt-in, so nobody's booking is exposed.</p>
+    </article>
+
+    <article class="idea" id="gear">
+      <div class="idea-h"><h2>Gear lists and a gear-sharing economy</h2><div class="chips"><span class="chip someday">Someday</span><span class="chip">Large</span></div></div>
+      <p class="pitch">Bands own a lot of gear that sits in closets, and touring bands need backline in towns they don't live in. Start with a proper inventory, then let bands lend and rent to each other.</p>
+      <div class="cols">
+        <div class="col"><h4>Step 1: inventory</h4><ul><li>Every piece: what it is, who owns it, serial, value, photos, condition.</li><li>Feeds the show gear lists and an insurance list.</li><li>"What did we bring to Top Hat?" and "where's the DI box?"</li></ul></div>
+        <div class="col"><h4>Step 2: sharing</h4><ul><li>Mark pieces as lendable or rentable, with a calendar and a price you set.</li><li>Touring bands find a backline in Missoula from a band that lives there.</li><li>Check-out and check-in with photos; ratings both ways.</li><li>Money changes hands directly (Venmo or cash). We never take a cut.</li></ul></div>
+        <div class="col q"><h4>To figure out</h4><ul><li>Damage and theft: deposits, insurance, or just trust between bands?</li><li>Tax and liability if it grows beyond friends.</li><li>Needs a lot of bands to work; start with lending inside a city.</li></ul></div>
+      </div>
+      <p class="check"><b>Principles:</b> no cut, ever (1). Starts useful for one band (the inventory) before it needs a crowd.</p>
+    </article>
+  </div>
+
+  <footer>Ingrid Avison Band · Boulder, CO · CC0. Copy it.</footer>
+</div>
+
+</body></html>

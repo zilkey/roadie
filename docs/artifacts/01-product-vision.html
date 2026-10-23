@@ -1,0 +1,239 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Band App Product Vision</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a product doc in the band app family; vision as the one big statement, ranked principles as the spine, each with its tension and what it means in the product */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:860px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 90px}
+h1,h2,h3{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(34px,6vw,52px);font-weight:800;line-height:1}
+h2{font-size:clamp(25px,3.6vw,32px);font-weight:800;line-height:1.08}
+h3{font-size:19px;font-weight:600}
+p{margin:0;max-width:66ch}
+code{font-family:var(--f-mono);font-size:.86em;color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin-top:22px;padding:10px 0;display:flex;gap:6px;flex-wrap:wrap}
+nav.toc a{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+nav.toc a:hover{border-color:var(--ink)}
+section{padding-top:50px;scroll-margin-top:60px;display:grid;gap:14px}
+.vision{background:var(--ink);color:var(--bg);border-radius:20px;padding:28px 24px;display:grid;gap:12px;margin-top:22px}
+.vision .eyebrow{color:var(--accent)}
+.vision blockquote{margin:0;font-family:var(--f-display);font-weight:800;font-size:clamp(26px,4.6vw,40px);line-height:1.08;max-width:24ch}
+.vision p{color:var(--bg);opacity:.85}
+.vision em{font-style:normal;color:var(--accent)}
+.pr{display:grid;gap:14px}
+.p{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 16px}
+.p .n{grid-row:span 4;font-family:var(--f-display);font-weight:800;font-size:44px;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.p h3{font-size:22px;font-weight:800}
+.p .belief{color:var(--muted);font-size:15.5px}
+.p .tension{margin-top:8px;font-size:14.5px;background:var(--accent-soft);border-radius:10px;padding:8px 12px}
+.p .tension b{color:var(--accent)}
+.p ul{margin:8px 0 0;padding:0;list-style:none;display:grid;gap:5px;font-size:14.5px}
+.p li{padding-left:16px;position:relative}
+.p li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--blue)}
+@media (max-width:520px){.p{grid-template-columns:minmax(0,1fr)}.p .n{grid-row:auto;font-size:34px}}
+.proposed .p{border-style:dashed}
+.proposed .p .n{color:var(--muted)}
+.callout{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:8px;padding:12px 14px;font-size:15px;max-width:72ch}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:10px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:6px;align-content:start}
+.box h3{font-size:17px}
+.box p,.box li{font-size:14.5px;color:var(--muted)}
+.box ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.hz{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.hz div{position:relative;padding:0 0 20px 22px;display:grid;gap:3px}
+.hz div::before{content:"";position:absolute;left:-8px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+.hz div.now::before{background:var(--accent)}
+.hz span{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.hz p{font-size:15px;color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.tbl table{min-width:540px}
+th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:9px 14px;border-top:1px solid var(--soft);vertical-align:top}
+footer{margin-top:56px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+/* module switcher shared by every module page */
+.modnav{position:relative;margin:0 0 16px;z-index:20}
+.modnav summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body,system-ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.modnav summary::-webkit-details-marker{display:none}
+.modnav summary b{font-weight:800}
+.modnav summary .car{color:var(--muted);font-size:11px}
+.modnav[open] summary{border-color:var(--ink)}
+.modnav .menu{position:absolute;top:calc(100% + 6px);left:0;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgb(0 0 0 / .18);padding:6px;display:grid}
+.modnav .menu a{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none;font:500 14px/1.3 var(--f-body,system-ui)}
+.modnav .menu a:hover{background:var(--soft)}
+.modnav .menu a.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.modnav .menu a span{color:var(--muted);font-size:12px}
+.modnav .menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+</style>
+
+<div class="wrap">
+  <details class="modnav"><summary>Band App · <b>Vision & principles</b> <span class="car">▼ modules</span></summary><div class="menu"><a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy" class="on">Vision & principles<span>1</span></a><a href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" class="">Roadie & MCP<span>2</span></a><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" class="">Definition of done<span>3</span></a><a href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" class="">Account<span>4</span></a><a href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" class="">Booking<span>5</span></a><a href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" class="">Shows<span>6</span></a><a href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" class="">Money<span>7</span></a><a href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" class="">Set lists<span>8</span></a><a href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" class="">Touring<span>9</span></a><a href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" class="">Promotion<span>10</span></a><hr><a href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" class="">Business plan<span>11</span></a><a href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" class="">Later<span>12</span></a><hr><a href="https://claude.ai/code/artifact/553a7d8e-f2c2-40aa-9bb9-5ab7ce1a26e3">Original blueprint<span>archive</span></a></div></details>
+  <header>
+    <p class="eyebrow">Product doc · draft · Oct 2026</p>
+    <h1 style="margin-top:10px">Band App: vision and principles</h1>
+    <p class="muted" style="margin-top:12px">Laid out the way Marty Cagan separates them: a vision that says where we're going in 3 to 10 years, principles that say what we stand for and break ties when good goals pull in different directions, and a strategy for which steps come first. The principles are ranked: when two collide, the higher one wins.</p>
+  </header>
+
+  <div class="vision">
+    <span class="eyebrow">Vision</span>
+    <blockquote>Every band and solo artist has <em>insanely good tools</em> to run their career and their day.</blockquote>
+    <p>Booking, touring, shows, songs, money, and eventually getting the word out, at the level a label's back office would give a big act. Free, open, and as easy to talk to as a bandmate.</p>
+  </div>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#modules">Modules</a><a href="#problem">The problem</a><a href="#principles">Principles</a><a href="#proposed">Proposed</a><a href="#strategy">Strategy</a><a href="#outcomes">Outcomes</a><a href="#docs">How we document</a><a href="#not">Not doing</a>
+  </nav>
+
+  <section id="modules">
+    <h2>Modules</h2>
+    <p class="muted">Each module is a whole slice: what you can say to Roadie, what you see, what you edit, what stays hidden, the data, and the screens. Not the order we build in.</p>
+    <div class="grid2"><a class="box" href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" style="text-decoration:none;color:var(--ink)"><h3>Roadie & MCP</h3><p>The in-app assistant and the MCP server</p></a><a class="box" href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" style="text-decoration:none;color:var(--ink)"><h3>Definition of done</h3><p>What every feature must do; core tech and UI</p></a><a class="box" href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" style="text-decoration:none;color:var(--ink)"><h3>Account</h3><p>Bands, people, roles, permissions</p></a><a class="box" href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" style="text-decoration:none;color:var(--ink)"><h3>Booking</h3><p>Venues, contacts, pitches, emails</p></a><a class="box" href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" style="text-decoration:none;color:var(--ink)"><h3>Shows</h3><p>Deals, run of show, after the show</p></a><a class="box" href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" style="text-decoration:none;color:var(--ink)"><h3>Money</h3><p>Ledger, expenses, payouts</p></a><a class="box" href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" style="text-decoration:none;color:var(--ink)"><h3>Set lists</h3><p>Songs, docs, recordings, setlists</p></a><a class="box" href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" style="text-decoration:none;color:var(--ink)"><h3>Touring</h3><p>Tours, travel, stays, tour sheet</p></a><a class="box" href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" style="text-decoration:none;color:var(--ink)"><h3>Promotion</h3><p>Listings, stats, media, posting</p></a><a class="box" href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" style="text-decoration:none;color:var(--ink)"><h3>Business plan</h3><p>Open source, non-profit, marketing</p></a><a class="box" href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" style="text-decoration:none;color:var(--ink)"><h3>Later</h3><p>Ideas parked for later</p></a></div>
+  </section>
+
+  <section id="problem">
+    <h2>The problem</h2>
+    <p>Working musicians run a small business out of spreadsheets, text threads, email and memory. Booking lives in one place, routing in another, the money in a notes app, and the setlist on a phone that dies at soundcheck. The tools that exist either take a cut, cost a monthly fee bands resent, or are built for agencies, not for the people on stage.</p>
+    <p>The work isn't hard. It's scattered, it happens at bad times (in the van, at the merch table at midnight), and the people doing it would rather be playing.</p>
+    <div class="grid2">
+      <div class="box"><h3>Who it's for first</h3><p>Independent bands and solo artists who book themselves, from the weekly local gig to the six-state van tour.</p></div>
+      <div class="box"><h3>Who comes with them</h3><p>The players and subs who need the time, address and setlist; the manager and the booking agent who work for them.</p></div>
+      <div class="box"><h3>Who it's built by</h3><p>The Ingrid Avison Band, using it on our own shows and tours before anyone else does.</p></div>
+    </div>
+  </section>
+
+  <section id="principles">
+    <h2>Principles</h2>
+    <p class="muted">Ranked. Each one says what we believe, what it costs us, and what it means in the product.</p>
+    <div class="pr">
+      <article class="p">
+        <span class="n">1</span>
+        <h3>We serve musicians. We don't make money from them.</h3>
+        <p class="belief">The product exists for the people using it. Money only comes in to keep the lights on, and we show exactly where it goes.</p>
+        <p class="tension"><b>Even over growth and revenue.</b> No ads, no selling data, no investors, no lock-in. If a feature would earn money by costing musicians money, attention or ownership of their data, we don't build it.</p>
+        <ul>
+          <li>Open source with no restrictions; anyone can copy the code, the screens and the ideas.</li>
+          <li>Hosting is covered by grants first, then a published cost share. The cloud bill is public.</li>
+          <li>Export everything, any time. Self-hosting stays possible.</li>
+        </ul>
+      </article>
+      <article class="p">
+        <span class="n">2</span>
+        <h3>We never waste a musician's time.</h3>
+        <p class="belief">Every tap, form and question has to earn its place. Musicians use this tired, on bad signal, between other jobs, and they fat-finger things.</p>
+        <p class="tension"><b>Even over completeness and power.</b> When a feature makes the simple case slower, the simple case wins and the power moves behind More. A short form beats a thorough one.</p>
+        <ul>
+          <li>Nothing needs a Save button. Fields autosave, new forms are drafts that survive closing the app and switching devices.</li>
+          <li>Every change can be undone, including everything an AI session did.</li>
+          <li>Setup asks the big questions first and only the follow-ups that matter; unused features stay hidden.</li>
+          <li>The post-show interview asks only what's missing, one question at a time.</li>
+        </ul>
+      </article>
+      <article class="p">
+        <span class="n">3</span>
+        <h3>AI first. Never AI only.</h3>
+        <p class="belief">The best interface for a musician in a van is a sentence. Talk to your favorite chatbot, Claude, Gemini or another, or click around the app. Both do the same things.</p>
+        <p class="tension"><b>Even over a polished UI for every edge case.</b> Every action is a server command an AI can call before it's a screen. But nothing requires an AI, and sending anything on someone's behalf stays with a person.</p>
+        <ul>
+          <li>One MCP server any assistant can use, with the same commands the app calls.</li>
+          <li>Every write is signed with the person and the assistant, so you can see and undo what an AI did.</li>
+          <li>Claude drafts emails and asks; you send them.</li>
+        </ul>
+      </article>
+    </div>
+    <div class="callout">Why this order: serving musicians decides what we build at all. Not wasting their time decides how. AI first is our best way to save that time, so it gives way when it wouldn't.</div>
+  </section>
+
+  <section id="proposed" class="proposed">
+    <h2>Proposed principles</h2>
+    <p class="muted">Two more that the decisions so far already follow. Keep, merge, or drop them; Cagan's advice is to keep the list short enough to remember.</p>
+    <div class="pr">
+      <article class="p">
+        <span class="n">4</span>
+        <h3>Never lose or corrupt their data.</h3>
+        <p class="belief">A wrong number in the band's money or a lost show is worse than a missing feature.</p>
+        <p class="tension"><b>Even over speed of building.</b> Strict shapes, server-only writes, a ledger that's never edited, history on every record, nightly backups.</p>
+      </article>
+      <article class="p">
+        <span class="n">5</span>
+        <h3>Built on the road.</h3>
+        <p class="belief">We use it on our own shows and tours first. If it doesn't work in the van, it doesn't ship.</p>
+        <p class="tension"><b>Even over what other bands ask for, until we've lived it.</b> Requests are welcome; we test them on a real night first.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="strategy">
+    <h2>Strategy</h2>
+    <p class="muted">The order we'll go in. Each step earns the next.</p>
+    <div class="hz">
+      <div class="now"><span>Now</span><h3>Run our band on it</h3><p>Booking, pitches, shows, schedules, tours, money, songs. Talking to Claude as the main way in.</p></div>
+      <div><span>Next</span><h3>Bands we play with</h3><p>Many bands in one app, each walled off. Setup that starts simple. The open cost page.</p></div>
+      <div><span>Then</span><h3>Any band, anywhere</h3><p>Public launch with tour videos and webinars. Grants. Docs that build themselves.</p></div>
+      <div><span>Eventually</span><h3>Getting the word out</h3><p>Replace Buffer: schedule posts for shows, tours and releases to every social account from the same app, written with Claude from the show details already there.</p></div>
+      <div><span>If it happens</span><h3>An open venue list</h3><p>With Tenor: venues every artist can rate and add to. And places to talk about the job.</p></div>
+    </div>
+  </section>
+
+  <section id="outcomes">
+    <h2>Outcomes we watch</h2>
+    <p class="muted">Results for musicians, not features shipped.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Outcome</th><th>How we'll see it</th></tr></thead>
+      <tbody>
+        <tr><td>Less time on admin</td><td>Minutes from "I just got done with a show" to wrapped up; taps per new show</td></tr>
+        <tr><td>Nothing falls through</td><td>Shows settled within a day; drafts finished vs. tossed; follow-ups done on time</td></tr>
+        <tr><td>Bands stay</td><td>Bands still active after three months and after their first tour</td></tr>
+        <tr><td>AI actually helps</td><td>Share of writes made by talking; how often AI writes get undone</td></tr>
+        <tr><td>We don't cost them</td><td>Cost per artist; share covered by grants</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="docs">
+    <h2>How we document</h2>
+    <p>Docs build themselves from end-to-end tests, so they never fall behind the app.</p>
+    <div class="grid2">
+      <div class="box"><h3>Playwright walks the stories</h3><p>One script per user story runs against the Firebase emulator with seeded example data, the Mountain West tour, and takes a screenshot at every step, on phone and desktop, light and dark.</p></div>
+      <div class="box"><h3>Claude Code writes the words</h3><p>Each step gets a doc comment saying what the musician sees and why, written by Claude Code from the code and the screens. Step names become headings.</p></div>
+      <div class="box"><h3>Rebuilt on every merge</h3><p>CI runs the scripts, which double as tests, and publishes the docs site. A screen change that breaks a step breaks the build, so stale docs can't ship.</p></div>
+      <div class="box"><h3>Talk examples too</h3><p>The same scripts record what to say to Claude for each story, so every doc page shows both ways to do it.</p></div>
+    </div>
+  </section>
+
+  <section id="not">
+    <h2>Not doing</h2>
+    <ul style="margin:0;padding-left:20px;display:grid;gap:6px;max-width:66ch">
+      <li>Ticketing or taking a cut of anything a band earns.</li>
+      <li>Ads, sponsored placements, or selling anyone's data.</li>
+      <li>Features for agencies that make the band's own use harder.</li>
+      <li>Anything that only works with one AI company's assistant.</li>
+    </ul>
+  </section>
+
+  <footer>Ingrid Avison Band · Boulder, CO · CC0. Copy it.</footer>
+</div>
+
+</body></html>

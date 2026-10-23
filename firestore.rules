@@ -11,6 +11,8 @@ service cloud.firestore {
     function band() { return isAdmin() || (isMember() && live()); }
 
     match /users/{id}            { allow read: if isAdmin(); }
+    // Unfinished 'new X' forms: only their owner, never written from the client (server writes with firebase-admin).
+    match /users/{uid}/drafts/{draftId} { allow read: if signedIn() && request.auth.uid == uid; }
     match /musicians/{id}        { allow read: if band(); }
     match /artists/{id}          { allow read: if band(); }
     match /shows/{id}            { allow read: if band(); }
@@ -44,6 +46,13 @@ service cloud.firestore {
     match /statSnapshots/{id}      { allow read: if isAdmin(); }
     match /history/{id}            { allow read: if isAdmin(); }
     match /mcpTokens/{id}          { allow read: if isAdmin(); }
+    // Roadie chat: only the owner (and only admins) read; writes are server-only.
+    match /assistantThreads/{tid} {
+      allow read: if isAdmin() && resource.data.ownerUid == request.auth.uid;
+      match /messages/{mid} {
+        allow read: if isAdmin() && get(/databases/$(database)/documents/assistantThreads/$(tid)).data.ownerUid == request.auth.uid;
+      }
+    }
     match /pitches/{id} {
       allow read: if isAdmin();
       match /comments/{cid}  { allow read: if isAdmin(); }

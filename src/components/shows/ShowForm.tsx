@@ -29,12 +29,40 @@ export function dealOf(s: ShowFormState) {
   };
 }
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * The `shows.update` patch for ONE edit: only the fields that differ between the form before (`a`) and after (`b`).
+ * Diffing consecutive form states (not form vs. the live show) is what makes A -> B -> A save correctly while the
+ * live document is still catching up. Invalid half-typed values (no venue, partial date) are left out.
+ */
+export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, unknown> {
+  const p: Record<string, unknown> = {};
+  const ne = (x: unknown, y: unknown) => JSON.stringify(x) !== JSON.stringify(y);
+  if (b.venueId !== a.venueId && b.venueId) p.venueId = b.venueId;
+  if (b.date !== a.date && DATE.test(b.date)) p.date = b.date;
+  if (b.status !== a.status) p.status = b.status;
+  if (ne(timesOf(a), timesOf(b))) p.times = timesOf(b);
+  if (b.billedAs !== a.billedAs) p.billedAs = b.billedAs || null;
+  if (ne([...a.personnel].sort(), [...b.personnel].sort())) p.personnel = b.personnel;
+  if (b.soundProvider !== a.soundProvider || b.soundNotes !== a.soundNotes) p.sound = { provider: b.soundProvider, ...(b.soundNotes.trim() ? { notes: b.soundNotes.trim() } : {}) };
+  if (b.soundProvider !== a.soundProvider) p.rebuildGear = true;
+  if (b.poster !== a.poster || b.backline !== a.backline || b.merch !== a.merch) p.needs = { poster: b.poster, backline: b.backline, merch: b.merch };
+  if (b.public !== a.public) p.public = b.public;
+  if (b.ticketUrl !== a.ticketUrl) p.ticketUrl = b.ticketUrl || null;
+  if (b.bandNotes !== a.bandNotes) p.bandNotes = b.bandNotes.trim() || null;
+  return p;
+}
+
 const L = ({ children }: { children: React.ReactNode }) => <span className="lbl">{children}</span>;
 
 /** Shared by "New show" (Booked it) and editing a show. Controlled by the parent so it can diff what changed. */
-export function ShowForm({ mode, value, onChange, venues, artist, musicians, error, busy, submitLabel, onSubmit, onCancel }: {
+export function ShowForm({ mode, value, onChange, onBlur, venues, artist, musicians, error, busy, submitLabel, onSubmit, onCancel }: {
   mode: "create" | "edit"; value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[]; artist?: Row<Artist>; musicians: Row<Musician>[];
-  error: string | null; busy: boolean; submitLabel: string; onSubmit(): void; onCancel?(): void;
+  error: string | null; busy: boolean;
+  /** Edit mode (autosave): leave out onSubmit, there is no Save button. Called when focus leaves a field. */
+  onBlur?(): void;
+  /** Create mode: the explicit button ("Add show"). */
+  submitLabel?: string; onSubmit?(): void; onCancel?(): void;
 }) {
   const [soundTouched, setSoundTouched] = useState(mode === "edit");
   const set = (p: Partial<ShowFormState>) => onChange({ ...value, ...p });
@@ -45,7 +73,7 @@ export function ShowForm({ mode, value, onChange, venues, artist, musicians, err
     </label>
   );
   return (
-    <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); onSubmit(); }}>
+    <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }} onBlur={onBlur}>
       <div className="card">
         <label className="grid gap-1"><L>Venue</L>
           <select className="select" value={value.venueId} data-testid="show-venue" required
@@ -126,10 +154,12 @@ export function ShowForm({ mode, value, onChange, venues, artist, musicians, err
       )}
 
       <ErrorBox error={error} />
-      <div className="flex gap-2">
-        <button className="btn acc" disabled={busy || !value.venueId || !value.date} data-testid="show-save">{submitLabel}</button>
-        {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
-      </div>
+      {onSubmit && (
+        <div className="flex gap-2">
+          <button className="btn acc" disabled={busy || !value.venueId || !value.date} data-testid="show-save">{submitLabel ?? "Save"}</button>
+          {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
+        </div>
+      )}
     </form>
   );
 }

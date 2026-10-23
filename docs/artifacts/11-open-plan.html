@@ -1,0 +1,271 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Band App Open Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one readable column like an open letter to musicians; the cost-share math is the one interactive moment; the Tenor "if" is the one loud block */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7; --warn:#B07A00;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:860px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 90px}
+h1,h2,h3{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(40px,8.5vw,76px);font-weight:800;line-height:.92}
+h1 em{font-style:normal;color:var(--accent)}
+h2{font-size:clamp(26px,4vw,34px);font-weight:800;line-height:1.05}
+h3{font-size:19px;font-weight:600}
+p{margin:0;max-width:66ch}
+a{color:var(--blue)}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:19px;color:var(--muted);margin-top:16px;max-width:58ch}
+.status{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
+.chip{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.chip.a{background:var(--accent-soft);color:var(--accent)}
+.chip.g{background:var(--ok-soft);color:var(--ok)}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin-top:26px;padding:10px 0;display:flex;gap:6px;flex-wrap:wrap}
+nav.toc a{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+nav.toc a:hover{border-color:var(--ink)}
+section{padding-top:52px;scroll-margin-top:60px;display:grid;gap:14px}
+.promise{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px;margin-top:6px}
+.promise div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:4px;align-content:start}
+.promise b{font-family:var(--f-display);font-size:18px;font-weight:600}
+.promise span{font-size:14.5px;color:var(--muted)}
+ul.list{margin:0;padding:0;list-style:none;display:grid;gap:9px;max-width:68ch}
+ul.list li{padding-left:20px;position:relative}
+ul.list li::before{content:"";position:absolute;left:0;top:.66em;width:8px;height:8px;border-radius:2px;background:var(--accent)}
+.note{font-size:14px;color:var(--muted)}
+.calc{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;gap:16px}
+.calc .inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:14px}
+.calc label{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.calc input[type=range]{width:100%;accent-color:var(--accent)}
+.calc output{font-family:var(--f-mono);font-size:15px;color:var(--ink);font-weight:500}
+.math{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px;font-family:var(--f-mono);font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;font-variant-numeric:tabular-nums}
+.math b{color:var(--ink);font-weight:500}
+.math .res{font-family:var(--f-display);font-size:34px;font-weight:800;color:var(--accent);line-height:1}
+.ladder{display:grid;gap:8px}
+.step{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.step .n{width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--panel);display:grid;place-items:center;font-weight:700;font-size:14px}
+.step b{display:block}
+.step span{font-size:14.5px;color:var(--muted)}
+.phases{display:grid;gap:0;border-left:2px solid var(--line);margin-left:6px}
+.phase{position:relative;padding:0 0 22px 22px;display:grid;gap:4px}
+.phase::before{content:"";position:absolute;left:-8px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--bg);border:2px solid var(--accent)}
+.phase.now::before{background:var(--accent)}
+.phase .when{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.phase p{font-size:15px;color:var(--muted)}
+.channels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:10px}
+.channel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:6px;align-content:start}
+.channel h3{font-size:17px}
+.channel p{font-size:14.5px;color:var(--muted)}
+.quote{font-family:var(--f-display);font-size:clamp(22px,3.4vw,30px);font-weight:600;line-height:1.2;max-width:28ch}
+.costtbl{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.costtbl table{border-collapse:collapse;width:100%;min-width:520px;font-size:14.5px}
+.costtbl th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line)}
+.costtbl td{padding:9px 14px;border-top:1px solid var(--soft)}
+.costtbl td.r{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.if{background:var(--ink);color:var(--bg);border-radius:20px;padding:26px 22px;display:grid;gap:14px;margin-top:56px}
+.if .big{font-family:var(--f-display);font-weight:800;font-size:clamp(64px,14vw,120px);line-height:.8;color:var(--accent)}
+.if h2{color:var(--bg)}
+.if p,.if li{color:var(--bg);opacity:.86}
+.if ul.list li::before{background:var(--accent)}
+.qs{display:grid;gap:8px}
+.qs div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:15px}
+footer{margin-top:56px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+/* module switcher shared by every module page */
+.modnav{position:relative;margin:0 0 16px;z-index:20}
+.modnav summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body,system-ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.modnav summary::-webkit-details-marker{display:none}
+.modnav summary b{font-weight:800}
+.modnav summary .car{color:var(--muted);font-size:11px}
+.modnav[open] summary{border-color:var(--ink)}
+.modnav .menu{position:absolute;top:calc(100% + 6px);left:0;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgb(0 0 0 / .18);padding:6px;display:grid}
+.modnav .menu a{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none;font:500 14px/1.3 var(--f-body,system-ui)}
+.modnav .menu a:hover{background:var(--soft)}
+.modnav .menu a.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.modnav .menu a span{color:var(--muted);font-size:12px}
+.modnav .menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+</style>
+
+<div class="wrap">
+  <details class="modnav"><summary>Band App · <b>Business plan</b> <span class="car">▼ modules</span></summary><div class="menu"><a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy" class="">Vision & principles<span>1</span></a><a href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" class="">Roadie & MCP<span>2</span></a><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" class="">Definition of done<span>3</span></a><a href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" class="">Account<span>4</span></a><a href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" class="">Booking<span>5</span></a><a href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" class="">Shows<span>6</span></a><a href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" class="">Money<span>7</span></a><a href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" class="">Set lists<span>8</span></a><a href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" class="">Touring<span>9</span></a><a href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" class="">Promotion<span>10</span></a><hr><a href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" class="on">Business plan<span>11</span></a><a href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" class="">Later<span>12</span></a><hr><a href="https://claude.ai/code/artifact/553a7d8e-f2c2-40aa-9bb9-5ab7ce1a26e3">Original blueprint<span>archive</span></a></div></details>
+  <header>
+    <p class="eyebrow">Business plan · draft · Oct 2026</p>
+    <h1 style="margin-top:10px">We don't want <em>your money.</em></h1>
+    <p class="lede">The Ingrid Avison Band is building a booking, touring and band-money app for ourselves. We're giving it to every working musician, and giving the code, the design and the ideas to anyone who wants to copy them.</p>
+    <div class="status"><span class="chip a">Open source, no restrictions</span><span class="chip g">Non-profit by design</span><span class="chip">Subject to change if it blows up</span></div>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#what">What it is</a><a href="#open">Open</a><a href="#money">Money</a><a href="#change">If it grows</a><a href="#marketing">Marketing</a><a href="#phases">Phases</a><a href="#tenor">The big if</a><a href="#questions">Open questions</a>
+  </nav>
+
+  <section id="what">
+    <h2>What it is</h2>
+    <p>One place for the business side of a band: venues, festivals and the people who book them; a Pitch List of what we're going after; emails sent from your own Gmail; tours with drives, flights and places to stay; shows with a run of show, gear and setlists; songs and rehearsal recordings; and every dollar in and out, with payouts to the people who played.</p>
+    <p>We're building it because we need it. Jeff and Ingrid book, route and pay the band out of spreadsheets and pages that don't talk to each other. If it works for a five-piece out of Boulder, it will work for a lot of bands.</p>
+    <div class="promise">
+      <div><b>Built by a touring band</b><span>Every feature exists because we needed it on a real tour first.</span></div>
+      <div><b>Your data stays yours</b><span>Export everything any time. No ads, no selling data, no investors.</span></div>
+      <div><b>AI does the clicking</b><span>Research venues, draft pitches and fill in drive times with any AI model you like.</span></div>
+    </div>
+  </section>
+
+  <section id="open">
+    <h2>Open, with zero restrictions</h2>
+    <p>Copying us is the point. Other companies, other bands and other developers can take the code, the screens, the data model and the ideas, change them, sell them, and never tell us.</p>
+    <ul class="list">
+      <li><b>Code:</b> public on GitHub under a public-domain-style license (0BSD or the Unlicense), so there's no attribution clause to follow.</li>
+      <li><b>Designs and docs:</b> CC0. The blueprint, the wireframes and this plan included.</li>
+      <li><b>Concepts:</b> how pitches become shows, how tours hold options, how the band ledger never edits a line. No patents, ever.</li>
+      <li><b>Self-hosting:</b> one Firebase project per band, so anyone can run their own copy and pay their own bill.</li>
+    </ul>
+    <p class="note">The one thing we may hold onto is the name, so people can tell which copy is ours. That's an open question below.</p>
+  </section>
+
+  <section id="money">
+    <h2>How money works</h2>
+    <p class="quote">We don't make money. We try not to lose it.</p>
+    <p>The app costs almost nothing to run at our size. As more artists use it, the cloud bill grows, and we cover it in this order:</p>
+    <div class="ladder">
+      <div class="step"><span class="n">1</span><span><b>We pay it</b><span>While the bill is small, the band covers it.</span></span></div>
+      <div class="step"><span class="n">2</span><span><b>Grants</b><span>Arts councils, open source funds and music organizations. A grant that covers hosting means nobody pays.</span></span></div>
+      <div class="step"><span class="n">3</span><span><b>Cost share</b><span>If grants don't cover it, we take a recent cloud bill, divide it by the number of active artists, and charge that, in multi-month blocks so card fees don't eat it.</span></span></div>
+    </div>
+    <p>Cost share is not a price. It's the bill, divided, published. When the bill drops, the share drops. When a grant lands, the share pauses.</p>
+
+    <div class="calc" aria-label="Cost share calculator">
+      <div class="inputs">
+        <label for="bill">Monthly cloud bill <output id="billOut">$180</output><input id="bill" type="range" min="20" max="2000" step="10" value="180"></label>
+        <label for="artists">Active artists <output id="artistsOut">120</output><input id="artists" type="range" min="10" max="5000" step="10" value="120"></label>
+        <label for="months">Billed every <output id="monthsOut">6 months</output><input id="months" type="range" min="3" max="12" step="3" value="6"></label>
+      </div>
+      <div class="math" id="math"></div>
+      <p class="note">Example numbers, not our real bill. A card processor takes roughly 3% plus 30¢ per charge, which is why we bill a few months at once.</p>
+    </div>
+
+    <h3 style="margin-top:8px">What's on the bill</h3>
+    <div class="costtbl"><table>
+      <thead><tr><th>Line</th><th>What it pays for</th><th style="text-align:right">Grows with</th></tr></thead>
+      <tbody>
+        <tr><td>Firestore</td><td>The database: reads, writes, storage</td><td class="r">artists</td></tr>
+        <tr><td>App hosting</td><td>The web app and server commands</td><td class="r">traffic</td></tr>
+        <tr><td>Google Maps routes</td><td>Drive times and miles on tours</td><td class="r">tour legs</td></tr>
+        <tr><td>Email and auth</td><td>Sign-in and availability emails</td><td class="r">members</td></tr>
+        <tr><td>Domain and backups</td><td>Name, nightly JSON backups</td><td class="r">flat</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Files stay in each band's own Google Drive, so storage, the usual big cost, isn't on our bill.</p>
+  </section>
+
+  <section id="change">
+    <h2>If it blows up</h2>
+    <p>This plan is for a project run by two musicians in their spare time. If thousands of bands show up and it needs people to keep it running, the plan changes, in the open.</p>
+    <ul class="list">
+      <li><b>Nonprofit first.</b> We'd look at becoming a nonprofit, likely starting under a fiscal sponsor so grants and donations can come in before we set one up ourselves.</li>
+      <li><b>Staff costs join the bill.</b> If we hire, salaries go on the published cost page and into the cost share, with the same math.</li>
+      <li><b>Never a lock-in.</b> The code stays open and self-hosting stays possible, whatever the money looks like.</li>
+      <li><b>We'll say so before it happens.</b> Any change to how money works is announced, with numbers, before it takes effect.</li>
+    </ul>
+    <p class="note">Not legal or tax advice; we'll talk to people who know before choosing a structure.</p>
+  </section>
+
+  <section id="marketing">
+    <h2>Marketing plan</h2>
+    <p>Our pitch is the business model. Musicians are tired of tools that take a cut, raise prices, or get bought. We lead with the opposite.</p>
+    <p class="quote">"We don't want your money. Here's our cloud bill."</p>
+    <div class="channels">
+      <div class="channel"><h3>The open cost page</h3><p>A public page with the latest cloud bill, the number of active artists, the cost share, and what grants covered. Updated every month, kept forever.</p></div>
+      <div class="channel"><h3>Tour videos</h3><p>Short videos of us on the road using the app: booking the open date, the day sheet in the van, settling up after the show. The Mountain West run in March 2027 is the first one.</p></div>
+      <div class="channel"><h3>Webinars</h3><p>Live sessions that walk through it: set up your band, build your Pitch List, plan a tour, pay your players. Recorded and posted.</p></div>
+      <div class="channel"><h3>Musician to musician</h3><p>Bands we share bills with, players who sub for us, the bookers we work with. Every show is a demo.</p></div>
+      <div class="channel"><h3>Open source crowd</h3><p>A clean repo, a public roadmap, good first issues. Developers who play music are our best early users.</p></div>
+      <div class="channel"><h3>Build in public</h3><p>Posts about what we built, what it cost, and what broke. The cost page and the changelog are the content.</p></div>
+    </div>
+    <h3 style="margin-top:8px">Later: a place to talk</h3>
+    <p>Eventually we'll build spaces where working musicians and indie artists can talk about the job: routing, pay, which rooms treat bands well, how to split money fairly, how to keep going. Not before the app is solid, and run with the same openness.</p>
+    <h3 style="margin-top:8px">How we'll know it's working</h3>
+    <ul class="list">
+      <li>Active artists, and how many play a show booked through the app each month.</li>
+      <li>Cost per artist, and how much of the bill grants cover.</li>
+      <li>Forks and copies. Other people taking the ideas counts as a win.</li>
+      <li>Webinar attendance and who sets up a band afterward.</li>
+    </ul>
+  </section>
+
+  <section id="phases">
+    <h2>Phases</h2>
+    <div class="phases">
+      <div class="phase now"><span class="when">Now · fall 2026</span><h3>Build it for our band</h3><p>Claude Code is building the core: booking, pitches, shows, songs, money. Tours and show schedules next.</p></div>
+      <div class="phase"><span class="when">Winter 2026–27</span><h3>Friends' bands</h3><p>A handful of bands we know, each with their own login. Open the repo. Publish the first cost page.</p></div>
+      <div class="phase"><span class="when">Spring 2027</span><h3>Public, with the tour</h3><p>Launch around the Mountain West tour: videos from the road, first webinar, open sign-ups.</p></div>
+      <div class="phase"><span class="when">When the bill needs it</span><h3>Grants, then cost share</h3><p>Apply for grants as soon as there are users. Turn on cost share only if grants fall short.</p></div>
+      <div class="phase"><span class="when">Later</span><h3>Community</h3><p>Spaces for working musicians to talk. Nonprofit if it needs staff.</p></div>
+    </div>
+  </section>
+
+  <section id="tenor" style="padding-top:0">
+    <div class="if">
+      <span class="big">If</span>
+      <h2>we merge with Tenor</h2>
+      <p>Tenor is Daphne's project. If we join forces, we'll also build a huge open source venue list that every artist can use, rate and add to.</p>
+      <ul class="list">
+        <li><b>Open venue data.</b> Rooms, capacities, sound, load-in, ages, who books them. Free to download and reuse, like the code.</li>
+        <li><b>Ratings from artists.</b> Pay, sound, hospitality, how the night went. The ratings our app already asks for after each show, shared if the band chooses.</li>
+        <li><b>Shared info.</b> Parking, load-in tips, what the booker likes in a pitch. Private booker contacts stay private unless they agree to be listed.</li>
+        <li><b>Plugs into the app.</b> A band's venue book starts from the shared list, and their own notes sit on top.</li>
+      </ul>
+      <p>This is a big if. Nothing here depends on it.</p>
+    </div>
+  </section>
+
+  <section id="questions">
+    <h2>Open questions</h2>
+    <div class="qs">
+      <div>Do we keep the name as the one restriction, or let anyone use it too?</div>
+      <div>Hosted service first, or self-hosting first with a hosted option later?</div>
+      <div>Which grants fit a free tool for musicians, and who writes the applications?</div>
+      <div>How long a block for cost share: 6 months, 12, or the artist's choice?</div>
+      <div>What do artists who can't pay the share get? Our default answer: the same app.</div>
+      <div>Does the project stay under our band, or get its own entity from the start?</div>
+    </div>
+  </section>
+
+  <footer>Ingrid Avison Band · Boulder, CO · This plan is CC0. Copy it.</footer>
+</div>
+
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const money = n => "$" + (n >= 100 ? Math.round(n).toLocaleString() : n.toFixed(2));
+  const draw = () => {
+    const bill = +el("bill").value, artists = +el("artists").value, months = +el("months").value;
+    el("billOut").textContent = money(bill);
+    el("artistsOut").textContent = artists.toLocaleString();
+    el("monthsOut").textContent = months + " months";
+    const per = bill / artists, charge = per * months, fee = charge * 0.029 + 0.30;
+    el("math").innerHTML = `<span><b>${money(bill)}</b> ÷ <b>${artists.toLocaleString()}</b> artists = <b>${money(per)}</b>/mo</span><span>× ${months} =</span><span class="res">${money(charge + fee)}</span><span>per artist every ${months} months, ${money(fee)} of it card fees</span>`;
+  };
+  ["bill","artists","months"].forEach(id => el(id).addEventListener("input", draw));
+  draw();
+})();
+</script>
+
+</body></html>

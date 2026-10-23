@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { CommandError, runCommand } from "@/lib/commands";
+import { CommandError, runCommand, type CommandMeta } from "@/lib/commands";
 
 export function PageTitle({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -23,10 +23,10 @@ export function Stub({ title, slice, children }: { title: string; slice: number;
 export function useCommand() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  async function call<T = { id?: string }>(name: string, input: unknown): Promise<T | undefined> {
+  async function call<T = { id?: string }>(name: string, input: unknown, meta?: CommandMeta): Promise<T | undefined> {
     setBusy(true); setError(null);
     try {
-      return await runCommand<T>(name, input);
+      return await runCommand<T>(name, input, meta);
     } catch (e) {
       const ce = e as CommandError;
       setError(ce.issues?.length ? `${ce.message}: ${ce.issues.map((i) => `${i.path} ${i.message}`).join("; ")}` : ce.message);

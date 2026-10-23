@@ -1,8 +1,12 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Seg } from "@/components/booking/common";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { useDraft } from "@/lib/drafts";
+import { newMutationId } from "@/lib/commands";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
 import {
@@ -14,14 +18,17 @@ import type { Expense, Musician, Show, ShowDeal, User } from "@/schema";
 
 type Tab = "overview" | "shows" | "categories" | "ledger";
 
-export function AdminMoney() {
+export function AdminMoney() { return <Suspense><Admin /></Suspense>; }
+
+function Admin() {
   const ledger = useCollection<LedgerLike>("ledger");
   const expenses = useCollection<Expense>("expenses");
   const deals = useCollection<ShowDeal>("showDeals");
   const shows = useCollection<Show>("shows");
   const musicians = useCollection<Musician>("musicians");
   const users = useCollection<User>("users");
-  const [tab, setTab] = useState<Tab>("overview");
+  const tabParam = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(tabParam === "ledger" ? "ledger" : "overview"); // a restored ledger draft links to ?tab=ledger
   const { call, error, busy } = useCommand();
 
   const led = useMemo(() => ledger.rows ?? [], [ledger.rows]);
@@ -131,17 +138,27 @@ function LedgerList({ rows, showName, person, onCorrect, busy }: {
 
 function RecordForm({ shows, musicians }: { shows: Row<Show>[]; musicians: Row<Musician>[] }) {
   const { call, error, busy } = useCommand();
-  const [f, setF] = useState({ kind: "expense", date: todayStr(), amount: "", category: "photo", method: "card", memo: "", showId: "", payee: "" });
+  // The ledger is immutable (corrections only), so a new entry is a draft with an explicit Record button, never autosaved.
+  const draft = useDraft("ledger", "new", { kind: "expense", date: todayStr(), amount: "", category: "photo", method: "card", memo: "", showId: "", payee: "" },
+    { route: "/money?tab=ledger", title: (v) => `Ledger entry · ${v.amount ? `$${v.amount}` : v.kind}${v.memo ? ` · ${v.memo}` : ""}` });
+  const mutationId = useRef(newMutationId());
+  const f = draft.value;
   const [ok, setOk] = useState(false);
-  const set = (k: keyof typeof f, v: string) => { setOk(false); setF({ ...f, [k]: v }); };
+  const set = (k: keyof typeof f, v: string) => { setOk(false); draft.setValue({ ...f, [k]: v }); };
   const cents = f.amount.trim() && !isNaN(Number(f.amount)) ? dollarsToCents(f.amount) : 0;
   async function save() {
+    await draft.settle();
     const r = await call("ledger.record", {
       date: f.date, kind: f.kind, amount: cents, category: f.category, method: f.method,
       ...(f.memo.trim() ? { memo: f.memo.trim() } : {}), ...(f.showId ? { showId: f.showId } : {}), ...(f.kind === "payout" && f.payee ? { payeeMusicianId: f.payee } : {}),
-    });
-    if (r) { setOk(true); setF({ ...f, amount: "", memo: "" }); }
+    }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
+    if (r) {
+      mutationId.current = newMutationId();
+      await draft.clear({ reset: true });
+      setOk(true);
+    }
   }
+  if (!draft.ready) return <div className="card content-start" data-testid="record-form"><span className="s">Loading…</span></div>;
   return (
     <div className="card content-start" data-testid="record-form">
       <span className="lbl">Record</span>
@@ -173,6 +190,7 @@ function RecordForm({ shows, musicians }: { shows: Row<Show>[]; musicians: Row<M
           </select></label>
       )}
       <input className="input" placeholder="Note (optional)" value={f.memo} onChange={(e) => set("memo", e.target.value)} data-testid="rec-memo" />
+      <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
       <ErrorBox error={error} />
       {ok && <span className="chip g self-start" data-testid="rec-saved">Recorded</span>}
       <button className="btn acc" disabled={busy || cents <= 0 || (f.kind === "payout" && !f.payee)} onClick={save} data-testid="rec-save">Record</button>

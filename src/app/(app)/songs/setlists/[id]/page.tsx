@@ -6,6 +6,8 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { fmtLen, move, parseLen, setlistSlack } from "@/lib/music";
+import { SaveStatus } from "@/components/SaveStatus";
+import { useAutosave } from "@/lib/autosave";
 import { BackTo, Missing, fmtDay, useMusic } from "@/components/music/common";
 import type { SetlistItem } from "@/schema";
 import type { z } from "zod";
@@ -30,6 +32,8 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const admin = useProfile().role === "admin";
   const router = useRouter();
   const { call, error, busy } = useCommand();
+  // Existing record = autosave through setlists.update: the name saves as you type, list changes save at once (status + Undo toast).
+  const as = useAutosave({ command: "setlists.update", id: sl.id, rev: sl.rev });
   const [items, setItems] = useState<Item[]>(sl.items);
   const [drag, setDrag] = useState<number | null>(null);
   const [songId, setSongId] = useState("");
@@ -45,7 +49,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const slack = setlistSlack(sl.totalSec, show?.times.setLength);
   const over = slack != null && slack < 0;
 
-  const save = async (next: Item[]) => { setItems(next); await call("setlists.update", { id: sl.id, patch: { items: payload(next) } }); };
+  const save = async (next: Item[]) => { setItems(next); as.patch({ items: payload(next) }, { now: true }); };
   const reorder = (from: number, to: number) => { const next = move(items, from, to); if (next !== items) save(next); };
   const pickable = m.songs.filter((s) => s.status === "active" || s.status === "learning").sort((a, b) => a.title.localeCompare(b.title));
   const songTitle = (i: Item) => (i.type === "song" ? m.songs.find((s) => s.id === i.songId)?.title ?? i.title : i.title);
@@ -55,8 +59,10 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
       <BackTo href="/songs" label="Songs" />
       <PageTitle title={sl.name} />
       {admin && (
-        <input className="input" defaultValue={sl.name} aria-label="Setlist name" data-testid="setlist-name"
-          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== sl.name) call("setlists.update", { id: sl.id, patch: { name: v } }); }} />
+        <div className="flex items-center gap-2">
+          <input className="input" aria-label="Setlist name" data-testid="setlist-name" {...as.bind("name", sl.name, { toPatch: (t) => t.trim() })} />
+          <SaveStatus {...as.statusProps} />
+        </div>
       )}
       <div className={`card ${over ? "" : slack != null ? "hi" : ""}`} data-testid="setlist-total" data-over={over ? "1" : "0"}>
         <div className="flex items-baseline justify-between gap-2">
@@ -79,9 +85,9 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
             <span className="font-mono text-sm" data-testid="item-len">{fmtLen(it.lengthSec ?? 0)}</span>
             {admin && (
               <span className="flex gap-1">
-                <button className="btn ghost sm" disabled={busy || i === 0} onClick={() => reorder(i, i - 1)} aria-label={`Move ${songTitle(it)} up`} data-testid="item-up">↑</button>
-                <button className="btn ghost sm" disabled={busy || i === items.length - 1} onClick={() => reorder(i, i + 1)} aria-label={`Move ${songTitle(it)} down`} data-testid="item-down">↓</button>
-                <button className="btn ghost sm" disabled={busy} onClick={() => save(items.filter((_, j) => j !== i))} aria-label={`Remove ${songTitle(it)}`} data-testid="item-remove">✕</button>
+                <button className="btn ghost sm" disabled={i === 0} onClick={() => reorder(i, i - 1)} aria-label={`Move ${songTitle(it)} up`} data-testid="item-up">↑</button>
+                <button className="btn ghost sm" disabled={i === items.length - 1} onClick={() => reorder(i, i + 1)} aria-label={`Move ${songTitle(it)} down`} data-testid="item-down">↓</button>
+                <button className="btn ghost sm" onClick={() => save(items.filter((_, j) => j !== i))} aria-label={`Remove ${songTitle(it)}`} data-testid="item-remove">✕</button>
               </span>
             )}
           </li>
@@ -95,7 +101,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
               <option value="">Pick a song…</option>
               {pickable.map((s) => <option key={s.id} value={s.id}>{s.title}{s.key ? ` · ${s.key}` : ""}</option>)}
             </select>
-            <button className="btn ghost" disabled={!songId || busy} data-testid="add-song-item" onClick={async () => {
+            <button className="btn ghost" disabled={!songId} data-testid="add-song-item" onClick={async () => {
               const s = m.songs.find((x) => x.id === songId)!;
               setSongId("");
               await save([...items, { type: "song", songId: s.id, title: s.title, lengthSec: s.lengthSec, key: s.key }]);
@@ -104,7 +110,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
           <div className="flex gap-2">
             <input className="input" value={breakTitle} onChange={(e) => setBreakTitle(e.target.value)} aria-label="Break name" data-testid="break-title" />
             <input className="input !w-24" value={breakLen} onChange={(e) => setBreakLen(e.target.value)} aria-label="Break length" data-testid="break-len" />
-            <button className="btn ghost" disabled={busy} data-testid="add-break" onClick={() => save([...items, { type: "break", title: breakTitle.trim() || "Break", lengthSec: parseLen(breakLen) ?? 60 }])}>+ Break</button>
+            <button className="btn ghost" data-testid="add-break" onClick={() => save([...items, { type: "break", title: breakTitle.trim() || "Break", lengthSec: parseLen(breakLen) ?? 60 }])}>+ Break</button>
           </div>
         </div>
       )}

@@ -41,10 +41,11 @@ export async function dumpAll(fs: Firestore): Promise<Dump> {
     for (const ref of refs) {
       const snap = await ref.get();
       if (snap.exists) (dump[top] ??= []).push({ path: ref.path, data: encode(snap.data()) as Record<string, unknown> });
-      for (const sub of await ref.listCollections()) await walk(sub, top);
+      for (const sub of await ref.listCollections()) if (sub.id !== "drafts") await walk(sub, top); // drafts are personal scratch, not backed up
     }
   }
   for (const col of await fs.listCollections()) {
+    if (col.id === "mutations") continue; // idempotency bookkeeping, expires on its own
     dump[col.id] ??= [];
     await walk(col, col.id);
   }

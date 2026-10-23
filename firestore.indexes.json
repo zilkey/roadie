@@ -1,1 +1,8 @@
-{ "indexes": [], "fieldOverrides": [] }
+{
+  "indexes": [
+    { "collectionGroup": "history", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "entity.id", "order": "ASCENDING" }, { "fieldPath": "docRev", "order": "DESCENDING" }] }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+  ]
+}

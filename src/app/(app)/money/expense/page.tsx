@@ -1,8 +1,11 @@
 "use client";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { BackLink } from "@/components/booking/common";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { useDraft } from "@/lib/drafts";
+import { newMutationId } from "@/lib/commands";
 import { useCollection } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, dollarsToCents } from "@/lib/money";
 import { fmtLong } from "@/lib/shows";
@@ -19,11 +22,17 @@ function AddExpense() {
   const sp = useSearchParams();
   const shows = useCollection<Show>("shows");
   const { call, error, busy } = useCommand();
-  const [amount, setAmount] = useState("");
-  const [what, setWhat] = useState("");
-  const [cat, setCat] = useState<(typeof CATS)[number]>("gear");
-  const [showId, setShowId] = useState(sp.get("show") ?? "");
-  const [link, setLink] = useState("");
+  // A new expense is a draft with an explicit Send button (expenses can't be edited once sent).
+  const fromShow = sp.get("show") ?? "";
+  const draft = useDraft("expense", fromShow ? `show:${fromShow}` : "new", { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "" },
+    { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
+  const mutationId = useRef(newMutationId());
+  const { amount, what, cat, showId, link } = draft.value;
+  const setAmount = (v: string) => draft.setValue({ ...draft.value, amount: v });
+  const setWhat = (v: string) => draft.setValue({ ...draft.value, what: v });
+  const setCat = (v: (typeof CATS)[number]) => draft.setValue({ ...draft.value, cat: v });
+  const setShowId = (v: string) => draft.setValue({ ...draft.value, showId: v });
+  const setLink = (v: string) => draft.setValue((d) => ({ ...d, link: v }));
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const search = useCommand();
@@ -36,17 +45,18 @@ function AddExpense() {
   }
   async function send() {
     const url = link.trim();
+    await draft.settle();
     const r = await call("expenses.add", {
       amount: cents, what: what.trim(), category: cat, ...(showId ? { showId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
-    });
-    if (r) router.push("/money");
+    }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
+    if (r) { await draft.clear(); router.push("/money"); }
   }
   return (
     <div className="grid max-w-xl gap-3" data-testid="add-expense">
       <BackLink href="/money" label="My money" />
       <PageTitle title="Add an expense" />
-      <div className="card">
+      {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
         <label className="grid gap-1"><span className="lbl">How much</span>
           <input className="input font-mono" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="expense-amount" /></label>
         <span className="lbl">What for</span>
@@ -72,8 +82,9 @@ function AddExpense() {
         ))}
         <span className="s">You can't change it after sending. Ask Jeff or Ingrid to fix mistakes.</span>
         <ErrorBox error={error} />
+        <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <button className="btn acc" disabled={busy || cents <= 0 || !what.trim()} onClick={send} data-testid="expense-send">Send</button>
-      </div>
+      </div>}
     </div>
   );
 }

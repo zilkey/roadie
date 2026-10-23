@@ -2,10 +2,15 @@
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
+import { useAutosave } from "@/lib/autosave";
+import { useDraft } from "@/lib/drafts";
+import { newMutationId } from "@/lib/commands";
+import { SaveStatus } from "@/components/SaveStatus";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, Seg, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
@@ -30,27 +35,57 @@ function PitchPage() {
   const artist = (useCollection<Artist>("artists").rows ?? [])[0];
   const { call, error, busy } = useCommand();
   const [emailOpen, setEmailOpen] = useState(false);
-  const [note, setNote] = useState("");
-  const [comment, setComment] = useState("");
   const [step, setStep] = useState<{ text: string; due: string } | null>(null);
   const [replies, setReplies] = useState<string | null>(null);
   const nf = useNotFound(loading, p, "pitch");
+  const as = useAutosave({ command: "pitches.update", id, rev: p?.rev, onUseTheirs: () => setStep(null) });
+  // Follow the live pitch (someone else's edit, an Undo) once nothing of ours is waiting to be saved.
+  const liveStep = JSON.stringify(p?.nextStep ?? null);
+  useEffect(() => { if (!as.isBusy()) setStep(null); }, [liveStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Taps build on the local list, so a second tap before the first save lands doesn't drop it.
+  const [crew, setCrew] = useState<string[] | null>(null);
+  const livePeople = JSON.stringify(p?.personnel ?? []);
+  useEffect(() => { if (!as.isBusy()) setCrew(null); }, [livePeople]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pitchName = p?.target.name ?? "pitch";
+  const commentDraft = useDraft("pitchComment", `pitch:${id}`, { text: "" }, { title: (v) => `Comment on ${pitchName}: ${v.text.slice(0, 40)}` });
+  const callDraft = useDraft("pitchCall", `pitch:${id}`, { text: "" }, { title: (v) => `Call log for ${pitchName}: ${v.text.slice(0, 40)}` });
+  const commentId = useRef(newMutationId());
+  const callId = useRef(newMutationId());
   const shows = useCollection<Show>("shows").rows ?? [];
   const edition = p?.target.kind === "edition" ? b.editions.find((e) => e.id === p.target.id) : undefined;
   const activity = useCollection<Activity>(`pitches/${id}/activity`).rows ?? [];
   const comments = useCollection<Comment>(`pitches/${id}/comments`).rows ?? [];
   if (nf || !p) return nf;
 
-  const patch = (x: Record<string, unknown>) => call("pitches.update", { id, patch: x });
+  const patch = (x: Record<string, unknown>) => as.patch(x, { now: true });
   const name = (uid?: string) => users.find((u) => u.id === uid)?.name ?? "Someone";
   const flow: Status[] = ["idea", "toPitch", "pitched", "waiting", "talking", "booked"];
   const stepVal = step ?? { text: p.nextStep?.text ?? "", due: p.nextStep?.due ?? "" };
+  const people = crew ?? p.personnel;
   const timeline = [
     ...activity.map((a) => ({ id: a.id, at: ms(a.createdAt), who: name(a.createdBy), kind: a.type as string, a })),
     ...comments.map((c) => ({ id: c.id, at: ms(c.createdAt), who: name(c.authorId), kind: "comment", a: c as unknown as Row<Activity> & { body?: string } })),
   ].sort((x, y) => y.at - x.at);
   const targetHref = p.target.kind === "edition" ? hrefFor("edition", p.target.id) : hrefFor(p.target.kind, p.target.id);
   const config = artist?.configurations.find((c) => c.id === p.pitchedAs);
+
+  // Both parts or neither: a half-filled step is held back (and shown as "Not saved") until it is complete.
+  function editStep(next: { text: string; due: string }) {
+    setStep(next);
+    if (next.text.trim() && next.due) as.patch({ nextStep: { text: next.text, due: next.due } });
+    else if (!next.text.trim() && !next.due) as.patch({ nextStep: null });
+    else as.hold("a next step needs words and a date");
+  }
+  async function post() {
+    await commentDraft.settle();
+    const r = await call("pitches.comment", { id, body: commentDraft.value.text }, { clientMutationId: commentId.current, clearDraft: commentDraft.draftId });
+    if (r) { await commentDraft.clear({ reset: true }); commentId.current = newMutationId(); }
+  }
+  async function logCall() {
+    await callDraft.settle();
+    const r = await call("pitches.log", { id, type: "call", text: callDraft.value.text }, { clientMutationId: callId.current, clearDraft: callDraft.draftId });
+    if (r) { await callDraft.clear({ reset: true }); callId.current = newMutationId(); }
+  }
 
   async function checkReplies() {
     const r = await call<{ added: number }>("pitches.checkReplies", { id });
@@ -74,38 +109,38 @@ function PitchPage() {
 
       <div className="card">
         <span className="lbl">Pitching as</span>
-        <select className="select" value={p.pitchedAs ?? ""} data-testid="pitched-as" disabled={busy}
+        <select className="select" value={p.pitchedAs ?? ""} data-testid="pitched-as"
           onChange={(e) => patch({ pitchedAs: e.target.value || null })}>
           <option value="">Not sure</option>
           {artist?.configurations.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <span className="lbl">Who&apos;s on it</span>
         <div className="flex flex-wrap gap-1.5" data-testid="personnel">
-          {musicians.filter((m) => m.active || p.personnel.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {
-            const on = p.personnel.includes(m.id);
+          {musicians.filter((m) => m.active || people.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {
+            const on = people.includes(m.id);
             return (
-              <button key={m.id} type="button" aria-pressed={on} disabled={busy} data-testid={`person-${m.name}`} className={`btn sm ${on ? "acc" : "ghost"}`}
-                onClick={() => patch({ personnel: on ? p.personnel.filter((x) => x !== m.id) : [...p.personnel, m.id] })}>{m.name}</button>
+              <button key={m.id} type="button" aria-pressed={on} data-testid={`person-${m.name}`} className={`btn sm ${on ? "acc" : "ghost"}`}
+                onClick={() => { const next = on ? people.filter((x) => x !== m.id) : [...people, m.id]; setCrew(next); patch({ personnel: next }); }}>{m.name}</button>
             );
           })}
         </div>
         {config && <span className="s">Filled in from {config.name}. Tap to change.</span>}
         <span className="lbl">Who&apos;s handling it</span>
-        <select className="select" value={p.assigneeId ?? ""} data-testid="assignee" disabled={busy} onChange={(e) => patch({ assigneeId: e.target.value || null })}>
+        <select className="select" value={p.assigneeId ?? ""} data-testid="assignee" onChange={(e) => patch({ assigneeId: e.target.value || null })}>
           <option value="">No one</option>
           {users.filter((u) => u.role === "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
       </div>
 
-      <form className="card" data-testid="next-step" onSubmit={(e) => { e.preventDefault(); patch({ nextStep: stepVal.text && stepVal.due ? stepVal : null }).then(() => setStep(null)); }}>
+      <div className="card" data-testid="next-step">
         <span className="lbl">Next step</span>
-        <input className="input" placeholder="e.g. Follow up" value={stepVal.text} onChange={(e) => setStep({ ...stepVal, text: e.target.value })} data-testid="next-text" />
-        <input className="input" type="date" value={stepVal.due} onChange={(e) => setStep({ ...stepVal, due: e.target.value })} data-testid="next-due" />
-        <div className="flex gap-2">
-          <button className="btn sm acc" disabled={busy} data-testid="next-save">Save</button>
-          {p.nextStep && <button type="button" className="btn sm ghost" onClick={() => patch({ nextStep: null }).then(() => setStep(null))}>Clear</button>}
+        <input className="input" placeholder="e.g. Follow up" value={stepVal.text} onChange={(e) => editStep({ ...stepVal, text: e.target.value })} onBlur={() => void as.flush()} data-testid="next-text" />
+        <input className="input" type="date" value={stepVal.due} onChange={(e) => editStep({ ...stepVal, due: e.target.value })} onBlur={() => void as.flush()} data-testid="next-due" />
+        <div className="flex items-center gap-2">
+          <SaveStatus {...as.statusProps} />
+          {p.nextStep && <button type="button" className="btn sm ghost" onClick={() => { setStep({ text: "", due: "" }); patch({ nextStep: null }); }}>Clear</button>}
         </div>
-      </form>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button className="btn ghost" onClick={() => setEmailOpen(!emailOpen)} data-testid="email-toggle">Email</button>
@@ -129,14 +164,24 @@ function PitchPage() {
         {timeline.length === 0 && <span className="s">Nothing yet.</span>}
         {timeline.map((t) => <TimelineRow key={t.kind + t.id} t={t} />)}
       </div>
-      <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (await call("pitches.comment", { id, body: comment })) setComment(""); }}>
-        <input className="input" placeholder="Write a comment…" value={comment} onChange={(e) => setComment(e.target.value)} data-testid="comment-input" />
-        <button className="btn acc" disabled={busy || !comment.trim()} data-testid="comment-send">Post</button>
-      </form>
-      <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (await call("pitches.log", { id, type: "call", text: note })) setNote(""); }}>
-        <input className="input" placeholder="Log a call (what was said)…" value={note} onChange={(e) => setNote(e.target.value)} data-testid="call-input" />
-        <button className="btn ghost" disabled={busy || !note.trim()} data-testid="call-send">Log call</button>
-      </form>
+      {commentDraft.ready && (
+        <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void post(); }}>
+          <div className="flex gap-2">
+            <input className="input" placeholder="Write a comment…" value={commentDraft.value.text} onChange={(e) => commentDraft.setValue({ text: e.target.value })} data-testid="comment-input" />
+            <button className="btn acc" disabled={busy || !commentDraft.value.text.trim()} data-testid="comment-send">Post</button>
+          </div>
+          <DraftNote restoredAt={commentDraft.restoredAt} status={commentDraft.status} onStartOver={() => void commentDraft.clear({ reset: true })} />
+        </form>
+      )}
+      {callDraft.ready && (
+        <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void logCall(); }}>
+          <div className="flex gap-2">
+            <input className="input" placeholder="Log a call (what was said)…" value={callDraft.value.text} onChange={(e) => callDraft.setValue({ text: e.target.value })} data-testid="call-input" />
+            <button className="btn ghost" disabled={busy || !callDraft.value.text.trim()} data-testid="call-send">Log call</button>
+          </div>
+          <DraftNote restoredAt={callDraft.restoredAt} status={callDraft.status} onStartOver={() => void callDraft.clear({ reset: true })} />
+        </form>
+      )}
       <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); }}>Remove from Pitch List</button>
     </div>
   );

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, CopyButton, EntityForm, contactForm, hrefFor, toPatch, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, CopyButton, EntityForm, contactForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
 import type { Contact } from "@/schema";
 
 export default function Page() { return <AdminOnly><ContactPage /></AdminOnly>; }
@@ -35,10 +35,10 @@ function ContactPage() {
         {c.instagram && <a className="underline" href={`https://instagram.com/${c.instagram}`} target="_blank" rel="noreferrer">@{c.instagram}</a>}
         {c.notes && <span className="s">{c.notes}</span>}
       </div>
-      <button className="btn ghost justify-self-start" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Close" : "Edit"}</button>
+      <button className="btn ghost justify-self-start" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
       {edit && (
-        <EntityForm testid="contact-edit" fields={contactForm.fields} initial={contactForm.initial(c)} build={contactForm.build} submitLabel="Save"
-          onSubmit={async (d) => { const r = await call("contacts.update", { id, patch: toPatch(d) }); if (r) setEdit(false); }} />
+        <EntityForm testid="contact-edit" fields={contactForm.fields} initial={contactForm.initial(c)} build={contactForm.build}
+          autosave={{ command: "contacts.update", id, rev: c.rev }} />
       )}
       <span className="lbl">Works with</span>
       {at.length === 0 ? <span className="s">Not linked to anything yet.</span> : at.map((a) => (

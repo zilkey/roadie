@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
+import { useHasDraft } from "@/lib/drafts";
 import {
-  EntityForm, FlagButton, Seg, StatusChip, contactForm, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+  EntityForm, FlagButton, Seg, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems } from "@/lib/booking";
 import type { User } from "@/schema";
@@ -23,7 +24,10 @@ function Booking() {
   const { call, error } = useCommand();
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
-  const [add, setAdd] = useState<Add>(null);
+  // An unfinished "new X" opens its form by itself (Home's Unfinished card links here).
+  const drafts = { venue: useHasDraft("venue", "new"), promoter: useHasDraft("promoter", "new"), festival: useHasDraft("festival", "new"), contact: useHasDraft("contact", "new") };
+  const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
+  const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival", "contact"] as const).find((k) => drafts[k]) ?? null;
 
   const rows = useMemo(() => {
     const items = searchItems(buildSearchItems(b), q);
@@ -54,11 +58,11 @@ function Booking() {
   const userName = (id?: string) => users.rows?.find((u) => u.id === id)?.name;
   const pitchesFiltered = q.trim() ? b.pitches.filter((p) => p.target.name.toLowerCase().includes(q.toLowerCase())) : b.pitches;
 
-  async function create(kind: Exclude<Add, null>, data: Record<string, unknown>) {
+  async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
     const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", contact: "contacts.create" }[kind];
-    const r = await call<{ id: string }>(cmd, data);
+    const r = await call<{ id: string }>(cmd, data, meta);
     if (r) router.push(hrefFor(kind, r.id));
-    return false;
+    return !!r;
   }
   const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, contact: contactForm };
 
@@ -105,13 +109,14 @@ function Booking() {
 
       <div className="flex flex-wrap gap-2">
         {(["venue", "promoter", "festival", "contact"] as const).map((k) => (
-          <button key={k} className="btn ghost sm" data-testid={`add-${k}`} onClick={() => setAdd(add === k ? null : k)}>+ Add {k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}</button>
+          <button key={k} className="btn ghost sm" data-testid={`add-${k}`} onClick={() => setAdd(add === k ? "none" : k)}>+ Add {k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}</button>
         ))}
         <Link href="/booking/templates" className="btn ghost sm" data-testid="templates-link">Email templates</Link>
       </div>
       {add && (
         <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
-          submitLabel={`Add ${add}`} onSubmit={(d) => create(add, d)} onCancel={() => setAdd(null)} />
+          submitLabel={`Add ${add}`} onSubmit={(d, meta) => create(add, d, meta)} onCancel={() => setAdd("none")}
+          draft={{ kind: add, contextKey: "new", title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
       )}
     </div>
   );

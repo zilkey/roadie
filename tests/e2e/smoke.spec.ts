@@ -29,12 +29,25 @@ test("admin adds a musician, a sub, and a user by email", async ({ page }) => {
   await page.getByTestId("musician-name").fill("Riley Sub");
   await page.getByTestId("musician-add").click();
   await expect(page.getByTestId("musician-Riley Sub")).toContainText("no login");
+  // an existing musician autosaves
+  await page.getByTestId("musician-Riley Sub").getByTestId("musician-edit").click();
+  await page.getByTestId("musician-edit-phone").fill("303-555-0100");
+  await expect(page.getByTestId("musician-Riley Sub").getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("musician-Riley Sub")).toContainText("303-555-0100");
   await page.goto("/admin/users");
   const email = `newbie${Date.now()}@example.com`;
   await page.getByTestId("user-email").fill(email);
   await page.getByTestId("user-name").fill("New Bie");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("user-email")).toHaveValue(email); // the add form is a draft
   await page.getByTestId("user-add").click();
   await expect(page.getByTestId(`user-${email}`)).toContainText("member");
+  // role changes save on the spot, with status
+  await page.getByTestId(`user-${email}`).getByLabel("Role").selectOption("admin");
+  await expect(page.getByTestId(`user-${email}`).getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId(`user-${email}`)).toContainText("admin");
   // duplicate invite is refused with a readable error
   await page.getByTestId("user-email").fill(email);
   await page.getByTestId("user-name").fill("Again");
@@ -46,9 +59,21 @@ test("admin edits artist configurations", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto("/admin/artist");
   await expect(page.getByTestId("config-trio")).toBeVisible();
+  await expect(page.getByTestId("artist-save")).toHaveCount(0); // autosave: no Save button
+  await page.getByTestId("artist-name").fill("Ingrid Avison Band Test");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("artist-name")).toHaveValue("Ingrid Avison Band Test");
   await page.getByTestId("artist-name").fill("Ingrid Avison Band");
-  await page.getByTestId("artist-save").click();
-  await expect(page.getByTestId("artist-saved")).toBeVisible();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  // a new configuration is a draft until Add
+  await page.getByTestId("add-config").click();
+  await page.getByTestId("new-config-name").fill("Quartet");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("new-config-name")).toHaveValue("Quartet");
+  await page.getByTestId("new-config-add").click();
+  await expect(page.getByTestId("config-quartet")).toBeVisible();
 });
 
 test("member sees 4 tabs, 'My money', and cannot open /booking or admin pages", async ({ page }) => {

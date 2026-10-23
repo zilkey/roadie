@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth, useProfile } from "@/lib/auth";
+import { Roadie } from "@/components/roadie/Roadie";
 
 const I = {
   home: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
@@ -40,6 +41,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh md:flex">
+      {profile.role === "admin" && <Roadie />}
       <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-line bg-panel p-4 md:flex" data-testid="sidebar">
         <div className="font-display mb-3 text-xl font-extrabold">Band Tracker</div>
         {items.map((n) => (

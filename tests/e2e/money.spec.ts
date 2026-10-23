@@ -137,3 +137,39 @@ test("members cannot open the stats page", async ({ browser }) => {
   await expect(david.page).toHaveURL(/\/home$/);
   await david.close();
 });
+
+test("drafts: a half-entered expense and ledger entry survive a reload and clear with Start over", async ({ page, browser }) => {
+  // a member's expense
+  const david = await as(browser, "david");
+  const p = david.page;
+  await p.getByTestId("tab-money").click();
+  await p.getByTestId("add-expense-link").click();
+  await p.getByTestId("expense-what").fill("Half typed cables");
+  await p.getByTestId("expense-amount").fill("12.50");
+  await expect(p.getByTestId("draft-status")).toHaveText("Draft saved");
+  await p.reload();
+  await expect(p.getByTestId("expense-what")).toHaveValue("Half typed cables");
+  await expect(p.getByTestId("expense-amount")).toHaveValue("12.50");
+  await expect(p.getByTestId("draft-restored")).toBeVisible();
+  await p.goto("/home");
+  await expect(p.getByTestId("unfinished")).toContainText("New expense · Half typed cables");
+  await p.goBack();
+  await p.getByTestId("draft-start-over").click();
+  await expect(p.getByTestId("expense-what")).toHaveValue("");
+  await expect(p.getByTestId("draft-restored")).toHaveCount(0);
+  await david.close();
+
+  // an admin's ledger entry
+  await signInAs(page, "ingrid");
+  await page.getByTestId("tab-money").click();
+  await page.getByTestId("money-tab-ledger").click();
+  await page.getByTestId("rec-amount").fill("77");
+  await page.getByTestId("rec-memo").fill("Half typed entry");
+  await expect(page.getByTestId("record-form").getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await page.getByTestId("money-tab-ledger").click();
+  await expect(page.getByTestId("rec-amount")).toHaveValue("77");
+  await expect(page.getByTestId("rec-memo")).toHaveValue("Half typed entry");
+  await page.getByTestId("draft-start-over").click();
+  await expect(page.getByTestId("rec-amount")).toHaveValue("");
+});

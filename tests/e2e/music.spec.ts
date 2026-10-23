@@ -218,3 +218,102 @@ test("log a rehearsal, tick the songs run, attach the recording from Drive", asy
   await page.getByTestId("songs-list").getByText("Low Light").first().click();
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 20");
 });
+
+test("a new song is a draft; an existing song autosaves with Undo", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await newSong(page, "Draft Song");
+  await page.getByTestId("song-key").fill("A");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("song-title")).toHaveValue("Draft Song");
+  await expect(page.getByTestId("song-key")).toHaveValue("A");
+  await expect(page.getByTestId("draft-restored")).toBeVisible();
+  await page.goto("/home");
+  await expect(page.getByTestId("unfinished")).toContainText("New song · Draft Song");
+  await page.goBack();
+  await page.getByTestId("save-song").click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await page.goto("/songs/new");
+  await expect(page.getByTestId("song-title")).toHaveValue(""); // creating cleared the draft
+
+  await page.goBack();
+  await page.getByTestId("song-edit").click();
+  await expect(page.getByTestId("song-save")).toHaveCount(0);
+  await page.getByTestId("edit-key").fill("C#m");
+  await page.getByTestId("edit-length").fill("3:30");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("page-title")).toHaveText("Draft Song");
+  await page.getByTestId("song-edit").click();
+  await expect(page.getByTestId("edit-key")).toHaveValue("C#m");
+  await expect(page.getByTestId("edit-length")).toHaveValue("3:30");
+  await page.getByTestId("edit-length").fill("nope");
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "error");
+  await page.getByTestId("edit-length").fill("4:00");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("undo-button").last().click(); // saves by the same person within 2 minutes fold into one history entry
+  await expect(page.getByTestId("edit-length")).not.toHaveValue("4:00");
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("song-archive").click();
+  await expect(page).toHaveURL(/\/songs$/);
+});
+
+test("a new rehearsal is a draft; an existing one autosaves", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto("/songs/rehearsals/new");
+  await page.getByTestId("reh-date").fill("2027-01-05");
+  await page.getByTestId("reh-place").fill("Draft room");
+  await page.getByTestId("reh-who-Jeff").click();
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("reh-place")).toHaveValue("Draft room");
+  await expect(page.getByTestId("reh-who-Jeff")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("draft-restored")).toBeVisible();
+  await page.getByTestId("reh-save").click();
+  await expect(page).toHaveURL(/\/songs\/rehearsals\/[^/]+$/);
+
+  // existing: no Save button, fields save on their own
+  await expect(page.getByTestId("reh-save")).toHaveCount(0);
+  await page.getByTestId("reh-place").fill("Real room");
+  await page.getByTestId("reh-song-Low Light").check();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("reh-place")).toHaveValue("Real room");
+  await expect(page.getByTestId("reh-song-Low Light")).toBeChecked();
+  await page.getByTestId("reh-place").fill("Other room");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("undo-button").last().click(); // the form follows the record after an Undo
+  await expect(page.getByTestId("reh-place")).not.toHaveValue("Other room");
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("reh-archive").click();
+  await expect(page).toHaveURL(/\/songs$/);
+});
+
+test("a new setlist name is a draft; the name and the item list autosave, with Undo", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("tab-songs").click();
+  await page.getByTestId("songs-seg-setlists").click();
+  await page.getByTestId("new-setlist-name").fill("Draft set");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await page.getByTestId("songs-seg-setlists").click();
+  await expect(page.getByTestId("new-setlist-name")).toHaveValue("Draft set");
+  await page.getByTestId("new-setlist").click();
+  await expect(page.getByTestId("setlist-page")).toBeVisible();
+
+  await page.getByTestId("setlist-name").fill("Renamed set");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("page-title")).toHaveText("Renamed set");
+
+  await page.getByTestId("add-song-select").selectOption({ label: "Glass Coast · F#m" });
+  await page.getByTestId("add-song-item").click();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveText(["Glass Coast"]);
+  await expect(page.getByTestId("toast").filter({ hasText: "Saved items" })).toBeVisible();
+  await page.getByTestId("undo-button").last().click();
+  await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveCount(0);
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("setlist-archive").click();
+  await expect(page).toHaveURL(/\/songs$/);
+});

@@ -1,13 +1,17 @@
 "use client";
 import { fmtInstant } from "@/lib/timezone";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { formatCents, dollarsToCents } from "@/lib/money";
 import { fmtDur, fmtLong, type ChecklistItem } from "@/lib/shows";
 import { GearChecklist, nameOf, packedCount, type ShowRow } from "./common";
+import { PanelStatus, useInstantSave } from "./saved";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { useAutosave } from "@/lib/autosave";
+import { useDraft } from "@/lib/drafts";
 import type { Contact, Musician, Setlist, ShowDeal } from "@/schema";
 
 const Sec = ({ title, children, testid }: { title: React.ReactNode; children: React.ReactNode; testid?: string }) => (
@@ -17,21 +21,30 @@ const Sec = ({ title, children, testid }: { title: React.ReactNode; children: Re
 // ---------- checklist ----------
 
 export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; musicians: Row<Musician>[]; editable: boolean }) {
-  const { call, error, busy } = useCommand();
-  const [adding, setAdding] = useState("");
+  const inst = useInstantSave();
+  const busy = inst.status === "saving";
+  // The "add an item" box is a draft (kept on this device and the server until the item is added).
+  const add = useDraft("checklistItem", show.id, { label: "" }, { title: (v) => `New checklist item · ${v.label || show.venue.name}` });
   const list = show.checklist as ChecklistItem[];
-  const save = (next: unknown[]) => call("shows.setChecklist", { id: show.id, checklist: next });
+  const save = (next: unknown[]) => inst.save("shows.setChecklist", { id: show.id, checklist: next }, "checklist");
   const patch = (id: string, p: Partial<ChecklistItem>) => save(list.map((c) => (c.id === id ? { ...c, ...p } : c)));
   const done = list.filter((c) => c.done).length;
+  async function addItem(e: React.FormEvent) {
+    e.preventDefault();
+    const label = add.value.label.trim();
+    if (!label) return;
+    await add.settle();
+    if (await save([...list, { label, done: false }])) await add.clear({ reset: true });
+  }
   return (
-    <Sec title={`Checklist · ${done} of ${list.length}`} testid="checklist">
+    <Sec title={<>{`Checklist · ${done} of ${list.length}`} <PanelStatus status={inst.status} error={inst.error} /></>} testid="checklist">
       {list.length === 0 && <span className="s">Nothing on the list.</span>}
       {list.map((c) => (
         <div key={c.id} className="grid gap-1 rounded-lg border border-line p-2" data-testid={`check-row-${c.id}`}>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={c.done} disabled={!editable || busy} data-testid={`check-${c.id}`} onChange={(e) => patch(c.id, { done: e.target.checked })} />
             {editable
-              ? <input className="input" defaultValue={c.label} data-testid={`check-label-${c.id}`} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.label) patch(c.id, { label: v }); }} />
+              ? <input className="input" key={c.label} defaultValue={c.label} data-testid={`check-label-${c.id}`} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.label) patch(c.id, { label: v }); }} />
               : <span className={c.done ? "line-through opacity-60" : ""}>{c.label}</span>}
           </label>
           {editable ? (
@@ -47,12 +60,14 @@ export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; m
         </div>
       ))}
       {editable && (
-        <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (adding.trim() && (await save([...list, { label: adding.trim(), done: false }]))) setAdding(""); }}>
-          <input className="input" placeholder="Add an item…" value={adding} onChange={(e) => setAdding(e.target.value)} data-testid="check-add" />
-          <button className="btn ghost" disabled={busy || !adding.trim()} data-testid="check-add-btn">Add</button>
-        </form>
+        <>
+          <form className="flex gap-2" onSubmit={addItem}>
+            <input className="input" placeholder="Add an item…" value={add.value.label} disabled={!add.ready} onChange={(e) => add.setValue({ label: e.target.value })} data-testid="check-add" />
+            <button className="btn ghost" disabled={busy || !add.ready || !add.value.label.trim()} data-testid="check-add-btn">Add</button>
+          </form>
+          <DraftNote restoredAt={add.restoredAt} status={add.status} onStartOver={() => void add.clear({ reset: true })} />
+        </>
       )}
-      <ErrorBox error={error} />
     </Sec>
   );
 }
@@ -60,18 +75,26 @@ export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; m
 // ---------- gear ----------
 
 export function GearPanel({ show, musicians, editable }: { show: ShowRow; musicians: Row<Musician>[]; editable: boolean }) {
-  const { call, error, busy } = useCommand();
-  const [label, setLabel] = useState("");
-  const [owner, setOwner] = useState("");
-  const pack = (itemId: string, packed: boolean) => call("shows.packGear", { id: show.id, itemId, packed });
-  const save = (gear: unknown[]) => call("shows.setGear", { id: show.id, gear });
+  const { call, error: callError, busy: callBusy } = useCommand();
+  const inst = useInstantSave();
+  const busy = callBusy || inst.status === "saving";
+  const add = useDraft("gearItem", show.id, { label: "", owner: "" }, { title: (v) => `New gear · ${v.label || show.venue.name}` });
+  const pack = (itemId: string, packed: boolean) => inst.save("shows.packGear", { id: show.id, itemId, packed }, "gear");
+  const save = (gear: unknown[]) => inst.save("shows.setGear", { id: show.id, gear }, "gear");
+  async function addGear(e: React.FormEvent) {
+    e.preventDefault();
+    const { label, owner } = add.value;
+    if (!label.trim()) return;
+    await add.settle();
+    if (await save([...show.gear, { label: label.trim(), ...(owner ? { musicianId: owner } : {}), packed: false }])) await add.clear({ reset: true });
+  }
   return (
-    <Sec title={`Gear · ${packedCount(show)}`} testid="gear">
+    <Sec title={<>{`Gear · ${packedCount(show)}`} <PanelStatus status={inst.status} error={inst.error} /></>} testid="gear">
       {!editable && <GearChecklist show={show} musicians={musicians} onPack={pack} />}
       {editable && show.gear.map((g) => (
         <div key={g.id} className="flex flex-wrap items-center gap-2" data-testid={`gear-row-${g.id}`}>
           <input type="checkbox" checked={g.packed} data-testid={`gear-${g.id}`} onChange={(e) => pack(g.id, e.target.checked)} aria-label={`${g.label} packed`} />
-          <input className="input !w-auto min-w-0 flex-1" defaultValue={g.label} data-testid={`gear-label-${g.id}`}
+          <input className="input !w-auto min-w-0 flex-1" key={g.label} defaultValue={g.label} data-testid={`gear-label-${g.id}`}
             onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== g.label) save(show.gear.map((x) => (x.id === g.id ? { ...x, label: v } : x))); }} />
           <select className="select !w-auto" value={g.musicianId ?? ""} data-testid={`gear-owner-${g.id}`}
             onChange={(e) => save(show.gear.map((x) => { if (x.id !== g.id) return x; const { musicianId: _m, ...rest } = x; void _m; return e.target.value ? { ...rest, musicianId: e.target.value } : rest; }))}>
@@ -84,21 +107,22 @@ export function GearPanel({ show, musicians, editable }: { show: ShowRow; musici
       {show.gear.length === 0 && editable && <span className="s">No gear yet. Pick &ldquo;Billed as&rdquo; or add some.</span>}
       {editable && (
         <>
-          <form className="flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); if (label.trim() && (await save([...show.gear, { label: label.trim(), ...(owner ? { musicianId: owner } : {}), packed: false }]))) { setLabel(""); setOwner(""); } }}>
-            <input className="input !w-auto min-w-0 flex-1" placeholder="Add gear…" value={label} onChange={(e) => setLabel(e.target.value)} data-testid="gear-add" />
-            <select className="select !w-auto" value={owner} onChange={(e) => setOwner(e.target.value)}>
+          <form className="flex flex-wrap gap-2" onSubmit={addGear}>
+            <input className="input !w-auto min-w-0 flex-1" placeholder="Add gear…" value={add.value.label} disabled={!add.ready} onChange={(e) => add.setValue({ ...add.value, label: e.target.value })} data-testid="gear-add" />
+            <select className="select !w-auto" value={add.value.owner} disabled={!add.ready} onChange={(e) => add.setValue({ ...add.value, owner: e.target.value })} data-testid="gear-add-owner">
               <option value="">Who brings it</option>
               {musicians.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
-            <button className="btn ghost" disabled={busy || !label.trim()} data-testid="gear-add-btn">Add</button>
+            <button className="btn ghost" disabled={busy || !add.ready || !add.value.label.trim()} data-testid="gear-add-btn">Add</button>
           </form>
+          <DraftNote restoredAt={add.restoredAt} status={add.status} onStartOver={() => void add.clear({ reset: true })} />
           <div className="flex items-center gap-2">
             <button className="btn ghost sm" disabled={busy} onClick={() => confirm("Rebuild the gear list from Billed as and sound? Your edits to the list are replaced.") && call("shows.update", { id: show.id, patch: { rebuildGear: true } })} data-testid="gear-rebuild">Rebuild from billed as + sound</button>
             <span className="s">Built from {show.billedAs ? "the configuration" : "sound only"} and who provides sound.</span>
           </div>
         </>
       )}
-      <ErrorBox error={error} />
+      <ErrorBox error={callError} />
     </Sec>
   );
 }
@@ -129,27 +153,35 @@ export function SetlistPanel({ show, setlists, editable }: { show: ShowRow; setl
 }
 
 export function DocsPanel({ show, editable }: { show: ShowRow; editable: boolean }) {
-  const { call, error, busy } = useCommand();
-  const [title, setTitle] = useState("");
-  const [url, setUrl] = useState("");
+  const inst = useInstantSave();
+  const busy = inst.status === "saving";
+  const add = useDraft("showDoc", show.id, { title: "", url: "" }, { title: (v) => `New doc · ${v.title || show.venue.name}` });
+  const saveDocs = (docs: unknown[]) => inst.save("shows.update", { id: show.id, patch: { docs } }, "docs");
+  async function addDoc(e: React.FormEvent) {
+    e.preventDefault();
+    await add.settle();
+    if (await saveDocs([...show.docs, { title: add.value.title.trim(), driveFileId: "", url: add.value.url.trim() }])) await add.clear({ reset: true });
+  }
   if (!show.docs.length && !editable) return null;
   return (
-    <Sec title="Docs" testid="docs">
+    <Sec title={<>Docs <PanelStatus status={inst.status} error={inst.error} /></>} testid="docs">
       {show.docs.map((d, i) => (
         <div key={d.url + i} className="flex items-center justify-between gap-2">
           <a href={d.url} target="_blank" rel="noreferrer" className="font-semibold underline">{d.title}</a>
-          {editable && <button className="btn ghost sm" onClick={() => call("shows.update", { id: show.id, patch: { docs: show.docs.filter((_, j) => j !== i) } })}>Remove</button>}
+          {editable && <button className="btn ghost sm" disabled={busy} onClick={() => saveDocs(show.docs.filter((_, j) => j !== i))}>Remove</button>}
         </div>
       ))}
       {show.docs.length === 0 && <span className="s">Stage plot, poster, etc.</span>}
       {editable && (
-        <form className="flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); if (await call("shows.update", { id: show.id, patch: { docs: [...show.docs, { title: title.trim(), driveFileId: "", url: url.trim() }] } })) { setTitle(""); setUrl(""); } }}>
-          <input className="input !w-auto min-w-0 flex-1" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="doc-title" />
-          <input className="input !w-auto min-w-0 flex-1" placeholder="Link" type="url" value={url} onChange={(e) => setUrl(e.target.value)} data-testid="doc-url" />
-          <button className="btn ghost" disabled={busy || !title.trim() || !url.trim()} data-testid="doc-add">Add</button>
-        </form>
+        <>
+          <form className="flex flex-wrap gap-2" onSubmit={addDoc}>
+            <input className="input !w-auto min-w-0 flex-1" placeholder="Title" value={add.value.title} disabled={!add.ready} onChange={(e) => add.setValue({ ...add.value, title: e.target.value })} data-testid="doc-title" />
+            <input className="input !w-auto min-w-0 flex-1" placeholder="Link" type="url" value={add.value.url} disabled={!add.ready} onChange={(e) => add.setValue({ ...add.value, url: e.target.value })} data-testid="doc-url" />
+            <button className="btn ghost" disabled={busy || !add.ready || !add.value.title.trim() || !add.value.url.trim()} data-testid="doc-add">Add</button>
+          </form>
+          <DraftNote restoredAt={add.restoredAt} status={add.status} onStartOver={() => void add.clear({ reset: true })} />
+        </>
       )}
-      <ErrorBox error={error} />
     </Sec>
   );
 }
@@ -210,20 +242,27 @@ export function dealSummary(d: Pick<ShowDeal, "deal" | "guarantee" | "doorSplitP
 export function DealPanel({ show }: { show: ShowRow }) {
   const deal = useDoc<ShowDeal>("showDeals", show.id).doc;
   const contacts = useCollection<Contact>("contacts").rows ?? [];
-  const { call, error, busy } = useCommand();
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState<{ deal: ShowDeal["deal"]; guarantee: string; pct: string; ticket: string } | null>(null);
+  // Existing record = autosave: each change is a patch through showDeals.update, with status and Undo.
+  const as = useAutosave({ command: "showDeals.update", id: show.id, rev: deal?.rev, onUseTheirs: () => setF(null) });
+  const serverKey = JSON.stringify([deal?.deal, deal?.guarantee, deal?.doorSplitPct, deal?.ticketPrice]);
+  // Keep the form in step with the record when it changes under us (Undo, someone else), unless we have unsaved edits.
+  useEffect(() => { if (!as.isBusy()) setF(null); }, [serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!deal) return null;
   const form = f ?? { deal: deal.deal, guarantee: deal.guarantee != null ? String(deal.guarantee / 100) : "", pct: deal.doorSplitPct != null ? String(deal.doorSplitPct) : "", ticket: deal.ticketPrice != null ? String(deal.ticketPrice / 100) : "" };
   const people = contacts.filter((c) => deal.contactIds.includes(c.id));
   const rating = deal.rating;
-  async function save() {
-    const ok = await call("showDeals.update", { id: show.id, patch: {
-      deal: form.deal, guarantee: form.deal === "guarantee" && form.guarantee ? dollarsToCents(form.guarantee) : null,
-      doorSplitPct: form.deal === "doorSplit" && form.pct ? Number(form.pct) : null, ticketPrice: form.deal === "doorSplit" && form.ticket ? dollarsToCents(form.ticket) : null,
-    } });
-    if (ok) { setEdit(false); setF(null); }
-  }
+  type DealForm = typeof form;
+  const dealPatch = (a: DealForm, b: DealForm) => {
+    const pa = valuesOf(a), pb = valuesOf(b);
+    return Object.fromEntries(Object.entries(pb).filter(([k, v]) => v !== pa[k as keyof typeof pa]));
+  };
+  const valuesOf = (x: DealForm) => ({
+    deal: x.deal, guarantee: x.deal === "guarantee" && x.guarantee ? dollarsToCents(x.guarantee) : null,
+    doorSplitPct: x.deal === "doorSplit" && x.pct ? Number(x.pct) : null, ticketPrice: x.deal === "doorSplit" && x.ticket ? dollarsToCents(x.ticket) : null,
+  });
+  const change = (next: DealForm) => { as.patch(dealPatch(form, next)); setF(next); };
   return (
     <div className="card hi" data-testid="deal-panel">
       <span className="s font-semibold">Only admins see this</span>
@@ -242,23 +281,22 @@ export function DealPanel({ show }: { show: ShowRow }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <button className="btn ghost sm" onClick={() => setEdit(!edit)} data-testid="deal-edit">{edit ? "Close" : "Edit deal"}</button>
+        <button className="btn ghost sm" onClick={() => { void as.flush(); setF(null); setEdit(!edit); }} data-testid="deal-edit">{edit ? "Done" : "Edit deal"}</button>
+        <PanelStatus {...as.statusProps} />
         <Link href={`/shows/${show.id}/after`} className="btn sm" data-testid="after-show">After the show</Link>
       </div>
       {edit && (
         <div className="grid gap-2" data-testid="deal-form">
-          <select className="select" value={form.deal} onChange={(e) => setF({ ...form, deal: e.target.value as ShowDeal["deal"] })} data-testid="deal-edit-type">
+          <select className="select" value={form.deal} onChange={(e) => change({ ...form, deal: e.target.value as ShowDeal["deal"] })} onBlur={() => void as.flush()} data-testid="deal-edit-type">
             {Object.entries(DEAL_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          {form.deal === "guarantee" && <input className="input" type="number" placeholder="Guarantee ($)" value={form.guarantee} onChange={(e) => setF({ ...form, guarantee: e.target.value })} data-testid="deal-edit-guarantee" />}
+          {form.deal === "guarantee" && <input className="input" type="number" placeholder="Guarantee ($)" value={form.guarantee} onChange={(e) => change({ ...form, guarantee: e.target.value })} onBlur={() => void as.flush()} data-testid="deal-edit-guarantee" />}
           {form.deal === "doorSplit" && <>
-            <input className="input" type="number" placeholder="Our share (%)" value={form.pct} onChange={(e) => setF({ ...form, pct: e.target.value })} />
-            <input className="input" type="number" placeholder="Ticket price ($)" value={form.ticket} onChange={(e) => setF({ ...form, ticket: e.target.value })} />
+            <input className="input" type="number" placeholder="Our share (%)" value={form.pct} onChange={(e) => change({ ...form, pct: e.target.value })} onBlur={() => void as.flush()} data-testid="deal-edit-pct" />
+            <input className="input" type="number" placeholder="Ticket price ($)" value={form.ticket} onChange={(e) => change({ ...form, ticket: e.target.value })} onBlur={() => void as.flush()} data-testid="deal-edit-ticket" />
           </>}
-          <button className="btn acc" disabled={busy} onClick={save} data-testid="deal-save">Save deal</button>
         </div>
       )}
-      <ErrorBox error={error} />
     </div>
   );
 }

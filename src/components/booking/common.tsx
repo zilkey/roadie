@@ -1,10 +1,15 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox } from "@/components/ui";
+import { SaveStatus } from "@/components/SaveStatus";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { useAutosave } from "@/lib/autosave";
+import { useDraft, useHasDraft } from "@/lib/drafts";
+import { newMutationId, type CommandMeta } from "@/lib/commands";
 import type { Venue, Promoter, Festival, Edition, Contact, Pitch } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
@@ -95,40 +100,128 @@ export interface Field {
 }
 export type Values = Record<string, string>;
 
-/** `build` turns form values into command input; undefined fields are sent as null on edit (cleared). */
-export function EntityForm({ fields, initial, build, submitLabel, onSubmit, testid, onCancel }: {
-  fields: Field[]; initial: Values; build(v: Values): Record<string, unknown>; submitLabel: string;
-  onSubmit(data: Record<string, unknown>): Promise<boolean | void>; testid: string; onCancel?(): void; // onSubmit resolves true to reset the form (create forms)
-}) {
+/** The field grid shared by every EntityForm mode. */
+function FormFields({ fields, v, set, testid, onBlur }: { fields: Field[]; v: Values; set(k: string, val: string): void; testid: string; onBlur?(): void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2" onBlur={onBlur}>
+      {fields.map((f) => (
+        <label key={f.key} className={`grid gap-1 ${f.half ? "" : "col-span-2"}`}>
+          <span className="lbl">{f.label}{f.required ? " *" : ""}</span>
+          {f.type === "textarea" ? (
+            <textarea className="input" rows={3} value={v[f.key] ?? ""} placeholder={f.placeholder} data-testid={`${testid}-${f.key}`} onChange={(e) => set(f.key, e.target.value)} />
+          ) : f.type === "select" ? (
+            <select className="select" value={v[f.key] ?? ""} data-testid={`${testid}-${f.key}`} onChange={(e) => set(f.key, e.target.value)}>
+              {f.options!.map(([val, l]) => <option key={val} value={val}>{l}</option>)}
+            </select>
+          ) : (
+            <input className="input" type={f.type ?? "text"} required={f.required} value={v[f.key] ?? ""} placeholder={f.placeholder}
+              data-testid={`${testid}-${f.key}`} onChange={(e) => set(f.key, e.target.value)} />
+          )}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** Sent with a create so a double tap creates once and the draft goes away with it. Pass it on: `call("x.create", data, meta)`. */
+export type SubmitMeta = CommandMeta;
+
+interface EntityFormProps {
+  fields: Field[]; initial: Values; build(v: Values): Record<string, unknown>; testid: string; onCancel?(): void;
+  /** Label of the explicit button (create forms and legacy edit forms). Not used with `autosave`. */
+  submitLabel?: string;
+  /** Resolves true to reset the form (create forms). `meta` has clientMutationId (+ clearDraft with `draft`): pass it to `call`. */
+  onSubmit?(data: Record<string, unknown>, meta: SubmitMeta): Promise<boolean | void>;
+  /** EXISTING record: no Save button; each field saves as a patch through `command` (a `<kind>.update`) on blur / after a pause. */
+  autosave?: { command: string; id: string; rev?: number };
+  /** NEW record: values are kept as a draft (device + server) and restored on any machine. The explicit create button stays. */
+  draft?: { kind: string; contextKey?: string; title?(v: Values): string; route?: string };
+}
+
+/**
+ * `build` turns form values into command input; undefined fields are sent as null on edit (cleared).
+ * Three modes: plain (legacy Save button), `autosave` (existing record), `draft` (new record).
+ */
+export function EntityForm(p: EntityFormProps) {
+  if (p.autosave) return <AutoEntityForm {...p} autosave={p.autosave} />;
+  if (p.draft) return <DraftEntityForm {...p} draft={p.draft} />;
+  return <PlainEntityForm {...p} />;
+}
+
+function SubmitRow({ busy, label, testid, onCancel }: { busy: boolean; label?: string; testid: string; onCancel?(): void }) {
+  return (
+    <div className="flex gap-2">
+      <button className="btn acc" disabled={busy} data-testid={`${testid}-submit`}>{label ?? "Save"}</button>
+      {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
+    </div>
+  );
+}
+
+function PlainEntityForm({ fields, initial, build, submitLabel, onSubmit, testid, onCancel }: EntityFormProps) {
   const [v, setV] = useState<Values>(initial);
   const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true);
-    try { if ((await onSubmit(build(v))) === true) setV(initial); } finally { setBusy(false); }
+    try { if ((await onSubmit?.(build(v), {})) === true) setV(initial); } finally { setBusy(false); }
   }
   return (
     <form onSubmit={submit} className="card" data-testid={testid}>
-      <div className="grid grid-cols-2 gap-2">
-        {fields.map((f) => (
-          <label key={f.key} className={`grid gap-1 ${f.half ? "" : "col-span-2"}`}>
-            <span className="lbl">{f.label}{f.required ? " *" : ""}</span>
-            {f.type === "textarea" ? (
-              <textarea className="input" rows={3} value={v[f.key] ?? ""} placeholder={f.placeholder} data-testid={`${testid}-${f.key}`} onChange={(e) => setV({ ...v, [f.key]: e.target.value })} />
-            ) : f.type === "select" ? (
-              <select className="select" value={v[f.key] ?? ""} data-testid={`${testid}-${f.key}`} onChange={(e) => setV({ ...v, [f.key]: e.target.value })}>
-                {f.options!.map(([val, l]) => <option key={val} value={val}>{l}</option>)}
-              </select>
-            ) : (
-              <input className="input" type={f.type ?? "text"} required={f.required} value={v[f.key] ?? ""} placeholder={f.placeholder}
-                data-testid={`${testid}-${f.key}`} onChange={(e) => setV({ ...v, [f.key]: e.target.value })} />
-            )}
-          </label>
-        ))}
-      </div>
-      <div className="flex gap-2">
-        <button className="btn acc" disabled={busy} data-testid={`${testid}-submit`}>{submitLabel}</button>
-        {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
-      </div>
+      <FormFields fields={fields} v={v} set={(k, val) => setV({ ...v, [k]: val })} testid={testid} />
+      <SubmitRow busy={busy} label={submitLabel} testid={testid} onCancel={onCancel} />
+    </form>
+  );
+}
+
+const jsonOf = (o: Record<string, unknown>) => JSON.stringify(o);
+/** Top-level keys whose built value differs between two form states (undefined = cleared = null). */
+function changedKeys(build: (v: Values) => Record<string, unknown>, a: Values, b: Values) {
+  const pa = toPatch(build(a)), pb = toPatch(build(b)), out: Record<string, unknown> = {};
+  for (const k of new Set([...Object.keys(pa), ...Object.keys(pb)])) if (jsonOf({ v: pa[k] ?? null }) !== jsonOf({ v: pb[k] ?? null })) out[k] = pb[k] ?? null;
+  return out;
+}
+
+function AutoEntityForm({ fields, initial, build, testid, autosave }: EntityFormProps & { autosave: NonNullable<EntityFormProps["autosave"]> }) {
+  const [v, setV] = useState<Values>(initial);
+  const queued = useRef<Values>(initial); // the form state the last queued patch brought the server to; edits are diffed against it
+  const as = useAutosave({ ...autosave, onUseTheirs: () => { setV(initial); queued.current = initial; } });
+  // Follow the live document (someone else's edit, an Undo) whenever nothing of ours is waiting to be saved.
+  const initialKey = JSON.stringify(initial);
+  useEffect(() => { if (!as.isBusy()) { setV(initial); queued.current = initial; } }, [initialKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  function set(k: string, val: string) {
+    const next = { ...v, [k]: val };
+    setV(next);
+    const missing = fields.find((f) => f.required && !(next[f.key] ?? "").trim());
+    if (missing) return as.hold(`${missing.label} is required`); // the server would refuse it; saved once it is filled in
+    as.patch(changedKeys(build, queued.current, next));
+    queued.current = next;
+  }
+  return (
+    <form className="card" data-testid={testid} onSubmit={(e) => e.preventDefault()}>
+      <FormFields fields={fields} v={v} set={set} testid={testid} onBlur={() => void as.flush()} />
+      <SaveStatus {...as.statusProps} />
+    </form>
+  );
+}
+
+function DraftEntityForm({ fields, initial, build, submitLabel, onSubmit, testid, onCancel, draft }: EntityFormProps & { draft: NonNullable<EntityFormProps["draft"]> }) {
+  const d = useDraft<Values>(draft.kind, draft.contextKey ?? "new", initial, { title: draft.title, route: draft.route });
+  const [busy, setBusy] = useState(false);
+  const mutationId = useRef(newMutationId());
+  if (!d.ready) return <div className="card s">Loading…</div>;
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setBusy(true);
+    try {
+      await d.settle();
+      if ((await onSubmit?.(build(d.value), { clientMutationId: mutationId.current, clearDraft: d.draftId })) === true) {
+        await d.clear({ reset: true }); mutationId.current = newMutationId();
+      }
+    } finally { setBusy(false); }
+  }
+  return (
+    <form onSubmit={submit} className="card" data-testid={testid}>
+      <FormFields fields={fields} v={d.value} set={(k, val) => d.setValue((x) => ({ ...x, [k]: val }))} testid={testid} />
+      <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
+      <SubmitRow busy={busy} label={submitLabel} testid={testid} onCancel={onCancel} />
     </form>
   );
 }
@@ -229,7 +322,9 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
   kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
 }) {
   const { call, error, busy } = useCommand();
-  const [adding, setAdding] = useState(false);
+  const hasDraft = useHasDraft("contact", `${kind}:${parentId}`);
+  const [explicit, setAdding] = useState<boolean | null>(null);
+  const adding = explicit ?? hasDraft; // an unfinished contact opens the form
   const mine = contactIds.map((id) => contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
   const others = contacts.filter((c) => !contactIds.includes(c.id)).sort((a, b) => a.name.localeCompare(b.name));
   return (
@@ -260,7 +355,8 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
       </div>
       {adding && (
         <EntityForm testid="contact-form" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build} submitLabel="Add contact"
-          onSubmit={async (d) => { const r = await call("contacts.create", { ...d, attachTo: { kind, id: parentId } }); if (r) setAdding(false); return !!r; }} />
+          draft={{ kind: "contact", contextKey: `${kind}:${parentId}`, title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }}
+          onSubmit={async (d, meta) => { const r = await call("contacts.create", { ...d, attachTo: { kind, id: parentId } }, meta); if (r) setAdding(false); return !!r; }} />
       )}
     </div>
   );

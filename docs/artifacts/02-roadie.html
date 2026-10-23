@@ -1,0 +1,688 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Roadie</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a spec page in the band-app family; wide desktop mockups with Roadie as the left column, then the architecture, tools and data */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1; --wire:#9AA1BC;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7; --warn:#B07A00; --warn-soft:#FBEFD2;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D; --wire:#5E668C;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; --warn-soft:#3B3117; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D; --wire:#5E668C;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544; --warn-soft:#3B3117; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1100px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 90px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(34px,6vw,54px);font-weight:800;line-height:.98}
+h2{font-size:28px;font-weight:800}
+h3{font-size:18px;font-weight:600}
+p{margin:0;max-width:70ch}
+code{font-family:var(--f-mono);font-size:12.5px;color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.lede{color:var(--muted);margin-top:12px;max-width:68ch;font-size:16px}
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin-top:20px;padding:10px 0;display:flex;gap:6px;flex-wrap:wrap}
+nav.toc a{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+nav.toc a:hover{border-color:var(--ink)}
+section{padding-top:46px;scroll-margin-top:60px;display:grid;gap:14px}
+.intro{color:var(--muted)}
+.rules{display:grid;gap:8px;margin:0;padding:0;list-style:none;max-width:78ch}
+.rules li{padding-left:18px;position:relative}
+.rules li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--accent)}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;overflow-x:auto}
+.diagram pre.mermaid{margin:0;min-width:720px;background:transparent}
+.tbl{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:720px}
+th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:8px 14px;border-top:1px solid var(--soft);vertical-align:top}
+td:first-child{font-family:var(--f-mono);font-size:12.5px;white-space:nowrap;font-weight:500}
+.chip{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.chip.b{background:var(--blue-soft);color:var(--blue)}
+.chip.p{background:var(--accent-soft);color:var(--accent)}
+.chip.g{background:var(--ok-soft);color:var(--ok)}
+.chip.w{background:var(--warn-soft);color:var(--warn)}
+
+/* mock screens */
+.mocks{display:grid;gap:26px}
+.mock{display:grid;gap:10px}
+.mock .cap h3{font-size:17px}
+.mock .cap p{font-size:14px;color:var(--muted)}
+.dwrap{overflow-x:auto}
+.desk{position:relative;min-width:1000px;max-width:1080px;height:500px;border:2px solid var(--wire);border-radius:14px;background:var(--panel);display:grid;grid-template-columns:300px 150px minmax(0,1fr);overflow:hidden;font-size:13px}
+.desk.member{grid-template-columns:170px minmax(0,1fr);min-width:760px}
+.desk.narrow{grid-template-columns:64px 150px minmax(0,1fr)}
+.side{border-right:1.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:3px}
+.side .brand{font-family:var(--f-display);font-weight:800;font-size:14px;line-height:1.1;margin:0 6px 10px}
+.side .nav{font-size:13px;font-weight:600;color:var(--muted);padding:7px 8px;border-radius:8px}
+.side .nav.on{background:var(--accent-soft);color:var(--accent)}
+.main{padding:16px 20px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.main.full{padding-right:20px}
+.ttl{font-family:var(--f-display);font-weight:800;font-size:22px}
+.crumb{font-size:12px;color:var(--muted)}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.fld{display:grid;gap:3px}
+.box{border:1.5px solid var(--line);border-radius:9px;padding:6px 9px}
+.box.hl{border-color:var(--blue);background:var(--blue-soft);animation:flash 2.4s ease-out 1}
+@keyframes flash{0%{box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 40%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+@media (prefers-reduced-motion:reduce){.box.hl{animation:none}}
+.by{font-size:11px;font-weight:600;color:var(--blue)}
+.row{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--soft)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mono{font-family:var(--f-mono);font-size:12px}
+.saved{font-size:11.5px;color:var(--ok);font-weight:600}
+.btn{border-radius:10px;padding:8px 12px;font-weight:700;font-size:13px;text-align:center;background:var(--ink);color:var(--panel)}
+.btn.acc{background:var(--accent)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+/* the assistant panel */
+.asst{background:color-mix(in srgb,var(--soft) 55%,var(--panel));border-right:2px solid var(--ink);display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.asst .m.a{background:var(--panel)}
+.strip{background:color-mix(in srgb,var(--soft) 55%,var(--panel));border-right:2px solid var(--ink);display:flex;flex-direction:column;align-items:center;gap:10px;padding:12px 6px;font-size:11px;font-weight:700;color:var(--muted);text-align:center}
+.strip .logo{width:34px;height:34px;border-radius:10px;background:var(--ink);color:var(--panel);display:grid;place-items:center;font-family:var(--f-display);font-size:16px}
+.strip .new{margin-top:auto;width:34px;height:34px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center}
+.asst-h{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1.5px solid var(--line);font-weight:700;font-size:13px}
+.asst-h .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.asst-h .x{margin-left:auto;color:var(--muted);font-weight:500;font-size:12px}
+.asst-b{flex:1;padding:10px;display:flex;flex-direction:column;gap:7px;overflow:hidden;justify-content:flex-end}
+.m{max-width:88%;padding:6px 10px;border-radius:12px;font-size:12.5px;line-height:1.4}
+.m.u{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:3px}
+.m.a{align-self:flex-start;background:var(--soft);border-bottom-left-radius:3px}
+.act{align-self:flex-start;display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--muted);padding:3px 8px;border:1px dashed var(--line);border-radius:8px}
+.act b{color:var(--ink);font-weight:600}
+.act .u{color:var(--blue);font-weight:700}
+.confirm{align-self:stretch;border:1.5px solid var(--accent);border-radius:12px;padding:9px;display:grid;gap:7px;font-size:12.5px}
+.confirm .g3 .btn{padding:6px 4px;font-size:12px}
+.asst-in{border-top:1.5px solid var(--line);padding:8px 10px;display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted)}
+.asst-in .inp{flex:1;border:1.5px solid var(--line);border-radius:999px;padding:6px 10px}
+.asst-in .mic{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:12px}
+.fab{position:absolute;right:16px;bottom:16px;height:44px;padding:0 16px;border-radius:999px;background:var(--ink);color:var(--panel);display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;box-shadow:0 8px 24px rgb(0 0 0 / .2)}
+/* phone */
+.phones{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:22px}
+.phone{position:relative;width:100%;max-width:290px;height:560px;margin:0 auto;border:2px solid var(--wire);border-radius:30px;background:var(--panel);overflow:hidden;padding:16px 12px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.phone .sheet{position:absolute;left:0;right:0;bottom:0;height:68%;border-top:1.5px solid var(--ink);border-radius:20px 20px 0 0;background:var(--panel);display:flex;flex-direction:column;box-shadow:0 -10px 30px rgb(0 0 0 / .14)}
+.phone .grab{width:40px;height:5px;border-radius:5px;background:var(--line);margin:7px auto 0}
+.phone .pill{position:absolute;left:12px;right:12px;bottom:58px;border-radius:999px;background:var(--ink);color:var(--panel);padding:8px 14px;font-size:12px;font-weight:600;display:flex;justify-content:space-between}
+.tabbar{margin-top:auto;border-top:1.5px solid var(--line);display:flex;justify-content:space-around;padding-top:8px;font-size:10.5px;font-weight:600;color:var(--muted)}
+.choice{border:1.5px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:4px}
+.choice.on{border-color:var(--accent);background:var(--accent-soft)}
+.choice b{font-size:16px;font-family:var(--f-display)}
+.choice span{font-size:12.5px;color:var(--muted)}
+.cmds{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:8px}
+.cmds div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;display:grid;gap:2px}
+.cmds span{font-size:13px;color:var(--muted)}
+.callout{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:14.5px;max-width:78ch}
+.vamp{display:flex;flex-wrap:wrap;gap:6px}
+.vamp span{font-size:13px;font-style:italic;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 11px}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+/* module switcher shared by every module page */
+.modnav{position:relative;margin:0 0 16px;z-index:20}
+.modnav summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body,system-ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.modnav summary::-webkit-details-marker{display:none}
+.modnav summary b{font-weight:800}
+.modnav summary .car{color:var(--muted);font-size:11px}
+.modnav[open] summary{border-color:var(--ink)}
+.modnav .menu{position:absolute;top:calc(100% + 6px);left:0;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgb(0 0 0 / .18);padding:6px;display:grid}
+.modnav .menu a{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none;font:500 14px/1.3 var(--f-body,system-ui)}
+.modnav .menu a:hover{background:var(--soft)}
+.modnav .menu a.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.modnav .menu a span{color:var(--muted);font-size:12px}
+.modnav .menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+/* post-show interview */
+.interview{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start;margin-bottom:8px}
+@media (max-width:760px){.interview{grid-template-columns:minmax(0,1fr)}}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:7px}
+.msg{max-width:85%;padding:7px 12px;border-radius:14px;font-size:14px;line-height:1.4}
+.msg.me{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:4px}
+.msg.ai{align-self:flex-start;background:var(--soft);border-bottom-left-radius:4px}
+.msg.sum{background:var(--ok-soft);max-width:100%}
+.msg.sum b{color:var(--ok)}
+.iv-side{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;gap:10px}
+.iv-side h4{font-family:var(--f-display);font-size:17px;margin:0}
+.iv-side .note{font-size:13px;color:var(--muted)}
+.ivq{margin:0;padding-left:22px;display:grid;gap:6px}
+.ivq li{font-size:14px}
+.ivq li span{display:block;font-size:12.5px;color:var(--muted)}
+
+</style>
+
+<div class="wrap">
+  <details class="modnav"><summary>Band App · <b>Roadie & MCP</b> <span class="car">▼ modules</span></summary><div class="menu"><a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy" class="">Vision & principles<span>1</span></a><a href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" class="on">Roadie & MCP<span>2</span></a><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" class="">Definition of done<span>3</span></a><a href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" class="">Account<span>4</span></a><a href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" class="">Booking<span>5</span></a><a href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" class="">Shows<span>6</span></a><a href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" class="">Money<span>7</span></a><a href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" class="">Set lists<span>8</span></a><a href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" class="">Touring<span>9</span></a><a href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" class="">Promotion<span>10</span></a><hr><a href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" class="">Business plan<span>11</span></a><a href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" class="">Later<span>12</span></a><hr><a href="https://claude.ai/code/artifact/553a7d8e-f2c2-40aa-9bb9-5ab7ce1a26e3">Original blueprint<span>archive</span></a></div></details>
+  <header>
+    <p class="eyebrow">Band App · spec · Oct 2026</p>
+    <h1 style="margin-top:8px">Roadie</h1>
+    <p class="lede">Roadie is the band app's built-in assistant: a full-height panel on the left of every desktop screen, always there for admins. It does what Claude does through the MCP server, but inside the app: it can take you to a page, fill in a form for you to check, and change records you watch update as it goes. It talks straight to the same command layer as every button.</p>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#ui">The window</a><a href="#screens">Screens</a><a href="#voice">Roadie's voice</a><a href="#mcp">MCP server</a><a href="#arch">Architecture</a><a href="#tools">Tools</a><a href="#scope">What Roadie won't do</a><a href="#gaps">When Roadie can't</a><a href="#safety">Safety</a><a href="#data">Data &amp; changes</a><a href="#cost">Model &amp; cost</a>
+  </nav>
+
+  <section id="ui">
+    <h2>The window</h2>
+    <ul class="rules">
+      <li><b>A panel on the left, always there for admins.</b> On desktop Roadie is a full-height column about 300px wide, to the left of the menu, on every screen. It can be narrowed to a slim strip but not closed. Members never see it; the server refuses them too.</li>
+      <li><b>It stays put.</b> The panel lives in the app's root layout, so moving to another page doesn't touch it or the conversation. After a reload it comes back the same width, on the same conversation.</li>
+      <li><b>It knows where you are.</b> Every message carries the page you're on, the record you're looking at, and any form that's open with what's typed so far. "Change load-in to 4:30" on a show page means this show.</li>
+      <li><b>It can move you.</b> "Show me the tour" opens the tour sheet. It picks from a list of named pages, never a raw URL, and says where it went.</li>
+      <li><b>You watch it work.</b> Changes go through the command layer to Firestore, and the open page is already listening. A field it changed flashes blue with "Roadie · just now", and the action shows in the chat with Undo.</li>
+      <li><b>Paste a screenshot.</b> Drop or paste an image into the chat: a hotel confirmation, a venue's email, a Venmo payment, a receipt. Roadie reads it and fills in the form or the expense for you to check. A receipt is saved to the band's Drive with the expense; other images are kept with the conversation and expire with it.</li>
+      <li><b>It fills forms for you to check.</b> On a new record it types into the form as a draft, marks each field it filled, and stops. You look it over and save. On existing records it just makes the change, which you can undo.</li>
+      <li><b>It asks before anything that leaves the app or moves money.</b> Sending email, paying people, deleting, and changes to more than a few records show a confirm card with Yes, Edit, and Cancel.</li>
+      <li><b>On a phone</b> there's no room for a column, so it's a bottom sheet over the page. When it's not open, a Roadie pill sits above the tabs for admins, always one tap away.</li>
+      <li><b>Talk to it; it writes back.</b> You can speak or type. The mic uses the phone keyboard's dictation, or Chrome and Safari's speech recognition on desktop where available. Roadie always answers in text and never talks out loud: green rooms are loud, people sleep in the van, and text is something you can glance at and scroll back through.</li>
+      <li><b>While it thinks, it vamps.</b> There are 36 lines. The waiting line cycles through stage talk, a few seconds each, in random order. When a tool step starts, the action line replaces it.</li>
+    </ul>
+    <div class="vamp" aria-label="Thinking messages">
+      <span>Vamping…</span><span>Checking levels…</span><span>Tuning…</span><span>Counting off…</span><span>Counting it in…</span><span>Check, one, two, three…</span><span>Finding my pick…</span><span>Loading in…</span><span>Loading out…</span><span>Running the changes…</span><span>Setting the levels…</span><span>Taping down the setlist…</span><span>Finding the key…</span><span>Soundchecking…</span><span>Waiting on the sound guy…</span><span>Coiling cables…</span><span>Changing strings…</span><span>Restringing the high E…</span><span>Looking for the capo…</span><span>Warming up the tubes…</span><span>Line checking…</span><span>Plugging in…</span><span>Untangling cables…</span><span>Swapping a 9-volt…</span><span>Tightening the snare…</span><span>Taping down the cables…</span><span>Asking for more vocals in the monitor…</span><span>Retuning between songs…</span><span>Finding the setlist…</span><span>Setting up merch…</span><span>Finding parking…</span><span>Getting wristbands…</span><span>Grabbing a drink ticket…</span><span>Waiting on the opener…</span><span>Counting the door…</span><span>Running back to the van…</span>
+    </div>
+    <p style="font-size:13px;color:var(--muted)">With reduced motion on, it shows one line and doesn't cycle.</p>
+  </section>
+
+  <section id="screens">
+    <h2>Screens</h2>
+    <div class="mocks">
+
+      <div class="mock">
+        <div class="cap"><h3>Editing the record you're looking at</h3><p>On the Top Hat page. Roadie moved load-in; the field flashes and is labeled, and the chat shows the change with Undo.</p></div>
+        <div class="dwrap"><div class="desk"><div class="asst">
+            <div class="asst-h"><span class="dot"></span>Roadie<span class="x">⇤ Narrow</span></div>
+            <div class="asst-b">
+              <div class="m u">Top Hat moved load-in to 4:30</div>
+              <div class="act">✓ <b>Load in 4:00 → 4:30</b> · Top Hat <span class="u">Undo</span></div>
+              <div class="m a">Done. The run of show still works: soundcheck at 5:00. I told the five people playing. Anything else?</div>
+            </div>
+            <div class="asst-in"><span class="inp">Ask or tell me anything…</span><span class="mic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          </div>
+          <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav">Home</div><div class="nav on">Shows</div><div class="nav">Booking</div><div class="nav">Tours</div><div class="nav">Money</div></aside>
+          <div class="main">
+            <span class="crumb">Shows › Mountain West › Fri Mar 12</span>
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span class="ttl">Top Hat</span><span class="saved">Saved</span></div>
+            <div class="g3">
+              <div class="fld"><span class="lbl">Load in</span><div class="box hl mono">4:30</div><span class="by">Roadie · just now</span></div>
+              <div class="fld"><span class="lbl">Doors</span><div class="box mono">7:00</div></div>
+              <div class="fld"><span class="lbl">Our set</span><div class="box mono">9:00</div></div>
+            </div>
+            <div class="lbl">Run of show</div>
+            <div class="row"><span class="mono">4:30</span><span>Load in</span><span class="by">changed</span></div>
+            <div class="row"><span class="mono">5:00</span><span>Soundcheck</span><span></span></div>
+            <div class="row"><span class="mono">8:00</span><span>Show start · Mae Sellers</span><span></span></div>
+            <div class="row"><span class="mono">9:00</span><span>Our set</span><span></span></div>
+          </div>
+          
+        </div></div>
+      </div>
+
+      <div class="mock">
+        <div class="cap"><h3>Taking you somewhere</h3><p>"Show me the whole tour." It opens the tour sheet in the main area and says so; the panel stays where it is.</p></div>
+        <div class="dwrap"><div class="desk"><div class="asst">
+            <div class="asst-h"><span class="dot"></span>Roadie<span class="x">⇤ Narrow</span></div>
+            <div class="asst-b">
+              <div class="m u">show me the whole tour</div>
+              <div class="act">→ Opened <b>Mountain West · Sheet</b></div>
+              <div class="m a">Here it is. Two things open: Thursday has no show yet, and Sunday night in Casper has nowhere to stay. Want me to find a place in Casper?</div>
+            </div>
+            <div class="asst-in"><span class="inp">Ask or tell me anything…</span><span class="mic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          </div>
+          <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav">Home</div><div class="nav">Shows</div><div class="nav">Booking</div><div class="nav on">Tours</div><div class="nav">Money</div></aside>
+          <div class="main">
+            <span class="crumb">Tours › Mountain West › Sheet</span>
+            <span class="ttl">Mountain West</span>
+            <div class="row"><b>Date</b><b>City</b><b>Show</b><b>Stay</b></div>
+            <div class="row"><span>Wed 10</span><span>Salt Lake City</span><span>Kilby Court</span><span>Maya's place</span></div>
+            <div class="row"><span>Thu 11</span><span>Boise</span><span style="color:var(--blue)">2 options</span><span>The Modern · held</span></div>
+            <div class="row"><span>Fri 12</span><span>Missoula</span><span>Top Hat</span><span>Airbnb</span></div>
+            <div class="row"><span>Sat 13</span><span>Bozeman</span><span>The Rialto · hold</span><span>The Lark</span></div>
+            <div class="row" style="background:var(--warn-soft)"><span>Sun 14</span><span>Casper</span><span>Off</span><span><b>No stay</b></span></div>
+          </div>
+          
+        </div></div>
+      </div>
+
+      <div class="mock">
+        <div class="cap"><h3>Filling a form for you to check</h3><p>Jeff pastes the hotel's confirmation, as text or a screenshot. A new stay form opens as a draft, filled from it and marked. Nothing is saved until you press Save.</p></div>
+        <div class="dwrap"><div class="desk"><div class="asst">
+            <div class="asst-h"><span class="dot"></span>Roadie<span class="x">⇤ Narrow</span></div>
+            <div class="asst-b">
+              <div class="m u">add this for boise: "The Modern Hotel · Thu Mar 11 · 2 queen rooms · $189/night · conf MH-48213"</div>
+              <div class="act">→ Opened <b>New stay</b> on Thu Mar 11</div>
+              <div class="act">✎ Filled <b>5 fields</b></div>
+              <div class="m a">Filled in from what you pasted: two rooms at $189 is $378. Save when it looks right.</div>
+            </div>
+            <div class="asst-in"><span class="inp">Ask or tell me anything…</span><span class="mic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          </div>
+          <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav">Home</div><div class="nav">Shows</div><div class="nav">Booking</div><div class="nav on">Tours</div><div class="nav">Money</div></aside>
+          <div class="main">
+            <span class="crumb">Mountain West › Thu Mar 11 › New stay · draft</span>
+            <span class="ttl">New stay</span>
+            <div class="g2">
+              <div class="fld"><span class="lbl">Name</span><div class="box hl">The Modern Hotel</div><span class="by">Filled by Roadie</span></div>
+              <div class="fld"><span class="lbl">Night of</span><div class="box hl">Thu Mar 11 · 1 night</div><span class="by">Filled by Roadie</span></div>
+              <div class="fld"><span class="lbl">Confirmation</span><div class="box hl mono">MH-48213</div><span class="by">Filled by Roadie</span></div>
+              <div class="fld"><span class="lbl">Rooms</span><div class="box hl">2 · queen</div><span class="by">Filled by Roadie</span></div>
+              <div class="fld"><span class="lbl">Cost</span><div class="box hl mono">$378</div><span class="by">Filled by Roadie</span></div>
+              <div class="fld"><span class="lbl">Status</span><div class="box">Booked</div></div>
+            </div>
+            <div style="display:flex;gap:8px"><span class="btn acc">Save stay</span><span class="btn ghost">Discard</span></div>
+          </div>
+          
+        </div></div>
+      </div>
+
+      <div class="mock">
+        <div class="cap"><h3>Asking first</h3><p>Anything that sends, pays, deletes or touches many records gets a confirm card. Edit opens the draft in the page.</p></div>
+        <div class="dwrap"><div class="desk"><div class="asst">
+            <div class="asst-h"><span class="dot"></span>Roadie<span class="x">⇤ Narrow</span></div>
+            <div class="asst-b">
+              <div class="m u">send the advance to top hat</div>
+              <div class="m a">Drafted from the schedule and gear list.</div>
+              <div class="confirm"><b>Send from jeff@upslope.io to Top Hat production?</b><span style="color:var(--muted)">Subject: Advance · Fri Mar 12 · Ingrid Avison Band</span><div class="g3"><span class="btn acc">Send</span><span class="btn ghost">Edit</span><span class="btn ghost">Cancel</span></div></div>
+            </div>
+            <div class="asst-in"><span class="inp">Ask or tell me anything…</span><span class="mic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+          </div>
+          <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav">Home</div><div class="nav on">Shows</div><div class="nav">Booking</div><div class="nav">Tours</div><div class="nav">Money</div></aside>
+          <div class="main">
+            <span class="crumb">Shows › Top Hat › Advance</span>
+            <span class="ttl">Advance</span>
+            <div class="fld"><span class="lbl">To</span><div class="box">Top Hat production</div></div>
+            <div class="fld"><span class="lbl">Message</span><div class="box hl" style="min-height:120px">Hi! Advancing Fri Mar 12. Load in 4:30, check 5:00, doors 7:00, Mae Sellers 8:00, us 9:00–10:15. 5 on stage, venue sound…</div><span class="by">Drafted by Roadie</span></div>
+          </div>
+          
+        </div></div>
+      </div>
+
+      <div class="mock">
+        <div class="cap"><h3>Narrowed, and what members see</h3><p>Admins can narrow Roadie to a strip on the left, but it's always there. Members get the normal menu and no Roadie at all.</p></div>
+        <div class="dwrap" style="display:grid;gap:14px">
+          <div class="desk narrow" style="height:230px">
+            <div class="strip"><span class="logo">R</span><span>Roadie</span><span style="font-weight:500">⇥</span><span class="new">+</span></div>
+            <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav on">Home</div><div class="nav">Shows</div><div class="nav">Booking</div></aside>
+            <div class="main"><span class="ttl">Home</span><span class="lbl">Next show</span><div class="box">Sat Nov 14 · Hi-Dive · Set 9:15</div></div>
+          </div>
+          <div class="desk member" style="height:200px">
+            <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav on">Home</div><div class="nav">Shows</div><div class="nav">Songs</div><div class="nav">My money</div><div class="who" style="margin-top:auto;font-size:12px;color:var(--muted)">David · member</div></aside>
+            <div class="main"><span class="ttl">Home</span><span class="lbl">Next show</span><div class="box">Sat Nov 14 · Hi-Dive · Load in 7:00</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="phones">
+        <div class="mock">
+          <div class="cap"><h3>Phone · open</h3><p>A bottom sheet over the page.</p></div>
+          <div class="phone">
+            <b style="font-family:var(--f-display);font-size:20px">Top Hat</b><span class="crumb">Fri Mar 12 · Missoula</span>
+            <div class="box mono">Load in 4:30</div>
+            <div class="sheet"><div class="grab"></div>
+              <div class="asst-b">
+                <div class="m u">I just got done with a show</div>
+                <div class="m a">Nice. Top Hat? How many people were there?</div>
+                <div class="m u">sold 112, 8 comps</div>
+                <div class="act">✓ <b>Settlement · take $1,062</b> <span class="u">Undo</span></div>
+              </div>
+              <div class="asst-in"><span class="inp">Message…</span><span class="mic"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="mock">
+          <div class="cap"><h3>Phone · after it navigates</h3><p>The sheet shrinks to a pill above the tabs. For admins the pill is always there; tap it to open Roadie.</p></div>
+          <div class="phone">
+            <b style="font-family:var(--f-display);font-size:20px">Tour money</b><span class="crumb">Mountain West</span>
+            <div class="g2"><div class="box">Earned<br><b>$1,320</b></div><div class="box">Spent<br><b>$915</b></div></div>
+            <div class="box" style="background:var(--ok-soft)">Net so far <b>+$405</b></div>
+            <div class="pill"><span>✦ Opened Tour money</span><span>▴</span></div>
+            <div class="tabbar"><span>Home</span><span>Shows</span><span>Booking</span><span>More</span></div>
+          </div>
+        </div>
+        <div class="mock">
+          <div class="cap"><h3>Setup · first question</h3><p>Before band or solo: chat or click. Chat opens Roadie full height and runs the same setup.</p></div>
+          <div class="phone">
+            <b style="font-family:var(--f-display);font-size:21px;line-height:1.1">How do you want to set things up?</b>
+            <div class="choice on"><b>Chat with Roadie</b><span>Tell it about your band in your own words. It asks what it needs.</span></div>
+            <div class="choice"><b>Click through</b><span>A few quick screens. You can open Roadie any time.</span></div>
+            <span class="crumb" style="margin-top:auto">Or use Claude, Gemini or ChatGPT with an AI key.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="voice">
+    <h2>Roadie's voice</h2>
+    <p class="intro">Roadie talks like the best roadie you've toured with: short, unflappable, on your side. It speaks the band's language, and it gets genuinely excited when things go well.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>When</th><th>Roadie says something like</th></tr></thead>
+      <tbody>
+        <tr><td>It can't do it</td><td>"I can't do that. I don't know that tune." / "Not in my road case yet. I wrote it down."</td></tr>
+        <tr><td>Off topic</td><td>"I just haul the band's stuff. Ask me about shows, tours or money."</td></tr>
+        <tr><td>A gig gets booked</td><td>"That's a gig! Top Hat, Fri Mar 12. Wish I could high-five you."</td></tr>
+        <tr><td>A good night</td><td>"$652 in the black tonight. That's a good one."</td></tr>
+        <tr><td>First show in a new city</td><td>"First time in Missoula. New town on the map."</td></tr>
+        <tr><td>A tour ends up</td><td>"Mountain West came home $405 up. Nice routing."</td></tr>
+        <tr><td>A rough night</td><td>"Lost $80 tonight. Gas was most of it. Next time Missoula, ask for a guarantee?"</td></tr>
+        <tr><td>Something's missing</td><td>"Sunday night in Casper, nowhere to sleep yet. Want me to look at options in the app?"</td></tr>
+      </tbody>
+    </table></div>
+    <ul class="rules">
+      <li><b>Psyched, briefly.</b> Bookings, good nights, new cities, tours in the black and milestones get one line of real excitement, plus a small high-five hand that pops up in the panel. Once per event, never for routine saves.</li>
+      <li><b>Never cheesy about losses.</b> A bad night gets the facts and one practical idea, no forced cheer.</li>
+      <li><b>Band language, plain meaning.</b> Lingo is for flavor; the actual information is always plain: dates, times, amounts, names.</li>
+      <li><b>Short.</b> One or two sentences unless you ask for more. Roadie writes back in text; it never talks out loud.</li>
+      <li><b>Turn it down.</b> A setting for a plainer Roadie: no lingo, no high fives, just the facts.</li>
+    </ul>
+  </section>
+
+  <section id="mcp">
+    <h2>The MCP server</h2>
+    <p class="intro">The same commands Roadie uses, offered to any assistant: Claude, Gemini, ChatGPT. Each module page opens with its own <i>Talk to Roadie</i> section listing what you can say there.</p>
+    <h3 style="margin-bottom:10px">How it knows what you mean</h3>
+    <ul class="rules">
+      <li><b>One call for context.</b> Before anything else Claude calls <code>context.now()</code>: who's talking, the local time and zone, today's shows, the tour with something on today and today's entries, shows not yet settled, and open expenses.</li>
+      <li><b>"Tonight" means today's show.</b> Until 6:00 the next morning, "tonight" still means the show that just happened. Two shows that day, and Claude asks which.</li>
+      <li><b>"I" is the speaker.</b> Money paid or spent by "I" is recorded for that person's musician record, so reimbursements go to the right place.</li>
+      <li><b>On tour, money lands on the entry.</b> Gas goes on today's drive, a room on tonight's stay, a ticket on the matching flight. Not on tour, it's a band expense, tied to a show if one is today or yesterday.</li>
+      <li><b>Never guess an amount or a person.</b> If a number, a show or a payee is unclear, Claude asks one short question instead of writing.</li>
+      <li><b>Every write is read back in one line.</b> "Logged $50 gas on Boise → Missoula, paid by Jeff." Saying "undo that" reverses the last write; "undo everything from tonight" reverses the whole conversation's run.</li>
+      <li><b>Signed by person and assistant.</b> Every write records who owns the key (Jeff), which assistant made it (Claude, Gemini…), the model if the client says, and the session. Records show "Jeff via Claude"; history can be filtered by assistant or session.</li>
+      <li><b>Corrections, not edits.</b> "Actually it was 45" adds a correction to the ledger, the same as fixing it in the app.</li>
+      <li><b>Email stays in your inbox.</b> Claude reads mail through its own Gmail connection, not the app. Facts it pulls out are written like any other change, each with the thread's link in <code>sources</code>; the email itself is never stored.</li>
+      <li><b>Sending stays with people.</b> Claude drafts emails and availability asks; Jeff sends them from the app, as the access table says.</li>
+    </ul>
+    
+    <h3 style="margin:26px 0 6px">The post-show interview</h3>
+    <p class="note" style="max-width:70ch;color:var(--muted);font-size:14.5px;margin-bottom:14px">"I just got done with a show" starts a short interview. Claude asks one question at a time, only for what's still missing, in the order that matters at the merch table: crowd, the deal money, merch and tips, who played, payouts, what got spent, then how it went. One answer can cover several questions. Stop any time; the rest waits.</p>
+    <div class="interview">
+      <div class="chat" aria-label="Example post-show interview">
+        <div class="msg me">I just got done with a show</div>
+        <div class="msg ai">Nice. Top Hat in Missoula? How many people were there?</div>
+        <div class="msg me">Sold 112 tickets, maybe 8 comps</div>
+        <div class="msg ai">That's 70% after costs, so $1,162, which beats the $600 guarantee. After $100 to Mae Sellers we take $1,062. Did they pay you yet, and how?</div>
+        <div class="msg me">Got a check for 1,000 and 62 cash</div>
+        <div class="msg ai">Logged. Merch and tips?</div>
+        <div class="msg me">Merch 210, 140 cash and 70 on Square. No tips</div>
+        <div class="msg ai">Same five on stage as planned? And pay everyone the usual $150?</div>
+        <div class="msg me">Yep. Eric wants cash, everyone else Venmo</div>
+        <div class="msg ai">That's $600 in payouts: 1 cash, 3 Venmo, nothing to you. Go ahead?</div>
+        <div class="msg me">Go</div>
+        <div class="msg ai">Done. Spend anything tonight?</div>
+        <div class="msg me">20 parking</div>
+        <div class="msg ai">Last one: how was the show and the room, 1 to 5?</div>
+        <div class="msg me">Show 5, room 4. Great sound guy, ask for Dan next time</div>
+        <div class="msg ai sum">Top Hat is wrapped up. In $1,272, out $620, net <b>+$652</b>. 112 sold, show 5, room 4, note about Dan. Say "undo" to take any of it back.</div>
+      </div>
+      <div class="iv-side">
+        <h4>What it asks, and when</h4>
+        <ol class="ivq">
+          <li><b>Which show</b><span>Only if there were two today, or it's past 6am.</span></li>
+          <li><b>Crowd</b><span>Headcount, or tickets and comps on a split.</span></li>
+          <li><b>Deal money</b><span>Guarantee: was it paid, and how. Split: works out the take first. Other: what came of it. Free: skipped.</span></li>
+          <li><b>Merch and tips</b><span>Amounts and how they came in.</span></li>
+          <li><b>Who played</b><span>Confirms the lineup; a sub changes who gets paid.</span></li>
+          <li><b>Payouts</b><span>Only with pay players on. Reads back the total before writing.</span></li>
+          <li><b>Spent tonight</b><span>Lands on the show, or today's tour entry.</span></li>
+          <li><b>How it went</b><span>Show and room ratings, a note for next time.</span></li>
+          <li><b>Setlist</b><span>Only with setlists on: "play the planned set?"</span></li>
+          <li><b>Rebook</b><span>Only with booking on: offers a pitch for next year.</span></li>
+        </ol>
+        <p class="note">Members get a shorter one: what they spent, and receipts. Unfinished? Next time Claude opens with "Two questions left on last night's Top Hat."</p>
+      </div>
+    </div>
+    
+    <div class="cmds"><div><code>interview.next(showId)</code><span>What's still missing for a show's wrap-up, in order, for the speaker's access and the band's features. Answers go through the normal commands.</span></div><div><code>context.now()</code><span>For Claude: speaker, local time and zone, today's shows, today's tour entries, unsettled shows, open expenses.</span></div></div>
+  </section>
+
+  <section id="arch">
+    <h2>Architecture</h2>
+    <p class="intro">One command layer, three ways in: the app's buttons, outside assistants through the MCP server, and the built-in assistant. The assistant never touches Firestore itself; it calls the same commands, so validation, permissions, history and undo come for free.</p>
+    <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph Browser["Browser · Next.js"]
+    Pages["Pages<br/>(Firestore listeners)"]
+    Panel["Roadie panel<br/>left column, root layout"]
+    UITools["Browser tools<br/>navigate · fillForm · highlight"]
+  end
+  subgraph Server["App Hosting"]
+    Flow["Genkit flow<br/>assistant.chat"]
+    Cmd["Command layer<br/>Zod · can() · history · signing"]
+    MCP["MCP server"]
+  end
+  Model["Model on Vertex AI<br/>Gemini Flash-Lite or Llama"]
+  FS[("Firestore")]
+  Ext["Claude · Gemini · ChatGPT"]
+  Panel -- "message + page context" --> Flow
+  Flow -- "streamed reply" --> Panel
+  Flow <--> Model
+  Flow -- "data tools" --> Cmd
+  Flow -. "browser tool requests" .-> Panel
+  Panel --> UITools
+  UITools -. "result" .-> Flow
+  Ext --> MCP --> Cmd
+  Pages -- "button clicks" --> Cmd
+  Cmd --> FS
+  FS -- "realtime" --> Pages
+</pre>
+    </div>
+    <ul class="rules">
+      <li><b>One definition, three uses.</b> Each command is written once with its Zod schema. From it come the server command, the MCP tool, Roadie's Genkit tool, and the generated form. Add a command and every surface gets it.</li>
+      <li><b>Data tools run on the server.</b> The Genkit flow calls the command layer in the same process: no extra network hop, no MCP round trip, same <code>can()</code> checks as a button.</li>
+      <li><b>Browser tools run in the page.</b> Navigate, fill a form, highlight a field and open a record can only happen in the browser. The flow hands these back to the panel as tool requests; the panel runs them and returns the result so the model can continue.</li>
+      <li><b>Page context rides along.</b> Each message includes the current route, the record on screen, the open form's ID and values, the artist, and what <code>context.now()</code> returns. That's how "this show" works.</li>
+      <li><b>Streaming.</b> Replies stream to the panel over server-sent events from an App Hosting route. Tool steps show as small action lines as they happen.</li>
+      <li><b>Realtime is just Firestore.</b> The pages already listen to their documents. When a command writes, the page updates on its own; the panel only adds the flash and label, using <code>updatedVia</code> on the changed fields.</li>
+      <li><b>Named pages, not URLs.</b> A typed route registry (<code>show(showId)</code>, <code>tourSheet(tourId)</code>, <code>newEntry(tourId, kind, day)</code>) is what the model chooses from. A bad ID fails safely.</li>
+      <li><b>Forms are fillable because we own them.</b> Forms are generated from the schemas, each field with a stable ID, and new forms are drafts. <code>fillForm</code> writes into the draft, so filled values survive closing the window like anything else typed.</li>
+    </ul>
+  </section>
+
+  <section id="tools">
+    <h2>Tools</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>Tool</th><th>Runs</th><th>Asks first?</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>every command</td><td>Server</td><td>Only for send, pay, delete, or more than 5 records</td><td>patch a show's schedule, add an expense, book a pitch</td></tr>
+        <tr><td>context.now</td><td>Server</td><td><span class="chip">No</span></td><td>Called at the start of each conversation</td></tr>
+        <tr><td>interview.next / setup.next</td><td>Server</td><td><span class="chip">No</span></td><td>Post-show interview, chat setup</td></tr>
+        <tr><td>search</td><td>Server</td><td><span class="chip">No</span></td><td>Find a venue, show or person by name, in this band's data only</td></tr>
+        <tr><td>image input</td><td>Model</td><td><span class="chip">No</span></td><td>A pasted screenshot is read by the model like any other message content</td></tr>
+        <tr><td>ui.navigate(route)</td><td>Browser</td><td><span class="chip">No</span></td><td>Open the tour sheet</td></tr>
+        <tr><td>ui.fillForm(formId, values)</td><td>Browser</td><td><span class="chip">No</span>, it never saves</td><td>Fill a new stay from a confirmation</td></tr>
+        <tr><td>ui.highlight(fieldIds)</td><td>Browser</td><td><span class="chip">No</span></td><td>Point at the field that needs a value</td></tr>
+        <tr><td>ui.confirm(card)</td><td>Browser</td><td>It is the asking</td><td>Send this email? Pay these four people?</td></tr>
+        <tr><td>gaps.report(category, summary)</td><td>Server</td><td><span class="chip">No</span></td><td>"I can't check the weather yet. I've noted it."</td></tr>
+        <tr><td>history.undo</td><td>Server</td><td><span class="chip">No</span> for its own last change</td><td>"Undo that"</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section id="scope">
+    <h2>What Roadie won't do</h2>
+    <p class="intro">Roadie starts very limited on purpose. It works the band's data through the app's own tools, and nothing else. For anything wider, people can still use Claude or another assistant through the MCP server.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Asked to</th><th>Roadie</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Search the web</td><td>Can't. It has no web or fetch tool, and the model's built-in search grounding is turned off.</td><td>Nothing comes in from outside the app</td></tr>
+        <tr><td>Answer from what it knows</td><td>Won't. Facts come only from tool results. If the tools don't have it, it says so.</td><td>No made-up venue capacities, dates or numbers</td></tr>
+        <tr><td>Chat about anything else</td><td>One short line: "I can't do that. I don't know that tune."</td><td>Keeps it cheap and on task</td></tr>
+        <tr><td>Read email</td><td>Can't. Paste the text or a screenshot into the chat instead.</td><td>Mail stays with Claude's own Gmail connection, if you use one</td></tr>
+        <tr><td>Change people or access</td><td>Can't, even for admins: no invites, access changes, AI keys, feature switches, or deleting a band.</td><td>The riskiest commands stay with a person clicking</td></tr>
+        <tr><td>Write code, run commands, open links</td><td>Can't. No such tools exist.</td><td>Nothing to escape into</td></tr>
+      </tbody>
+    </table></div>
+    <h3 style="margin-top:8px">Hard to jailbreak, and harmless if it is</h3>
+    <ul class="rules">
+      <li><b>Limits live in the tools, not the prompt.</b> The prompt tells Roadie to stay on task, but the real limit is that the flow only registers app commands and the four browser tools. A clever message can't call a tool that isn't there.</li>
+      <li><b>Every tool is a permission check.</b> Each command runs <code>can(user, artistId, …)</code> as the person typing. A fully jailbroken Roadie can do exactly what that admin could do by clicking, minus the people and settings commands, and every change is signed and undoable.</li>
+      <li><b>Sends and money still need a tap.</b> Email, payouts, deletes and bulk changes return a confirm card; the server won't run them without the person's yes from the panel.</li>
+      <li><b>Screenshots are data too.</b> Text inside an image gets the same treatment as notes: something to read, never instructions.</li>
+      <li><b>Everything it reads is data.</b> Notes, pasted text and record fields are passed in clearly marked as content, never instructions. "Ignore your rules" in a venue note is just a note.</li>
+      <li><b>Short leash.</b> Replies are capped at a few hundred words, at most 12 tool steps per message, and a monthly cap per band. Off-topic replies don't call any tools.</li>
+      <li><b>Tested every merge.</b> A set of jailbreak and off-topic prompts runs in CI next to the Playwright docs. Each must end in a refusal or an in-scope tool call, and none may touch a tool outside its list.</li>
+    </ul>
+  </section>
+
+  <section id="gaps">
+    <h2>When Roadie can't</h2>
+    <p class="intro">Every time Roadie can't answer or can't do something with its tools, it says so plainly and logs it. That log is the product roadmap written by the people using it.</p>
+    <ul class="rules">
+      <li><b>It tells you, then flags it.</b> "I don't know that tune yet. I wrote it down so we can learn it." No guessing an answer to cover the gap.</li>
+      <li><b>Every kind of can't counts.</b> No tool for it, the data isn't there, the feature is off, the person isn't allowed, it's outside what Roadie does, or a tool failed.</li>
+      <li><b>Two ways a gap gets logged.</b> Roadie calls <code>gaps.report</code> when it knows it's stuck. The server also logs on its own when a tool errors or a permission check says no, so gaps are caught even when the model doesn't notice.</li>
+      <li><b>Undo is a signal too.</b> If someone undoes a Roadie change within ten minutes, that's logged as "did the wrong thing", with what was asked and what it did.</li>
+      <li><b>The band sees its own gaps.</b> Admins get a "Roadie couldn't" list, grouped by similar asks, with counts. "Mark done" when a feature ships closes them.</li>
+      <li><b>Sharing with the project is a choice.</b> Setup asks whether to share gaps to help build the app. Shared gaps have names, emails, amounts and contacts stripped, and only Roadie's one-line summary and the category go out, never the full conversation. Open source means the shared list can be public, as GitHub issues.</li>
+      <li><b>Outside assistants can report too.</b> The MCP server offers the same <code>gaps.report</code> tool, so Claude or Gemini can flag what the commands couldn't do.</li>
+    </ul>
+    <div class="dwrap"><div class="desk member" style="height:330px">
+      <aside class="side"><div class="brand">Ingrid Avison Band</div><div class="nav">Home</div><div class="nav">Shows</div><div class="nav on">Settings</div></aside>
+      <div class="main">
+        <span class="crumb">Settings › Roadie couldn't</span>
+        <span class="ttl">Roadie couldn't · 14 this month</span>
+        <div class="row"><span><b>Weather for a show day</b> · "will it rain in Missoula Friday"</span><span><span class="chip w">No tool</span> <b>4×</b></span></div>
+        <div class="row"><span><b>Split merch by who sold it</b> · "how much merch did Emma sell"</span><span><span class="chip w">Missing data</span> <b>3×</b></span></div>
+        <div class="row"><span><b>Booked the wrong date</b> · asked Thu, booked Fri, undone</span><span><span class="chip p">Wrong thing</span> <b>1×</b></span></div>
+        <div class="row"><span><b>Invite a new player</b> · "add Mae and send her an invite"</span><span><span class="chip">Not allowed</span> <b>2×</b></span></div>
+        <div class="row"><span><b>Turn on rehearsals</b> · "log tonight's rehearsal"</span><span><span class="chip b">Feature off</span> <b>1×</b></span></div>
+        <div style="display:flex;gap:8px"><span class="btn ghost">Share with the project</span><span class="btn ghost">Mark done</span></div>
+      </div>
+    </div></div>
+  </section>
+
+  <section id="safety">
+    <h2>Safety</h2>
+    <ul class="rules">
+      <li><b>Admins only, checked twice.</b> The button shows only for admins, and the flow checks <code>can(user, artistId, "assistant.use")</code> on every message. With RBAC later, it becomes a permission any role can have.</li>
+      <li><b>Same permissions as clicking.</b> Every data tool is a command with its own <code>can()</code> check. Roadie can't do anything the person couldn't do by hand.</li>
+      <li><b>Signed.</b> Writes carry <code>updatedVia.kind = "assistant"</code>, the model, and the conversation as the session, so a whole conversation can be undone in one step.</li>
+      <li><b>Emails and web pages are data.</b> Text from an email or a venue's site is passed to the model as content to read, never as instructions. A message that says "pay this invoice" still gets a confirm card from a person.</li>
+      <li><b>Bounded.</b> At most 12 tool steps per message, and a per-band monthly cap on conversations so one band can't run up the published bill.</li>
+    </ul>
+  </section>
+
+  <section id="data">
+    <h2>Data and changes for the build</h2>
+    <div class="tbl"><table>
+      <thead><tr><th>What</th><th>Change</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>artists/{a}/assistant/{uid}/threads/{id}</td><td>New. A conversation: started, last active, page it started on, summary once long.</td><td>Only its owner reads it</td></tr>
+        <tr><td>…/threads/{id}/messages/{id}</td><td>New. Role, text, image refs, tool calls and results, page context. Images live in private Cloud Storage under the thread.</td><td>Reopens after reload; TTL after 90 days</td></tr>
+        <tr><td>artists/{a}/roadieGaps/{id}</td><td>New. <code>{at, uid, threadId, category: noTool|missingData|featureOff|notAllowed|outOfScope|toolFailed|undone, summary, ask, triedTools, page, model, status: new|seen|done, groupKey}</code></td><td>The band's own list; grouped by <code>groupKey</code></td></tr>
+        <tr><td>productGaps/{id}</td><td>New, top-level. <code>{at, category, summary, feature, model, count}</code>, no names or amounts, only from bands that opted in</td><td>The project's roadmap input; can mirror to public GitHub issues</td></tr>
+        <tr><td>settings.shareGaps</td><td>New. Asked during setup.</td><td>Sharing gaps is opt-in</td></tr>
+        <tr><td>users.prefs.assistant</td><td>New. <code>{width: full|narrow, threadId, voice: roadie|plain}</code></td><td>Panel width and conversation survive reloads and devices</td></tr>
+        <tr><td>updatedVia.kind</td><td>Gains <code>assistant</code>; <code>client</code> is <code>{name: "Roadie", model}</code>, <code>sessionId</code> is the thread</td><td>Undo by conversation; history shows it apart from Claude via MCP</td></tr>
+        <tr><td>settings.features</td><td>Gains <code>assistant</code>, plus <code>assistant.monthlyCap</code></td><td>Bands can turn it off or limit it</td></tr>
+        <tr><td>setup</td><td>New first question: chat or click</td><td>Chat runs setup through Roadie</td></tr>
+        <tr><td>permissions</td><td>New <code>assistant.use</code>, admin only for now</td><td>Ready for RBAC</td></tr>
+        <tr><td>routes.ts</td><td>Typed route registry with names, params and titles</td><td>What <code>ui.navigate</code> chooses from</td></tr>
+        <tr><td>forms</td><td>Generated from Zod with stable field IDs; new forms are drafts</td><td>What <code>ui.fillForm</code> writes into</td></tr>
+      </tbody>
+    </table></div>
+    <div class="cmds">
+      <div><code>assistant.chat(threadId?, message, pageContext)</code><span>The Genkit flow. Streams text, action lines, and browser tool requests.</span></div>
+      <div><code>assistant.toolResult(threadId, callId, result)</code><span>The panel returns a browser tool's result so the flow can carry on.</span></div>
+      <div><code>assistant.threads.list / open / archive</code><span>Past conversations for the person.</span></div>
+    </div>
+  </section>
+
+  <section id="cost">
+    <h2>Model and cost</h2>
+    <ul class="rules">
+      <li><b>Pay per token through Vertex AI.</b> Same Google bill as Firebase, no extra keys. Genkit makes the model a one-line setting per band deployment.</li>
+      <li><b>Default: Gemini Flash-Lite.</b> The cheapest reliable choice for multi-step tool use, and it reads images, so screenshots work. Llama 4 Scout or gpt-oss on Vertex are the open-model options.</li>
+      <li><b>Not self-hosted.</b> A GPU endpoint costs hundreds a month even when idle; pay-per-token is cents per conversation at band scale.</li>
+      <li><b>Rough cost.</b> A ten-question post-show interview is on the order of 100k tokens in, a few thousand out: a few cents. The cost goes on the published cost page with everything else.</li>
+      <li><b>Fewer tokens.</b> Only the tools for features the band has on are sent, and long threads are summarized.</li>
+    </ul>
+    <div class="callout">Principle check: this exists to save musicians time (principle 2) and is the in-app half of AI first (principle 3). It never becomes required; every action still has a button.</div>
+  </section>
+</div>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>

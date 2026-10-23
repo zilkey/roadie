@@ -2,6 +2,8 @@
 import { fmtInstant } from "@/lib/timezone";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { SaveStatus } from "@/components/SaveStatus";
+import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
@@ -64,7 +66,10 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
 function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }) {
   const admin = useProfile().role === "admin";
   const router = useRouter();
-  const { call, error, busy, setError } = useCommand();
+  const { call, error, busy } = useCommand();
+  // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
+  const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev });
+  const [len, setLen] = useState<string | null>(null);
   const [edit, setEdit] = useState(false);
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -91,40 +96,37 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <div className="flex flex-wrap items-center gap-2">
         <span className="chip" data-testid="song-status">{{ active: "Playing", learning: "Learning", idea: "Idea", retired: "Retired" }[song.status]}</span>
         {song.writers && <span className="s">Written by {song.writers}</span>}
-        {admin && <button className="btn ghost sm" onClick={() => setEdit(!edit)} data-testid="song-edit">{edit ? "Close" : "Edit"}</button>}
+        {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setLen(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>}
+        {admin && edit && <SaveStatus {...as.statusProps} />}
       </div>
       {song.notes && <p className="text-sm">{song.notes}</p>}
       {edit && admin && (
-        <form className="card" data-testid="song-form" onSubmit={async (e) => {
-          e.preventDefault();
-          const f = new FormData(e.currentTarget);
-          const len = String(f.get("length") ?? "");
-          const lengthSec = parseLen(len);
-          if (len.trim() && lengthSec === undefined) { setError("Length looks like 3:52"); return; }
-          const bpm = String(f.get("bpm") ?? "").trim();
-          const r = await call("songs.update", { id: song.id, patch: {
-            title: String(f.get("title")).trim(), key: String(f.get("key")).trim() || null, bpm: bpm ? Number(bpm) : null, lengthSec: lengthSec ?? null,
-            status: f.get("status"), writers: String(f.get("writers")).trim() || null, notes: String(f.get("notes")).trim() || null,
-          } });
-          if (r) setEdit(false);
-        }}>
-          <label className="grid gap-1"><span className="lbl">Title</span><input className="input" name="title" defaultValue={song.title} required data-testid="edit-title" /></label>
+        <div className="card" data-testid="song-form">
+          <label className="grid gap-1"><span className="lbl">Title</span><input className="input" required data-testid="edit-title" {...as.bind("title", song.title, { toPatch: (t) => t.trim() })} /></label>
           <div className="grid grid-cols-3 gap-2">
-            <label className="grid gap-1"><span className="lbl">Key</span><input className="input" name="key" defaultValue={song.key ?? ""} data-testid="edit-key" /></label>
-            <label className="grid gap-1"><span className="lbl">BPM</span><input className="input" name="bpm" inputMode="numeric" defaultValue={song.bpm ?? ""} /></label>
-            <label className="grid gap-1"><span className="lbl">Length</span><input className="input" name="length" placeholder="3:52" defaultValue={fmtLen(song.lengthSec)} data-testid="edit-length" /></label>
+            <label className="grid gap-1"><span className="lbl">Key</span><input className="input" data-testid="edit-key" {...as.bind("key", song.key ?? "", { toPatch: (t) => t.trim() || null })} /></label>
+            <label className="grid gap-1"><span className="lbl">BPM</span><input className="input" inputMode="numeric" data-testid="edit-bpm" {...as.bind("bpm", song.bpm != null ? String(song.bpm) : "", { toPatch: (t) => (t.trim() === "" ? null : Number.isFinite(Number(t)) ? Number(t) : t) })} /></label>
+            <label className="grid gap-1"><span className="lbl">Length</span>
+              <input className="input" placeholder="3:52" data-testid="edit-length" value={len ?? fmtLen(song.lengthSec)}
+                onChange={(e) => {
+                  const t = e.target.value; setLen(t);
+                  const sec = parseLen(t);
+                  if (!t.trim()) as.patch({ lengthSec: null });
+                  else if (sec === undefined) as.hold("Length looks like 3:52");
+                  else as.patch({ lengthSec: sec });
+                }}
+                onBlur={() => { void as.flush(); if (!len?.trim() || parseLen(len) !== undefined) setLen(null); }} /></label>
           </div>
           <label className="grid gap-1"><span className="lbl">Status</span>
-            <select className="select" name="status" defaultValue={song.status} data-testid="edit-status">
+            <select className="select" data-testid="edit-status" {...as.bind("status", song.status, { toPatch: (t) => t })}>
               <option value="active">Playing</option><option value="learning">Learning</option><option value="idea">Idea</option><option value="retired">Retired</option>
             </select></label>
-          <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" name="writers" defaultValue={song.writers ?? ""} /></label>
-          <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" name="notes" rows={2} defaultValue={song.notes ?? ""} /></label>
+          <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
+          <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <div className="flex gap-2">
-            <button className="btn acc" disabled={busy} data-testid="song-save">Save</button>
             <button type="button" className="btn ghost" disabled={busy} data-testid="song-archive" onClick={async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); }}>Archive song</button>
           </div>
-        </form>
+        </div>
       )}
 
       <div className="card" data-testid="last-rehearsed">

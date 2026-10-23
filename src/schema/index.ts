@@ -26,6 +26,7 @@ import { e164, lowerEmail, matchKeyFor } from "./normalize";
 export * from "./common";
 export * from "./normalize";
 export * from "./users";
+export * from "./assistant";
 export * from "./musicians";
 export * from "./artists";
 export * from "./contacts";

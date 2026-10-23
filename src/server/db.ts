@@ -14,7 +14,9 @@ import { denormalizers } from "./denorm";
 export type Doc = DocumentData & { id: string };
 
 const COMMON = new Set<string>(commonKeys);
-const STAMP = new Set(["id", "schemaVersion", "createdAt", "updatedAt", "createdBy", "updatedBy", "via", "runId"]);
+/** Autosave patches fold into the previous history entry when it is at most this old. */
+export const COALESCE_MS = 2 * 60_000;
+const STAMP = new Set(["id", "schemaVersion", "createdAt", "updatedAt", "createdBy", "updatedBy", "via", "runId", "rev"]);
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -96,9 +98,14 @@ function writable(doc: DocumentData): Record<string, unknown> {
 export class Writer {
   private pending: ((tx: Transaction) => void)[] = [];
   private overlay = new Map<string, DocumentData | null>();
-  readonly now = Timestamp.now();
+  readonly now: Timestamp;
   private seq = 0;
-  constructor(private tx: Transaction, readonly ctx: Ctx) {}
+  /** Set when an autosave update folded into an earlier history entry: the rest of this unit uses that entry's runId. */
+  coalescedRunId?: string;
+  constructor(private tx: Transaction, readonly ctx: Ctx) {
+    this.now = ctx.now ? Timestamp.fromDate(ctx.now) : Timestamp.now();
+  }
+  get runId() { return this.coalescedRunId ?? this.ctx.runId; }
 
   private fs = firestore();
   flush() { for (const p of this.pending) p(this.tx); }
@@ -132,28 +139,86 @@ export class Writer {
   private stampNew(id: string, body: Record<string, unknown>): DocumentData {
     return {
       ...body, id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
-      createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.ctx.runId, deletedAt: null,
+      createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
     };
   }
   private stampUpdate(prev: DocumentData, body: Record<string, unknown>, deletedAt: Timestamp | null): DocumentData {
     return {
       ...body, id: prev.id, schemaVersion: prev.schemaVersion ?? SCHEMA_VERSION, createdAt: prev.createdAt, createdBy: prev.createdBy,
-      updatedAt: this.now, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.ctx.runId, deletedAt,
+      updatedAt: this.now, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt, rev: ((prev.rev as number | undefined) ?? 0) + 1,
     };
   }
 
-  private commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff) {
+  private commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
     const ref = this.fs.collection(path).doc(id);
     const hist = this.fs.collection("history").doc();
     const seq = this.seq++;
     this.overlay.set(`${path}/${id}`, doc);
+    (this.ctx.touched ??= {})[id] = doc.rev as number;
     this.pending.push((tx) => {
       tx.set(ref, doc);
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
-        createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.ctx.runId, deletedAt: null,
-        entity: { kind: path, id }, op, diff, seq, actor: { uid: this.ctx.uid, via: this.ctx.via },
+        createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
+        entity: { kind: path, id }, op, diff, seq, actor: { uid: this.ctx.uid, via: this.ctx.via }, docRev: doc.rev,
+        ...(autosave ? { autosave: true } : {}),
       });
+    });
+  }
+
+  /** Newest history entries of one document (highest docRev first). Entries from before `rev` existed are not returned. */
+  private async recentHistory(path: string, id: string): Promise<Doc[]> {
+    const rows = await this.query("history", (q) => q.where("entity.id", "==", id).orderBy("docRev", "desc").limit(25));
+    return rows.filter((h) => h.entity?.kind === path);
+  }
+
+  /** Field-level conflict: refuse to overwrite a field someone changed after the `rev` the caller saw. */
+  private async checkConflict(path: string, id: string, baseRev: number, fields: string[], recent: Doc[]) {
+    const newer = recent.filter((h) => (h.docRev as number) > baseRev);
+    const hits: { field: string; value: unknown; by: string; byUid: string; rev: number }[] = [];
+    for (const f of fields) {
+      const h = newer.find((e) => (e.diff as Diff)[f]); // recent is newest first
+      if (h) hits.push({ field: f, value: (h.diff as Diff)[f].after, by: h.actor.uid, byUid: h.actor.uid, rev: h.docRev });
+    }
+    if (!hits.length) return;
+    for (const h of hits) h.by = ((await this.get("users", h.byUid))?.name as string | undefined) ?? "Someone";
+    const cur = ((await this.get(path, id))?.rev as number | undefined) ?? 0;
+    const shown = (v: unknown) => (v === null || v === undefined || v === "" ? "empty" : typeof v === "string" ? `"${v}"` : JSON.stringify(v));
+    throw new AppError("conflict", `${hits[0].by} changed ${hits[0].field} to ${shown(hits[0].value)}`, 409, undefined, { conflicts: hits, currentRev: cur });
+  }
+
+  /**
+   * Autosave coalescing. An update with ctx.autosave folds into the document's newest history entry when that entry is
+   * (a) an autosave update by the same person from the app, (b) the last thing that happened to the doc (its docRev is the
+   * doc's current rev), (c) at most COALESCE_MS old, and (d) already covers every field this patch changes.
+   * The entry keeps its first `before`, takes the new `after`, keeps its runId (the doc and the response use that runId
+   * too), so undo of that one run puts the field back to what it was before the burst of typing. Edits to a field the
+   * entry doesn't cover start a new entry (a new decision, its own runId, its own Undo).
+   */
+  private foldTarget(path: string, existing: Doc, diff: Diff, recent: Doc[]): Doc | null {
+    if (!this.ctx.autosave || this.ctx.via !== "app") return null;
+    const last = recent[0];
+    if (!last || last.op !== "update" || !last.autosave || last.actor?.uid !== this.ctx.uid || last.entity?.kind !== path) return null;
+    if (last.docRev !== ((existing.rev as number | undefined) ?? 0)) return null;
+    const at = (last.updatedAt as Timestamp | undefined)?.toMillis() ?? 0;
+    if (this.now.toMillis() - at > COALESCE_MS) return null;
+    if (!Object.keys(diff).every((k) => k in (last.diff as Diff))) return null;
+    return last;
+  }
+
+  private commitFolded(path: string, id: string, doc: DocumentData, diff: Diff, into: Doc) {
+    const ref = this.fs.collection(path).doc(id);
+    const hist = this.fs.collection("history").doc(into.id);
+    const merged: Diff = { ...(into.diff as Diff) };
+    for (const [k, d] of Object.entries(diff)) {
+      if (same(merged[k].before, d.after)) delete merged[k]; // typed it back to where it started
+      else merged[k] = { before: merged[k].before, after: d.after };
+    }
+    this.overlay.set(`${path}/${id}`, doc);
+    (this.ctx.touched ??= {})[id] = doc.rev as number;
+    this.pending.push((tx) => {
+      tx.set(ref, doc);
+      tx.update(hist, { diff: merged, docRev: doc.rev, updatedAt: this.now, updatedBy: this.ctx.uid });
     });
   }
 
@@ -215,10 +280,19 @@ export class Writer {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits.some((h) => h.id !== id)) throw new AppError("duplicate", `Another ${kind} already matches that name`, 409);
     }
-    const next = clean(this.stampUpdate(existing, { ...data, ...computed }, null));
+    let next = clean(this.stampUpdate(existing, { ...data, ...computed }, null));
     const diff = diffDocs(existing, next);
     if (!Object.keys(diff).length) return { id, changed: false };
-    this.commit(path, id, next, "update", diff);
+    const br = this.ctx.baseRev;
+    const watch = br?.id === id || this.ctx.autosave;
+    const recent = watch ? await this.recentHistory(path, id) : [];
+    if (br?.id === id) await this.checkConflict(path, id, br.rev, Object.keys(diff), recent);
+    const fold = this.foldTarget(path, existing, diff, recent);
+    if (fold) {
+      this.coalescedRunId = fold.runId as string;
+      next = { ...next, runId: this.coalescedRunId };
+      this.commitFolded(path, id, next, diff, fold);
+    } else this.commit(path, id, next, "update", diff, !!this.ctx.autosave && this.ctx.via === "app");
     await this.afterChange(path, existing, next);
     return { id, changed: true };
   }
@@ -247,7 +321,7 @@ export class Writer {
    * Reverse one history entry (used by undo only). create -> soft delete, delete -> restore, restore -> soft delete,
    * update/merge -> put the `before` values back. Works on append-only docs too (activity); never on immutable ones.
    */
-  async revert(path: string, id: string, op: string, diff: Diff): Promise<{ changed: boolean; as: "delete" | "restore" | "update" }> {
+  async revert(path: string, id: string, op: string, diff: Diff): Promise<{ changed: boolean; as: "delete" | "restore" | "update"; skipped?: string[] }> {
     const kind = kindOf(path);
     const d = def(kind);
     if (d.immutable) throw new AppError("immutable", `${kind} documents are never edited`, 409);
@@ -267,17 +341,19 @@ export class Writer {
     }
     const computed = new Set(computedFields[kind] ?? []);
     const merged: Record<string, unknown> = { ...writable(existing) };
+    const skipped: string[] = [];
     for (const [k, v] of Object.entries(diff)) {
       if (COMMON.has(k) || computed.has(k)) continue;
+      if (!same(existing[k], v.after)) { skipped.push(k); continue; } // changed again since: leave the newer value alone
       if (v.before === null || v.before === undefined) delete merged[k]; else merged[k] = v.before;
     }
     const { data, computed: comp } = prepare(kind, merged);
     const next = clean(this.stampUpdate(existing, { ...data, ...comp }, existing.deletedAt ?? null));
     const changes = diffDocs(existing, next);
-    if (!Object.keys(changes).length) return { changed: false, as: "update" };
+    if (!Object.keys(changes).length) return { changed: false, as: "update", ...(skipped.length ? { skipped } : {}) };
     this.commit(path, id, next, "update", changes);
     await this.afterChange(path, existing, next);
-    return { changed: true, as: "update" };
+    return { changed: true, as: "update", ...(skipped.length ? { skipped } : {}) };
   }
 
   /** Denormalization hooks: refresh copies of display fields when the source doc changes. */
@@ -293,12 +369,15 @@ export class Writer {
 
 /** One transaction. Retries re-run fn, so keep it free of side effects other than writer calls. */
 export async function run<T>(ctx: Ctx, fn: (w: Writer) => Promise<T>): Promise<T> {
-  return firestore().runTransaction(async (tx) => {
-    const w = new Writer(tx, ctx);
+  let last: Writer | undefined;
+  const out = await firestore().runTransaction(async (tx) => {
+    const w = (last = new Writer(tx, ctx));
     const out = await fn(w);
     w.flush();
     return out;
   });
+  if (last?.coalescedRunId) ctx.runId = last.coalescedRunId; // the caller (and the response) now refer to the entry that was folded into
+  return out;
 }
 
 /**

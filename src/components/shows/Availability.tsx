@@ -1,7 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { useDraft, useHasDraft } from "@/lib/drafts";
+import { newMutationId } from "@/lib/commands";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { ASK_LABEL, askState, fmtLong, type Answer, type AskState } from "@/lib/shows";
 import type { Availability, Musician } from "@/schema";
@@ -33,21 +36,29 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
   pitchId?: string; showId?: string; date: string; defaultIds: string[]; place: string; musicians: Row<Musician>[];
 }) {
   const { call, error, busy } = useCommand();
-  const [open, setOpen] = useState(false);
-  const [d, setD] = useState(date);
-  const [picked, setPicked] = useState<string[]>(defaultIds);
-  const [msg, setMsg] = useState<string | null>(null);
+  // The ask is an action (it emails people): the button stays, its inputs are a draft per show/pitch.
+  const ctxKey = showId ? `show:${showId}` : `pitch:${pitchId}`;
+  const draft = useDraft("availabilityAsk", ctxKey, { date, picked: defaultIds, msg: null as string | null }, { title: () => `Ask who's free · ${place}` });
+  const hasDraft = useHasDraft("availabilityAsk", ctxKey);
+  const [explicit, setOpen] = useState<boolean | null>(null);
+  const open = explicit ?? hasDraft;
+  const mutationId = useRef(newMutationId());
+  const { date: d, picked, msg } = draft.value;
+  const setD = (v: string) => draft.setValue({ ...draft.value, date: v });
+  const setPicked = (v: string[]) => draft.setValue({ ...draft.value, picked: v });
+  const setMsg = (v: string | null) => draft.setValue({ ...draft.value, msg: v });
   const [result, setResult] = useState<AskResult | null>(null);
   const defaultMsg = `We have an option for a show at ${place} on ${fmtLong(d) || "that date"}. Tap here to say if you're available.`;
   async function send() {
-    const r = await call<AskResult>("availability.ask", { pitchId, showId, date: d, musicianIds: picked, message: msg ?? defaultMsg });
-    if (r) { setResult(r); setOpen(false); setMsg(null); }
+    await draft.settle();
+    const r = await call<AskResult>("availability.ask", { pitchId, showId, date: d, musicianIds: picked, message: msg ?? defaultMsg }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
+    if (r) { setResult(r); setOpen(false); mutationId.current = newMutationId(); await draft.clear({ reset: true }); }
   }
   return (
     <div className="grid gap-2">
       <button className="btn ghost justify-self-start" onClick={() => setOpen(!open)} data-testid="ask-toggle">Ask who&apos;s free</button>
       {result && <Sent r={result} />}
-      {open && (
+      {open && draft.ready && (
         <div className="card" data-testid="ask-form">
           <span className="lbl">Date</span>
           <input className="input" type="date" value={d} onChange={(e) => setD(e.target.value)} data-testid="ask-date" />
@@ -62,6 +73,7 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
           <span className="lbl">Message</span>
           <textarea className="input" rows={4} value={msg ?? defaultMsg} onChange={(e) => setMsg(e.target.value)} data-testid="ask-message" />
           <span className="s">Each person gets an email with their own link. They can answer without logging in.</span>
+          <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
           <ErrorBox error={error} />
           <button className="btn acc" disabled={busy || !picked.length || !d} onClick={send} data-testid="ask-send">Send</button>
         </div>

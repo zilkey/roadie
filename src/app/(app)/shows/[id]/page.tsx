@@ -9,7 +9,9 @@ import { fmtLongYear } from "@/lib/shows";
 import { billingName, configName, nameOf, ShowStatusChip, Times, useBand, type ShowRow } from "@/components/shows/common";
 import { ChecklistPanel, DealPanel, DocsPanel, GearPanel, ListingsPanel, SetlistPanel } from "@/components/shows/ShowParts";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
-import { ShowForm, timesOf, type ShowFormState } from "@/components/shows/ShowForm";
+import { ShowForm, showPatch, type ShowFormState } from "@/components/shows/ShowForm";
+import { SaveStatus } from "@/components/SaveStatus";
+import { useAutosave } from "@/lib/autosave";
 import type { Show, Venue } from "@/schema";
 
 export default function ShowPage() {
@@ -38,28 +40,12 @@ function ShowView({ show }: { show: ShowRow }) {
   const { call, error, busy } = useCommand();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ShowFormState>(() => formOf(show));
+  // Existing record = autosave: no Save button, each field is a patch through shows.update, "Saved" + Undo toast after.
+  const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, onUseTheirs: () => setForm(formOf(show)) });
+  const edit = (next: ShowFormState) => { as.patch(showPatch(form, next)); setForm(next); };
   const venues = useCollection<Venue>("venues", { skip: !admin }).rows ?? [];
-  const [notes, setNotes] = useState<string | null>(null);
   const cfg = configName(b.artist, show.billedAs);
   const playing = !!p.musicianId && show.personnel.includes(p.musicianId);
-
-  async function save() {
-    const f = form, patch: Record<string, unknown> = {};
-    if (f.venueId !== show.venue.id) patch.venueId = f.venueId;
-    if (f.date !== show.date) patch.date = f.date;
-    if (f.status !== show.status) patch.status = f.status;
-    if (JSON.stringify(timesOf(f)) !== JSON.stringify(timesOf(formOf(show)))) patch.times = timesOf(f);
-    if (f.billedAs !== (show.billedAs ?? "")) patch.billedAs = f.billedAs || null;
-    if (JSON.stringify([...f.personnel].sort()) !== JSON.stringify([...show.personnel].sort())) patch.personnel = f.personnel;
-    if (f.soundProvider !== show.sound.provider || f.soundNotes !== (show.sound.notes ?? "")) patch.sound = { provider: f.soundProvider, ...(f.soundNotes.trim() ? { notes: f.soundNotes.trim() } : {}) };
-    if (f.soundProvider !== show.sound.provider) patch.rebuildGear = true;
-    if (f.poster !== show.needs.poster || f.backline !== show.needs.backline || f.merch !== show.needs.merch) patch.needs = { poster: f.poster, backline: f.backline, merch: f.merch };
-    if (f.public !== show.public) patch.public = f.public;
-    if (f.ticketUrl !== (show.ticketUrl ?? "")) patch.ticketUrl = f.ticketUrl || null;
-    if (f.bandNotes !== (show.bandNotes ?? "")) patch.bandNotes = f.bandNotes.trim() || null;
-    if (!Object.keys(patch).length) return setEditing(false);
-    if (await call("shows.update", { id: show.id, patch })) setEditing(false);
-  }
 
   return (
     <div className="grid gap-3" data-testid="show-page" data-show-id={show.id}>
@@ -70,7 +56,8 @@ function ShowView({ show }: { show: ShowRow }) {
         <ShowStatusChip status={show.status} />
         {show.editionName && <span className="chip m">{show.editionName}</span>}
         {!admin && p.musicianId && <span className={`chip ${playing ? "m" : ""}`}>{playing ? "You're playing" : "Not playing"}</span>}
-        {admin && <button className="btn ghost sm" onClick={() => { setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Close" : "Edit"}</button>}
+        {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
+        {admin && <SaveStatus {...as.statusProps} />}
         {admin && show.status !== "canceled" && (
           <button className="btn ghost sm" disabled={busy} data-testid="show-cancel"
             onClick={() => confirm("Cancel this show? It comes off the calendar and Bandsintown.") && call("shows.cancel", { id: show.id })}>Cancel show</button>
@@ -79,7 +66,7 @@ function ShowView({ show }: { show: ShowRow }) {
       </div>
 
       {editing && admin ? (
-        <ShowForm mode="edit" value={form} onChange={setForm} venues={venues} artist={b.artist} musicians={b.musicians} error={null} busy={busy} submitLabel="Save changes" onSubmit={save} onCancel={() => setEditing(false)} />
+        <ShowForm mode="edit" value={form} onChange={edit} onBlur={() => void as.flush()} venues={venues} artist={b.artist} musicians={b.musicians} error={null} busy={busy} />
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid content-start gap-3">
@@ -109,8 +96,7 @@ function ShowView({ show }: { show: ShowRow }) {
             <div className="grid gap-1" data-testid="band-notes">
               <span className="lbl">Band notes</span>
               {admin
-                ? <textarea className="input" rows={3} placeholder="Parking, dress, food" value={notes ?? show.bandNotes ?? ""} data-testid="notes-input"
-                    onChange={(e) => setNotes(e.target.value)} onBlur={() => { if (notes !== null && notes !== (show.bandNotes ?? "")) call("shows.update", { id: show.id, patch: { bandNotes: notes.trim() || null } }).then(() => setNotes(null)); }} />
+                ? <textarea className="input" rows={3} placeholder="Parking, dress, food" data-testid="notes-input" {...as.bind("bandNotes", show.bandNotes ?? "", { toPatch: (t) => t.trim() || null })} />
                 : <span className="whitespace-pre-wrap">{show.bandNotes || <span className="s">Nothing yet.</span>}</span>}
             </div>
             <ListingsPanel show={show} editable={admin} />

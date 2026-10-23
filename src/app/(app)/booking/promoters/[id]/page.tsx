@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, promoterForm, toPatch, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound } from "@/components/booking/common";
 import type { Promoter } from "@/schema";
 
 export default function Page() { return <AdminOnly><PromoterPage /></AdminOnly>; }
@@ -27,11 +27,11 @@ function PromoterPage() {
       <ErrorBox error={error} />
       <div className="flex flex-wrap gap-2">
         <FlagButton kind="promoter" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Close" : "Edit"}</button>
+        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
       </div>
       {edit && (
-        <EntityForm testid="promoter-edit" fields={promoterForm.fields} initial={promoterForm.initial(p)} build={promoterForm.build} submitLabel="Save"
-          onSubmit={async (d) => { const r = await call("promoters.update", { id, patch: toPatch(d) }); if (r) setEdit(false); }} />
+        <EntityForm testid="promoter-edit" fields={promoterForm.fields} initial={promoterForm.initial(p)} build={promoterForm.build}
+          autosave={{ command: "promoters.update", id, rev: p.rev }} />
       )}
       {!edit && (p.howToPitch || p.notes || p.website) && (
         <div className="card">

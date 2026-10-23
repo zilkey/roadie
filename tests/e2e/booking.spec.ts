@@ -29,13 +29,14 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("person-David")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("next-text").fill("Follow up");
   await page.getByTestId("next-due").fill("2026-11-09");
-  await page.getByTestId("next-save").click();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.getByTestId("status-pitched").click();
   await expect(page.getByTestId("status-pitched")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("timeline")).toContainText("Moved to Pitched");
   await page.getByTestId("comment-input").fill("Great room for the trio");
   await page.getByTestId("comment-send").click();
   await expect(page.getByTestId("timeline")).toContainText("Great room for the trio");
+  await expect(page.getByTestId("comment-input")).toHaveValue("");
 
   await page.goto("/home");
   await expect(page.getByTestId("todos")).toContainText("Follow up · Swallow Hill Music");
@@ -95,4 +96,142 @@ test("members cannot reach booking pages", async ({ page }) => {
   await page.goto("/booking/templates");
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByTestId("booking-home")).toHaveCount(0);
+});
+
+test("a venue's edit form autosaves (no Save button), survives a reload, and a new contact is a draft until Add", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto("/booking");
+  await page.getByTestId("booking-search").fill("lost lake");
+  await page.getByTestId(/^row-venue-/).getByRole("link").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  const url = page.url();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("venue-edit-submit")).toHaveCount(0);
+  const note = `Load in through the alley ${Date.now()}`;
+  await page.getByTestId("venue-edit-loadInNotes").fill(note);
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("venue-edit-loadInNotes")).toHaveValue(note);
+  // an empty required field is not saved (and does not blank the venue)
+  await page.getByTestId("venue-edit-city").fill("");
+  await page.getByTestId("venue-edit-notes").fill("still here");
+  await expect(page.getByTestId("save-status")).toContainText("City is required");
+  await page.getByTestId("venue-edit-city").fill("Denver");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("venue-edit-notes")).toHaveValue("still here");
+  await expect(page.getByTestId("page-title")).toHaveText("Lost Lake Lounge");
+
+  // inline "New contact" = draft: closed and reopened, the typing is still there; Add creates it and clears the draft
+  await page.getByTestId("contact-new").click();
+  await page.getByTestId("contact-form-name").fill("Draft Person");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("contact-form-name")).toHaveValue("Draft Person"); // form reopens by itself
+  await page.getByTestId("contact-form-submit").click();
+  await expect(page.getByTestId("contact-Draft Person")).toBeVisible();
+  await page.goto(url);
+  await expect(page.getByTestId("contact-form")).toHaveCount(0);
+});
+
+test("a new promoter and a new year are drafts; existing promoter, festival and contact autosave", async ({ page }) => {
+  await signInAs(page, "jeff");
+  const stamp = Date.now();
+  const name = `Draft Promo ${stamp}`;
+  await page.goto("/booking");
+  await page.getByTestId("add-promoter").click();
+  await page.getByTestId("new-promoter-name").fill(name);
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("new-promoter-name")).toHaveValue(name); // the form reopens by itself
+  await page.goto("/home");
+  await expect(page.getByTestId("unfinished")).toContainText(name);
+  await page.goto("/booking");
+  await page.getByTestId("new-promoter-submit").click();
+  await expect(page.getByTestId("promoter-page")).toBeVisible();
+  await page.goto("/home");
+  await expect(page.getByTestId("unfinished")).toHaveCount(0);
+
+  await page.goto("/booking");
+  await page.getByTestId("booking-search").fill(name);
+  await page.getByTestId(/^row-promoter-/).getByRole("link").click();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("promoter-edit-submit")).toHaveCount(0);
+  await page.getByTestId("promoter-edit-notes").fill("Books Fridays");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("promoter-edit-notes")).toHaveValue("Books Fridays");
+
+  // a festival: edit autosaves, "Add a year" is a draft until Add year
+  await page.goto("/booking");
+  await page.getByTestId("add-festival").click();
+  await page.getByTestId("new-festival-name").fill(`Fest ${stamp}`);
+  await page.getByTestId("new-festival-submit").click();
+  await expect(page.getByTestId("festival-page")).toBeVisible();
+  await page.getByTestId("edit-toggle").click();
+  await page.getByTestId("festival-edit-genres").fill("folk");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("add-edition").click();
+  await page.getByTestId("new-edition-label").fill("2099");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("new-edition-label")).toHaveValue("2099");
+  await page.getByTestId("new-edition-submit").click();
+  await expect(page.getByTestId(/^edition-/).first()).toContainText("2099");
+  await page.getByTestId(/^edition-/).first().getByRole("link").click();
+  await expect(page.getByTestId("edition-page")).toBeVisible();
+  await page.getByTestId("edit-toggle").click();
+  await page.getByTestId("edition-edit-payNotes").fill("$500");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("edition-edit-payNotes")).toHaveValue("$500");
+  await page.getByTestId("edition-edit-payNotes").fill("$900");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("undo-button").first().click(); // edits within 2 minutes fold into one history entry, so Undo reverts both
+  await expect(page.getByTestId("edition-edit-payNotes")).toHaveValue("");
+
+  // a contact page autosaves too
+  await page.goto("/booking");
+  await page.getByTestId("booking-seg-contacts").click();
+  await page.getByTestId(/^row-contact-/).first().getByRole("link").click();
+  await expect(page.getByTestId("contact-page")).toBeVisible();
+  await page.getByTestId("edit-toggle").click();
+  const note = `call after 5 ${stamp}`;
+  await page.getByTestId("contact-edit-notes").fill(note);
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await page.getByTestId("edit-toggle").click();
+  await expect(page.getByTestId("contact-edit-notes")).toHaveValue(note);
+});
+
+test("pitch comments and email templates: existing templates autosave, new ones and comments are drafts", async ({ page }) => {
+  await signInAs(page, "jeff");
+  const stamp = Date.now();
+  await page.goto("/booking/templates");
+  await page.getByTestId("template-new").click();
+  await page.getByTestId("template-name").fill(`Tpl ${stamp}`);
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("template-name")).toHaveValue(`Tpl ${stamp}`);
+  await page.getByTestId("template-subject").fill("Hello");
+  await page.getByTestId("template-save").click();
+  const card = page.getByTestId(`template-Tpl ${stamp}`);
+  await expect(card).toContainText("Hello");
+  await card.getByTestId("template-edit").click();
+  await page.getByTestId("template-subject").fill("Hello again");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId(`template-Tpl ${stamp}`)).toContainText("Hello again");
+
+  await page.goto("/booking");
+  await page.getByTestId("booking-seg-pitches").click();
+  await page.getByTestId(/^pitch-(?!list)/).first().click();
+  await page.getByTestId("comment-input").fill(`typing ${stamp}`);
+  await expect(page.getByTestId("draft-status").first()).toHaveText("Draft saved");
+  await page.reload();
+  await expect(page.getByTestId("comment-input")).toHaveValue(`typing ${stamp}`);
 });

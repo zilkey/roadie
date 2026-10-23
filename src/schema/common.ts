@@ -42,12 +42,14 @@ export const commonShape = {
   via,
   runId: z.string(),
   deletedAt: ts.nullable(),
+  /** +1 on every write (create = 1). Documents written before this existed have none: treat as 0. */
+  rev: z.number().int().optional(),
 };
 export const commonKeys = Object.keys(commonShape) as (keyof typeof commonShape)[];
 /** Mask to `.omit()` the server-stamped fields to get the input schema. */
 export const serverMask = {
   id: true, schemaVersion: true, createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
-  via: true, runId: true, deletedAt: true,
+  via: true, runId: true, deletedAt: true, rev: true,
 } as const;
 
 /** Booking data keeps where each fact came from. */

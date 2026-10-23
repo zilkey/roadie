@@ -68,3 +68,53 @@ Each client is plain HTTP aimed at `<SVC>_BASE_URL` (defaults to the fake). **No
 11. `mcpTokens.lastUsedAt` and restore write outside `db.ts` on purpose (telemetry should not appear in or be undone with an AI run; restore must keep ids and timestamps).
 12. `npm run lint` is `tsc --noEmit`; there is no ESLint.
 13. `history.diff` is `{field: {before, after}}`, not the blueprint's `[before, after]` (Firestore forbids nested arrays).
+
+## Roadie (slice 8a)
+
+**Built**
+- Genkit (`genkit`, `@genkit-ai/google-genai`, dev `genkit-cli`). Flow `assistant.chat` in `src/server/assistant/` (`flow.ts`, model setup in `ai.ts`, canned replies in `script.ts`). `npm run genkit:ui` opens the Developer UI on `src/server/assistant/dev.ts` with the emulator env vars (`ROADIE_MODEL` defaults to `fake`).
+- `POST /api/assistant/chat` (`src/server/assistant/chat.ts`): verifies the ID token, admins only (members 403), streams SSE `text | action | navigate | done | error`.
+- Named routes in `src/lib/routes.ts`; `ui.navigate` takes a route name + params, never a URL; unknown names fail safely (an action line, no navigation).
+- Threads: `assistantThreads/{id}` + `messages/{id}`, written by `threads.ts` with firebase-admin directly (not db.ts, so no history/undo). Rules: owner admin reads, no client writes. Zod in `src/schema/assistant.ts`.
+- Panel (`src/components/roadie/`), mounted in `Shell.tsx` for admins: left column on desktop (narrow strip, not closable), pill + bottom sheet on phones, live transcript from Firestore, vamping line (36 spec lines, one static line with reduced motion). Width and thread are saved by command `assistant.setPrefs` into `users.prefs.assistant`.
+
+**Faked**
+- `ROADIE_MODEL=fake` is the default under emulators and in all tests: a keyword script (greeting, off-topic, can't-do, "show me the shows" / "go to money" style navigation). No network.
+- The Gemini path (`ROADIE_MODEL=gemini`, needs `GOOGLE_API_KEY`) is wired in `ai.ts` but never exercised.
+
+**Gaps**
+- No data tools yet (reads/writes through the command layer), no form filling, confirm cards, undo links, images, mic, high-fives, or "plainer Roadie" setting.
+- Browser tools are fire-and-forget: the server treats `ui.navigate` as done. `assistant.toolResult` (round trip) comes later.
+- Page context sends only route + record id, not open-form state.
+- `assistant.setPrefs` goes through db.ts, so width/thread changes show up in the history list as user updates.
+- Threads are never pruned and there is no thread list; "New" just starts another.
+
+
+## Definition of done: saving (slice 8b)
+
+Shared core is in; Shows (`shows/new`, `shows/[id]`, band notes) and the Venue page are converted. How to convert the rest: `docs/AUTOSAVE.md`.
+
+- **Autosave** on existing records (`useAutosave`, `EntityForm autosave`): field-level patches through `<kind>.update`, 800 ms / blur, "Saving… / Saved / Offline · will save", toast with Undo for 10 s, conflict message instead of overwrite.
+- **Drafts** for new records (`useDraft`, `EntityForm draft`): device (localStorage) then `users/{uid}/drafts/{draftId}` via `drafts.save` / `drafts.discard` / `drafts.list`; owner-only read in rules; 30-day expiry (ignored when read, deleted on save); Home "Unfinished" card. New records are still created by an explicit button.
+- **History**: `rev` on every document (+1 per write; missing = 0); history rows carry `docRev` and `autosave`. Autosave patches by the same person from the app within 2 minutes fold into the previous entry **when that entry already covers the fields** (a different field starts a new entry). A folded save keeps the entry's runId (the doc and the API response report it), so the toast's Undo reverts the whole burst of typing back to the value before it. `history.undoRun` now skips fields edited again since (`skippedFields` / `changedSince` in the report). Commands accept `_meta: {clientMutationId, baseRev, autosave, clearDraft}`; responses are `{result, runId, revs}`.
+- **Writes outside db.ts (all documented exceptions)**: `touchLastUsed` (mcpTokens telemetry), `restoreDump` (restore keeps ids and timestamps), `src/server/drafts.ts` (personal scratch), `src/server/mutations.ts` (idempotency bookkeeping), Roadie chat threads (`src/server/assistant/threads.ts`). Nothing else writes Firestore except through db.ts (grep of `src/server`, `mcp`, `scripts`).
+- **Ops to do before production**: deploy `firestore.indexes.json` (history `entity.id` + `docRev desc` composite index; TTL policy on `mutations.expiresAt`). Backups skip drafts and mutations.
+- **Booking + Admin converted** (autosave = existing record, draft = new record with an explicit Add button, action = stays a button):
+  - `booking/venues/[id]`, `promoters/[id]`, `festivals/[id]`, `editions/[id]`, `contacts/[id]`: edit = autosave (`EntityForm autosave`, toggle says Done). Flag, Archive, link/unlink promoter or contact = actions.
+  - `festivals/[id]` "Add a year": draft (`edition`, context `festival:<id>`), opens by itself when a draft exists.
+  - `booking` add venue / promoter / festival / contact: drafts (context `new`), the form opens by itself on return from Home's Unfinished card.
+  - `booking/pitches/[id]`: Pitching as, Who's on it, Who's handling it and Next step = autosave (`pitches.update`; a half-filled next step is held with "Not saved"). Comment and Log a call = drafts (`pitchComment`, `pitchCall`, per pitch) with Post / Log call buttons. Status moves, Email, Check replies, Remove, Booked it = actions.
+  - `booking/templates`: existing template = autosave (Done button closes); new template = draft with Add template.
+  - `admin/musicians`: existing rows autosave (Edit opens the fields; Set active/inactive saves at once with status and Undo; Archive = action); add form = draft.
+  - `admin/users`: role and AI access save on change with per-row status and Undo (`users.update`); add form = draft; Remove = action.
+  - `admin/artist`: artist name, configurations (name, billing name, lineup, gear) and sound gear autosave (no Save button; blank gear rows are kept on screen but not sent); a new configuration = draft (`configuration`) with Add configuration.
+  - `admin/ai-keys`: unchanged. Create key and Revoke are actions; nothing else there is editable.
+- **Songs, Money, Shows converted** (autosave = existing record, draft = new record or half-entered action with its button kept):
+  - `songs/new`: draft (`song`, title/key/length; Drive picks are re-picked after a restore). `songs/[id]`: edit = autosave (`songs.update`, Done button; Archive, Add from Drive, sharing fixes, Remove file = actions).
+  - `songs/rehearsals/[id]`: split. `new` = draft (`rehearsal`) with Save rehearsal; existing = autosave (`rehearsals.update`). Attach recording, Archive = actions.
+  - `songs/setlists/[id]`: name and item list (add, remove, reorder) autosave through `setlists.update` (list changes patch at once) with status and Undo; Attach to show = action. `songs` new setlist name = draft (`setlist`, opens on the Setlists tab via `?seg=setlists`).
+  - `money/expense`: draft (`expense`, context `new` or `show:<id>`) with Send. `money` ledger Record form: draft (`ledger`, `?tab=ledger`) with Record; the ledger is immutable, Correct stays explicit. Mark reimbursed / Mark paid = actions. `MyMoney` submits nothing (read-only).
+  - `shows/[id]/after`: `shows.afterShow` is a one-shot action (marks played, syncs): answers are a draft (`afterShow`, per show), Save stays. `EnterMoney`: the `shows.settle` inputs are a draft (`settlement`, per show), Save money stays.
+  - `ShowParts`: `DealPanel` autosaves (`showDeals.update`, Done button). Checklist, gear and docs: existing rows save at once (`shows.setChecklist` / `setGear` / `packGear` / `update docs`, status + Undo; `components/shows/saved.tsx`, because those commands take whole lists, not a patch); the "add" boxes are drafts (`checklistItem`, `gearItem`, `showDoc`, per show). Setlist select, Rebuild gear, Sync, Calendar = actions.
+  - `Availability`: the ask form is a draft (`availabilityAsk`, per show/pitch) and Send stays; Mark, Remind, Close, Reopen = actions. Public `ask/...` page untouched.
+- **Gaps (not done on purpose)**: history is still one top-level collection (not per-document subcollections); no offline write queue (a closed tab with an unsent autosave loses it; the draft's device copy survives); no typo guard on money; no `createdVia/updatedVia` rename; conflicts are field-level and only for `*.update` patches that send `baseRev`; MCP calls don't send `clientMutationId`; a coalesced entry's Undo reverts everything folded into it; rest of the app still has Save buttons (list in the handoff).

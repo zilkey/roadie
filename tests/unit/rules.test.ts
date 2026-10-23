@@ -32,6 +32,8 @@ before(async () => {
     await setDoc(doc(d, "ledger/spend"), { ...live, kind: "expense" });
     await setDoc(doc(d, "expenses/mine"), { ...live, userId: "david" });
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
+    await setDoc(doc(d, "users/jeff/drafts/show__new"), { kind: "show", values: { a: 1 } });
+    await setDoc(doc(d, "users/david/drafts/show__new"), { kind: "show", values: { a: 2 } });
   });
 });
 after(async () => { await env.cleanup(); });
@@ -100,5 +102,21 @@ test("ALL client writes are denied, even for admins", async () => {
     await assertFails(setDoc(doc(db, "expenses", "new"), { userId: "david" }));
     await assertFails(setDoc(doc(db, "pitches/x/comments/new"), { body: "x" }));
     await assertFails(setDoc(doc(db, "unlisted", "new"), { a: 1 }));
+  }
+});
+
+test("drafts: only the owner reads their own; admins, members and anon cannot read someone else's; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "users/jeff/drafts/show__new")));
+  await assertSucceeds(getDocs(collection(admin(), "users/jeff/drafts")));
+  await assertSucceeds(getDoc(doc(david(), "users/david/drafts/show__new")));
+  await assertFails(getDoc(doc(admin(), "users/david/drafts/show__new"))); // not even an admin
+  await assertFails(getDoc(doc(david(), "users/jeff/drafts/show__new")));
+  await assertFails(getDocs(collection(david(), "users/jeff/drafts")));
+  await assertFails(getDoc(doc(anon(), "users/jeff/drafts/show__new")));
+  await assertFails(getDoc(doc(noRole(), "users/jeff/drafts/show__new")));
+  for (const [who, uid] of [[admin(), "jeff"], [david(), "david"]] as const) {
+    await assertFails(setDoc(doc(who, `users/${uid}/drafts/mine`), { kind: "show" }));
+    await assertFails(updateDoc(doc(who, `users/${uid}/drafts/show__new`), { title: "x" }));
+    await assertFails(deleteDoc(doc(who, `users/${uid}/drafts/show__new`)));
   }
 });
