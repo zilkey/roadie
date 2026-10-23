@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where, type WhereFilterOp } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, where, type WhereFilterOp } from "firebase/firestore";
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
 
@@ -25,4 +25,21 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, key]);
   return { rows, error, loading: rows === null && !error };
+}
+
+/** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted. */
+export function useDoc<T = Record<string, unknown>>(path: string, id: string) {
+  const { state } = useAuth();
+  const ready = state.status === "ready";
+  const [value, setValue] = useState<{ doc: Row<T> | null } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!ready) return;
+    return onSnapshot(
+      doc(clientDb(), path, id),
+      (s) => { const d = s.data(); setValue({ doc: s.exists() && !d?.deletedAt ? ({ ...(d as T), id: s.id }) : null }); setError(null); },
+      (e) => setError(e.message),
+    );
+  }, [ready, path, id]);
+  return { doc: value?.doc ?? null, loading: value === null && !error, error };
 }

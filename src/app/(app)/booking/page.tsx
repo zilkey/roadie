@@ -1,4 +1,144 @@
 "use client";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
-import { Stub } from "@/components/ui";
-export default function Booking() { return <AdminOnly><Stub title="Booking" slice={3} /></AdminOnly>; }
+import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { useCollection } from "@/lib/firestore-hooks";
+import {
+  EntityForm, FlagButton, Seg, StatusChip, contactForm, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+} from "@/components/booking/common";
+import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems } from "@/lib/booking";
+import type { User } from "@/schema";
+
+export default function BookingPage() { return <AdminOnly><Booking /></AdminOnly>; }
+
+type Seg = "all" | "pitches" | "venues" | "festivals" | "promoters" | "contacts";
+type Add = null | "venue" | "promoter" | "festival" | "contact";
+interface ListRow { key: string; kind: "venue" | "promoter" | "festival" | "edition" | "contact"; id: string; title: string; sub: string; ownerId: string }
+
+function Booking() {
+  const router = useRouter();
+  const b = useBooking();
+  const { call, error } = useCommand();
+  const [seg, setSeg] = useState<Seg>("all");
+  const [q, setQ] = useState("");
+  const [add, setAdd] = useState<Add>(null);
+
+  const rows = useMemo(() => {
+    const items = searchItems(buildSearchItems(b), q);
+    const hit = new Set(items.map((i) => `${i.kind}:${i.id}`));
+    const searching = q.trim().length > 0;
+    const all: ListRow[] = [];
+    const sorted = <T extends { name: string }>(x: T[]) => [...x].sort((a, c) => a.name.localeCompare(c.name));
+    for (const v of sorted(b.venues)) all.push({ key: `venue:${v.id}`, kind: "venue", id: v.id, ownerId: v.id, title: v.name, sub: ["Venue", v.address.city, v.capacity].filter(Boolean).join(" · ") });
+    for (const p of sorted(b.promoters)) all.push({ key: `promoter:${p.id}`, kind: "promoter", id: p.id, ownerId: p.id, title: p.name, sub: `Promoter · ${p.venueIds.length} venue${p.venueIds.length === 1 ? "" : "s"}` });
+    for (const f of sorted(b.festivals)) {
+      all.push({ key: `festival:${f.id}`, kind: "festival", id: f.id, ownerId: f.id, title: f.name, sub: f.type === "series" ? "Series" : "Festival" });
+      for (const e of b.editions.filter((x) => x.festivalId === f.id).sort((x, y) => y.year - x.year)) {
+        all.push({ key: `edition:${e.id}`, kind: "edition", id: e.id, ownerId: f.id, title: `${f.name} ${e.label}`,
+          sub: `${f.type === "series" ? "Series" : "Festival"}${e.startDate ? ` · ${fmtDate(e.startDate)}${e.endDate && e.endDate !== e.startDate ? `–${fmtDate(e.endDate)}` : ""}` : ""}` });
+      }
+    }
+    for (const c of sorted(b.contacts)) all.push({ key: `contact:${c.id}`, kind: "contact", id: c.id, ownerId: c.id, title: c.name, sub: ["Contact", c.title].filter(Boolean).join(" · ") });
+    const inSeg = (r: ListRow) =>
+      seg === "venues" ? r.kind === "venue" : seg === "promoters" ? r.kind === "promoter" : seg === "contacts" ? r.kind === "contact"
+        : seg === "festivals" ? r.kind === "festival" || r.kind === "edition"
+        : seg === "all" ? (searching || (r.kind !== "contact" && r.kind !== "festival")) : false;
+    // editions follow their festival's match, so searching "UMS" shows the festival and its years
+    return all.filter((r) => inSeg(r) && (!searching || hit.has(`${r.kind === "edition" ? "festival" : r.kind}:${r.ownerId}`)));
+  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, q, seg]);
+
+  const open = appsOpenThisMonth(b.editions);
+  const users = useCollection<User>("users");
+  const userName = (id?: string) => users.rows?.find((u) => u.id === id)?.name;
+  const pitchesFiltered = q.trim() ? b.pitches.filter((p) => p.target.name.toLowerCase().includes(q.toLowerCase())) : b.pitches;
+
+  async function create(kind: Exclude<Add, null>, data: Record<string, unknown>) {
+    const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", contact: "contacts.create" }[kind];
+    const r = await call<{ id: string }>(cmd, data);
+    if (r) router.push(hrefFor(kind, r.id));
+    return false;
+  }
+  const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, contact: contactForm };
+
+  return (
+    <div className="grid gap-3">
+      <PageTitle title="Booking" sub="Everything we could play. The flag adds it to the Pitch List." />
+      <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
+      <Seg<Seg> testid="booking-seg" value={seg} onChange={setSeg}
+        options={[["all", "All"], ["pitches", "Pitch List"], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
+      <ErrorBox error={error} />
+
+      {open.length > 0 && (
+        <div className="card hi" data-testid="apps-open">
+          <span className="lbl">Applications open this month</span>
+          {open.map((e) => (
+            <Link key={e.id} href={hrefFor("edition", e.id)} className="flex justify-between gap-2" data-testid={`apps-open-${e.id}`}>
+              <b>{e.festivalName} {e.label}</b>
+              <span className="s">{e.appOpens ? `opens ${fmtDate(e.appOpens.date)}` : ""}{e.appDeadline ? ` · closes ${fmtDate(e.appDeadline.date)}` : ""}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {seg === "pitches" ? (
+        <PitchList pitches={pitchesFiltered} userName={userName} />
+      ) : (
+        <div className="grid gap-2" data-testid="booking-list">
+          {b.loading && <span className="s">Loading…</span>}
+          {!b.loading && rows.length === 0 && <span className="s" data-testid="no-results">Nothing matches.</span>}
+          {rows.map((r) => {
+            const pitch = r.kind === "contact" || r.kind === "festival" ? undefined : activeFor(b.pitches, r.kind, r.id);
+            return (
+              <div key={r.key} className={`card flex-row items-center justify-between ${r.kind === "edition" ? "ml-4" : ""}`} style={{ display: "flex" }} data-testid={`row-${r.kind}-${r.id}`}>
+                <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5">
+                  <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
+                </Link>
+                {pitch && <StatusChip status={pitch.status} />}
+                {(r.kind === "venue" || r.kind === "promoter" || r.kind === "edition") && <FlagButton kind={r.kind} id={r.id} pitches={b.pitches} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {(["venue", "promoter", "festival", "contact"] as const).map((k) => (
+          <button key={k} className="btn ghost sm" data-testid={`add-${k}`} onClick={() => setAdd(add === k ? null : k)}>+ Add {k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}</button>
+        ))}
+        <Link href="/booking/templates" className="btn ghost sm" data-testid="templates-link">Email templates</Link>
+      </div>
+      {add && (
+        <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
+          submitLabel={`Add ${add}`} onSubmit={(d) => create(add, d)} onCancel={() => setAdd(null)} />
+      )}
+    </div>
+  );
+}
+
+const activeFor = (pitches: PitchRow[], kind: string, id: string) =>
+  pitches.find((p) => p.target.kind === kind && p.target.id === id && !["declined", "dropped"].includes(p.status));
+
+function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {
+  return (
+    <div className="grid gap-3" data-testid="pitch-list">
+      {pitches.length === 0 && <span className="s">Nothing on the Pitch List. Tap a flag to add something.</span>}
+      {STATUSES.map((s) => {
+        const group = pitches.filter((p) => p.status === s).sort((a, b) => (a.nextStep?.due ?? "9").localeCompare(b.nextStep?.due ?? "9"));
+        if (!group.length) return null;
+        return (
+          <div key={s} className="grid gap-2" data-testid={`group-${s}`}>
+            <span className="lbl">{STATUS_LABEL[s]} · {group.length}</span>
+            {group.map((p) => (
+              <Link key={p.id} href={`/booking/pitches/${p.id}`} className="card" data-testid={`pitch-${p.id}`}>
+                <div className="flex items-center justify-between gap-2"><b>{p.target.name}</b><StatusChip status={p.status} /></div>
+                <span className="s">{[userName(p.assigneeId), p.nextStep ? `${p.nextStep.text} · ${fmtDate(p.nextStep.due)}` : null].filter(Boolean).join(" · ")}</span>
+              </Link>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

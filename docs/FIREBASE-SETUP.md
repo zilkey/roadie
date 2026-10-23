@@ -20,3 +20,7 @@ Each client in `src/server/integrations/<svc>.ts` reads `<SVC>_BASE_URL` (GMAIL,
 - **Calendar**: `https://www.googleapis.com/auth/calendar.events`; `events.insert/patch/delete/list` with `sendUpdates=all` so attendees get invites.
 - **Bandsintown**: the public API is read-only. Writing events needs Bandsintown for Artists / a partner `app_id` and artist access approval (request via Bandsintown support). Until approved, keep the fake or export a CSV.
 - **Spotify**: Web API, client-credentials flow (client id + secret, no user scopes): `GET /v1/artists/{id}` for `followers.total` and `popularity`, `GET /v1/artists/{id}/top-tracks?market=US`. There is no history endpoint, so a daily job stores statSnapshots; "plays" in the fake's top tracks has no real equivalent (use Spotify for Artists CSV).
+
+### Slice 3 (Booking)
+- Gmail: replace the fake client with real Gmail API calls (`gmail.send`, `gmail.readonly` for `pitches.checkReplies`). The send account is the signed-in admin's email, so each admin who sends needs their own OAuth grant.
+- No new Firestore indexes: booking queries are single-field (`target.id`, `venue.id`, `festivalId`, `contactIds` array-contains).
