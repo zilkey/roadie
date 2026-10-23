@@ -11,3 +11,7 @@ tsconfig.tsbuildinfo
 backups
 backup-out
 backup-repo
+
+# Service-account keys and other secrets: never committed (public repo)
+.secrets/
+*firebase-adminsdk*.json

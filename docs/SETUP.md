@@ -137,11 +137,13 @@ npx firebase apphosting:backends:create --project roadie-prod-iab
 
 The app is invite-only, so the first admin is created from your machine.
 
-☐ Console → Project settings → Service accounts → **Generate new private key**. Save it outside the repo, e.g. `~/keys/roadie-prod-iab.json`.
-☐ In a fresh terminal where no `*_EMULATOR_HOST` variables are set:
+☐ Console → Project settings → Service accounts → **Generate new private key**. Move it into `.secrets/` in the repo (gitignored, along with any `*firebase-adminsdk*.json`; the repo is public, so never anywhere else in it).
+☐ Run (the `env -u` drops any emulator variables so it can't write to the emulator by mistake):
 
 ```sh
-GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=~/keys/roadie-prod-iab.json \
+env -u FIRESTORE_EMULATOR_HOST -u FIREBASE_AUTH_EMULATOR_HOST \
+  GCLOUD_PROJECT=roadie-prod-iab \
+  GOOGLE_APPLICATION_CREDENTIALS=.secrets/roadie-prod-iab-firebase-adminsdk-fbsvc-ec7be59afd.json \
   npx tsx scripts/bootstrap-admin.ts <your-google-email> "<Your Name>"
 ```
 
