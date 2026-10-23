@@ -287,7 +287,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   await cancelShow(page, showId(page));
 });
 
-test("after the show: rating and attendance saved, money step is a placeholder", async ({ page }) => {
+test("after the show: rating and attendance saved", async ({ page }) => {
   await signInAs(page, "jeff");
   // the seeded played show (Dairy Arts, Oct 10) is unsettled
   await page.goto("/shows");
@@ -300,7 +300,7 @@ test("after the show: rating and attendance saved, money step is a placeholder",
   await page.getByTestId("rate-notes").fill("Lovely room");
   await page.getByTestId("rate-save").click();
   await expect(page.getByTestId("rate-saved")).toBeVisible();
-  await expect(page.getByTestId("enter-money")).toBeDisabled();
+  await expect(page.getByTestId("money-step")).toBeVisible();
   await page.getByText("Back to the show").click();
   await expect(page.getByTestId("rating-summary")).toContainText("★★★★☆");
   await expect(page.getByTestId("rating-summary")).toContainText("Crowd about 60");

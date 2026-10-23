@@ -7,6 +7,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { BackLink, useNotFound } from "@/components/booking/common";
 import { useDoc } from "@/lib/firestore-hooks";
 import { fmtLong } from "@/lib/shows";
+import { EnterMoney } from "@/components/money/EnterMoney";
 import type { Show, ShowDeal } from "@/schema";
 
 export default function Page() { return <AdminOnly><After /></AdminOnly>; }
@@ -60,12 +61,8 @@ function After() {
         <button className="btn acc" disabled={busy || !v.show || !v.venue} onClick={save} data-testid="rate-save">Save</button>
         {saved && <span className="chip g self-start" data-testid="rate-saved">Saved</span>}
       </div>
-      <div className="card" data-testid="money-step">
-        <span className="lbl">Money in</span>
-        <span className="s">Entering money (guarantee, merch, tips, Venmo) and paying people out comes with the Money tab. Until then this show stays unsettled.</span>
-        <button className="btn" disabled data-testid="enter-money">Enter money</button>
-        {rated && <Link href={`/shows/${id}`} className="s font-semibold underline">Back to the show</Link>}
-      </div>
+      <EnterMoney show={show.doc} deal={deal.doc} />
+      {rated && <Link href={`/shows/${id}`} className="s font-semibold underline">Back to the show</Link>}
     </div>
   );
 }

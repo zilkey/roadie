@@ -36,3 +36,8 @@ Each client in `src/server/integrations/<svc>.ts` reads `<SVC>_BASE_URL` (GMAIL,
 - Set the real band folder id on the artist (`driveFolderId`, Admin > Artist) or `DRIVE_BAND_FOLDER_ID`; "in band folder" and "Copy to band folder" depend on it.
 - The real Drive client needs `drive` scope (read permissions, copy, create permissions) so the sharing check can list permissions and the fixes can copy/share. Group or domain-wide sharing would need extra handling in `src/server/music.ts` `missingFor`.
 - Inline playback for real files: store the `https://drive.google.com/file/d/ID/view` link as `url`; the app embeds Drive's `/preview` player.
+
+### Slice 6 (Money + Reach)
+- Deploy the updated `firestore.rules` (members read their own ledger rows: payouts, reimbursements, corrections with `payeeUserId == uid`). Member queries use `payeeUserId ==`, `kind in [...]`, `deletedAt ==` together; no composite index file changes were needed on the emulator, but Firestore in production may ask for an index for that combination: create it from the link in the console error.
+- Daily Spotify pull: schedule `scripts/stats-pull.ts` (or call `stats.pull`) once a day, e.g. Cloud Scheduler / GitHub Actions cron, with real `SPOTIFY_BASE_URL` credentials (client-credentials). Spotify for Artists has no API: export the audience CSV by hand and import it on /stats.
+- Receipts are Drive links; the real Drive client must let members search (`receipts.search` runs as the app's Drive account).

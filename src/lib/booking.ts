@@ -27,6 +27,7 @@ export function unfilledFields(text: string): string[] {
 export const TEMPLATE_FIELDS = [
   "venue.name", "venue.city", "promoter.name", "edition.name", "festival.name", "target.name",
   "contact.name", "contact.firstName", "artist.name", "artist.video", "pitch.configuration", "user.name", "user.firstName",
+  "stats.monthlyListeners", "stats.followers",
 ];
 
 interface CtxInput {
@@ -35,6 +36,8 @@ interface CtxInput {
   artist?: { name: string; links?: { website?: string; spotify?: string; instagram?: string } } | null;
   configurationName?: string;
   user?: { name: string } | null;
+  /** From statsTemplateFields(snapshots). */
+  stats?: Record<string, string | undefined>;
 }
 export function buildTemplateContext(i: CtxInput): TemplateContext {
   const first = (n?: string) => n?.trim().split(/\s+/)[0];
@@ -45,6 +48,7 @@ export function buildTemplateContext(i: CtxInput): TemplateContext {
     "artist.name": i.artist?.name, "artist.video": i.artist?.links?.website ?? i.artist?.links?.spotify,
     "pitch.configuration": i.configurationName,
     "user.name": i.user?.name, "user.firstName": first(i.user?.name),
+    ...i.stats,
   };
   if (t?.kind === "venue") { ctx["venue.name"] = t.name; ctx["venue.city"] = t.city; }
   if (t?.kind === "promoter") ctx["promoter.name"] = t.name;

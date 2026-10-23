@@ -27,6 +27,9 @@ before(async () => {
     await setDoc(doc(d, "ledger/mine"), { ...live, kind: "payout", payeeUserId: "david" });
     await setDoc(doc(d, "ledger/theirs"), { ...live, kind: "payout", payeeUserId: "eric" });
     await setDoc(doc(d, "ledger/income"), { ...live, kind: "income" });
+    await setDoc(doc(d, "ledger/reimb"), { ...live, kind: "reimbursement", payeeUserId: "david" });
+    await setDoc(doc(d, "ledger/reimbTheirs"), { ...live, kind: "reimbursement", payeeUserId: "eric" });
+    await setDoc(doc(d, "ledger/spend"), { ...live, kind: "expense" });
     await setDoc(doc(d, "expenses/mine"), { ...live, userId: "david" });
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
   });
@@ -70,6 +73,9 @@ test("availability: members read only where they are asked", async () => {
 
 test("ledger: members read only their own payouts", async () => {
   await assertSucceeds(getDoc(doc(david(), "ledger/mine")));
+  await assertSucceeds(getDoc(doc(david(), "ledger/reimb")));
+  await assertFails(getDoc(doc(david(), "ledger/reimbTheirs")));
+  await assertFails(getDoc(doc(david(), "ledger/spend")));
   await assertFails(getDoc(doc(david(), "ledger/theirs")));
   await assertFails(getDoc(doc(david(), "ledger/income")));
 });

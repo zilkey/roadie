@@ -10,7 +10,8 @@ import { BackLink, Seg, StatusChip, hrefFor, useBooking, useNotFound, type Pitch
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { fmtLong } from "@/lib/shows";
-import type { Activity, Artist, Comment, Contact, EmailTemplate, Musician, Show, User } from "@/schema";
+import { statsTemplateFields } from "@/lib/stats";
+import type { Activity, Artist, Comment, Contact, EmailTemplate, Musician, Show, StatSnapshot, User } from "@/schema";
 
 export default function Page() { return <AdminOnly><PitchPage /></AdminOnly>; }
 
@@ -170,6 +171,7 @@ function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; arti
     return ids.map((i) => contacts.find((c) => c.id === i)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0);
   }, [pitch.target, b.venues, b.promoters, b.editions, b.festivals, contacts]);
 
+  const snaps = useCollection<StatSnapshot>("statSnapshots").rows ?? [];
   const [tplId, setTplId] = useState("");
   const [picked, setPicked] = useState<string[] | null>(null);
   const [extra, setExtra] = useState("");
@@ -188,7 +190,7 @@ function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; arti
     const ed = t.kind === "edition" ? b.editions.find((e) => e.id === t.id) : undefined;
     return buildTemplateContext({
       target: { kind: t.kind, name: t.name, city: venue?.address.city, festivalName: ed?.festivalName }, contact, artist,
-      configurationName: artist?.configurations.find((c) => c.id === pitch.pitchedAs)?.name, user: profile,
+      configurationName: artist?.configurations.find((c) => c.id === pitch.pitchedAs)?.name, user: profile, stats: statsTemplateFields(snaps),
     });
   }
   function apply(templateId: string, toList: string[], force: boolean) {

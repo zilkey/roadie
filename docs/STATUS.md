@@ -106,3 +106,27 @@ Each slice appends its section below.
 
 **Known gaps**
 - Setlist `items` have no per-item note editor in the UI (field exists). Songs can appear twice in a setlist. No "retired" filter chip on the Home card. Show `docs` still have no Drive picker.
+
+## Slice 6: Money + Reach
+
+**Done**
+- **Money tab (admin)** `/money`: Overview (in/out/left, SVG month bars, "Owed to people" per person with Mark reimbursed / Mark paid), By show and By category (SVG bars), Ledger (list + "Record" form for income, spending or a payout to a person: photo shoots, video, room rental...; "Correct..." per entry). Charts are hand-drawn SVG in `src/components/money/charts.tsx`. Pure math in `src/lib/money.ts` (`totals`, `byMonth/byShow/byCategory`, `owedLines`, `splitEvenly`; a reversed entry and its correction cancel out of reports).
+- **Enter money** (`/shows/[id]/after`, `EnterMoney`): income lines (door, guarantee prefilled from the deal, merch, tips, Venmo), payouts proposed evenly for `show.personnel` (editable, untick, or mark "owed"). `shows.settle` writes income + payout ledger entries and `showDeals.settled = true` in one transaction (payouts cannot exceed income; settling twice is refused). Home's unsettled card disappears.
+- **Owed payouts**: unpaid payouts live in new optional `showDeals.owedPayouts`; `payouts.pay` records the payment as a ledger payout. Owed = unreimbursed expenses + `owedPayouts` minus paid.
+- **Ledger rules** (`addLedgerEntry` in `src/server/commands/money.ts`, the one creation path): entries are immutable (`db.update/softDelete/merge` refuse; no update/remove command exists). Corrections: `kind: correction` needs `reversesId`, same amount, not a correction itself, one per entry (`ledger.correct` builds one from the original). `reversesId` is refused on other kinds. Reimbursements need `expenseId` and are refused twice unless the first was corrected.
+- **Expenses**: `expenses.add` (member: own only; admin may pass userId), `expenses.reimburse` (reimbursement entry with `expenseId`, payee = submitter), `receipts.search` (members + admins, Drive search). Pages: `/money/expense?show=ID` (amount, category, what, optional show, receipt link or Drive search). Home's "Add expenses from last night" links there with the show preselected.
+- **My money** (members): own expenses with Paid back / Not yet, payments to them (payouts + reimbursements, "reversed" marked).
+- **Rules**: members read ledger rows only with `payeeUserId == uid` and kind in payout, reimbursement, correction (extended from payout-only so "paid back" and reversals are visible). Rules tests updated. Expenses were already own-only.
+- **Stats** `/stats` (admin, linked from Money): current numbers, SVG line charts (followers, popularity, monthly listeners, streams), "Pull now", CSV upload/paste. `stats.pull` (id `spotifyApi_{date}`, skips a day already stored), `stats.importCsv` (ids `spotifyForArtists_{date}`; bare months map to the month's last day; nothing written if any line is bad), `stats.current` (`statsCurrent` in `src/lib/stats.ts`). `npm run stats:pull` runs the daily pull against the emulator (`scripts/stats-pull.ts`; cron later). Sample: `fixtures/spotify-for-artists-sample.csv`.
+- **Email templates**: `{{stats.monthlyListeners}}` and `{{stats.followers}}` (pitch page reads snapshots; listed in TEMPLATE_FIELDS).
+- Tests: `tests/unit/money.test.ts` (9: ledger math, immutability, correction rules, settle + atomic rollback, expenses/reimbursement, receipts search, CSV parsing, pull/import/current/template fields, role checks), `tests/e2e/money.spec.ts` (6). 75 unit and 27 e2e pass.
+
+**Gotchas / deviations**
+- "Approved" expenses: there is no approval step in the schema, so every expense counts as approved.
+- Db `merge` now also refuses immutable/append-only collections (it was a gap).
+- Stats snapshots are immutable, so a second pull the same day or a re-imported month is skipped, not updated. The fake Spotify returns no history on a real API, so charts start when the daily job starts.
+- The Spotify CSV format is a guess (date/month + listeners + streams [+ followers] headers, flexible names); adjust `HEADS` in `src/lib/stats.ts` against a real export.
+- Money page shows all time, no year filter.
+
+**Known gaps**
+- No UI to enter a payout to someone for a show after it is settled except Record form; no per-person payout history for admins beyond the ledger list. Receipt is a link only (no upload). Show page does not display the settled money.

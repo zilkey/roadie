@@ -51,6 +51,8 @@ export const ShowDeal = entity({
     crowd: z.number().int().optional(), notes: z.string().optional(),
   }).optional(),
   settled: z.boolean(),
+  /** Payouts agreed at settle time but not yet paid; paid ones become ledger payout entries. */
+  owedPayouts: z.array(z.strictObject({ musicianId: id, amount: cents.positive() })).optional(),
 });
 export const ShowDealInput = ShowDeal.omit(serverMask);
 export type ShowDeal = z.infer<typeof ShowDeal>;

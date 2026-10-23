@@ -1,7 +1,9 @@
 "use client";
 import { useProfile } from "@/lib/auth";
-import { Stub } from "@/components/ui";
+import { AdminMoney } from "@/components/money/AdminMoney";
+import { MyMoney } from "@/components/money/MyMoney";
+
 export default function Money() {
   const p = useProfile();
-  return <Stub title={p.role === "admin" ? "Money" : "My money"} slice={6} />;
+  return p.role === "admin" ? <AdminMoney /> : <MyMoney />;
 }

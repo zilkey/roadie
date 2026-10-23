@@ -188,6 +188,8 @@ export class Writer {
 
   /** Explicit merge of input into an existing doc (fill gaps, union arrays). */
   async merge(path: string, id: string, input: Record<string, unknown>) {
+    const dm = def(kindOf(path));
+    if (dm.immutable || dm.appendOnly) throw new AppError("immutable", `${kindOf(path)} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing || existing.deletedAt) throw new AppError("not_found", `${path}/${id} not found`, 404);
     return this.mergeInto(path, existing, input);

@@ -47,7 +47,7 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
             <>
               <b>Add expenses from last night</b>
               <span className="s">Gas, strings, parking. Anything you paid for.</span>
-              <Link href="/money" className="btn acc" data-testid={`add-expenses-${s.id}`}>Add an expense</Link>
+              <Link href={`/money/expense?show=${s.id}`} className="btn acc" data-testid={`add-expenses-${s.id}`}>Add an expense</Link>
             </>
           )}
         </div>
@@ -55,7 +55,7 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
       {plan.today.length === 0 && !b.loading && (
         <>
           <NextShow next={plan.next} upcoming={plan.upcoming} b={b} onPack={plan.next ? pack(plan.next.id) : () => undefined} />
-          {admin ? regular : <Link href="/money" className="btn acc" data-testid="add-expense">Add an expense</Link>}
+          {admin ? regular : <Link href="/money/expense" className="btn acc" data-testid="add-expense">Add an expense</Link>}
         </>
       )}
     </div>

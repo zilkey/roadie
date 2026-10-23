@@ -25,7 +25,8 @@ service cloud.firestore {
     }
     match /ledger/{id} {
       allow read: if isAdmin()
-        || (isMember() && resource.data.kind == 'payout' && resource.data.payeeUserId == request.auth.uid);
+        || (isMember() && live() && resource.data.kind in ['payout', 'reimbursement', 'correction']
+            && resource.data.get('payeeUserId', '') == request.auth.uid);
     }
     match /expenses/{id} {
       allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);

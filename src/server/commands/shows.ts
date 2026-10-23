@@ -256,7 +256,7 @@ export const showsAfter = defineCommand({
   name: "shows.afterShow", roles: ["admin", "mcp"],
   description:
     "How'd it go? Rate the show and venue (1-5), optional crowd size and notes, and paid attendance. Marks the show played. " +
-    "Does NOT settle money (showDeals.settled stays false until the Money slice).",
+    "Does NOT enter money: use shows.settle for that.",
   input: z.strictObject({
     id: z.string().min(1), show: z.number().int().min(1).max(5), venue: z.number().int().min(1).max(5),
     crowd: z.number().int().min(0).optional(), notes: z.string().optional(), paidAttendance: z.number().int().min(0).optional(),
