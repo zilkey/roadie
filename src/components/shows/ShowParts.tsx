@@ -117,7 +117,7 @@ export function SetlistPanel({ show, setlists, editable }: { show: ShowRow; setl
         </Link>
       ) : <span className="s">No setlist yet.</span>}
       {editable && (
-        <select className="select" value={show.setlistId ?? ""} data-testid="setlist-select" onChange={(e) => call("shows.update", { id: show.id, patch: { setlistId: e.target.value || null } })}>
+        <select className="select" value={show.setlistId ?? ""} data-testid="setlist-select" onChange={(e) => call("setlists.attach", { showId: show.id, setlistId: e.target.value || null })}>
           <option value="">No setlist</option>
           {setlists.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>

@@ -85,3 +85,24 @@ Each slice appends its section below.
 
 **Known gaps**
 - Show docs are plain title + link (no Drive picker until slice 5). No UI to edit checklist templates (commands exist). Sub-musicians without email are not on calendar events. Member can't see other people's availability answers.
+
+## Slice 5: Music
+
+**Done**
+- **Songs tab** (`/songs`, members read, admins write): segments Playing / Learning / Ideas / Retired / Setlists / Rehearsals, a filter box (title, writers), key + length per row, a note icon when a recording is attached. `/songs/new` (Add a song), `/songs/[id]` (files grouped by kind, "Chart in <key>", last rehearsed with days ago, admin edit/archive). Audio/video plays inline when the URL allows (`playerFor` in `src/lib/music.ts`: direct media URL -> audio/video tag, `drive.google.com/file/d/ID/...` -> Drive's `/preview` embed); otherwise "Open in Drive" in a new tab. Fake Drive links are not playable, so e2e checks the link path.
+- **Attach Drive files**: `DrivePicker` (`src/components/music/DrivePicker.tsx`) follows the song title, searches Drive (audio, video, Docs, Word only), shows mimeType icons, "Band folder / Outside band folder", who can't open each file, kind + key pickers (guessed from the name), multi-select. "Copy to band folder" / "Share with band" work on the picked files before saving (`drive.fix`), and on attached files from the song page (`files.copyToBand`, `files.shareWithBand`). "Run sharing check" (`files.check`) re-reads Drive for every song file and rewrites `sharing`, `inBandFolder`, `checkedAt`.
+- "Members who must be able to open a file" = active musicians with an email. A file is in the band folder if any ancestor is the artist's `driveFolderId` (fallback `DRIVE_BAND_FOLDER_ID`, then `fake-band-folder`). "Copy" puts a copy in the band folder, shares it with the band, and repoints the files doc at the copy (the original is untouched).
+- **Setlists** (`/songs/setlists/[id]`): songs and breaks, drag-and-drop plus up/down buttons, remove, rename. The server fills title/length/key from the song and computes `totalSec` (db normalize). Shown against the attached show's `setLength` (red "N over" or "Fits"). Attach to a show with `setlists.attach` (sets `show.setlistId` and `setlist.showId`, clears the previous links); the show page's setlist select now uses it. Song renames/length/key changes flow into setlists and rehearsals through the existing `denorm.ts` hook (tested). `/songs?setlist=ID` redirects to `/songs/setlists/ID`.
+- **Rehearsals** (`/songs/rehearsals/[id]`, `new`): date, place, who came, songs run with notes, notes, recordings from Drive (kind `rehearsal`). Members see a read-only view.
+- Commands (all in `src/server/commands/music.ts`): drive.search, drive.fix, files.attach|update|remove|check|shareWithBand|copyToBand, songs.create (optionally with files)|update|remove, setlists.create|update|attach|remove, rehearsals.create|update|remove. Admin (+mcp except the removes); no member write commands.
+- Tests: `tests/unit/music.test.ts` (9: helpers, search, attach, check/share/copy against fake-drive, setlists + denorm + attach, rehearsals), `tests/e2e/music.spec.ts` (5: add song + Drive search, fix a sharing gap, setlist with total time + reorder by drag and buttons, member views a song, log a rehearsal). All 65 unit and 21 e2e tests pass.
+
+**Gotchas / deviations**
+- The fake Drive has no per-user view, so "can the member open it" is computed from the file's permission emails (owner counts). Real Drive groups/domain sharing/"anyone with the link" are not modelled.
+- Search skips PDFs on purpose (spec: audio, video, Docs, Word), although fake-drive has PDF charts.
+- Sharing details on song pages (who can't open it, fix buttons) are shown to admins only.
+- No composite song "length from Drive" fill-in (that is an MCP/AI story for slice 7).
+- e2e resets fake-drive (`POST /__reset`) before each music spec because fix actions mutate it.
+
+**Known gaps**
+- Setlist `items` have no per-item note editor in the UI (field exists). Songs can appear twice in a setlist. No "retired" filter chip on the Home card. Show `docs` still have no Drive picker.

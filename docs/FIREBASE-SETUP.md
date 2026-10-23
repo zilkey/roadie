@@ -31,3 +31,8 @@ Each client in `src/server/integrations/<svc>.ts` reads `<SVC>_BASE_URL` (GMAIL,
 - Calendar (real client): events need `timeZone` (America/Denver) alongside the local `start`/`end` strings, and `attendees` from musician emails with `sendUpdates=all`. Subs without an email are skipped.
 - Bandsintown (real client): same approval caveat as slice 2. Until approved, listings stay in the fake or show `state: "error"` with the message; `shows.sync` retries.
 - No new Firestore indexes: queries are single-field (`pitchId ==`, `venue.id ==`, `askedMusicianIds array-contains`).
+
+### Slice 5 (Music)
+- Set the real band folder id on the artist (`driveFolderId`, Admin > Artist) or `DRIVE_BAND_FOLDER_ID`; "in band folder" and "Copy to band folder" depend on it.
+- The real Drive client needs `drive` scope (read permissions, copy, create permissions) so the sharing check can list permissions and the fixes can copy/share. Group or domain-wide sharing would need extra handling in `src/server/music.ts` `missingFor`.
+- Inline playback for real files: store the `https://drive.google.com/file/d/ID/view` link as `url`; the app embeds Drive's `/preview` player.
