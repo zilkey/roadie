@@ -10,9 +10,9 @@ import { ensureThread, loadHistory, newMessageId, newThreadId, saveTurn } from "
 const sse = (e: AssistantEvent) => `data: ${JSON.stringify(e)}\n\n`;
 
 /** POST /api/assistant/chat: admins only. Errors before the stream starts are plain JSON; later ones are `error` events. */
-export async function handleChat(authHeader: string | null, body: unknown): Promise<Response> {
+export async function handleChat(authHeader: string | null, body: unknown, artistHeader?: string | null): Promise<Response> {
   try {
-    const ctx = await authenticate(authHeader);
+    const ctx = await authenticate(authHeader, artistHeader);
     if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     const parsed = ChatRequest.safeParse(body ?? {});
     if (!parsed.success) throw invalid(parsed.error);
@@ -27,7 +27,7 @@ export async function handleChat(authHeader: string | null, body: unknown): Prom
     await ensureThread({ uid: ctx.uid, threadId, pageContext: req.pageContext, at: userAt });
     // One run id per user message: every write Roadie makes for it shares it, so one Undo reverses the message.
     const session: Omit<Session, "model"> = {
-      uid: ctx.uid, role: ctx.role, musicianId: ctx.musicianId, name: (user?.name as string | undefined) ?? "Someone",
+      uid: ctx.uid, role: ctx.role, ...(ctx.artistId ? { artistId: ctx.artistId } : {}), musicianId: ctx.musicianId, name: (user?.name as string | undefined) ?? "Someone",
       threadId, runId: newRunId(), replyId: newMessageId(),
     };
 

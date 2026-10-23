@@ -1,4 +1,4 @@
-import { dispatch } from "@/server/commands/dispatch";
+import { ARTIST_HEADER, dispatch } from "@/server/commands/dispatch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ name: s
   } catch {
     /* empty body */
   }
-  const { status, json } = await dispatch(name, req.headers.get("authorization"), body);
+  const { status, json } = await dispatch(name, req.headers.get("authorization"), body, req.headers.get(ARTIST_HEADER));
   return Response.json(json, { status });
 }

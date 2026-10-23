@@ -11,7 +11,7 @@ export default function SignIn() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (state.status === "ready") router.replace("/home");
+    if (state.status === "ready") router.replace("/artists");
     if (state.status === "notInvited") router.replace("/not-invited");
   }, [state.status, router]);
 

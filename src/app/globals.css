@@ -33,6 +33,7 @@ a { color: inherit; }
 .lbl { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 .s { color: var(--muted); font-size: 13px; }
 .input, .select { width: 100%; background: var(--panel); color: var(--ink); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 11px; font: inherit; }
+.select { padding-right: 2rem; }
 .input:focus, .select:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 12px; padding: 10px 16px; font: inherit; font-weight: 700; cursor: pointer; background: var(--ink); color: var(--panel); text-decoration: none; }
 .btn.acc { background: var(--accent); color: #fff; }

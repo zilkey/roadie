@@ -6,7 +6,7 @@ import { startSession } from "@/server/session";
 import { adminAuth } from "@/server/admin";
 import { db } from "@/server/db";
 import { AppError } from "@/server/errors";
-import { resetEmulators, makeUser, idToken } from "./helpers";
+import { resetEmulators, makeUser, idToken, makeArtist, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -63,11 +63,13 @@ test("users.add creates invite + claims + musician link; session picks it up; re
   const uid = (add.json as { result: { id: string } }).result.id;
   assert.equal((await db.get("users", uid))!.email, "david@example.com");
   assert.equal((await db.get("musicians", mid))!.userId, uid);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { role: "member", musicianId: mid });
+  assert.deepEqual((await db.get("users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member" }]);
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, musicianId: mid });
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "david@example.com", name: "D", role: "member" })).status, 409);
 
+  await makeArtist("Test Band", "test-band");
   const s = await startSession(bearer(await idToken(uid)));
-  assert.equal(s.role, "member");
+  assert.deepEqual(s.artists, [{ artistId: TEST_ARTIST, slug: "test-band", name: "Test Band", role: "member" }]);
   assert.equal(s.musicianId, mid);
 
   const rm = await dispatch("users.remove", bearer(admin.token), { id: uid });
@@ -79,6 +81,41 @@ test("users.add creates invite + claims + musician link; session picks it up; re
   // can't demote or remove yourself
   assert.equal((await dispatch("users.update", bearer(admin.token), { id: admin.uid, patch: { role: "member" } })).status, 403);
   assert.equal((await dispatch("users.remove", bearer(admin.token), { id: admin.uid })).status, 403);
+});
+
+test("users.add with musician: one call makes the band member and the login, linked", async () => {
+  const admin = await makeUser("a@example.com", "admin");
+  const add = await dispatch("users.add", bearer(admin.token), { email: "Emma@Example.com", name: "Emma", role: "member", musician: { instruments: ["fiddle", "vocals"] } });
+  assert.equal(add.status, 200);
+  const { id: uid, musicianId } = (add.json as { result: { id: string; musicianId: string } }).result;
+  const m = (await db.get("musicians", musicianId))!;
+  assert.deepEqual([m.name, m.email, m.instruments, m.active, m.userId], ["Emma", "emma@example.com", ["fiddle", "vocals"], true, uid]);
+  assert.equal((await db.get("users", uid))!.musicianId, musicianId);
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, musicianId });
+  // musicianId and musician together is refused
+  const both = await dispatch("users.add", bearer(admin.token), { email: "x@example.com", name: "X", role: "member", musicianId: musicianId, musician: { instruments: [] } });
+  assert.equal(both.status, 400);
+});
+
+test("ai role: always has AI access, can't sign in to the app or call commands, can't be self-assigned", async () => {
+  const admin = await makeUser("a@example.com", "admin");
+  const add = await dispatch("users.add", bearer(admin.token), { email: "bot@example.com", name: "Bot", role: "ai" });
+  assert.equal(add.status, 200);
+  const uid = (add.json as { result: { id: string } }).result.id;
+  const u = (await db.get("users", uid))!;
+  assert.deepEqual(u.artists, [{ artistId: TEST_ARTIST, role: "ai" }]);
+  assert.equal(u.mcpAccess, true);
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: {} }); // ai is never a Firestore-reading role
+  await assert.rejects(startSession(bearer(await idToken(uid))), (e: AppError) => e.code === "ai_only" && e.status === 403);
+  assert.equal((await dispatch("musicians.create", bearer(await idToken(uid)), { name: "x", instruments: [] })).status, 403);
+  // turning AI access off doesn't stick for an ai login; moving a member to ai turns it on
+  await dispatch("users.update", bearer(admin.token), { id: uid, patch: { mcpAccess: false } });
+  assert.equal((await db.get("users", uid))!.mcpAccess, true);
+  const member = await makeUser("m@example.com", "member");
+  assert.equal((await dispatch("users.update", bearer(admin.token), { id: member.uid, patch: { role: "ai" } })).status, 200);
+  assert.equal((await db.get("users", member.uid))!.mcpAccess, true);
+  assert.equal((await dispatch("users.update", bearer(admin.token), { id: admin.uid, patch: { role: "ai" } })).status, 403);
+  assert.equal((await dispatch("users.add", bearer(admin.token), { email: "z@example.com", name: "Z", role: "robot" })).status, 400);
 });
 
 test("session: uninvited email is 403 not_invited", async () => {

@@ -19,9 +19,9 @@ before(async () => {
 });
 after(async () => { await env.cleanup(); });
 
-const jeff = () => env.authenticatedContext("jeff", { role: "admin" }).firestore();
-const david = () => env.authenticatedContext("david", { role: "member" }).firestore();
-const demoted = () => env.authenticatedContext("jeff", { role: "member" }).firestore();
+const jeff = () => env.authenticatedContext("jeff", { artists: { a: "admin" } }).firestore();
+const david = () => env.authenticatedContext("david", { artists: { a: "member" } }).firestore();
+const demoted = () => env.authenticatedContext("jeff", { artists: { a: "member" } }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 
 test("assistant threads: owner admin reads own thread and messages", async () => {

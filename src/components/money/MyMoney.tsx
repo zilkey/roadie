@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { useCollection } from "@/lib/firestore-hooks";
 import { PageTitle } from "@/components/ui";

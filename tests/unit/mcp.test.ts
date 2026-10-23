@@ -1,5 +1,6 @@
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +12,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
+import { hashToken } from "@/server/availability";
 import { authenticateToken } from "../../mcp/auth";
 import { callTool, toolList } from "../../mcp/tools";
 import { createHttpServer } from "../../mcp/http";
@@ -40,7 +42,13 @@ beforeEach(async () => {
 });
 
 const run = async (name: string, input: unknown, c: Ctx = admin) => (await registry[name].run(c, registry[name].input.parse(input))) as Record<string, any>;
-const newKey = async (label = "Jeff · Claude") => (await run("mcpTokens.create", { label })) as { token: string; id: string };
+/** Keys are minted outside the app now (no command), so tests write the hashed doc directly. */
+const newKey = async (label = "Jeff · Claude") => {
+  const token = `btk_${randomBytes(32).toString("base64url")}`;
+  const id = hashToken(token);
+  await db.create(importCtx(), "mcpTokens", { userId: adminUid, label }, { id });
+  return { token, id };
+};
 const mcpCtx = (uid = adminUid, runId = newRunId()): Ctx => ({ uid, role: "mcp", via: "mcp", runId });
 const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
 
@@ -65,15 +73,8 @@ test("token auth: hashed lookup, lastUsedAt, revoked and no-AI-access are refuse
   await db.update(importCtx(), "users", adminUid, { mcpAccess: true });
   await authenticateToken(token);
 
-  await run("mcpTokens.revoke", { id });
+  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
   await assert.rejects(authenticateToken(token), (e: any) => e.status === 401 && /revoked/.test(e.message));
-});
-
-test("an AI key needs AI access, and only admins can mint or revoke one", async () => {
-  await db.update(importCtx(), "users", adminUid, { mcpAccess: false });
-  await assert.rejects(run("mcpTokens.create", { label: "x" }), (e: any) => e.code === "no_ai_access");
-  assert.deepEqual(registry["mcpTokens.create"].roles, ["admin"]);
-  assert.deepEqual(registry["mcpTokens.revoke"].roles, ["admin"]);
 });
 
 // ---------- tool list ----------
@@ -109,7 +110,7 @@ test("the tool list is exactly the registry commands allowed for MCP (the access
   }
   const names = new Set(tools.map((t) => t.name));
   for (const banned of ["users.add", "users.update", "users.remove", "musicians.create", "musicians.update", "musicians.remove", "artists.update",
-    "mcpTokens.create", "mcpTokens.revoke", "pitches.sendEmail", "pitches.checkReplies", "availability.mark", "availability.answer", "expenses.add", "venues.remove"]) {
+    "pitches.sendEmail", "pitches.checkReplies", "availability.mark", "availability.answer", "expenses.add", "venues.remove"]) {
     assert.equal(names.has(banned), false, `${banned} must not be an MCP tool`);
   }
   // JSON schema comes from the Zod input
@@ -230,7 +231,7 @@ test("HTTP: bearer auth, one runId per session, revoking a key stops a live sess
     assert.equal(undone.result.reverted.length, 2);
     assert.notEqual(undone.result.undoRunId, a.runId);
 
-    await run("mcpTokens.revoke", { id });
+    await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
     await assert.rejects(client.callTool({ name: "stats.current", arguments: {} }), /revoked/);
     // and at the tool layer a failed re-check is a structured error too
     const viaTool = await callTool("stats.current", {}, () => authenticateToken(token).then(() => mcpCtx()));

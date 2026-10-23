@@ -1,6 +1,6 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";

@@ -13,7 +13,7 @@ export const ChatFlowInput = z.object({
   pageContext: z.object({ route: z.string(), recordKind: z.string().optional(), recordId: z.string().optional() }),
   /** Who is talking and which conversation and message this is. Built by the server (chat.ts), never by the browser. */
   session: z.object({
-    uid: z.string(), role: z.enum(["admin", "member", "mcp"]), musicianId: z.string().optional(), name: z.string(),
+    uid: z.string(), role: z.enum(["admin", "member", "mcp"]), artistId: z.string().optional(), musicianId: z.string().optional(), name: z.string(),
     threadId: z.string(), runId: z.string(), replyId: z.string(),
   }),
 });

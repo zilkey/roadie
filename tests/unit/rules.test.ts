@@ -40,10 +40,17 @@ before(async () => {
 });
 after(async () => { await env.cleanup(); });
 
-const admin = () => env.authenticatedContext("jeff", { role: "admin" }).firestore();
-const david = () => env.authenticatedContext("david", { role: "member", musicianId: "m-david" }).firestore();
+// Roles are per artist: the `artists` claim is {artistId: role} (the seeded artist doc is artists/x).
+const admin = () => env.authenticatedContext("jeff", { artists: { x: "admin" } }).firestore();
+const david = () => env.authenticatedContext("david", { artists: { x: "member" }, musicianId: "m-david" }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
-const noRole = () => env.authenticatedContext("nobody", {}).firestore();
+const noRole = () => env.authenticatedContext("nobody", { artists: {} }).firestore();
+/** An "ai" login is never in the claim (session.ts keeps only admin/member there). */
+const aiLogin = () => env.authenticatedContext("bot", { artists: {} }).firestore();
+/** Before memberships, the claim was a single `role`: it no longer grants anything. */
+const legacyAdmin = () => env.authenticatedContext("old", { role: "admin" }).firestore();
+/** An admin of a different artist. */
+const otherAdmin = () => env.authenticatedContext("olga", { artists: { y: "admin" } }).firestore();
 
 const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
   "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"];
@@ -89,11 +96,32 @@ test("expenses: members read only their own", async () => {
   await assertFails(getDoc(doc(david(), "expenses/theirs")));
 });
 
-test("signed-out and role-less users read nothing", async () => {
+test("signed-out, role-less and ai (AI-tools-only) logins read nothing", async () => {
   for (const c of ["musicians", "shows", "venues", "users"]) {
     await assertFails(getDoc(doc(anon(), c, "x")));
     await assertFails(getDoc(doc(noRole(), c, "x")));
   }
+  for (const c of ALL) await assertFails(getDoc(doc(aiLogin(), c, "x")));
+  for (const c of ALL) await assertFails(getDoc(doc(legacyAdmin(), c, "x")));
+});
+
+test("artist docs: only that artist's members read them", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "artists/x")));
+  await assertSucceeds(getDoc(doc(david(), "artists/x")));
+  await assertFails(getDoc(doc(otherAdmin(), "artists/x")));
+  await assertFails(getDocs(collection(admin(), "artists"))); // no listing every artist
+  await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), "artists/gone"), { deletedAt: new Date() }); });
+  const goneAdmin = env.authenticatedContext("jeff", { artists: { gone: "admin" } }).firestore();
+  const goneMember = env.authenticatedContext("david", { artists: { gone: "member" } }).firestore();
+  await assertSucceeds(getDoc(doc(goneAdmin, "artists/gone")));
+  await assertFails(getDoc(doc(goneMember, "artists/gone")));
+});
+
+test("several artists: your best role applies to records not yet partitioned by artist", async () => {
+  const both = () => env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  await assertSucceeds(getDoc(doc(both(), "venues/x")));
+  await assertSucceeds(getDoc(doc(both(), "artists/x")));
+  await assertFails(getDoc(doc(env.authenticatedContext("mia", { artists: { y: "member" } }).firestore(), "artists/x")));
 });
 
 test("ALL client writes are denied, even for admins", async () => {

@@ -144,7 +144,7 @@ The app is invite-only, so the first admin is created from your machine.
 env -u FIRESTORE_EMULATOR_HOST -u FIREBASE_AUTH_EMULATOR_HOST \
   GCLOUD_PROJECT=roadie-prod-iab \
   GOOGLE_APPLICATION_CREDENTIALS=.secrets/roadie-prod-iab-firebase-adminsdk-fbsvc-ec7be59afd.json \
-  npx tsx scripts/bootstrap-admin.ts <your-google-email> "<Your Name>"
+  npx tsx scripts/bootstrap-admin.ts <your-google-email> "<Your Name>" ["<Artist name>"]
 ```
 
 ☐ Delete the key file and revoke it on the same Service accounts page.

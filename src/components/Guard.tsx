@@ -2,6 +2,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
+import { useArtistRouter, useMaybeArtist } from "@/lib/artist";
 
 /** Signed-in gate for the app shell: sends everyone else to sign-in / not-invited. */
 export function SignedIn({ children }: { children: React.ReactNode }) {
@@ -15,11 +16,11 @@ export function SignedIn({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Page-level role gate. Non-admins go back Home. */
+/** Page-level role gate: admins of the current artist only. Everyone else goes back to the artist's Home. */
 export function AdminOnly({ children }: { children: React.ReactNode }) {
-  const { state } = useAuth();
-  const router = useRouter();
-  const ok = state.status === "ready" && state.profile.role === "admin";
-  useEffect(() => { if (state.status === "ready" && !ok) router.replace("/home"); }, [state.status, ok, router]);
+  const artist = useMaybeArtist();
+  const router = useArtistRouter();
+  const ok = artist?.role === "admin";
+  useEffect(() => { if (artist && !ok) router.replace("/home"); }, [artist, ok, router]);
   return ok ? <>{children}</> : null;
 }

@@ -17,8 +17,8 @@ export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
 const PAGES: [RegExp, RouteName][] = [
   [/\bmoney\b|\bexpenses?\b/, "money"], [/\bshows\b/, "shows"], [/\bbooking\b/, "booking"], [/\bsongs\b/, "songs"],
-  [/\bhistory\b/, "history"], [/\bstats\b/, "stats"], [/\bhome\b/, "home"], [/\bmusicians\b/, "musicians"],
-  [/\busers\b/, "users"], [/\bai keys\b/, "aiKeys"], [/\bgear\b|\bartist\b/, "artist"],
+  [/\bhistory\b/, "history"], [/\bstats\b/, "stats"], [/\bhome\b/, "home"], [/\bmusicians\b|\busers\b|\bpeople\b/, "people"],
+  [/\bgear\b|\bartist\b/, "artist"],
 ];
 const GO = /^(?:please |can you |could you )?(show me|take me to|take me|go to|open|pull up|navigate to)\s+(?:the |my |a )?(.+?)(?: page| tab)?[.!?]*$/;
 const KIND_WORDS: Record<string, string> = { venue: "venue", pitch: "pitch", song: "song", promoter: "promoter", festival: "festival", contact: "contact" };

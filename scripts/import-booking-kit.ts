@@ -7,6 +7,7 @@
  * matchKey, so a second run only adds what is new. Needs the artist (and musicians, for personnel) set up.
  *   npm run import:booking                 (emulators: FIRESTORE_EMULATOR_HOST etc. set by the npm script)
  *   npm run import:booking -- --dry-run    (validate and count, write nothing)
+ *   npm run import:booking -- --artist=ingrid-avison-band   (which artist, when there is more than one)
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -14,6 +15,7 @@ import { db, run, type Doc, type Writer } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
 import { email as emailSchema } from "../src/schema/common";
 import { e164 } from "../src/schema/normalize";
+import { roleIn } from "../src/schema/users";
 import { joinNames } from "../src/lib/shows";
 import { dateInBandZone } from "../src/lib/timezone";
 
@@ -423,13 +425,18 @@ async function pitch(w: Writer, id: string, target: { kind: "venue" | "promoter"
 const ctx = importCtx("import-booking-kit");
 
 async function main() {
-  const [a] = await db.list("artists", (q) => q.limit(1));
-  if (!a) throw new Error("No artist yet. Run `npm run seed -- --people` (local) or set the band up in Admin first.");
+  // Which artist the data is for: --artist=<slug>, or the only one there is.
+  const want = process.argv.find((x) => x.startsWith("--artist="))?.slice("--artist=".length);
+  const all = await db.list("artists");
+  if (!want && all.length > 1) throw new Error(`There are ${all.length} artists: say which with --artist=<slug> (${all.map((x) => x.slug).join(", ")})`);
+  const a = want ? all.find((x) => x.slug === want) : all[0];
+  if (!a) throw new Error(want ? `No artist with slug ${want}` : "No artist yet. Run `npm run seed -- --people` (local) or set the band up in Admin first.");
   artist = a;
   const musicians = await db.list("musicians");
   musiciansByName = new Map(musicians.map((m) => [String(m.name).split(/\s+/)[0].toLowerCase(), m.id]));
   const users = await db.list("users");
-  assigneeId = users.find((u) => u.role === "admin" && /^jeff\b/i.test(String(u.name)))?.id ?? users.find((u) => u.role === "admin")?.id;
+  const isAdmin = (u: Doc) => roleIn(u, artist.id) === "admin";
+  assigneeId = users.find((u) => isAdmin(u) && /^jeff\b/i.test(String(u.name)))?.id ?? users.find(isAdmin)?.id;
 
   if (DRY) {
     const vb = load<{ venues: VbVenue[] }>("venue-book.json").venues;

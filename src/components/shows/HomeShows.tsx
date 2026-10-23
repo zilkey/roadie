@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";

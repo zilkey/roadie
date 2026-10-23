@@ -2,14 +2,11 @@
  * Read tools for AI (MCP) plus the safety-net commands: history undo and AI keys.
  * Everything here that reads returns plain JSON; writes go through db.ts like every other command.
  */
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { defineCommand } from "./types";
-import { idInput } from "./util";
 import { db } from "../db";
 import { AppError } from "../errors";
 import { bandsintownClient } from "../integrations";
-import { hashToken } from "../availability";
 import { undoRun, runsOf } from "../undo";
 import { buildSearchItems, searchItems, isActive, todayStr } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
@@ -60,13 +57,24 @@ function present(kind: string, d: Record<string, unknown>) {
   return o;
 }
 
+/**
+ * Records that say whose they are (an artist itself; shows and pitches carry artistId) are only visible from that artist.
+ * Everything else isn't partitioned by artist yet (one band per project today), so it is visible to every member.
+ */
+function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, unknown>) {
+  if (!ctx.artistId) return true;
+  if (kind === "artists") return d.id === ctx.artistId;
+  if (kind === "shows" || kind === "pitches") return !d.artistId || d.artistId === ctx.artistId;
+  return true;
+}
+
 export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
   description: "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const d = await db.get(i.kind, i.id);
-    if (!d || d.deletedAt) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
+    if (!d || d.deletedAt || !inArtist(ctx, i.kind, d)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
     const out: Record<string, unknown> = present(i.kind, d);
     if (i.kind === "pitches") {
       out.activity = (await db.list(`pitches/${i.id}/activity`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
@@ -80,8 +88,8 @@ export const recordsList = defineCommand({
   name: "records.list", roles: [...READ],
   description: "List records of one kind (newest changes first), live ones only. Use search to find specific ones.",
   input: strict({ kind: kindEnum, limit: z.number().int().min(1).max(200).default(50) }),
-  async run(_ctx, i) {
-    const rows = (await db.list(i.kind)).sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
+  async run(ctx, i) {
+    const rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d)).sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
     return { count: rows.length, rows: rows.slice(0, i.limit).map((r) => present(i.kind, r)) };
   },
 });
@@ -257,35 +265,7 @@ export const historyMyRuns = defineCommand({
   run: async (ctx, i) => ({ runs: await runsOf(ctx.uid, i.limit), currentRunId: ctx.runId }),
 });
 
-// ---------- AI keys (admin only, never MCP) ----------
-
-export const mcpTokenCreate = defineCommand({
-  name: "mcpTokens.create", roles: ["admin"],
-  description: "Make an AI key for yourself (or another user who has AI access). The key is returned once; only its hash is stored.",
-  input: strict({ label: z.string().min(1), userId: z.string().min(1).optional() }),
-  async run(ctx, i) {
-    const userId = i.userId ?? ctx.uid;
-    const u = await db.get("users", userId);
-    if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
-    if (!u.mcpAccess) throw new AppError("no_ai_access", `Turn on AI access for ${u.name} first`, 409);
-    const token = `btk_${randomBytes(32).toString("base64url")}`;
-    const hash = hashToken(token);
-    await db.create(ctx, "mcpTokens", { userId, label: i.label }, { id: hash });
-    return { id: hash, token, label: i.label, userId };
-  },
-});
-
-export const mcpTokenRevoke = defineCommand({
-  name: "mcpTokens.revoke", roles: ["admin"], input: idInput, description: "Revoke an AI key. It stops working at once.",
-  async run(ctx, { id }) {
-    const t = await db.get("mcpTokens", id);
-    if (!t || t.deletedAt) throw new AppError("not_found", "Key not found", 404);
-    if (t.revokedAt) return { id, changed: false };
-    return db.update(ctx, "mcpTokens", id, { revokedAt: new Date() });
-  },
-});
-
 export const aiCommands = [
   search, recordsGet, recordsList, pitchesNeedingFollowUp, songsMissingFiles, availabilityCheck, bandsintownReconcile, statsMovementCmd,
-  historyUndoRun, historyMyRuns, mcpTokenCreate, mcpTokenRevoke,
+  historyUndoRun, historyMyRuns,
 ];

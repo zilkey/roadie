@@ -7,6 +7,7 @@ import { completeMutation, claimMutation, releaseMutation, MUTATION_ID } from ".
 import { DraftPath } from "@/schema/drafts";
 import { clearDraft } from "../drafts";
 import { registry } from "./registry";
+import type { Membership } from "@/schema/users";
 
 /** Optional envelope next to a command's own input: `{...input, _meta: {...}}`. Stripped before the command's schema sees it. */
 const Meta = z.strictObject({
@@ -20,8 +21,15 @@ const Meta = z.strictObject({
   clearDraft: DraftPath.optional(),
 });
 
-/** Verify the Bearer ID token and build the request context. The users doc must still be live. */
-export async function authenticate(authHeader: string | null): Promise<Ctx> {
+/** The header the app sends with every request: which artist (by id) the call is for. */
+export const ARTIST_HEADER = "x-artist-id";
+
+/**
+ * Verify the Bearer ID token and build the request context. The users doc must still be live and the caller must belong
+ * to the artist the request names (`x-artist-id`), as admin or member; their role there becomes `ctx.role`. Without the
+ * header, a person who belongs to exactly one artist gets that one (scripts, older clients).
+ */
+export async function authenticate(authHeader: string | null, artistHeader?: string | null): Promise<Ctx> {
   const m = /^Bearer (.+)$/.exec(authHeader ?? "");
   if (!m) throw new AppError("unauthenticated", "Missing bearer token", 401);
   let decoded;
@@ -30,11 +38,17 @@ export async function authenticate(authHeader: string | null): Promise<Ctx> {
   } catch {
     throw new AppError("unauthenticated", "Invalid or expired token", 401);
   }
-  const role = decoded.role;
-  if (role !== "admin" && role !== "member") throw new AppError("forbidden", "No role on this account", 403);
   const user = await db.get("users", decoded.uid);
-  if (!user || user.deletedAt || user.role !== role) throw new AppError("forbidden", "Account is not active", 403);
-  return { uid: decoded.uid, role, musicianId: decoded.musicianId as string | undefined, via: "app", runId: newRunId() };
+  if (!user || user.deletedAt) throw new AppError("forbidden", "Account is not active", 403);
+  const app = ((user.artists ?? []) as Membership[]).filter((x) => x.role === "admin" || x.role === "member");
+  if (!app.length) throw new AppError("forbidden", "No role on this account", 403);
+  const wanted = artistHeader?.trim();
+  const mine = wanted ? app.find((x) => x.artistId === wanted) : app.length === 1 ? app[0] : undefined;
+  if (!mine) {
+    if (wanted) throw new AppError("not_a_member", "You're not a member of this artist", 403);
+    throw new AppError("artist_required", "Say which artist this is for", 400);
+  }
+  return { uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, musicianId: user.musicianId as string | undefined, via: "app", runId: newRunId() };
 }
 
 export interface Executed { result: unknown; runId: string; revs: Record<string, number>; repeated?: boolean }
@@ -73,9 +87,9 @@ export async function execute(ctx: Ctx, name: string, body: unknown): Promise<Ex
   return out;
 }
 
-export async function dispatch(name: string, authHeader: string | null, body: unknown): Promise<{ status: number; json: unknown }> {
+export async function dispatch(name: string, authHeader: string | null, body: unknown, artistHeader?: string | null): Promise<{ status: number; json: unknown }> {
   try {
-    const ctx = await authenticate(authHeader);
+    const ctx = await authenticate(authHeader, artistHeader);
     return { status: 200, json: await execute(ctx, name, body) };
   } catch (e) {
     if (e instanceof AppError) return { status: e.status, json: e.toJSON() };

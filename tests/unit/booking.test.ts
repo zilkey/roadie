@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
 import { fillTemplate, unfilledFields, buildTemplateContext, buildSearchItems, searchItems, appsOpenThisMonth, upcomingDeadlines } from "@/lib/booking";
-import { resetEmulators, makeUser, venue } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -36,12 +36,12 @@ beforeEach(async () => {
   mids = [];
   for (const n of ["Ingrid", "Jeff", "David"]) mids.push((await db.create(ctx, "musicians", { name: n, instruments: [], active: true })).id);
   artistId = (await db.create(ctx, "artists", {
-    name: "Ingrid Avison Band", driveFolderId: "", links: { website: "https://band.example" }, soundGear: { bandProvided: [], venueProvided: [] },
+    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: { website: "https://band.example" }, soundGear: { bandProvided: [], venueProvided: [] },
     configurations: [
       { id: "trio", name: "Trio", billingName: "Trio", musicianIds: mids, gear: [] },
       { id: "duo", name: "Duo", billingName: "Duo", musicianIds: mids.slice(0, 2), gear: [] },
     ],
-  })).id;
+  }, { id: TEST_ARTIST })).id;
 });
 
 const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {

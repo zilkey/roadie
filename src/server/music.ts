@@ -13,8 +13,9 @@ export async function bandmates(): Promise<Bandmate[]> {
   return ms.filter((m: Doc) => m.active && m.email).map((m) => ({ id: m.id, name: m.name as string, email: String(m.email).toLowerCase() }));
 }
 
-export async function bandFolderId(): Promise<string> {
-  const [artist] = await db.list("artists");
+/** The artist's Drive folder (the one artist there is when no id is given). */
+export async function bandFolderId(artistId?: string): Promise<string> {
+  const artist = artistId ? await db.get("artists", artistId) : (await db.list("artists"))[0];
   return (artist?.driveFolderId as string) || DEFAULT_BAND_FOLDER;
 }
 

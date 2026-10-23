@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useBooking, StatusChip, hrefFor } from "./common";
 import { STATUSES, STATUS_LABEL, fmtDate, todayStr, upcomingDeadlines } from "@/lib/booking";
 

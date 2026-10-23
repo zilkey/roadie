@@ -162,9 +162,10 @@ async function targetName(w: Writer, kind: keyof typeof COLL, id: string) {
   if (!t || t.deletedAt) throw new AppError("not_found", `${kind} not found`, 404);
   return kind === "edition" ? `${t.festivalName} ${t.label}` : (t.name as string);
 }
+/** The artist this call is for (ctx.artistId), or the one artist there is when the caller didn't say. */
 async function artistOf(w: Writer) {
-  const [a] = await w.query("artists", (q) => q.limit(1));
-  if (!a) throw new AppError("not_found", "Set up the artist first", 404);
+  const a = w.ctx.artistId ? await w.get("artists", w.ctx.artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
+  if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
 }
 function personnelFor(artist: Doc, configId: string | null | undefined): string[] | undefined {

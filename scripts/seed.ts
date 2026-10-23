@@ -9,6 +9,8 @@
 import { adminAuth } from "../src/server/admin";
 import { db } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
+import { syncClaims } from "../src/server/session";
+import { slugForArtist } from "../src/schema/artists";
 import { DEV_PEOPLE } from "../src/lib/dev-people";
 import { DEFAULT_CHECKLIST_TEMPLATES } from "../src/lib/shows";
 
@@ -34,18 +36,11 @@ async function main() {
     mid[p.key] = await create("musicians", { name: p.name, instruments: p.instruments, email: p.email, active: true });
   }
   mid.sam = await create("musicians", { name: "Sam", instruments: ["drums"], phone: "+13035550142", payHandle: "@sam-drums", active: true });
-  const uid: Record<string, string> = {};
-  for (const p of DEV_PEOPLE) {
-    const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
-    uid[p.key] = u.uid;
-    await create("users", { email: p.email, name: p.name, role: p.role, mcpAccess: p.key === "jeff", musicianId: mid[p.key] }, u.uid);
-    await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
-    await adminAuth().setCustomUserClaims(u.uid, { role: p.role, musicianId: mid[p.key] });
-  }
 
   const gear = (label: string, who?: string) => ({ label, ...(who ? { musicianId: mid[who] } : {}) });
   const artist = await create("artists", {
     name: "Ingrid Avison Band",
+    slug: slugForArtist("Ingrid Avison Band"),
     configurations: [
       { id: "full-band", name: "Full band", billingName: "Ingrid Avison Band", musicianIds: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]),
         gear: [gear("Keys rig", "jeff"), gear("Bass rig", "david"), gear("Snare, cymbals, pedal", "eric"), gear("Violin + pedalboard", "emma")] },
@@ -61,6 +56,16 @@ async function main() {
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/ingridavison", website: "https://ingridavison.example" },
     driveFolderId: "fake-band-folder",
   });
+
+  // Every seeded person belongs to the artist, with their role there.
+  const uid: Record<string, string> = {};
+  for (const p of DEV_PEOPLE) {
+    const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
+    uid[p.key] = u.uid;
+    await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role }], mcpAccess: p.key === "jeff", musicianId: mid[p.key] }, u.uid);
+    await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
+    await syncClaims(u.uid);
+  }
 
   if (process.argv.includes("--people")) {
     await seedTemplates(create);

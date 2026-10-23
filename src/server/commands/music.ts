@@ -14,8 +14,8 @@ type Attach = z.infer<typeof AttachFile>;
 
 // ---------- files ----------
 
-async function buildFileDocs(files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
-  const [mates, folder] = await Promise.all([bandmates(), bandFolderId()]);
+async function buildFileDocs(artistId: string | undefined, files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
+  const [mates, folder] = await Promise.all([bandmates(), bandFolderId(artistId)]);
   const drive = driveClient();
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
@@ -50,8 +50,8 @@ export const driveSearch = defineCommand({
   roles: ["admin", "mcp"],
   description: "Search Drive for audio, video, Docs and Word files matching a song title. Each hit says which band members can't open it and whether it is in the band folder.",
   input: z.strictObject({ q: z.string().min(1) }),
-  async run(_ctx, { q }) {
-    const [hits, mates, folder] = await Promise.all([driveClient().search({ q }), bandmates(), bandFolderId()]);
+  async run(ctx, { q }) {
+    const [hits, mates, folder] = await Promise.all([driveClient().search({ q }), bandmates(), bandFolderId(ctx.artistId)]);
     const out = [];
     for (const f of hits.filter((h) => isAttachable(h.mimeType))) {
       const ins = await inspect(f, mates, folder);
@@ -73,7 +73,7 @@ export const filesAttach = defineCommand({
     .refine((v) => !!v.songId !== !!v.rehearsalId, "Give exactly one of songId or rehearsalId"),
   async run(ctx, input) {
     const parent = input.songId ? { songId: input.songId } : { rehearsalId: input.rehearsalId };
-    const docs = await buildFileDocs(input.files, parent, input.rehearsalId ? "rehearsal" : undefined);
+    const docs = await buildFileDocs(ctx.artistId, input.files, parent, input.rehearsalId ? "rehearsal" : undefined);
     return run(ctx, async (w) => {
       const p = input.songId ? await w.get("songs", input.songId) : await w.get("rehearsals", input.rehearsalId!);
       if (!p || p.deletedAt) throw new AppError("not_found", input.songId ? "Song not found" : "Rehearsal not found", 404);
@@ -126,7 +126,7 @@ async function fixInDrive(id: string, fix: Fix, mates: Bandmate[], folder: strin
 
 /** Re-reads Drive for each file (after an optional fix) and writes sharing, inBandFolder and checkedAt. */
 async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
-  const [mates, folder] = await Promise.all([bandmates(), bandFolderId()]);
+  const [mates, folder] = await Promise.all([bandmates(), bandFolderId(ctx.artistId)]);
   const updates: { id: string; patch: Record<string, unknown> }[] = [];
   const errors: { id: string; title: string; message: string }[] = [];
   let fixed = 0;
@@ -153,8 +153,8 @@ export const driveFix = defineCommand({
   roles: ["admin", "mcp"],
   description: "Before attaching: copy Drive files into the band folder or share them with the band. Returns each file's new id and state.",
   input: z.strictObject({ driveFileIds: z.array(z.string().min(1)).min(1), fix: z.enum(["copy", "share"]) }),
-  async run(_ctx, { driveFileIds, fix }) {
-    const [mates, folder] = await Promise.all([bandmates(), bandFolderId()]);
+  async run(ctx, { driveFileIds, fix }) {
+    const [mates, folder] = await Promise.all([bandmates(), bandFolderId(ctx.artistId)]);
     const out = [];
     for (const id of driveFileIds) {
       const r = await fixInDrive(id, fix, mates, folder).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
@@ -196,7 +196,7 @@ export const songsCreate = defineCommand({
   description: "Add a song, optionally attaching Drive files (see drive.search) in the same step.",
   input: SongInput.extend({ files: z.array(AttachFile).default([]) }),
   async run(ctx, { files, ...song }) {
-    const docs = await buildFileDocs(files, {});
+    const docs = await buildFileDocs(ctx.artistId, files, {});
     return run(ctx, async (w) => {
       const { id } = await w.create("songs", song);
       const r = await writeFiles(w, docs.map((d) => ({ ...d, songId: id })));
@@ -321,7 +321,7 @@ export const rehearsalsCreate = defineCommand({
   description: "Log a rehearsal: date, place, who came, the songs run (with notes). Recordings attach through files.attach with rehearsalId.",
   input: z.strictObject({ ...RehFields, files: z.array(AttachFile).default([]) }),
   async run(ctx, { songs, files, ...r }) {
-    const docs = await buildFileDocs(files, {}, "rehearsal");
+    const docs = await buildFileDocs(ctx.artistId, files, {}, "rehearsal");
     return run(ctx, async (w) => {
       const { id } = await w.create("rehearsals", { ...r, songs: await resolveSongs(w, songs) });
       const res = await writeFiles(w, docs.map((d) => ({ ...d, rehearsalId: id })));

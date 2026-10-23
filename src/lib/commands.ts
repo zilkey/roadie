@@ -13,6 +13,13 @@ export interface CommandOutcome<T> { result: T; runId: string; /** doc id -> rev
 
 export const newMutationId = () => crypto.randomUUID();
 
+/** The artist the open page belongs to (set by the /artists/[slug] layout). Every server call says which artist it is for. */
+let currentArtistId: string | null = null;
+/** `only`: change it only while it is still that artist (a layout leaving must not clear the next one's). */
+export function setCommandArtist(id: string | null, only?: string | null) { if (only === undefined || currentArtistId === only) currentArtistId = id; }
+/** The `x-artist-id` header for calls to /api (commands, Roadie). Empty outside an artist. */
+export const artistHeaders = (): Record<string, string> => (currentArtistId ? { "x-artist-id": currentArtistId } : {});
+
 /** Like runCommand, but also returns the runId (for Undo) and the new revs. */
 export async function runCommandFull<T = { id?: string }>(name: string, input: unknown = {}, meta?: CommandMeta): Promise<CommandOutcome<T>> {
   const user = clientAuth().currentUser;
@@ -22,7 +29,7 @@ export async function runCommandFull<T = { id?: string }>(name: string, input: u
   try {
     res = await fetch(`/api/commands/${encodeURIComponent(name)}`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${await user.getIdToken()}` },
+      headers: { "content-type": "application/json", authorization: `Bearer ${await user.getIdToken()}`, ...artistHeaders() },
       body,
       keepalive: body.length < 60_000, // a request already on its way survives the tab closing (browsers cap keepalive bodies at 64KB)
     });

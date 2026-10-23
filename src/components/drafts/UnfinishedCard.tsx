@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useDrafts } from "@/lib/drafts";
 import type { SaveState } from "@/lib/autosave";
 

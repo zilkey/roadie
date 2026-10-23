@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { A } from "./env";
 import { dateInBandZone } from "../../src/lib/timezone";
 import { addDays } from "../../src/lib/shows";
 
@@ -10,7 +11,7 @@ async function signInAs(page: Page, key: string) {
 
 test("a house concert has hosts and a city, no venue; it can move to a venue and back", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-where-house").click();
   await expect(page.getByTestId("show-venue")).toHaveCount(0);
   await page.getByTestId("show-host-add").selectOption({ label: "Dana Ortiz" });
@@ -38,7 +39,7 @@ test("a house concert has hosts and a city, no venue; it can move to a venue and
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("House concert · Dana Ortiz");
 
   // The host's contact page lists the show.
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByPlaceholder(/Search/).fill("Dana Ortiz");
   await page.getByText("Dana Ortiz").first().click();
   await expect(page.getByTestId("hosted-shows")).toContainText("House concert · Dana Ortiz");

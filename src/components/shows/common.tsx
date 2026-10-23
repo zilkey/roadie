@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link, { useArtist } from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { fmtLong, fmtTime, showName, showCity } from "@/lib/shows";
@@ -12,15 +12,15 @@ export function useBand() {
   const p = useProfile();
   const shows = useCollection<Show>("shows");
   const musicians = useCollection<Musician>("musicians");
-  const artists = useCollection<Artist>("artists");
+  const { doc: artist } = useArtist();
   const setlists = useCollection<Setlist>("setlists");
   // Rules only let a member read asks they are on, so a member's query must say so.
   const asks = useCollection<Availability>("availability", {
     where: p.role === "member" ? [["askedMusicianIds", "array-contains", p.musicianId ?? "none"]] : [],
   });
   return {
-    shows: shows.rows ?? [], musicians: musicians.rows ?? [], artist: (artists.rows ?? [])[0], setlists: setlists.rows ?? [], asks: asks.rows ?? [],
-    loading: [shows, musicians, artists, setlists, asks].some((c) => c.loading),
+    shows: shows.rows ?? [], musicians: musicians.rows ?? [], artist: artist ?? undefined, setlists: setlists.rows ?? [], asks: asks.rows ?? [],
+    loading: [shows, musicians, setlists, asks].some((c) => c.loading) || !artist,
   };
 }
 

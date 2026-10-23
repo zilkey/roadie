@@ -90,18 +90,20 @@ Each file below defines an interface plus an HTTP client for the fake. Write a s
 
 ## 8. Bootstrap the first admin
 
-The app is invite-only; the first admin has to be created outside the app. `scripts/bootstrap-admin.ts` does it: creates the Auth user, the `users/{uid}` doc (role admin) via the normal `users.add` command, and the `{role: "admin"}` custom claim. Safe to repeat.
+The app is invite-only; the first admin has to be created outside the app. `scripts/bootstrap-admin.ts` does it: creates the artist if there is none yet (third argument: its name; its URL name, `/artists/{slug}`, comes from that), then the Auth user and the `users/{uid}` doc (admin of that artist, `artists: [{artistId, role: "admin"}]`) via the normal `users.add` command, and the `{artists: {artistId: "admin"}}` custom claim. Safe to repeat.
+
+Existing data from before artists had URLs (artists without `slug`, users with a single `role`): run `npm run migrate:artists -- --dry-run`, then `-- --yes` (see `scripts/migrate-artists.ts`).
 
 - [ ] Create a service-account key: Project settings > Service accounts > Generate new private key (keep it out of the repo; `*.json` keys must never be committed).
 - [ ] Run (from the repo root, with `npm ci` done):
 
 ```
 GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
-  npx tsx scripts/bootstrap-admin.ts YOU@gmail.com "Your Name"
+  npx tsx scripts/bootstrap-admin.ts YOU@gmail.com "Your Name" "Ingrid Avison Band"
 ```
 
 - [ ] Make sure no `FIRESTORE_EMULATOR_HOST` / `FIREBASE_AUTH_EMULATOR_HOST` is set in that shell (otherwise it writes to the emulator).
-- [ ] Sign in to the app with that Google account. Then invite everyone else at **Admin > Users**, and add musicians at Admin > Musicians. Delete the key afterwards.
+- [ ] Sign in to the app with that Google account. Then invite everyone else and add musicians at **Settings > People**. Delete the key afterwards.
 
 ## 9. Replace `demo-band-tracker`
 

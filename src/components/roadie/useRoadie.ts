@@ -4,8 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { collection, onSnapshot, orderBy, query, type Timestamp } from "firebase/firestore";
 import { clientAuth, clientDb } from "@/lib/firebase-client";
 import { useProfile } from "@/lib/auth";
+import { useArtist } from "@/lib/artist";
 import { useDoc } from "@/lib/firestore-hooks";
-import { runCommand } from "@/lib/commands";
+import { artistHeaders, runCommand } from "@/lib/commands";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assistant";
 
@@ -26,6 +27,7 @@ export function pageContextFor(path: string): PageContext {
 /** All of Roadie's client state. Lives in Shell, so it survives navigation. */
 export function useRoadie(onNavigated?: () => void) {
   const profile = useProfile();
+  const { slug } = useArtist();
   const router = useRouter();
   const path = usePathname();
   const prefs = useDoc<{ prefs?: { assistant?: { width?: Width; threadId?: string } } }>("users", profile.userId);
@@ -78,7 +80,7 @@ export function useRoadie(onNavigated?: () => void) {
     else if (e.type === "readback") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "readback", label: e.label, runId: e.runId }] });
     else if (e.type === "confirm") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending" }] });
     else if (e.type === "navigate") {
-      const r = resolveRoute(e.route, e.params);
+      const r = resolveRoute(e.route, e.params, slug); // always inside the artist you are in
       if (!r) return;
       setPending((p) => p && { ...p, actions: [...p.actions, { kind: "navigate", label: e.label, route: e.route, params: e.params }] });
       router.push(r.href);
@@ -88,7 +90,7 @@ export function useRoadie(onNavigated?: () => void) {
       runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
       setPending((p) => p && { ...p, doneId: e.messageId });
     } else if (e.type === "error") setPending((p) => p && { ...p, error: e.message });
-  }, [router, onNavigated]);
+  }, [router, onNavigated, slug]);
 
   const send = useCallback(async (text: string) => {
     const message = text.trim();
@@ -99,7 +101,7 @@ export function useRoadie(onNavigated?: () => void) {
       const token = await clientAuth().currentUser?.getIdToken();
       const res = await fetch("/api/assistant/chat", {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() },
         body: JSON.stringify({ threadId, message, pageContext: pageContextFor(path) }),
       });
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error?.message ?? "Roadie is unavailable");
@@ -132,7 +134,7 @@ export function useRoadie(onNavigated?: () => void) {
     try {
       const token = await clientAuth().currentUser?.getIdToken();
       const res = await fetch(`/api/assistant/${path}`, {
-        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ threadId, ...body }),
+        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() }, body: JSON.stringify({ threadId, ...body }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) setNotice(json.error?.message ?? "Roadie is unavailable");

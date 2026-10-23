@@ -3,7 +3,7 @@
  *   tsx scripts/restore.ts <backups/2026-10-23> [--overwrite] [--yes] [--dry-run]
  * Every document is validated with the Zod schemas first; if any fails, nothing is written.
  * Refuses to touch a database that already has data unless --overwrite. Against real Firestore (no emulator host) it also needs --yes.
- * Auth accounts are not part of a backup: people sign in again with Google and /api/session re-sets their role from the users doc.
+ * Auth accounts are not part of a backup: people sign in again with Google and /api/session re-sets their per-artist roles (claims) from the users doc.
  */
 import fs from "node:fs";
 import path from "node:path";

@@ -1,7 +1,7 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { dateInBandZone } from "../../src/lib/timezone";
 import { addDays } from "../../src/lib/shows";
-import { CAL, BIT, GMAIL } from "./env";
+import { CAL, BIT, GMAIL, A } from "./env";
 
 
 async function signInAs(page: Page, key: string) {
@@ -19,7 +19,7 @@ const localToday = () => dateInBandZone();
 const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 
 async function cancelShow(page: Page, id: string) {
-  await page.goto(`/shows/${id}`);
+  await page.goto(A(`/shows/${id}`));
   page.once("dialog", (d) => d.accept());
   await page.getByTestId("show-cancel").click();
   await expect(page.getByTestId("show-status")).toHaveText("Canceled");
@@ -29,7 +29,7 @@ test("Booked it turns a pitch into a show with checklist, gear, calendar and a d
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };
   const calIds = new Set(((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).map((e) => e.id)); // fake state outlives runs
   await signInAs(page, "jeff");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("group-talking").getByText("Fox Theatre").click();
   await expect(page.getByTestId("pitch-page")).toBeVisible();
@@ -109,7 +109,7 @@ test("Booked it turns a pitch into a show with checklist, gear, calendar and a d
 
 test("Ask who's free: emails go out, a sub answers by link without logging in", async ({ page, browser, request }) => {
   await signInAs(page, "jeff");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("group-toPitch").getByText("Dairy Arts Center").click();
   await page.getByTestId("ask-toggle").click();
@@ -164,7 +164,7 @@ test("Ask who's free: emails go out, a sub answers by link without logging in", 
 
 test("a member sees Home with a show today, read-only, with no money", async ({ page, browser }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill(localToday());
   await page.getByTestId("show-loadIn").fill("17:00");
@@ -177,7 +177,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   const id = showId(page);
 
   // admin Home: show day. Today's card first; the booking to-dos step aside.
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId(`today-${id}`)).toBeVisible();
   await expect(page.getByTestId("booking-home")).toHaveCount(0);
 
@@ -204,7 +204,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(bass).toBeChecked();
 
   // read-only show page, no deal
-  await d.goto(`/shows/${id}`);
+  await d.goto(A(`/shows/${id}`));
   await expect(d.getByTestId("show-page")).toBeVisible();
   await expect(d.getByTestId("show-address")).toContainText("Broadway");
   await expect(d.getByTestId("deal-panel")).toHaveCount(0);
@@ -213,14 +213,14 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(d.getByTestId("check-add")).toHaveCount(0);
   await expect(d.getByTestId("checklist").locator('input[type="checkbox"]').first()).toBeDisabled();
   await expect(d.getByTestId("gear").locator("label", { hasText: "Bass rig" }).locator("input")).toBeChecked();
-  await d.goto("/shows/new");
+  await d.goto(A("/shows/new"));
   await expect(d).toHaveURL(/\/home$/);
-  await d.goto("/shows");
+  await d.goto(A("/shows"));
   await expect(d.getByTestId(`show-${id}`)).toBeVisible();
   await david.close();
 
   await cancelShow(page, id);
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId(`today-${id}`)).toHaveCount(0);
   await expect(page.getByTestId("booking-home")).toBeVisible();
 });
@@ -229,7 +229,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   const unique = "2027-04-10";
   await request.post(`${BIT}/__reset`); // fake state outlives runs
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Lost Lake Lounge · Denver" });
   await page.getByTestId("show-date").fill(unique);
   await page.getByTestId("show-set").fill("20:30");
@@ -250,7 +250,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   await expect(page.getByText("tickets.example/lost-lake")).toBeVisible();
 
   // a time change updates the same listing
-  await page.goto(`/shows/${id}`);
+  await page.goto(A(`/shows/${id}`));
   await page.getByTestId("show-edit").click();
   await page.getByTestId("show-set").fill("21:00");
   await expect(page.getByTestId("save-status")).toHaveText("Saved"); // autosave: no Save button on an existing show
@@ -280,7 +280,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   expect((await list()).filter((e) => e.datetime.startsWith(unique))).toHaveLength(0);
 
   // a private show never goes out
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Lost Lake Lounge · Denver" });
   await page.getByTestId("show-date").fill("2027-04-11");
   await page.getByTestId("show-calendar").uncheck();
@@ -294,7 +294,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
 test("after the show: rating and attendance saved", async ({ page }) => {
   await signInAs(page, "jeff");
   // the seeded played show (Dairy Arts, Oct 10) is unsettled
-  await page.goto("/shows");
+  await page.goto(A("/shows"));
   await page.getByTestId("shows-filter-played").click();
   await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
   await page.getByTestId("after-show").click();
@@ -320,7 +320,7 @@ test("after the show: rating and attendance saved", async ({ page }) => {
 test("last night's unsettled show stays on top of Home: enter money for admins, add expenses for members", async ({ page, browser }) => {
   const yesterday = addDays(dateInBandZone(), -1);
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill(yesterday);
   await page.getByTestId("show-calendar").uncheck();
@@ -328,7 +328,7 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
 
-  await page.goto("/home");
+  await page.goto(A("/home"));
   const card = page.getByTestId(`recent-${id}`);
   await expect(card).toContainText("Last night");
   await expect(card).toContainText("How'd it go?");
@@ -351,7 +351,7 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
   await expect(david.page.getByTestId(`add-expenses-${id}`)).toBeVisible();
   await david.close();
 
-  await page.goto(`/shows/${id}`);
+  await page.goto(A(`/shows/${id}`));
   page.once("dialog", (dlg) => dlg.accept());
   await page.getByTestId("show-remove").click();
   await expect(page).toHaveURL(/\/shows$/);
@@ -360,7 +360,7 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
 
 test("autosave: edit a show field with no Save button, see Saved, reload, then Undo from the toast puts it back", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill("2027-05-01");
   await page.getByTestId("show-calendar").uncheck();
@@ -404,7 +404,7 @@ test("autosave: edit a show field with no Save button, see Saved, reload, then U
 
 test("a new show is a draft: it restores in another browser, Home lists it under Unfinished, and creating the show clears it", async ({ page, browser }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Lost Lake Lounge · Denver" });
   await page.getByTestId("show-date").fill("2027-06-12");
   await page.getByTestId("show-set").fill("20:15");
@@ -417,7 +417,7 @@ test("a new show is a draft: it restores in another browser, Home lists it under
 
   // another machine = a new browser context signed in as the same person (no shared localStorage)
   const other = await as(browser, "jeff");
-  await other.page.goto("/home");
+  await other.page.goto(A("/home"));
   const card = other.page.getByTestId("unfinished");
   await expect(card).toContainText("New show · Lost Lake Lounge · 2027-06-12");
   await card.getByRole("link").first().click();
@@ -436,9 +436,9 @@ test("a new show is a draft: it restores in another browser, Home lists it under
   await other.page.getByTestId("show-save").click();
   await expect(other.page.getByTestId("show-page")).toBeVisible();
   const id = showId(other.page);
-  await other.page.goto("/home");
+  await other.page.goto(A("/home"));
   await expect(other.page.getByTestId("unfinished")).toHaveCount(0);
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await expect(page.getByTestId("show-date")).toHaveValue("");
   await expect(page.getByTestId("draft-restored")).toHaveCount(0);
   await other.close();
@@ -447,7 +447,7 @@ test("a new show is a draft: it restores in another browser, Home lists it under
 
 test("show panels: the deal autosaves, checklist/gear/docs adds are drafts, each change shows a status and Undo", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill("2027-07-03");
   await page.getByTestId("show-calendar").uncheck();

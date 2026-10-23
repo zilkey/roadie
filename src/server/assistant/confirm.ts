@@ -13,7 +13,7 @@ import type { Session } from "./run";
 import { runCommandTool, undoInThread } from "./tools";
 import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending } from "./threads";
 
-export interface Who { uid: string; role: Role; musicianId?: string; name: string }
+export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
 
 /** The session for a write outside the chat stream (a confirmed card, an Undo tap). */
 export function sessionFor(who: Who, threadId: string, replyId = newMessageId(), now?: Date): Session {
@@ -79,11 +79,11 @@ export async function undoRunOf(who: Who, req: UndoRequest): Promise<{ undone: n
   return { undone: u.undone.length };
 }
 
-async function who(authHeader: string | null): Promise<Who> {
-  const ctx = await authenticate(authHeader);
+async function who(authHeader: string | null, artistHeader?: string | null): Promise<Who> {
+  const ctx = await authenticate(authHeader, artistHeader);
   if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
   const u = await db.get("users", ctx.uid);
-  return { uid: ctx.uid, role: ctx.role, musicianId: ctx.musicianId, name: (u?.name as string | undefined) ?? "Someone" };
+  return { uid: ctx.uid, role: ctx.role, artistId: ctx.artistId, musicianId: ctx.musicianId, name: (u?.name as string | undefined) ?? "Someone" };
 }
 
 async function respond(f: () => Promise<unknown>): Promise<Response> {
@@ -95,16 +95,16 @@ async function respond(f: () => Promise<unknown>): Promise<Response> {
 }
 
 /** POST /api/assistant/confirm: admins only. */
-export const handleConfirm = (authHeader: string | null, body: unknown) => respond(async () => {
-  const w = await who(authHeader);
+export const handleConfirm = (authHeader: string | null, body: unknown, artistHeader?: string | null) => respond(async () => {
+  const w = await who(authHeader, artistHeader);
   const p = ConfirmRequest.safeParse(body ?? {}); // strict: there is no place to put input
   if (!p.success) throw invalid(p.error);
   return answerPending(w, p.data);
 });
 
 /** POST /api/assistant/undo: admins only. */
-export const handleUndo = (authHeader: string | null, body: unknown) => respond(async () => {
-  const w = await who(authHeader);
+export const handleUndo = (authHeader: string | null, body: unknown, artistHeader?: string | null) => respond(async () => {
+  const w = await who(authHeader, artistHeader);
   const p = UndoRequest.safeParse(body ?? {});
   if (!p.success) throw invalid(p.error);
   return undoRunOf(w, p.data);

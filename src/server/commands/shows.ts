@@ -32,7 +32,8 @@ async function requireVenue(w: Writer, id: string) {
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
   return v;
 }
-async function artistFor(w: Writer, artistId?: string): Promise<Doc> {
+/** A show's artist: the one given, else the one this call is for (ctx.artistId), else the one artist there is. */
+async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
   const a = artistId ? await w.get("artists", artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
   if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
@@ -122,6 +123,7 @@ export const showsCreate = defineCommand({
       const hosts = i.hostContactIds?.length ? await hostsOf(w, i.hostContactIds) : null;
       const pitch = i.pitchId ? await w.get("pitches", i.pitchId) : null;
       if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
+      if (pitch && ctx.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
       const artist = await artistFor(w, pitch?.artistId);
       const billedAs = i.billedAs ?? pitch?.pitchedAs ?? undefined;
       const cfg = configOf(artist, billedAs);
@@ -189,6 +191,7 @@ export const showsUpdate = defineCommand({
       const before = await requireShow(w, id);
       const { venueId, hostContactIds, editionId, rebuildGear, addMissingChecklist, ...rest } = patch;
       const p: Record<string, unknown> = { ...rest };
+      if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
       const artist = await artistFor(w, before.artistId);
       if (venueId) p.venue = venueCopy(await requireVenue(w, venueId));
       if (venueId === null) p.venue = null;

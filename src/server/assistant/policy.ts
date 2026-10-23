@@ -8,7 +8,7 @@ import type { Role } from "../ctx";
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
   "users.",           // invites, access, roles
-  "mcpTokens.",       // AI keys
+  "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
   "artists.",         // settings, feature switches, creating or changing the band
   "assistant.",       // Roadie's own prefs
   "drafts.",          // personal scratch, nothing to hand an assistant

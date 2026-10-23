@@ -16,7 +16,7 @@ import { contextNow, searchAll, tonightDate } from "@/server/assistant/context";
 import { MAX_REPLY_CHARS, MAX_STEPS } from "@/server/assistant/flow";
 import { ensureThread, getRuns, newThreadId, PENDING_TTL_MS } from "@/server/assistant/threads";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser, venue } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -44,9 +44,9 @@ beforeEach(async () => {
   sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Ingrid", instruments: [], active: true })).id;
   const artist = (await db.create(sys, "artists", {
-    name: "Ingrid Avison Band", driveFolderId: "", links: {}, soundGear: { bandProvided: [], venueProvided: [] },
+    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: {}, soundGear: { bandProvided: [], venueProvided: [] },
     configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [mus], gear: [] }],
-  })).id;
+  }, { id: TEST_ARTIST })).id;
   void artist;
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Hi-Dive")))) as { id: string };
   const r = (await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: "2026-11-14", venueId: v.id, status: "hold", times: { loadIn: "19:00", set: "21:15" } }))) as { id: string };

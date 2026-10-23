@@ -1,4 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
+import { A } from "./env";
 import fs from "node:fs";
 
 async function signInAs(page: Page, key: string) {
@@ -17,7 +18,7 @@ const WHAT = `Drum heads ${Date.now()}`;
 
 test("enter money after the played seeded show: ledger entries, payouts, settled", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/shows");
+  await page.goto(A("/shows"));
   await page.getByTestId("shows-filter-played").click();
   await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
   await page.getByTestId("after-show").click();
@@ -39,7 +40,7 @@ test("enter money after the played seeded show: ledger entries, payouts, settled
   await expect(page.getByTestId("money-step")).toContainText("$450.00");
 
   // Home no longer shows it as unsettled
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId(`recent-${id}`)).toHaveCount(0);
 
   // the ledger on the Money tab has it, and entering again is refused
@@ -134,7 +135,7 @@ test("stats: pull from Spotify, import the Spotify for Artists sample, charts re
 
 test("members cannot open the stats page", async ({ browser }) => {
   const david = await as(browser, "david");
-  await david.page.goto("/stats");
+  await david.page.goto(A("/stats"));
   await expect(david.page).toHaveURL(/\/home$/);
   await david.close();
 });
@@ -152,7 +153,7 @@ test("drafts: a half-entered expense and ledger entry survive a reload and clear
   await expect(p.getByTestId("expense-what")).toHaveValue("Half typed cables");
   await expect(p.getByTestId("expense-amount")).toHaveValue("12.50");
   await expect(p.getByTestId("draft-restored")).toBeVisible();
-  await p.goto("/home");
+  await p.goto(A("/home"));
   await expect(p.getByTestId("unfinished")).toContainText("New expense · Half typed cables");
   await p.goBack();
   await p.getByTestId("draft-start-over").click();

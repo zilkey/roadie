@@ -9,6 +9,8 @@ import { newRunId } from "../ctx";
 
 export interface Session {
   uid: string; role: Role; musicianId?: string; name: string;
+  /** The artist the conversation is about (the page the admin is on). Becomes `ctx.artistId`. */
+  artistId?: string;
   /** The conversation. Becomes `ctx.sessionId`. */
   threadId: string;
   /** One per user message. Every write in the message shares it, so one Undo reverses the message. */
@@ -27,7 +29,7 @@ export const ROADIE = "Roadie";
 export function makeCtx(s: Session, over: { runId?: string; via?: "assistant" | "app" } = {}): Ctx {
   const via = over.via ?? "assistant";
   return {
-    uid: s.uid, role: s.role, musicianId: s.musicianId, via, runId: over.runId ?? s.runId, now: s.now,
+    uid: s.uid, role: s.role, ...(s.artistId ? { artistId: s.artistId } : {}), musicianId: s.musicianId, via, runId: over.runId ?? s.runId, now: s.now,
     ...(via === "assistant" ? { sessionId: s.threadId, client: { name: ROADIE, model: s.model } } : {}),
   };
 }

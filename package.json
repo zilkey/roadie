@@ -21,7 +21,8 @@
     "mcp:stdio": "tsx mcp/server.ts --stdio",
     "backup": "tsx scripts/backup.ts",
     "restore": "tsx scripts/restore.ts",
-    "migrate:history": "tsx scripts/migrate-history.ts"
+    "migrate:history": "tsx scripts/migrate-history.ts",
+    "migrate:artists": "tsx scripts/migrate-artists.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

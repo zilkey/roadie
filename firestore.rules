@@ -4,8 +4,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
-    function isAdmin() { return signedIn() && request.auth.token.get('role', '') == 'admin'; }
-    function isMember() { return signedIn() && request.auth.token.get('role', '') == 'member'; }
+    // Roles are per artist. The server (src/server/session.ts) keeps the custom claim `artists` = {artistId: role} in step
+    // with users/{uid}.artists, holding only the app roles 'admin' and 'member'. The third role, 'ai' (a login for AI tools
+    // only, via MCP keys on the server), is never in the claim, so it reads nothing here.
+    function roles() { return signedIn() ? request.auth.token.get('artists', {}) : {}; }
+    function roleIn(artistId) { return roles().get(artistId, ''); }
+    // Band records aren't partitioned by artist yet (one band per project today; shows and pitches already carry artistId).
+    // Until they are, your best role in any of your artists applies to them. TODO: once every record has artistId, use
+    // roleIn(resource.data.artistId) and query with where('artistId', '==', ...).
+    function isAdmin() { return 'admin' in roles().values(); }
+    function isMember() { return !isAdmin() && 'member' in roles().values(); }
     function live() { return resource.data.get('deletedAt', null) == null; }
     // Whole band reads (admins and members); soft-deleted docs only show to admins.
     function band() { return isAdmin() || (isMember() && live()); }
@@ -16,7 +24,8 @@ service cloud.firestore {
     // Per-user prefs (hidden nav sections), id = uid: only their owner reads, server writes.
     match /userPrefs/{uid}       { allow read: if signedIn() && request.auth.uid == uid; }
     match /musicians/{id}        { allow read: if band(); }
-    match /artists/{id}          { allow read: if band(); }
+    // An artist doc is readable by its own members only (the app reads it by id: /artists/[slug] resolves through your session).
+    match /artists/{id}          { allow get: if roleIn(id) == 'admin' || (roleIn(id) == 'member' && live()); }
     match /shows/{id}            { allow read: if band(); }
     match /songs/{id}            { allow read: if band(); }
     match /files/{id}            { allow read: if band(); }

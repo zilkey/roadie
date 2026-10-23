@@ -2,7 +2,7 @@
 import { doc, getDoc } from "firebase/firestore";
 import { onIdTokenChanged } from "firebase/auth";
 import { clientAuth, clientDb } from "./firebase-client";
-import { CommandError, runCommand } from "./commands";
+import { artistHeaders, CommandError, runCommand } from "./commands";
 import { draftDocId } from "@/schema/drafts";
 import type { SaveState } from "./autosave";
 
@@ -100,7 +100,7 @@ export class DraftChannel {
     writeLocal(this.uid, this.path, { ...l, sent: true });
     try {
       void fetch(`/api/commands/${l.cleared ? "drafts.clear" : "drafts.save"}`, {
-        method: "POST", keepalive: true, headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body,
+        method: "POST", keepalive: true, headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() }, body,
       }).catch(() => undefined);
     } catch { writeLocal(this.uid, this.path, l); }
   }

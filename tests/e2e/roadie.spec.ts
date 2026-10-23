@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { FIRESTORE } from "./env";
+import { FIRESTORE, A } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -129,7 +129,7 @@ test("'show me' a seeded show opens it", async ({ page }) => {
 test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async ({ page }) => {
   await signInAs(page, "ingrid");
   // a show of its own, so the seeded ones stay as they are
-  await page.goto("/shows/new");
+  await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Swallow Hill Music · Denver" });
   await page.getByTestId("show-date").fill("2028-03-05");
   await page.getByTestId("show-loadIn").fill("17:00");

@@ -1,3 +1,4 @@
+import { ARTIST_HEADER } from "@/server/commands/dispatch";
 import { handleChat } from "@/server/assistant/chat";
 
 export const runtime = "nodejs";
@@ -10,5 +11,5 @@ export async function POST(req: Request) {
   } catch {
     /* empty body */
   }
-  return handleChat(req.headers.get("authorization"), body);
+  return handleChat(req.headers.get("authorization"), body, req.headers.get(ARTIST_HEADER));
 }

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { useArtistRouter as useRouter } from "@/lib/artist";
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
 import { runCommand } from "./commands";

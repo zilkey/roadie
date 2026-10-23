@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import { fmtInstant } from "@/lib/timezone";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useEffect, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";

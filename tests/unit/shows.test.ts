@@ -10,7 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
 import { buildChecklist, buildGear, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
-import { resetEmulators, makeUser, venue } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -50,13 +50,13 @@ beforeEach(async () => {
     ids[k] = (await db.create(sys, "musicians", { name: k[0].toUpperCase() + k.slice(1), instruments: [], active: true, ...(email ? { email } : {}) })).id;
   }
   artistId = (await db.create(sys, "artists", {
-    name: "Ingrid Avison Band", driveFolderId: "", links: {},
+    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: {},
     soundGear: { bandProvided: [{ label: "PA speakers", musicianId: ids.jeff }], venueProvided: [{ label: "In-ear rack", musicianId: ids.jeff }] },
     configurations: [
       { id: "trio", name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: [ids.ingrid, ids.jeff, ids.david], gear: [{ label: "Keys rig", musicianId: ids.jeff }, { label: "Bass rig", musicianId: ids.david }] },
       { id: "duo", name: "Duo", billingName: "Ingrid Avison Duo", musicianIds: [ids.ingrid, ids.jeff], gear: [{ label: "Keys rig", musicianId: ids.jeff }] },
     ],
-  })).id;
+  }, { id: TEST_ARTIST })).id;
   venueId = (await cmd("venues.create", venue("Hi-Dive", "Denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" }, sound: { provider: "venueProvided", notes: "House engineer" } }))).id;
   for (const t of DEFAULT_CHECKLIST_TEMPLATES) await db.create(sys, "checklistTemplates", { ...t });
   pitchId = (await cmd("pitches.flag", { kind: "venue", id: venueId, pitchedAs: "trio" })).id;

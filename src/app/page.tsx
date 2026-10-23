@@ -1,2 +1,4 @@
 import { redirect } from "next/navigation";
-export default function Index() { redirect("/home"); }
+import { ARTISTS_PATH } from "@/lib/routes";
+/** Your artist (or the picker when you have several): /artists decides. */
+export default function Index() { redirect(ARTISTS_PATH); }

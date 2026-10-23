@@ -3,8 +3,9 @@ import { hashToken } from "@/server/availability";
 import type { Ctx } from "@/server/ctx";
 import { db, touchLastUsed } from "@/server/db";
 import { AppError } from "@/server/errors";
+import type { Membership } from "@/schema/users";
 
-export interface McpIdentity { uid: string; tokenHash: string; label: string }
+export interface McpIdentity { uid: string; tokenHash: string; label: string; artistId: string }
 
 export async function authenticateToken(raw: string | null | undefined): Promise<McpIdentity> {
   const token = raw?.trim();
@@ -15,8 +16,12 @@ export async function authenticateToken(raw: string | null | undefined): Promise
   if (t.revokedAt) throw new AppError("unauthenticated", "This token was revoked", 401);
   const u = await db.get("users", t.userId);
   if (!u || u.deletedAt || !u.mcpAccess) throw new AppError("forbidden", "This user does not have AI access", 403);
+  // The key works on one artist the person still belongs to (any role, "ai" included): the one it names, or their only one.
+  const ms = (u.artists ?? []) as Membership[];
+  const m = t.artistId ? ms.find((x) => x.artistId === t.artistId) : ms.length === 1 ? ms[0] : undefined;
+  if (!m) throw new AppError("forbidden", t.artistId || !ms.length ? "This user is not a member of the key's artist" : "This key doesn't say which artist it is for", 403);
   await touchLastUsed(hash);
-  return { uid: u.id, tokenHash: hash, label: t.label };
+  return { uid: u.id, tokenHash: hash, label: t.label, artistId: m.artistId };
 }
 
 export const bearerOf = (header: string | string[] | null | undefined) => {
@@ -25,4 +30,4 @@ export const bearerOf = (header: string | string[] | null | undefined) => {
   return m ? m[1] : null;
 };
 
-export const mcpCtx = (id: McpIdentity, runId: string): Ctx => ({ uid: id.uid, role: "mcp", via: "mcp", runId });
+export const mcpCtx = (id: McpIdentity, runId: string): Ctx => ({ uid: id.uid, role: "mcp", artistId: id.artistId, via: "mcp", runId });

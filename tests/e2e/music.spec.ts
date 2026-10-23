@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { DRIVE } from "./env";
+import { DRIVE, A } from "./env";
 
 
 async function signInAs(page: Page, key: string) {
@@ -145,7 +145,7 @@ test("build a setlist with total time against the show's set length", async ({ p
   const setlistId = idFromUrl(page, "setlists");
   await page.getByTestId("show-link").click();
   await expect(page.getByTestId("setlist-link")).toContainText("E2E set");
-  await page.goto(`/songs?setlist=${setlistId}`);
+  await page.goto(A(`/songs?setlist=${setlistId}`));
   await expect(page).toHaveURL(new RegExp(`/songs/setlists/${setlistId}$`));
 
   // put the seeded setlist back on the show
@@ -175,26 +175,26 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   for (const t of ["song-edit", "add-from-drive", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
 
   // setlists and rehearsals are readable, read-only
-  await page.goto("/songs");
+  await page.goto(A("/songs"));
   await page.getByTestId("songs-seg-setlists").click();
   await expect(page.getByTestId("new-setlist")).toHaveCount(0);
   await page.getByTestId("setlists-list").getByText("Hi-Dive 45 min").click();
   await expect(page.getByTestId("setlist-items").getByTestId("item-title").first()).toHaveText("Glass Coast");
   await expect(page.getByTestId("add-song-item")).toHaveCount(0);
   await expect(page.getByTestId("item-up")).toHaveCount(0);
-  await page.goto("/songs");
+  await page.goto(A("/songs"));
   await page.getByTestId("songs-seg-rehearsals").click();
   await expect(page.getByTestId("log-rehearsal")).toHaveCount(0);
   await page.getByTestId("rehearsals-list").getByText("Jeff's basement").click();
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Glass Coast");
   // add-a-song is admin only
-  await page.goto("/songs/new");
+  await page.goto(A("/songs/new"));
   await expect(page).toHaveURL(/\/home$/);
 });
 
 test("log a rehearsal, tick the songs run, attach the recording from Drive", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/songs/rehearsals/new");
+  await page.goto(A("/songs/rehearsals/new"));
   await page.getByTestId("reh-date").fill("2026-10-20");
   await page.getByTestId("reh-place").fill("Studio B");
   for (const n of ["Jeff", "David"]) await page.getByTestId(`reh-who-${n}`).click();
@@ -213,7 +213,7 @@ test("log a rehearsal, tick the songs run, attach the recording from Drive", asy
   await expect(page.getByTestId("rehearsal-files")).toContainText("Rehearsal video Ruby Hill ending.mp4");
 
   // "last rehearsed" now reflects it
-  await page.goto("/songs");
+  await page.goto(A("/songs"));
   await page.getByTestId("songs-filter").fill("low light");
   await page.getByTestId("songs-list").getByText("Low Light").first().click();
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 20");
@@ -228,12 +228,12 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await expect(page.getByTestId("song-title")).toHaveValue("Draft Song");
   await expect(page.getByTestId("song-key")).toHaveValue("A");
   await expect(page.getByTestId("draft-restored")).toBeVisible();
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId("unfinished")).toContainText("New song · Draft Song");
   await page.goBack();
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  await page.goto("/songs/new");
+  await page.goto(A("/songs/new"));
   await expect(page.getByTestId("song-title")).toHaveValue(""); // creating cleared the draft
 
   await page.goBack();
@@ -260,7 +260,7 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
 
 test("a new rehearsal is a draft; an existing one autosaves", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/songs/rehearsals/new");
+  await page.goto(A("/songs/rehearsals/new"));
   await page.getByTestId("reh-date").fill("2027-01-05");
   await page.getByTestId("reh-place").fill("Draft room");
   await page.getByTestId("reh-who-Jeff").click();

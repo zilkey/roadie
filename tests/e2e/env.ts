@@ -13,3 +13,7 @@ export const DRIVE = "http://127.0.0.1:3212";
 export const CAL = "http://127.0.0.1:3213";
 export const BIT = "http://127.0.0.1:3214";
 export const SPOTIFY = "http://127.0.0.1:3215";
+/** The seeded artist's URL name (scripts/seed.ts): every band page is under /artists/{slug}. */
+export const ARTIST_SLUG = "ingrid-avison-band";
+/** A band page of the seeded artist: A("/shows/1") -> "/artists/ingrid-avison-band/shows/1". */
+export const A = (path: string) => `/artists/${ARTIST_SLUG}${path}`;

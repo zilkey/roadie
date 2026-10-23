@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { GMAIL } from "./env";
+import { GMAIL, A } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -13,10 +13,15 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await page.getByTestId("booking-search").fill("swallow");
   const row = page.getByTestId(/^row-venue-/);
   await expect(row).toHaveCount(1);
-  const flag = row.getByTestId(/^flag-/);
+  const flag = row.locator("[data-testid^='flag-'][data-flagged]"); // the flag button itself, not its form's fields
   await expect(flag).toHaveAttribute("data-flagged", "0");
+  // tapping the flag opens a small form; nothing is added until "Add to list"
   await flag.click();
+  await expect(row.getByTestId(/^flag-form-/)).toBeVisible();
+  await expect(flag).toHaveAttribute("data-flagged", "0");
+  await row.getByTestId(/^flag-submit-/).click();
   await expect(flag).toHaveAttribute("data-flagged", "1");
+  await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
 
   await page.getByTestId("booking-search").fill("");
   await page.getByTestId("booking-seg-pitches").click();
@@ -38,20 +43,22 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("timeline")).toContainText("Great room for the trio");
   await expect(page.getByTestId("comment-input")).toHaveValue("");
 
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId("todos")).toContainText("Follow up · Swallow Hill Music");
   await expect(page.getByTestId("deadlines")).toBeVisible();
 });
 
 test("a duplicate venue merges into the existing one and its page shows people", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("lost lake");
-  await page.getByTestId(/^row-venue-/).getByRole("link").click();
+  // a venue row expands in place; its full record is one link further
+  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-expand-/).click();
+  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   const url = page.url();
   await expect(page.getByTestId("venue-page")).toContainText("Haylee Jackson");
   await expect(page.getByTestId("copy-email")).toHaveAttribute("data-copy", "haylee@lostlake.example");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("add-venue").click();
   await page.getByTestId("new-venue-name").fill("Lost Lake Lounge");
   await page.getByTestId("new-venue-city").fill("Denver");
@@ -61,7 +68,7 @@ test("a duplicate venue merges into the existing one and its page shows people",
 
 test("send an email from a pitch; it shows in fake Gmail, on the timeline, and replies come back", async ({ page, request }) => {
   await signInAs(page, "jeff");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("group-pitched").getByText("Lost Lake Lounge").click();
   await page.getByTestId("email-toggle").click();
@@ -93,16 +100,18 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
 
 test("members cannot reach booking pages", async ({ page }) => {
   await signInAs(page, "david");
-  await page.goto("/booking/templates");
+  await page.goto(A("/booking/templates"));
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByTestId("booking-home")).toHaveCount(0);
 });
 
 test("a venue's edit form autosaves (no Save button), survives a reload, and a new contact is a draft until Add", async ({ page }) => {
   await signInAs(page, "jeff");
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("lost lake");
-  await page.getByTestId(/^row-venue-/).getByRole("link").click();
+  // a venue row expands in place; its full record is one link further
+  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-expand-/).click();
+  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   const url = page.url();
   await page.getByTestId("edit-toggle").click();
@@ -140,21 +149,21 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await signInAs(page, "jeff");
   const stamp = Date.now();
   const name = `Draft Promo ${stamp}`;
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("add-promoter").click();
   await page.getByTestId("new-promoter-name").fill(name);
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   await page.reload();
   await expect(page.getByTestId("new-promoter-name")).toHaveValue(name); // the form reopens by itself
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId("unfinished")).toContainText(name);
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("new-promoter-submit").click();
   await expect(page.getByTestId("promoter-page")).toBeVisible();
-  await page.goto("/home");
+  await page.goto(A("/home"));
   await expect(page.getByTestId("unfinished")).toHaveCount(0);
 
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill(name);
   await page.getByTestId(/^row-promoter-/).getByRole("link").click();
   await page.getByTestId("edit-toggle").click();
@@ -166,7 +175,7 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await expect(page.getByTestId("promoter-edit-notes")).toHaveValue("Books Fridays");
 
   // a festival: edit autosaves, "Add a year" is a draft until Add year
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("add-festival").click();
   await page.getByTestId("new-festival-name").fill(`Fest ${stamp}`);
   await page.getByTestId("new-festival-submit").click();
@@ -195,7 +204,7 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await expect(page.getByTestId("edition-edit-payNotes")).toHaveValue("");
 
   // a contact page autosaves too
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-contacts").click();
   await page.getByTestId(/^row-contact-/).first().getByRole("link").click();
   await expect(page.getByTestId("contact-page")).toBeVisible();
@@ -211,7 +220,7 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
 test("pitch comments and email templates: existing templates autosave, new ones and comments are drafts", async ({ page }) => {
   await signInAs(page, "jeff");
   const stamp = Date.now();
-  await page.goto("/booking/templates");
+  await page.goto(A("/booking/templates"));
   await page.getByTestId("template-new").click();
   await page.getByTestId("template-name").fill(`Tpl ${stamp}`);
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
@@ -227,7 +236,7 @@ test("pitch comments and email templates: existing templates autosave, new ones 
   await page.reload();
   await expect(page.getByTestId(`template-Tpl ${stamp}`)).toContainText("Hello again");
 
-  await page.goto("/booking");
+  await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId(/^pitch-(?!list)/).first().click();
   await page.getByTestId("comment-input").fill(`typing ${stamp}`);

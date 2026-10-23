@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { MIME_ICON, mimeGroup } from "@/lib/music";
 import type { FileDoc, Musician, Rehearsal, Setlist, Show, Song } from "@/schema";

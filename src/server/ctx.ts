@@ -4,8 +4,13 @@ import type { Via } from "@/schema/common";
 export type Role = "admin" | "member" | "mcp";
 export interface Ctx {
   uid: string;
-  /** The caller's role. MCP sessions use "mcp". */
+  /** The caller's role in `artistId`. MCP sessions use "mcp". */
   role: Role;
+  /**
+   * The artist this call is for (the app sends it with every request; see `authenticate`). Absent for imports, scripts and
+   * tests that build a Ctx by hand: commands then fall back to the one artist there is.
+   */
+  artistId?: string;
   musicianId?: string;
   via: Via;
   runId: string;
@@ -23,4 +28,4 @@ export interface Ctx {
   touched?: Record<string, number>;
 }
 export const newRunId = () => randomUUID();
-export const importCtx = (uid = "import", runId: string = newRunId()): Ctx => ({ uid, role: "admin", via: "import", runId });
+export const importCtx = (uid = "import", runId: string = newRunId(), artistId?: string): Ctx => ({ uid, role: "admin", via: "import", runId, ...(artistId ? { artistId } : {}) });

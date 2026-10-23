@@ -1,6 +1,7 @@
 import { adminAuth } from "@/server/admin";
 import { importCtx } from "@/server/ctx";
 import { db } from "@/server/db";
+import { syncClaims } from "@/server/session";
 
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9319";
@@ -11,12 +12,22 @@ export async function resetEmulators() {
   await fetch(`http://${authHost}/emulator/v1/projects/${project}/accounts`, { method: "DELETE" });
 }
 
-/** Create an auth user + users doc + claims, return an ID token. */
-export async function makeUser(email: string, role: "admin" | "member", opts: { musicianId?: string; name?: string } = {}) {
+/** The artist test users belong to unless they say otherwise (no artists doc is needed for commands to accept it). */
+export const TEST_ARTIST = "test-artist";
+
+/** Create an auth user + users doc (a member of `artistId`, default TEST_ARTIST) + claims, return an ID token. */
+export async function makeUser(email: string, role: "admin" | "member" | "ai", opts: { musicianId?: string; name?: string; artistId?: string; artists?: { artistId: string; role: "admin" | "member" | "ai" }[] } = {}) {
   const u = await adminAuth().createUser({ email, emailVerified: true, displayName: opts.name ?? email });
-  await db.create(importCtx(), "users", { email, name: opts.name ?? email, role, mcpAccess: false, musicianId: opts.musicianId }, { id: u.uid });
-  await adminAuth().setCustomUserClaims(u.uid, { role, ...(opts.musicianId ? { musicianId: opts.musicianId } : {}) });
+  const artists = opts.artists ?? [{ artistId: opts.artistId ?? TEST_ARTIST, role }];
+  await db.create(importCtx(), "users", { email, name: opts.name ?? email, artists, mcpAccess: role === "ai", musicianId: opts.musicianId }, { id: u.uid });
+  await syncClaims(u.uid);
   return { uid: u.uid, token: await idToken(u.uid) };
+}
+
+/** An artists doc (default id TEST_ARTIST) with a slug. */
+export async function makeArtist(name: string, slug: string, id = TEST_ARTIST) {
+  await db.create(importCtx(), "artists", { name, slug, configurations: [], soundGear: { bandProvided: [], venueProvided: [] }, links: {}, driveFolderId: "" }, { id });
+  return id;
 }
 
 export async function idToken(uid: string) {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { clientDb } from "./firebase-client";
 import { useAuth, useProfile } from "./auth";
+import { useHref } from "./artist";
 import { DraftChannel, openDraft, pushPending } from "./draftSync";
 import { DRAFT_TTL_MS, isEditPath } from "@/schema/drafts";
 import type { SaveState } from "./autosave";
@@ -35,6 +36,8 @@ export function useChannelLifecycle(ch: DraftChannel | null) {
  */
 export function useDraft<T extends object>(path: string, initial: T, meta: { title?(v: T): string; route?: string } = {}) {
   const { uid } = useProfile();
+  const toHref = useHref(); // a relative `route` is stored inside the current artist
+  const toHrefRef = useRef(toHref); toHrefRef.current = toHref;
   const [value, setVal] = useState<T>(initial);
   const [ready, setReady] = useState(false);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
@@ -59,7 +62,7 @@ export function useDraft<T extends object>(path: string, initial: T, meta: { tit
     const v = typeof next === "function" ? (next as (p: T) => T)(cur.current) : next;
     cur.current = v; setVal(v);
     const m = metaRef.current;
-    ch.set({ values: v as Record<string, unknown>, title: m.title?.(v) ?? "", route: m.route ?? window.location.pathname + window.location.search });
+    ch.set({ values: v as Record<string, unknown>, title: m.title?.(v) ?? "", route: m.route ? toHrefRef.current(m.route) : window.location.pathname + window.location.search });
   }, [ch]);
 
   /** Drop the draft everywhere (call after the create command succeeded, or for "Start over"). */

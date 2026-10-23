@@ -1,8 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link from "next/link";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox } from "@/components/ui";
@@ -60,16 +59,30 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-/** Flag = add to the Pitch List (one tap). Filled flag = already there; tapping it opens the pitch. */
+/** Flag = add to the Pitch List. Filled flag = already there; tapping it opens the pitch. Unflagged shows a small inline form. */
 export function FlagButton({ kind, id, pitches, big }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean }) {
   const { call, error, busy } = useCommand();
   const router = useRouter();
   const open = pitches.find((p) => p.target.kind === kind && p.target.id === id && isActive(p.status));
-  async function tap(e: React.MouseEvent) {
+  const [showForm, setShowForm] = useState(false);
+  const [pitchedAs, setPitchedAs] = useState("");
+  const [notes, setNotes] = useState("");
+
+  function tap(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     if (open) return router.push(`/booking/pitches/${open.id}`);
-    await call("pitches.flag", { kind, id });
+    setShowForm(true);
   }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); e.stopPropagation();
+    const r = await call("pitches.flag", { kind, id, ...(pitchedAs.trim() ? { pitchedAs: pitchedAs.trim() } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
+    if (r) { setShowForm(false); setPitchedAs(""); setNotes(""); }
+  }
+  function dismiss(e: React.MouseEvent) {
+    e.preventDefault(); e.stopPropagation();
+    setShowForm(false); setPitchedAs(""); setNotes("");
+  }
+
   return (
     <>
       <button type="button" onClick={tap} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"}
@@ -77,6 +90,27 @@ export function FlagButton({ kind, id, pitches, big }: { kind: "venue" | "promot
         className={big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`}>
         <FlagIcon filled={!!open} />{big && (open ? "On the Pitch List" : "Add to Pitch List")}
       </button>
+      {showForm && !open && (
+        <form onSubmit={submit} onClick={(e) => e.stopPropagation()}
+          className="card mt-2 grid gap-2" data-testid={`flag-form-${id}`}>
+          <label className="grid gap-1">
+            <span className="lbl">Configuration (e.g. Duo)</span>
+            <input className="input" type="text" value={pitchedAs} placeholder="Duo, trio, solo…" data-testid={`flag-pitchedAs-${id}`}
+              onChange={(e) => setPitchedAs(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setShowForm(false); setPitchedAs(""); setNotes(""); } }} />
+          </label>
+          <label className="grid gap-1">
+            <span className="lbl">Notes</span>
+            <textarea className="input" rows={2} value={notes} data-testid={`flag-notes-${id}`}
+              onChange={(e) => setNotes(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setShowForm(false); setPitchedAs(""); setNotes(""); } }} />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" className="btn acc sm" disabled={busy} data-testid={`flag-submit-${id}`}>Add to list</button>
+            <button type="button" className="btn ghost sm" onClick={dismiss} data-testid={`flag-cancel-${id}`}>Cancel</button>
+          </div>
+        </form>
+      )}
       {error && <ErrorBox error={error} />}
     </>
   );
