@@ -1,4 +1,5 @@
 "use client";
+import { fmtInstant } from "@/lib/timezone";
 import Link from "next/link";
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
@@ -159,7 +160,7 @@ export function ListingsPanel({ show, editable }: { show: ShowRow; editable: boo
   const { call, error, busy } = useCommand();
   const bit = show.listings.bandsintown;
   const eligible = show.public && show.status === "confirmed";
-  const when = bit?.syncedAt ? new Date(bit.syncedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+  const when = bit?.syncedAt ? fmtInstant(bit.syncedAt) : "";
   const [warn, setWarn] = useState<string[]>([]);
   async function sync() { const r = await call<{ warnings: string[] }>("shows.sync", { id: show.id }); if (r) setWarn(r.warnings); }
   return (

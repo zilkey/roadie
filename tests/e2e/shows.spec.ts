@@ -1,4 +1,6 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
+import { dateInBandZone } from "../../src/lib/timezone";
+import { addDays } from "../../src/lib/shows";
 
 const CAL = "http://127.0.0.1:3203";
 const BIT = "http://127.0.0.1:3204";
@@ -15,7 +17,7 @@ async function as(browser: Browser, key: string) {
   await signInAs(page, key);
   return { page, close: () => ctx.close() };
 }
-const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const localToday = () => dateInBandZone();
 const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 
 async function cancelShow(page: Page, id: string) {
@@ -307,8 +309,7 @@ test("after the show: rating and attendance saved", async ({ page }) => {
 });
 
 test("last night's unsettled show stays on top of Home: enter money for admins, add expenses for members", async ({ page, browser }) => {
-  const d = new Date(); d.setDate(d.getDate() - 1);
-  const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const yesterday = addDays(dateInBandZone(), -1);
   await signInAs(page, "jeff");
   await page.goto("/shows/new");
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });

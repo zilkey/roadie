@@ -5,8 +5,8 @@
 import { jsonClient } from "./http";
 
 export interface CalAttendee { email: string; responseStatus: "needsAction" | "accepted" | "declined" | "tentative" }
-export interface CalEvent { id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; attendees: CalAttendee[]; createdAt: string; updatedAt: string }
-export interface CalEventInput { title: string; start: string; end: string; location?: string; description?: string; attendees?: string[]; calendarId?: string }
+export interface CalEvent { id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees: CalAttendee[]; createdAt: string; updatedAt: string }
+export interface CalEventInput { title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees?: string[]; calendarId?: string }
 
 export interface CalendarService {
   create(input: CalEventInput): Promise<CalEvent>;

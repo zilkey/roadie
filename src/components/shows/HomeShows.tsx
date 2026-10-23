@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
-import { addDays, fmtDur, fmtLong, planHome, type Answer } from "@/lib/shows";
+import { addDays, fmtDur, fmtLong, fmtTime, planHome, type Answer } from "@/lib/shows";
 import { GearChecklist, Times, billingName, configName, packedCount, useBand, type ShowRow } from "./common";
 import type { Availability, Contact, ShowDeal } from "@/schema";
 
@@ -133,7 +133,7 @@ function NextShow({ next, upcoming, b, onPack }: { next?: ShowRow; upcoming: Sho
         <span className="lbl">Next show</span>
         <Link href={`/shows/${next.id}`} className="card" data-testid={`next-show-${next.id}`}>
           <b>{fmtLong(next.date)} · {next.venue.name}</b>
-          <span className="font-mono text-sm">{[next.venue.city, next.times.loadIn && `Load in ${next.times.loadIn}`, next.times.set && `Set ${next.times.set}`, configName(b.artist, next.billedAs)].filter(Boolean).join(" · ")}</span>
+          <span className="font-mono text-sm">{[next.venue.city, next.times.loadIn && `Load in ${fmtTime(next.times.loadIn)}`, next.times.set && `Set ${fmtTime(next.times.set)}`, configName(b.artist, next.billedAs)].filter(Boolean).join(" · ")}</span>
           {total > 0 && <>
             <div className="h-1.5 overflow-hidden rounded-full bg-soft"><div className="h-full bg-accent" style={{ width: `${(done / total) * 100}%` }} /></div>
             <span className="s">Checklist {done} of {total}</span>

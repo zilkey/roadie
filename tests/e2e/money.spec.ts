@@ -99,7 +99,7 @@ test("admin reimburses it; the member then sees it paid back and the payment", a
   await page.getByTestId("tab-money").click();
   const owed = page.getByTestId("owed");
   await expect(owed).toContainText(WHAT);
-  await owed.locator("div", { hasText: WHAT }).getByRole("button", { name: "Mark reimbursed" }).last().click();
+  await owed.locator("div.items-center", { hasText: WHAT }).getByRole("button", { name: "Mark reimbursed" }).click();
   await expect(owed).not.toContainText(WHAT);
 
   const david = await as(browser, "david");

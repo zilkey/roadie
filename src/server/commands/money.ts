@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { dateInBandZone } from "@/lib/timezone";
 import { run, type Writer } from "../db";
 import { AppError } from "../errors";
 import { defineCommand } from "./types";
@@ -6,7 +7,7 @@ import { driveClient } from "../integrations";
 import { LedgerInput, ledgerCategory, driveRef } from "@/schema";
 import { reversedIds, reimbursementFor, owedLines, type LedgerLike } from "@/lib/money";
 
-const todayServer = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const todayServer = () => dateInBandZone();
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const method = z.enum(["cash", "venmo", "check", "card", "bank", "other"]);
 

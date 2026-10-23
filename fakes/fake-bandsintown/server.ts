@@ -2,7 +2,7 @@ import { defineFake, runIfMain, esc, need, required, type Route } from "../lib";
 
 export interface BitEvent {
   id: string; artist: string; datetime: string; venueName: string; city: string; region?: string; country?: string;
-  description?: string; ticketUrl?: string; status: "active"; createdAt: string; updatedAt: string;
+  description?: string; ticketUrl?: string; timeZone?: string; status: "active"; createdAt: string; updatedAt: string;
 }
 export interface BitState { seq: number; events: BitEvent[] }
 const ARTIST = "Ingrid Avison Band";
@@ -11,7 +11,7 @@ const routes: Route<BitState>[] = [
   ["POST", "/events", ({ body }, s) => {
     required(body, "datetime", "venueName", "city");
     const now = new Date().toISOString();
-    const e: BitEvent = { id: `bit${++s.seq}`, artist: body.artist ?? ARTIST, datetime: body.datetime, venueName: body.venueName, city: body.city, region: body.region, country: body.country, description: body.description, ticketUrl: body.ticketUrl, status: "active", createdAt: now, updatedAt: now };
+    const e: BitEvent = { id: `bit${++s.seq}`, artist: body.artist ?? ARTIST, datetime: body.datetime, venueName: body.venueName, city: body.city, region: body.region, country: body.country, timeZone: body.timeZone, description: body.description, ticketUrl: body.ticketUrl, status: "active", createdAt: now, updatedAt: now };
     s.events.push(e);
     return e;
   }],
@@ -19,7 +19,7 @@ const routes: Route<BitState>[] = [
   ["GET", "/events/:id", ({ params }, s) => need(s.events.find((e) => e.id === params.id), "Event")],
   ["PATCH", "/events/:id", ({ params, body }, s) => {
     const e = need(s.events.find((x) => x.id === params.id), "Event");
-    for (const k of ["datetime", "venueName", "city", "region", "country", "description", "ticketUrl"] as const) if (body[k] !== undefined) e[k] = body[k];
+    for (const k of ["datetime", "venueName", "city", "region", "country", "description", "ticketUrl", "timeZone"] as const) if (body[k] !== undefined) e[k] = body[k];
     e.updatedAt = new Date().toISOString();
     return e;
   }],

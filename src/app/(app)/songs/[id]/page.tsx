@@ -1,4 +1,5 @@
 "use client";
+import { fmtInstant } from "@/lib/timezone";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -72,7 +73,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const last = lastRehearsed(m.rehearsals)[song.id];
   const today = todayStr();
   const checked = files.map((f) => f.checkedAt as unknown as { toMillis?(): number }).filter((c) => c?.toMillis).map((c) => c.toMillis!());
-  const lastCheck = checked.length ? new Date(Math.min(...checked)).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : null;
+  const lastCheck = checked.length ? fmtInstant(Math.min(...checked)) : null;
 
   async function attach() {
     const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId: song.id, files: picks });

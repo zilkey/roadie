@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { dateInBandZone } from "@/lib/timezone";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
@@ -10,7 +11,7 @@ import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput }
 import { patchInput } from "./util";
 
 const newId = () => randomUUID().slice(0, 8);
-const todayServer = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const todayServer = () => dateInBandZone();
 
 const times = z.strictObject({
   loadIn: timeStr.optional(), soundcheck: timeStr.optional(), doors: timeStr.optional(), set: timeStr.optional(), setLength: z.number().int().min(1).optional(),

@@ -201,6 +201,7 @@ test("Bandsintown: public + confirmed lists it; holds and private stay off; chan
   const bit = show.listings.bandsintown;
   assert.equal(bit.state, "listed");
   assert.ok(bit.syncedAt && bit.eventId);
+  assert.equal((await bandsintownClient().list())[0].timeZone, "America/Denver");
   let events = await bandsintownClient().list();
   assert.equal(events.length, 1);
   assert.equal(events[0].datetime, "2027-02-13T21:15:00");
@@ -263,6 +264,7 @@ test("Calendar: update on change, delete on cancel, optional on create, toggle f
   const ev = await calendarClient().get(evId);
   assert.equal(ev.start, "2027-03-01T17:00:00");
   assert.equal(ev.end, "2027-03-01T20:30:00");
+  assert.equal(ev.timeZone, "America/Denver");
   assert.deepEqual(ev.attendees.map((a) => a.email), ["ingrid@example.com"]);
   await cmd("shows.calendar", { id: none.id, on: false });
   assert.equal((await calendarClient().list()).length, 0);

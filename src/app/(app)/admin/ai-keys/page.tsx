@@ -1,4 +1,5 @@
 "use client";
+import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -8,7 +9,7 @@ import type { McpToken, User } from "@/schema";
 
 export default function AiKeysPage() { return <AdminOnly><AiKeys /></AdminOnly>; }
 
-const when = (t: unknown) => (t && typeof (t as { toDate?: unknown }).toDate === "function" ? (t as { toDate(): Date }).toDate().toLocaleString() : "never");
+const when = (t: unknown) => (t && typeof (t as { toDate?: unknown }).toDate === "function" ? (t as { toDate(): Date }).toDate().toLocaleString("en-US", { timeZone: BAND_TIME_ZONE }) : "never");
 
 function AiKeys() {
   const me = useProfile();

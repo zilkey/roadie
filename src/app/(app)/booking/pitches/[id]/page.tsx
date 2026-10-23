@@ -1,4 +1,5 @@
 "use client";
+import { BAND_TIME_ZONE } from "@/lib/timezone";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -17,7 +18,7 @@ export default function Page() { return <AdminOnly><PitchPage /></AdminOnly>; }
 
 type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
-const when = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
+const when = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
 
 function PitchPage() {
   const { id } = useParams<{ id: string }>();
@@ -143,7 +144,7 @@ function PitchPage() {
 
 function TimelineRow({ t }: { t: { at: number; who: string; kind: string; a: Row<Activity> & { body?: string } } }) {
   const a = t.a;
-  const date = t.at ? new Date(t.at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+  const date = t.at ? new Date(t.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "";
   let body: React.ReactNode;
   switch (t.kind) {
     case "status": body = a.fromStatus && a.toStatus ? <>Moved to <b>{STATUS_LABEL[a.toStatus]}</b>{a.text ? ` · ${a.text}` : ""}</> : <>{a.text ?? "Status set"}</>; break;

@@ -1,5 +1,7 @@
 /** Pure helpers shared by the booking UI and server commands (no server or browser imports). */
 
+import { dateInBandZone } from "./timezone";
+
 export const STATUSES = ["idea", "toPitch", "pitched", "waiting", "talking", "booked", "declined", "dropped"] as const;
 export type Status = (typeof STATUSES)[number];
 export const STATUS_LABEL: Record<Status, string> = {
@@ -86,7 +88,7 @@ export function searchItems(items: SearchItem[], q: string): SearchItem[] {
 
 // ---------- dates ----------
 
-export const todayStr = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export const todayStr = (d = new Date()) => dateInBandZone(d);
 
 interface EditionDates {
   appOpens?: { date: string }; appDeadline?: { date: string };
@@ -102,8 +104,8 @@ export function appsOpenThisMonth<T extends EditionDates>(editions: T[], today =
 }
 /** Deadlines from today through `days` ahead, soonest first. */
 export function upcomingDeadlines<T extends EditionDates>(editions: T[], today = todayStr(), days = 90): T[] {
-  const end = new Date(today + "T00:00:00"); end.setDate(end.getDate() + days);
-  const last = todayStr(end);
+  const [y, m, d] = today.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
   return editions.filter((e) => { const d = e.appDeadline?.date; return !!d && d >= today && d <= last; })
     .sort((a, b) => a.appDeadline!.date.localeCompare(b.appDeadline!.date));
 }

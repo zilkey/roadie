@@ -7,6 +7,7 @@ import { db, type Doc } from "./db";
 import type { Ctx } from "./ctx";
 import { IntegrationError, bandsintownClient, calendarClient } from "./integrations";
 import { addDays, fmtTime } from "@/lib/shows";
+import { BAND_TIME_ZONE } from "@/lib/timezone";
 
 export interface SyncResult { warnings: string[]; calendar?: "created" | "updated" | "removed"; bandsintown?: "listed" | "updated" | "removed" | "error" }
 
@@ -48,7 +49,7 @@ async function syncCalendar(ctx: Ctx, show: Doc, create: boolean, remove: boolea
     `Sound: ${show.sound.provider === "bandProvided" ? "we bring it" : "venue provides"}`, show.bandNotes,
   ].filter(Boolean).join("\n");
   const body = {
-    title: `${show.status === "hold" ? "HOLD: " : ""}${who} at ${show.venue.name}`, ...eventTimes(show as unknown as Parameters<typeof eventTimes>[0]),
+    title: `${show.status === "hold" ? "HOLD: " : ""}${who} at ${show.venue.name}`, ...eventTimes(show as unknown as Parameters<typeof eventTimes>[0]), timeZone: BAND_TIME_ZONE,
     location: [show.venue.name, show.venue.address].filter(Boolean).join(", "), description: lines, attendees,
   };
   if (show.calendarEventId) {
@@ -76,7 +77,7 @@ async function syncBandsintown(ctx: Ctx, show: Doc, out: SyncResult) {
   const t = show.times as { set?: string; doors?: string };
   const body = {
     datetime: `${show.date}T${t.set ?? t.doors ?? "20:00"}:00`, venueName: show.venue.name, city: show.venue.city ?? venue?.address?.city ?? "",
-    region: venue?.address?.state, country: "US", ticketUrl: show.ticketUrl, description: show.editionName,
+    region: venue?.address?.state, country: "US", timeZone: BAND_TIME_ZONE, ticketUrl: show.ticketUrl, description: show.editionName,
   };
   const done = (eventId: string, how: "listed" | "updated") => {
     out.bandsintown = how;

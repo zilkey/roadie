@@ -6,9 +6,9 @@ import { jsonClient } from "./http";
 
 export interface BitEvent {
   id: string; artist: string; datetime: string; venueName: string; city: string; region?: string; country?: string;
-  description?: string; ticketUrl?: string; status: "active"; createdAt: string; updatedAt: string;
+  description?: string; ticketUrl?: string; timeZone?: string; status: "active"; createdAt: string; updatedAt: string;
 }
-export interface BitEventInput { datetime: string; venueName: string; city: string; region?: string; country?: string; description?: string; ticketUrl?: string }
+export interface BitEventInput { datetime: string; venueName: string; city: string; region?: string; country?: string; description?: string; ticketUrl?: string; timeZone?: string }
 
 export interface BandsintownService {
   create(input: BitEventInput): Promise<BitEvent>;

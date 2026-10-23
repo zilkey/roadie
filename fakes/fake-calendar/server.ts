@@ -2,7 +2,7 @@ import { defineFake, runIfMain, esc, need, required, type Route } from "../lib";
 
 export interface CalAttendee { email: string; responseStatus: "needsAction" | "accepted" | "declined" | "tentative" }
 export interface CalEvent {
-  id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string;
+  id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string;
   attendees: CalAttendee[]; createdAt: string; updatedAt: string;
 }
 export interface CalState { seq: number; events: CalEvent[] }
@@ -13,7 +13,7 @@ const routes: Route<CalState>[] = [
   ["POST", "/events", ({ body }, s) => {
     required(body, "title", "start", "end");
     const now = new Date().toISOString();
-    const e: CalEvent = { id: `ev${++s.seq}`, calendarId: body.calendarId ?? "primary", title: body.title, start: body.start, end: body.end, location: body.location, description: body.description, attendees: att(body.attendees), createdAt: now, updatedAt: now };
+    const e: CalEvent = { id: `ev${++s.seq}`, calendarId: body.calendarId ?? "primary", title: body.title, start: body.start, end: body.end, timeZone: body.timeZone, location: body.location, description: body.description, attendees: att(body.attendees), createdAt: now, updatedAt: now };
     s.events.push(e);
     return e;
   }],
@@ -24,7 +24,7 @@ const routes: Route<CalState>[] = [
   ["GET", "/events/:id", ({ params }, s) => need(s.events.find((e) => e.id === params.id), "Event")],
   ["PATCH", "/events/:id", ({ params, body }, s) => {
     const e = need(s.events.find((x) => x.id === params.id), "Event");
-    for (const k of ["title", "start", "end", "location", "description"] as const) if (body[k] !== undefined) (e as unknown as Record<string, unknown>)[k] = body[k];
+    for (const k of ["title", "start", "end", "timeZone", "location", "description"] as const) if (body[k] !== undefined) (e as unknown as Record<string, unknown>)[k] = body[k];
     if (body.attendees !== undefined) e.attendees = att(body.attendees);
     e.updatedAt = new Date().toISOString();
     return e;
