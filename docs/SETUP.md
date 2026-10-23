@@ -2,7 +2,7 @@
 
 How to get the app running on your machine, then live on a real Firebase project called **`roadie-prod-iab`**. Do the parts in order. Each step is either something you do (☐) or something to ask Claude Code to do (🤖).
 
-The code still calls itself `band-tracker` / `demo-band-tracker`. Part 3 is the rename, and it waits until the project exists.
+The production config points at `roadie-prod-iab` (Part 3 is done). Local work and tests still use the offline emulator project `demo-band-tracker`.
 
 ---
 
@@ -53,15 +53,9 @@ ROADIE_MODEL=gemini GEMINI_API_KEY=<your key> npm run genkit:ui
 
 ### 2.1 Put the code on GitHub
 
-App Hosting deploys from GitHub, and the repo has no remote yet.
+☑ Done: `https://github.com/zilkey/roadie`, **public by design** (open source). App Hosting deploys from it.
 
-☐ Create a **private** GitHub repo (e.g. `roadie`). Don't add a README or license.
-☐ Push:
-
-```sh
-git remote add origin git@github.com:<you>/roadie.git
-git push -u origin main
-```
+Because it's public, nothing secret is ever committed: no service-account keys, OAuth secrets or API keys. Those go in App Hosting secrets (`npx firebase apphosting:secrets:set <name> --project roadie-prod-iab`). The web config in `apphosting.yaml` is fine to publish; it only identifies the project.
 
 ### 2.2 Create the project
 
@@ -101,18 +95,16 @@ npx firebase apps:sdkconfig WEB --project roadie-prod-iab
 
 ---
 
-## Part 3 · Rename (🤖 ask Claude Code)
+## Part 3 · Rename
 
-Once Part 2 is done, tell Claude Code: *"The project is created as `roadie-prod-iab`; here is the web config: …. Do the rename."* That change will:
+☑ Done (🤖). What changed:
 
-- add `"prod": "roadie-prod-iab"` to `.firebaserc`. `default` stays `demo-band-tracker` so tests never touch the real project.
-- create `apphosting.yaml` with your web config and `GCLOUD_PROJECT=roadie-prod-iab`. Leave `NEXT_PUBLIC_USE_EMULATORS` and the `*_EMULATOR_HOST` variables out of it so production never shows the dev sign-in buttons.
-- set `GCLOUD_PROJECT: roadie-prod-iab` in `.github/workflows/backup.yml`.
-- update `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md`, `docs/MCP.md` and the README from `band-tracker` to `roadie-prod-iab`.
-- rename the npm package, the app title and the emulator ID (`demo-band-tracker` → `demo-roadie`) everywhere they appear, then re-run the full test suite.
-- point Roadie at Vertex AI rather than an API key in production, which is what the spec asks for. That way it runs on the same Google bill and needs no key.
+- `.firebaserc` has `"prod": "roadie-prod-iab"`. `default` stays `demo-band-tracker`, so tests never touch the real project.
+- `apphosting.yaml` holds the web config, `GCLOUD_PROJECT=roadie-prod-iab` and `ROADIE_MODEL=vertex`. `APP_URL` is commented out until the backend URL exists (4.2).
+- `.github/workflows/backup.yml`, `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md` and `docs/MCP.md` say `roadie-prod-iab`.
+- Roadie uses Vertex AI in production (the backend's service account, same Google bill, no key; default model `gemini-2.5-flash-lite`). A `GEMINI_API_KEY` still works for trying it locally.
 
-Then commit and push.
+Not renamed yet: the npm package, the in-app title ("Band Tracker") and the emulator project id.
 
 ---
 

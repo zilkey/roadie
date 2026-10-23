@@ -41,7 +41,9 @@ const post = (token: string | null, body: unknown) => handleChat(token ? `Bearer
 
 test("model defaults to the canned one under emulators", () => {
   assert.equal(modelMode({ FIRESTORE_EMULATOR_HOST: "x" } as never), "fake");
-  assert.equal(modelMode({} as never), "gemini");
+  assert.equal(modelMode({} as never), "vertex");
+  assert.equal(modelMode({ GEMINI_API_KEY: "k" } as never), "gemini");
+  assert.equal(modelMode({ ROADIE_MODEL: "vertex", GEMINI_API_KEY: "k" } as never), "vertex");
   assert.equal(modelMode({ ROADIE_MODEL: "fake" } as never), "fake");
 });
 

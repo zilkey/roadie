@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      GCLOUD_PROJECT: band-tracker
+      GCLOUD_PROJECT: roadie-prod-iab
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
       - name: Check out the private backup repo
         uses: actions/checkout@v4
         with:
-          repository: ${{ vars.BACKUP_REPO }} # e.g. your-org/band-tracker-backups
+          repository: ${{ vars.BACKUP_REPO }} # e.g. your-org/roadie-backups
           token: ${{ secrets.BACKUP_REPO_TOKEN }} # fine-grained PAT, contents: read+write on that repo only
           path: backup-repo
 

@@ -1,7 +1,7 @@
 /**
  * Create the FIRST admin in a real project (after that, admins invite people from /admin/users).
  *
- *   GCLOUD_PROJECT=band-tracker GOOGLE_APPLICATION_CREDENTIALS=./key.json \
+ *   GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=./key.json \
  *     npx tsx scripts/bootstrap-admin.ts you@gmail.com "Your Name"
  *
  * Runs the normal users.add command (Auth user + users/{uid} doc), then sets the {role:'admin'} custom claim.
@@ -15,7 +15,7 @@ async function main() {
   const [email, ...nameParts] = process.argv.slice(2);
   const name = nameParts.join(" ") || email?.split("@")[0];
   if (!email || !email.includes("@")) throw new Error('Usage: tsx scripts/bootstrap-admin.ts <google-email> "<Name>"');
-  if (!process.env.GCLOUD_PROJECT) throw new Error("Set GCLOUD_PROJECT (e.g. band-tracker)");
+  if (!process.env.GCLOUD_PROJECT) throw new Error("Set GCLOUD_PROJECT (e.g. roadie-prod-iab)");
   const cmd = registry["users.add"];
   if (!cmd) throw new Error("users.add not found");
   await cmd.run(importCtx("bootstrap"), cmd.input.parse({ email, name, role: "admin" }));

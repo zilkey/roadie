@@ -1,1 +1,1 @@
-{ "projects": { "default": "demo-band-tracker" } }
+{ "projects": { "default": "demo-band-tracker", "prod": "roadie-prod-iab" } }

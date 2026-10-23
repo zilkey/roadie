@@ -14,7 +14,7 @@ The Band Tracker MCP server lets Claude (or any MCP client) read and update the 
 npm run mcp          # Streamable HTTP on http://127.0.0.1:3300/mcp
 ```
 
-Dev defaults to the local emulators (start them with `npm run emulators`, then `npm run seed`). For the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=band-tracker`, plus the real `*_BASE_URL`s once the Google clients exist. `MCP_PORT` changes the port. `GET /health` answers without a key.
+Dev defaults to the local emulators (start them with `npm run emulators`, then `npm run seed`). For the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`, plus the real `*_BASE_URL`s once the Google clients exist. `MCP_PORT` changes the port. `GET /health` answers without a key.
 
 ## 3. Connect Claude Code
 

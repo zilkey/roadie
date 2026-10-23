@@ -3,15 +3,28 @@ import { script, type Step } from "./script";
 
 export const FAKE_MODEL = "roadie/fake";
 
-/** `fake` by default whenever emulators are on (or under test); anything else selects Gemini. */
-export function modelMode(env: NodeJS.ProcessEnv = process.env): "fake" | "gemini" {
+export type ModelMode = "fake" | "gemini" | "vertex";
+const hasKey = (env: NodeJS.ProcessEnv) => !!(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENAI_API_KEY);
+
+/**
+ * `fake` by default whenever emulators are on (or under test). Otherwise Gemini: through Vertex AI with the server's
+ * service account (production; same Google bill, no key), or through the Gemini API when a key is set (trying it locally).
+ * ROADIE_MODEL=fake|gemini|vertex forces one.
+ */
+export function modelMode(env: NodeJS.ProcessEnv = process.env): ModelMode {
   const m = env.ROADIE_MODEL;
-  if (m) return m === "fake" ? "fake" : "gemini";
-  return env.FIRESTORE_EMULATOR_HOST || env.NODE_ENV === "test" ? "fake" : "gemini";
+  if (m === "fake" || m === "vertex") return m;
+  if (m) return "gemini";
+  if (env.FIRESTORE_EMULATOR_HOST || env.NODE_ENV === "test") return "fake";
+  return hasKey(env) ? "gemini" : "vertex";
 }
 
-/** The model's name as history records it. */
-export const modelLabel = (env: NodeJS.ProcessEnv = process.env) => (modelMode(env) === "fake" ? FAKE_MODEL : env.ROADIE_GEMINI_MODEL ?? "gemini-flash-latest");
+/** The model's name as history records it. Defaults: Flash-Lite on Vertex (the spec's cheap default), the latest Flash alias on the Gemini API. */
+export const modelLabel = (env: NodeJS.ProcessEnv = process.env) => {
+  const mode = modelMode(env);
+  if (mode === "fake") return FAKE_MODEL;
+  return env.ROADIE_GEMINI_MODEL ?? (mode === "vertex" ? "gemini-2.5-flash-lite" : "gemini-flash-latest");
+};
 
 /** The user's last typed message and the tool calls made (and answered) since, rebuilt from the conversation. */
 function lastTurn(req: GenerateRequest) {
@@ -55,10 +68,14 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
       const ai = genkit({});
       return { ai, model: defineFake(ai) };
     }
-    // Never exercised offline. Needs GOOGLE_API_KEY (or switch to vertexAI for a service account).
-    const { googleAI } = await import("@genkit-ai/google-genai");
+    // Never exercised offline. Vertex uses GCLOUD_PROJECT + the service account; the Gemini API path needs GEMINI_API_KEY.
+    const { googleAI, vertexAI } = await import("@genkit-ai/google-genai");
+    if (modelMode() === "vertex") {
+      const ai = genkit({ plugins: [vertexAI({ location: process.env.ROADIE_VERTEX_LOCATION ?? "us-central1" })] });
+      return { ai, model: vertexAI.model(modelLabel()) };
+    }
     const ai = genkit({ plugins: [googleAI()] });
-    return { ai, model: googleAI.model(process.env.ROADIE_GEMINI_MODEL ?? "gemini-flash-latest") };
+    return { ai, model: googleAI.model(modelLabel()) };
   })();
   return cached;
 }

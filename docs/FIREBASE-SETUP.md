@@ -1,17 +1,17 @@
-# Taking Band Tracker to a real Firebase project (`band-tracker`)
+# Taking Band Tracker to a real Firebase project (`roadie-prod-iab`)
 
 One ordered checklist. Everything below is manual; nothing has been run against a real project. Where the app needs code that does not exist yet, the step says **CODE NEEDED**. Replace `YOU` with the first admin's Google email.
 
 ## 1. Create the project
 
-- [ ] Create a Firebase project with id **`band-tracker`** (console.firebase.google.com). Skip Analytics.
+- [ ] Create a Firebase project with id **`roadie-prod-iab`** (console.firebase.google.com). Skip Analytics.
 - [ ] Upgrade to the Blaze plan (billing). App Hosting and the Admin SDK server need it; usage for one band stays in the free quotas.
-- [ ] Install the CLI locally (`npx firebase login`) and set the alias: `npx firebase use --add band-tracker` (alias `prod`; leave `default` as `demo-band-tracker` so tests stay offline).
+- [ ] Install the CLI locally (`npx firebase login`) and set the alias: `npx firebase use --add roadie-prod-iab` (alias `prod`; leave `default` as `demo-band-tracker` so tests stay offline).
 
 ## 2. Firestore, rules and indexes
 
 - [ ] Console > Firestore Database > Create database, **production mode**, a US region (e.g. `us-central1` or `nam5`; it cannot be changed later).
-- [ ] Deploy rules and indexes: `npx firebase deploy --only firestore --project band-tracker`.
+- [ ] Deploy rules and indexes: `npx firebase deploy --only firestore --project roadie-prod-iab`.
 - [ ] After the first real use, watch for "query requires an index" errors in the browser console. The member ledger query (`payeeUserId ==`, `kind in [...]`, `deletedAt ==`) may want one; click the link in the error, then copy the result into `firestore.indexes.json` and redeploy.
 
 ## 3. Authentication (Google sign-in)
@@ -23,8 +23,8 @@ One ordered checklist. Everything below is manual; nothing has been run against 
 
 ## 4. App Hosting
 
-- [ ] Console > App Hosting > Get started: connect the GitHub repo, live branch `main`, root directory `/`, create the backend (e.g. `band-tracker`, same region as Firestore).
-- [ ] **CODE NEEDED (small):** there is no `apphosting.yaml` in the repo. Create it at the repo root:
+- [ ] Console > App Hosting > Get started: connect the GitHub repo, live branch `main`, root directory `/`, create the backend (e.g. `roadie-prod-iab`, same region as Firestore).
+- [x] `apphosting.yaml` exists at the repo root (see it for the current values). The shape, for reference:
 
 ```yaml
 runConfig:
@@ -35,16 +35,16 @@ env:
     value: <web app apiKey>
     availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    value: band-tracker.firebaseapp.com
+    value: roadie-prod-iab.firebaseapp.com
     availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
-    value: band-tracker
+    value: roadie-prod-iab
     availability: [BUILD, RUNTIME]
   - variable: NEXT_PUBLIC_FIREBASE_APP_ID
     value: <web app appId>
     availability: [BUILD, RUNTIME]
   - variable: GCLOUD_PROJECT
-    value: band-tracker
+    value: roadie-prod-iab
   - variable: APP_URL            # base of the "can you play?" links in emails
     value: https://<your production domain>
   # Do NOT set NEXT_PUBLIC_USE_EMULATORS (it shows the dev sign-in buttons) or any *_EMULATOR_HOST.
@@ -55,7 +55,7 @@ env:
   #   secret: google-oauth-client-secret
 ```
 
-- [ ] Secrets: `npx firebase apphosting:secrets:set <name> --project band-tracker`, then reference them in `apphosting.yaml`, and `apphosting:secrets:grantaccess`.
+- [ ] Secrets: `npx firebase apphosting:secrets:set <name> --project roadie-prod-iab`, then reference them in `apphosting.yaml`, and `apphosting:secrets:grantaccess`.
 - [ ] The backend's service account needs the **Cloud Datastore User** and **Firebase Authentication Admin** roles (IAM) so `firebase-admin` can write Firestore and set custom claims. (Default App Hosting service accounts often have Datastore access; verify `setCustomUserClaims` works in the smoke test.)
 - [ ] Push to `main` and confirm the rollout succeeds. `.env.development` is only read by `next dev`, so it does not leak into production.
 
@@ -96,7 +96,7 @@ The app is invite-only; the first admin has to be created outside the app. `scri
 - [ ] Run (from the repo root, with `npm ci` done):
 
 ```
-GCLOUD_PROJECT=band-tracker GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
+GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
   npx tsx scripts/bootstrap-admin.ts YOU@gmail.com "Your Name"
 ```
 
@@ -108,23 +108,23 @@ GCLOUD_PROJECT=band-tracker GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json \
 The id `demo-band-tracker` is correct for local work and tests and should stay in most places. Change only what runs in production:
 
 - [ ] `apphosting.yaml` (step 4): real values for `NEXT_PUBLIC_FIREBASE_*` and `GCLOUD_PROJECT`.
-- [ ] `.firebaserc`: add `"prod": "band-tracker"` next to `default` (keep `default` demo so `npm test`/`e2e` stay offline); deploy with `--project band-tracker`.
+- [ ] `.firebaserc`: add `"prod": "roadie-prod-iab"` next to `default` (keep `default` demo so `npm test`/`e2e` stay offline); deploy with `--project roadie-prod-iab`.
 - [ ] `src/server/admin.ts`: the fallback project id `demo-band-tracker` (only used when no env is set; production sets `GCLOUD_PROJECT`).
 - [ ] `src/lib/firebase-client.ts`: fallbacks `demo-key`, `demo-band-tracker.firebaseapp.com`, `demo-band-tracker`, `demo-app` (production sets `NEXT_PUBLIC_FIREBASE_*`; consider throwing instead when missing in production).
-- [ ] `mcp/env.ts`: defaults to the demo emulator only when no real `GCLOUD_PROJECT` / credentials are set; nothing to change, but check the MCP host sets `GCLOUD_PROJECT=band-tracker`.
-- [ ] `.github/workflows/backup.yml`: already `GCLOUD_PROJECT: band-tracker`.
+- [ ] `mcp/env.ts`: defaults to the demo emulator only when no real `GCLOUD_PROJECT` / credentials are set; nothing to change, but check the MCP host sets `GCLOUD_PROJECT=roadie-prod-iab`.
+- [ ] `.github/workflows/backup.yml`: already `GCLOUD_PROJECT: roadie-prod-iab`.
 - [ ] Leave as is (local/test only): `.env.development`, `package.json` scripts (`emulators`, `seed`, `test`, `e2e`, `stats:pull`), `playwright.config.ts`, `scripts/dev-all.ts`, `scripts/seed.ts`, `tests/unit/helpers.ts`, `tests/unit/rules.test.ts`, `PLAN.md`. Never run `npm run seed` against the real project.
 
 ## 10. Scheduled jobs
 
-- [ ] **Daily Spotify pull (CODE NEEDED for the schedule):** `scripts/stats-pull.ts` exists but is hard-wired to the emulator in `npm run stats:pull`, and no schedule exists. Either add a GitHub Actions cron (like `backup.yml`) that runs it with `GCLOUD_PROJECT=band-tracker`, the service-account secret and the Spotify secrets, or a Cloud Scheduler job calling a small authenticated route that runs the `stats.pull` command. Charts only start filling from the first run.
+- [ ] **Daily Spotify pull (CODE NEEDED for the schedule):** `scripts/stats-pull.ts` exists but is hard-wired to the emulator in `npm run stats:pull`, and no schedule exists. Either add a GitHub Actions cron (like `backup.yml`) that runs it with `GCLOUD_PROJECT=roadie-prod-iab`, the service-account secret and the Spotify secrets, or a Cloud Scheduler job calling a small authenticated route that runs the `stats.pull` command. Charts only start filling from the first run.
 - [ ] **Backup workflow** (`.github/workflows/backup.yml`, never run): create a private repo for backups; create a service account with **Cloud Datastore Viewer** and a JSON key; add Actions secrets `FIREBASE_SERVICE_ACCOUNT` (the key JSON) and `BACKUP_REPO_TOKEN` (fine-grained PAT, Contents read/write on the backup repo only) and variable `BACKUP_REPO` (`owner/repo`). Run "Nightly backup" once by hand and check the commit. Details and restore in `docs/BACKUP.md`.
 
 ## 11. MCP hosting and tokens
 
-- [ ] Host the MCP server (`npm run mcp`, port 3300, Streamable HTTP at `/mcp`) somewhere with a service account and `GCLOUD_PROJECT=band-tracker`: a small Cloud Run service, or a tunnel from an always-on machine. **CODE NEEDED:** no Dockerfile or deploy config exists. The bearer token is the only credential, so serve it over HTTPS only. It also needs the real integration env from step 6 or its Gmail/Drive/Calendar tools will fail.
+- [ ] Host the MCP server (`npm run mcp`, port 3300, Streamable HTTP at `/mcp`) somewhere with a service account and `GCLOUD_PROJECT=roadie-prod-iab`: a small Cloud Run service, or a tunnel from an always-on machine. **CODE NEEDED:** no Dockerfile or deploy config exists. The bearer token is the only credential, so serve it over HTTPS only. It also needs the real integration env from step 6 or its Gmail/Drive/Calendar tools will fail.
 - [ ] In the app: Admin > Users > tick AI access for the person, then Admin > AI keys > create a key (shown once, only its hash is stored; revoke there).
-- [ ] Connect Claude Code as in `docs/MCP.md` (`claude mcp add --transport http band-tracker https://<host>/mcp --header "Authorization: Bearer btk_..."`).
+- [ ] Connect Claude Code as in `docs/MCP.md` (`claude mcp add --transport http roadie-prod-iab https://<host>/mcp --header "Authorization: Bearer btk_..."`).
 
 ## 12. Smoke test after deploy
 

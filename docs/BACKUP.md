@@ -5,13 +5,13 @@
 
 ## Nightly job (`.github/workflows/backup.yml`)
 Runs at 09:17 UTC every day (and on demand from the Actions tab), dumps the real Firestore and commits the result to a **private** backup repo. It has never been run; set up once:
-1. Create a private repo, for example `your-org/band-tracker-backups`.
+1. Create a private repo, for example `your-org/roadie-backups`.
 2. In the Google Cloud project create a service account with role **Cloud Datastore Viewer** (read-only Firestore). Download a JSON key.
 3. In the app repo (Settings > Secrets and variables > Actions):
    - secret `FIREBASE_SERVICE_ACCOUNT`: the whole JSON key
    - secret `BACKUP_REPO_TOKEN`: a fine-grained personal access token limited to the backup repo with Contents: read and write
-   - variable `BACKUP_REPO`: `your-org/band-tracker-backups`
-4. Edit `GCLOUD_PROJECT` in the workflow if the project id is not `band-tracker`.
+   - variable `BACKUP_REPO`: `your-org/roadie-backups`
+4. Edit `GCLOUD_PROJECT` in the workflow if the project id is not `roadie-prod-iab`.
 5. Run "Nightly backup" once by hand and check the commit appears.
 
 Each day adds a dated folder; git history gives you the rest. The service account key is written to the runner's temp dir and deleted at the end.
