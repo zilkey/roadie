@@ -8,6 +8,7 @@ import { adminAuth } from "../src/server/admin";
 import { db } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
 import { DEV_PEOPLE } from "../src/lib/dev-people";
+import { DEFAULT_CHECKLIST_TEMPLATES } from "../src/lib/shows";
 
 const project = "demo-band-tracker";
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
@@ -103,9 +104,7 @@ async function main() {
   await create("emailTemplates", { name: "First pitch", subject: "{{venue.name}} · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nWe're a Denver band... Live video: {{artist.video}}\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter"] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · {{artist.name}}", body: "Hi {{contact.firstName}},\n\nChecking back on {{target.name}}. Live video: {{artist.video}}\n\nThanks,\n{{user.firstName}}", targetKinds: [] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nChecking back on {{venue.name}}.\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter", "edition"] });
-  for (const [label, when, daysBefore] of [["Confirm load-in time", "always", 7], ["Book sound engineer", "bandSound", 21], ["Post the poster", "poster", 14], ["Pack merch table", "merch", 2]] as const) {
-    await create("checklistTemplates", { label, when, daysBefore });
-  }
+  for (const t of DEFAULT_CHECKLIST_TEMPLATES) await create("checklistTemplates", { ...t });
 
   // --- music ---
   const songSpecs: [string, string, number, number][] = [

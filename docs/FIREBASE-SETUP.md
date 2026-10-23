@@ -24,3 +24,10 @@ Each client in `src/server/integrations/<svc>.ts` reads `<SVC>_BASE_URL` (GMAIL,
 ### Slice 3 (Booking)
 - Gmail: replace the fake client with real Gmail API calls (`gmail.send`, `gmail.readonly` for `pitches.checkReplies`). The send account is the signed-in admin's email, so each admin who sends needs their own OAuth grant.
 - No new Firestore indexes: booking queries are single-field (`target.id`, `venue.id`, `festivalId`, `contactIds` array-contains).
+
+### Slice 4 (Shows)
+- Set `APP_URL` (e.g. `https://band-tracker.web.app`) on the server: it is the base of the availability answer links in emails (`/ask/{id}/{musicianId}/{token}`). The default is `http://127.0.0.1:3100`.
+- `/ask/*` and `/api/availability/*` are public by design (no login; the token is the credential, stored only as a SHA-256 hash). Nothing in Firebase needs to be opened for them: the server reads/writes with the admin SDK.
+- Calendar (real client): events need `timeZone` (America/Denver) alongside the local `start`/`end` strings, and `attendees` from musician emails with `sendUpdates=all`. Subs without an email are skipped.
+- Bandsintown (real client): same approval caveat as slice 2. Until approved, listings stay in the fake or show `state: "error"` with the message; `shows.sync` retries.
+- No new Firestore indexes: queries are single-field (`pitchId ==`, `venue.id ==`, `askedMusicianIds array-contains`).

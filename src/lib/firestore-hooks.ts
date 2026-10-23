@@ -8,9 +8,9 @@ export type Row<T> = T & { id: string };
 type Where = [field: string, op: WhereFilterOp, value: unknown];
 
 /** Live read-only listener. Soft-deleted docs are hidden. Sort client-side (avoids composite indexes). Client writes are denied by rules: use runCommand. */
-export function useCollection<T = Record<string, unknown>>(path: string, opts: { where?: Where[] } = {}) {
+export function useCollection<T = Record<string, unknown>>(path: string, opts: { where?: Where[]; skip?: boolean } = {}) {
   const { state } = useAuth();
-  const ready = state.status === "ready";
+  const ready = state.status === "ready" && !opts.skip;
   const [rows, setRows] = useState<Row<T>[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const key = JSON.stringify([path, opts]);
@@ -24,7 +24,7 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, key]);
-  return { rows, error, loading: rows === null && !error };
+  return { rows, error, loading: rows === null && !error && !opts.skip };
 }
 
 /** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted. */

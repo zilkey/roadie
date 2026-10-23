@@ -8,7 +8,9 @@ import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, Seg, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
-import type { Activity, Artist, Comment, Contact, EmailTemplate, Musician, User } from "@/schema";
+import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
+import { fmtLong } from "@/lib/shows";
+import type { Activity, Artist, Comment, Contact, EmailTemplate, Musician, Show, User } from "@/schema";
 
 export default function Page() { return <AdminOnly><PitchPage /></AdminOnly>; }
 
@@ -31,6 +33,8 @@ function PitchPage() {
   const [step, setStep] = useState<{ text: string; due: string } | null>(null);
   const [replies, setReplies] = useState<string | null>(null);
   const nf = useNotFound(loading, p, "pitch");
+  const shows = useCollection<Show>("shows").rows ?? [];
+  const edition = p?.target.kind === "edition" ? b.editions.find((e) => e.id === p.target.id) : undefined;
   const activity = useCollection<Activity>(`pitches/${id}/activity`).rows ?? [];
   const comments = useCollection<Comment>(`pitches/${id}/comments`).rows ?? [];
   if (nf || !p) return nf;
@@ -107,6 +111,16 @@ function PitchPage() {
         {replies && <span className="s self-center" data-testid="replies-result">{replies}</span>}
       </div>
       {emailOpen && <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />}
+
+      <div className="grid gap-2" data-testid="pitch-shows">
+        <span className="lbl">Shows</span>
+        {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
+          <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {x.venue.name}</b><span className="s">{x.status}</span></Link>
+        ))}
+        {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc justify-self-start" data-testid="booked-it">Booked it</Link>}
+        <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />
+        <AskWhoIsFree pitchId={id} date={edition?.startDate ?? ""} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
+      </div>
 
       <span className="lbl">Timeline</span>
       <div className="grid gap-2" data-testid="timeline">
