@@ -17,7 +17,15 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
-  webServer: {
+  webServer: [
+    {
+      // All five fakes in one process (3201-3205); state in .fake-data.
+      command: "npx tsx fakes/run-all.ts",
+      url: "http://127.0.0.1:3205/health",
+      reuseExistingServer: true,
+      timeout: 30_000,
+    },
+    {
     command: "npx next dev -p 3100",
     url: "http://127.0.0.1:3100/signin",
     reuseExistingServer: true,
@@ -29,5 +37,6 @@ export default defineConfig({
       FIRESTORE_EMULATOR_HOST: "127.0.0.1:8280",
       FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9319",
     },
-  },
+    },
+  ],
 });

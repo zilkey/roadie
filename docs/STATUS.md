@@ -29,3 +29,14 @@ Each slice appends its section below.
 **Known gaps**
 - No UI to rename/delete configurations' ids (ids come from the name at first save). `users.add` side effects (Auth user, claims) happen outside the Firestore transaction.
 - Role/claim changes take effect after the user's token refreshes (we revoke refresh tokens on role change).
+
+## Slice 2: Fakes + integrations
+
+**Done**
+- `fakes/fake-{gmail,drive,calendar,bandsintown,spotify}/server.ts` on ports 3201-3205 (framework in `fakes/lib.ts`): state in `.fake-data/<svc>.json`, `GET /` HTML page, `GET /health`, `POST /__reset`. `npm run fakes` / `tsx fakes/run-all.ts` starts all; `npm run dev:all` (`scripts/dev-all.ts`) runs emulators + fakes + next; Playwright `webServer` starts the fakes for `npm run e2e`. `FAKE_DATA_DIR` overrides the state dir.
+- fake-gmail: send, drafts, messages/threads, `POST /threads/:id/reply` (button "Simulate reply" on its page, testid `simulate-reply`). fake-drive: seeded band folder (`fake-band-folder`), per-song demo/charts in two keys/lyrics, rehearsal recordings, some not shared with everyone or outside the band folder; ids `fake-drive-demo-1` / `fake-drive-chart-1` match scripts/seed.ts. Search `GET /files?q=`, copy, share, permissions. fake-calendar / fake-bandsintown: event CRUD + list. fake-spotify: 60 days of followers/popularity with deterministic daily drift (extends each day), top tracks.
+- Clients + interfaces in `src/server/integrations/` (`gmailClient()`, `driveClient()`, ...; `IntegrationError` on non-2xx). Env: `*_BASE_URL`.
+- `tests/unit/integrations.test.ts` starts the fakes in-process on random ports with a temp data dir (so `npm test` needs no external fakes and cannot clash with `dev:all`).
+
+**Stubbed / gaps**
+- No app features use the clients yet. Fake Drive has no auth or per-user visibility (every caller sees everything). Calendar attendee responses can't be simulated yet (PATCH attendees with a responseStatus object works). Real implementations not written; see FIREBASE-SETUP.md.
