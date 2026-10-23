@@ -1,7 +1,7 @@
 import { test, before, after } from "node:test";
 import { readFileSync } from "node:fs";
 import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
+import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
 
 let env: RulesTestEnvironment;
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280").split(":");
@@ -16,11 +16,13 @@ before(async () => {
     const d = ctx.firestore();
     const live = { deletedAt: null };
     for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
-      "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "history", "mcpTokens"]) {
+      "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
       await setDoc(doc(d, c, "x"), { ...live, n: 1 });
     }
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
+    await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1" });
+    await setDoc(doc(d, "pitches/x/activity/a1/history/000001"), { ...live, runId: "r1" });
     await setDoc(doc(d, "songs/gone"), { deletedAt: new Date() });
     await setDoc(doc(d, "availability/asked"), { ...live, askedMusicianIds: ["m-david"] });
     await setDoc(doc(d, "availability/other"), { ...live, askedMusicianIds: ["m-eric"] });
@@ -32,8 +34,8 @@ before(async () => {
     await setDoc(doc(d, "ledger/spend"), { ...live, kind: "expense" });
     await setDoc(doc(d, "expenses/mine"), { ...live, userId: "david" });
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
-    await setDoc(doc(d, "users/jeff/drafts/show__new"), { kind: "show", values: { a: 1 } });
-    await setDoc(doc(d, "users/david/drafts/show__new"), { kind: "show", values: { a: 2 } });
+    await setDoc(doc(d, "unsubmittedDrafts/jeff__expenses"), { uid: "jeff", path: "expenses", values: { a: 1 } });
+    await setDoc(doc(d, "unsubmittedDrafts/david__shows~x"), { uid: "david", path: "shows/x", values: { a: 2 } });
   });
 });
 after(async () => { await env.cleanup(); });
@@ -44,7 +46,7 @@ const anon = () => env.unauthenticatedContext().firestore();
 const noRole = () => env.authenticatedContext("nobody", {}).firestore();
 
 const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
-  "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "history", "mcpTokens"];
+  "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"];
 const MEMBER_READS = ["musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals"];
 
 test("admin reads everything, including sub-collections", async () => {
@@ -105,18 +107,20 @@ test("ALL client writes are denied, even for admins", async () => {
   }
 });
 
-test("drafts: only the owner reads their own; admins, members and anon cannot read someone else's; no client writes", async () => {
-  await assertSucceeds(getDoc(doc(admin(), "users/jeff/drafts/show__new")));
-  await assertSucceeds(getDocs(collection(admin(), "users/jeff/drafts")));
-  await assertSucceeds(getDoc(doc(david(), "users/david/drafts/show__new")));
-  await assertFails(getDoc(doc(admin(), "users/david/drafts/show__new"))); // not even an admin
-  await assertFails(getDoc(doc(david(), "users/jeff/drafts/show__new")));
-  await assertFails(getDocs(collection(david(), "users/jeff/drafts")));
-  await assertFails(getDoc(doc(anon(), "users/jeff/drafts/show__new")));
-  await assertFails(getDoc(doc(noRole(), "users/jeff/drafts/show__new")));
+test("unsubmittedDrafts: only the owner reads their own; admins, members and anon cannot read someone else's; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "unsubmittedDrafts/jeff__expenses")));
+  await assertSucceeds(getDocs(query(collection(admin(), "unsubmittedDrafts"), where("uid", "==", "jeff"))));
+  await assertSucceeds(getDoc(doc(david(), "unsubmittedDrafts/david__shows~x")));
+  await assertFails(getDoc(doc(admin(), "unsubmittedDrafts/david__shows~x"))); // not even an admin
+  await assertFails(getDoc(doc(david(), "unsubmittedDrafts/jeff__expenses")));
+  await assertFails(getDocs(collection(david(), "unsubmittedDrafts"))); // a whole-collection read would include others'
+  await assertFails(getDocs(query(collection(david(), "unsubmittedDrafts"), where("uid", "==", "jeff"))));
+  await assertFails(getDoc(doc(anon(), "unsubmittedDrafts/jeff__expenses")));
+  await assertFails(getDoc(doc(noRole(), "unsubmittedDrafts/jeff__expenses")));
   for (const [who, uid] of [[admin(), "jeff"], [david(), "david"]] as const) {
-    await assertFails(setDoc(doc(who, `users/${uid}/drafts/mine`), { kind: "show" }));
-    await assertFails(updateDoc(doc(who, `users/${uid}/drafts/show__new`), { title: "x" }));
-    await assertFails(deleteDoc(doc(who, `users/${uid}/drafts/show__new`)));
+    await assertFails(setDoc(doc(who, `unsubmittedDrafts/${uid}__venues`), { uid, path: "venues" }));
+    await assertFails(updateDoc(doc(who, uid === "jeff" ? "unsubmittedDrafts/jeff__expenses" : "unsubmittedDrafts/david__shows~x"), { title: "x" }));
+    await assertFails(deleteDoc(doc(who, uid === "jeff" ? "unsubmittedDrafts/jeff__expenses" : "unsubmittedDrafts/david__shows~x")));
   }
+  await assertFails(getDoc(doc(admin(), "users/jeff/drafts/show__new"))); // the old location is gone
 });

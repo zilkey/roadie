@@ -33,7 +33,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const router = useRouter();
   const { call, error, busy } = useCommand();
   // Existing record = autosave through setlists.update: the name saves as you type, list changes save at once (status + Undo toast).
-  const as = useAutosave({ command: "setlists.update", id: sl.id, rev: sl.rev });
+  const as = useAutosave({ command: "setlists.update", id: sl.id, rev: sl.rev, title: sl.name });
   const [items, setItems] = useState<Item[]>(sl.items);
   const [drag, setDrag] = useState<number | null>(null);
   const [songId, setSongId] = useState("");

@@ -8,7 +8,8 @@ import type { SaveState } from "@/lib/autosave";
 /**
  * Whole-value commands (shows.setChecklist, shows.setGear, shows.packGear) that take the new list instead of a
  * `{id, patch}` pair can't go through useAutosave. Each change is one request, one history entry, one "Saved ... Undo"
- * toast, with a status next to the panel. Not folded (`autosave` is off), so every Undo reverts exactly one change.
+ * toast, with a status next to the panel. The request is sent with keepalive, so closing the tab right after a change doesn't drop it
+ * (offline, the change is not kept: the status says so and the list shows the live value). Not folded (`autosave` is off), so every Undo reverts exactly one change.
  */
 export function useInstantSave() {
   const [status, setStatus] = useState<SaveState>("idle");

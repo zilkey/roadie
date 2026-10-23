@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -22,7 +23,7 @@ type SegKey = "active" | "learning" | "idea" | "retired" | "setlists" | "rehears
 function NewSetlist() {
   const router = useRouter();
   const { call, error, busy } = useCommand();
-  const draft = useDraft("setlist", "new", { name: "" }, { route: "/songs?seg=setlists", title: (v) => `New setlist${v.name.trim() ? ` · ${v.name.trim()}` : ""}` });
+  const draft = useDraft(draftPath.newIn("setlists"), { name: "" }, { route: "/songs?seg=setlists", title: (v) => `New setlist${v.name.trim() ? ` · ${v.name.trim()}` : ""}` });
   const mutationId = useRef(newMutationId());
   const name = draft.value.name;
   async function create(e: React.FormEvent) {

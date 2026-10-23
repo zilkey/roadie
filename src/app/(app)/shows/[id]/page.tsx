@@ -41,7 +41,7 @@ function ShowView({ show }: { show: ShowRow }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ShowFormState>(() => formOf(show));
   // Existing record = autosave: no Save button, each field is a patch through shows.update, "Saved" + Undo toast after.
-  const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, onUseTheirs: () => setForm(formOf(show)) });
+  const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, title: `${show.venue.name} · ${show.date}`, onUseTheirs: () => setForm(formOf(show)) });
   const edit = (next: ShowFormState) => { as.patch(showPatch(form, next)); setForm(next); };
   const venues = useCollection<Venue>("venues", { skip: !admin }).rows ?? [];
   const cfg = configName(b.artist, show.billedAs);

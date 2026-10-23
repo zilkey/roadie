@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
@@ -18,7 +19,7 @@ export function EnterMoney({ show, deal }: { show: Row<Show>; deal: Row<ShowDeal
   const ledger = useCollection<LedgerLike>("ledger", { where: [["showId", "==", show.id]] });
   const { call, error, busy } = useCommand();
   // shows.settle is a one-shot action: the button stays, what has been typed so far is a draft for this show.
-  const draft = useDraft("settlement", show.id, {
+  const draft = useDraft(draftPath.newUnder("shows", show.id, "settlement"), {
     inc: { door: "", guarantee: deal?.guarantee ? String(deal.guarantee / 100) : "", merch: "", tips: "", venmo: "" } as Record<Cat, string>,
     pay: null as Record<string, string> | null, skip: {} as Record<string, boolean>, unpaid: {} as Record<string, boolean>,
   }, { title: () => `Settle show · ${show.venue.name} · ${show.date}` });

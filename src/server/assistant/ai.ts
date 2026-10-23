@@ -1,6 +1,5 @@
-import { genkit, z, type Genkit, type GenerateRequest, type GenerateResponseData, type Part } from "genkit";
-import { routeNames } from "@/lib/routes";
-import { script } from "./script";
+import { genkit, type Genkit, type GenerateRequest, type GenerateResponseData, type Part } from "genkit";
+import { script, type Step } from "./script";
 
 export const FAKE_MODEL = "roadie/fake";
 
@@ -11,31 +10,37 @@ export function modelMode(env: NodeJS.ProcessEnv = process.env): "fake" | "gemin
   return env.FIRESTORE_EMULATOR_HOST || env.NODE_ENV === "test" ? "fake" : "gemini";
 }
 
-export const navigateInput = z.object({
-  route: z.enum(routeNames as [string, ...string[]]).describe("Name of the page to open"),
-  params: z.record(z.string(), z.string()).optional().describe("Route params, e.g. {id} for a show"),
-});
+/** The model's name as history records it. */
+export const modelLabel = (env: NodeJS.ProcessEnv = process.env) => (modelMode(env) === "fake" ? FAKE_MODEL : env.ROADIE_GEMINI_MODEL ?? "gemini-flash-latest");
 
-/** Pull the user's text (or the navigate tool result) out of a model request. */
+/** The user's last typed message and the tool calls made (and answered) since, rebuilt from the conversation. */
 function lastTurn(req: GenerateRequest) {
-  const last = req.messages[req.messages.length - 1];
-  const tr = last?.content.find((p) => p.toolResponse)?.toolResponse;
-  if (tr) return { text: "", tool: { ok: !(tr.output as { error?: string } | undefined)?.error } };
-  return { text: last?.content.map((p) => p.text ?? "").join("") ?? "" };
+  const msgs = req.messages;
+  let at = -1;
+  msgs.forEach((m, i) => { if (m.role === "user") at = i; });
+  const text = at >= 0 ? msgs[at].content.map((p) => p.text ?? "").join("") : "";
+  const after = msgs.slice(at + 1);
+  const requests = after.flatMap((m) => (m.role === "model" ? m.content.flatMap((p) => (p.toolRequest ? [p.toolRequest] : [])) : []));
+  const responses = after.flatMap((m) => (m.role === "tool" ? m.content.flatMap((p) => (p.toolResponse ? [p.toolResponse] : [])) : []));
+  const steps: Step[] = requests.map((r) => ({ name: r.name, input: r.input, output: responses.find((x) => x.ref === r.ref)?.output }));
+  const sys = msgs.find((m) => m.role === "system")?.content.map((p) => p.text ?? "").join("") ?? "";
+  const pg = /looking at (\w+) ([\w-]+)/.exec(sys);
+  return { text, steps, page: pg ? { kind: pg[1], id: pg[2] } : undefined };
 }
 
 function defineFake(ai: Genkit) {
   return ai.defineModel(
     { name: FAKE_MODEL, label: "Roadie (canned)", supports: { tools: true, multiturn: true, systemRole: true, media: false } },
     async (req, send): Promise<GenerateResponseData> => {
-      const out = script(lastTurn(req));
+      const turn = lastTurn(req);
+      const out = script(turn);
       const content: Part[] = [];
       if (out.text) {
         // Stream word by word like a real model would.
         for (const w of out.text.match(/\S+\s*/g) ?? []) send?.({ content: [{ text: w }] });
         content.push({ text: out.text });
       }
-      if ("navigate" in out) content.push({ toolRequest: { name: "ui.navigate", ref: "nav-1", input: out.navigate } });
+      (out.calls ?? []).forEach((c, i) => content.push({ toolRequest: { name: c.name, ref: `fake-${turn.steps.length + i}`, input: c.input } }));
       return { message: { role: "model", content }, finishReason: "stop" };
     },
   );

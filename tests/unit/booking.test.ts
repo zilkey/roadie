@@ -90,7 +90,7 @@ test("dedupe: venue, promoter, festival and contact creates merge instead of dup
   const c2 = await cmd("contacts.create", { name: "Haylee J", emails: ["haylee@x.com"], phones: ["303-555-0101"] });
   assert.equal(c2.id, c1.id);
   assert.deepEqual((await db.get("contacts", c1.id))!.phones, ["+13035550101"]);
-  const hist = await db.list("history", (q) => q.where("entity.id", "==", c1.id));
+  const hist = await db.listGroup("history", (q) => q.where("entity.id", "==", c1.id));
   assert.ok(hist.some((h) => h.op === "merge"));
 });
 

@@ -28,7 +28,10 @@ test("backup then restore round-trips every collection, subcollections, history 
   await db.softDelete(ctx, "contacts", c.id);
 
   const before = await dumpAll(firestore());
-  assert.ok(before.venues.length === 1 && before.history.length >= 6 && before.ledger.length === 1);
+  assert.ok([before.venues, before.ledger].every((rows) => rows.filter((r) => !r.path.includes("/history/")).length === 1));
+  const histRows = (d: typeof before) => Object.values(d).flat().filter((r) => r.path.includes("/history/"));
+  assert.ok(histRows(before).length >= 6 && !before.history, "history lives in each record's subcollection, so it is in the parent's file");
+  assert.ok(before.venues.some((r) => r.path === `venues/${v.id}/history/000002`) && before.pitches.some((r) => r.path.includes("/activity/") && r.path.includes("/history/")));
   assert.ok(before.pitches.some((r) => r.path.includes("/activity/")), "subcollection docs are included");
   assert.deepEqual(validateDump(before), []);
 
@@ -36,8 +39,8 @@ test("backup then restore round-trips every collection, subcollections, history 
   try {
     const { dir, counts } = await backup(out, "2026-10-23");
     assert.ok(dir.endsWith("2026-10-23"));
-    assert.ok(fs.existsSync(path.join(dir, "venues.json")) && fs.existsSync(path.join(dir, "history.json")));
-    assert.equal(counts.pitches, 3);
+    assert.ok(fs.existsSync(path.join(dir, "venues.json")) && !fs.existsSync(path.join(dir, "history.json")));
+    assert.equal(counts.pitches, before.pitches.length);
 
     await resetEmulators();
     assert.deepEqual(await dumpAll(firestore()), {});
@@ -47,6 +50,7 @@ test("backup then restore round-trips every collection, subcollections, history 
     assert.equal(n, Object.values(before).flat().length);
 
     assert.deepEqual(await dumpAll(firestore()), before, "identical after restore");
+    assert.equal(histRows(await dumpAll(firestore())).length, histRows(before).length, "history subcollections are put back");
     const doc = (await db.get("venues", v.id))!;
     assert.equal(typeof doc.createdAt.toMillis, "function", "timestamps are real timestamps again");
   } finally { fs.rmSync(out, { recursive: true, force: true }); }

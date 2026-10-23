@@ -75,6 +75,8 @@ export function useRoadie(onNavigated?: () => void) {
   const apply = useCallback((e: AssistantEvent) => {
     if (e.type === "text") setPending((p) => p && { ...p, reply: p.reply + e.delta });
     else if (e.type === "action") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "action", label: e.label }] });
+    else if (e.type === "readback") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "readback", label: e.label, runId: e.runId }] });
+    else if (e.type === "confirm") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending" }] });
     else if (e.type === "navigate") {
       const r = resolveRoute(e.route, e.params);
       if (!r) return;
@@ -85,12 +87,13 @@ export function useRoadie(onNavigated?: () => void) {
       setThreadId(e.threadId);
       runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
       setPending((p) => p && { ...p, doneId: e.messageId });
-    } else setPending((p) => p && { ...p, error: e.message });
+    } else if (e.type === "error") setPending((p) => p && { ...p, error: e.message });
   }, [router, onNavigated]);
 
   const send = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message || (pending && !pending.doneId && !pending.error)) return;
+    setNotice(null);
     setPending({ text: message, reply: "", actions: [] });
     try {
       const token = await clientAuth().currentUser?.getIdToken();
@@ -122,6 +125,25 @@ export function useRoadie(onNavigated?: () => void) {
     runCommand("assistant.setPrefs", { threadId: null }).catch(() => {});
   }, []);
 
+  /** Yes / Cancel on a confirm card, and Undo on a read-back line. The server does the work from what it stored; the page just shows the result. */
+  const [notice, setNotice] = useState<string | null>(null);
+  const post = useCallback(async (path: "confirm" | "undo", body: Record<string, string>) => {
+    setNotice(null);
+    try {
+      const token = await clientAuth().currentUser?.getIdToken();
+      const res = await fetch(`/api/assistant/${path}`, {
+        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ threadId, ...body }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) setNotice(json.error?.message ?? "Roadie is unavailable");
+      else if (json.status === "failed") setNotice(json.message ?? "That didn't work");
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : "Roadie is unavailable");
+    }
+  }, [threadId]);
+  const answer = useCallback((pendingId: string, decision: "yes" | "cancel") => post("confirm", { pendingId, decision }), [post]);
+  const undo = useCallback((runId: string) => post("undo", { runId }), [post]);
+
   const busy = !!pending && !pending.doneId && !pending.error;
-  return { width, setWidth, messages, pending, busy, send, newChat };
+  return { width, setWidth, messages, pending, busy, send, newChat, answer, undo, notice };
 }

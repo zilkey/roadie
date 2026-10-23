@@ -1,8 +1,15 @@
 {
   "indexes": [
-    { "collectionGroup": "history", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "entity.id", "order": "ASCENDING" }, { "fieldPath": "docRev", "order": "DESCENDING" }] }
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "runId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.uid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": [
-    { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] }
+    { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "unsubmittedDrafts", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "history", "fieldPath": "runId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "history", "fieldPath": "createdAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] }
   ]
 }

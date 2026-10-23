@@ -1,8 +1,11 @@
 import { authenticate } from "../commands/dispatch";
+import { db } from "../db";
+import { newRunId } from "../ctx";
 import { AppError, invalid } from "../errors";
 import { ChatRequest, type AssistantAction, type AssistantEvent } from "@/schema/assistant";
 import { getChatFlow } from "./flow";
-import { loadHistory, newThreadId, saveTurn } from "./threads";
+import type { Session } from "./run";
+import { ensureThread, loadHistory, newMessageId, newThreadId, saveTurn } from "./threads";
 
 const sse = (e: AssistantEvent) => `data: ${JSON.stringify(e)}\n\n`;
 
@@ -20,17 +23,24 @@ export async function handleChat(authHeader: string | null, body: unknown): Prom
     const threadId = history ? req.threadId! : newThreadId();
     const userAt = new Date();
     const enc = new TextEncoder();
+    const user = await db.get("users", ctx.uid);
+    await ensureThread({ uid: ctx.uid, threadId, pageContext: req.pageContext, at: userAt });
+    // One run id per user message: every write Roadie makes for it shares it, so one Undo reverses the message.
+    const session: Omit<Session, "model"> = {
+      uid: ctx.uid, role: ctx.role, musicianId: ctx.musicianId, name: (user?.name as string | undefined) ?? "Someone",
+      threadId, runId: newRunId(), replyId: newMessageId(),
+    };
 
     const stream = new ReadableStream<Uint8Array>({
       async start(c) {
         const send = (e: AssistantEvent) => c.enqueue(enc.encode(sse(e)));
         try {
           const flow = await getChatFlow();
-          const { stream: chunks, output } = flow.stream({ message: req.message, history: history ?? [], pageContext: req.pageContext });
+          const { stream: chunks, output } = flow.stream({ message: req.message, history: history ?? [], pageContext: req.pageContext, session });
           for await (const e of chunks as AsyncIterable<AssistantEvent>) send(e);
           const out = (await output) as { text: string; actions: AssistantAction[] };
           const { assistantMessageId } = await saveTurn({
-            uid: ctx.uid, threadId, isNew: !history, pageContext: req.pageContext,
+            threadId, replyId: session.replyId, pageContext: req.pageContext,
             userText: req.message, replyText: out.text, actions: out.actions, userAt,
           });
           send({ type: "done", threadId, messageId: assistantMessageId });

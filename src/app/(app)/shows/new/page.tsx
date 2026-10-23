@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
@@ -52,7 +53,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, musicians, a
     dealType: "guarantee", guarantee: "", doorSplitPct: "", ticketPrice: "",
   };
   // New record = draft: saved as you type (device, then server), restored on any machine, deleted when the show is created.
-  const draft = useDraft("show", pitchId ? `pitch:${pitchId}` : "new", blank, {
+  const draft = useDraft(pitchId ? draftPath.newUnder("pitches", pitchId, "shows") : draftPath.newIn("shows"), blank, {
     title: (v) => `New show${venues.find((x) => x.id === v.venueId) ? ` · ${venues.find((x) => x.id === v.venueId)!.name}` : ""}${v.date ? ` · ${v.date}` : ""}`,
   });
   const s = draft.value;

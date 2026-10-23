@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -25,7 +26,7 @@ function Booking() {
   const [seg, setSeg] = useState<Seg>("all");
   const [q, setQ] = useState("");
   // An unfinished "new X" opens its form by itself (Home's Unfinished card links here).
-  const drafts = { venue: useHasDraft("venue", "new"), promoter: useHasDraft("promoter", "new"), festival: useHasDraft("festival", "new"), contact: useHasDraft("contact", "new") };
+  const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")), contact: useHasDraft(draftPath.newIn("contacts")) };
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
   const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival", "contact"] as const).find((k) => drafts[k]) ?? null;
 
@@ -116,7 +117,7 @@ function Booking() {
       {add && (
         <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
           submitLabel={`Add ${add}`} onSubmit={(d, meta) => create(add, d, meta)} onCancel={() => setAdd("none")}
-          draft={{ kind: add, contextKey: "new", title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
+          draft={{ path: draftPath.newIn(`${add}s`), title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
       )}
     </div>
   );

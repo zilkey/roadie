@@ -94,3 +94,78 @@ test("phone: pill opens a sheet; navigating collapses it back to the pill", asyn
   await pill.click();
   await expect(page.getByTestId("roadie-action").last()).toHaveText("→ Opened Money");
 });
+
+const STAMP = Date.now();
+
+test("'add $50 gas': read-back line, the expense appears on Money live, Undo removes it", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  await page.getByTestId("tab-money").click();
+  await expect(page).toHaveURL(/\/money$/);
+  const what = `gas ${STAMP}`;
+  await ask(page, `add $50 ${what}`);
+  await expect(page.getByTestId("roadie-readback")).toContainText(`Logged $50 ${what}, paid by`);
+  await expect(page.locator("main").getByText(what).first()).toBeVisible(); // the Money page updated by itself, no reload
+  await page.getByTestId("roadie-undo").click();
+  await expect(page.getByTestId("roadie-undone")).toBeVisible();
+  await expect(page.locator("main").getByText(what)).toHaveCount(0);
+});
+
+test("'show me' a seeded show opens it", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "show me Dairy Arts Center");
+  await expect(page).toHaveURL(/\/shows\/[\w-]+$/);
+  await expect(page.getByTestId("roadie-action")).toHaveText("→ Opened Show");
+  await expect(page.getByTestId("show-page")).toContainText("Dairy Arts Center");
+  // a name that isn't in the book goes nowhere
+  const url = page.url();
+  await ask(page, "show me Narnia Ballroom");
+  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("can't do that");
+  expect(page.url()).toBe(url);
+});
+
+test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  // a show of its own, so the seeded ones stay as they are
+  await page.goto("/shows/new");
+  await page.getByTestId("show-venue").selectOption({ label: "Swallow Hill Music · Denver" });
+  await page.getByTestId("show-date").fill("2028-03-05");
+  await page.getByTestId("show-loadIn").fill("17:00");
+  await page.getByTestId("show-set").fill("20:00");
+  await page.getByTestId("billed-as").selectOption("full-band");
+  await page.getByTestId("show-calendar").uncheck();
+  await page.getByTestId("show-save").click();
+  await expect(page.getByTestId("show-page")).toBeVisible();
+  const status = page.getByTestId("show-status");
+  await expect(status).not.toHaveText("Canceled");
+
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "cancel the show");
+  const card = page.getByTestId("roadie-confirm").last();
+  await expect(card).toContainText("Cancel the show");
+  await expect(card).toContainText("Swallow Hill Music");
+  await expect(card).toHaveAttribute("data-status", "pending");
+  await expect(status).not.toHaveText("Canceled"); // asking first: nothing happened yet
+  await card.getByTestId("roadie-confirm-cancel").click();
+  await expect(card).toHaveAttribute("data-status", "canceled");
+  await expect(status).not.toHaveText("Canceled");
+
+  await ask(page, "cancel the show");
+  const second = page.getByTestId("roadie-confirm").last();
+  await expect(second).toHaveAttribute("data-status", "pending");
+  await second.getByTestId("roadie-confirm-yes").click();
+  await expect(second).toHaveAttribute("data-status", "done");
+  await expect(status).toHaveText("Canceled");
+  await expect(page.getByTestId("roadie-readback").last()).toContainText("Canceled the show");
+});
+
+test("'invite Mae' is refused with no tool call", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "invite Mae");
+  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("can't do that");
+  await expect(page.getByTestId("roadie-action")).toHaveCount(0);
+  await expect(page.getByTestId("roadie-readback")).toHaveCount(0);
+  await expect(page.getByTestId("roadie-confirm")).toHaveCount(0);
+});

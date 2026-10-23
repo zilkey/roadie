@@ -37,7 +37,7 @@ function VenuePage() {
       </div>
       {edit && (
         <EntityForm testid="venue-edit" fields={venueForm.fields} initial={venueForm.initial(v)} build={venueForm.build}
-          autosave={{ command: "venues.update", id, rev: v.rev }} />
+          autosave={{ command: "venues.update", id, rev: v.rev, title: v.name }} />
       )}
       {!edit && (v.notes || v.loadInNotes || v.website) && (
         <div className="card">

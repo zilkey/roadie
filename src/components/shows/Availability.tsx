@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";
@@ -37,9 +38,9 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
 }) {
   const { call, error, busy } = useCommand();
   // The ask is an action (it emails people): the button stays, its inputs are a draft per show/pitch.
-  const ctxKey = showId ? `show:${showId}` : `pitch:${pitchId}`;
-  const draft = useDraft("availabilityAsk", ctxKey, { date, picked: defaultIds, msg: null as string | null }, { title: () => `Ask who's free · ${place}` });
-  const hasDraft = useHasDraft("availabilityAsk", ctxKey);
+  const askPath = showId ? draftPath.newUnder("shows", showId, "availability") : draftPath.newUnder("pitches", pitchId!, "availability");
+  const draft = useDraft(askPath, { date, picked: defaultIds, msg: null as string | null }, { title: () => `Ask who's free · ${place}` });
+  const hasDraft = useHasDraft(askPath);
   const [explicit, setOpen] = useState<boolean | null>(null);
   const open = explicit ?? hasDraft;
   const mutationId = useRef(newMutationId());

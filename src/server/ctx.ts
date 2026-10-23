@@ -15,6 +15,10 @@ export interface Ctx {
   autosave?: boolean;
   /** Set by dispatch: the `rev` the caller last saw of document `id`. Writer.update refuses to overwrite fields changed since. */
   baseRev?: { id: string; rev: number };
+  /** Which assistant session made the call (Roadie: the thread id). The history entry records it. */
+  sessionId?: string;
+  /** Which assistant made the call, and the model if known (Roadie: {name: "Roadie", model}). */
+  client?: { name: string; model?: string };
   /** Filled by Writer: doc id -> rev after this call's writes. Dispatch returns it so clients can track revs. */
   touched?: Record<string, number>;
 }

@@ -1,13 +1,14 @@
 /**
  * The ONLY write path. Every write goes through run()/create/update/softDelete/restore/merge:
- * validates with the collection's Zod schema, stamps common fields, writes a `history` doc with a
- * diff + runId, enforces matchKey dedupe, and runs denormalization hooks. One call to run() is one
- * Firestore transaction (reads first, buffered writes applied at the end).
+ * validates with the collection's Zod schema, stamps common fields, writes a history entry (only the changed fields,
+ * with the runId) at `{docPath}/history/{rev}` in the same transaction, enforces matchKey dedupe, and runs
+ * denormalization hooks. One call to run() is one Firestore transaction (reads first, buffered writes applied at the end).
  */
 import { Timestamp, type DocumentData, type Query, type Transaction } from "firebase-admin/firestore";
 import { firestore } from "./admin";
 import { AppError, invalid } from "./errors";
 import type { Ctx } from "./ctx";
+import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
 
@@ -40,16 +41,98 @@ const same = (a: unknown, b: unknown) => {
   return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 };
 
-export type Diff = Record<string, { before: unknown; after: unknown }>;
+export type Diff = Record<string, FieldDiff>;
+type Plain = { before: unknown; after: unknown };
+type ListDiff = Extract<FieldDiff, { byId: unknown }>;
+export const isListDiff = (d: FieldDiff): d is ListDiff => "byId" in d;
+
+/** History entries are named by the zero-padded rev of the change, so they sort by id and never collide. */
+export const revId = (rev: number) => String(rev).padStart(6, "0");
+/** Path of the history subcollection under a document. */
+export const historyPath = (path: string, id: string) => `${path}/${id}/history`;
+
+/** itemId -> item, when `v` is an array of plain objects that all carry a unique string `id`. Otherwise null (diff the whole field). */
+export function itemsById(v: unknown): Map<string, Record<string, unknown>> | null {
+  if (!Array.isArray(v)) return null;
+  const m = new Map<string, Record<string, unknown>>();
+  for (const x of v) {
+    if (!isPlain(x) || typeof x.id !== "string" || m.has(x.id)) return null;
+    m.set(x.id, x);
+  }
+  return m;
+}
+
+function diffField(b: unknown, a: unknown): FieldDiff {
+  const bm = itemsById(b), am = itemsById(a);
+  if (!bm || !am || (!bm.size && !am.size)) return { before: b ?? null, after: a ?? null };
+  const byId: ListDiff["byId"] = {};
+  let i = 0;
+  for (const [k, v] of bm) {
+    const n = am.get(k);
+    if (!n) byId[k] = { before: v, after: null, at: i };
+    else if (!same(v, n)) byId[k] = { before: v, after: n };
+    i++;
+  }
+  for (const [k, n] of am) if (!bm.has(k)) byId[k] = { before: null, after: n };
+  const bo = [...bm.keys()], ao = [...am.keys()];
+  const moved = JSON.stringify(bo.filter((k) => am.has(k))) !== JSON.stringify(ao.filter((k) => bm.has(k)));
+  return { byId, ...(moved ? { order: { before: bo, after: ao } } : {}) };
+}
+
 export function diffDocs(before: DocumentData | null, after: DocumentData | null): Diff {
   const d: Diff = {};
   const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
   for (const k of keys) {
     if (STAMP.has(k)) continue;
     const b = before?.[k], a = after?.[k];
-    if (!same(b, a)) d[k] = { before: b ?? null, after: a ?? null };
+    if (!same(b, a)) d[k] = diffField(b, a);
   }
   return d;
+}
+
+/**
+ * Fold a newer diff of one field into an older one: keeps the first `before`, takes the last `after`.
+ * null = ends where it started (drop the field); undefined = shapes that cannot be folded.
+ */
+function foldField(o: FieldDiff, n: FieldDiff): FieldDiff | null | undefined {
+  if (!isListDiff(o) && !isListDiff(n)) return same(o.before, (n as Plain).after) ? null : { before: o.before, after: (n as Plain).after };
+  if (!isListDiff(o) || !isListDiff(n) || o.order || n.order) return undefined;
+  const byId = { ...o.byId };
+  for (const [id, c] of Object.entries(n.byId)) {
+    const p = byId[id];
+    if (!p) { byId[id] = c; continue; }
+    if (same(p.before, c.after)) delete byId[id];
+    else {
+      const at = p.at ?? c.at;
+      byId[id] = { before: p.before, after: c.after, ...(c.after === null && at !== undefined ? { at } : {}) };
+    }
+  }
+  return Object.keys(byId).length ? { byId } : null;
+}
+
+/** Undo one field's list diff against the list as it is now. Items edited again since are left alone and named in `skipped` ("field.itemId"). */
+function revertList(field: string, current: unknown, d: ListDiff): { next: Record<string, unknown>[]; skipped: string[] } | null {
+  const cm = itemsById(current);
+  if (!cm) return null;
+  const items = [...cm.values()];
+  const skipped: string[] = [];
+  for (const [iid, c] of Object.entries(d.byId)) {
+    const idx = items.findIndex((x) => x.id === iid);
+    if (!same(idx >= 0 ? items[idx] : null, c.after)) { skipped.push(`${field}.${iid}`); continue; }
+    if (c.before === null || c.before === undefined) { if (idx >= 0) items.splice(idx, 1); }
+    else if (idx >= 0) items[idx] = c.before as Record<string, unknown>;
+    else items.splice(Math.min(c.at ?? items.length, items.length), 0, c.before as Record<string, unknown>);
+  }
+  if (d.order) {
+    const have = new Set(items.map((x) => x.id as string)), after = d.order.after;
+    const now = items.map((x) => x.id as string).filter((k) => after.includes(k));
+    if (JSON.stringify(now) !== JSON.stringify(after.filter((k) => have.has(k)))) skipped.push(`${field}.order`);
+    else {
+      const rank = new Map(d.order.before.map((k, i) => [k, i]));
+      items.sort((x, y) => (rank.get(x.id as string) ?? Infinity) - (rank.get(y.id as string) ?? Infinity));
+    }
+  }
+  return { next: items, skipped };
 }
 
 const isEmpty = (v: unknown) => v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
@@ -149,9 +232,14 @@ export class Writer {
     };
   }
 
+  private actor() {
+    const c = this.ctx;
+    return { uid: c.uid, via: c.via, ...(c.sessionId ? { sessionId: c.sessionId } : {}), ...(c.client ? { client: c.client } : {}) };
+  }
+
   private commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
     const ref = this.fs.collection(path).doc(id);
-    const hist = this.fs.collection("history").doc();
+    const hist = ref.collection("history").doc(revId(doc.rev as number));
     const seq = this.seq++;
     this.overlay.set(`${path}/${id}`, doc);
     (this.ctx.touched ??= {})[id] = doc.rev as number;
@@ -160,65 +248,72 @@ export class Writer {
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
-        entity: { kind: path, id }, op, diff, seq, actor: { uid: this.ctx.uid, via: this.ctx.via }, docRev: doc.rev,
+        entity: { kind: path, id }, op, diff, seq, actor: this.actor(), docRev: doc.rev,
         ...(autosave ? { autosave: true } : {}),
       });
     });
   }
 
-  /** Newest history entries of one document (highest docRev first). Entries from before `rev` existed are not returned. */
-  private async recentHistory(path: string, id: string): Promise<Doc[]> {
-    const rows = await this.query("history", (q) => q.where("entity.id", "==", id).orderBy("docRev", "desc").limit(25));
-    return rows.filter((h) => h.entity?.kind === path);
+  /** History entries of one document newer than `rev` (newest first): a range read on its own subcollection. */
+  private async historyAfter(path: string, id: string, rev: number): Promise<Doc[]> {
+    return this.query(historyPath(path, id), (q) => q.where("docRev", ">", rev).orderBy("docRev", "desc").limit(25));
   }
 
   /** Field-level conflict: refuse to overwrite a field someone changed after the `rev` the caller saw. */
-  private async checkConflict(path: string, id: string, baseRev: number, fields: string[], recent: Doc[]) {
-    const newer = recent.filter((h) => (h.docRev as number) > baseRev);
+  private async checkConflict(path: string, id: string, baseRev: number, fields: string[]) {
+    const newer = await this.historyAfter(path, id, baseRev);
+    const cur = await this.get(path, id);
     const hits: { field: string; value: unknown; by: string; byUid: string; rev: number }[] = [];
     for (const f of fields) {
-      const h = newer.find((e) => (e.diff as Diff)[f]); // recent is newest first
-      if (h) hits.push({ field: f, value: (h.diff as Diff)[f].after, by: h.actor.uid, byUid: h.actor.uid, rev: h.docRev });
+      const h = newer.find((e) => (e.diff as Diff)[f]); // newest first
+      if (!h) continue;
+      const d = (h.diff as Diff)[f];
+      hits.push({ field: f, value: isListDiff(d) ? cur?.[f] ?? null : d.after, by: h.actor.uid, byUid: h.actor.uid, rev: h.docRev });
     }
     if (!hits.length) return;
     for (const h of hits) h.by = ((await this.get("users", h.byUid))?.name as string | undefined) ?? "Someone";
-    const cur = ((await this.get(path, id))?.rev as number | undefined) ?? 0;
     const shown = (v: unknown) => (v === null || v === undefined || v === "" ? "empty" : typeof v === "string" ? `"${v}"` : JSON.stringify(v));
-    throw new AppError("conflict", `${hits[0].by} changed ${hits[0].field} to ${shown(hits[0].value)}`, 409, undefined, { conflicts: hits, currentRev: cur });
+    const list = Array.isArray(hits[0].value);
+    throw new AppError("conflict", list ? `${hits[0].by} changed ${hits[0].field}` : `${hits[0].by} changed ${hits[0].field} to ${shown(hits[0].value)}`, 409, undefined, { conflicts: hits, currentRev: (cur?.rev as number | undefined) ?? 0 });
   }
 
   /**
-   * Autosave coalescing. An update with ctx.autosave folds into the document's newest history entry when that entry is
-   * (a) an autosave update by the same person from the app, (b) the last thing that happened to the doc (its docRev is the
-   * doc's current rev), (c) at most COALESCE_MS old, and (d) already covers every field this patch changes.
+   * Autosave coalescing. An update with ctx.autosave folds into the document's newest history entry, which is simply
+   * `{docPath}/history/{current rev}` (one direct read), when that entry is (a) an autosave update by the same person
+   * from the app, (b) at most COALESCE_MS old, and (c) already covers every field this patch changes.
    * The entry keeps its first `before`, takes the new `after`, keeps its runId (the doc and the response use that runId
-   * too), so undo of that one run puts the field back to what it was before the burst of typing. Edits to a field the
-   * entry doesn't cover start a new entry (a new decision, its own runId, its own Undo).
+   * too), so undo of that one run puts the field back to what it was before the burst of typing. The entry moves to the
+   * new rev's id so it stays the newest. Edits to a field the entry doesn't cover start a new entry (a new decision,
+   * its own runId, its own Undo).
    */
-  private foldTarget(path: string, existing: Doc, diff: Diff, recent: Doc[]): Doc | null {
-    if (!this.ctx.autosave || this.ctx.via !== "app") return null;
-    const last = recent[0];
+  private async foldTarget(path: string, existing: Doc, diff: Diff): Promise<{ last: Doc; merged: Diff } | null> {
+    if (!this.ctx.autosave || this.ctx.via !== "app" || typeof existing.rev !== "number") return null;
+    const last = await this.get(historyPath(path, existing.id), revId(existing.rev));
     if (!last || last.op !== "update" || !last.autosave || last.actor?.uid !== this.ctx.uid || last.entity?.kind !== path) return null;
-    if (last.docRev !== ((existing.rev as number | undefined) ?? 0)) return null;
     const at = (last.updatedAt as Timestamp | undefined)?.toMillis() ?? 0;
     if (this.now.toMillis() - at > COALESCE_MS) return null;
     if (!Object.keys(diff).every((k) => k in (last.diff as Diff))) return null;
-    return last;
+    const merged: Diff = { ...(last.diff as Diff) };
+    for (const [k, d] of Object.entries(diff)) {
+      const m = foldField(merged[k], d);
+      if (m === undefined) return null;
+      if (m === null) delete merged[k]; else merged[k] = m;
+    }
+    return { last, merged };
   }
 
-  private commitFolded(path: string, id: string, doc: DocumentData, diff: Diff, into: Doc) {
+  private commitFolded(path: string, id: string, doc: DocumentData, into: { last: Doc; merged: Diff }) {
     const ref = this.fs.collection(path).doc(id);
-    const hist = this.fs.collection("history").doc(into.id);
-    const merged: Diff = { ...(into.diff as Diff) };
-    for (const [k, d] of Object.entries(diff)) {
-      if (same(merged[k].before, d.after)) delete merged[k]; // typed it back to where it started
-      else merged[k] = { before: merged[k].before, after: d.after };
-    }
+    const old = ref.collection("history").doc(into.last.id);
+    const hist = ref.collection("history").doc(revId(doc.rev as number));
+    const { id: _oldId, ...body } = into.last;
+    void _oldId;
     this.overlay.set(`${path}/${id}`, doc);
     (this.ctx.touched ??= {})[id] = doc.rev as number;
     this.pending.push((tx) => {
       tx.set(ref, doc);
-      tx.update(hist, { diff: merged, docRev: doc.rev, updatedAt: this.now, updatedBy: this.ctx.uid });
+      tx.delete(old);
+      tx.set(hist, { ...body, id: hist.id, diff: into.merged, docRev: doc.rev, updatedAt: this.now, updatedBy: this.ctx.uid });
     });
   }
 
@@ -284,14 +379,12 @@ export class Writer {
     const diff = diffDocs(existing, next);
     if (!Object.keys(diff).length) return { id, changed: false };
     const br = this.ctx.baseRev;
-    const watch = br?.id === id || this.ctx.autosave;
-    const recent = watch ? await this.recentHistory(path, id) : [];
-    if (br?.id === id) await this.checkConflict(path, id, br.rev, Object.keys(diff), recent);
-    const fold = this.foldTarget(path, existing, diff, recent);
+    if (br?.id === id) await this.checkConflict(path, id, br.rev, Object.keys(diff));
+    const fold = await this.foldTarget(path, existing, diff);
     if (fold) {
-      this.coalescedRunId = fold.runId as string;
+      this.coalescedRunId = fold.last.runId as string;
       next = { ...next, runId: this.coalescedRunId };
-      this.commitFolded(path, id, next, diff, fold);
+      this.commitFolded(path, id, next, fold);
     } else this.commit(path, id, next, "update", diff, !!this.ctx.autosave && this.ctx.via === "app");
     await this.afterChange(path, existing, next);
     return { id, changed: true };
@@ -344,6 +437,13 @@ export class Writer {
     const skipped: string[] = [];
     for (const [k, v] of Object.entries(diff)) {
       if (COMMON.has(k) || computed.has(k)) continue;
+      if (isListDiff(v)) {
+        const r = revertList(k, existing[k], v);
+        if (!r) { skipped.push(k); continue; } // no longer a list of id-keyed items: leave it alone
+        skipped.push(...r.skipped);
+        merged[k] = r.next;
+        continue;
+      }
       if (!same(existing[k], v.after)) { skipped.push(k); continue; } // changed again since: leave the newer value alone
       if (v.before === null || v.before === undefined) delete merged[k]; else merged[k] = v.before;
     }
@@ -407,5 +507,15 @@ export const db = {
   async list(path: string, build?: (q: Query) => Query): Promise<Doc[]> {
     const s = await (build ? build(firestore().collection(path)) : firestore().collection(path)).get();
     return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => !d.deletedAt);
+  },
+  /** Collection-group query (every collection with this name, at any depth). Rows carry their full `path`. */
+  async listGroup(group: string, build?: (q: Query) => Query): Promise<(Doc & { path: string })[]> {
+    const g = firestore().collectionGroup(group);
+    const s = await (build ? build(g) : g).get();
+    return s.docs.map((d) => ({ ...d.data(), id: d.id, path: d.ref.path }) as Doc & { path: string }).filter((d) => !d.deletedAt);
+  },
+  /** History entries of one record, newest first (a direct read of its subcollection). */
+  async history(path: string, id: string, limit = 50): Promise<Doc[]> {
+    return db.list(historyPath(path, id), (q) => q.orderBy("docRev", "desc").limit(limit));
   },
 };

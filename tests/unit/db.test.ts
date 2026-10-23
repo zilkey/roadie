@@ -7,7 +7,7 @@ import { resetEmulators, venue } from "./helpers";
 
 beforeEach(resetEmulators);
 const ctx = () => importCtx("tester", "run-1");
-const history = (entityId?: string) => db.list("history", (q) => q).then((h) => h.filter((x) => !entityId || x.entity.id === entityId));
+const history = (entityId?: string) => db.listGroup("history", (q) => q).then((h) => h.filter((x) => !entityId || x.entity.id === entityId));
 
 test("create stamps common fields and writes history with runId", async () => {
   const { id } = await db.create(ctx(), "venues", venue("The Hi-Dive"));

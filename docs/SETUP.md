@@ -1,6 +1,6 @@
 # Setting up Roadie
 
-How to get the app running on your machine, then live on a real Firebase project called **`roadie-production`**. Do the parts in order. Each step is either something you do (☐) or something to ask Claude Code to do (🤖).
+How to get the app running on your machine, then live on a real Firebase project called **`roadie-prod-iab`**. Do the parts in order. Each step is either something you do (☐) or something to ask Claude Code to do (🤖).
 
 The code still calls itself `band-tracker` / `demo-band-tracker`. Part 3 is the rename, and it waits until the project exists.
 
@@ -49,7 +49,7 @@ ROADIE_MODEL=gemini GEMINI_API_KEY=<your key> npm run genkit:ui
 
 ---
 
-## Part 2 · Create `roadie-production`
+## Part 2 · Create `roadie-prod-iab`
 
 ### 2.1 Put the code on GitHub
 
@@ -67,14 +67,14 @@ git push -u origin main
 
 ```sh
 npx firebase login
-npx firebase projects:create roadie-production --display-name "Roadie"
+npx firebase projects:create roadie-prod-iab --display-name "Roadie"
 ```
 
-☐ **Project IDs are global.** If `roadie-production` is taken, the command fails. Pick another ID (e.g. `roadie-production-iab`) and use it everywhere this doc says `roadie-production`.
+☐ Done: the project ID is **`roadie-prod-iab`** (display name "Roadie"). `roadie-production` was already taken by someone else.
 
 ### 2.3 Billing
 
-☐ Console → `roadie-production` → bottom-left **Upgrade** → **Blaze**. App Hosting, Vertex AI and the server's Admin SDK need it. One band's use stays inside the free quotas.
+☐ Console → `roadie-prod-iab` → bottom-left **Upgrade** → **Blaze**. App Hosting, Vertex AI and the server's Admin SDK need it. One band's use stays inside the free quotas.
 ☐ Set a budget alert: Google Cloud console → Billing → Budgets & alerts → $10/month, alerts at 50/90/100%.
 
 ### 2.4 Firestore
@@ -89,8 +89,8 @@ npx firebase projects:create roadie-production --display-name "Roadie"
 ### 2.6 Web app config
 
 ```sh
-npx firebase apps:create WEB roadie-web --project roadie-production
-npx firebase apps:sdkconfig WEB --project roadie-production
+npx firebase apps:create WEB roadie-web --project roadie-prod-iab
+npx firebase apps:sdkconfig WEB --project roadie-prod-iab
 ```
 
 ☐ Keep the printed `apiKey`, `authDomain`, `projectId` and `appId`; Part 3 needs them. They aren't secret; they end up in the browser.
@@ -103,12 +103,12 @@ npx firebase apps:sdkconfig WEB --project roadie-production
 
 ## Part 3 · Rename (🤖 ask Claude Code)
 
-Once Part 2 is done, tell Claude Code: *"The project is created as `roadie-production`; here is the web config: …. Do the rename."* That change will:
+Once Part 2 is done, tell Claude Code: *"The project is created as `roadie-prod-iab`; here is the web config: …. Do the rename."* That change will:
 
-- add `"prod": "roadie-production"` to `.firebaserc`. `default` stays `demo-band-tracker` so tests never touch the real project.
-- create `apphosting.yaml` with your web config and `GCLOUD_PROJECT=roadie-production`. Leave `NEXT_PUBLIC_USE_EMULATORS` and the `*_EMULATOR_HOST` variables out of it so production never shows the dev sign-in buttons.
-- set `GCLOUD_PROJECT: roadie-production` in `.github/workflows/backup.yml`.
-- update `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md`, `docs/MCP.md` and the README from `band-tracker` to `roadie-production`.
+- add `"prod": "roadie-prod-iab"` to `.firebaserc`. `default` stays `demo-band-tracker` so tests never touch the real project.
+- create `apphosting.yaml` with your web config and `GCLOUD_PROJECT=roadie-prod-iab`. Leave `NEXT_PUBLIC_USE_EMULATORS` and the `*_EMULATOR_HOST` variables out of it so production never shows the dev sign-in buttons.
+- set `GCLOUD_PROJECT: roadie-prod-iab` in `.github/workflows/backup.yml`.
+- update `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md`, `docs/MCP.md` and the README from `band-tracker` to `roadie-prod-iab`.
 - rename the npm package, the app title and the emulator ID (`demo-band-tracker` → `demo-roadie`) everywhere they appear, then re-run the full test suite.
 - point Roadie at Vertex AI rather than an API key in production, which is what the spec asks for. That way it runs on the same Google bill and needs no key.
 
@@ -121,33 +121,35 @@ Then commit and push.
 ### 4.1 Rules and indexes
 
 ```sh
-npx firebase deploy --only firestore --project roadie-production
+npx firebase deploy --only firestore --project roadie-prod-iab
 ```
+
+This deploys rules, indexes and TTL policies together. Then check Console → Firestore → TTL to confirm the policies are active (see `docs/BACKLOG.md`, "Before or at go-live").
 
 ### 4.2 App Hosting backend
 
 ```sh
-npx firebase apphosting:backends:create --project roadie-production
+npx firebase apphosting:backends:create --project roadie-prod-iab
 ```
 
 ☐ Answer the prompts: region `us-central1`, connect GitHub, choose the `roadie` repo, root directory `/`, live branch `main`, backend name `roadie`. It deploys on every push to `main`.
-☐ Console → App Hosting → `roadie`: note the URL (`https://roadie--roadie-production.us-central1.hosted.app` or similar).
+☐ Console → App Hosting → `roadie`: note the URL (`https://roadie--roadie-prod-iab.us-central1.hosted.app` or similar).
 ☐ Authentication → Settings → **Authorized domains** → add that hostname (and any custom domain).
 ☐ Ask Claude Code to put that URL in `apphosting.yaml` as `APP_URL`; it's the base of the "can you play?" links. Push.
 
 ### 4.3 Permissions for the server
 
-☐ Google Cloud console → IAM → find the App Hosting service account (`firebase-app-hosting-compute@roadie-production.iam.gserviceaccount.com`) → make sure it has **Cloud Datastore User**, **Firebase Authentication Admin** and **Vertex AI User**.
+☐ Google Cloud console → IAM → find the App Hosting service account (`firebase-app-hosting-compute@roadie-prod-iab.iam.gserviceaccount.com`) → make sure it has **Cloud Datastore User**, **Firebase Authentication Admin** and **Vertex AI User**.
 
 ### 4.4 The first admin
 
 The app is invite-only, so the first admin is created from your machine.
 
-☐ Console → Project settings → Service accounts → **Generate new private key**. Save it outside the repo, e.g. `~/keys/roadie-production.json`.
+☐ Console → Project settings → Service accounts → **Generate new private key**. Save it outside the repo, e.g. `~/keys/roadie-prod-iab.json`.
 ☐ In a fresh terminal where no `*_EMULATOR_HOST` variables are set:
 
 ```sh
-GCLOUD_PROJECT=roadie-production GOOGLE_APPLICATION_CREDENTIALS=~/keys/roadie-production.json \
+GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=~/keys/roadie-prod-iab.json \
   npx tsx scripts/bootstrap-admin.ts <your-google-email> "<Your Name>"
 ```
 

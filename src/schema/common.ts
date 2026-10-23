@@ -18,7 +18,7 @@ export const ts = z.custom<TimestampLike | Date>(
   "Expected a timestamp",
 );
 
-export const via = z.enum(["app", "mcp", "import"]);
+export const via = z.enum(["app", "mcp", "import", "assistant"]);
 export type Via = z.infer<typeof via>;
 
 export const source = z.strictObject({ url: z.string().url(), checkedAt: z.string(), note: z.string().optional() });

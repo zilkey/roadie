@@ -31,7 +31,7 @@ function PromoterPage() {
       </div>
       {edit && (
         <EntityForm testid="promoter-edit" fields={promoterForm.fields} initial={promoterForm.initial(p)} build={promoterForm.build}
-          autosave={{ command: "promoters.update", id, rev: p.rev }} />
+          autosave={{ command: "promoters.update", id, rev: p.rev, title: p.name }} />
       )}
       {!edit && (p.howToPitch || p.notes || p.website) && (
         <div className="card">

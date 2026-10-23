@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -24,7 +25,7 @@ function AddExpense() {
   const { call, error, busy } = useCommand();
   // A new expense is a draft with an explicit Send button (expenses can't be edited once sent).
   const fromShow = sp.get("show") ?? "";
-  const draft = useDraft("expense", fromShow ? `show:${fromShow}` : "new", { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "" },
+  const draft = useDraft(fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : draftPath.newIn("expenses"), { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "" },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
   const { amount, what, cat, showId, link } = draft.value;

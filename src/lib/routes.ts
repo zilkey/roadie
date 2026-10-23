@@ -5,8 +5,15 @@ export const ROUTES = {
   home: { title: "Home", path: "/home" },
   shows: { title: "Shows", path: "/shows" },
   show: { title: "Show", path: "/shows/:id", params: ["id"] },
+  showAfter: { title: "After the show", path: "/shows/:id/after", params: ["id"] },
   newShow: { title: "New show", path: "/shows/new" },
   booking: { title: "Booking", path: "/booking" },
+  venue: { title: "Venue", path: "/booking/venues/:id", params: ["id"] },
+  promoter: { title: "Promoter", path: "/booking/promoters/:id", params: ["id"] },
+  festival: { title: "Festival", path: "/booking/festivals/:id", params: ["id"] },
+  edition: { title: "Festival year", path: "/booking/editions/:id", params: ["id"] },
+  contact: { title: "Contact", path: "/booking/contacts/:id", params: ["id"] },
+  pitch: { title: "Pitch", path: "/booking/pitches/:id", params: ["id"] },
   bookingTemplates: { title: "Email templates", path: "/booking/templates" },
   songs: { title: "Songs", path: "/songs" },
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
@@ -21,6 +28,15 @@ export const ROUTES = {
   aiKeys: { title: "AI keys", path: "/admin/ai-keys" },
   history: { title: "History", path: "/admin/history" },
 } as const satisfies Record<string, RouteDef>;
+
+/** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
+export const RECORD_ROUTES = {
+  show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
+  pitch: "pitches", song: "songs", setlist: "setlists", rehearsal: "rehearsals", showAfter: "shows",
+} as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
+/** The page for one record of a collection (null when there is none). */
+export const routeForRecord = (kind: string): keyof typeof RECORD_ROUTES | null =>
+  (Object.entries(RECORD_ROUTES).find(([n, k]) => k === kind && n !== "showAfter")?.[0] as keyof typeof RECORD_ROUTES | undefined) ?? null;
 
 export type RouteName = keyof typeof ROUTES;
 export const routeNames = Object.keys(ROUTES) as RouteName[];

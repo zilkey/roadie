@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -139,7 +140,7 @@ function LedgerList({ rows, showName, person, onCorrect, busy }: {
 function RecordForm({ shows, musicians }: { shows: Row<Show>[]; musicians: Row<Musician>[] }) {
   const { call, error, busy } = useCommand();
   // The ledger is immutable (corrections only), so a new entry is a draft with an explicit Record button, never autosaved.
-  const draft = useDraft("ledger", "new", { kind: "expense", date: todayStr(), amount: "", category: "photo", method: "card", memo: "", showId: "", payee: "" },
+  const draft = useDraft(draftPath.newIn("ledger"), { kind: "expense", date: todayStr(), amount: "", category: "photo", method: "card", memo: "", showId: "", payee: "" },
     { route: "/money?tab=ledger", title: (v) => `Ledger entry · ${v.amount ? `$${v.amount}` : v.kind}${v.memo ? ` · ${v.memo}` : ""}` });
   const mutationId = useRef(newMutationId());
   const f = draft.value;

@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useRef } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -20,7 +21,7 @@ function Users() {
   const users = useCollection<User>("users");
   const musicians = useCollection<Musician>("musicians");
   const { call, error, busy } = useCommand();
-  const d = useDraft("user", "new", blank, { title: (v) => `New user${v.name ? ` · ${v.name}` : v.email ? ` · ${v.email}` : ""}` });
+  const d = useDraft(draftPath.newIn("users"), blank, { title: (v) => `New user${v.name ? ` · ${v.name}` : v.email ? ` · ${v.email}` : ""}` });
   const mutationId = useRef(newMutationId());
   const f = d.value;
   const setF = d.setValue;
@@ -65,7 +66,7 @@ function Users() {
 
 /** An existing user: role and AI access save the moment they change (status + Undo like any other edit). */
 function UserRow({ u, isMe, busy, call, musicianName }: { u: Row<User>; isMe: boolean; busy: boolean; call: (n: string, i: unknown) => Promise<unknown>; musicianName?: string }) {
-  const as = useAutosave({ command: "users.update", id: u.id, rev: u.rev });
+  const as = useAutosave({ command: "users.update", id: u.id, rev: u.rev, title: u.name || u.email });
   return (
     <div className="card" data-testid={`user-${u.email}`}>
       <div className="flex items-center justify-between gap-2">

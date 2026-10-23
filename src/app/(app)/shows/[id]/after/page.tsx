@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
@@ -46,7 +47,7 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   const { call, error, busy } = useCommand();
   const r = deal?.rating;
   const blank: Rating = { show: r?.show ?? 0, venue: r?.venue ?? 0, crowd: r?.crowd != null ? String(r.crowd) : "", paid: deal?.paidAttendance != null ? String(deal.paidAttendance) : "", notes: r?.notes ?? "" };
-  const draft = useDraft("afterShow", id, blank, { title: () => `How'd it go? · ${show.venue.name}` });
+  const draft = useDraft(draftPath.newUnder("shows", id, "after"), blank, { title: () => `How'd it go? · ${show.venue.name}` });
   const mutationId = useRef(newMutationId());
   const [saved, setSaved] = useState(false);
   const v = draft.value;

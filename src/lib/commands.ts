@@ -18,11 +18,13 @@ export async function runCommandFull<T = { id?: string }>(name: string, input: u
   const user = clientAuth().currentUser;
   if (!user) throw new CommandError("unauthenticated", "Not signed in", 401);
   let res: Response;
+  const body = JSON.stringify(meta && Object.keys(meta).length ? { ...(input as object), _meta: meta } : input);
   try {
     res = await fetch(`/api/commands/${encodeURIComponent(name)}`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${await user.getIdToken()}` },
-      body: JSON.stringify(meta && Object.keys(meta).length ? { ...(input as object), _meta: meta } : input),
+      body,
+      keepalive: body.length < 60_000, // a request already on its way survives the tab closing (browsers cap keepalive bodies at 64KB)
     });
   } catch {
     throw new CommandError("offline", "You're offline", 0);

@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useEffect, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -22,7 +23,7 @@ function Templates() {
   const { rows } = useCollection<EmailTemplate>("emailTemplates");
   const { call, error } = useCommand();
   const [editing, setEditing] = useState<string | null>(null);
-  const hasDraft = useHasDraft("template", "new");
+  const hasDraft = useHasDraft(draftPath.newIn("emailTemplates"));
   const [explicit, setAdding] = useState<boolean | null>(null);
   const adding = explicit ?? hasDraft; // an unfinished template opens the form
   const sorted = [...(rows ?? [])].sort((a, b) => a.name.localeCompare(b.name));
@@ -74,7 +75,7 @@ function Kinds({ value, onChange }: { value: T["targetKinds"]; onChange(v: T["ta
 
 /** An existing template: each field saves on its own. */
 function TemplateEditor({ t, onDone }: { t: Row<EmailTemplate>; onDone(): void }) {
-  const as = useAutosave({ command: "emailTemplates.update", id: t.id, rev: t.rev });
+  const as = useAutosave({ command: "emailTemplates.update", id: t.id, rev: t.rev, title: t.name });
   const [name, setName] = useState<string | null>(null); // a name being typed (it may not be saved while empty)
   useEffect(() => { if (name !== null && name === t.name) setName(null); }, [t.name, name]);
   const keep = (s: string) => s;
@@ -93,7 +94,7 @@ function TemplateEditor({ t, onDone }: { t: Row<EmailTemplate>; onDone(): void }
 /** A new template is a draft until Add. */
 function NewTemplate({ onDone }: { onDone(): void }) {
   const { call, busy } = useCommand();
-  const d = useDraft<T>("template", "new", blank, { title: (v) => `New template${v.name ? ` · ${v.name}` : ""}` });
+  const d = useDraft<T>(draftPath.newIn("emailTemplates"), blank, { title: (v) => `New template${v.name ? ` · ${v.name}` : ""}` });
   const mutationId = useRef(newMutationId());
   if (!d.ready) return <div className="card s">Loading…</div>;
   const v = d.value;

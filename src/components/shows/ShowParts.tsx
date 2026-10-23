@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { fmtInstant } from "@/lib/timezone";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -24,7 +25,7 @@ export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; m
   const inst = useInstantSave();
   const busy = inst.status === "saving";
   // The "add an item" box is a draft (kept on this device and the server until the item is added).
-  const add = useDraft("checklistItem", show.id, { label: "" }, { title: (v) => `New checklist item · ${v.label || show.venue.name}` });
+  const add = useDraft(draftPath.newUnder("shows", show.id, "checklist"), { label: "" }, { title: (v) => `New checklist item · ${v.label || show.venue.name}` });
   const list = show.checklist as ChecklistItem[];
   const save = (next: unknown[]) => inst.save("shows.setChecklist", { id: show.id, checklist: next }, "checklist");
   const patch = (id: string, p: Partial<ChecklistItem>) => save(list.map((c) => (c.id === id ? { ...c, ...p } : c)));
@@ -78,7 +79,7 @@ export function GearPanel({ show, musicians, editable }: { show: ShowRow; musici
   const { call, error: callError, busy: callBusy } = useCommand();
   const inst = useInstantSave();
   const busy = callBusy || inst.status === "saving";
-  const add = useDraft("gearItem", show.id, { label: "", owner: "" }, { title: (v) => `New gear · ${v.label || show.venue.name}` });
+  const add = useDraft(draftPath.newUnder("shows", show.id, "gear"), { label: "", owner: "" }, { title: (v) => `New gear · ${v.label || show.venue.name}` });
   const pack = (itemId: string, packed: boolean) => inst.save("shows.packGear", { id: show.id, itemId, packed }, "gear");
   const save = (gear: unknown[]) => inst.save("shows.setGear", { id: show.id, gear }, "gear");
   async function addGear(e: React.FormEvent) {
@@ -155,7 +156,7 @@ export function SetlistPanel({ show, setlists, editable }: { show: ShowRow; setl
 export function DocsPanel({ show, editable }: { show: ShowRow; editable: boolean }) {
   const inst = useInstantSave();
   const busy = inst.status === "saving";
-  const add = useDraft("showDoc", show.id, { title: "", url: "" }, { title: (v) => `New doc · ${v.title || show.venue.name}` });
+  const add = useDraft(draftPath.newUnder("shows", show.id, "docs"), { title: "", url: "" }, { title: (v) => `New doc · ${v.title || show.venue.name}` });
   const saveDocs = (docs: unknown[]) => inst.save("shows.update", { id: show.id, patch: { docs } }, "docs");
   async function addDoc(e: React.FormEvent) {
     e.preventDefault();

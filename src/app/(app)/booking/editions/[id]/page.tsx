@@ -32,7 +32,7 @@ function EditionPage() {
       </div>
       {edit ? (
         <EntityForm testid="edition-edit" fields={editionForm.fields} initial={editionForm.initial(e)} build={editionForm.build}
-          autosave={{ command: "editions.update", id, rev: e.rev }} />
+          autosave={{ command: "editions.update", id, rev: e.rev, title: `${e.festivalName} ${e.label}` }} />
       ) : (
         <div className="card" data-testid="edition-facts">
           {e.appOpens && <span>Applications open <b>{fmtDate(e.appOpens.date)}</b>{sure(e.appOpens.sure)}</span>}

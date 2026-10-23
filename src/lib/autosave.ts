@@ -1,7 +1,11 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommandError, newMutationId, runCommandFull } from "./commands";
 import { toast, UNDO_MS } from "@/components/Toasts";
+import { useProfile } from "./auth";
+import { DraftChannel, openDraft } from "./draftSync";
+import { useChannelLifecycle } from "./drafts";
+import { draftPath } from "@/schema/drafts";
 
 export type SaveState = "idle" | "saving" | "saved" | "offline" | "error" | "conflict";
 export const AUTOSAVE_MS = 800;
@@ -20,9 +24,16 @@ const emptyToNull = (s: string) => (s.trim() === "" ? null : s);
  * retry after a lost response is applied once), baseRev (a field someone else changed meanwhile comes back as a
  * conflict instead of being overwritten) and autosave:true (the server folds bursts into one history entry).
  * After each save a toast with Undo (10s) is shown. Offline: the patch is kept and retried.
+ * Unsent patches are also kept as an unsubmitted draft at unsubmittedDrafts/{uid}__{collection}~{id} (last write wins, see
+ * src/lib/draftSync.ts), so a closed tab doesn't lose them. When the record is opened again they are restored (`onRestore`,
+ * `bind` fields) and sent through this same autosave at once; once every patch is saved the draft is cleared.
  */
-export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs }: {
+export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs, title, onRestore }: {
   command: string; id: string; rev?: number; delay?: number;
+  /** Name of the record, for Home's "Unsaved changes to <title>". */
+  title?: string;
+  /** Called with the unsaved patch found when the record opens (already on its way to the server): show it in your form state. */
+  onRestore?(patch: Record<string, unknown>): void;
   /** Called when the person picks "Use theirs" after a conflict: reset your local form state to the server's. */
   onUseTheirs?(): void;
 }) {
@@ -38,11 +49,24 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const baseRev = useRef(rev ?? 0);
   const seenId = useRef(id);
-  const cfg = useRef({ command, id, onUseTheirs });
-  cfg.current = { command, id, onUseTheirs };
+  const cfg = useRef({ command, id, onUseTheirs, onRestore, title });
+  cfg.current = { command, id, onUseTheirs, onRestore, title };
+  const { uid } = useProfile();
+  const path = id ? draftPath.edit(command.split(".")[0], id) : "";
+  const ch = useMemo(() => (path ? new DraftChannel(uid, path) : null), [uid, path]);
+  const chRef = useRef(ch); chRef.current = ch;
+  useChannelLifecycle(ch);
+  // Every patch not yet saved, and the rev it was made against: what the draft holds.
+  const unsaved = useRef<Record<string, unknown>>({});
+  const unsavedRev = useRef(0);
+  const persist = useCallback(() => {
+    const c = chRef.current; if (!c) return;
+    if (Object.keys(unsaved.current).length) c.set({ values: unsaved.current, title: cfg.current.title ?? "", route: window.location.pathname + window.location.search, rev: unsavedRev.current });
+    else void c.clear();
+  }, []);
 
   useEffect(() => {
-    if (seenId.current !== id) { seenId.current = id; baseRev.current = 0; pending.current = {}; retry.current = null; held.current = null; }
+    if (seenId.current !== id) { seenId.current = id; baseRev.current = 0; pending.current = {}; unsaved.current = {}; retry.current = null; held.current = null; }
     baseRev.current = Math.max(baseRev.current, rev ?? 0);
   }, [id, rev]);
 
@@ -62,6 +86,9 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
         try {
           const out = await runCommandFull(cmd, { id: rid, patch: job.patch }, { clientMutationId: job.mutationId, baseRev: baseRev.current, autosave: true });
           if (out.revs[rid]) baseRev.current = Math.max(baseRev.current, out.revs[rid]);
+          for (const k of Object.keys(job.patch)) if (JSON.stringify(unsaved.current[k]) === JSON.stringify(job.patch[k])) delete unsaved.current[k];
+          unsavedRev.current = baseRev.current;
+          persist(); // nothing left unsaved: clears the draft
           if (Object.keys(out.revs).length) {
             toast({ key: `${cmd}:${rid}:${out.runId}`, text: `Saved ${Object.keys(job.patch).join(", ")}`, undoRunId: out.runId, ms: UNDO_MS });
           }
@@ -83,7 +110,7 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
         }
       }
     } finally { running.current = false; }
-  }, []);
+  }, [persist]);
 
   const flush = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -94,10 +121,13 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
   const patch = useCallback((p: Record<string, unknown>, o: { now?: boolean } = {}) => {
     if (!Object.keys(p).length) return;
     pending.current = { ...pending.current, ...p };
+    if (!Object.keys(unsaved.current).length) unsavedRev.current = baseRev.current;
+    unsaved.current = { ...unsaved.current, ...p };
+    persist();
     setStatus((s) => (s === "conflict" ? s : "saving"));
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => { timer.current = null; void drain(); }, o.now ? 0 : delay);
-  }, [delay, drain]);
+  }, [delay, drain, persist]);
 
   // Don't lose a pending edit when leaving the page or coming back online.
   useEffect(() => {
@@ -106,6 +136,27 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
     window.addEventListener("pagehide", out); window.addEventListener("online", out); document.addEventListener("visibilitychange", vis);
     return () => { window.removeEventListener("pagehide", out); window.removeEventListener("online", out); document.removeEventListener("visibilitychange", vis); void flush(); };
   }, [flush]);
+
+  // Unsent edits from an earlier visit (closed tab, other machine): show them and send them now, against the rev they were made on.
+  const [restored, setRestored] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (!ch) return;
+    let live = true;
+    void openDraft(uid, path).then((d) => {
+      if (!live || !d || !Object.keys(d.values).length) return;
+      ch.adopt();
+      if (!Object.keys(unsaved.current).length) { if (d.rev !== undefined) baseRev.current = d.rev; unsavedRev.current = baseRev.current; }
+      pending.current = { ...d.values, ...pending.current };
+      unsaved.current = { ...d.values, ...unsaved.current };
+      setEdits((e) => ({ ...Object.fromEntries(Object.entries(d.values).filter(([, v]) => typeof v === "string" || v === null).map(([k, v]) => [k, (v as string | null) ?? ""])), ...e }));
+      setRestored(d.values);
+      setStatus("saving");
+      persist();
+      cfg.current.onRestore?.(d.values);
+      void drain();
+    });
+    return () => { live = false; };
+  }, [ch, uid, path, drain, persist]);
 
   // Local text edits stay on screen until the live document has caught up with what we saved (or an Undo changed it).
   useEffect(() => {
@@ -132,11 +183,11 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
     if (j) { retry.current = j; void drain(); }
   };
   const acceptTheirs = () => {
-    held.current = null; pending.current = {}; setConflict(null); setEdits({}); setStatus("saved"); cfg.current.onUseTheirs?.();
+    held.current = null; pending.current = {}; unsaved.current = {}; persist(); setConflict(null); setEdits({}); setStatus("saved"); cfg.current.onUseTheirs?.();
   };
 
   return {
-    status, error, conflict, patch, hold, flush, bind, isBusy,
+    status, error, conflict, restored, patch, hold, flush, bind, isBusy,
     /** Spread onto <SaveStatus />. */
     statusProps: { status, error, conflict, onKeepMine: keepMine, onUseTheirs: acceptTheirs },
   };

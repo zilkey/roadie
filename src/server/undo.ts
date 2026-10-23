@@ -36,8 +36,9 @@ const byTime = (a: Doc, b: Doc) => {
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
 };
 
+/** Every history entry of a run, oldest first: a collection-group query over all the `history` subcollections. */
 export async function historyOfRun(runId: string): Promise<Doc[]> {
-  return (await db.list("history", (q) => q.where("runId", "==", runId))).sort(byTime);
+  return (await db.listGroup("history", (q) => q.where("runId", "==", runId))).sort(byTime);
 }
 
 function place(report: UndoReport, item: UndoItem, changed: boolean, skipped?: string[]) {
@@ -93,9 +94,12 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
   return report;
 }
 
-/** Recent runs by one actor, newest first: {runId, via, at, changes, entities}. */
+/** How many of an actor's newest history entries runsOf looks at. */
+const RUNS_WINDOW = 500;
+
+/** Recent runs by one actor, newest first: {runId, via, at, changes, entities}. Looks at their newest RUNS_WINDOW changes. */
 export async function runsOf(uid: string, limit = 20) {
-  const rows = await db.list("history", (q) => q.where("actor.uid", "==", uid));
+  const rows = await db.listGroup("history", (q) => q.where("actor.uid", "==", uid).orderBy("createdAt", "desc").limit(RUNS_WINDOW));
   const runs = new Map<string, { runId: string; via: string; at: string; changes: number; entities: Set<string> }>();
   for (const r of rows.sort(byTime)) {
     const cur = runs.get(r.runId) ?? { runId: r.runId as string, via: r.actor.via as string, at: (r.createdAt as Timestamp).toDate().toISOString(), changes: 0, entities: new Set<string>() };

@@ -3,8 +3,17 @@ import Link from "next/link";
 import { useDrafts } from "@/lib/drafts";
 import type { SaveState } from "@/lib/autosave";
 
-const KIND: Record<string, string> = { show: "Show", venue: "Venue", promoter: "Promoter", festival: "Festival", edition: "Edition", contact: "Contact", song: "Song", template: "Email template", musician: "Musician", user: "User", configuration: "Configuration", pitchComment: "Pitch comment", pitchCall: "Pitch call" };
-export const kindLabel = (k: string) => KIND[k] ?? k.charAt(0).toUpperCase() + k.slice(1);
+const NOUN: Record<string, string> = {
+  shows: "Show", venues: "Venue", promoters: "Promoter", festivals: "Festival", editions: "Edition", contacts: "Contact", songs: "Song",
+  emailTemplates: "Email template", musicians: "Musician", users: "User", configurations: "Configuration", expenses: "Expense", ledger: "Ledger entry",
+  setlists: "Setlist", rehearsals: "Rehearsal", pitches: "Pitch", comments: "Pitch comment", calls: "Pitch call", checklist: "Checklist item",
+  gear: "Gear item", docs: "Show doc", after: "After-show notes", settlement: "Settlement", availability: "Availability ask", artists: "Artist", showDeals: "Deal",
+};
+/** "Expense" for `expenses` or `shows/{id}/expenses`; for an edit path (`shows/{id}`) the record's kind. */
+export function pathLabel(path: string) {
+  const parts = path.split("/"), coll = parts.length === 2 ? parts[0] : parts[parts.length - 1];
+  return NOUN[coll] ?? coll.charAt(0).toUpperCase() + coll.slice(1);
+}
 
 function when(ms: number) {
   const mins = Math.round((Date.now() - ms) / 60000);
@@ -14,7 +23,7 @@ function when(ms: number) {
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Home: the signed-in user's unfinished "new X" forms, from any machine. Renders nothing when there are none. */
+/** Home: the signed-in user's unfinished "new X" forms and unsaved edits, from any machine. Renders nothing when there are none. */
 export function UnfinishedCard() {
   const rows = useDrafts();
   if (!rows?.length) return null;
@@ -23,8 +32,8 @@ export function UnfinishedCard() {
       <span className="lbl">Unfinished</span>
       {rows.map((d) => (
         <Link key={d.id} href={d.route} className="flex items-center justify-between gap-2" data-testid={`draft-${d.id}`}>
-          <span className="font-bold">{d.title || `New ${d.kind}`}</span>
-          <span className="s">{kindLabel(d.kind)} · {when(d.updatedAt)}</span>
+          <span className="font-bold">{d.edit ? `Unsaved changes to ${d.title || pathLabel(d.path).toLowerCase()}` : d.title || `New ${pathLabel(d.path).toLowerCase()}`}</span>
+          <span className="s">{pathLabel(d.path)} · {when(d.updatedAt)}</span>
         </Link>
       ))}
     </div>

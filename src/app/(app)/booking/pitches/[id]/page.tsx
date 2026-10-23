@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -47,8 +48,8 @@ function PitchPage() {
   const livePeople = JSON.stringify(p?.personnel ?? []);
   useEffect(() => { if (!as.isBusy()) setCrew(null); }, [livePeople]); // eslint-disable-line react-hooks/exhaustive-deps
   const pitchName = p?.target.name ?? "pitch";
-  const commentDraft = useDraft("pitchComment", `pitch:${id}`, { text: "" }, { title: (v) => `Comment on ${pitchName}: ${v.text.slice(0, 40)}` });
-  const callDraft = useDraft("pitchCall", `pitch:${id}`, { text: "" }, { title: (v) => `Call log for ${pitchName}: ${v.text.slice(0, 40)}` });
+  const commentDraft = useDraft(draftPath.newUnder("pitches", id, "comments"), { text: "" }, { title: (v) => `Comment on ${pitchName}: ${v.text.slice(0, 40)}` });
+  const callDraft = useDraft(draftPath.newUnder("pitches", id, "calls"), { text: "" }, { title: (v) => `Call log for ${pitchName}: ${v.text.slice(0, 40)}` });
   const commentId = useRef(newMutationId());
   const callId = useRef(newMutationId());
   const shows = useCollection<Show>("shows").rows ?? [];

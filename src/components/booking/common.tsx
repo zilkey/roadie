@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -133,9 +134,9 @@ interface EntityFormProps {
   /** Resolves true to reset the form (create forms). `meta` has clientMutationId (+ clearDraft with `draft`): pass it to `call`. */
   onSubmit?(data: Record<string, unknown>, meta: SubmitMeta): Promise<boolean | void>;
   /** EXISTING record: no Save button; each field saves as a patch through `command` (a `<kind>.update`) on blur / after a pause. */
-  autosave?: { command: string; id: string; rev?: number };
+  autosave?: { command: string; id: string; rev?: number; /** Name of the record, for Home's "Unsaved changes to ..." */ title?: string };
   /** NEW record: values are kept as a draft (device + server) and restored on any machine. The explicit create button stays. */
-  draft?: { kind: string; contextKey?: string; title?(v: Values): string; route?: string };
+  draft?: { path: string; title?(v: Values): string; route?: string };
 }
 
 /**
@@ -204,7 +205,7 @@ function AutoEntityForm({ fields, initial, build, testid, autosave }: EntityForm
 }
 
 function DraftEntityForm({ fields, initial, build, submitLabel, onSubmit, testid, onCancel, draft }: EntityFormProps & { draft: NonNullable<EntityFormProps["draft"]> }) {
-  const d = useDraft<Values>(draft.kind, draft.contextKey ?? "new", initial, { title: draft.title, route: draft.route });
+  const d = useDraft<Values>(draft.path, initial, { title: draft.title, route: draft.route });
   const [busy, setBusy] = useState(false);
   const mutationId = useRef(newMutationId());
   if (!d.ready) return <div className="card s">Loading…</div>;
@@ -322,7 +323,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
   kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
 }) {
   const { call, error, busy } = useCommand();
-  const hasDraft = useHasDraft("contact", `${kind}:${parentId}`);
+  const hasDraft = useHasDraft(draftPath.newUnder(kind, parentId, "contacts"));
   const [explicit, setAdding] = useState<boolean | null>(null);
   const adding = explicit ?? hasDraft; // an unfinished contact opens the form
   const mine = contactIds.map((id) => contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
@@ -355,7 +356,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
       </div>
       {adding && (
         <EntityForm testid="contact-form" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build} submitLabel="Add contact"
-          draft={{ kind: "contact", contextKey: `${kind}:${parentId}`, title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }}
+          draft={{ path: draftPath.newUnder(kind, parentId, "contacts"), title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }}
           onSubmit={async (d, meta) => { const r = await call("contacts.create", { ...d, attachTo: { kind, id: parentId } }, meta); if (r) setAdding(false); return !!r; }} />
       )}
     </div>

@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -81,7 +82,7 @@ function RehFields({ value, onChange, onBlur, m, existingRan }: { value: RehForm
 function NewRehearsal({ m }: { m: Music }) {
   const router = useRouter();
   const { call, error, busy } = useCommand();
-  const draft = useDraft<RehForm>("rehearsal", "new", { date: todayStr(), place: "", notes: "", personnel: [], ran: {} }, { title: (v) => `New rehearsal · ${v.date}${v.place ? ` · ${v.place}` : ""}` });
+  const draft = useDraft<RehForm>(draftPath.newIn("rehearsals"), { date: todayStr(), place: "", notes: "", personnel: [], ran: {} }, { title: (v) => `New rehearsal · ${v.date}${v.place ? ` · ${v.place}` : ""}` });
   const [picks, setPicks] = useState<Pick[]>([]);
   const mutationId = useRef(newMutationId());
   const v = draft.value;

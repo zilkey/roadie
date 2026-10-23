@@ -8,7 +8,7 @@ import { resetEmulators, makeUser, venue } from "./helpers";
 
 beforeEach(resetEmulators);
 const as = (uid: string, via: Ctx["via"] = "mcp", runId = newRunId()): Ctx => ({ uid, role: via === "mcp" ? "mcp" : "admin", via, runId });
-const hist = (runId: string) => db.list("history", (q) => q.where("runId", "==", runId));
+const hist = (runId: string) => db.listGroup("history", (q) => q.where("runId", "==", runId));
 
 test("undo of a mixed run restores state; reversals are history under a new run; ledger is reported", async () => {
   const setup = importCtx("setup", "setup-run");

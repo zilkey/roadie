@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
@@ -19,7 +20,7 @@ function FestivalPage() {
   const b = useBooking();
   const { call, error } = useCommand();
   const [edit, setEdit] = useState(false);
-  const hasEdDraft = useHasDraft("edition", `festival:${id}`);
+  const hasEdDraft = useHasDraft(draftPath.newUnder("festivals", id, "editions"));
   const [addEdX, setAddEd] = useState<boolean | null>(null);
   const addEd = addEdX ?? hasEdDraft; // an unfinished year opens the form
   const nf = useNotFound(loading, f, "festival");
@@ -35,7 +36,7 @@ function FestivalPage() {
       </div>
       {edit && (
         <EntityForm testid="festival-edit" fields={festivalForm.fields} initial={festivalForm.initial(f)} build={festivalForm.build}
-          autosave={{ command: "festivals.update", id, rev: f.rev }} />
+          autosave={{ command: "festivals.update", id, rev: f.rev, title: f.name }} />
       )}
       {!edit && (f.website || f.notes) && <div className="card">{f.website && <a className="underline" href={f.website} target="_blank" rel="noreferrer">{f.website}</a>}{f.notes && <span className="s">{f.notes}</span>}</div>}
       <span className="lbl">Years</span>
@@ -52,7 +53,7 @@ function FestivalPage() {
       <button className="btn ghost sm justify-self-start" onClick={() => setAddEd(!addEd)} data-testid="add-edition">{addEd ? "Close" : "+ Add a year"}</button>
       {addEd && (
         <EntityForm testid="new-edition" fields={editionForm.fields} initial={editionForm.blank} build={editionForm.build} submitLabel="Add year"
-          draft={{ kind: "edition", contextKey: `festival:${id}`, title: (v) => `New year · ${f.name} ${v.label ?? ""}`.trim() }}
+          draft={{ path: draftPath.newUnder("festivals", id, "editions"), title: (v) => `New year · ${f.name} ${v.label ?? ""}`.trim() }}
           onSubmit={async (d, meta) => { const r = await call("editions.create", { ...d, festivalId: id }, meta); if (r) setAddEd(false); return !!r; }} />
       )}
       <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} />

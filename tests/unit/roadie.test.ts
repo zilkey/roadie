@@ -1,7 +1,10 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { handleChat } from "@/server/assistant/chat";
-import { getChatFlow, runNavigate } from "@/server/assistant/flow";
+import { getChatFlow } from "@/server/assistant/flow";
+import { execTool } from "@/server/assistant/tools";
+import { ensureThread, newMessageId, newThreadId } from "@/server/assistant/threads";
+import { newRunId } from "@/server/ctx";
 import { modelMode } from "@/server/assistant/ai";
 import { script, OFF_TOPIC, CANT_DO } from "@/server/assistant/script";
 import { resolveRoute, routeForPath } from "@/lib/routes";
@@ -14,9 +17,16 @@ import { resetEmulators, makeUser } from "./helpers";
 beforeEach(resetEmulators);
 const ctx = { route: "home" };
 
+let n = 0;
+async function session() {
+  const admin = await makeUser(`s${++n}@example.com`, "admin", { name: "Jeff" });
+  const threadId = newThreadId();
+  await ensureThread({ uid: admin.uid, threadId, pageContext: ctx, at: new Date() });
+  return { uid: admin.uid, role: "admin" as const, name: "Jeff", threadId, runId: newRunId(), replyId: newMessageId() };
+}
 async function run(message: string) {
   const flow = await getChatFlow();
-  const { stream, output } = flow.stream({ message, history: [], pageContext: ctx });
+  const { stream, output } = flow.stream({ message, history: [], pageContext: ctx, session: await session() });
   const events: AssistantEvent[] = [];
   for await (const e of stream as AsyncIterable<AssistantEvent>) events.push(e);
   return { events, out: (await output) as { text: string; actions: { kind: string; label: string; route?: string }[] } };
@@ -39,8 +49,8 @@ test("script: greeting, off-topic, can't-do, navigation", () => {
   assert.match(script({ text: "hi" }).text!, /Roadie/);
   assert.equal(script({ text: "what's the weather" }).text, OFF_TOPIC);
   assert.equal(script({ text: "delete the Top Hat show" }).text, CANT_DO);
-  assert.deepEqual((script({ text: "show me the shows" }) as { navigate: unknown }).navigate, { route: "shows" });
-  assert.deepEqual((script({ text: "go to money" }) as { navigate: unknown }).navigate, { route: "money" });
+  assert.deepEqual(script({ text: "show me the shows" }).calls, [{ name: "ui.navigate", input: { route: "shows" } }]);
+  assert.deepEqual(script({ text: "go to money" }).calls, [{ name: "ui.navigate", input: { route: "money" } }]);
 });
 
 test("flow: greeting streams text word by word", async () => {
@@ -67,10 +77,12 @@ test("flow: 'show me the shows' emits a navigate event and records it", async ()
 test("flow: a bad route name fails safely (no navigate event)", async () => {
   const { events, out } = await run("go to narnia");
   assert.equal(events.some((e) => e.type === "navigate"), false);
-  assert.ok(events.some((e) => e.type === "action"));
   assert.match(out.text, /can't do that/);
-  assert.deepEqual(runNavigate({ route: "http://evil.example" }), { ok: false, error: 'No page called "http://evil.example"' });
-  assert.equal(runNavigate({ route: "show" }).ok, false); // missing :id
+  const s = { ...(await session()), model: "roadie/fake" };
+  const none = () => {};
+  assert.deepEqual((await execTool(s, "ui.navigate", { route: "http://evil.example" }, none)).output, { error: 'No page called "http://evil.example"' });
+  assert.ok((await execTool(s, "ui.navigate", { route: "show" }, none)).output); // missing :id
+  assert.equal((await execTool(s, "ui.navigate", { route: "show" }, none)).action?.kind, "action");
 });
 
 test("routes: registry resolves names, never raw URLs", () => {

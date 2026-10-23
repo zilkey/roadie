@@ -147,7 +147,7 @@ test("a good call returns the result and the session runId; dedupe merges instea
   const b = parse(await call("venues.create", venue("The  Walnut Room", "Denver", { capacity: 400 })));
   assert.equal(b.result.merged, true);
   assert.equal(b.result.id, a.result.id);
-  const h = await db.list("history", (q) => q.where("runId", "==", ctx.runId));
+  const h = await db.listGroup("history", (q) => q.where("runId", "==", ctx.runId));
   assert.deepEqual(h.map((x) => x.op).sort(), ["create", "merge"]);
   assert.ok(h.every((x) => x.actor.via === "mcp" && x.actor.uid === adminUid));
 });
@@ -211,7 +211,7 @@ test("HTTP: bearer auth, one runId per session, revoking a key stops a live sess
     const a = text(await client.callTool({ name: "venues.create", arguments: venue("Hi-Dive") }));
     const b = text(await client.callTool({ name: "contacts.create", arguments: { name: "Pat Booker", emails: ["pat@example.com"] } }));
     assert.equal(a.runId, b.runId);
-    const hist = await db.list("history", (q) => q.where("runId", "==", a.runId));
+    const hist = await db.listGroup("history", (q) => q.where("runId", "==", a.runId));
     assert.equal(hist.length, 2);
 
     const bad2 = await client.callTool({ name: "venues.create", arguments: { name: "x" } });

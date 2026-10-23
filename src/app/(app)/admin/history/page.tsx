@@ -3,11 +3,12 @@ import { useMemo, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
-import type { History, User } from "@/schema";
+import type { FieldDiff, History, User } from "@/schema";
 
 export default function HistoryPage() { return <AdminOnly><HistoryView /></AdminOnly>; }
 
 const PAGE = 100;
+const RUN_LIMIT = 500;
 type Row = History & { id: string };
 interface UndoItem { kind: string; id: string; op: string; as?: string; reason?: string }
 interface UndoReport { undoRunId: string; reverted: UndoItem[]; unchanged: UndoItem[]; needsManualCorrection: UndoItem[]; failed: UndoItem[] }
@@ -22,6 +23,14 @@ function show(v: unknown): string {
   return JSON.stringify(v, (_k, x) => (x && typeof x === "object" && typeof x.toDate === "function" ? x.toDate().toISOString() : x));
 }
 
+/** One table row per changed field, or per changed item for id-keyed lists. */
+function diffRows(f: string, d: FieldDiff): { key: string; label: string; before: unknown; after: unknown }[] {
+  if (!("byId" in d)) return [{ key: f, label: f, before: d.before, after: d.after }];
+  const rows = Object.entries(d.byId).map(([id, c]) => ({ key: `${f}.${id}`, label: `${f} · ${id.slice(0, 6)}`, before: c.before, after: c.after }));
+  if (d.order) rows.push({ key: `${f}.order`, label: `${f} · order`, before: d.order.before.map((x) => x.slice(0, 6)).join(", "), after: d.order.after.map((x) => x.slice(0, 6)).join(", ") });
+  return rows;
+}
+
 function HistoryView() {
   const [runId, setRunId] = useState("");
   const [via, setVia] = useState("");
@@ -30,17 +39,23 @@ function HistoryView() {
   const [report, setReport] = useState<UndoReport | null>(null);
   const { call, error, busy } = useCommand();
 
+  // Every record keeps its own history/{rev} subcollection: one collection-group listener, newest first, the server does the limit.
+  // A run id is looked up alone (it is rare); the other filters are applied here for that case.
   const where = useMemo(() => {
     const w: [string, "==", unknown][] = [];
     if (runId.trim()) w.push(["runId", "==", runId.trim()]);
-    if (via) w.push(["actor.via", "==", via]);
-    if (kind.trim()) w.push(["entity.kind", "==", kind.trim()]);
+    else {
+      if (via) w.push(["actor.via", "==", via]);
+      if (kind.trim()) w.push(["entity.kind", "==", kind.trim()]);
+    }
     return w;
   }, [runId, via, kind]);
-  const hist = useCollection<History>("history", { where });
+  const hist = useCollection<History>("history", { group: true, includeDeleted: true, where, order: ["createdAt", "desc"], limit: runId.trim() ? RUN_LIMIT : shown });
   const users = useCollection<User>("users");
   const who = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? uid;
-  const rows = useMemo(() => [...(hist.rows ?? [])].sort((a, b) => ms(b) - ms(a) || (b.seq ?? 0) - (a.seq ?? 0)), [hist.rows]);
+  const rows = useMemo(() => [...(hist.rows ?? [])]
+    .filter((r) => !runId.trim() || ((!via || r.actor.via === via) && (!kind.trim() || r.entity.kind === kind.trim())))
+    .sort((a, b) => ms(b) - ms(a) || (b.seq ?? 0) - (a.seq ?? 0)), [hist.rows, runId, via, kind]);
   const runRows = runId.trim() ? rows : [];
 
   async function undo(id: string) {
@@ -58,7 +73,7 @@ function HistoryView() {
         <div className="grid gap-2 sm:grid-cols-3">
           <input className="input" placeholder="Run id" value={runId} onChange={(e) => { setRunId(e.target.value); setShown(PAGE); }} data-testid="filter-run" />
           <select className="select" value={via} onChange={(e) => { setVia(e.target.value); setShown(PAGE); }} data-testid="filter-via" aria-label="Via">
-            <option value="">Any source</option><option value="app">App</option><option value="mcp">AI (MCP)</option><option value="import">Import</option>
+            <option value="">Any source</option><option value="app">App</option><option value="mcp">AI (MCP)</option><option value="import">Import</option><option value="assistant">Roadie</option>
           </select>
           <input className="input" placeholder="Record type, e.g. venues" value={kind} onChange={(e) => { setKind(e.target.value); setShown(PAGE); }} data-testid="filter-entity" />
         </div>
@@ -90,8 +105,8 @@ function HistoryView() {
       <div className="grid gap-2" data-testid="history-list">
         {hist.loading && <span className="s">Loading…</span>}
         {!hist.loading && rows.length === 0 && <span className="s" data-testid="history-empty">No changes match.</span>}
-        {rows.slice(0, shown).map((r) => (
-          <div key={r.id} className="card" data-testid="history-row" data-run={r.runId} data-kind={r.entity.kind} data-op={r.op}>
+        {rows.map((r) => (
+          <div key={`${r.entity.kind}/${r.entity.id}/${r.id}`} className="card" data-testid="history-row" data-run={r.runId} data-kind={r.entity.kind} data-op={r.op}>
             <div className="flex flex-wrap items-center gap-2">
               <span className="chip">{r.op}</span>
               <b>{r.entity.kind}</b><span className="s">{r.entity.id}</span>
@@ -104,11 +119,11 @@ function HistoryView() {
               <summary className="s cursor-pointer">{Object.keys(r.diff).length} field{Object.keys(r.diff).length === 1 ? "" : "s"}</summary>
               <table className="mt-1 w-full text-sm" data-testid="diff">
                 <tbody>
-                  {Object.entries(r.diff).map(([f, d]) => (
-                    <tr key={f} className="align-top">
-                      <td className="pr-2 font-semibold">{f}</td>
-                      <td className="pr-2 text-muted line-through break-all">{show(d.before)}</td>
-                      <td className="break-all">{show(d.after)}</td>
+                  {Object.entries(r.diff).flatMap(([f, d]) => diffRows(f, d)).map((x) => (
+                    <tr key={x.key} className="align-top">
+                      <td className="pr-2 font-semibold">{x.label}</td>
+                      <td className="pr-2 text-muted line-through break-all">{show(x.before)}</td>
+                      <td className="break-all">{show(x.after)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -117,7 +132,7 @@ function HistoryView() {
           </div>
         ))}
       </div>
-      {rows.length > shown && <button className="btn ghost" onClick={() => setShown(shown + PAGE)}>Show more ({rows.length - shown} older)</button>}
+      {!runId.trim() && (hist.rows?.length ?? 0) >= shown && <button className="btn ghost" onClick={() => setShown(shown + PAGE)} data-testid="show-more">Show more</button>}
     </div>
   );
 }

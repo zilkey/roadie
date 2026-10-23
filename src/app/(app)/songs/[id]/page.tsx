@@ -68,7 +68,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const router = useRouter();
   const { call, error, busy } = useCommand();
   // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
-  const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev });
+  const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
   const [len, setLen] = useState<string | null>(null);
   const [edit, setEdit] = useState(false);
   const [adding, setAdding] = useState(false);

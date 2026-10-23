@@ -38,7 +38,7 @@ function ContactPage() {
       <button className="btn ghost justify-self-start" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
       {edit && (
         <EntityForm testid="contact-edit" fields={contactForm.fields} initial={contactForm.initial(c)} build={contactForm.build}
-          autosave={{ command: "contacts.update", id, rev: c.rev }} />
+          autosave={{ command: "contacts.update", id, rev: c.rev, title: c.name }} />
       )}
       <span className="lbl">Works with</span>
       {at.length === 0 ? <span className="s">Not linked to anything yet.</span> : at.map((a) => (

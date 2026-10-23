@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
@@ -17,7 +18,7 @@ function Form() {
   const { call, error, busy, setError } = useCommand();
   // New record = draft: typed values persist on this device and the server; "Add song" creates it. Drive picks come
   // from a live search, so they are re-picked after a restore (the title restores and re-runs the search).
-  const draft = useDraft("song", "new", { title: "", key: "", len: "" }, { title: (v) => `New song${v.title.trim() ? ` · ${v.title.trim()}` : ""}` });
+  const draft = useDraft(draftPath.newIn("songs"), { title: "", key: "", len: "" }, { title: (v) => `New song${v.title.trim() ? ` · ${v.title.trim()}` : ""}` });
   const { title, key, len } = draft.value;
   const set = (p: Partial<typeof draft.value>) => draft.setValue({ ...draft.value, ...p });
   const [picks, setPicks] = useState<Pick[]>([]);

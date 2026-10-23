@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -20,7 +21,7 @@ const emptyToNull = (s: string) => (s.trim() ? s.trim() : null);
 function Musicians() {
   const { rows } = useCollection<Musician>("musicians");
   const { call, error, busy } = useCommand();
-  const d = useDraft("musician", "new", blank, { title: (v) => `New musician${v.name ? ` · ${v.name}` : ""}` });
+  const d = useDraft(draftPath.newIn("musicians"), blank, { title: (v) => `New musician${v.name ? ` · ${v.name}` : ""}` });
   const mutationId = useRef(newMutationId());
   const f = d.value;
 
@@ -61,7 +62,7 @@ function Musicians() {
 
 /** An existing musician: each field saves on its own. */
 function MusicianRow({ m, busy, call }: { m: Row<Musician>; busy: boolean; call: (n: string, i: unknown) => Promise<unknown> }) {
-  const as = useAutosave({ command: "musicians.update", id: m.id, rev: m.rev });
+  const as = useAutosave({ command: "musicians.update", id: m.id, rev: m.rev, title: m.name });
   const [edit, setEdit] = useState(false);
   const [name, setName] = useState<string | null>(null);
   const [instr, setInstr] = useState<string | null>(null);

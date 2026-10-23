@@ -6,8 +6,8 @@ import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
 import { dispatch } from "@/server/commands/dispatch";
 import { firestore } from "@/server/admin";
-import { discardDraft, listDrafts, saveDraft } from "@/server/drafts";
-import { DRAFT_TTL_MS, draftId } from "@/schema/drafts";
+import { clearDraft, listDrafts, saveDraft } from "@/server/drafts";
+import { DRAFT_TTL_MS, DRAFT_PATH, draftDocId, draftPath, pathOfDocId, isEditPath } from "@/schema/drafts";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 beforeEach(resetEmulators);
@@ -15,7 +15,7 @@ const T0 = new Date("2026-10-01T12:00:00Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
 /** An app autosave caller with an injectable clock. */
 const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, role: "admin", via: "app", runId: newRunId(), autosave: true, now: at(ms), ...extra });
-const hist = (id: string) => db.list("history", (q) => q.where("entity.id", "==", id));
+const hist = (id: string) => db.listGroup("history", (q) => q.where("entity.id", "==", id));
 const mk = async (name = "Hi-Dive") => (await db.create(importCtx("setup"), "venues", venue(name, "Denver", { notes: "orig", capacity: 100 }))).id;
 const bearer = (t: string) => `Bearer ${t}`;
 
@@ -171,53 +171,81 @@ test("autosave through dispatch coalesces and returns the folded runId for Undo"
   assert.equal((await db.get("venues", id))!.notes, "orig");
 });
 
-test("drafts: save, list newest first, overwrite keeps createdAt, discard, owner-isolated, never in history", async () => {
+const draftDoc = async (uid: string, path: string) => (await firestore().collection("unsubmittedDrafts").doc(draftDocId(uid, path)).get()).data();
+
+test("drafts: keyed by uid + path, last write wins, list newest first and own only, never in history", async () => {
   const jeff = await makeUser("jeff@example.com", "admin");
   const eric = await makeUser("eric@example.com", "admin");
   const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
-  const s1 = await call(jeff.token, "drafts.save", { kind: "show", contextKey: "new", values: { date: "2027-01-01" }, route: "/shows/new", title: "New show" });
+  const s1 = await call(jeff.token, "drafts.save", { path: "expenses", values: { what: "strings" }, route: "/money/expense", title: "New expense" });
   assert.equal(s1.status, 200);
-  assert.equal((s1.json as { result: { draftId: string } }).result.draftId, draftId("show", "new"));
-  await call(jeff.token, "drafts.save", { kind: "show", contextKey: "pitch:abc", values: { date: "2027-02-02" }, route: "/shows/new?pitch=abc", title: "Fox" });
-  const first = await listDrafts(jeff.uid);
-  assert.deepEqual(first.map((d) => d.contextKey), ["pitch:abc", "new"]);
-  const created = first[1].createdAt.toMillis();
-  await new Promise((r) => setTimeout(r, 15));
-  await call(jeff.token, "drafts.save", { kind: "show", contextKey: "new", values: { date: "2027-03-03" }, route: "/shows/new", title: "New show 2" });
-  const second = await listDrafts(jeff.uid);
-  assert.equal(second[0].values.date, "2027-03-03");
-  assert.equal(second[0].createdAt.toMillis(), created);
+  assert.equal((s1.json as { result: { path: string } }).result.path, "expenses");
+  assert.equal(draftDocId(jeff.uid, "expenses"), `${jeff.uid}__expenses`);
+  await call(jeff.token, "drafts.save", { path: "venues/v1/contacts", values: { name: "Pat" }, route: "/booking/venues/v1", title: "New contact" });
+  assert.equal((await draftDoc(jeff.uid, "venues/v1/contacts"))!.uid, jeff.uid);
+  assert.ok((await firestore().collection("unsubmittedDrafts").doc(`${jeff.uid}__venues~v1~contacts`).get()).exists, "/ is stored as ~");
+  assert.equal(pathOfDocId(`${jeff.uid}__venues~v1~contacts`), "venues/v1/contacts");
+  assert.deepEqual((await listDrafts(jeff.uid)).map((d) => d.path), ["venues/v1/contacts", "expenses"]);
+  // last in wins: no merge, no timestamp comparison
+  await call(jeff.token, "drafts.save", { path: "expenses", values: { amount: "5" }, route: "/money/expense", title: "second" });
+  await call(jeff.token, "drafts.save", { path: "expenses", values: { what: "picks" }, route: "/money/expense", title: "third" });
+  const now = await draftDoc(jeff.uid, "expenses");
+  assert.deepEqual(now!.values, { what: "picks" });
+  assert.equal(now!.title, "third");
   assert.equal((await listDrafts(eric.uid)).length, 0);
   const l = await call(jeff.token, "drafts.list", {});
-  assert.equal((l.json as { result: { drafts: unknown[] } }).result.drafts.length, 2);
-  assert.equal((await call(jeff.token, "drafts.save", { kind: "show", values: {}, route: "nope" })).status, 400);
-  assert.equal((await db.list("history")).filter((h) => h.entity.kind === "drafts").length, 0, "drafts do not flood history");
-  // eric cannot discard jeff's
-  await call(eric.token, "drafts.discard", { draftId: draftId("show", "new") });
-  assert.equal((await listDrafts(jeff.uid)).length, 2);
-  await call(jeff.token, "drafts.discard", { draftId: draftId("show", "new") });
-  assert.deepEqual((await listDrafts(jeff.uid)).map((d) => d.contextKey), ["pitch:abc"]);
+  assert.deepEqual((l.json as { result: { drafts: { path: string }[] } }).result.drafts.map((d) => d.path).sort(), ["expenses", "venues/v1/contacts"]);
+  assert.equal((await db.listGroup("history")).filter((h) => h.entity.kind === "unsubmittedDrafts").length, 0, "drafts do not flood history");
+  // edits to an existing record: doc path, with the rev they were made against
+  await call(jeff.token, "drafts.save", { path: draftPath.edit("shows", "s1"), values: { bandNotes: "x" }, route: "/shows/s1", title: "Fox", rev: 3 });
+  assert.equal((await draftDoc(jeff.uid, "shows/s1"))!.rev, 3);
+  // eric cannot clear jeff's: clear is always scoped to the caller's own uid
+  await call(eric.token, "drafts.clear", { path: "expenses" });
+  assert.equal((await listDrafts(jeff.uid)).length, 3);
+  assert.equal((await call(jeff.token, "drafts.clear", { path: "expenses" })).status, 200);
+  assert.deepEqual((await listDrafts(jeff.uid)).map((d) => d.path).sort(), ["shows/s1", "venues/v1/contacts"]);
 });
 
-test("drafts expire after 30 days: ignored when listed and deleted on the next save", async () => {
+test("drafts: path shape and size are validated", async () => {
+  const jeff = await makeUser("jeff@example.com", "admin");
+  const save = (b: object) => dispatch("drafts.save", bearer(jeff.token), { values: {}, route: "/x", ...b });
+  for (const ok of ["expenses", "shows/abc-1_2", "venues/v1/contacts", "pitches/p1/comments"]) assert.ok(DRAFT_PATH.test(ok), ok);
+  for (const bad of ["", "/expenses", "expenses/", "a/b/c/d", "shows/a b", "shows/a~b", "shows//x", "../x", "shows/x/1bad", "1shows"]) {
+    assert.equal(DRAFT_PATH.test(bad), false, bad);
+    assert.equal((await save({ path: bad })).status, 400, bad);
+  }
+  assert.equal((await dispatch("drafts.clear", bearer(jeff.token), { path: "a/b/c/d" })).status, 400);
+  assert.equal((await save({ path: "expenses", route: "nope" })).status, 400);
+  assert.equal((await save({ path: "expenses", kind: "show" })).status, 400, "strict");
+  assert.equal((await save({ path: "songs", values: { x: "y".repeat(100_001) } })).status, 400, "over ~100KB");
+  assert.equal((await save({ path: "songs", values: { x: "y".repeat(90_000) } })).status, 200);
+  assert.ok(isEditPath("shows/x") && !isEditPath("shows") && !isEditPath("shows/x/gear"));
+  assert.equal((await dispatch("drafts.save", "Bearer nope", { path: "songs", values: {}, route: "/x" })).status, 401);
+});
+
+test("drafts expire after 30 days: expiresAt is set for the TTL policy, and expired ones are not listed", async () => {
   const u = "someone";
   const old = new Date(T0.getTime() - DRAFT_TTL_MS - 1000);
-  await saveDraft(u, { kind: "show", contextKey: "old", values: { a: 1 }, route: "/x", title: "old" }, old);
-  await saveDraft(u, { kind: "show", contextKey: "fresh", values: { a: 2 }, route: "/x", title: "fresh" }, new Date(T0.getTime() - 1000));
-  assert.deepEqual((await listDrafts(u, T0)).map((d) => d.contextKey), ["fresh"], "old one is ignored");
-  assert.equal((await firestore().collection("users").doc(u).collection("drafts").get()).size, 2, "still stored until a save");
-  await saveDraft(u, { kind: "show", contextKey: "newer", values: {}, route: "/x", title: "n" }, T0);
-  assert.deepEqual((await firestore().collection("users").doc(u).collection("drafts").get()).docs.map((d) => d.id).sort(), ["show__fresh", "show__newer"]);
-  await discardDraft(u, "show__fresh");
+  await saveDraft(u, { path: "songs", values: { a: 1 }, route: "/x", title: "old" }, old);
+  await saveDraft(u, { path: "venues", values: { a: 2 }, route: "/x", title: "fresh" }, new Date(T0.getTime() - 1000));
+  assert.equal(((await draftDoc(u, "venues"))!.expiresAt as Timestamp).toMillis(), T0.getTime() - 1000 + DRAFT_TTL_MS, "expiresAt = updatedAt + 30 days");
+  assert.deepEqual((await listDrafts(u, T0)).map((d) => d.path), ["venues"], "old one is ignored");
+  await saveDraft(u, { path: "songs", values: { a: 3 }, route: "/x", title: "again" }, T0); // a new write pushes expiry out
+  assert.equal((await listDrafts(u, T0)).length, 2);
+  await clearDraft(u, "venues");
   assert.equal((await listDrafts(u, T0)).length, 1);
 });
 
-test("clearDraft in the envelope removes the draft once the create succeeds (and not when it fails)", async () => {
+test("clearDraft in the envelope removes the draft once the create succeeds, and only then", async () => {
   const jeff = await makeUser("jeff@example.com", "admin");
-  await saveDraft(jeff.uid, { kind: "venue", contextKey: "new", values: {}, route: "/booking", title: "v" });
-  const bad = await dispatch("venues.create", bearer(jeff.token), { name: "", _meta: { clearDraft: draftId("venue", "new") } });
+  const eric = await makeUser("eric@example.com", "admin");
+  await saveDraft(jeff.uid, { path: "venues", values: {}, route: "/booking", title: "v" });
+  await saveDraft(eric.uid, { path: "venues", values: {}, route: "/booking", title: "e" });
+  const bad = await dispatch("venues.create", bearer(jeff.token), { name: "", _meta: { clearDraft: "venues" } });
   assert.equal(bad.status, 400);
-  assert.equal((await listDrafts(jeff.uid)).length, 1);
-  assert.equal((await dispatch("venues.create", bearer(jeff.token), { ...venue("Made"), _meta: { clearDraft: draftId("venue", "new") } })).status, 200);
+  assert.equal((await listDrafts(jeff.uid)).length, 1, "a failed create keeps the draft");
+  assert.equal((await dispatch("venues.create", bearer(jeff.token), { ...venue("Made"), _meta: { clearDraft: "venues/../x" } })).status, 400, "bad path refused");
+  assert.equal((await dispatch("venues.create", bearer(jeff.token), { ...venue("Made"), _meta: { clearDraft: "venues" } })).status, 200);
   assert.equal((await listDrafts(jeff.uid)).length, 0);
+  assert.equal((await listDrafts(eric.uid)).length, 1, "someone else's draft at the same path is untouched");
 });

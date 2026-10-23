@@ -24,3 +24,12 @@ npm run restore -- backups/2026-10-23 --overwrite   # over existing documents (o
 ```
 Every document is validated with the Zod schemas (common fields, strict collection shape, id equals path); if any fails nothing is written and the problems are listed. Restore refuses a non-empty database without `--overwrite`, and refuses real Firestore (no emulator host) without `--yes`. It writes documents exactly as they were (ids, timestamps, history), so it is the one writer that bypasses `db.ts` on purpose.
 To try it locally: `npm run emulators`, `npm run seed`, `npm run backup`, wipe the emulator, `npm run restore -- backups/<date>`.
+
+## Moving old history under its records (one time)
+History used to be one top-level `history` collection. It is now a `history` subcollection under each record (`venues/{id}/history/000002`), which backup and restore already carry because they walk sub-collections (the entries are in their parent collection's file, not in `history.json`). Backups made before the change still contain `history.json`; restoring one puts the old collection back, and the migration then moves it.
+```
+npm run migrate:history -- --dry-run   # count only, writes nothing
+npm run migrate:history                # emulator
+npm run migrate:history -- --yes       # real Firestore (refused without --yes)
+```
+Each old entry becomes `{entity.kind}/{entity.id}/history/{docRev padded}` (entries from before `docRev` existed become `000000-{time}-{oldId}`; two entries claiming one rev are kept side by side). Safe to re-run: ids are derived from the entry, and every move is one batch that writes the new doc and deletes the old, so it finishes where a failed run stopped. Deploy the new rules, indexes and code first.

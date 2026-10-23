@@ -1,26 +1,24 @@
 import { z } from "zod";
-import { DraftSaveInput } from "@/schema/drafts";
-import { discardDraft, listDrafts, saveDraft } from "../drafts";
+import { DraftPath, DraftSaveInput } from "@/schema/drafts";
+import { clearDraft, listDrafts, saveDraft } from "../drafts";
 import { defineCommand } from "./types";
-
-const strict = <T extends z.ZodRawShape>(s: T) => z.strictObject(s);
 
 export const draftsSave = defineCommand({
   name: "drafts.save", roles: ["admin", "member"], input: DraftSaveInput,
-  description: "Save the caller's unfinished 'new X' form (one draft per kind + contextKey). Personal scratch space: no history, not undoable.",
+  description: "Save what the caller has typed but not submitted, keyed by the Firestore path of the form (last write wins). Personal scratch space: no history, not undoable.",
   run: (ctx, i) => saveDraft(ctx.uid, i),
 });
-export const draftsDiscard = defineCommand({
-  name: "drafts.discard", roles: ["admin", "member"], input: strict({ draftId: z.string().min(1).max(150) }),
-  description: "Throw away one of the caller's drafts.",
-  async run(ctx, i) { await discardDraft(ctx.uid, i.draftId); return { draftId: i.draftId }; },
+export const draftsClear = defineCommand({
+  name: "drafts.clear", roles: ["admin", "member"], input: z.strictObject({ path: DraftPath }),
+  description: "Throw away the caller's unsubmitted draft at this path.",
+  async run(ctx, i) { await clearDraft(ctx.uid, i.path); return { path: i.path }; },
 });
 export const draftsList = defineCommand({
-  name: "drafts.list", roles: ["admin", "member"], input: strict({}),
-  description: "The caller's drafts from the last 30 days, newest first.",
+  name: "drafts.list", roles: ["admin", "member"], input: z.strictObject({}),
+  description: "The caller's unsubmitted drafts (30-day expiry), newest first.",
   async run(ctx) {
-    return { drafts: (await listDrafts(ctx.uid)).map((d) => ({ id: d.id, kind: d.kind, contextKey: d.contextKey, title: d.title, route: d.route, values: d.values, updatedAt: d.updatedAt.toMillis() })) };
+    return { drafts: (await listDrafts(ctx.uid)).map((d) => ({ path: d.path, title: d.title, route: d.route, values: d.values, updatedAt: d.updatedAt.toMillis() })) };
   },
 });
 
-export const draftCommands = [draftsSave, draftsDiscard, draftsList];
+export const draftCommands = [draftsSave, draftsClear, draftsList];

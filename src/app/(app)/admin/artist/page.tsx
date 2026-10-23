@@ -1,4 +1,5 @@
 "use client";
+import { draftPath } from "@/schema/drafts";
 import { useEffect, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -50,8 +51,8 @@ function ArtistEditor() {
   const [sound, setSound] = useState<SoundGear>({ bandProvided: [], venueProvided: [] });
   const ms = (musicians.rows ?? []).filter((m) => m.active).sort((a, b) => a.name.localeCompare(b.name));
   const resetFrom = (a: Artist) => { setName(a.name); setCfgs(a.configurations); setSound(a.soundGear); };
-  const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, onUseTheirs: () => artist && resetFrom(artist) });
-  const cfgDraft = useDraft("configuration", "new", { name: "", billingName: "" }, { title: (v) => `New configuration${v.name ? ` · ${v.name}` : ""}` });
+  const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
+  const cfgDraft = useDraft(draftPath.newIn("configurations"), { name: "", billingName: "" }, { title: (v) => `New configuration${v.name ? ` · ${v.name}` : ""}` });
   const cfgMutation = useRef(newMutationId());
   const hasDraft = cfgDraft.restoredAt !== null;
   const [adding, setAdding] = useState<boolean | null>(null);
