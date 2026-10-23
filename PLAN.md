@@ -22,7 +22,7 @@ Reference for Firebase emulator / Playwright patterns: `/Users/jeff/workspace/wo
 | --- | --- |
 | Next dev | 3100 |
 | Firestore emulator | 8280 |
-| Auth emulator | 9299 |
+| Auth emulator | 9319 (9299 taken by woven) |
 | Emulator UI | 4200 (hub 4600, logging 4700) |
 | fake-gmail | 3201 |
 | fake-drive | 3202 |
@@ -87,3 +87,18 @@ docs/FIREBASE-SETUP.md      each slice appends manual real-Firebase steps it imp
 6. Money + Reach: ledger, expenses, payouts, owed-per-person, reports; statSnapshots (daily Spotify pull, Spotify for Artists CSV import), stats chart.
 7. MCP + safety net: MCP server (token auth via mcpTokens, tools = registry commands allowed for 'mcp', drafts-only email), history view, undo a run, AI key management UI, backup script + workflow.
 8. Final: full e2e pass, fix breakage, finish docs.
+
+## Learned in slice 1 (binding for later slices)
+- Writes only via `db.create/update/merge/softDelete/restore` or `run(ctx, w => …)` (one atomic transaction) in `src/server/db.ts`.
+- `<Name>Input` = writable schema shape; `collections` registry in `src/schema/index.ts`.
+- New commands: append an array to `src/server/commands/registry.ts`; updates take `{id, patch}` via `patchInput()`; client uses `runCommand()`.
+- Denormalized copies go in `src/server/denorm.ts`.
+- Client reads: `useCollection` (hides soft-deleted; sort client-side).
+- `history.diff` is `{before, after}` objects (Firestore forbids nested arrays).
+- Next 16 needs `allowedDevOrigins` for 127.0.0.1. Auth emulator port is hardcoded in several files (see docs/STATUS.md).
+
+## Every slice agent must
+- Read this file, then grep only the blueprint parts it needs. Read existing code before adding to it; reuse helpers.
+- Keep `npm run typecheck`, `npm test`, `npm run e2e` green (add unit tests for commands, at least one e2e spec per main flow).
+- Append its section to docs/STATUS.md and manual real-Firebase/Google steps to docs/FIREBASE-SETUP.md.
+- Commit locally, stop all processes it started, and reply in under 150 words: what works, test results, notes for later slices.
