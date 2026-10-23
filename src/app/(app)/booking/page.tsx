@@ -7,6 +7,7 @@ import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
+import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import {
   EntityForm, FlagButton, Seg, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
@@ -67,6 +68,24 @@ function Booking() {
   }
   const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, contact: contactForm };
 
+  const form = add && (
+    <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
+      submitLabel={`Add ${add}`} onSubmit={(d, meta) => create(add, d, meta)} onCancel={() => setAdd("none")}
+      draft={{ path: draftPath.newIn(`${add}s`), title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
+  );
+  // No data at all: only the welcome card (and the open "new X" form), none of the usual search, tabs and lists.
+  const nothingYet = !b.loading && [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches].every((x) => x.length === 0);
+  if (nothingYet) {
+    return (
+      <WelcomeEmpty section="booking" title="Welcome to Booking!"
+        body="This is home base for every venue, festival, promoter and contact you might play with. Build a pitch list of the places you'd love to play, then send pitches from your own email templates."
+        actions={<button className="btn acc" data-testid="add-venue" onClick={() => setAdd(add === "venue" ? "none" : "venue")}>+ Add a place</button>}>
+        <ErrorBox error={error} />
+        {form}
+      </WelcomeEmpty>
+    );
+  }
+
   return (
     <div className="grid gap-3">
       <PageTitle title="Booking" sub="Everything we could play. The flag adds it to the Pitch List." />
@@ -114,11 +133,7 @@ function Booking() {
         ))}
         <Link href="/booking/templates" className="btn ghost sm" data-testid="templates-link">Email templates</Link>
       </div>
-      {add && (
-        <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
-          submitLabel={`Add ${add}`} onSubmit={(d, meta) => create(add, d, meta)} onCancel={() => setAdd("none")}
-          draft={{ path: draftPath.newIn(`${add}s`), title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
-      )}
+      {form}
     </div>
   );
 }

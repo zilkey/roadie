@@ -10,6 +10,7 @@ import { fmtLen, mimeGroup } from "@/lib/music";
 import { fmtDur } from "@/lib/shows";
 import { fmtDay, useMusic } from "@/components/music/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 
@@ -68,6 +69,17 @@ function Songs() {
 
   if (setlistParam) return <div className="s">Opening setlist…</div>;
   const showOf = (id?: string) => m.shows.find((s) => s.id === id);
+
+  // Nothing recorded at all (songs, setlists, rehearsals): only the welcome card, none of the segments, search or lists.
+  if (!m.loading && m.songs.length === 0 && m.setlists.length === 0 && m.rehearsals.length === 0) {
+    return (
+      <WelcomeEmpty section="songs" variant={2} title="Welcome to Songs!"
+        body="Everything we play, with its key and length. Charts and recordings, setlists, rehearsals, and the songs we're learning or just thinking about all live here too."
+        actions={admin ? <Link href="/songs/new" className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined}>
+        <ErrorBox error={error} />
+      </WelcomeEmpty>
+    );
+  }
 
   return (
     <div className="grid gap-3" data-testid="songs-page">

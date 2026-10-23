@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Seg } from "@/components/booking/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
-import { useDraft } from "@/lib/drafts";
+import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/money";
 import { fmtLong } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
+import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import type { Expense, Musician, Show, ShowDeal, User } from "@/schema";
 
 type Tab = "overview" | "shows" | "categories" | "ledger";
@@ -31,6 +32,9 @@ function Admin() {
   const tabParam = useSearchParams().get("tab");
   const [tab, setTab] = useState<Tab>(tabParam === "ledger" ? "ledger" : "overview"); // a restored ledger draft links to ?tab=ledger
   const { call, error, busy } = useCommand();
+  // An unfinished ledger entry opens its form by itself (the Unfinished card links to ?tab=ledger).
+  const ledgerDraft = useHasDraft(draftPath.newIn("ledger"));
+  const [recording, setRecording] = useState<boolean | undefined>(undefined);
 
   const led = useMemo(() => ledger.rows ?? [], [ledger.rows]);
   const showById = useMemo(() => new Map((shows.rows ?? []).map((s) => [s.id, s])), [shows.rows]);
@@ -45,6 +49,23 @@ function Admin() {
     const name = l.kind === "expense" ? person(l.userId) : person(undefined, l.musicianId);
     const o = owedBy.get(key) ?? { name, total: 0, lines: [] };
     o.total += l.amount; o.lines.push(l); owedBy.set(key, o);
+  }
+
+  // Nothing in the ledger and no expenses: only the welcome card (and the open "Record" form), none of the tabs or totals.
+  const nothingYet = ledger.rows !== null && expenses.rows !== null && led.length === 0 && (expenses.rows ?? []).length === 0;
+  if (nothingYet) {
+    const recordOpen = recording ?? (tabParam === "ledger" || ledgerDraft);
+    return (
+      <WelcomeEmpty section="money" variant={0} title="Welcome to Money!"
+        body="Everything that comes in and goes out: show money, merch, gear and rentals, who's owed what, and the totals broken down by show and category. Record the first entry and the numbers start to fill in."
+        actions={<>
+          <button className="btn acc" data-testid="add-money" onClick={() => setRecording(!recordOpen)}>Add money in or out</button>
+          <Link href="/money/expense" className="btn ghost" data-testid="add-expense-link">Add an expense</Link>
+        </>}>
+        <ErrorBox error={error} />
+        {recordOpen && <RecordForm shows={shows.rows ?? []} musicians={(musicians.rows ?? []).filter((m) => m.active)} />}
+      </WelcomeEmpty>
+    );
   }
 
   return (

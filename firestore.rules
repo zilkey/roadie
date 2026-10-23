@@ -13,6 +13,8 @@ service cloud.firestore {
     match /users/{id}            { allow read: if isAdmin(); }
     // Unsubmitted forms and unsaved edits (id = uid__path): only their owner reads, never written from the client (server writes with firebase-admin).
     match /unsubmittedDrafts/{id} { allow read: if signedIn() && resource.data.uid == request.auth.uid; }
+    // Per-user prefs (hidden nav sections), id = uid: only their owner reads, server writes.
+    match /userPrefs/{uid}       { allow read: if signedIn() && request.auth.uid == uid; }
     match /musicians/{id}        { allow read: if band(); }
     match /artists/{id}          { allow read: if band(); }
     match /shows/{id}            { allow read: if band(); }

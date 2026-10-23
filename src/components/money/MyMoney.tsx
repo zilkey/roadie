@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useProfile } from "@/lib/auth";
 import { useCollection } from "@/lib/firestore-hooks";
 import { PageTitle } from "@/components/ui";
+import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import { CATEGORY_LABEL, formatCents, reimbursementFor, reversedIds, type LedgerLike } from "@/lib/money";
 import { fmtLong } from "@/lib/shows";
 import type { Expense, Show } from "@/schema";
@@ -18,6 +19,15 @@ export function MyMoney() {
   const mine = [...(expenses.rows ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1));
   const payments = led.filter((e) => e.kind === "payout" || e.kind === "reimbursement").sort((a, b) => (a.date < b.date ? 1 : -1));
   const showName = (id?: string) => shows.rows?.find((s) => s.id === id)?.venue.name;
+  // Nothing of theirs yet (no expenses, no payments or entries): a welcome card with no hide button, since Money is how they get paid back.
+  const nothingYet = expenses.rows !== null && ledger.rows !== null && mine.length === 0 && led.length === 0;
+  if (nothingYet) {
+    return (
+      <WelcomeEmpty section="money" variant={0} hideable={false} title="Welcome to your money page!"
+        body="Anything you spend for the band, like gas, strings or a rental, goes here so you get paid back, along with what the band has paid you."
+        actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>} />
+    );
+  }
   return (
     <div className="grid gap-3" data-testid="my-money">
       <PageTitle title="My money" />

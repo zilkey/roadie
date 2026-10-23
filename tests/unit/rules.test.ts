@@ -107,6 +107,14 @@ test("ALL client writes are denied, even for admins", async () => {
   }
 });
 
+test("userPrefs: only the owner reads their own doc; no client writes", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), "userPrefs/jeff"), { uid: "jeff", hiddenSections: ["booking"] }); });
+  await assertSucceeds(getDoc(doc(admin(), "userPrefs/jeff")));
+  await assertFails(getDoc(doc(david(), "userPrefs/jeff")));
+  await assertFails(getDoc(doc(anon(), "userPrefs/jeff")));
+  await assertFails(setDoc(doc(admin(), "userPrefs/jeff"), { hiddenSections: [] }));
+});
+
 test("unsubmittedDrafts: only the owner reads their own; admins, members and anon cannot read someone else's; no client writes", async () => {
   await assertSucceeds(getDoc(doc(admin(), "unsubmittedDrafts/jeff__expenses")));
   await assertSucceeds(getDocs(query(collection(admin(), "unsubmittedDrafts"), where("uid", "==", "jeff"))));
