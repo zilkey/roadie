@@ -1,8 +1,10 @@
-node_modules
 .next
+node_modules
 .fake-data
 .emulator-data
 *-debug.log
 test-results
 playwright-report
 .env*.local
+next-env.d.ts
+tsconfig.tsbuildinfo

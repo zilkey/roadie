@@ -1,0 +1,52 @@
+rules_version = '2';
+// Reads follow the blueprint's access table. ALL client writes are denied: writes go through
+// the server (firebase-admin, which bypasses rules) in src/server/db.ts.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.get('role', '') == 'admin'; }
+    function isMember() { return signedIn() && request.auth.token.get('role', '') == 'member'; }
+    function live() { return resource.data.get('deletedAt', null) == null; }
+    // Whole band reads (admins and members); soft-deleted docs only show to admins.
+    function band() { return isAdmin() || (isMember() && live()); }
+
+    match /users/{id}            { allow read: if isAdmin(); }
+    match /musicians/{id}        { allow read: if band(); }
+    match /artists/{id}          { allow read: if band(); }
+    match /shows/{id}            { allow read: if band(); }
+    match /songs/{id}            { allow read: if band(); }
+    match /files/{id}            { allow read: if band(); }
+    match /setlists/{id}         { allow read: if band(); }
+    match /rehearsals/{id}       { allow read: if band(); }
+
+    match /availability/{id} {
+      allow read: if isAdmin()
+        || (isMember() && live() && request.auth.token.get('musicianId', '') in resource.data.askedMusicianIds);
+    }
+    match /ledger/{id} {
+      allow read: if isAdmin()
+        || (isMember() && resource.data.kind == 'payout' && resource.data.payeeUserId == request.auth.uid);
+    }
+    match /expenses/{id} {
+      allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);
+    }
+
+    // Admin only
+    match /contacts/{id}           { allow read: if isAdmin(); }
+    match /venues/{id}             { allow read: if isAdmin(); }
+    match /promoters/{id}          { allow read: if isAdmin(); }
+    match /festivals/{id}          { allow read: if isAdmin(); }
+    match /editions/{id}           { allow read: if isAdmin(); }
+    match /emailTemplates/{id}     { allow read: if isAdmin(); }
+    match /checklistTemplates/{id} { allow read: if isAdmin(); }
+    match /showDeals/{id}          { allow read: if isAdmin(); }
+    match /statSnapshots/{id}      { allow read: if isAdmin(); }
+    match /history/{id}            { allow read: if isAdmin(); }
+    match /mcpTokens/{id}          { allow read: if isAdmin(); }
+    match /pitches/{id} {
+      allow read: if isAdmin();
+      match /comments/{cid}  { allow read: if isAdmin(); }
+      match /activity/{aid}  { allow read: if isAdmin(); }
+    }
+  }
+}

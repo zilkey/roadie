@@ -1,0 +1,38 @@
+{
+  "name": "band-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "dev:all": "echo 'run: npm run emulators (one terminal), npm run seed, npm run dev (fakes: later slices)'",
+    "emulators": "firebase emulators:start --project demo-band-tracker --import .emulator-data --export-on-exit",
+    "seed": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/seed.ts",
+    "test": "firebase emulators:exec --only firestore,auth --project demo-band-tracker \"tsx --test --test-concurrency=1 tests/unit/*.test.ts\"",
+    "e2e": "firebase emulators:exec --only firestore,auth --project demo-band-tracker \"npm run seed && playwright test\"",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase": "^13.1.0",
+    "firebase-admin": "^14.5.0",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "firebase-tools": "^15.34.1",
+    "postcss": "^8.5.31",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
