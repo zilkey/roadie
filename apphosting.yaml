@@ -1,4 +1,4 @@
-# App Hosting config for roadie-prod-iab (backend "roadie", us-central1). The NEXT_PUBLIC_* values are the web app's
+# App Hosting config for roadie-prod-iab (backend "roadie-web-prod", us-central1, nodejs24). The NEXT_PUBLIC_* values are the web app's
 # public Firebase config: safe in a public repo (rules and sign-in protect the data). Real secrets never go here;
 # add them with `npx firebase apphosting:secrets:set <name> --project roadie-prod-iab` and reference them below.
 # Never set NEXT_PUBLIC_USE_EMULATORS or any *_EMULATOR_HOST here.
@@ -23,6 +23,6 @@ env:
   # Roadie on Vertex AI with the backend's service account (needs the Vertex AI User role); no API key.
   - variable: ROADIE_MODEL
     value: vertex
-  # TODO: the backend's URL once it exists (base of the "can you play?" links in emails).
-  # - variable: APP_URL
-  #   value: https://roadie--roadie-prod-iab.us-central1.hosted.app
+  # Base of the "can you play?" links in emails.
+  - variable: APP_URL
+    value: https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app

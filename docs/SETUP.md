@@ -100,7 +100,7 @@ npx firebase apps:sdkconfig WEB --project roadie-prod-iab
 ☑ Done (🤖). What changed:
 
 - `.firebaserc` has `"prod": "roadie-prod-iab"`. `default` stays `demo-band-tracker`, so tests never touch the real project.
-- `apphosting.yaml` holds the web config, `GCLOUD_PROJECT=roadie-prod-iab` and `ROADIE_MODEL=vertex`. `APP_URL` is commented out until the backend URL exists (4.2).
+- `apphosting.yaml` holds the web config, `GCLOUD_PROJECT=roadie-prod-iab` and `ROADIE_MODEL=vertex`. `APP_URL` is the backend URL.
 - `.github/workflows/backup.yml`, `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md` and `docs/MCP.md` say `roadie-prod-iab`.
 - Roadie uses Vertex AI in production (the backend's service account, same Google bill, no key; default model `gemini-2.5-flash-lite`). A `GEMINI_API_KEY` still works for trying it locally.
 
