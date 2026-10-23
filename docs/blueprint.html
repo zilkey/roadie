@@ -1,0 +1,1144 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Band App Blueprint</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one long spec page in the booking kit's look; sticky section nav; schema as compact field tables; wireframes as a grid of phone frames */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7; --warn:#B07A00;
+  --wire:#9AA1BC;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544;
+  --wire:#5E668C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544;
+  --wire:#5E668C; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 80px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(36px,7vw,58px);font-weight:800;line-height:.95}
+h2{font-size:30px;font-weight:800;margin-bottom:6px}
+h3{font-size:19px;font-weight:600}
+p{margin:0}
+.lede{color:var(--muted);margin-top:10px;max-width:66ch}
+code,.mono{font-family:var(--f-mono);font-size:12.5px}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin:22px 0 0;padding:10px 0;display:flex;gap:6px;flex-wrap:wrap}
+nav.toc a{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+nav.toc a:hover{border-color:var(--ink)}
+
+section.sec{padding-top:44px;scroll-margin-top:60px}
+.sec-intro{color:var(--muted);max-width:68ch;margin-bottom:18px}
+
+/* glossary */
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:14px}
+.gloss div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:2px}
+.gloss b{font-size:15px}
+.gloss span{font-size:13px;color:var(--muted)}
+
+/* rules list */
+.rules{display:grid;gap:8px;margin:0;padding:0;list-style:none;max-width:76ch}
+.rules li{padding-left:18px;position:relative}
+.rules li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--accent)}
+
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;overflow-x:auto}
+.diagram pre.mermaid{margin:0;min-width:640px;background:transparent}
+
+/* schema */
+.groups{display:grid;gap:28px}
+.group h3{margin-bottom:10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.group h3 small{font-family:var(--f-body);font-size:13px;font-weight:500;color:var(--muted)}
+.colls{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,470px),1fr));gap:12px}
+.coll{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0;display:flex;flex-direction:column}
+.coll-h{padding:12px 14px 8px;display:grid;gap:4px;border-bottom:1px solid var(--line)}
+.coll-t{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.coll-t h4{font-size:17px;font-weight:600}
+.coll-t code{color:var(--muted)}
+.coll-h p{font-size:13.5px;color:var(--muted)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.chip.a{background:var(--accent-soft);color:var(--accent)}
+.chip.m{background:var(--blue-soft);color:var(--blue)}
+.chip.ai{background:var(--ok-soft);color:var(--ok)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td{padding:5px 14px 5px 0;vertical-align:top;border-top:1px solid var(--soft)}
+tr:first-child td{border-top:0}
+td:first-child{padding-left:14px;font-family:var(--f-mono);font-size:12.5px;white-space:nowrap;font-weight:500}
+td.t{font-family:var(--f-mono);font-size:12px;color:var(--blue);white-space:nowrap}
+td.n{color:var(--muted);min-width:150px}
+.common{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:12px 0 6px;margin-bottom:22px}
+.common h4{font-size:15px;padding:0 14px 6px}
+.legend{font-size:13px;color:var(--muted);margin:0 0 18px;display:flex;flex-wrap:wrap;gap:6px 16px}
+.legend code{color:var(--blue)}
+
+/* access table */
+.access{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.access table{font-size:13.5px;min-width:620px}
+.access th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);font-weight:700}
+.access td{padding:8px 14px;border-top:1px solid var(--soft);font-family:var(--f-body);font-size:13.5px;white-space:normal}
+.access td:first-child{font-weight:600}
+.y{color:var(--ok);font-weight:700}
+.no{color:var(--muted)}
+
+/* stories */
+.stories{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:12px}
+.story{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:8px;align-content:start}
+.story h3{font-size:17px}
+.story ul{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.story li{display:grid;grid-template-columns:62px 1fr;gap:8px;font-size:14px;align-items:baseline}
+.story li .chip{justify-self:start}
+
+/* wireframes */
+.screens{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:26px 18px}
+.screen{display:grid;gap:10px;align-content:start;justify-items:center;min-width:0}
+.cap{width:100%;max-width:290px}
+.cap h3{font-size:16px}
+.cap p{font-size:13px;color:var(--muted);margin-top:2px}
+.phone{width:100%;max-width:290px;min-height:520px;background:var(--panel);border:2px solid var(--wire);border-radius:30px;padding:14px 12px 0;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}
+.phone::before{content:"";width:70px;height:6px;border-radius:6px;background:var(--line);align-self:center;margin-bottom:2px}
+.ph-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ph-top b{font-family:var(--f-display);font-size:21px;font-weight:800}
+.ph-top .back{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:2px}
+.ph-body{display:flex;flex-direction:column;gap:8px;flex:1}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card{border:1.5px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:4px}
+.card.hi{border-color:var(--accent);background:var(--accent-soft)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px;padding:7px 2px;border-bottom:1px solid var(--soft)}
+.row:last-child{border-bottom:0}
+.row .s{font-size:12px;color:var(--muted)}
+.row .grow{flex:1;min-width:0}
+.row .grow b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.pill.b{background:var(--blue-soft);color:var(--blue)}
+.pill.g{background:var(--ok-soft);color:var(--ok)}
+.pill.p{background:var(--accent-soft);color:var(--accent)}
+.ibtn{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);display:grid;place-items:center;flex:none}
+.ibtn.on{background:var(--accent);color:var(--panel)}
+.ibtn svg,.tab svg,.big svg,.ico{width:18px;height:18px}
+.big{background:var(--ink);color:var(--panel);border-radius:12px;padding:11px;font-weight:700;font-size:14px;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px}
+.big.acc{background:var(--accent)}
+.big.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.search{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--muted)}
+.segs{display:flex;gap:4px;flex-wrap:wrap}
+.segs span{font-size:12px;font-weight:600;padding:4px 9px;border-radius:999px;border:1.5px solid var(--line);color:var(--muted)}
+.segs span.on{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.field{display:grid;gap:3px}
+.field .box{border:1.5px solid var(--line);border-radius:9px;padding:7px 9px;font-size:13px}
+.field .box.ph{color:var(--muted)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:5px 0}
+.cb{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--wire);flex:none;display:grid;place-items:center}
+.cb.on{background:var(--ok);border-color:var(--ok);color:var(--panel)}
+.cb svg{width:12px;height:12px}
+.bar{height:6px;border-radius:6px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+.steps{display:flex;gap:3px}
+.steps i{flex:1;height:6px;border-radius:4px;background:var(--soft)}
+.steps i.on{background:var(--blue)}
+.feed{font-size:12.5px;display:grid;gap:6px}
+.feed div{display:grid;grid-template-columns:auto 1fr;gap:6px;align-items:start}
+.feed .ico{width:14px;height:14px;color:var(--muted);margin-top:2px}
+.note{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.note svg{width:13px;height:13px;flex:none}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--panel);border-top:2px solid var(--wire);border-radius:22px 22px 0 0;padding:14px 12px 16px;display:grid;gap:9px;box-shadow:0 -10px 30px rgb(0 0 0 / .12)}
+.dim{position:absolute;inset:0;background:var(--ink);opacity:.18}
+.tabbar{margin:auto -12px 0;border-top:1.5px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px 12px}
+.tab{display:grid;justify-items:center;gap:2px;font-size:10.5px;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--accent)}
+.money{display:grid;grid-template-columns:1fr auto;gap:6px 10px;font-size:13.5px;align-items:center}
+.money .amt{font-family:var(--f-mono);font-size:13px;border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;min-width:76px;text-align:right}
+.stars{color:var(--warn);letter-spacing:2px;font-size:15px}
+.drag{color:var(--wire);font-size:14px;letter-spacing:-2px}
+.mono-s{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.sum{display:flex;justify-content:space-between;font-size:13px;font-weight:600}
+.screen.web{grid-column:1/-1;justify-items:stretch}
+.screen.web .cap{max-width:none}
+.cap-t{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.vt{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel);flex:none}
+.vt button{border:0;background:none;font:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:4px 10px;cursor:pointer}
+.vt button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.desk-wrap{width:100%;overflow-x:auto}
+.desk{min-width:640px;max-width:880px;border:2px solid var(--wire);border-radius:14px;background:var(--panel);display:grid;grid-template-columns:170px minmax(0,1fr);min-height:400px;overflow:hidden}
+.side{border-right:1.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:3px}
+.side .brand{font-family:var(--f-display);font-weight:800;font-size:15px;line-height:1.1;margin:0 6px 10px}
+.side .nav{display:flex;gap:8px;align-items:center;font-size:13.5px;font-weight:600;color:var(--muted);padding:7px 8px;border-radius:8px}
+.side .nav svg{width:16px;height:16px}
+.side .nav.on{background:var(--accent-soft);color:var(--accent)}
+.side .who{margin-top:auto;font-size:12px;color:var(--muted);padding:0 8px}
+.desk main{padding:16px 20px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;align-items:start}
+.col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.times{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px}
+.times span{display:grid;font-size:11px;color:var(--muted)}
+.times b{font-family:var(--f-mono);font-size:13px;color:var(--ink);font-weight:500}
+.avail{display:flex;gap:4px;flex-wrap:wrap}
+.av{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.av.y{background:var(--ok-soft);color:var(--ok)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.txt{font-size:13.5px}
+.screens-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:18px;font-size:14px;color:var(--muted)}
+.callout{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:14px;max-width:76ch}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;margin:6px 0 20px}
+.flow span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-weight:600}
+.flow em{color:var(--muted);font-style:normal}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+    <symbol id="i-money" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <h1>Band App<br>Blueprint</h1>
+    <p class="lede">Data model, schema, who can see what, user stories, and simple screens for the Ingrid Avison Band app. Firebase (Firestore + Google sign-in), Next on App Hosting, one MCP server for AI. Campaigns are left out for now.</p>
+  </header>
+
+  <nav class="toc" aria-label="Sections">
+    <a href="#words">Words</a><a href="#model">Model</a><a href="#schema">Schema</a><a href="#access">Who sees what</a><a href="#stories">User stories</a><a href="#screens">Screens</a>
+  </nav>
+
+  <section class="sec" id="words">
+    <h2>Words</h2>
+    <p class="sec-intro">The app speaks plain language. The schema uses precise names. This is the mapping, so the screens and the database never drift apart.</p>
+    <div class="gloss">
+      <div><b>Pitch</b><span><code>pitch</code>. One thing we're going after.</span></div>
+      <div><b>Venue</b><span><code>venue</code>. A physical room or stage.</span></div>
+      <div><b>Promoter</b><span><code>promoter</code>. Whoever books: a buyer, a venue group, a nonprofit.</span></div>
+      <div><b>Festival or Concert series</b><span><code>festival</code>, with <code>type</code> festival or series. Lists say "Festivals &amp; series".</span></div>
+      <div><b>UMS 2027</b><span><code>edition</code>. One dated run of a festival. The app just shows name + year.</span></div>
+      <div><b>Contacts</b><span><code>contact</code>. Bookers and buyers. Not musicians.</span></div>
+      <div><b>Artist</b><span><code>artist</code>. Ingrid Avison Band. The only one for now.</span></div><div><b>Full band, Duo…</b><span><code>configuration</code>. A way the artist plays, with its usual musicians.</span></div><div><b>Who's playing</b><span><code>personnel</code>. The musicians on this show.</span></div>
+            <div><b>Musicians</b><span><code>musician</code>. Anyone who plays. Subs need no login.</span></div><div><b>Files</b><span><code>file</code>. A Google Drive link: chart, demo, recording, receipt.</span></div>
+      <div><b>Money</b><span><code>ledger</code>. Every dollar in or out, never edited.</span></div>
+    </div>
+  </section>
+
+  <section class="sec" id="model">
+    <h2>Data model</h2>
+    <p class="sec-intro">Conceptual relationships. In Firestore these are ID references plus copied display fields (a name, an address) that the server keeps in sync.</p>
+    <div class="diagram">
+<pre class="mermaid">
+erDiagram
+  CONTACT }o--o{ VENUE : "works at"
+  CONTACT }o--o{ PROMOTER : "works for"
+  CONTACT }o--o{ FESTIVAL : "runs"
+  PROMOTER }o--o{ VENUE : "books"
+  FESTIVAL ||--o{ EDITION : "has years"
+  EDITION }o--o{ VENUE : "uses"
+  PITCH }o--o| VENUE : "targets one of"
+  PITCH }o--o| PROMOTER : "targets one of"
+  PITCH }o--o| EDITION : "targets one of"
+  PITCH ||--o{ SHOW : "becomes"
+  ARTIST ||--o{ CONFIGURATION : "plays as"
+  CONFIGURATION }o--o{ MUSICIAN : "usually"
+  PITCH }o--o| CONFIGURATION : "pitched as"
+  SHOW }o--o| CONFIGURATION : "billed as"
+  SHOW }o--|| VENUE : "at"
+  SHOW }o--o| EDITION : "part of"
+  SHOW ||--|| SHOW_DEAL : "private half"
+  SHOW }o--o{ MUSICIAN : "personnel"
+  SHOW |o--o| SETLIST : "uses"
+  SETLIST }o--o{ SONG : "lists"
+  SONG ||--o{ FILE : "has"
+  REHEARSAL }o--o{ SONG : "practiced"
+  REHEARSAL ||--o{ FILE : "recorded"
+  USER |o--o| MUSICIAN : "is"
+  EXPENSE }o--|| MUSICIAN : "paid by"
+  LEDGER_ENTRY }o--o| SHOW : "for"
+  LEDGER_ENTRY }o--o| EXPENSE : "reimburses"
+  LEDGER_ENTRY }o--o| MUSICIAN : "paid to"
+</pre>
+    </div>
+    <div style="height:18px"></div>
+    <h3 style="margin-bottom:10px">Ground rules</h3>
+    <ul class="rules">
+      <li><b>One door for writes.</b> Browsers read Firestore directly. Every write goes through server commands (app, MCP, scripts). Rules deny all client writes.</li>
+      <li><b>Strict shapes.</b> One Zod schema per collection, shared by app, MCP, import and restore. Unknown fields are rejected. Values are normalized.</li>
+      <li><b>Roles live in the sign-in token.</b> The server sets a <code>role</code> custom claim (and <code>musicianId</code>) on each Firebase account. Rules check <code>request.auth.token.role</code> without reading any document. The <code>users</code> doc mirrors it for display.</li>
+      <li><b>Show is one thing.</b> It is stored as <code>shows</code> + <code>showDeals</code> only so members can't read the money. Commands and MCP tools always write both together.</li>
+      <li><b>No duplicates.</b> Venues, promoters, festivals and contacts carry a <code>matchKey</code>. A create that matches merges instead.</li>
+      <li><b>Money in cents.</b> Integers only. Ledger entries are never edited or deleted; mistakes get a reversal entry.</li>
+      <li><b>Soft delete + history.</b> Nothing is hard-deleted. Every change writes a history record with a <code>runId</code>, so a whole AI session can be undone at once.</li>
+      <li><b>Drive for files.</b> Recordings, charts, receipts and posters live in Google Drive, ideally in the one band folder. The app stores the Drive file ID and link, and checks that every band member can open each file.</li>
+      <li><b>Nightly backup.</b> A GitHub Action dumps every collection to JSON in a private repo.</li>
+    </ul>
+  </section>
+
+  <section class="sec" id="schema">
+    <h2>Schema</h2>
+    <p class="sec-intro">Top-level collections, one band per project. Types are terse on purpose.</p>
+    <p class="legend"><span><code>str</code> text</span><span><code>int</code></span><span><code>cents</code> integer cents</span><span><code>date</code> YYYY-MM-DD</span><span><code>time</code> HH:mm</span><span><code>ts</code> server timestamp</span><span><code>ref(x)</code> ID in x</span><span><code>?</code> optional</span><span><code>[ ]</code> list</span><span><code>a|b</code> fixed choices</span></p>
+
+    <div class="common">
+      <h4>On every document</h4>
+      <div class="tbl"><table id="common"></table></div>
+    </div>
+
+    <div class="groups" id="groups"></div>
+  </section>
+
+  <section class="sec" id="access">
+    <h2>Who sees what</h2>
+    <p class="sec-intro">Admins: Jeff and Ingrid. Members: David, Eric, Emma. MCP users: Jeff to start, Ingrid later. Reads are enforced by Firestore rules; writes by which server commands a role may call. Rules check documents, not fields, which is why shows are split in two.</p>
+    <div class="access"><table id="accessTbl"></table></div>
+  </section>
+
+  <section class="sec" id="stories">
+    <h2>User stories</h2>
+    <p class="sec-intro">Everyone signs in with Google. An admin adds a person's email first; anyone else is turned away.</p>
+    <div class="stories" id="storyGrid"></div>
+  </section>
+
+  <section class="sec" id="screens">
+    <h2>Screens</h2>
+    <p class="sec-intro">Every screen comes in a phone and a web version. Phone: five tabs along the bottom. Web: the same five down the left. Members see four of them.</p>
+    <div class="flow"><span>Find a venue</span><em>→</em><span>Add to Pitch List</span><em>→</em><span>Pitch</span><em>→</em><span>Send email</span><em>→</em><span>Booked it</span><em>→</em><span>Show</span><em>→</em><span>After the show</span></div>
+    <div class="callout" style="margin-bottom:18px"><b>How Home decides.</b> First, any show today, one card each. If none, any played show in the last few days whose money isn't entered yet stays on top until it is. Otherwise: next show, to-dos, deadlines and the Pitch List. Members get the same order without money, with "add expenses from last night" in place of entering money, and any unanswered "Can you play?" question above everything except today's show.</div>
+    <div class="screens-bar"><span>Show all as</span><div class="vt" id="allViews" role="group" aria-label="View all"><button type="button" data-m="mobile" aria-pressed="true">Mobile</button><button type="button" data-m="web" aria-pressed="false">Web</button></div><span>or switch each screen on its own.</span></div>
+    <div class="screens" id="screenGrid"></div>
+  </section>
+</div>
+
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const rows = f => f.map(([n,t,d]) => `<tr><td>${esc(n)}</td><td class="t">${esc(t)}</td><td class="n">${esc(d||"")}</td></tr>`).join("");
+
+$("#common").innerHTML = rows([
+  ["id","str","Firestore doc ID"],
+  ["schemaVersion","int","Bumped by migrations"],
+  ["createdAt / updatedAt","ts","Server time"],
+  ["createdBy / updatedBy","ref(users)","Who made the change"],
+  ["via","app|mcp|import","Where the write came from"],
+  ["runId","str","Groups one session's writes for undo"],
+  ["deletedAt","ts?","Soft delete; hidden when set"],
+  ["sources","[{url, checkedAt, note?}]?","Booking data only: where a fact came from"],
+]);
+
+const C = (id, path, desc, access, fields) => ({id,path,desc,access,fields});
+const groups = [
+ {name:"People & sign-in", note:"band side", colls:[
+  C("users","users/{uid}","A login. Created by an admin by email.",["admin"],[
+    ["email","str","Google account, lowercase"],
+    ["name","str",""],
+    ["role","admin|member","Mirrored to a custom auth claim; rules read the claim"],
+    ["musicianId","ref(musicians)?","Link to their musician record"],
+    ["mcpAccess","bool","May use the MCP server"],
+  ]),
+  C("musicians","musicians/{id}","Anyone who plays. Subs need no login.",["admin","member: read"],[
+    ["name","str",""],
+    ["instruments","[str]","e.g. drums, keys"],
+    ["userId","ref(users)?","Set if they log in"],
+    ["email / phone","str?",""],
+    ["payHandle","str?","Venmo or similar, for payouts"],
+    ["active","bool","Current member or regular sub"],
+  ]),
+  C("artists","artists/{id}","Who gets billed. Only Ingrid Avison Band for now.",["admin","member: read"],[
+    ["name","str","e.g. Ingrid Avison Band"],
+    ["configurations","[{id, name, billingName, musicianIds, gear: [{label, musicianId?}]}]","Full band, Duo, Trio, Ingrid solo"],
+    ["soundGear","{bandProvided: [{label, musicianId?}], venueProvided: [{label, musicianId?}]}","Added to a show's gear by who provides sound"],
+    ["links","{spotify?, instagram?, website?, bandsintown?}",""],
+    ["driveFolderId","str","The one shared band folder everything lives in"],
+  ]),
+ ]},
+ {name:"Booking", note:"admins only", colls:[
+  C("contacts","contacts/{id}","A booker, buyer or festival person.",["admin"],[
+    ["name","str",""],
+    ["title","str?","e.g. talent buyer"],
+    ["emails","[str]","Lowercase; first is primary"],
+    ["phones","[str]","E.164"],
+    ["instagram","str?","Handle without @"],
+    ["notes","str?",""],
+    ["matchKey","str","Primary email, else name slug"],
+  ]),
+  C("venues","venues/{id}","A physical room or stage.",["admin"],[
+    ["name","str",""],
+    ["type","listening|bar|brewery|club|theater|outdoor|house|other",""],
+    ["address","{street?, city, state, zip?}",""],
+    ["region","boulder|denver|north|south|mountains|southwest|out",""],
+    ["capacity","int?",""],
+    ["ages","all|18|21?",""],
+    ["sound","{provider: venueProvided|bandProvided, notes?}?","Default for shows here"],
+    ["loadInNotes","str?",""],
+    ["website / instagram","str?",""],
+    ["contactIds","[ref(contacts)]",""],
+    ["promoterIds","[ref(promoters)]","Who books it"],
+    ["notes","str?",""],
+    ["matchKey","str","slug(name)+slug(city)"],
+  ]),
+  C("promoters","promoters/{id}","Whoever books: buyer, venue group, nonprofit.",["admin"],[
+    ["name","str",""],
+    ["kind","promoter|venueGroup|nonprofit|buyer",""],
+    ["website","str?",""],
+    ["contactIds","[ref(contacts)]",""],
+    ["venueIds","[ref(venues)]","Rooms they book"],
+    ["howToPitch","str?","Form, email, intro"],
+    ["notes","str?",""],
+    ["matchKey","str","slug(name)"],
+  ]),
+  C("festivals","festivals/{id}","A festival or concert series that repeats. Series are stored here too, told apart by type.",["admin"],[
+    ["name","str",""],
+    ["type","festival|series","UI: Festival or Concert series"],
+    ["region","same list as venues",""],
+    ["website","str?",""],
+    ["genres","str?","As they describe it"],
+    ["contactIds","[ref(contacts)]","Stays year to year"],
+    ["promoterId","ref(promoters)?",""],
+    ["typicalMonth","1–12?",""],
+    ["notes","str?",""],
+    ["matchKey","str","slug(name)"],
+  ]),
+  C("editions","editions/{id}","One dated run of a festival or series.",["admin"],[
+    ["festivalId","ref(festivals)",""],
+    ["festivalName","str","Copied for display"],
+    ["year","int",""],
+    ["label","str","e.g. 2027, Summer 2027"],
+    ["startDate / endDate","date?",""],
+    ["appOpens","{date, sure: confirmed|estimated}?",""],
+    ["appDeadline","{date, sure: confirmed|estimated|target}?",""],
+    ["notifyDate","date?","When they announce"],
+    ["applyUrl","str?",""],
+    ["venueIds","[ref(venues)]","Stages, if known"],
+    ["payNotes","str?",""],
+    ["notes","str?",""],
+  ]),
+ ]},
+ {name:"Pitches", note:"admins only", colls:[
+  C("pitches","pitches/{id}","One effort to get booked at a venue, promoter or festival year.",["admin"],[
+    ["target","{kind: venue|promoter|edition, id, name}","Name copied for display"],
+    ["status","idea|toPitch|pitched|waiting|talking|booked|declined|dropped","declined: they said no. dropped: we stopped"],
+    ["artistId","ref(artists)",""],
+    ["pitchedAs","configuration id?","Dropdown; empty means not sure"],
+    ["personnel","[ref(musicians)]","Who's on it. Fills in from pitchedAs"],
+    ["assigneeId","ref(users)?","Who's handling it"],
+    ["nextStep","{text, due: date}?","Feeds Home to-dos"],
+    ["lastContactAt","ts?","Updated by email log"],
+    ["showIds","[ref(shows)]","Shows it produced"],
+    ["notes","str?",""],
+  ]),
+  C("comments","pitches/{id}/comments/{id}","Talk about a pitch.",["admin"],[
+    ["authorId","ref(users)",""],
+    ["body","str",""],
+  ]),
+  C("activity","pitches/{id}/activity/{id}","The pitch's timeline. Append only.",["admin"],[
+    ["type","status|emailSent|emailReply|call|note",""],
+    ["fromStatus / toStatus","status?",""],
+    ["gmail","{messageId, threadId, to, subject}?","For emails"],
+    ["text","str?",""],
+  ]),
+  C("emailTemplates","emailTemplates/{id}","Reusable pitch and follow-up emails.",["admin"],[
+    ["name","str","e.g. Support slot pitch"],
+    ["subject","str","Supports {{fields}}"],
+    ["body","str","{{contact.firstName}}, {{venue.name}}…"],
+    ["targetKinds","[venue|promoter|edition]","Where it's offered"],
+  ]),
+ ]},
+ {name:"Shows", note:"split in two", colls:[
+  C("shows","shows/{id}","The part the whole band sees.",["admin","member: read"],[
+    ["date","date",""],
+    ["status","hold|confirmed|played|canceled",""],
+    ["venue","{id, name, address, city}","Copied; no contacts"],
+    ["editionName","str?","e.g. UMS 2027"],
+    ["times","{loadIn?, soundcheck?, doors?, set?, setLength?: int}","time fields; setLength minutes"],
+    ["artistId","ref(artists)",""],
+    ["billedAs","configuration id?","Dropdown; can be set late"],
+    ["personnel","[ref(musicians)]","Who's playing. Starts from the configuration"],
+    ["sound","{provider: venueProvided|bandProvided, notes?}","Starts from the venue"],
+    ["needs","{poster, backline, merch: bool}","With sound, builds the checklist"],
+    ["checklist","[{id, label, done, ownerId?, due?}]",""],
+    ["gear","[{id, label, musicianId?, packed}]","Built from billed as + sound; editable per show"],
+    ["setlistId","ref(setlists)?",""],
+    ["docs","[{title, driveFileId, url}]","Stage plot, poster, etc."],
+    ["calendarEventId","str?","Google Calendar event"],
+    ["public","bool","May be listed publicly"],
+    ["ticketUrl","str?",""],
+    ["listings","{bandsintown?: {eventId?, state: pending|listed|error, syncedAt?, error?}}","Kept in sync by server"],
+    ["bandNotes","str?","Parking, dress, food"],
+  ]),
+  C("showDeals","showDeals/{showId}","The admin-only half. Same ID as the show.",["admin"],[
+    ["pitchId","ref(pitches)?",""],
+    ["promoterId / editionId","ref?",""],
+    ["contactIds","[ref(contacts)]","Day-of and booking"],
+    ["deal","guarantee|doorSplit|flat|tips|free",""],
+    ["guarantee","cents?",""],
+    ["doorSplitPct","int?","0–100"],
+    ["ticketPrice","cents?",""],
+    ["paidAttendance","int?",""],
+    ["rating","{show 1–5, venue 1–5, crowd?: int, notes?}?","After the show"],
+    ["settled","bool","Money entered"],
+  ]),
+  C("availability","availability/{id}","Asking who can play a date.",["admin","member: own"],[
+    ["date","date",""],
+    ["label","str","e.g. Lost Lake · Sat Jan 16"],
+    ["pitchId / showId","ref?","What it's for"],
+    ["askedMusicianIds","[ref(musicians)]","Rules let a member read it if listed"],
+    ["responses","{musicianId: {answer: yes|no|maybe, note?, by: self|admin, at: ts}}",""],
+    ["linkTokens","{musicianId: hash}","Answer links work without a login (subs)"],
+    ["sentAt","ts?",""],
+    ["closedAt","ts?","Stop taking answers"],
+  ]),
+  C("checklistTemplates","checklistTemplates/{id}","Items added to shows automatically.",["admin"],[
+    ["label","str","e.g. Book sound engineer"],
+    ["when","always|bandSound|venueSound|poster|backline|merch","Matches show.sound and show.needs"],
+    ["daysBefore","int","Sets the due date"],
+  ]),
+ ]},
+ {name:"Music", note:"whole band reads", colls:[
+  C("songs","songs/{id}","A song we play or are writing.",["admin","member: read"],[
+    ["title","str",""],
+    ["writers","str?",""],
+    ["key","str?","Main key, e.g. F#m"],
+    ["bpm","int?",""],
+    ["lengthSec","int?",""],
+    ["status","active|learning|idea|retired",""],
+    ["lyricsDoc","{driveFileId, url}?",""],
+    ["notes","str?",""],
+  ]),
+  C("files","files/{id}","A Drive file tied to a song or rehearsal.",["admin","member: read"],[
+    ["kind","chart|demo|rehearsal|recording|lyrics|stems|other",""],
+    ["title","str",""],
+    ["songId","ref(songs)?",""],
+    ["rehearsalId","ref(rehearsals)?",""],
+    ["key","str?","For charts in other keys"],
+    ["driveFileId / url","str",""],
+    ["mimeType","str?","Picks the icon: audio, video, doc"],
+    ["ownerEmail","str","Drive owner"],
+    ["inBandFolder","bool","Lives in (or was copied to) the band folder"],
+    ["sharing","ok|missing: [musicianIds]","Every band member can open it?"],
+    ["checkedAt","ts","Last sharing check"],
+  ]),
+  C("setlists","setlists/{id}","Ordered songs, maybe for a show.",["admin","member: read"],[
+    ["name","str","e.g. Hi-Dive 45 min"],
+    ["showId","ref(shows)?",""],
+    ["items","[{type: song|break, songId?, title, lengthSec?, key?, note?}]","Title copied"],
+    ["totalSec","int","Computed by server"],
+  ]),
+  C("rehearsals","rehearsals/{id}","A practice and what we worked on.",["admin","member: read"],[
+    ["date","date",""],
+    ["place","str?","Or venueId for a rented room"],
+    ["personnel","[ref(musicians)]",""],
+    ["songs","[{songId, title, note?}]",""],
+    ["notes","str?",""],
+  ]),
+ ]},
+ {name:"Money", note:"split by person", colls:[
+  C("ledger","ledger/{id}","Every dollar in or out. Never edited.",["admin","member: own payouts"],[
+    ["date","date",""],
+    ["kind","income|expense|payout|reimbursement|correction","In or out follows from kind"],
+    ["amount","cents","Always positive"],
+    ["category","guarantee|door|merch|tips|venmo|photo|video|space|gear|marketing|travel|fees|other","What the money was for"],
+    ["method","cash|venmo|check|card|bank|other",""],
+    ["showId / rehearsalId","ref?",""],
+    ["payeeUserId","ref(users)?","Lets a member read their own"],
+    ["payeeMusicianId","ref(musicians)?","Subs without logins"],
+    ["expenseId","ref(expenses)?","What this reimburses"],
+    ["reversesId","ref(ledger)?","Required when kind is correction"],
+    ["memo","str?",""],
+    ["receipt","{driveFileId, url}?",""],
+  ]),
+  C("expenses","expenses/{id}","Something a member paid for. Create only.",["admin","member: create + own"],[
+    ["userId","ref(users)","Who submitted"],
+    ["date","date",""],
+    ["amount","cents",""],
+    ["category","same list as ledger category",""],
+    ["what","str","Short description"],
+    ["showId","ref(shows)?",""],
+    ["receipt","{driveFileId, url}?",""],
+  ]),
+ ]},
+ {name:"Reach", note:"admins only", colls:[
+  C("statSnapshots","statSnapshots/{source}_{date}","One day's numbers from one source. Never edited.",["admin"],[
+    ["source","spotifyApi|spotifyForArtists|instagram|bandsintown",""],
+    ["date","date","Day the numbers describe"],
+    ["followers","int?",""],
+    ["monthlyListeners","int?","Spotify for Artists only"],
+    ["streams","int?","Period total, if given"],
+    ["popularity","int?","Spotify 0–100"],
+    ["topTracks","[{title, streams}]?",""],
+    ["importFile","{driveFileId, url}?","Export it came from"],
+  ]),
+ ]},
+ {name:"System", note:"server only", colls:[
+  C("history","history/{id}","Every change, for audit and undo.",["admin"],[
+    ["entity","{kind, id}",""],
+    ["op","create|update|delete|merge|restore",""],
+    ["diff","{field: [before, after]}",""],
+    ["actor","{uid, via}",""],
+    ["runId","str","Undo a whole run"],
+  ]),
+  C("mcpTokens","mcpTokens/{hash}","AI access keys. Stored hashed.",["admin"],[
+    ["userId","ref(users)",""],
+    ["label","str","e.g. Jeff · Claude"],
+    ["lastUsedAt","ts?",""],
+    ["revokedAt","ts?",""],
+  ]),
+ ]},
+];
+const chipFor = a => a==="admin" ? `<span class="chip a">admin</span>` : `<span class="chip m">${esc(a)}</span>`;
+$("#groups").innerHTML = groups.map(g => `<div class="group"><h3>${g.name}<small>${g.note}</small></h3><div class="colls">${g.colls.map(c => `
+  <article class="coll"><div class="coll-h"><div class="coll-t"><h4>${c.id}</h4><code>${esc(c.path)}</code></div><p>${esc(c.desc)}</p><div class="chips">${c.access.map(chipFor).join("")}</div></div>
+  <div class="tbl"><table>${rows(c.fields)}</table></div></article>`).join("")}</div></div>`).join("");
+
+const Y = `<span class="y">Yes</span>`, N = `<span class="no">—</span>`;
+const acc = [
+  ["Venues, promoters, festivals, contacts", "Read + write", N, "Read + write, with dedupe"],
+  ["Artist and configurations", "Read + write", "Read only", "Read only"],
+  ["Pitches, comments, email templates", "Read + write", N, "Read + write"],
+  ["Send email from Gmail", "Yes, from own account", N, "Draft only (sent from the app)"],
+  ["Shows: date, place, times, checklist, setlist", "Read + write", "Read only", "Read + write"],
+  ["Availability", "Ask, read all, mark anyone", "Read and answer own", "Ask and read"],
+  ["Show deal, contacts, rating", "Read + write", N, "Read + write (with the show)"],
+  ["Songs, setlists, rehearsals, files", "Read + write", "Read only", "Read + write"],
+  ["Expenses", "Read all", "Create, read own", "Read all"],
+  ["Ledger", "Read + add entries", "Read own payouts", "Read + add entries"],
+  ["Money reports", Y, N, Y],
+  ["Spotify stats", Y, N, Y],
+  ["Publish to Bandsintown", Y, N, Y],
+  ["History and undo", Y, N, "Undo own runs"],
+  ["Users, musicians, AI keys", Y, "Read musicians", N],
+];
+$("#accessTbl").innerHTML = `<thead><tr><th>Data</th><th>Admins</th><th>Members</th><th>MCP (Jeff)</th></tr></thead><tbody>${acc.map(r => `<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</tbody>`;
+
+const R = {a:`<span class="chip a">admin</span>`, m:`<span class="chip m">member</span>`, ai:`<span class="chip ai">MCP</span>`};
+const stories = [
+ ["Sign in & people", [
+  ["a","Add a band member by email and choose admin or member."],
+  ["a","Add a sub as a musician without giving them a login."],
+  ["a","Set up the ways we play (full band, duo, trio) and who usually plays in each."],
+  ["m","Sign in with Google and land on my upcoming shows."],
+  ["a","Turn AI access on for myself and revoke a key."],
+ ]],
+ ["Venues, promoters, festivals", [
+  ["a","Search everything by name, city, or person."],
+  ["a","Open a venue and see its people, past shows, and pitches."],
+  ["a","Copy a booker's email in one tap."],
+  ["a","See which festivals open applications this month."],
+  ["ai","Research Front Range rooms and add them with contacts and sources."],
+  ["ai","Have a match merge into the existing venue, not duplicate it."],
+  ["ai","Add next year's dates and deadlines to a festival."],
+ ]],
+ ["Pitches", [
+  ["a","Tap the flag on a venue, promoter, or festival year to add it to the Pitch List."],
+  ["a","Pick full band, duo, or not sure when pitching, and change it later."],
+  ["a","When I pick a configuration, who's on it fills in with its usual musicians, and I can still change it."],
+  ["a","Move a pitch along: to pitch, pitched, waiting, talking, booked, declined, or dropped."],
+  ["a","Set a next step with a date and see it on Home."],
+  ["a","Assign a pitch to Ingrid or me."],
+  ["a","Comment on a pitch and see the whole timeline."],
+  ["ai","List pitches that need a follow-up and draft the emails."],
+  ["ai","Start pitches for every A-fit festival with a 2027 deadline."],
+ ]],
+ ["Email", [
+  ["a","Pick a template, check the filled-in email, and send from my Gmail."],
+  ["a","See sent emails and replies on the pitch timeline."],
+  ["a","Edit templates with fill-in fields like the venue name."],
+  ["ai","Write a pitch email for a venue and leave it as a draft for me to send."],
+ ]],
+ ["Home", [
+  ["a","On a show day, see today's shows first, with times, gear and setlist."],
+  ["a","After a show, have entering the money stay at the top until it's done."],
+  ["a","On other days, see the next show, my to-dos, deadlines and the Pitch List."],
+  ["m","See today's show first, then a reminder to add expenses after a show."],
+ ]],
+ ["Availability", [
+  ["a","Ask who can play a date from a pitch, with a short message that goes out by email."],
+  ["a","See yes, no, maybe and waiting for each musician on the pitch."],
+  ["a","Mark someone available or not myself, for answers given in person or by text."],
+  ["a","Send a reminder to whoever hasn't answered."],
+  ["m","Tap the link, see the date and place, and answer yes, no or maybe with a note."],
+  ["m","See open availability questions at the top of Home."],
+  ["m","Answer from a link without logging in, if I'm a sub."],
+  ["ai","Check availability for a list of dates before I pitch them."],
+ ]],
+ ["Gear", [
+  ["a","Set the gear each way we play needs, and who brings each piece."],
+  ["a","Set the extra gear we bring when we provide sound."],
+  ["a","Get a gear list on every show, built from billed as and sound, and adjust it."],
+  ["m","See the gear list for a show and what I'm bringing."],
+ ]],
+ ["Shows & calendar", [
+  ["a","Tap Booked it on a pitch and fill in the show."],
+  ["a","Choose what we're billed as from a list, and who's playing fills in. Change either later."],
+  ["a","Say who provides sound and whether we need posters, backline, or merch, and get a checklist."],
+  ["a","Add the show to Google Calendar for everyone playing."],
+  ["m","See my upcoming shows with address, times, and setlist."],
+  ["m","See the checklist for a show."],
+ ]],
+ ["After the show", [
+  ["a","Rate the show and the venue."],
+  ["a","Enter money from tickets, merch, cash tips, and Venmo."],
+  ["a","Pay out the people who played and record it."],
+  ["a","Fix a mistake by adding a correction, never by editing."],
+ ]],
+ ["Songs & setlists", [
+  ["m","Browse songs with key and length."],
+  ["m","Open a song and play the demo or a rehearsal recording."],
+  ["m","Find the chart in the key I need."],
+  ["a","Add a song and attach Drive files to it."],
+  ["a","Build a setlist by dragging songs and see total time against set length."],
+  ["a","Attach a setlist to a show."],
+  ["ai","Fill in song lengths and keys from our Drive folder."],
+ ]],
+ ["Files & Drive", [
+  ["a","Type a song title and see every matching audio, video and Word/Docs file in my Drive."],
+  ["a","Pick the files that belong to the song in one go."],
+  ["a","See which files a band member can't open."],
+  ["a","Copy files into the band folder, or share them with every band member, in one tap."],
+  ["a","Run a sharing check across all song files."],
+  ["m","Open any file the app links to without asking for access."],
+  ["ai","Find Drive files for every song that has none and report sharing problems."],
+ ]],
+ ["Rehearsals", [
+  ["a","Log a rehearsal and check off which songs we ran."],
+  ["m","See when we last rehearsed a song before a show."],
+  ["a","Attach the rehearsal recording from Drive."],
+ ]],
+ ["Money", [
+  ["m","Add an expense with amount, what for, and a receipt."],
+  ["m","See my expenses and whether they've been paid back."],
+  ["m","See every payment the band has made to me."],
+  ["a","See what we owe each person."],
+  ["a","See income and spending by month, by show, and by category."],
+  ["a","Record photo shoots, video, and room rentals."],
+ ]],
+ ["Spotify stats", [
+  ["a","See followers and popularity over time, pulled daily from Spotify's public API."],
+  ["a","See monthly listeners and streams from a Spotify for Artists export, so the pitch email always has current numbers."],
+  ["a","Drop in a Spotify for Artists export and have it read in automatically."],
+  ["ai","Pull current stats into a pitch email when drafting it."],
+  ["ai","Report how listeners moved after each release or show."],
+ ]],
+ ["Bandsintown", [
+  ["a","Mark a show public and have it appear on Bandsintown, with a ticket link."],
+  ["a","See on each show whether it's listed, and when it last synced."],
+  ["a","Have a date or time change, or a cancellation, update Bandsintown too."],
+  ["a","Keep holds and private shows off Bandsintown."],
+  ["ai","Publish every confirmed public show that isn't listed yet."],
+  ["ai","Check our Bandsintown page against our shows and report mismatches."],
+ ]],
+ ["Safety net", [
+  ["a","See who changed what and when, human or AI."],
+  ["a","Undo everything an AI session did in one step."],
+  ["ai","Get a clear error when data doesn't fit, and fix it without a person stepping in."],
+ ]],
+];
+$("#storyGrid").innerHTML = stories.map(([t, list]) => `<article class="story"><h3>${t}</h3><ul>${list.map(([r,s]) => `<li>${R[r]}<span>${esc(s)}</span></li>`).join("")}</ul></article>`).join("");
+
+/* ---------- wireframes ---------- */
+const ic = (id, cls="") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+const cb = on => `<span class="cb${on?" on":""}">${on?ic("check"):""}</span>`;
+const NAV = [["home","Home"],["cal","Shows"],["flag","Booking"],["note","Songs"],["money","Money"]];
+const navItems = member => NAV.filter(n => !(member && n[1]==="Booking")).map(([i,l]) => [i, member && l==="Money" ? "My money" : l]);
+const tabbar = (on, member) => `<div class="tabbar">${navItems(member).map(([i,l]) => `<div class="tab${l===on?" on":""}">${ic(i)}${l}</div>`).join("")}</div>`;
+const sidebar = (on, member) => `<aside class="side"><div class="brand">Ingrid Avison Band</div>${navItems(member).map(([i,l]) => `<div class="nav${l===on?" on":""}">${ic(i)}${l}</div>`).join("")}<div class="who">${member?"David":"Jeff"}</div></aside>`;
+const head = (title, back) => `<div class="ph-top">${back?`<span class="back">‹ ${back}</span>`:""}<b>${title}</b><span></span></div>`;
+const row = (title, sub, right="") => `<div class="row"><span class="grow"><b>${title}</b>${sub?`<span class="s">${sub}</span>`:""}</span>${right}</div>`;
+
+const S = [];
+const add = (t, d, o) => S.push({t, d, ...o});
+
+/* Home: three states */
+add("Home · show day", "A show today goes to the top, with times, gear and setlist. Two shows today means two cards.", {nav:"Home", title:"Home", cols:[`
+  <div class="card hi"><span class="lbl">Today</span><b>Hi-Dive · Denver</b><span class="mono-s">7 S Broadway · Full band</span>
+    <div class="times"><span><b>7:00</b>Load in</span><span><b>7:30</b>Check</span><span><b>8:00</b>Doors</span><span><b>9:15</b>Set</span></div></div>
+  <div class="lbl">Gear · 4 of 7 packed</div>
+  <div class="chk">${cb(true)}Keys rig</div><div class="chk">${cb(true)}Bass rig</div><div class="chk">${cb(false)}In-ear rack</div><div class="chk">${cb(false)}Merch bin + card reader</div>`,`
+  <div class="lbl">Setlist · 43:20</div>
+  ${row("Hi-Dive 45","12 songs", `<span class="s">Open ›</span>`)}
+  <div class="lbl">Checklist</div>
+  <div class="chk">${cb(true)}Confirm load-in</div><div class="chk">${cb(false)}Post the poster</div>
+  <div class="lbl">Contact tonight</div>
+  ${row("Haylee","Lost Lake group", `<span class="pill">Copy</span>`)}`]});
+
+add("Home · after a show", "Until the money for a played show is entered, it stays the first thing on Home.", {nav:"Home", title:"Home", cols:[`
+  <div class="card hi"><span class="lbl">Last night · Hi-Dive</span><b>How'd it go?</b><span class="s">Rate it and enter the money</span><div class="big acc">Enter money</div></div>
+  <div class="lbl">Owed from this show</div>
+  ${row("David, Eric, Emma","Payouts not recorded", `<span class="pill p">3</span>`)}`,`
+  <div class="lbl">Next show</div>
+  ${row("Sat Dec 5 · Roots Music Project","Boulder · Duo", `<span class="pill">43 days</span>`)}
+  <div class="lbl">To do</div>
+  ${row("Follow up with Lost Lake","Due today", ic("mail","ico"))}`]});
+
+add("Home · regular day", "No show today and nothing left to settle: next show, to-dos, deadlines, Pitch List.", {nav:"Home", title:"Home", cols:[`
+  <div class="lbl">Next show</div>
+  <div class="card"><b>Sat Nov 14 · Hi-Dive</b><span class="mono-s">Denver · Set 9:15 · Full band</span><div class="bar"><i style="width:60%"></i></div><span class="s" style="font-size:12px">Checklist 3 of 5</span></div>
+  <div class="lbl">To do</div>
+  ${row("Follow up with Lost Lake","Due today", ic("mail","ico"))}
+  ${row("Order posters for Hi-Dive","Ingrid · Fri", cb(false))}`,`
+  <div class="lbl">Deadlines</div>
+  ${row("FoCoMX 2027","Apply by Jan 11", `<span class="pill p">80 days</span>`)}
+  ${row("Cherry Creek Arts","Apply by Jan 30", `<span class="pill">99 days</span>`)}
+  <div class="lbl">Pitch List</div>
+  ${row("6 waiting to hear back","2 need a follow-up", `<span class="s">Open ›</span>`)}`]});
+
+add("Home · member", "Same rules without money. Open availability questions sit at the top until answered.", {nav:"Home", member:true, title:"Home", cols:[`
+  <div class="card hi"><span class="lbl">Can you play?</span><b>Sat Jan 16 · Lost Lake</b><div class="pair"><div class="big acc">Yes</div><div class="big ghost">No</div></div></div>
+  <div class="lbl">Next show</div>
+  <div class="card"><b>Sat Nov 14 · Hi-Dive</b><span class="mono-s">Load in 7:00 · Set 9:15</span></div>
+  <div class="lbl">You're bringing</div>
+  <div class="chk">${cb(false)}Bass rig</div><div class="chk">${cb(false)}DI box</div>`,`
+  <div class="big acc">${ic("plus")}Add an expense</div>
+  <div class="lbl">Coming up</div>
+  ${row("Rehearsal","Mon Nov 9 · Jeff's")}
+  ${row("Roots Music Project","Sat Dec 5 · not playing")}`]});
+
+/* Booking + pitches */
+add("Booking", "Everything we could play. The flag adds it to the Pitch List in one tap; a filled flag means it's already there.", {nav:"Booking", title:"Booking", cols:[`
+  <div class="search">Search places, festivals, contacts…</div>
+  <div class="segs"><span class="on">All</span><span>Pitch List</span><span>Venues</span><span>Festivals &amp; series</span><span>Promoters</span></div>
+  ${row("Hi-Dive","Venue · Denver · 250", `<span class="pill g">Booked</span><span class="ibtn on">${ic("flag")}</span>`)}
+  ${row("Lost Lake","Venue · Denver · 200", `<span class="pill b">Waiting</span><span class="ibtn on">${ic("flag")}</span>`)}
+  ${row("UMS 2027","Festival · Jul 23–25", `<span class="ibtn">${ic("flag")}</span>`)}
+  ${row("Larimer Lounge group","Promoter · 3 venues", `<span class="ibtn">${ic("flag")}</span>`)}
+  ${row("Globe Hall","Venue · Denver · 300", `<span class="ibtn">${ic("flag")}</span>`)}
+  <div class="big ghost">${ic("plus")}Add a place</div>`]});
+
+add("Add to Pitch List", "What opens when you tap a flag. Picking a configuration fills in who's on it. Usually it's one more tap.", {nav:"Booking", back:"Booking", title:"UMS 2027", cols:[`
+  <div class="note">Festival · Jul 23–25 · applications close Mar 15 (estimated)</div>
+  <div class="lbl">Pitching as</div>
+  <div class="segs"><span>Full band</span><span class="on">Duo</span><span>Trio</span><span>Not sure</span></div>
+  <div class="lbl">Who's on it</div>
+  <div class="segs"><span class="on">Ingrid</span><span class="on">Jeff</span><span>David</span><span>Eric</span><span>Emma</span></div>
+  <div class="note">Filled in from Duo. Tap to change.</div>
+  <div class="lbl">Who's handling it</div>
+  <div class="segs"><span class="on">Jeff</span><span>Ingrid</span></div>
+  <div class="field"><span class="lbl">Next step</span><div class="box">Apply when it opens · Jan 15</div></div>
+  <div class="big acc">${ic("flag")}Add to Pitch List</div>`]});
+
+add("Venue", "Who to talk to, what happened before, and the same button to add it to the Pitch List.", {nav:"Booking", back:"Booking", title:"Lost Lake", cols:[`
+  <span class="mono-s">Denver · 200 cap · 21+ · venue sound</span>
+  <div class="big acc">${ic("flag")}Add to Pitch List</div>
+  <div class="lbl">Contacts</div>
+  <div class="card"><b>Haylee</b><span class="mono-s">haylee@larimerlounge.com</span><span class="pill" style="justify-self:start">Copy</span></div>
+  <div class="note">Booked by Larimer Lounge group</div>`,`
+  <div class="lbl">Pitches</div>
+  ${row("Support slot, winter","Jeff · Pitched Oct 20", `<span class="pill b">Waiting</span>`)}
+  <div class="lbl">Shows here</div>
+  <div class="row"><span class="s">None yet</span></div>`]});
+
+add("Pitch", "Where it's at, what's next, and everything that's happened. Booked it turns it into a show.", {nav:"Booking", back:"Pitch List", title:"Lost Lake", cols:[`
+  <div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+  <div class="sum"><span>Waiting to hear back</span><span class="pill b">Jeff</span></div>
+  <div class="card"><span class="lbl">Next step</span><b>Follow up</b><span class="s">Nov 3</span></div>
+  <div class="pair"><div class="big ghost">${ic("mail")}Email</div><div class="big">Booked it</div></div>
+  <div class="segs"><span>Declined</span><span>Dropped</span></div>
+  <div class="lbl">Who's free · Sat Jan 16</div>
+  <div class="avail"><span class="av y">Ingrid</span><span class="av y">Jeff</span><span class="av w">David</span></div>
+  <div class="big ghost">${ic("cal")}Ask who's free</div>`,`
+  <div class="lbl">Timeline</div>
+  <div class="feed">
+    <div>${ic("mail","ico")}<span><b>Jeff sent</b> Support slot pitch · Oct 20</span></div>
+    <div>${ic("flag","ico")}<span>Moved to Pitched · Oct 20</span></div>
+    <div>${ic("chat","ico")}<span><b>Ingrid:</b> mention the Roots show that drew 95</span></div>
+  </div>
+  <div class="field"><div class="box ph">Write a comment…</div></div>`]});
+
+add("Send email", "Pick a template, check the words, send. It goes out from your own Gmail and lands on the timeline.", {nav:"Booking", back:"Lost Lake", title:"Email", cols:[`
+  <div class="lbl">Template</div>
+  <div class="segs"><span>First pitch</span><span class="on">Follow up</span><span>Thanks</span></div>
+  <div class="field"><span class="lbl">To</span><div class="box">Haylee, Jackson</div></div>
+  <div class="field"><span class="lbl">Subject</span><div class="box">Following up · Ingrid Avison Band</div></div>
+  <div class="field"><span class="lbl">Message</span><div class="box" style="min-height:110px;font-size:12.5px;line-height:1.45">Hi Haylee,<br><br>Checking back on support slots at Lost Lake this winter. Live video: …<br><br>Thanks,<br>Jeff</div></div>
+  <div class="note">${ic("mail")}Sends from jeff@upslope.io</div>
+  <div class="big acc">Send</div>`]});
+
+add("Ask who's free", "From a pitch. Who to ask fills in from who's on it. Goes out by email with a link.", {nav:"Booking", back:"Lost Lake", title:"Ask who's free", cols:[`
+  <div class="field"><span class="lbl">Date</span><div class="box">Sat Jan 16, 2027</div></div>
+  <div class="lbl">Ask</div>
+  <div class="segs"><span class="on">Ingrid</span><span class="on">Jeff</span><span class="on">David</span><span>Eric</span><span>Emma</span></div>
+  <div class="note">From who's on it (Trio)</div>`,`
+  <div class="field"><span class="lbl">Message</span><div class="box" style="min-height:96px;font-size:12.5px;line-height:1.45">We have an option for a show at Lost Lake on Sat Jan 16. Tap here to say if you're available.</div></div>
+  <div class="big acc">${ic("mail")}Send</div>`]});
+
+add("Can you play?", "What David sees after tapping the link. Works signed in, or from the link alone for subs.", {nav:"Home", member:true, title:"Can you play?", cols:[`
+  <div class="card"><b>Sat Jan 16 · Lost Lake</b><span class="mono-s">Denver · evening · Trio</span><span class="s">Asked by Jeff</span></div>
+  <div class="pair"><div class="big acc">Yes</div><div class="big ghost">No</div></div>
+  <div class="big ghost">Maybe</div>
+  <div class="field"><div class="box ph">Add a note (optional)…</div></div>
+  <div class="note">You can change your answer until Jeff closes it.</div>`]});
+
+add("Who's free", "Answers on the pitch. Admins can tap anyone to set their answer for them.", {nav:"Booking", back:"Lost Lake", title:"Sat Jan 16", cols:[`
+  ${row("Ingrid","Yes", `<span class="pill g">Yes</span>`)}
+  ${row("Jeff","Yes", `<span class="pill g">Yes</span>`)}
+  ${row("David","Asked 2 days ago", `<span class="pill">Waiting</span>`)}
+  ${row("Eric","Not asked", `<span class="s">Ask</span>`)}`,`
+  <div class="lbl">Set for David</div>
+  <div class="segs"><span>Yes</span><span>No</span><span>Maybe</span></div>
+  <div class="note">Marked by you, shown as "set by Jeff"</div>
+  <div class="big ghost">${ic("mail")}Remind David</div>`]});
+
+/* Shows */
+add("Booked it", "The pitch becomes a show. Billed as fills in who's playing and the gear list; sound adds the PA gear if we bring it.", {nav:"Shows", back:"Pitch", title:"New show", cols:[`
+  <div class="field"><span class="lbl">Date</span><div class="box">Sat Jan 16, 2027</div></div>
+  <div class="pair"><div class="field"><span class="lbl">Set</span><div class="box">8:00</div></div><div class="field"><span class="lbl">Length</span><div class="box">40 min</div></div></div>
+  <div class="field"><span class="lbl">Billed as</span><div class="box">Trio ▾</div></div>
+  <div class="lbl">Who's playing</div>
+  <div class="segs"><span class="on">Ingrid</span><span class="on">Jeff</span><span class="on">David</span><span>Eric</span><span>Emma</span></div>`,`
+  <div class="lbl">Sound</div>
+  <div class="segs"><span class="on">Venue provides</span><span>We bring it</span></div>
+  <div class="lbl">We need</div>
+  <div class="chk">${cb(true)}Posters</div><div class="chk">${cb(true)}Merch table</div><div class="chk">${cb(true)}Add to everyone's calendar</div>
+  <div class="big acc">Save show</div>`]});
+
+const showTop = `
+  <div class="card"><b>Sat Nov 14</b><span class="mono-s">7 S Broadway, Denver</span><span class="mono-s">Load in 7:00 · Set 9:15 · 45 min</span></div>
+  <div class="lbl">Billed as</div><span class="txt">Ingrid Avison Band · Full band</span>
+  <div class="lbl">Who's playing</div><span class="txt">Ingrid, Jeff, David, Eric, Emma</span>
+  <div class="lbl">Sound</div><span class="txt">Venue provides · house engineer</span>`;
+const gear = edit => `
+  <div class="lbl">Gear</div>
+  <div class="chk">${cb(true)}Keys rig <span class="s">· Jeff</span></div>
+  <div class="chk">${cb(false)}Bass rig <span class="s">· David</span></div>
+  <div class="chk">${cb(false)}Snare, cymbals, pedal <span class="s">· Eric</span></div>
+  <div class="chk">${cb(false)}In-ear rack <span class="s">· Jeff</span></div>
+  ${edit?`<div class="note">From Full band + venue sound</div>`:""}`;
+add("Show · member", "What David, Eric and Emma see. Gear, setlist and checklist; no money and no booker contacts.", {nav:"Shows", member:true, back:"Shows", title:"Hi-Dive", cols:[showTop, `
+  ${gear(false)}
+  <div class="lbl">Setlist · 43:20</div>${row("Hi-Dive 45","12 songs", `<span class="s">Open ›</span>`)}
+  <div class="lbl">Checklist</div>
+  <div class="chk">${cb(true)}Confirm load-in</div><div class="chk">${cb(false)}Post the poster</div>`]});
+
+add("Show · admin", "The same page with the private part at the bottom. After the show leads to the money screen.", {nav:"Shows", back:"Shows", title:"Hi-Dive", cols:[showTop + gear(true), `
+  <div class="lbl">Setlist · 43:20</div>${row("Hi-Dive 45","12 songs", `<span class="s">Change ›</span>`)}
+  <div class="card hi" style="gap:6px">
+    <div class="note">${ic("lock")}Only Jeff and Ingrid see this</div>
+    <div class="sum"><span>Deal</span><span>$300 guarantee</span></div>
+    <div class="sum"><span>Day-of contact</span><span>Haylee</span></div>
+    <div class="sum"><span>From pitch</span><span>Support slot ›</span></div>
+  </div>
+  <div class="big">After the show</div>`]});
+
+add("After the show", "Ratings and money on one screen. Each line becomes a ledger entry; payouts come next.", {nav:"Shows", back:"Hi-Dive", title:"How'd it go?", cols:[`
+  <div class="money"><span>The show</span><span class="stars">★★★★☆</span><span>The venue</span><span class="stars">★★★★★</span></div>
+  <div class="field"><span class="lbl">Crowd</span><div class="box">about 60</div></div>
+  <div class="field"><div class="box ph">Notes for next time…</div></div>`,`
+  <div class="lbl">Money in</div>
+  <div class="money">
+    <span>Guarantee</span><span class="amt">$300</span>
+    <span>Merch</span><span class="amt">$145</span>
+    <span>Cash tips</span><span class="amt">$38</span>
+    <span>Venmo</span><span class="amt">$62</span>
+  </div>
+  <div class="sum"><span>Total</span><span class="mono">$545</span></div>
+  <div class="big acc">Save</div>`]});
+
+/* Music */
+add("Songs", "Everything we play, with key and length. Tap for charts and recordings.", {nav:"Songs", member:true, title:"Songs", cols:[`
+  <div class="search">Search songs…</div>
+  <div class="segs"><span class="on">Playing</span><span>Learning</span><span>Ideas</span><span>Setlists</span><span>Rehearsals</span></div>
+  ${row("Glass Coast","F#m · 3:52", ic("play","ico"))}
+  ${row("Weathervane","D · 4:10", ic("play","ico"))}
+  ${row("Low Light","A · 3:31", ic("play","ico"))}
+  ${row("Ruby Hill","E · 4:45", ic("play","ico"))}
+  ${row("Sundial","Bb · 3:18", ic("play","ico"))}`]});
+
+add("Add a song", "Type the title and the app searches Drive for audio, video and docs. Files outside the band folder get one fix for all of them.", {nav:"Songs", back:"Songs", title:"Add a song", cols:[`
+  <div class="field"><span class="lbl">Title</span><div class="box">Glass Coast</div></div>
+  <div class="lbl">Found in Drive</div>
+  <div class="chk">${cb(true)}${ic("play","ico")} Glass Coast demo v3.m4a <span class="pill g">Band folder</span></div>
+  <div class="chk">${cb(true)}${ic("play","ico")} Glass Coast live Roots.mp4 <span class="pill p">Not shared</span></div>
+  <div class="chk">${cb(true)}${ic("doc","ico")} Glass Coast chart F#m.docx <span class="pill p">Not shared</span></div>
+  <div class="chk">${cb(false)}${ic("doc","ico")} Glass Coast lyrics old.docx</div>`,`
+  <div class="card hi" style="gap:6px">
+    <b>2 files the band can't open</b>
+    <span class="s">They're in Jeff's Drive, outside the band folder.</span>
+    <div class="big acc">Copy into band folder</div>
+    <div class="big ghost">Share with all band members</div>
+  </div>
+  <div class="field"><span class="lbl">Key · Length</span><div class="box">F#m · 3:52</div></div>
+  <div class="big">Save song</div>`]});
+
+add("Song", "Charts by key, demos and rehearsal takes. Every file is a Drive link.", {nav:"Songs", back:"Songs", title:"Glass Coast", cols:[`
+  <span class="mono-s">F#m · 112 bpm · 3:52</span>
+  <div class="lbl">Charts</div>
+  <div class="row"><span>${ic("doc","ico")} Chart in F#m</span><span class="s">Drive</span></div>
+  <div class="row"><span>${ic("doc","ico")} Chart in Em (duo)</span><span class="s">Drive</span></div>`,`
+  <div class="lbl">Listen</div>
+  <div class="row"><span>${ic("play","ico")} Demo v3</span><span class="s">Sep 2</span></div>
+  <div class="row"><span>${ic("play","ico")} Rehearsal take</span><span class="s">Oct 19</span></div>
+  <div class="lbl">Last rehearsed</div><span class="txt">Oct 19 · 4 days ago</span>
+  <div class="big ghost">${ic("plus")}Add from Drive</div>`]});
+
+add("Setlist", "Drag to reorder. The total turns red if it runs past the set length.", {nav:"Songs", back:"Setlists", title:"Hi-Dive 45", cols:[`
+  <div class="sum"><span>43:20 of 45:00</span><span class="pill g">Fits</span></div>
+  <div class="bar"><i style="width:96%"></i></div>
+  <div class="row"><span class="drag">⋮⋮</span><span class="grow"><b>Weathervane</b></span><span class="s">4:10</span></div>
+  <div class="row"><span class="drag">⋮⋮</span><span class="grow"><b>Glass Coast</b></span><span class="s">3:52</span></div>
+  <div class="row"><span class="drag">⋮⋮</span><span class="grow"><b>Low Light</b></span><span class="s">3:31</span></div>
+  <div class="row"><span class="drag">⋮⋮</span><span class="grow"><b class="s">Talk / tune</b></span><span class="s">1:00</span></div>
+  <div class="row"><span class="drag">⋮⋮</span><span class="grow"><b>Ruby Hill</b></span><span class="s">4:45</span></div>
+  <div class="pair"><div class="big ghost">${ic("plus")}Song</div><div class="big ghost">${ic("plus")}Break</div></div>
+  <div class="note">Used for: Sat Nov 14 · Hi-Dive</div>`]});
+
+add("Rehearsal", "Check off what we ran. That's what powers 'last rehearsed'.", {nav:"Songs", back:"Rehearsals", title:"Rehearsal", cols:[`
+  <div class="field"><span class="lbl">When</span><div class="box">Mon Oct 19 · Jeff's</div></div>
+  <div class="lbl">We ran</div>
+  <div class="chk">${cb(true)}Glass Coast</div><div class="chk">${cb(true)}Weathervane</div><div class="chk">${cb(false)}Low Light</div><div class="chk">${cb(true)}Ruby Hill</div>
+  <div class="big ghost">${ic("plus")}Add recording from Drive</div>
+  <div class="big acc">Save</div>`]});
+
+/* Money */
+add("My money", "Members' money tab: add an expense, see what's been paid back, see payments.", {nav:"My money", member:true, title:"My money", cols:[`
+  <div class="big acc">${ic("plus")}Add an expense</div>
+  <div class="lbl">My expenses</div>
+  ${row("Drum heads","Oct 12 · $64", `<span class="pill g">Paid back</span>`)}
+  ${row("Gas to Pueblo","Oct 3 · $38", `<span class="pill">Not yet</span>`)}`,`
+  <div class="lbl">Payments to me</div>
+  ${row("Hi-Dive","Venmo", `<span class="mono">$80</span>`)}
+  ${row("Drum heads","Reimbursed", `<span class="mono">$64</span>`)}`]});
+
+add("Add an expense", "Short on purpose. Once sent it can't be changed, so the page says who to ask.", {nav:"My money", member:true, back:"My money", title:"Add an expense", cols:[`
+  <div class="field"><span class="lbl">How much</span><div class="box">$64.00</div></div>
+  <div class="lbl">What for</div>
+  <div class="segs"><span class="on">Gear</span><span>Travel</span><span>Food</span><span>Room</span><span>Other</span></div>
+  <div class="field"><div class="box">Drum heads</div></div>
+  <div class="field"><span class="lbl">For a show?</span><div class="box ph">Pick a show (optional)</div></div>
+  <div class="big ghost">${ic("doc")}Add receipt</div>
+  <div class="note">You can't change it after sending. Ask Jeff or Ingrid to fix mistakes.</div>
+  <div class="big acc">Send</div>`]});
+
+add("Money · admin", "Where things stand: this year, owed to people, and each show's take.", {nav:"Money", title:"Money", cols:[`
+  <div class="segs"><span class="on">2026</span><span>By show</span><span>By category</span></div>
+  <div class="card"><div class="sum"><span>In</span><span class="mono">$4,820</span></div><div class="sum"><span>Out</span><span class="mono">$3,105</span></div><div class="sum"><span>Left</span><span class="mono">$1,715</span></div></div>
+  <div class="lbl">Owed to people</div>
+  ${row("Eric","Gas to Pueblo", `<span class="mono">$38</span>`)}`,`
+  <div class="lbl">Recent shows</div>
+  ${row("Hi-Dive","Nov 14", `<span class="mono">$545</span>`)}
+  ${row("Roots Music Project","Oct 2", `<span class="mono">$410</span>`)}
+  <div class="big ghost">${ic("plus")}Add money in or out</div>`]});
+
+const frame = (x, mode) => {
+  const body = mode==="web"
+    ? `<div class="desk-wrap"><div class="desk">${sidebar(x.nav, x.member)}<main>${head(x.title, x.back)}<div class="cols">${x.cols.map(c=>`<div class="col">${c}</div>`).join("")}</div></main></div></div>`
+    : `<div class="phone">${head(x.title, x.back)}<div class="ph-body">${x.cols.join("")}</div>${tabbar(x.nav, x.member)}</div>`;
+  return body;
+};
+const grid = $("#screenGrid");
+const draw = () => {
+  grid.innerHTML = S.map((x,i) => {
+    const mode = x.mode || "mobile";
+    return `<div class="screen ${mode}" data-i="${i}">
+      <div class="cap"><div class="cap-t"><h3>${x.t}</h3><div class="vt" role="group" aria-label="View"><button type="button" data-m="mobile" aria-pressed="${mode==="mobile"}">Mobile</button><button type="button" data-m="web" aria-pressed="${mode==="web"}">Web</button></div></div><p>${x.d}</p></div>
+      ${frame(x, mode)}</div>`;
+  }).join("");
+};
+grid.addEventListener("click", e => {
+  const b = e.target.closest("button[data-m]"); if(!b) return;
+  S[+b.closest(".screen").dataset.i].mode = b.dataset.m; draw();
+});
+document.querySelectorAll("#allViews button").forEach(b => b.addEventListener("click", () => {
+  S.forEach(x => x.mode = b.dataset.m);
+  document.querySelectorAll("#allViews button").forEach(o => o.setAttribute("aria-pressed", o===b));
+  draw();
+}));
+draw();
+})();
+</script>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>
