@@ -272,7 +272,8 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await page.getByTestId("undo-button").last().click(); // saves by the same person within 2 minutes fold into one history entry
   await expect(page.getByTestId("edit-length")).not.toHaveValue("4:00");
   page.once("dialog", (d) => d.accept());
-  await page.getByTestId("song-archive").click();
+  await page.getByTestId("song-actions").click();
+  await page.getByTestId("song-menu-archive").click();
   await expect(page).toHaveURL(/\/songs$/);
 });
 
@@ -303,7 +304,8 @@ test("a new rehearsal is a draft; an existing one autosaves", async ({ page }) =
   await page.getByTestId("undo-button").last().click(); // the form follows the record after an Undo
   await expect(page.getByTestId("reh-place")).not.toHaveValue("Other room");
   page.once("dialog", (d) => d.accept());
-  await page.getByTestId("reh-archive").click();
+  await page.getByTestId("reh-actions").click();
+  await page.getByTestId("reh-menu-archive").click();
   await expect(page).toHaveURL(/\/songs$/);
 });
 
@@ -332,7 +334,8 @@ test("a new setlist name is a draft; the name and the item list autosave, with U
   await page.getByTestId("undo-button").last().click();
   await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveCount(0);
   page.once("dialog", (d) => d.accept());
-  await page.getByTestId("setlist-archive").click();
+  await page.getByTestId("setlist-actions").click();
+  await page.getByTestId("setlist-menu-archive").click();
   await expect(page).toHaveURL(/\/songs$/);
 });
 

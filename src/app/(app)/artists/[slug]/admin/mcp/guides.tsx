@@ -8,7 +8,7 @@ function Code({ children, testid }: { children: string; testid?: string }) {
 }
 
 function H({ children }: { children: React.ReactNode }) {
-  return <h2 className="font-display text-base font-bold">{children}</h2>;
+  return <h2 className="font-display text-lg font-bold">{children}</h2>;
 }
 
 const Inline = ({ children }: { children: string }) => <code className="rounded bg-soft px-1 font-mono text-xs">{children}</code>;

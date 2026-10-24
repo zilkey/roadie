@@ -21,7 +21,8 @@ const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 async function cancelShow(page: Page, id: string) {
   await page.goto(A(`/shows/${id}`));
   page.once("dialog", (d) => d.accept());
-  await page.getByTestId("show-cancel").click();
+  await page.getByTestId("show-actions").click();
+  await page.getByTestId("show-menu-cancel").click();
   await expect(page.getByTestId("show-status")).toHaveText("Canceled");
 }
 
@@ -74,12 +75,12 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
   const gear = page.getByTestId("gear");
   // nothing is pre-filled: people add gear here
   await expect(gear.locator('[data-testid^="gear-row-"]')).toHaveCount(0);
-  await expect(gear.locator(".lbl").first()).toContainText("0 of 0");
+  await expect(gear.locator(".card-h").first()).toContainText("0 of 0");
   await gear.getByTestId("gear-add").fill("Keys rig");
   await gear.getByTestId("gear-add-owner").selectOption({ label: "Jeff" });
   await gear.getByTestId("gear-add-btn").click();
   await expect(gear.locator('input[value="Keys rig"]')).toHaveCount(1);
-  await expect(gear.locator(".lbl").first()).toContainText("0 of 1");
+  await expect(gear.locator(".card-h").first()).toContainText("0 of 1");
 
   // check off, give an owner, pack
   const first = checklist.locator('[data-testid^="check-row-"]').first();
@@ -88,7 +89,7 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
   await first.locator("select").selectOption({ label: "Eric" });
   await expect(first.locator("select")).toHaveValue(/.+/);
   await gear.locator('[data-testid^="gear-row-"]').first().locator('input[type="checkbox"]').click();
-  await expect(gear.locator(".lbl").first()).toContainText("1 of");
+  await expect(gear.locator(".card-h").first()).toContainText("1 of");
 
   // calendar + deal
   await expect(page.getByTestId("cal-state")).toHaveText("On calendar");
@@ -256,7 +257,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(d.getByTestId("show-address")).toContainText("Broadway");
   await expect(d.getByTestId("deal-panel")).toHaveCount(0);
   await expect(d.getByTestId("show-edit")).toHaveCount(0);
-  await expect(d.getByTestId("show-cancel")).toHaveCount(0);
+  await expect(d.getByTestId("show-actions")).toHaveCount(0);
   await expect(d.getByTestId("check-add")).toHaveCount(0);
   await expect(d.getByTestId("checklist").locator('input[type="checkbox"]').first()).toBeDisabled();
   await expect(d.getByTestId("gear").locator("label", { hasText: "Bass rig" }).locator("input")).toBeChecked();
@@ -400,7 +401,8 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
 
   await page.goto(A(`/shows/${id}`));
   page.once("dialog", (dlg) => dlg.accept());
-  await page.getByTestId("show-remove").click();
+  await page.getByTestId("show-actions").click();
+  await page.getByTestId("show-menu-remove").click();
   await expect(page).toHaveURL(/\/shows$/);
 });
 

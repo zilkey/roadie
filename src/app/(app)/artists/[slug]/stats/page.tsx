@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
-import { BackLink } from "@/components/booking/common";
+import Link from "@/lib/artist";
 import { LineChart } from "@/components/money/charts";
 import { useCollection } from "@/lib/firestore-hooks";
 import { statsCurrent } from "@/lib/stats";
@@ -35,22 +35,21 @@ function Stats() {
   async function pickFile(f?: File) { if (f) setCsv(await f.text()); }
 
   return (
-    <div className="grid gap-3" data-testid="stats-page">
-      <BackLink href="/money" label="Money" />
-      <PageTitle title="Spotify stats" sub="Followers and popularity are pulled daily; monthly listeners and streams come from a Spotify for Artists export." />
-      <div className="grid grid-cols-3 gap-2" data-testid="stats-current">
+    <div className="grid gap-5" data-testid="stats-page">
+      <PageTitle back={<Link href="/money" className="back-link" data-testid="back">← Money</Link>} title="Spotify stats" sub="Followers and popularity are pulled daily; monthly listeners and streams come from a Spotify for Artists export." />
+      <div className="grid grid-cols-3 gap-5" data-testid="stats-current">
         {([["Followers", cur.followers], ["Monthly listeners", cur.monthlyListeners], ["Popularity", cur.popularity]] as const).map(([l, v]) => (
           <div key={l} className="card"><span className="s">{l}</span><b className="font-mono text-lg" data-testid={`current-${l.split(" ")[0].toLowerCase()}`}>{v ? v.value.toLocaleString("en-US") : "—"}</b>{v && <span className="s">{v.date}</span>}</div>
         ))}
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
         <LineChart title="Followers" testid="chart-followers" points={series("spotifyApi", "followers")} />
         <LineChart title="Popularity" testid="chart-popularity" points={series("spotifyApi", "popularity")} />
         <LineChart title="Monthly listeners" testid="chart-listeners" points={series("spotifyForArtists", "monthlyListeners")} />
         <LineChart title="Streams" testid="chart-streams" points={series("spotifyForArtists", "streams")} />
       </div>
       {msg && <span className="chip g self-start" data-testid="stats-msg">{msg}</span>}
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
         <div className="card content-start">
           <span className="lbl">Pull from Spotify</span>
           <span className="s">Runs daily on its own once scheduled; this does it now.</span>

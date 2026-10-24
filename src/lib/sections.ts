@@ -5,24 +5,29 @@ import { useArtistRouter as useRouter } from "@/lib/artist";
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
 import { runCommand } from "./commands";
-import { isSectionId, SECTION_LABEL, type SectionId } from "@/schema/sections";
+import { isSectionId, normalizeOrder, SECTION_LABEL, type SectionId } from "@/schema/sections";
 import { toast } from "@/components/Toasts";
 
-/** Live set of the signed-in user's hidden sections (userPrefs/{uid}; owner-only read). `loaded` is false until the first snapshot. */
+/** Live nav prefs of the signed-in user (userPrefs/{uid}; owner-only read): hidden sections and their order. `loaded` is false until the first snapshot. */
 export function useHiddenSections() {
   const { state } = useAuth();
   const uid = state.status === "ready" ? state.profile.uid : null;
   const [hidden, setHidden] = useState<SectionId[]>([]);
+  const [order, setOrder] = useState<SectionId[]>(() => normalizeOrder([]));
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (!uid) return;
     return onSnapshot(doc(clientDb(), "userPrefs", uid), (s) => {
       const v = s.data()?.hiddenSections;
-      setHidden(Array.isArray(v) ? v.filter(isSectionId) : []); setLoaded(true);
+      setHidden(Array.isArray(v) ? v.filter(isSectionId) : []); setOrder(normalizeOrder(s.data()?.order)); setLoaded(true);
     }, () => setLoaded(true));
   }, [uid]);
-  return { hidden, loaded };
+  return { hidden, order, loaded };
 }
+export const useNavPrefs = useHiddenSections;
+
+/** Save the section order (command sections.setOrder). */
+export const setSectionOrder = (order: SectionId[]) => runCommand("sections.setOrder", { order });
 
 /** Hide or bring back a section (command sections.setHidden). */
 export const setSectionHidden = (section: SectionId, hidden: boolean) => runCommand("sections.setHidden", { section, hidden });

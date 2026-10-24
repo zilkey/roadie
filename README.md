@@ -61,7 +61,7 @@ npm run e2e         # Playwright (Chromium): starts emulators, seeds, starts fak
 
 ```
 src/app/                 Next routes: (app)/ signed-in screens, signin, ask/ (public no-login availability page), api/
-src/components/          UI by area: booking, shows, music, money, Shell (bottom tabs on phone, sidebar on desktop)
+src/components/          UI by area: booking, shows, music, money, Shell (top bar + nav on desktop, bottom tabs on phone)
 src/lib/                 pure helpers shared by browser and server (money, booking, shows, stats, timezone, music)
 src/schema/              Zod schema per collection; index.ts has the collection registry
 src/server/db.ts         the only write path: stamps common fields, writes history, dedupes, atomic runs

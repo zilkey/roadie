@@ -1,7 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { dispatch } from "@/server/commands/dispatch";
-import { hiddenSections } from "@/server/prefs";
+import { hiddenSections, sectionOrder } from "@/server/prefs";
 import { toolDefs } from "@/server/assistant/tools";
 import { resetEmulators, makeUser } from "./helpers";
 
@@ -28,4 +28,18 @@ test("sections.setHidden: per user, idempotent, can be brought back; unknown sec
 
 test("Roadie is offered sections.setHidden", () => {
   assert.ok(toolDefs("admin").some((t) => t.name === "sections.setHidden"));
+});
+
+test("sections.setOrder: per user, completed with the default order, duplicates and unknown sections refused", async () => {
+  const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
+  const jeff = await makeUser("jeff@example.com", "admin");
+  const david = await makeUser("david@example.com", "member");
+  assert.deepEqual(await sectionOrder(jeff.uid), ["shows", "booking", "songs", "money"]);
+  assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "songs"] })).status, 200);
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking"]);
+  assert.deepEqual(await sectionOrder(david.uid), ["shows", "booking", "songs", "money"], "someone else's menu is untouched");
+  await call(jeff.token, "sections.setHidden", { section: "booking", hidden: true });
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking"], "hiding keeps the order");
+  assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "money"] })).status, 400);
+  assert.equal((await call(jeff.token, "sections.setOrder", { order: ["home"] })).status, 400);
 });

@@ -10,7 +10,7 @@ test("admin signs in and sees 5 tabs", async ({ page }) => {
   await signInAs(page, "jeff");
   await expect(page).toHaveURL(new RegExp(`/artists/${ARTIST_SLUG}/home$`)); // sign-in lands in your artist
   await expect(page.getByTestId("current-artist")).toHaveText("Ingrid Avison Band");
-  await expect(page.getByTestId("sidebar").getByTestId(/^tab-/)).toHaveCount(5);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5);
   await expect(page.getByTestId("tab-booking")).toBeVisible();
   await expect(page.getByTestId("tab-money")).toHaveText("Money");
   await page.getByTestId("tab-booking").click();
@@ -22,7 +22,7 @@ test("admin: phone layout uses bottom tabs", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAs(page, "ingrid");
   await expect(page.getByTestId("bottom-tabs").getByTestId(/^mtab-/)).toHaveCount(5);
-  await expect(page.getByTestId("sidebar")).toBeHidden();
+  await expect(page.getByTestId("topbar")).toBeHidden();
 });
 
 test("admin edits artist configurations", async ({ page }) => {
@@ -50,7 +50,7 @@ test("admin edits artist configurations", async ({ page }) => {
 test("member sees 4 tabs, 'My money', and cannot open /booking or admin pages", async ({ page }) => {
   await signInAs(page, "david");
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByTestId("sidebar").getByTestId(/^tab-/)).toHaveCount(4);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(4);
   await expect(page.getByTestId("tab-booking")).toHaveCount(0);
   await expect(page.getByTestId("tab-money")).toHaveText("My money");
   await page.goto(A("/booking"));
@@ -87,7 +87,7 @@ test("a band you don't belong to is refused", async ({ page }) => {
   await expect(page).toHaveURL(/\/home$/);
   await page.goto("/artists/someone-elses-band/home");
   await expect(page.getByTestId("not-member")).toBeVisible();
-  await expect(page.getByTestId("sidebar")).toHaveCount(0);
+  await expect(page.getByTestId("topbar")).toHaveCount(0);
   await page.getByTestId("to-my-artists").click();
   await expect(page).toHaveURL(new RegExp(`${A("/home")}$`));
 });
@@ -95,7 +95,7 @@ test("a band you don't belong to is refused", async ({ page }) => {
 test("settings: Artist comes before People; the artist's web address is validated and can be changed", async ({ page }) => {
   await signInAs(page, "jeff");
   await expect(page).toHaveURL(/\/home$/);
-  await page.getByTestId("settings-toggle").click();
+  await page.getByTestId("account-menu").click(); // Settings lives in the avatar menu
   await expect(page.getByTestId(/^side-admin-/)).toHaveText(["Artist", "People", "Claude Code", "History"]);
   await page.getByTestId("side-admin-artist").click();
   await expect(page).toHaveURL(new RegExp(`${A("/admin/artist")}$`));

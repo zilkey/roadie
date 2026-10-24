@@ -6,8 +6,8 @@ import type { AssistantAction } from "@/schema/assistant";
 
 const useDesktop = () =>
   useSyncExternalStore(
-    (cb) => { const m = window.matchMedia("(min-width: 768px)"); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); },
-    () => window.matchMedia("(min-width: 768px)").matches,
+    (cb) => { const m = window.matchMedia("(min-width: 900px)"); m.addEventListener("change", cb); return () => m.removeEventListener("change", cb); },
+    () => window.matchMedia("(min-width: 900px)").matches,
     () => true,
   );
 
@@ -32,12 +32,12 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
         if (a.kind === "confirm") {
           const open = (a.status ?? "pending") === "pending";
           return (
-            <div key={i} className="grid gap-2 rounded-xl border border-line bg-panel p-2 text-sm" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
+            <div key={i} className="grid gap-2 rounded-xl border border-[var(--roadie-control-border)] bg-[var(--surface)] p-2 text-sm shadow-[var(--shadow)]" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
               <span>{a.label}?</span>
               {open ? (
                 <span className="flex gap-1">
                   <button className="btn acc sm" data-testid="roadie-confirm-yes" onClick={() => a.pendingId && on.answer(a.pendingId, "yes")}>Yes</button>
-                  {/* TODO: Edit (open the draft in the page) */}
+                  {/* Edit: not built today; not added here. */}
                   <button className="btn ghost sm" data-testid="roadie-confirm-cancel" onClick={() => a.pendingId && on.answer(a.pendingId, "cancel")}>Cancel</button>
                 </span>
               ) : <span className="s" data-testid="roadie-confirm-result">{CONFIRM_DONE[a.status as keyof typeof CONFIRM_DONE]}</span>}
@@ -55,7 +55,7 @@ function Bubble({ role, text, actions = [], on }: { role: "user" | "assistant"; 
     <div className={`grid gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
       {role === "assistant" && <Actions actions={actions} on={on} />}
       {text && (
-        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-accent-soft" : "bg-soft"}`}>{text}</div>
+        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-[var(--accent)] text-[var(--on-accent)]" : "bg-[var(--roadie-bubble)] text-[var(--ink)]"}`}>{text}</div>
       )}
     </div>
   );
@@ -88,13 +88,27 @@ function Chat({ messages, pending, busy, send, on, notice }: { messages: ChatMsg
           <div ref={end} />
         </div>
       </div>
-      <div className="border-t border-line p-3">
-        <input className="input" data-testid="roadie-input" placeholder="Ask or tell me anything…" value={text}
-          onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+      <div className="p-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-[var(--roadie-control-border)] bg-[var(--roadie-bubble)] py-1.5 pl-3 pr-1.5">
+          <input className="min-w-0 flex-1 bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted)]" data-testid="roadie-input" placeholder="Ask or tell me anything…" value={text}
+            onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
+          <button type="button" aria-label="Send" data-testid="roadie-send" disabled={busy || !text.trim()} onClick={submit}
+            className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+          </button>
+        </div>
       </div>
     </>
   );
 }
+
+const Badge = ({ size = 38 }: { size?: number }) => (
+  <span className="grid shrink-0 place-items-center rounded-[10px] bg-[var(--accent)] font-display font-extrabold text-[var(--on-accent)]" style={{ width: size, height: size }} aria-hidden>R</span>
+);
+const Chevron = ({ dir }: { dir: "left" | "right" }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={dir === "left" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} /></svg>
+);
+const ghost = "rounded-lg border border-[var(--roadie-control-border)] bg-[var(--roadie-bubble)] px-2.5 py-1.5 text-sm text-[var(--ink)] hover:border-[var(--muted)]";
 
 /** The assistant. Mount once, in Shell, for admins only: a left column on desktop, a pill + bottom sheet on a phone. */
 export function Roadie() {
@@ -106,19 +120,19 @@ export function Roadie() {
   if (desktop) {
     if (r.width === "narrow") {
       return (
-        <aside className="sticky top-0 flex h-dvh w-12 shrink-0 flex-col items-center gap-2 border-r border-line bg-panel py-3" data-testid="roadie-panel" data-width="narrow">
-          <button className="btn acc sm" data-testid="roadie-expand" aria-label="Expand Roadie" title="Expand Roadie" onClick={() => r.setWidth("full")}>R</button>
-          <span className="s">⇥</span>
+        <aside className="sticky top-0 flex h-dvh w-[72px] shrink-0 flex-col items-center gap-2 border-r border-[var(--roadie-border)] bg-[var(--roadie-bg)] py-4" data-testid="roadie-panel" data-width="narrow">
+          <button data-testid="roadie-expand" aria-label="Expand Roadie" title="Expand Roadie" onClick={() => r.setWidth("full")}><Badge /></button>
         </aside>
       );
     }
     return (
-      <aside className="sticky top-0 flex h-dvh w-[300px] shrink-0 flex-col border-r border-line bg-panel" data-testid="roadie-panel" data-width="full">
-        <div className="flex items-center justify-between border-b border-line px-3 py-2">
+      <aside className="sticky top-0 flex h-dvh w-[360px] shrink-0 flex-col border-r border-[var(--roadie-border)] bg-[var(--roadie-bg)]" data-testid="roadie-panel" data-width="full">
+        <div className="flex items-center gap-2.5 px-3 py-3">
+          <Badge />
           <span className="font-display text-lg font-extrabold">Roadie</span>
-          <span className="flex gap-1">
-            <button className="btn ghost sm" data-testid="roadie-new" onClick={r.newChat}>New</button>
-            <button className="btn ghost sm" data-testid="roadie-narrow" onClick={() => r.setWidth("narrow")}>⇤ Narrow</button>
+          <span className="ml-auto flex gap-1.5">
+            <button className={ghost} data-testid="roadie-new" onClick={r.newChat}>New chat</button>
+            <button className={ghost} data-testid="roadie-narrow" aria-label="Narrow Roadie" title="Narrow Roadie" onClick={() => r.setWidth("narrow")}><Chevron dir="left" /></button>
           </span>
         </div>
         {chat}
@@ -128,17 +142,22 @@ export function Roadie() {
 
   if (!open) {
     return (
-      <button className="btn acc fixed right-3 z-10 shadow-lg" style={{ bottom: "calc(4.25rem + env(safe-area-inset-bottom))" }}
-        data-testid="roadie-pill" onClick={() => setOpen(true)}>Roadie</button>
+      <button className="fixed inset-x-3 z-10 flex items-center gap-2.5 rounded-full bg-[var(--strong)] p-1.5 pr-4 text-left text-[var(--on-strong)] shadow-[var(--shadow)]"
+        style={{ bottom: "calc(var(--tabbar-h, 64px) + env(safe-area-inset-bottom) + 8px)" }}
+        data-testid="roadie-pill" aria-label="Open Roadie" onClick={() => setOpen(true)}>
+        <Badge size={32} />
+        <span className="text-sm opacity-80">Ask or tell Roadie…</span>
+      </button>
     );
   }
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 flex h-[75dvh] flex-col rounded-t-2xl border border-line bg-panel shadow-2xl" data-testid="roadie-sheet">
-      <div className="flex items-center justify-between border-b border-line px-3 py-2">
+    <div className="fixed inset-x-0 bottom-0 z-30 flex h-[75dvh] flex-col rounded-t-2xl border border-[var(--roadie-border)] bg-[var(--roadie-bg)] shadow-2xl" data-testid="roadie-sheet">
+      <div className="flex items-center gap-2.5 px-3 py-3">
+        <Badge />
         <span className="font-display text-lg font-extrabold">Roadie</span>
-        <span className="flex gap-1">
-          <button className="btn ghost sm" data-testid="roadie-new" onClick={r.newChat}>New</button>
-          <button className="btn ghost sm" data-testid="roadie-close" onClick={() => setOpen(false)}>Close</button>
+        <span className="ml-auto flex gap-1.5">
+          <button className={ghost} data-testid="roadie-new" onClick={r.newChat}>New chat</button>
+          <button className={ghost} data-testid="roadie-close" onClick={() => setOpen(false)}>Close</button>
         </span>
       </div>
       {chat}

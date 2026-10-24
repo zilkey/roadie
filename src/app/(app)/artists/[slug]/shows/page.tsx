@@ -32,13 +32,13 @@ export default function Shows() {
     );
   }
   return (
-    <div className="grid gap-3" data-testid="shows-page">
+    <div className="grid gap-5" data-testid="shows-page">
       <PageTitle title="Shows" sub={p.role === "admin" ? "Upcoming, played, canceled and dropped." : "The band's shows."} />
       {p.role === "admin" && <Link href="/shows/new" className="btn acc justify-self-start" data-testid="new-show-btn">New show</Link>}
       <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={setFilter}
         options={SHOW_FILTERS.map((f) => [f, b.loading ? SHOW_FILTER_LABEL[f] : `${SHOW_FILTER_LABEL[f]} · ${count(f)}`])} />
       <div className="grid gap-2" data-testid={`shows-${filter}`}>
-        {!b.loading && shown.length === 0 && <span className="s">{EMPTY[filter]}</span>}
+        {!b.loading && shown.length === 0 && <div className="empty"><span>{EMPTY[filter]}</span></div>}
         {shown.map((s) => <ShowRowLink key={s.id} show={s} artist={b.artist} note={filter === "upcoming" ? note(s) : undefined} />)}
       </div>
     </div>

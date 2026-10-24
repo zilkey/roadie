@@ -3,14 +3,15 @@ import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { PageTitle, ErrorBox, useCommand } from "@/components/ui";
-import { BackLink, useNotFound } from "@/components/booking/common";
+import { useNotFound } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { fmtLongYear, showName, showCity, showAddress } from "@/lib/shows";
-import { billingName, configName, nameOf, ShowStatusChip, Times, useBand, type ShowRow } from "@/components/shows/common";
+import { billingName, configName, nameOf, ShowStatusPill, Times, useBand, type ShowRow } from "@/components/shows/common";
 import { ChecklistPanel, DealPanel, DocsPanel, GearPanel, ListingsPanel, SetlistPanel } from "@/components/shows/ShowParts";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { ShowForm, showPatch, type ShowFormState } from "@/components/shows/ShowForm";
+import { Menu, type MenuItem } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import type { Contact, Edition, Show, Venue } from "@/schema";
@@ -51,57 +52,62 @@ function ShowView({ show }: { show: ShowRow }) {
   const cfg = configName(b.artist, show.billedAs);
   const playing = !!p.musicianId && show.personnel.includes(p.musicianId);
 
+  const city = showCity(show);
+  const moreItems: MenuItem[] = [
+    ...(show.status !== "canceled" ? [{ key: "cancel", label: "Cancel show", danger: true, disabled: busy, onSelect: () => { if (confirm("Cancel this show? It comes off the calendar and Bandsintown.")) void call("shows.cancel", { id: show.id }); } }] : []),
+    { key: "remove", label: "Archive show", danger: true, onSelect: async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); } },
+  ];
+
   return (
-    <div className="grid gap-3" data-testid="show-page" data-show-id={show.id}>
-      <BackLink href="/shows" label="Shows" />
-      <PageTitle title={showName(show)} sub={fmtLongYear(show.date)} />
+    <div className="grid gap-5" data-testid="show-page" data-show-id={show.id}>
+      <PageTitle
+        back={<Link href="/shows" className="back-link" data-testid="back">← All shows</Link>}
+        title={showName(show)}
+        pill={<ShowStatusPill status={show.status} />}
+        sub={[fmtLongYear(show.date), city].filter(Boolean).join(" · ")}
+        actions={<>
+          {show.editionName && (admin && show.editionId
+            ? <Link href={`/booking/editions/${show.editionId}`} className="chip m" data-testid="show-edition-link">{show.editionName}</Link>
+            : <span className="chip m">{show.editionName}</span>)}
+          {!admin && p.musicianId && <span className={`chip ${playing ? "m" : ""}`}>{playing ? "You're playing" : "Not playing"}</span>}
+          {admin && <SaveStatus {...as.statusProps} />}
+          {admin && show.status === "canceled" && <button className="btn ghost sm" disabled={busy} onClick={() => call("shows.update", { id: show.id, patch: { status: "hold" } })} data-testid="show-restore">Bring back as a hold</button>}
+          {admin && <button className="btn ghost" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
+          {admin && <Menu label="More actions" testid="show" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={moreItems} />}
+        </>} />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap items-center gap-2">
-        <ShowStatusChip status={show.status} />
-        {show.editionName && (admin && show.editionId
-          ? <Link href={`/booking/editions/${show.editionId}`} className="chip m" data-testid="show-edition-link">{show.editionName}</Link>
-          : <span className="chip m">{show.editionName}</span>)}
-        {!admin && p.musicianId && <span className={`chip ${playing ? "m" : ""}`}>{playing ? "You're playing" : "Not playing"}</span>}
-        {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
-        {admin && <SaveStatus {...as.statusProps} />}
-        {admin && show.status !== "canceled" && (
-          <button className="btn danger sm" disabled={busy} data-testid="show-cancel"
-            onClick={() => confirm("Cancel this show? It comes off the calendar and Bandsintown.") && call("shows.cancel", { id: show.id })}>Cancel show</button>
-        )}
-        {admin && show.status === "canceled" && <button className="btn ghost sm" disabled={busy} onClick={() => call("shows.update", { id: show.id, patch: { status: "hold" } })} data-testid="show-restore">Bring back as a hold</button>}
-      </div>
 
       {editing && admin ? (
         <ShowForm mode="edit" value={form} onChange={edit} onBlur={() => void as.flush()} venues={venues} contacts={contacts} editions={editions} artist={b.artist} musicians={b.musicians} error={null} busy={busy} />
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="grid content-start gap-3">
+        <div className="cols">
+          <div className="col-main">
             <div className="card" data-testid="show-info">
               {show.venue
                 ? <Link href={`/booking/venues/${show.venue.id}`} className="font-bold underline" data-testid="show-venue-link">{showName(show)}</Link>
                 : <b>{showName(show)}</b>}
-              {showAddress(show) ? <span className="font-mono text-sm" data-testid="show-address">{showAddress(show)}</span> : showCity(show) && <span className="font-mono text-sm">{showCity(show)}</span>}
+              {showAddress(show) ? <span className="font-mono text-sm" data-testid="show-address">{showAddress(show)}</span> : city && <span className="font-mono text-sm">{city}</span>}
               <Times times={show.times} />
             </div>
-            <div className="grid gap-1">
+            <div className="card gap-1">
               <span className="lbl">Billed as</span>
               <span data-testid="show-billed">{show.billedAs ? `${billingName(b.artist, show.billedAs)} · ${cfg}` : "Not set yet"}</span>
-              <span className="lbl">Who&apos;s playing</span>
+              <span className="lbl mt-2">Who&apos;s playing</span>
               <span data-testid="show-people">{show.personnel.map((id) => nameOf(b.musicians, id)).join(", ") || "No one yet"}</span>
-              <span className="lbl">Sound</span>
+              <span className="lbl mt-2">Sound</span>
               <span data-testid="show-sound">{show.sound.provider === "venueProvided" ? "Venue provides" : "We bring it"}{show.sound.notes ? ` · ${show.sound.notes}` : ""}</span>
               {(show.needs.poster || show.needs.backline || show.needs.merch) && <>
-                <span className="lbl">We need</span>
+                <span className="lbl mt-2">We need</span>
                 <span>{[show.needs.poster && "Posters", show.needs.backline && "Backline", show.needs.merch && "Merch table"].filter(Boolean).join(", ")}</span>
               </>}
             </div>
             <GearPanel show={show} musicians={b.musicians} editable={admin} />
             <SetlistPanel show={show} setlists={b.setlists} editable={admin} />
           </div>
-          <div className="grid content-start gap-3">
+          <div className="col-side">
             <ChecklistPanel show={show} musicians={b.musicians} editable={admin} />
             <DocsPanel show={show} editable={admin} />
-            <div className="grid gap-1" data-testid="band-notes">
+            <div className="card gap-1" data-testid="band-notes">
               <span className="lbl">Band notes</span>
               {admin
                 ? <textarea className="input" rows={3} placeholder="Parking, dress, food" data-testid="notes-input" {...as.bind("bandNotes", show.bandNotes ?? "", { toPatch: (t) => t.trim() || null })} />
@@ -118,7 +124,6 @@ function ShowView({ show }: { show: ShowRow }) {
           </div>
         </div>
       )}
-      {admin && <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }} data-testid="show-remove">Archive show</button>}
     </div>
   );
 }

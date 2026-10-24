@@ -73,7 +73,7 @@ function HistoryView() {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <PageTitle title="History" sub="Who changed what, human or AI. Undo a whole run in one step." />
       <ErrorBox error={error} />
       <div className="card" data-testid="history-filters">
@@ -112,7 +112,7 @@ function HistoryView() {
       {hist.error && <div className="err" role="alert">{hist.error}</div>}
       <div className="grid gap-2" data-testid="history-list">
         {hist.loading && <span className="s">Loading…</span>}
-        {!hist.loading && rows.length === 0 && <span className="s" data-testid="history-empty">No changes match.</span>}
+        {!hist.loading && rows.length === 0 && <div className="empty" data-testid="history-empty"><span>No changes match.</span></div>}
         {rows.map((r) => (
           <div key={`${r.entity.kind}/${r.entity.id}/${r.id}`} className="card" data-testid="history-row" data-run={r.runId} data-kind={r.entity.kind} data-op={r.op}>
             <div className="flex flex-wrap items-center gap-2">

@@ -36,7 +36,7 @@ export default function AskPage() {
 
   return (
     <main className="mx-auto grid min-h-dvh max-w-md content-start gap-3 p-4 pt-10" data-testid="ask-page">
-      <h1 className="text-2xl">Can you play?</h1>
+      <h1 className="page-title">Can you play?</h1>
       {problem && !view && <div className="card" data-testid="ask-problem"><span>{problem}</span></div>}
       {!view && !problem && <span className="s">Loading…</span>}
       {view && (

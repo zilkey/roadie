@@ -20,7 +20,7 @@ export default function SignIn() {
   return (
     <main className="mx-auto grid min-h-dvh max-w-md content-center gap-5 px-4 py-10">
       <div className="grid gap-1">
-        <h1 className="text-3xl">Band Tracker</h1>
+        <h1 className="page-title">Band Tracker</h1>
         <p className="s">Ingrid Avison Band. Sign in with the Google account we invited.</p>
       </div>
       {(err || (state.status === "signedOut" && state.error)) && <div className="err">{err ?? (state as { error?: string }).error}</div>}

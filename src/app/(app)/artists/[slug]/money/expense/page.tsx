@@ -2,9 +2,8 @@
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
-import { BackLink } from "@/components/booking/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -55,9 +54,8 @@ function AddExpense() {
     if (r) { await draft.clear(); router.push("/money"); }
   }
   return (
-    <div className="grid max-w-xl gap-3" data-testid="add-expense">
-      <BackLink href="/money" label="My money" />
-      <PageTitle title="Add an expense" />
+    <div className="grid max-w-xl gap-5" data-testid="add-expense">
+      <PageTitle back={<Link href="/money" className="back-link" data-testid="back">← My money</Link>} title="Add an expense" />
       {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
         <label className="grid gap-1"><span className="lbl">How much</span>
           <input className="input font-mono" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="expense-amount" /></label>

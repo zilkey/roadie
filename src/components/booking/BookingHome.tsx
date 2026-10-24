@@ -12,10 +12,10 @@ export function BookingHome() {
   const deadlines = upcomingDeadlines(b.editions, today, 120);
   const counts = STATUSES.map((s) => [s, b.pitches.filter((p) => p.status === s).length] as const).filter(([, n]) => n > 0);
   return (
-    <div className="grid gap-3" data-testid="booking-home">
-      <div className="grid gap-2" data-testid="todos">
+    <div className="grid gap-5" data-testid="booking-home">
+      <div className="grid gap-3" data-testid="todos">
         <span className="lbl">To-dos</span>
-        {todos.length === 0 && <span className="s">Nothing due.</span>}
+        {todos.length === 0 && <div className="empty"><span>Nothing due.</span></div>}
         {todos.map((p) => {
           const overdue = p.nextStep!.due < today, due = p.nextStep!.due === today;
           return (
@@ -25,9 +25,9 @@ export function BookingHome() {
           );
         })}
       </div>
-      <div className="grid gap-2" data-testid="deadlines">
+      <div className="grid gap-3" data-testid="deadlines">
         <span className="lbl">Application deadlines</span>
-        {deadlines.length === 0 && <span className="s">None in the next few months.</span>}
+        {deadlines.length === 0 && <div className="empty"><span>None in the next few months.</span></div>}
         {deadlines.map((e) => {
           const pitch = b.pitches.find((p) => p.target.kind === "edition" && p.target.id === e.id);
           return (

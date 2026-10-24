@@ -69,14 +69,14 @@ function Admin() {
   }
 
   return (
-    <div className="grid gap-3" data-testid="admin-money">
+    <div className="grid gap-5" data-testid="admin-money">
       <PageTitle title="Money" />
       <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["shows", "By show"], ["categories", "By category"], ["ledger", "Ledger"]]} />
       <ErrorBox error={error} />
 
       {tab === "overview" && (
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="grid content-start gap-3">
+        <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid content-start gap-5">
             <div className="card" data-testid="money-totals">
               <div className="sum flex justify-between"><span>In</span><span className="font-mono" data-testid="total-in">{formatCents(t.in)}</span></div>
               <div className="sum flex justify-between"><span>Out</span><span className="font-mono" data-testid="total-out">{formatCents(t.out)}</span></div>
@@ -86,7 +86,7 @@ function Admin() {
           </div>
           <div className="grid content-start gap-2" data-testid="owed">
             <span className="lbl">Owed to people</span>
-            {owed.length === 0 && <div className="card"><span className="s">Nobody is owed anything.</span></div>}
+            {owed.length === 0 && <div className="empty"><span>Nobody is owed anything.</span></div>}
             {[...owedBy.entries()].map(([key, o]) => (
               <div key={key} className="card" data-testid={`owed-${key}`}>
                 <div className="flex justify-between"><b>{o.name}</b><b className="font-mono">{formatCents(o.total)}</b></div>
@@ -116,7 +116,7 @@ function Admin() {
       {tab === "categories" && <HBars title="By category" testid="chart-categories" rows={byCategory(led).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }))} />}
 
       {tab === "ledger" && (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2">
           <RecordForm shows={shows.rows ?? []} musicians={(musicians.rows ?? []).filter((m) => m.active)} />
           <LedgerList rows={led} showName={showName} person={person} onCorrect={(id) => call("ledger.correct", { reversesId: id })} busy={busy} />
         </div>
@@ -134,7 +134,7 @@ function LedgerList({ rows, showName, person, onCorrect, busy }: {
   return (
     <div className="grid content-start gap-2" data-testid="ledger-list">
       <span className="lbl">Ledger</span>
-      {rows.length === 0 && <div className="card"><span className="s">No entries yet.</span></div>}
+      {rows.length === 0 && <div className="empty"><span>No entries yet.</span></div>}
       {sorted.map((e) => {
         const n = netOf(e, by);
         return (

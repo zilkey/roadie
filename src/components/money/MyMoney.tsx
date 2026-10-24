@@ -29,13 +29,13 @@ export function MyMoney() {
     );
   }
   return (
-    <div className="grid gap-3" data-testid="my-money">
+    <div className="grid gap-5" data-testid="my-money">
       <PageTitle title="My money" />
       <Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-5 md:grid-cols-2">
         <div className="grid content-start gap-2">
           <span className="lbl">My expenses</span>
-          {expenses.rows && mine.length === 0 && <div className="card"><span className="s">Nothing yet.</span></div>}
+          {expenses.rows && mine.length === 0 && <div className="empty"><span>Nothing yet.</span></div>}
           {mine.map((x) => {
             const paid = !!reimbursementFor(x.id, led);
             return (
@@ -50,7 +50,7 @@ export function MyMoney() {
         </div>
         <div className="grid content-start gap-2">
           <span className="lbl">Payments to me</span>
-          {ledger.rows && payments.length === 0 && <div className="card"><span className="s">Nothing yet.</span></div>}
+          {ledger.rows && payments.length === 0 && <div className="empty"><span>Nothing yet.</span></div>}
           {payments.map((e) => (
             <div key={e.id} className="card" data-testid={`payment-${e.id}`}>
               <div className="flex items-center justify-between gap-2">

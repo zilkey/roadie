@@ -1,10 +1,9 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
-import { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
-import { BackTo } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 import { parseLen } from "@/lib/music";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
@@ -36,9 +35,9 @@ function Form() {
   }
 
   return (
-    <form className="grid gap-3" onSubmit={save} data-testid="add-song">
-      <BackTo href="/songs" label="Songs" />
-      <PageTitle title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
+    <form className="grid gap-5" onSubmit={save} data-testid="add-song">
+      <PageTitle back={<Link href="/songs" className="back-link" data-testid="back">← All songs</Link>} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
+      <div className="card">
       <label className="grid gap-1"><span className="lbl">Title</span>
         <input className="input" value={title} onChange={(e) => set({ title: e.target.value })} required disabled={!draft.ready} data-testid="song-title" />
       </label>
@@ -50,6 +49,7 @@ function Form() {
       <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
       <button className="btn acc" disabled={busy || !draft.ready || !title.trim()} data-testid="save-song">Add song{picks.length ? ` with ${picks.length} file${picks.length === 1 ? "" : "s"}` : ""}</button>
       <ErrorBox error={error} />
+      </div>
     </form>
   );
 }

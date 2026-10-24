@@ -3,10 +3,11 @@ import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { Menu } from "@/components/Menu";
 import { VenuePitch } from "@/components/booking/VenuePitch";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import {
-  BackLink, ContactsPanel, EntityForm, FormFields, StatusChip, changedKeys, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type Field, type Values, type VenueRow,
+  BackLink, ContactsPanel, EntityForm, FormFields, StatusPill, changedKeys, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type Field, type Values, type VenueRow,
 } from "@/components/booking/common";
 import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
@@ -42,16 +43,17 @@ export default function VenuePage() {
   const past = [...(shows.rows ?? [])].sort((a, c) => c.date.localeCompare(a.date));
   const facts = [v.address.city, v.capacity ? `${v.capacity} cap` : null, v.ages ? (v.ages === "all" ? "all ages" : `${v.ages}+`) : null,
     v.sound ? (v.sound.provider === "venueProvided" ? "venue sound" : "we bring sound") : null].filter(Boolean).join(" · ");
+  const archiveVenue = async () => { if (confirm(`Archive ${v.name} for your band? It leaves your lists; other bands keep it.`) && (await call("venues.remove", { id }))) router.replace("/booking"); };
   return (
-    <div className="grid gap-3" data-testid="venue-page">
-      <BackLink href={admin ? "/booking" : "/shows"} label={admin ? "Booking" : "Shows"} />
-      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
-        <PageTitle title={v.name} sub={facts} />
-        <div className="flex items-center gap-2">
-          {admin && openPitch && <StatusChip status={openPitch.status} />}
+    <div className="grid gap-5" data-testid="venue-page">
+      <PageTitle
+        back={<BackLink href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />}
+        title={v.name} sub={facts}
+        pill={admin && openPitch ? <StatusPill status={openPitch.status} /> : undefined}
+        actions={<>
           {!editing && <button className="btn ghost" onClick={() => setEditing(true)} data-testid="room-edit">Edit</button>}
-        </div>
-      </div>
+          {admin && !archived && <Menu label="More actions" testid="venue" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive venue", danger: true, onSelect: archiveVenue }]} />}
+        </>} />
       <ErrorBox error={error} />
       {archived && (
         <div className="card hi" data-testid="venue-archived">
@@ -60,37 +62,42 @@ export default function VenuePage() {
             onClick={() => call("venues.create", { name: v.name, type: v.type, address: v.address, region: v.region })}>Bring it back to our lists</button></div>
         </div>
       )}
-      <RoomCard v={v} edit={editing} setEdit={setEditing} />
-
-      {admin && (
-        <>
-          <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} />
-          {promoters.map((p) => <Link key={p.id} href={hrefFor("promoter", p.id)} className="note s" data-testid={`booked-by-${p.id}`}>Booked by <b>{p.name}</b></Link>)}
-          <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} />
-          <VenuePitch venueId={id} pitches={pitches} />
-          <span className="lbl">Our notes</span>
-          <div className="s" data-testid="notes-private">Only your band&apos;s admins see these.</div>
-          <EntityForm testid="notes" fields={venueNotesForm.fields} initial={venueNotesForm.initial(mine)} build={venueNotesForm.build}
-            autosave={{ command: "venues.update", id, rev: note?.rev, title: `${v.name} notes` }} />
-        </>
-      )}
-      <span className="lbl">Shows here ({past.length})</span>
-      {past.length === 0 ? <span className="s" data-testid="no-shows">None yet</span> : (
-        <div className="grid gap-2" data-testid="venue-shows">
-          {past.map((s) => (
-            <Link key={s.id} href={`/shows/${s.id}`} className="card" data-testid={`venue-show-${s.id}`}><b>{fmtDate(s.date)} {s.date.slice(0, 4)}</b><span className="s">{s.status}{s.editionName ? ` · ${s.editionName}` : ""}</span></Link>
-          ))}
-        </div>
-      )}
-      {admin && (
-        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-          <MergePanel v={v} venues={b.venues} onDone={(into) => router.replace(hrefFor("venue", into))} />
-          {!archived && (
-            <button className="btn danger sm" data-testid="venue-archive"
-              onClick={async () => { if (confirm(`Archive ${v.name} for your band? It leaves your lists; other bands keep it.`) && (await call("venues.remove", { id }))) router.replace("/booking"); }}>Archive venue</button>
+      <div className="cols">
+        <div className="col-main">
+          <RoomCard v={v} edit={editing} setEdit={setEditing} />
+          {admin && (
+            <>
+              {promoters.map((p) => <Link key={p.id} href={hrefFor("promoter", p.id)} className="note s" data-testid={`booked-by-${p.id}`}>Booked by <b>{p.name}</b></Link>)}
+              <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} />
+              <VenuePitch venueId={id} pitches={pitches} />
+            </>
           )}
+          <div className="grid gap-3">
+            <span className="lbl">Shows here ({past.length})</span>
+            {past.length === 0 ? <div className="empty" data-testid="no-shows"><span>None yet</span></div> : (
+              <div className="grid gap-3" data-testid="venue-shows">
+                {past.map((s) => (
+                  <Link key={s.id} href={`/shows/${s.id}`} className="card" data-testid={`venue-show-${s.id}`}><b>{fmtDate(s.date)} {s.date.slice(0, 4)}</b><span className="s">{s.status}{s.editionName ? ` · ${s.editionName}` : ""}</span></Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+        {admin && (
+          <div className="col-side">
+            <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} />
+            <div className="grid gap-3">
+              <span className="admin-label">Our notes</span>
+              <div className="s" data-testid="notes-private">Only your band&apos;s admins see these.</div>
+              <EntityForm testid="notes" fields={venueNotesForm.fields} initial={venueNotesForm.initial(mine)} build={venueNotesForm.build}
+                autosave={{ command: "venues.update", id, rev: note?.rev, title: `${v.name} notes` }} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <MergePanel v={v} venues={b.venues} onDone={(into) => router.replace(hrefFor("venue", into))} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

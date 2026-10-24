@@ -102,7 +102,7 @@ function Booking({ seg }: { seg: Seg }) {
   }
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-5">
       <PageTitle title="Booking" />
       <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
@@ -110,7 +110,7 @@ function Booking({ seg }: { seg: Seg }) {
       <ErrorBox error={error} />
 
       {open.length > 0 && (
-        <div className="card hi px-5 py-4" data-testid="apps-open">
+        <div className="card hi" data-testid="apps-open">
           <span className="text-xs font-bold uppercase tracking-wider text-[color:var(--acc-btn)]">Applications open this month</span>
           {open.map((e) => (
             <Link key={e.id} href={hrefFor("edition", e.id)} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1" data-testid={`apps-open-${e.id}`}>
@@ -124,9 +124,9 @@ function Booking({ seg }: { seg: Seg }) {
       {seg === "pitches" ? (
         <PitchList pitches={pitchesFiltered} userName={userName} />
       ) : (
-        <div className="grid gap-2" data-testid="booking-list">
+        <div className="grid gap-3" data-testid="booking-list">
           {b.loading && <span className="s">Loading…</span>}
-          {!b.loading && rows.length === 0 && <span className="s" data-testid="no-results">Nothing matches.</span>}
+          {!b.loading && rows.length === 0 && <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>}
           {rows.map((r) => {
             const pitch = r.kind === "contact" || r.kind === "festival" ? undefined : activeFor(b.pitches, r.kind, r.id);
             return (
@@ -171,8 +171,8 @@ function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string;
 function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {
   const today = todayStr();
   return (
-    <div className="grid gap-3" data-testid="pitch-list">
-      {pitches.length === 0 && <span className="s">Nothing on the Pitch List. Tap a flag to add something.</span>}
+    <div className="grid gap-5" data-testid="pitch-list">
+      {pitches.length === 0 && <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>}
       {STATUSES.map((s) => {
         const group = pitches.filter((p) => p.status === s).sort((a, b) => (a.nextStep?.due ?? "9").localeCompare(b.nextStep?.due ?? "9"));
         if (!group.length) return null;

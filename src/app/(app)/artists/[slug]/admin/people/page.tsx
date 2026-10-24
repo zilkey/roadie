@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { Tabs } from "@/components/booking/common";
 import { Menu, type MenuItem } from "@/components/Menu";
-import { Dialog, ErrorBox } from "@/components/ui";
+import { Dialog, ErrorBox, PageTitle } from "@/components/ui";
 import { AddPerson } from "@/components/people/AddPerson";
 import { PersonSheet, type Removal } from "@/components/people/PersonSheet";
 import { FieldError, Icons, TextField, derivePeople, firstName, guards, invalid, useAct, type Person } from "@/components/people/shared";
@@ -55,14 +55,9 @@ function People() {
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="grid gap-0.5">
-          <h1 className="text-2xl" data-testid="page-title">People</h1>
-          <p className="s"><b>Band Members</b> play in the band. The <b>Team</b> can sign in to Roadie.</p>
-        </div>
-        <button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="people-add-open">+ Add a person</button>
-      </div>
+    <div className="grid gap-5">
+      <PageTitle title="People" sub={<><b>Band Members</b> play in the band. The <b>Team</b> can sign in to Roadie.</>}
+        actions={<button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="people-add-open">+ Add a person</button>} />
 
       {adding && <AddPerson onClose={() => setAdding(false)} />}
       <ErrorBox error={act.error} />

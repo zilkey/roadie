@@ -50,7 +50,7 @@ export function ArtistGate({ slug, children }: { slug: string; children: React.R
 function NotAMember({ slug }: { slug: string }) {
   return (
     <main className="mx-auto grid min-h-dvh max-w-md content-center gap-4 px-4 py-10" data-testid="not-member">
-      <h1 className="text-3xl">Not your band</h1>
+      <h1 className="page-title">Not your band</h1>
       <p>You&apos;re not a member of <b>{slug}</b>, or it doesn&apos;t exist. Ask one of its admins to add you.</p>
       <NextLink href={ARTISTS_PATH} className="btn acc" data-testid="to-my-artists">Go to your artists</NextLink>
     </main>

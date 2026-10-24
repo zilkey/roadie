@@ -2,10 +2,9 @@
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { PageTitle, PickChip, useCommand } from "@/components/ui";
-import { BackLink } from "@/components/booking/common";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -91,9 +90,8 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   }
 
   return (
-    <div className="grid gap-3" data-testid="new-show">
-      <BackLink href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} label={pitchId ? "Pitch" : "Shows"} />
-      <PageTitle title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
+    <div className="grid gap-5" data-testid="new-show">
+      <PageTitle back={<Link href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} className="back-link" data-testid="back">{pitchId ? "← Pitch" : "← All shows"}</Link>} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
       {!draft.ready ? <span className="s">Loading…</span> : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <ShowForm mode="create" value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}

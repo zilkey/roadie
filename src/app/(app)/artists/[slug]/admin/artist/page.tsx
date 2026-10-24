@@ -91,7 +91,7 @@ function ArtistEditor() {
   const showAdd = adding ?? hasDraft;
 
   return (
-    <div className="grid gap-4" onBlur={() => void as.flush()}>
+    <div className="grid gap-5" onBlur={() => void as.flush()}>
       <PageTitle title="Artist" sub="How we play and who's in each lineup." />
       <ErrorBox error={error} />
       <div className="card"><span className="lbl">Artist name</span><input className="input" value={name} onChange={(e) => editName(e.target.value)} data-testid="artist-name" /></div>

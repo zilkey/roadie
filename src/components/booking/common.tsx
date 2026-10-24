@@ -48,7 +48,7 @@ export const KIND_PATH = { venue: "venues", promoter: "promoters", edition: "edi
 export const hrefFor = (kind: keyof typeof KIND_PATH, id: string) => `/booking/${KIND_PATH[kind]}/${id}`;
 
 export function BackLink({ href, label }: { href: string; label: string }) {
-  return <Link href={href} className="s font-semibold" data-testid="back">← {label}</Link>;
+  return <Link href={href} className="back-link" data-testid="back">← {label}</Link>;
 }
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
@@ -66,6 +66,11 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
 export function StatusChip({ status }: { status: string }) {
   const cls = status === "booked" ? "g" : status === "declined" || status === "dropped" ? "" : status === "idea" || status === "toPitch" ? "a" : "m";
   return <span className={`chip ${cls}`} data-testid="status-chip">{STATUS_LABEL[status as Status] ?? status}</span>;
+}
+
+/** The status shown beside a page title: neutral pill, green when booked. */
+export function StatusPill({ status }: { status: string }) {
+  return <span className={`pill${status === "booked" ? " ok" : ""}`} data-testid="status-chip">{STATUS_LABEL[status as Status] ?? status}</span>;
 }
 
 const FlagIcon = ({ filled }: { filled: boolean }) => (
@@ -192,8 +197,9 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
     <>
       {formOpen && (
         <form onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={escape} aria-label="Add to Pitch List"
-          className={opts.square ? "card-tint grid gap-4" : "mt-2 grid w-full gap-2 border-t border-line pt-2"} data-testid={`flag-form-${id}`}>
-          <div className="grid gap-4 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:items-start">
+          className={`@container ${opts.square ? "card-tint grid gap-4" : "mt-2 grid w-full gap-2 border-t border-line pt-2"}`} data-testid={`flag-form-${id}`}>
+          {/* side by side only when the form itself is wide: in a narrow column a date chip would wrap and move the buttons mid-click */}
+          <div className="grid gap-4 @xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @xl:items-start">
             <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
             <PitchDatesField dates={dates} onChange={setDates} testid={`flag-dates-${id}`} />
           </div>
@@ -518,7 +524,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
     <div className="grid gap-2" data-testid="contacts-panel">
       <span className="lbl">Contacts</span>
       <ErrorBox error={error} />
-      {mine.length === 0 && <span className="s">No one yet.</span>}
+      {mine.length === 0 && <div className="empty"><span>No one yet.</span></div>}
       {mine.map((c) => (
         <div key={c.id} className="card" data-testid={`contact-${c.name}`}>
           <div className="flex items-center justify-between gap-2">
@@ -550,7 +556,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
 }
 
 export function PitchLinks({ pitches }: { pitches: PitchRow[] }) {
-  if (!pitches.length) return <span className="s">None yet.</span>;
+  if (!pitches.length) return <div className="empty"><span>None yet.</span></div>;
   return (
     <div className="grid gap-2">
       {pitches.map((p) => (
@@ -565,6 +571,6 @@ export function PitchLinks({ pitches }: { pitches: PitchRow[] }) {
 
 export function useNotFound<T>(loading: boolean, d: T | null, what: string) {
   if (loading) return <div className="s">Loading…</div>;
-  if (!d) return <div className="card" data-testid="not-found">That {what} isn&apos;t here any more. <Link href="/booking" className="font-bold">Back to Booking</Link></div>;
+  if (!d) return <div className="empty" data-testid="not-found"><span>That {what} isn&apos;t here any more.</span> <Link href="/booking" className="font-bold">Back to Booking</Link></div>;
   return null;
 }

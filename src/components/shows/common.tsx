@@ -32,6 +32,12 @@ export function ShowStatusChip({ status }: { status: string }) {
   return <span className={`chip ${c}`} data-testid="show-status">{l}</span>;
 }
 
+/** The status pill beside a show's title: green for confirmed, plain otherwise. */
+export function ShowStatusPill({ status }: { status: string }) {
+  const [l] = STATUS_CHIP[status] ?? [status];
+  return <span className={`pill${status === "confirmed" ? " ok" : ""}`} data-testid="show-status">{l}</span>;
+}
+
 export function Times({ times }: { times: Show["times"] }) {
   const items = [["Load in", times.loadIn], ["Check", times.soundcheck], ["Doors", times.doors], ["Set", times.set]].filter(([, t]) => t) as [string, string][];
   if (!items.length) return <span className="s">Times not set yet.</span>;

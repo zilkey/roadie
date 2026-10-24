@@ -7,7 +7,7 @@ Consolidated after the final pass. Spec: `docs/blueprint.html`; conventions: `PL
 ## What is built, by area
 
 **Foundation**
-- Next 16 app, phone bottom tabs and desktop sidebar, light and dark. Members see Home, Shows, Songs, My money; admins also get Booking, Money, Stats, and the People/Admin pages.
+- Next 16 app: Roadie column (admins), top bar with band switcher, horizontal nav and account menu on desktop; top bar plus bottom tabs on phone; light and dark. Members see Home, Shows, Songs, My money; admins also get Booking, Money, Stats, and the People/Admin pages.
 - Zod schema for every collection (strict). `src/server/db.ts` is the only write path: stamps common fields, writes a history entry under the record (changed fields + runId), dedupes on `matchKey`, soft delete, atomic multi-write runs. Ledger, statSnapshots and history are immutable.
 - Command registry with roles `admin | member | mcp`, `POST /api/commands/[name]` with Firebase ID token, structured errors with Zod issues.
 - Auth: Google sign-in; `/api/session` looks the email up in `users` (invite only) and sets custom claims `{artists: {artistId: role}, musicianId}` (roles are per artist; every band page lives under `/artists/{slug}`); "not invited" page. Dev "Sign in as" buttons when emulators are on.

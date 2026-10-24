@@ -82,7 +82,7 @@ function Songs() {
   }
 
   return (
-    <div className="grid gap-3" data-testid="songs-page">
+    <div className="grid gap-5" data-testid="songs-page">
       <PageTitle title="Songs" sub="Everything we play, with key and length. Tap for charts and recordings." />
       {admin && <Link href="/songs/new" className="btn acc justify-self-start" data-testid="add-song-btn">Add a song</Link>}
       <Tabs<SegKey> testid="songs-seg" value={seg} onChange={setSeg} options={[["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["setlists", "Setlists"], ["rehearsals", "Rehearsals"]]} />
@@ -93,7 +93,7 @@ function Songs() {
       {seg === "setlists" ? (
         <div className="grid gap-2" data-testid="setlists-list">
           {admin && <NewSetlist />}
-          {!m.loading && m.setlists.length === 0 && <span className="s">No setlists yet.</span>}
+          {!m.loading && m.setlists.length === 0 && <div className="empty"><span>No setlists yet.</span></div>}
           {[...m.setlists].sort((a, b) => a.name.localeCompare(b.name)).map((s) => {
             const show = showOf(s.showId);
             return (
@@ -107,7 +107,7 @@ function Songs() {
       ) : seg === "rehearsals" ? (
         <div className="grid gap-2" data-testid="rehearsals-list">
           {admin && <Link href="/songs/rehearsals/new" className="btn acc justify-self-start" data-testid="log-rehearsal">Log a rehearsal</Link>}
-          {!m.loading && m.rehearsals.length === 0 && <span className="s">No rehearsals logged yet.</span>}
+          {!m.loading && m.rehearsals.length === 0 && <div className="empty"><span>No rehearsals logged yet.</span></div>}
           {[...m.rehearsals].sort((a, b) => b.date.localeCompare(a.date)).map((r) => (
             <Link key={r.id} href={`/songs/rehearsals/${r.id}`} className="card" data-testid={`rehearsal-${r.id}`}>
               <div className="flex items-center justify-between"><b>{fmtDay(r.date)}{r.place ? ` · ${r.place}` : ""}</b><span className="s font-semibold">Open ›</span></div>
@@ -117,7 +117,7 @@ function Songs() {
         </div>
       ) : (
         <div className="grid gap-2" data-testid="songs-list">
-          {!m.loading && songs.length === 0 && <span className="s">{q ? "No songs match." : "Nothing here yet."}</span>}
+          {!m.loading && songs.length === 0 && <div className="empty"><span>{q ? "No songs match." : "Nothing here yet."}</span></div>}
           {songs.map((s) => (
             <Link key={s.id} href={`/songs/${s.id}`} className="card" data-testid={`song-${s.id}`}>
               <div className="flex items-center justify-between gap-2">

@@ -16,11 +16,11 @@ test("admin: panel on the left, canned reply, survives navigation and reload", a
   const panel = page.getByTestId("roadie-panel");
   await expect(panel).toBeVisible();
   await expect(panel).toHaveAttribute("data-width", "full");
-  const [p, s] = await Promise.all([panel.boundingBox(), page.getByTestId("sidebar").boundingBox()]);
+  const [p, s] = await Promise.all([panel.boundingBox(), page.getByTestId("topbar").boundingBox()]);
   expect(p!.x).toBe(0);
-  expect(p!.width).toBeGreaterThan(280);
-  expect(p!.width).toBeLessThan(320);
-  expect(s!.x).toBeGreaterThanOrEqual(p!.x + p!.width - 1); // sidebar sits to the right of Roadie
+  expect(p!.width).toBeGreaterThan(350);
+  expect(p!.width).toBeLessThan(370);
+  expect(s!.x).toBeGreaterThanOrEqual(p!.x + p!.width - 1); // top bar sits to the right of Roadie
   await expect(page.getByTestId("roadie-input")).toHaveAttribute("placeholder", "Ask or tell me anything…");
 
   await page.getByTestId("roadie-new").click();
@@ -69,7 +69,7 @@ test("admin: 'show me the shows' navigates and says so", async ({ page }) => {
 
 test("member never sees Roadie", async ({ page }) => {
   await signInAs(page, "david");
-  await expect(page.getByTestId("sidebar")).toBeVisible();
+  await expect(page.getByTestId("topbar")).toBeVisible();
   await expect(page.getByTestId("roadie-panel")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId("bottom-tabs")).toBeVisible();

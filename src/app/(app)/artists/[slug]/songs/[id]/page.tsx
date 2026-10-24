@@ -1,7 +1,8 @@
 "use client";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
-import { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import { Menu } from "@/components/Menu";
 import { useState } from "react";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
@@ -9,7 +10,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor } from "@/lib/music";
-import { BackTo, FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
+import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 
 export default function SongPage() {
@@ -91,16 +92,22 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   }
 
   return (
-    <div className="grid gap-3" data-testid="song-page">
-      <BackTo href="/songs" label="Songs" />
-      <PageTitle title={song.title} sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined} />
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="chip" data-testid="song-status">{{ active: "Playing", learning: "Learning", idea: "Idea", retired: "Retired" }[song.status]}</span>
-        {song.writers && <span className="s">Written by {song.writers}</span>}
-        {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setLen(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>}
-        {admin && edit && <SaveStatus {...as.statusProps} />}
-      </div>
+    <div className="grid gap-5" data-testid="song-page">
+      <PageTitle
+        back={<Link href="/songs" className="back-link" data-testid="back">← All songs</Link>}
+        title={song.title}
+        pill={<span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{{ active: "Playing", learning: "Learning", idea: "Idea", retired: "Retired" }[song.status]}</span>}
+        sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
+        actions={admin ? <>
+          {edit && <SaveStatus {...as.statusProps} />}
+          <button className="btn ghost" onClick={() => { void as.flush(); setLen(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>
+          <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+            items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
+        </> : undefined} />
+      {song.writers && <span className="s">Written by {song.writers}</span>}
       {song.notes && <p className="text-sm">{song.notes}</p>}
+      <div className="cols">
+      <div className="col-main">
       {edit && admin && (
         <div className="card" data-testid="song-form">
           <label className="grid gap-1"><span className="lbl">Title</span><input className="input" required data-testid="edit-title" {...as.bind("title", song.title, { toPatch: (t) => t.trim() })} /></label>
@@ -124,31 +131,29 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
             </select></label>
           <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
-          <div className="flex gap-2">
-            <button type="button" className="btn danger" disabled={busy} data-testid="song-archive" onClick={async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); }}>Archive song</button>
-          </div>
         </div>
       )}
 
+      {files.length === 0 && <div className="empty" data-testid="no-files"><span>No files yet.</span></div>}
+      {KIND_ORDER.map((k) => {
+        const list = files.filter((f) => f.kind === k).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
+        if (!list.length) return null;
+        return (
+          <div key={k} className="card" data-testid={`files-${k}`}>
+            <span className="card-h">{KIND_LABEL[k]}</span>
+            {list.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}
+          </div>
+        );
+      })}
+      </div>
+      <div className="col-side">
       <div className="card" data-testid="last-rehearsed">
         <span className="lbl">Last rehearsed</span>
         <b>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</b>
       </div>
 
-      {files.length === 0 && <span className="s" data-testid="no-files">No files yet.</span>}
-      {KIND_ORDER.map((k) => {
-        const list = files.filter((f) => f.kind === k).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
-        if (!list.length) return null;
-        return (
-          <div key={k} className="grid gap-2" data-testid={`files-${k}`}>
-            <span className="lbl">{KIND_LABEL[k]}</span>
-            {list.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}
-          </div>
-        );
-      })}
-
       {admin && (
-        <div className="grid gap-2">
+        <div className="card">
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
             <button className="btn ghost" disabled={busy} onClick={check} data-testid="run-sharing-check">Run sharing check</button>
@@ -156,13 +161,15 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           </div>
           {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
           {adding && (
-            <div className="card">
+            <div className="grid gap-2">
               <DrivePicker syncWith={song.title} exclude={files.map((f) => f.driveFileId)} onChange={setPicks} />
               <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
             </div>
           )}
         </div>
       )}
+      </div>
+      </div>
       <ErrorBox error={error} />
     </div>
   );

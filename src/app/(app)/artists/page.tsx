@@ -25,7 +25,7 @@ function Picker() {
 
   return (
     <main className="mx-auto grid min-h-dvh max-w-md content-center gap-4 px-4 py-10" data-testid="artist-picker">
-      <h1 className="text-3xl">{artists.length ? "Pick a band" : "No band yet"}</h1>
+      <h1 className="page-title">{artists.length ? "Pick a band" : "No band yet"}</h1>
       {artists.length ? (
         <div className="grid gap-2">
           {artists.map((a) => (

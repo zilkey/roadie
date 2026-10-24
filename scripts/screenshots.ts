@@ -26,6 +26,8 @@ async function _unused(page: Page, prefix: string) {
 }
 
 async function main() {
+  // Off while the site is being redesigned: the shell and pages are mid-change, so these would only be retaken again.
+  if (!process.env.SCREENSHOTS_ANYWAY) { console.log("Screenshots are off until the redesign is done (set SCREENSHOTS_ANYWAY=1 to take them)."); return; }
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   const report: string[] = [];

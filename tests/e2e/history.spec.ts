@@ -22,7 +22,7 @@ test("undo from the History page for an app change restores the earlier value", 
   await expect(page).toHaveURL(/\/booking\/venues\/[^/]+$/);
   await expect(page.getByTestId("page-title")).toHaveText(name);
 
-  await page.getByTestId("settings-toggle").click(); // Settings is collapsed unless you are on one of its pages
+  await page.getByTestId("account-menu").click(); // Settings lives in the avatar menu
   await page.getByTestId("side-admin-history").click();
   await page.getByTestId("filter-via").selectOption("app");
   await page.getByTestId("filter-entity").fill("venues");

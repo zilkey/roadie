@@ -10,7 +10,7 @@ export interface MenuItem {
 }
 
 /**
- * A "⋯" actions menu. The trigger is a 44px icon button; the list is role=menu with role=menuitem rows.
+ * A "⋯" actions menu. The trigger is a 44px icon button, or an outline button holding `trigger` (e.g. "More ▾" in a page header); the list is role=menu with role=menuitem rows.
  * Closes on Escape (focus returns to the trigger) and on a click outside; arrow keys, Home and End move between items.
  * Test ids: `${testid}-actions` (trigger), `${testid}-menu`, `${testid}-menu-${item.key}`.
  */
@@ -40,7 +40,7 @@ export function Menu({ label, testid, items, trigger }: { label: string; testid:
 
   return (
     <div className="menu" ref={root} onKeyDown={open ? onKey : undefined}>
-      <button ref={btn} type="button" className="icon-btn" aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+      <button ref={btn} type="button" className={trigger ? "btn outline" : "icon-btn"} aria-label={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
         data-testid={`${testid}-actions`} onClick={() => setOpen(!open)}>
         {trigger ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>}
       </button>

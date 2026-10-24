@@ -29,10 +29,10 @@ export function WelcomeEmpty({ section, title, body, actions, children, variant,
   const hide = useHideSection(section);
   const name = SECTION_LABEL[section];
   return (
-    <div className="grid gap-3" data-testid={`welcome-${section}`}>
-      <div className="card justify-items-center gap-4 px-5 pt-8 pb-16 text-center">
+    <div className="grid gap-5" data-testid={`welcome-${section}`}>
+      <div className="empty justify-items-center gap-4 px-5 pt-8 pb-16 text-center">
         <WelcomeArt variant={variant} />
-        <h1 className="text-2xl" data-testid="page-title">{title}</h1>
+        <h1 className="page-title" data-testid="page-title">{title}</h1>
         <p className="max-w-md text-muted">{body}</p>
         {actions && <div className="flex flex-wrap justify-center gap-2">{actions}</div>}
         {hideable && (

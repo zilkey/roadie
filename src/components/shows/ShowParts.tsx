@@ -12,11 +12,12 @@ import { GearChecklist, nameOf, packedCount, type ShowRow } from "./common";
 import { PanelStatus, useInstantSave } from "./saved";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
+import { AdminLabel } from "@/components/AdminLabel";
 import { useDraft } from "@/lib/drafts";
 import type { Contact, Musician, Setlist, ShowDeal } from "@/schema";
 
 const Sec = ({ title, children, testid }: { title: React.ReactNode; children: React.ReactNode; testid?: string }) => (
-  <div className="grid gap-2" data-testid={testid}><span className="lbl">{title}</span>{children}</div>
+  <div className="card" data-testid={testid}><span className="card-h">{title}</span>{children}</div>
 );
 
 // ---------- checklist ----------
@@ -131,7 +132,7 @@ export function SetlistPanel({ show, setlists, editable }: { show: ShowRow; setl
   return (
     <Sec title={`Setlist${sl ? ` · ${fmtDur(sl.totalSec)}` : ""}`} testid="setlist">
       {sl ? (
-        <Link href={`/songs?setlist=${sl.id}`} className="card" data-testid="setlist-link">
+        <Link href={`/songs?setlist=${sl.id}`} className="grid gap-1 rounded-xl border border-[var(--divider)] p-3" data-testid="setlist-link">
           <div className="flex items-center justify-between"><b>{sl.name}</b><span className="s font-semibold">Open ›</span></div>
           <span className="s">{songs} songs</span>
         </Link>
@@ -192,7 +193,7 @@ export function ListingsPanel({ show, editable }: { show: ShowRow; editable: boo
   async function sync() { const r = await call<{ warnings: string[] }>("shows.sync", { id: show.id }); if (r) setWarn(r.warnings); }
   return (
     <Sec title="Listings" testid="listings">
-      <div className="card">
+      <div className="grid gap-1 rounded-xl border border-[var(--divider)] p-3">
         <div className="flex items-center justify-between gap-2">
           <b>Bandsintown</b>
           <span className={`chip ${bit?.state === "listed" ? "g" : bit?.state === "error" ? "a" : ""}`} data-testid="bit-state">
@@ -259,8 +260,8 @@ export function DealPanel({ show }: { show: ShowRow }) {
   });
   const change = (next: DealForm) => { as.patch(dealPatch(form, next)); setF(next); };
   return (
-    <div className="card hi" data-testid="deal-panel">
-      <span className="s font-semibold">Only admins see this</span>
+    <div className="card admin" data-testid="deal-panel">
+      <AdminLabel>Only admins see this</AdminLabel>
       <div className="flex justify-between gap-2"><span>Deal</span><b data-testid="deal-summary">{dealSummary(deal)}</b></div>
       <div className="flex justify-between gap-2"><span>Day-of contact</span>
         <span className="grid justify-items-end gap-1">{people.length ? people.map((c) => (

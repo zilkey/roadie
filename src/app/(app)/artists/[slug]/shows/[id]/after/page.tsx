@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
-import { BackLink, useNotFound } from "@/components/booking/common";
+import { useNotFound } from "@/components/booking/common";
 import { useDoc, type Row } from "@/lib/firestore-hooks";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -61,9 +61,8 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   }
   const rated = saved || !!r;
   return (
-    <div className="grid gap-3" data-testid="after-page">
-      <BackLink href={`/shows/${id}`} label={showName(show)} />
-      <PageTitle title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
+    <div className="grid gap-5" data-testid="after-page">
+      <PageTitle back={<Link href={`/shows/${id}`} className="back-link" data-testid="back">← {showName(show)}</Link>} title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
       <ErrorBox error={error} />
       {!draft.ready ? <span className="s">Loading…</span> : (
         <div className="card">

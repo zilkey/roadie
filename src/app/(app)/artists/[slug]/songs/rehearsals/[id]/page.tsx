@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { BackTo, FileIcon, Missing, bandMembers, fmtDay, useMusic } from "@/components/music/common";
+import { Menu } from "@/components/Menu";
+import { FileIcon, Missing, bandMembers, fmtDay, useMusic } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 import { playerFor } from "@/lib/music";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -97,18 +98,23 @@ function NewRehearsal({ m }: { m: Music }) {
   }
 
   return (
-    <form className="grid gap-3" onSubmit={save} data-testid="rehearsal-page">
-      <BackTo href="/songs" label="Songs" />
-      <PageTitle title="Log a rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
-      {!draft.ready ? <span className="s">Loading…</span> : <>
-        <RehFields value={v} onChange={draft.setValue} m={m} />
-        <div className="grid gap-2"><span className="lbl">Recording</span><DrivePicker defaultKind="rehearsal" onChange={setPicks} testid="picker" /></div>
-        <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-        <div className="flex items-center gap-2">
-          <button className="btn acc" disabled={busy || !v.date} data-testid="reh-save">Save rehearsal</button>
+    <form className="grid gap-5" onSubmit={save} data-testid="rehearsal-page">
+      <PageTitle back={<Link href="/songs?seg=rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Log a rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
+      {!draft.ready ? <span className="s">Loading…</span> : <div className="cols">
+        <div className="col-main">
+          <div className="card">
+            <RehFields value={v} onChange={draft.setValue} m={m} />
+            <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
+            <div className="flex items-center gap-2">
+              <button className="btn acc" disabled={busy || !v.date} data-testid="reh-save">Save rehearsal</button>
+            </div>
+            <ErrorBox error={error} />
+          </div>
         </div>
-        <ErrorBox error={error} />
-      </>}
+        <div className="col-side">
+          <div className="card"><span className="lbl">Recording</span><DrivePicker defaultKind="rehearsal" onChange={setPicks} testid="picker" /></div>
+        </div>
+      </div>}
     </form>
   );
 }
@@ -134,8 +140,8 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const nameOf = (mid: string) => m.musicians.find((x) => x.id === mid)?.name ?? "Someone";
 
   const fileList = files.length > 0 && (
-    <div className="grid gap-2" data-testid="rehearsal-files">
-      <span className="lbl">Recordings</span>
+    <div className="card" data-testid="rehearsal-files">
+      <span className="card-h">Recordings</span>
       {files.map((f) => (
         <div key={f.id} className="flex items-center gap-2 rounded-lg border border-line p-2" data-testid={`file-${f.id}`}>
           <FileIcon mime={f.mimeType} />
@@ -150,39 +156,56 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
 
   if (!admin) {
     return (
-      <div className="grid gap-3" data-testid="rehearsal-page">
-        <BackTo href="/songs" label="Songs" />
-        <PageTitle title="Rehearsal" sub={`${fmtDay(existing.date)}${existing.place ? ` · ${existing.place}` : ""}`} />
-        <span className="lbl">Who was there</span>
-        <span className="text-sm">{existing.personnel.map(nameOf).join(", ") || "Not recorded"}</span>
-        <span className="lbl">We ran</span>
-        <ul className="grid gap-1" data-testid="rehearsal-songs">
-          {existing.songs.map((s) => <li key={s.songId}><Link href={`/songs/${s.songId}`} className="font-semibold">{s.title}</Link>{s.note && <span className="s"> · {s.note}</span>}</li>)}
-        </ul>
-        {existing.notes && <p className="text-sm">{existing.notes}</p>}
-        {fileList}
+      <div className="grid gap-5" data-testid="rehearsal-page">
+        <PageTitle back={<Link href="/songs?seg=rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Rehearsal" sub={`${fmtDay(existing.date)}${existing.place ? ` · ${existing.place}` : ""}`} />
+        <div className="cols">
+          <div className="col-main">
+            <div className="card">
+              <span className="lbl">We ran</span>
+              <ul className="grid gap-1" data-testid="rehearsal-songs">
+                {existing.songs.map((s) => <li key={s.songId}><Link href={`/songs/${s.songId}`} className="font-semibold">{s.title}</Link>{s.note && <span className="s"> · {s.note}</span>}</li>)}
+              </ul>
+              {existing.notes && <p className="text-sm">{existing.notes}</p>}
+            </div>
+            {fileList}
+          </div>
+          <div className="col-side">
+            <div className="card">
+              <span className="lbl">Who was there</span>
+              <span className="text-sm">{existing.personnel.map(nameOf).join(", ") || "Not recorded"}</span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3" data-testid="rehearsal-page">
-      <BackTo href="/songs" label="Songs" />
-      <PageTitle title="Rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
-      <SaveStatus {...as.statusProps} />
-      <RehFields value={form} onChange={edit} onBlur={() => void as.flush()} m={m} existingRan={Object.fromEntries(existing.songs.map((s) => [s.songId, s.note ?? ""]))} />
-      {fileList}
-      <div className="grid gap-2">
-        <button type="button" className="btn ghost justify-self-start" onClick={() => setAdding(!adding)} data-testid="reh-add-recording">{adding ? "Cancel" : "+ Add recording from Drive"}</button>
-        {adding && (
+    <div className="grid gap-5" data-testid="rehearsal-page">
+      <PageTitle back={<Link href="/songs?seg=rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'."
+        actions={<>
+          <SaveStatus {...as.statusProps} />
+          <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+            items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/songs"); } }]} />
+        </>} />
+      <div className="cols">
+        <div className="col-main">
           <div className="card">
-            <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.map((f) => f.driveFileId)} defaultKind="rehearsal" onChange={setPicks} />
-            <button type="button" className="btn acc" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
+            <RehFields value={form} onChange={edit} onBlur={() => void as.flush()} m={m} existingRan={Object.fromEntries(existing.songs.map((s) => [s.songId, s.note ?? ""]))} />
           </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
-        <button type="button" className="btn danger" disabled={busy} data-testid="reh-archive" onClick={async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/songs"); }}>Archive</button>
+          {fileList}
+        </div>
+        <div className="col-side">
+          <div className="card">
+            <button type="button" className="btn ghost justify-self-start" onClick={() => setAdding(!adding)} data-testid="reh-add-recording">{adding ? "Cancel" : "+ Add recording from Drive"}</button>
+            {adding && (
+              <div className="grid gap-2">
+                <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.map((f) => f.driveFileId)} defaultKind="rehearsal" onChange={setPicks} />
+                <button type="button" className="btn acc" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       <ErrorBox error={error} />
     </div>

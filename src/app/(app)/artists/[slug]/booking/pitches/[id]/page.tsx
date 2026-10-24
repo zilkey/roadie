@@ -10,10 +10,11 @@ import { useProfile } from "@/lib/auth";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
+import { Menu } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, ConfigurationPicker, PitchDatesField, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { BackLink, ConfigurationPicker, PitchDatesField, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, sortedDates, todayStr, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { fmtLong, showName } from "@/lib/shows";
@@ -103,93 +104,100 @@ function PitchPage() {
   }
 
   return (
-    <div className="grid gap-3" data-testid="pitch-page">
-      <BackLink href="/booking" label="Pitch List" />
-      <PageTitle title={p.target.name} sub={p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"} />
+    <div className="grid gap-5" data-testid="pitch-page">
+      <PageTitle back={<BackLink href="/booking/pitches" label="All pitches" />} title={p.target.name}
+        sub={p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
+        pill={<StatusPill status={p.status} />}
+        actions={<Menu label="More actions" testid="pitch" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "remove", label: "Remove from Pitch List", danger: true,
+          onSelect: async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); } }]} />} />
       <ErrorBox error={error} />
-      <div className="flex items-center gap-2"><StatusChip status={p.status} /><Link href={targetHref} className="s font-semibold underline" data-testid="target-link">Open {p.target.kind === "edition" ? "festival year" : p.target.kind}</Link></div>
+      <div className="cols">
+        <div className="col-main">
+          <Link href={targetHref} className="s font-semibold underline justify-self-start" data-testid="target-link">Open {p.target.kind === "edition" ? "festival year" : p.target.kind}</Link>
+          <label className="grid gap-1.5">
+            <span className="lbl">Where it&apos;s at</span>
+            <Select<Status> testid="status" value={p.status} onChange={(s) => call("pitches.move", { id, status: s })}
+              options={[...flow, ...STATUSES.filter((s) => !flow.includes(s))].map((s) => [s, STATUS_LABEL[s]] as [Status, string])} />
+          </label>
 
-      <label className="grid gap-1.5">
-        <span className="lbl">Where it&apos;s at</span>
-        <Select<Status> testid="status" value={p.status} onChange={(s) => call("pitches.move", { id, status: s })}
-          options={[...flow, ...STATUSES.filter((s) => !flow.includes(s))].map((s) => [s, STATUS_LABEL[s]] as [Status, string])} />
-      </label>
-
-      <div className="card">
-        <ConfigurationPicker value={p.pitchedAs ?? ""} testid="pitched-as" onChange={(v) => patch({ pitchedAs: v || null })} />
-        <span className="lbl">Who&apos;s on it</span>
-        <div className="flex flex-wrap gap-1.5" data-testid="personnel">
-          {musicians.filter((m) => m.active || people.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {
-            const on = people.includes(m.id);
-            return (
-              <PickChip key={m.id} on={on} testid={`person-${m.name}`}
-                onToggle={() => { const next = on ? people.filter((x) => x !== m.id) : [...people, m.id]; setCrew(next); patch({ personnel: next }); }}>{m.name}</PickChip>
-            );
-          })}
-        </div>
-        {config && <span className="s">Filled in from {config.name}. Tap to change.</span>}
-        <span className="lbl">Who&apos;s handling it</span>
-        <select className="select" value={p.assigneeId ?? ""} data-testid="assignee" onChange={(e) => patch({ assigneeId: e.target.value || null })}>
-          <option value="">No one</option>
-          {users.filter((u) => roleIn(u, current.artistId) === "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-      </div>
-
-      <div className="card" data-testid="pitch-dates-card">
-        <PitchDatesField dates={dateRows ?? sortedDates(p.dates)} onChange={editDates} onBlur={() => void as.flush()} testid="pitch-dates" />
-      </div>
-
-      <div className="card" data-testid="next-step">
-        <span className="lbl">Next step</span>
-        <input className="input" placeholder="e.g. Follow up" value={stepVal.text} onChange={(e) => editStep({ ...stepVal, text: e.target.value })} onBlur={() => void as.flush()} data-testid="next-text" />
-        <input className="input" type="date" value={stepVal.due} onChange={(e) => editStep({ ...stepVal, due: e.target.value })} onBlur={() => void as.flush()} data-testid="next-due" />
-        <div className="flex items-center gap-2">
-          <SaveStatus {...as.statusProps} />
-          {p.nextStep && <button type="button" className="btn sm ghost" onClick={() => { setStep({ text: "", due: "" }); patch({ nextStep: null }); }}>Clear</button>}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button className="btn ghost" onClick={() => setEmailOpen(!emailOpen)} data-testid="email-toggle">Email</button>
-        <button className="btn ghost" onClick={checkReplies} disabled={busy} data-testid="check-replies">Check for replies</button>
-        {replies && <span className="s self-center" data-testid="replies-result">{replies}</span>}
-      </div>
-      {emailOpen && <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />}
-
-      <div className="grid gap-2" data-testid="pitch-shows">
-        <span className="lbl">Shows</span>
-        {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
-          <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {showName(x)}</b><span className="s">{x.status}</span></Link>
-        ))}
-        {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc justify-self-start" data-testid="booked-it">Booked it</Link>}
-        <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />
-        <AskWhoIsFree pitchId={id} date={edition?.startDate ?? ""} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
-      </div>
-
-      <span className="lbl">Timeline</span>
-      <div className="grid gap-2" data-testid="timeline">
-        {timeline.length === 0 && <span className="s">Nothing yet.</span>}
-        {timeline.map((t) => <TimelineRow key={t.kind + t.id} t={t} />)}
-      </div>
-      {commentDraft.ready && (
-        <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void post(); }}>
-          <div className="flex gap-2">
-            <input className="input" placeholder="Write a comment…" value={commentDraft.value.text} onChange={(e) => commentDraft.setValue({ text: e.target.value })} data-testid="comment-input" />
-            <button className="btn acc" disabled={busy || !commentDraft.value.text.trim()} data-testid="comment-send">Post</button>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn ghost" onClick={() => setEmailOpen(!emailOpen)} data-testid="email-toggle">Email</button>
+            <button className="btn ghost" onClick={checkReplies} disabled={busy} data-testid="check-replies">Check for replies</button>
+            {replies && <span className="s self-center" data-testid="replies-result">{replies}</span>}
           </div>
-          <DraftNote restoredAt={commentDraft.restoredAt} status={commentDraft.status} onStartOver={() => void commentDraft.clear({ reset: true })} />
-        </form>
-      )}
-      {callDraft.ready && (
-        <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void logCall(); }}>
-          <div className="flex gap-2">
-            <input className="input" placeholder="Log a call (what was said)…" value={callDraft.value.text} onChange={(e) => callDraft.setValue({ text: e.target.value })} data-testid="call-input" />
-            <button className="btn ghost" disabled={busy || !callDraft.value.text.trim()} data-testid="call-send">Log call</button>
+          {emailOpen && <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />}
+
+          <div className="grid gap-2" data-testid="pitch-shows">
+            <span className="lbl">Shows</span>
+            {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
+              <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {showName(x)}</b><span className="s">{x.status}</span></Link>
+            ))}
+            {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc justify-self-start" data-testid="booked-it">Booked it</Link>}
+            <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />
+            <AskWhoIsFree pitchId={id} date={edition?.startDate ?? ""} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
           </div>
-          <DraftNote restoredAt={callDraft.restoredAt} status={callDraft.status} onStartOver={() => void callDraft.clear({ reset: true })} />
-        </form>
-      )}
-      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); }}>Remove from Pitch List</button>
+
+          <span className="lbl">Timeline</span>
+          <div className="grid gap-3" data-testid="timeline">
+            {timeline.length === 0 && <div className="empty"><span>Nothing yet.</span></div>}
+            {timeline.map((t) => <TimelineRow key={t.kind + t.id} t={t} />)}
+          </div>
+          {commentDraft.ready && (
+            <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void post(); }}>
+              <div className="flex gap-2">
+                <input className="input" placeholder="Write a comment…" value={commentDraft.value.text} onChange={(e) => commentDraft.setValue({ text: e.target.value })} data-testid="comment-input" />
+                <button className="btn acc" disabled={busy || !commentDraft.value.text.trim()} data-testid="comment-send">Post</button>
+              </div>
+              <DraftNote restoredAt={commentDraft.restoredAt} status={commentDraft.status} onStartOver={() => void commentDraft.clear({ reset: true })} />
+            </form>
+          )}
+          {callDraft.ready && (
+            <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void logCall(); }}>
+              <div className="flex gap-2">
+                <input className="input" placeholder="Log a call (what was said)…" value={callDraft.value.text} onChange={(e) => callDraft.setValue({ text: e.target.value })} data-testid="call-input" />
+                <button className="btn ghost" disabled={busy || !callDraft.value.text.trim()} data-testid="call-send">Log call</button>
+              </div>
+              <DraftNote restoredAt={callDraft.restoredAt} status={callDraft.status} onStartOver={() => void callDraft.clear({ reset: true })} />
+            </form>
+          )}
+        </div>
+        <div className="col-side">
+          <div className="card">
+            <ConfigurationPicker value={p.pitchedAs ?? ""} testid="pitched-as" onChange={(v) => patch({ pitchedAs: v || null })} />
+            <span className="lbl">Who&apos;s on it</span>
+            <div className="flex flex-wrap gap-1.5" data-testid="personnel">
+              {musicians.filter((m) => m.active || people.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {
+                const on = people.includes(m.id);
+                return (
+                  <PickChip key={m.id} on={on} testid={`person-${m.name}`}
+                    onToggle={() => { const next = on ? people.filter((x) => x !== m.id) : [...people, m.id]; setCrew(next); patch({ personnel: next }); }}>{m.name}</PickChip>
+                );
+              })}
+            </div>
+            {config && <span className="s">Filled in from {config.name}. Tap to change.</span>}
+            <span className="lbl">Who&apos;s handling it</span>
+            <select className="select" value={p.assigneeId ?? ""} data-testid="assignee" onChange={(e) => patch({ assigneeId: e.target.value || null })}>
+              <option value="">No one</option>
+              {users.filter((u) => roleIn(u, current.artistId) === "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </div>
+
+          <div className="card" data-testid="pitch-dates-card">
+            <PitchDatesField dates={dateRows ?? sortedDates(p.dates)} onChange={editDates} onBlur={() => void as.flush()} testid="pitch-dates" />
+          </div>
+
+          <div className="card" data-testid="next-step">
+            <span className="lbl">Next step</span>
+            <input className="input" placeholder="e.g. Follow up" value={stepVal.text} onChange={(e) => editStep({ ...stepVal, text: e.target.value })} onBlur={() => void as.flush()} data-testid="next-text" />
+            <input className="input" type="date" value={stepVal.due} onChange={(e) => editStep({ ...stepVal, due: e.target.value })} onBlur={() => void as.flush()} data-testid="next-due" />
+            <div className="flex items-center gap-2">
+              <SaveStatus {...as.statusProps} />
+              {p.nextStep && <button type="button" className="btn sm ghost" onClick={() => { setStep({ text: "", due: "" }); patch({ nextStep: null }); }}>Clear</button>}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }

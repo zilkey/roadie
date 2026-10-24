@@ -2,11 +2,24 @@
 import { useEffect, useRef, useState } from "react";
 import { CommandError, runCommand, type CommandMeta } from "@/lib/commands";
 
-export function PageTitle({ title, sub }: { title: string; sub?: string }) {
+/**
+ * The page header: optional "← All <section>" back link, the title with a status pill beside it, the meta line (date · place) under it,
+ * and the header actions on the right. Destructive actions go in a "More ▾" menu among `actions`, not as standalone red buttons.
+ */
+export function PageTitle({ title, sub, back, pill, actions }: {
+  title: React.ReactNode; sub?: React.ReactNode; back?: React.ReactNode; pill?: React.ReactNode; actions?: React.ReactNode;
+}) {
   return (
-    <div className="mb-4 grid gap-0.5">
-      <h1 className="text-2xl" data-testid="page-title">{title}</h1>
-      {sub && <p className="s">{sub}</p>}
+    <div className="page-head">
+      <div className="grid min-w-0 gap-1">
+        {back}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="page-title" data-testid="page-title">{title}</h1>
+          {pill}
+        </div>
+        {sub && <p className="page-meta">{sub}</p>}
+      </div>
+      {actions && <div className="page-actions">{actions}</div>}
     </div>
   );
 }

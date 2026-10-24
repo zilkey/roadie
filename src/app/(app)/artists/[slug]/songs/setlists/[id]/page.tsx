@@ -8,7 +8,8 @@ import { todayStr } from "@/lib/booking";
 import { fmtLen, move, parseLen, setlistSlack } from "@/lib/music";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
-import { BackTo, Missing, fmtDay, useMusic } from "@/components/music/common";
+import { Menu } from "@/components/Menu";
+import { Missing, fmtDay, useMusic } from "@/components/music/common";
 import type { SetlistItem } from "@/schema";
 import type { z } from "zod";
 import { showName } from "@/lib/shows";
@@ -55,24 +56,26 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const pickable = m.songs.filter((s) => s.status === "active" || s.status === "learning").sort((a, b) => a.title.localeCompare(b.title));
   const songTitle = (i: Item) => (i.type === "song" ? m.songs.find((s) => s.id === i.songId)?.title ?? i.title : i.title);
 
-  return (
-    <div className="grid gap-3" data-testid="setlist-page">
-      <BackTo href="/songs" label="Songs" />
-      <PageTitle title={sl.name} />
-      {admin && (
-        <div className="flex items-center gap-2">
-          <input className="input" aria-label="Setlist name" data-testid="setlist-name" {...as.bind("name", sl.name, { toPatch: (t) => t.trim() })} />
-          <SaveStatus {...as.statusProps} />
-        </div>
-      )}
-      <div className={`card ${over ? "" : slack != null ? "hi" : ""}`} data-testid="setlist-total" data-over={over ? "1" : "0"}>
-        <div className="flex items-baseline justify-between gap-2">
-          <b className="font-mono text-xl" style={over ? { color: "#C0392B" } : undefined} data-testid="total-time">{fmtLen(sl.totalSec)}{show?.times.setLength ? ` of ${fmtLen(show.times.setLength * 60)}` : ""}</b>
-          {slack != null && <span className={`chip ${over ? "" : "g"}`} style={over ? { background: "#C0392B", color: "#fff" } : undefined} data-testid="fit">{over ? `${fmtLen(-slack)} over` : "Fits"}</span>}
-        </div>
-        <span className="s">{items.filter((i) => i.type === "song").length} songs{show && !show.times.setLength ? " · the show has no set length yet" : ""}{!show ? " · not attached to a show" : ""}</span>
+  const totalCard = (
+    <div className={`card ${over ? "" : slack != null ? "hi" : ""}`} data-testid="setlist-total" data-over={over ? "1" : "0"}>
+      <div className="flex items-baseline justify-between gap-2">
+        <b className="font-mono text-xl" style={over ? { color: "var(--danger)" } : undefined} data-testid="total-time">{fmtLen(sl.totalSec)}{show?.times.setLength ? ` of ${fmtLen(show.times.setLength * 60)}` : ""}</b>
+        {slack != null && <span className={`chip ${over ? "" : "g"}`} style={over ? { background: "var(--danger-soft)", color: "var(--danger)" } : undefined} data-testid="fit">{over ? `${fmtLen(-slack)} over` : "Fits"}</span>}
       </div>
+      <span className="s">{items.filter((i) => i.type === "song").length} songs{show && !show.times.setLength ? " · the show has no set length yet" : ""}{!show ? " · not attached to a show" : ""}</span>
+    </div>
+  );
 
+  return (
+    <div className="grid gap-5" data-testid="setlist-page">
+      <PageTitle
+        back={<Link href="/songs?seg=setlists" className="back-link" data-testid="back">← All setlists</Link>}
+        title={sl.name}
+        actions={admin ? <Menu label="More actions" testid="setlist" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+          items={[{ key: "archive", label: "Archive setlist", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${sl.name}?`) && (await call("setlists.remove", { id: sl.id }))) router.push("/songs"); } }]} /> : undefined} />
+      <div className="cols">
+      <div className="col-main">
+      <div className="card">
       <ol className="grid gap-1.5" data-testid="setlist-items">
         {items.length === 0 && <li className="s">Nothing in this setlist yet.</li>}
         {items.map((it, i) => (
@@ -96,7 +99,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
       </ol>
 
       {admin && (
-        <div className="grid gap-2">
+        <div className="grid gap-2 border-t border-divider pt-3">
           <div className="flex gap-2">
             <select className="select" value={songId} onChange={(e) => setSongId(e.target.value)} aria-label="Song to add" data-testid="add-song-select">
               <option value="">Pick a song…</option>
@@ -115,8 +118,19 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
           </div>
         </div>
       )}
-
-      <div className="grid gap-1" data-testid="setlist-show">
+      </div>
+      </div>
+      <div className="col-side">
+      {totalCard}
+      {admin && (
+        <div className="card">
+          <div className="flex items-center gap-2">
+            <input className="input" aria-label="Setlist name" data-testid="setlist-name" {...as.bind("name", sl.name, { toPatch: (t) => t.trim() })} />
+            <SaveStatus {...as.statusProps} />
+          </div>
+        </div>
+      )}
+      <div className="card gap-1" data-testid="setlist-show">
         <span className="lbl">Used for</span>
         {admin ? (
           <select className="select" value={show?.id ?? ""} onChange={(e) => e.target.value ? call("setlists.attach", { showId: e.target.value, setlistId: sl.id }) : show && call("setlists.attach", { showId: show.id, setlistId: null })} data-testid="attach-show" aria-label="Attach to a show">
@@ -126,9 +140,8 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
         ) : null}
         {show ? <Link href={`/shows/${show.id}`} className="s font-semibold" data-testid="show-link">{fmtDay(show.date)} · {showName(show)}</Link> : !admin && <span className="s">No show yet.</span>}
       </div>
-      {admin && (
-        <button className="btn danger justify-self-start" disabled={busy} data-testid="setlist-archive" onClick={async () => { if (confirm(`Archive ${sl.name}?`) && (await call("setlists.remove", { id: sl.id }))) router.push("/songs"); }}>Archive setlist</button>
-      )}
+      </div>
+      </div>
       <ErrorBox error={error} />
     </div>
   );

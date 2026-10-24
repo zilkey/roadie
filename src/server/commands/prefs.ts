@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { SectionSetInput } from "@/schema/sections";
-import { hiddenSections, setSectionHidden } from "../prefs";
+import { SectionOrderInput, SectionSetInput } from "@/schema/sections";
+import { hiddenSections, sectionOrder, setSectionHidden, setSectionOrder } from "../prefs";
 import { defineCommand } from "./types";
 
 export const sectionsSetHidden = defineCommand({
@@ -14,4 +14,15 @@ export const sectionsHidden = defineCommand({
   async run(ctx) { return { hiddenSections: await hiddenSections(ctx.uid) }; },
 });
 
-export const prefsCommands = [sectionsSetHidden, sectionsHidden];
+export const sectionsSetOrder = defineCommand({
+  name: "sections.setOrder", roles: ["admin", "member"], input: SectionOrderInput,
+  description: "Set the order of the caller's main sections after Home (shows, booking, songs, money). Sections left out go to the end in their default order.",
+  async run(ctx, i) { return { order: await setSectionOrder(ctx.uid, i.order) }; },
+});
+export const sectionsOrder = defineCommand({
+  name: "sections.order", roles: ["admin", "member"], input: z.strictObject({}),
+  description: "The order of the caller's main sections after Home.",
+  async run(ctx) { return { order: await sectionOrder(ctx.uid) }; },
+});
+
+export const prefsCommands = [sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder];
