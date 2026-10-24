@@ -69,7 +69,6 @@ function Booking() {
   const users = useCollection<User>("users");
   const userName = (id?: string) => users.rows?.find((u) => u.id === id)?.name;
   const pitchesFiltered = q.trim() ? b.pitches.filter((p) => p.target.name.toLowerCase().includes(q.toLowerCase())) : b.pitches;
-  const [expandedVenue, setExpandedVenue] = useState<string | null>(null);
 
   async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
     const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", contact: "contacts.create" }[kind];
@@ -105,16 +104,16 @@ function Booking() {
       <PageTitle title="Booking" sub="Everything we could play. The flag adds it to the Pitch List." />
       <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
-        options={[["all", "All"], ["pitches", "Pitch List"], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
+        options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{b.pitches.length}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 
       {open.length > 0 && (
-        <div className="card hi" data-testid="apps-open">
-          <span className="lbl">Applications open this month</span>
+        <div className="card hi px-5 py-4" data-testid="apps-open">
+          <span className="text-xs font-bold uppercase tracking-wider text-[color:var(--acc-btn)]">Applications open this month</span>
           {open.map((e) => (
-            <Link key={e.id} href={hrefFor("edition", e.id)} className="flex justify-between gap-2" data-testid={`apps-open-${e.id}`}>
-              <b>{e.festivalName} {e.label}</b>
-              <span className="s">{e.appOpens ? `opens ${fmtDate(e.appOpens.date)}` : ""}{e.appDeadline ? ` · closes ${fmtDate(e.appDeadline.date)}` : ""}</span>
+            <Link key={e.id} href={hrefFor("edition", e.id)} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1" data-testid={`apps-open-${e.id}`}>
+              <b className="text-lg">{e.festivalName} {e.label}</b>
+              <span className="s">{[e.appOpens && `Opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)}`].filter(Boolean).join(" · ")}</span>
             </Link>
           ))}
         </div>
@@ -128,45 +127,18 @@ function Booking() {
           {!b.loading && rows.length === 0 && <span className="s" data-testid="no-results">Nothing matches.</span>}
           {rows.map((r) => {
             const pitch = r.kind === "contact" || r.kind === "festival" ? undefined : activeFor(b.pitches, r.kind, r.id);
-            if (r.kind === "venue") {
-              const venue = b.venues.find((v) => v.id === r.id);
-              const isExpanded = expandedVenue === r.id;
-              const venuePitchCount = b.pitches.filter((p) => p.target.kind === "venue" && p.target.id === r.id).length;
-              return (
-                <div key={r.key} className="card" data-testid={`row-venue-${r.id}`}>
-                  <Flagged kind="venue" id={r.id} pitches={b.pitches}>{(flag, flagForm) => (<>
-                    <div className="flex items-center justify-between gap-2">
-                      <button type="button" className="grid min-w-0 flex-1 gap-0.5 text-left" onClick={() => setExpandedVenue(isExpanded ? null : r.id)} data-testid={`venue-expand-${r.id}`}>
-                        <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
-                      </button>
-                      {pitch && <StatusChip status={pitch.status} />}
-                      {flag}
-                    </div>
-                    {flagForm}
-                  </>)}</Flagged>
-                  {isExpanded && venue && (
-                    <div className="mt-2 grid gap-1 border-t border-line pt-2" data-testid={`venue-details-${r.id}`}>
-                      {venue.capacity && <span className="s">Capacity: {venue.capacity}</span>}
-                      {(venue.address.city || venue.address.state) && <span className="s">{[venue.address.city, venue.address.state].filter(Boolean).join(", ")}</span>}
-                      {venue.website && <a href={venue.website} target="_blank" rel="noopener noreferrer" className="s font-semibold" onClick={(e) => e.stopPropagation()}>{venue.website}</a>}
-                      {venuePitchCount > 0 && <span className="s">{venuePitchCount} pitch{venuePitchCount === 1 ? "" : "es"}</span>}
-                      <Link href={hrefFor("venue", r.id)} className="s font-semibold" data-testid={`venue-full-${r.id}`}>View full record →</Link>
-                    </div>
-                  )}
-                </div>
-              );
-            }
             return (
               <div key={r.key} className={`card ${r.kind === "edition" ? "ml-4" : ""}`} data-testid={`row-${r.kind}-${r.id}`}>
-                <FlaggedRow kind={r.kind} id={r.id} pitches={b.pitches}>{(flag, flagForm) => (<>
-                  <div className="flex items-center justify-between gap-2">
-                    <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5">
-                      <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
+                <FlaggedRow kind={r.kind} id={r.id} pitches={b.pitches}>{(flag, flagForm, strip) => (<>
+                  <div className="flex items-center justify-between gap-3">
+                    <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5 no-underline" data-testid={`${r.kind}-full-${r.id}`}>
+                      <b className="truncate text-lg">{r.title}</b><span className="s truncate">{r.sub}</span>
                     </Link>
                     {pitch && <StatusChip status={pitch.status} />}
                     {flag}
                   </div>
                   {flagForm}
+                  {strip}
                 </>)}</FlaggedRow>
               </div>
             );
@@ -188,10 +160,10 @@ function Booking() {
 const activeFor = (pitches: PitchRow[], kind: string, id: string) =>
   pitches.find((p) => p.target.kind === kind && p.target.id === id && !["declined", "dropped"].includes(p.status));
 
-/** Promoter and edition rows have a flag; festivals and contacts don't. */
-function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string; pitches: PitchRow[]; children(button: React.ReactNode, form: React.ReactNode): React.ReactNode }) {
-  if (kind !== "promoter" && kind !== "edition") return <>{children(null, null)}</>;
-  return <Flagged kind={kind} id={id} pitches={pitches}>{children}</Flagged>;
+/** Venue, promoter and edition rows have a flag; festivals and contacts don't. */
+function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string; pitches: PitchRow[]; children(button: React.ReactNode, form: React.ReactNode, strip: React.ReactNode): React.ReactNode }) {
+  if (kind !== "promoter" && kind !== "edition" && kind !== "venue") return <>{children(null, null, null)}</>;
+  return <Flagged kind={kind} id={id} pitches={pitches} square>{children}</Flagged>;
 }
 
 function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {

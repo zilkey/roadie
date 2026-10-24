@@ -3,7 +3,7 @@ import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
-import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, type Status } from "@/lib/booking";
+import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
 import { withNotes, type NoteFields } from "@/lib/venues";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -11,7 +11,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, PitchDate } from "@/schema";
+import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, PitchDate, Comment } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
 
@@ -81,16 +81,16 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { value: string; onChange(id: string): void; testid?: string; onKeyDown?: React.KeyboardEventHandler }) {
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
-  const edit = artist.role === "admin" && <Link href="/admin/artist" className="s font-semibold underline" data-testid="edit-configurations">Edit configurations</Link>;
+  const edit = artist.role === "admin" && <Link href="/admin/artist" className="s font-semibold" data-testid="edit-configurations">{configs.length === 0 ? "Add configurations" : "Edit"}</Link>;
   return (
     <div className="grid gap-1" onKeyDown={onKeyDown}>
-      <span className="lbl">Configuration</span>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="lbl">Configuration</span>
+        {edit}
+      </div>
       {configs.length === 0
-        ? <span className="s">No configurations yet. {edit}</span>
-        : <>
-            <Select<string> value={value} onChange={onChange} placeholder="Not sure yet" label="Configuration" testid={testid} options={configs.map((c) => [c.id, c.name] as [string, string])} />
-            {edit}
-          </>}
+        ? <span className="s">No configurations yet.</span>
+        : <Select<string> value={value} onChange={onChange} placeholder="Not sure yet" label="Configuration" testid={testid} options={configs.map((c) => [c.id, c.name] as [string, string])} />}
     </div>
   );
 }
@@ -119,6 +119,48 @@ export function PitchDatesEditor({ rows, onChange, onBlur, testid }: { rows: Dat
   );
 }
 
+/**
+ * Possible dates as removable chips with a date input and a round + beside it (the flag form). Same data as PitchDatesEditor:
+ * a run's last day and a note are optional extras next to the date. A date only joins the list when + is pressed.
+ */
+export function PitchDatesChips({ rows, onChange, testid }: { rows: DateRow[]; onChange(rows: DateRow[]): void; testid: string }) {
+  const [draft, setDraft] = useState<DateRow>({ date: "" });
+  const bad = !!draft.endDate && draft.endDate < draft.date;
+  const canAdd = !!draft.date && !bad;
+  function add() {
+    if (!canAdd) return;
+    onChange(completeDates([...rows, draft]));
+    setDraft({ date: "" });
+  }
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
+  return (
+    <div className="grid gap-2" data-testid={testid}>
+      <label className="lbl" htmlFor={`${testid}-date`}>Possible dates</label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input id={`${testid}-date`} className="input !w-auto" type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} onKeyDown={enter} data-testid={`${testid}-date`} />
+        <input className="input !w-auto" type="date" aria-label="Through (optional)" title="Through (optional)" value={draft.endDate ?? ""} min={draft.date || undefined} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} onKeyDown={enter} data-testid={`${testid}-end`} />
+        <input className="input !w-40" placeholder="Note (optional)" aria-label="Note (optional)" value={draft.note ?? ""} onChange={(e) => setDraft({ ...draft, note: e.target.value })} onKeyDown={enter} data-testid={`${testid}-note`} />
+        <button type="button" className="round-btn" aria-label="Add date" disabled={!canAdd} onClick={add} data-testid={`${testid}-add`}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      </div>
+      {(draft.date || draft.endDate) && <span className="s" data-testid={`${testid}-hint`}>{bad ? "An end date can't be before its start." : "Press + to add this date."}</span>}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {rows.map((r, i) => (
+            <span key={`${r.date}-${i}`} className="chip w lg" data-testid={`${testid}-chip-${i}`}>
+              {fmtPitchDate(r)}{r.note ? ` (${r.note})` : ""}
+              <button type="button" aria-label={`Remove ${fmtPitchDate(r)}`} onClick={() => onChange(rows.filter((_, j) => j !== i))} data-testid={`${testid}-remove-${i}`}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** The dates of a pitch as one line of text, past ones dimmed. Nothing when there are none. */
 export function PitchDates({ dates, today, testid }: { dates?: PitchDate[]; today: string; testid?: string }) {
   const list = sortedDates(dates);
@@ -134,20 +176,21 @@ export function PitchDates({ dates, today, testid }: { dates?: PitchDate[]; toda
 
 /**
  * Flag = add to the Pitch List. `button` is the flag itself (filled = already there; tapping it opens the pitch, unflagged opens
- * the form). `form` is the small add form: render it on its own line under the row, never inside the button's flex row.
+ * the form). `form` is the add form: render it under the row's button line, never inside the button's flex row.
+ * `strip` is the summary of the open pitch (configuration, dates, last comment); it is empty while there is no pitch.
  */
-function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: PitchRow[], opts: { big?: boolean } = {}) {
+function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: PitchRow[], opts: { big?: boolean; square?: boolean } = {}) {
   const { call, error, busy } = useCommand();
   const router = useRouter();
   const open = pitches.find((p) => p.target.kind === kind && p.target.id === id && isActive(p.status));
   const [showForm, setShowForm] = useState(false);
   const [pitchedAs, setPitchedAs] = useState("");
-  const [notes, setNotes] = useState("");
+  const [comment, setComment] = useState("");
   const [dates, setDates] = useState<DateRow[]>([]);
   const btn = useRef<HTMLButtonElement>(null);
   const formOpen = showForm && !open;
 
-  function close() { setShowForm(false); setPitchedAs(""); setNotes(""); setDates([]); btn.current?.focus(); }
+  function close() { setShowForm(false); setPitchedAs(""); setComment(""); setDates([]); btn.current?.focus(); }
   function tap(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     if (open) return router.push(`/booking/pitches/${open.id}`);
@@ -158,51 +201,85 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
     if (problem) return;
-    const r = await call("pitches.flag", { kind, id, ...(completeDates(dates).length ? { dates: completeDates(dates) } : {}), ...(pitchedAs ? { pitchedAs } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
-    if (r) close();
+    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(completeDates(dates).length ? { dates: completeDates(dates) } : {}), ...(pitchedAs ? { pitchedAs } : {}) });
+    if (!r) return;
+    // the first comment is a real comment on the new pitch (its timeline), not the pitch's notes field
+    if (comment.trim()) await call("pitches.comment", { id: r.id, body: comment.trim() });
+    close();
   }
   const escape = (e: React.KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
 
   const button = (
     <button ref={btn} type="button" onClick={tap} onKeyDown={(e) => { if (formOpen) escape(e); }} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"} data-open={formOpen ? "1" : "0"}
       aria-label={open ? "On the Pitch List" : "Add to Pitch List"} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
-      className={`${opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
+      className={opts.square ? "flag-sq" : `${opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
       <FlagIcon filled={!!open} />{opts.big && (open ? "On the Pitch List" : "Add to Pitch List")}
     </button>
   );
   const form = (
     <>
       {formOpen && (
-        <form onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={escape}
-          className="mt-2 grid w-full gap-2 border-t border-line pt-2 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-end" data-testid={`flag-form-${id}`}>
-          <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
+        <form onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={escape} aria-label="Add to Pitch List"
+          className={opts.square ? "card-tint grid gap-4" : "mt-2 grid w-full gap-2 border-t border-line pt-2"} data-testid={`flag-form-${id}`}>
+          <div className="grid gap-4 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:items-start">
+            <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
+            <PitchDatesChips rows={dates} onChange={setDates} testid={`flag-dates-${id}`} />
+          </div>
           <label className="grid gap-1">
-            <span className="lbl">Notes</span>
-            <textarea className="input max-h-40 resize-none [field-sizing:content]" rows={1} value={notes} data-testid={`flag-notes-${id}`}
-              onChange={(e) => setNotes(e.target.value)} />
+            <span className="lbl">First comment <span className="font-medium">(optional)</span></span>
+            <input className="input" type="text" value={comment} placeholder="e.g. Emailed Sam, they book 3 months out" data-testid={`flag-comment-${id}`}
+              onChange={(e) => setComment(e.target.value)} />
           </label>
-          <div className="md:col-span-2"><PitchDatesEditor rows={dates} onChange={setDates} testid={`flag-dates-${id}`} /></div>
-          {problem && <span className="note s md:col-span-2" data-testid={`flag-dates-problem-${id}`}>{problem}</span>}
-          <div className="flex gap-2 md:col-span-2">
-            <button type="submit" className="btn acc sm" disabled={busy || !!problem} data-testid={`flag-submit-${id}`}>Add to list</button>
-            <button type="button" className="btn ghost sm" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
+          {problem && <span className="note s" data-testid={`flag-dates-problem-${id}`}>{problem}</span>}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" className="btn ghost" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
+            <button type="submit" className="btn acc" disabled={busy || !!problem} data-testid={`flag-submit-${id}`}>Add to pitch list</button>
           </div>
         </form>
       )}
       {error && <ErrorBox error={error} />}
     </>
   );
-  return { button, form };
+  const strip = open && opts.square ? <PitchStrip pitch={open} /> : null;
+  return { button, form, strip };
 }
 
-/** Render prop over the flag: `{(button, form) => ...}`. Put the button in the row's flex line and the form below that line. */
-export function Flagged({ kind, id, pitches, big, children }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean; children(button: React.ReactNode, form: React.ReactNode): React.ReactNode }) {
-  const f = useFlag(kind, id, pitches, { big });
-  return <>{children(f.button, f.form)}</>;
+/** The pitch behind a flagged row: its configuration, possible dates and the latest comment, in the tinted strip under the row. */
+export function PitchStrip({ pitch }: { pitch: PitchRow }) {
+  const artist = useArtist();
+  const config = artist.doc?.configurations?.find((c) => c.id === pitch.pitchedAs)?.name ?? "Not sure yet";
+  const dates = sortedDates(pitch.dates);
+  const today = todayStr();
+  const last = useCollection<Comment>(`pitches/${pitch.id}/comments`, { order: ["createdAt", "desc"], limit: 1 }).rows?.[0];
+  const at = last?.createdAt;
+  const when = at ? (at instanceof Date ? at : at.toDate()).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+  return (
+    <div className="card-tint grid gap-2" data-testid={`pitch-strip-${pitch.id}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <b data-testid={`pitch-strip-config-${pitch.id}`}>{config}</b>
+        <div className="flex flex-wrap items-center gap-2" data-testid={`pitch-strip-dates-${pitch.id}`}>
+          {dates.map((d, i) => <span key={i} className={`chip w ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}{d.note ? ` (${d.note})` : ""}</span>)}
+          {dates.length === 0 && <span className="s">No dates yet</span>}
+        </div>
+      </div>
+      <div className="flex min-w-0 items-baseline gap-2 text-sm" data-testid={`pitch-strip-comment-${pitch.id}`}>
+        <span className="lbl uppercase tracking-wider">Last comment</span>
+        {last
+          ? <><span className="min-w-0 flex-1 truncate">{last.body}</span><span className="s shrink-0">{when}</span></>
+          : <span className="s">None yet</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Render prop over the flag: `{(button, form, strip) => ...}`. Put the button in the row's flex line and the form (or, once pitched, the strip) below that line. `square` is the list row's 44px flag button and tinted panels. */
+export function Flagged({ kind, id, pitches, big, square, children }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean; square?: boolean; children(button: React.ReactNode, form: React.ReactNode, strip: React.ReactNode): React.ReactNode }) {
+  const f = useFlag(kind, id, pitches, { big, square });
+  return <>{children(f.button, f.form, f.strip)}</>;
 }
 
 /** View switcher or filter: a tab bar, never a form field. Arrow keys / Home / End move between tabs. */
-export function Tabs<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, string][]; onChange(v: T): void; testid?: string }) {
+export function Tabs<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, React.ReactNode][]; onChange(v: T): void; testid?: string }) {
   function onKey(e: React.KeyboardEvent<HTMLDivElement>) {
     const i = options.findIndex(([v]) => v === value);
     const next = e.key === "ArrowRight" || e.key === "ArrowDown" ? (i + 1) % options.length

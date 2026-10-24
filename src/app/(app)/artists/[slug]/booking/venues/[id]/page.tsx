@@ -3,11 +3,12 @@ import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { VenuePitch } from "@/components/booking/VenuePitch";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import {
-  BackLink, ContactsPanel, EntityForm, Flagged, FormFields, PitchLinks, changedKeys, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type Field, type Values, type VenueRow,
+  BackLink, ContactsPanel, EntityForm, FormFields, StatusChip, changedKeys, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type Field, type Values, type VenueRow,
 } from "@/components/booking/common";
-import { fmtDate } from "@/lib/booking";
+import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
 import type { Show, Venue } from "@/schema";
 
@@ -25,6 +26,7 @@ export default function VenuePage() {
   const b = useBooking();
   const shows = useCollection<Show>("shows", { where: [["venue.id", "==", id]] });
   const { call, error } = useCommand();
+  const [editing, setEditing] = useState(false);
   const mergedInto = v?.deletedAt ? v.mergedInto : undefined;
   useEffect(() => { if (mergedInto) router.replace(hrefFor("venue", mergedInto)); }, [mergedInto, router]);
   const nf = useNotFound(loading, v && !v.deletedAt ? v : null, "venue");
@@ -36,13 +38,20 @@ export default function VenuePage() {
   const archived = !!note?.deletedAt;
   const promoters = b.promoters.filter((p) => mine.promoterIds.includes(p.id) || p.venueIds.includes(v.id));
   const pitches = b.pitches.filter((p) => p.target.kind === "venue" && p.target.id === id);
+  const openPitch = pitches.find((p) => isActive(p.status));
   const past = [...(shows.rows ?? [])].sort((a, c) => c.date.localeCompare(a.date));
   const facts = [v.address.city, v.capacity ? `${v.capacity} cap` : null, v.ages ? (v.ages === "all" ? "all ages" : `${v.ages}+`) : null,
     v.sound ? (v.sound.provider === "venueProvided" ? "venue sound" : "we bring sound") : null].filter(Boolean).join(" · ");
   return (
     <div className="grid gap-3" data-testid="venue-page">
       <BackLink href={admin ? "/booking" : "/shows"} label={admin ? "Booking" : "Shows"} />
-      <PageTitle title={v.name} sub={facts} />
+      <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+        <PageTitle title={v.name} sub={facts} />
+        <div className="flex items-center gap-2">
+          {admin && openPitch && <StatusChip status={openPitch.status} />}
+          {!editing && <button className="btn ghost" onClick={() => setEditing(true)} data-testid="room-edit">Edit</button>}
+        </div>
+      </div>
       <ErrorBox error={error} />
       {archived && (
         <div className="card hi" data-testid="venue-archived">
@@ -51,29 +60,21 @@ export default function VenuePage() {
             onClick={() => call("venues.create", { name: v.name, type: v.type, address: v.address, region: v.region })}>Bring it back to our lists</button></div>
         </div>
       )}
-      {admin && (
-        <Flagged kind="venue" id={id} pitches={b.pitches} big>{(flag, flagForm) => (<>
-          <div className="flex flex-wrap items-start gap-2">{flag}</div>
-          {flagForm}
-        </>)}</Flagged>
-      )}
-
-      <RoomCard v={v} />
+      <RoomCard v={v} edit={editing} setEdit={setEditing} />
 
       {admin && (
         <>
+          <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} />
+          {promoters.map((p) => <Link key={p.id} href={hrefFor("promoter", p.id)} className="note s" data-testid={`booked-by-${p.id}`}>Booked by <b>{p.name}</b></Link>)}
+          <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} />
+          <VenuePitch venueId={id} pitches={pitches} />
           <span className="lbl">Our notes</span>
           <div className="s" data-testid="notes-private">Only your band&apos;s admins see these.</div>
           <EntityForm testid="notes" fields={venueNotesForm.fields} initial={venueNotesForm.initial(mine)} build={venueNotesForm.build}
             autosave={{ command: "venues.update", id, rev: note?.rev, title: `${v.name} notes` }} />
-          <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} />
-          {promoters.map((p) => <Link key={p.id} href={hrefFor("promoter", p.id)} className="note s" data-testid={`booked-by-${p.id}`}>Booked by <b>{p.name}</b></Link>)}
-          <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} />
-          <span className="lbl">Pitches</span>
-          <PitchLinks pitches={pitches} />
         </>
       )}
-      <span className="lbl">Shows here</span>
+      <span className="lbl">Shows here ({past.length})</span>
       {past.length === 0 ? <span className="s" data-testid="no-shows">None yet</span> : (
         <div className="grid gap-2" data-testid="venue-shows">
           {past.map((s) => (
@@ -82,7 +83,7 @@ export default function VenuePage() {
         </div>
       )}
       {admin && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 border-t border-line pt-4">
           <MergePanel v={v} venues={b.venues} onDone={(into) => router.replace(hrefFor("venue", into))} />
           {!archived && (
             <button className="btn danger sm" data-testid="venue-archive"
@@ -100,15 +101,16 @@ const shown = (f: Field, vals: Values) => {
 };
 
 /** The shared room: facts, and an Edit that ends in an explicit Save and a "this changes it for every band" confirmation. */
-function RoomCard({ v }: { v: Venue & { id: string } }) {
+function RoomCard({ v, edit, setEdit }: { v: Venue & { id: string }; edit: boolean; setEdit(on: boolean): void }) {
   const initial = useMemo(() => roomForm.initial(v), [v]);
-  const [edit, setEdit] = useState(false);
   const [vals, setVals] = useState<Values>(initial);
   const [confirming, setConfirming] = useState(false);
   const { call, error, busy, setError } = useCommand();
   const changes = roomForm.fields.filter((f) => (initial[f.key] ?? "") !== (vals[f.key] ?? ""));
 
-  function open() { setVals(initial); setError(null); setEdit(true); }
+  // Reset while rendering the opening frame (not in an effect), so the form never shows last time's typing and nothing typed is wiped.
+  const [wasEdit, setWasEdit] = useState(edit);
+  if (edit !== wasEdit) { setWasEdit(edit); if (edit) { setVals(initial); setError(null); } }
   function save(e: React.FormEvent) {
     e.preventDefault();
     if (!changes.length) return setEdit(false);
@@ -141,10 +143,7 @@ function RoomCard({ v }: { v: Venue & { id: string } }) {
         </form>
       ) : (
         <div className="card" data-testid="room-card">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="lbl">About the room</span>
-            <button className="btn ghost sm" onClick={open} data-testid="room-edit">Edit</button>
-          </div>
+          <span className="lbl">About the room</span>
           <span className="s">Shared with every band that uses Band Tracker.</span>
           <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[7rem_minmax(0,1fr)]">
             {rows.filter(([, x]) => x !== "").map(([k, x]) => (<div key={k} className="contents"><dt className="s">{k}</dt><dd data-testid={`room-${k.toLowerCase()}`}>{x}</dd></div>))}

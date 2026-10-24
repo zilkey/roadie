@@ -29,18 +29,25 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await row.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Duo" });
   // possible dates: add two (out of order, one a run), remove a blank one; they save sorted with the pitch
   const dates = row.getByTestId(/^flag-dates-[^-]+$/);
+  await dates.getByTestId(/-date$/).fill("2099-05-01");
+  await dates.getByTestId(/-end$/).fill("2099-05-03");
+  await dates.getByTestId(/-note$/).fill("their preferred");
   await dates.getByTestId(/-add$/).click();
-  await dates.getByTestId(/-date-0$/).fill("2099-05-01");
-  await dates.getByTestId(/-end-0$/).fill("2099-05-03");
-  await dates.getByTestId(/-note-0$/).fill("their preferred");
+  await dates.getByTestId(/-date$/).fill("2020-05-01");
   await dates.getByTestId(/-add$/).click();
-  await dates.getByTestId(/-date-1$/).fill("2020-05-01");
+  await dates.getByTestId(/-date$/).fill("2020-06-01");
   await dates.getByTestId(/-add$/).click();
-  await dates.getByTestId(/-remove-2$/).click();
-  await expect(dates.getByTestId(/-row-\d$/)).toHaveCount(2);
+  await dates.getByTestId(/-remove-1$/).click(); // chips are sorted: 2020-05-01, 2020-06-01, 2099...; drop the middle one
+  await expect(dates.getByTestId(/-chip-\d$/)).toHaveCount(2);
+  await row.getByTestId(/^flag-comment-/).fill("Emailed Sam, they book 3 months out");
   await row.getByTestId(/^flag-submit-/).click();
   await expect(flag).toHaveAttribute("data-flagged", "1");
   await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
+  // the row now shows the pitch strip: configuration, dates and the first comment
+  const strip = row.getByTestId(/^pitch-strip-[^-]+$/);
+  await expect(strip).toContainText("Duo");
+  await expect(strip).toContainText("Emailed Sam, they book 3 months out");
+  await expect(page.getByTestId("pitch-count")).toBeVisible();
 
   await page.getByTestId("booking-search").fill("");
   await page.getByTestId("booking-seg-pitches").click();
@@ -88,8 +95,7 @@ test("a duplicate venue merges into the existing one and its page shows people",
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("lost lake");
-  // a venue row expands in place; its full record is one link further
-  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-expand-/).click();
+  // the venue row's name links to its full record
   await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   const url = page.url();
   await expect(page.getByTestId("venue-page")).toContainText("Haylee Jackson");
@@ -145,8 +151,7 @@ test("a venue's notes autosave (no Save button) and survive a reload, and a new 
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("lost lake");
-  // a venue row expands in place; its full record is one link further
-  await page.getByTestId(/^row-venue-/).getByTestId(/^venue-expand-/).click();
+  // the venue row's name links to its full record
   await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   const url = page.url();
@@ -166,7 +171,7 @@ test("a venue's notes autosave (no Save button) and survive a reload, and a new 
   // inline "New contact" = draft: closed and reopened, the typing is still there; Add creates it and clears the draft
   await page.getByTestId("contact-new").click();
   await page.getByTestId("contact-form-name").fill("Draft Person");
-  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await expect(page.getByTestId("contact-form").getByTestId("draft-status")).toHaveText("Draft saved");
   await page.reload();
   await expect(page.getByTestId("contact-form-name")).toHaveValue("Draft Person"); // form reopens by itself
   await page.getByTestId("contact-form-submit").click();
@@ -268,7 +273,7 @@ test("pitch comments and email templates: existing templates autosave, new ones 
 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId(/^pitch-(?!list)/).first().click();
+  await page.getByTestId(/^pitch-(?!list|count)/).first().click();
   await page.getByTestId("comment-input").fill(`typing ${stamp}`);
   await expect(page.getByTestId("draft-status").first()).toHaveText("Draft saved");
   await page.reload();

@@ -69,6 +69,7 @@ dialog.dlg::backdrop { background: rgb(10 14 30 / .55); }
 .pick[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
 .pick[aria-pressed="true"]::before { content: ""; width: 12px; height: 12px; background: currentColor; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3.2L13 4.8'/%3E%3C/svg%3E") center / contain no-repeat; }
 .pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.avatar { flex: none; width: 28px; height: 28px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--acc-btn); color: var(--on-accent); font-size: 12px; font-weight: 700; }
 .chip { font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); white-space: nowrap; }
 .chip.a { background: var(--accent-soft); color: var(--accent); }
 .chip.m { background: var(--blue-soft); color: var(--blue); }
@@ -84,3 +85,20 @@ dialog.dlg::backdrop { background: rgb(10 14 30 / .55); }
 .toast .btn.ghost { background: transparent; color: var(--panel); border-color: color-mix(in srgb, var(--panel) 40%, transparent); }
 /* The flag button while its add form is open: a ring marks which row the form belongs to. */
 .flag-btn[data-open="1"] { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Booking list: the square flag button (unpitched / form open / pitched), the tinted panel under a row, white chips, the round + button */
+.flag-sq { flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border-radius: 12px; border: 2px solid transparent; background: var(--blue-soft); color: var(--blue-btn); cursor: pointer; }
+.flag-sq svg { width: 20px; height: 20px; }
+.flag-sq:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.flag-sq:disabled { opacity: .5; cursor: default; }
+.flag-sq[data-open="1"] { background: var(--accent-soft); color: var(--acc-btn); border-color: var(--acc-btn); }
+.flag-sq[data-flagged="1"] { background: var(--acc-btn); color: var(--on-accent); border-color: var(--acc-btn); }
+.card-tint { margin: 0 -14px -14px; padding: 14px; background: var(--accent-soft); border-top: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 0 0 13px 13px; }
+.card:has(> .card-tint) { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.chip.w { background: var(--panel); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); font-weight: 600; font-size: 13px; padding: 4px 10px; }
+.chip.w.lg { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; padding: 4px 4px 4px 12px; }
+.chip.w button { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; padding: 0; }
+.chip.w button:hover { color: var(--ink); }
+.round-btn { flex: none; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 999px; padding: 0; background: var(--acc-btn); color: var(--on-accent); cursor: pointer; }
+.round-btn:disabled { opacity: .4; cursor: default; }
+.round-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

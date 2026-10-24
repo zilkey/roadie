@@ -14,7 +14,6 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
   await page.goto(base("/booking"));
   await page.getByTestId("booking-search").fill(search);
   const row = page.getByTestId(/^row-venue-/).filter({ hasText: exact ?? search }).first();
-  await row.getByTestId(/^venue-expand-/).click();
   await row.getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
@@ -154,4 +153,46 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   await expect(page.getByTestId("undo-counts")).toContainText("put back");
   await page.goto(dupUrl);
   await expect(page.getByTestId("page-title")).toHaveText("The Hi-Dive");
+});
+
+test("the venue page's Pitch card: add to the pitch list, edit it, comment, abandon it into Past pitches; Edit sits in the header", async ({ page }) => {
+  page.on("dialog", (d) => d.accept());
+  await signInAs(page, "jeff");
+  await page.goto(A("/shows"));
+  await page.locator("a[data-testid^='show-']", { hasText: "Hi-Dive" }).first().click();
+  await page.getByTestId("show-venue-link").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  // Edit is in the header and swaps the facts for the form; Cancel puts them back
+  await page.getByTestId("room-edit").click();
+  await expect(page.getByTestId("room-form")).toBeVisible();
+  await expect(page.getByTestId("room-edit")).toHaveCount(0);
+  await page.getByTestId("room-cancel").click();
+  await expect(page.getByTestId("room-edit")).toBeVisible();
+
+  const card = page.getByTestId("venue-pitch-card");
+  if (await page.getByTestId("pitch-open").count()) await page.getByTestId("pitch-abandon").click();
+  await expect(page.getByTestId("not-on-pitch-list")).toBeVisible();
+  // nothing is added until the explicit button
+  await card.locator("[data-testid^='flag-'][data-flagged]").click();
+  await expect(card.getByTestId(/^flag-form-/)).toBeVisible();
+  await expect(page.getByTestId("pitch-open")).toHaveCount(0);
+  await card.getByTestId(/^flag-submit-/).click();
+  await expect(page.getByTestId("pitch-open")).toBeVisible();
+  await expect(page.getByTestId("status-chip").first()).toBeVisible();
+
+  await page.getByTestId("pitch-edit").click();
+  await page.getByTestId("pitch-edit-dates-add").click();
+  await page.getByTestId("pitch-edit-dates-date-0").fill("2027-02-12");
+  await page.getByTestId("pitch-edit-save").click();
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Feb");
+
+  const text = `Sent the EPK ${Date.now()}`;
+  await page.getByTestId("pitch-comment-input").fill(text);
+  await expect(page.getByTestId("pitch-comment")).toHaveCount(await page.getByTestId("pitch-comment").count()); // typing alone posts nothing
+  await page.getByTestId("pitch-comment-send").click();
+  await expect(page.getByTestId("pitch-comments")).toContainText(text);
+
+  await page.getByTestId("pitch-abandon").click();
+  await expect(page.getByTestId("pitch-open")).toHaveCount(0);
+  await expect(page.getByTestId("past-pitches")).toContainText("Abandoned");
 });
