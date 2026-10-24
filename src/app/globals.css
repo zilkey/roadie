@@ -79,3 +79,5 @@ a { color: inherit; }
 .toasts { position: fixed; z-index: 60; left: 50%; bottom: 16px; transform: translateX(-50%); display: grid; gap: 8px; width: min(420px, calc(100vw - 24px)); }
 .toast { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--ink); color: var(--panel); border-radius: 12px; padding: 10px 14px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
 .toast .btn.ghost { background: transparent; color: var(--panel); border-color: color-mix(in srgb, var(--panel) 40%, transparent); }
+/* The flag button while its add form is open: a ring marks which row the form belongs to. */
+.flag-btn[data-open="1"] { box-shadow: 0 0 0 2px var(--accent); }

@@ -1,10 +1,10 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, type Status } from "@/lib/booking";
-import { useCommand, ErrorBox } from "@/components/ui";
+import { useCommand, ErrorBox, Select } from "@/components/ui";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
@@ -59,61 +59,89 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-/** Flag = add to the Pitch List. Filled flag = already there; tapping it opens the pitch. Unflagged shows a small inline form. */
-export function FlagButton({ kind, id, pitches, big }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean }) {
+/**
+ * A pitch's configuration, picked from the artist's configurations (stores the id; "" = not sure yet). With none yet,
+ * admins get the link to make some instead of an empty dropdown. Pitches are admin-only, so the link is always allowed.
+ */
+export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { value: string; onChange(id: string): void; testid?: string; onKeyDown?: React.KeyboardEventHandler }) {
+  const artist = useArtist();
+  const configs = artist.doc?.configurations ?? [];
+  const edit = artist.role === "admin" && <Link href="/admin/artist" className="s font-semibold underline" data-testid="edit-configurations">Edit configurations</Link>;
+  return (
+    <div className="grid gap-1" onKeyDown={onKeyDown}>
+      <span className="lbl">Configuration</span>
+      {configs.length === 0
+        ? <span className="s">No configurations yet. {edit}</span>
+        : <>
+            <Select<string> value={value} onChange={onChange} placeholder="Not sure yet" label="Configuration" testid={testid} options={configs.map((c) => [c.id, c.name] as [string, string])} />
+            {edit}
+          </>}
+    </div>
+  );
+}
+
+/**
+ * Flag = add to the Pitch List. `button` is the flag itself (filled = already there; tapping it opens the pitch, unflagged opens
+ * the form). `form` is the small add form: render it on its own line under the row, never inside the button's flex row.
+ */
+function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: PitchRow[], opts: { big?: boolean } = {}) {
   const { call, error, busy } = useCommand();
   const router = useRouter();
   const open = pitches.find((p) => p.target.kind === kind && p.target.id === id && isActive(p.status));
   const [showForm, setShowForm] = useState(false);
   const [pitchedAs, setPitchedAs] = useState("");
   const [notes, setNotes] = useState("");
+  const btn = useRef<HTMLButtonElement>(null);
+  const formOpen = showForm && !open;
 
+  function close() { setShowForm(false); setPitchedAs(""); setNotes(""); btn.current?.focus(); }
   function tap(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     if (open) return router.push(`/booking/pitches/${open.id}`);
+    if (formOpen) return close();
     setShowForm(true);
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
-    const r = await call("pitches.flag", { kind, id, ...(pitchedAs.trim() ? { pitchedAs: pitchedAs.trim() } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
-    if (r) { setShowForm(false); setPitchedAs(""); setNotes(""); }
+    const r = await call("pitches.flag", { kind, id, ...(pitchedAs ? { pitchedAs } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
+    if (r) close();
   }
-  function dismiss(e: React.MouseEvent) {
-    e.preventDefault(); e.stopPropagation();
-    setShowForm(false); setPitchedAs(""); setNotes("");
-  }
+  const escape = (e: React.KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
 
-  return (
+  const button = (
+    <button ref={btn} type="button" onClick={tap} onKeyDown={(e) => { if (formOpen) escape(e); }} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"} data-open={formOpen ? "1" : "0"}
+      aria-label={open ? "On the Pitch List" : "Add to Pitch List"} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
+      className={`${opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
+      <FlagIcon filled={!!open} />{opts.big && (open ? "On the Pitch List" : "Add to Pitch List")}
+    </button>
+  );
+  const form = (
     <>
-      <button type="button" onClick={tap} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"}
-        aria-label={open ? "On the Pitch List" : "Add to Pitch List"} aria-pressed={!!open}
-        className={big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`}>
-        <FlagIcon filled={!!open} />{big && (open ? "On the Pitch List" : "Add to Pitch List")}
-      </button>
-      {showForm && !open && (
-        <form onSubmit={submit} onClick={(e) => e.stopPropagation()}
-          className="card mt-2 grid gap-2" data-testid={`flag-form-${id}`}>
-          <label className="grid gap-1">
-            <span className="lbl">Configuration (e.g. Duo)</span>
-            <input className="input" type="text" value={pitchedAs} placeholder="Duo, trio, solo…" data-testid={`flag-pitchedAs-${id}`}
-              onChange={(e) => setPitchedAs(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setShowForm(false); setPitchedAs(""); setNotes(""); } }} />
-          </label>
+      {formOpen && (
+        <form onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={escape}
+          className="mt-2 grid w-full gap-2 border-t border-line pt-2 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] md:items-end" data-testid={`flag-form-${id}`}>
+          <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
           <label className="grid gap-1">
             <span className="lbl">Notes</span>
-            <textarea className="input" rows={2} value={notes} data-testid={`flag-notes-${id}`}
-              onChange={(e) => setNotes(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setShowForm(false); setPitchedAs(""); setNotes(""); } }} />
+            <textarea className="input max-h-40 resize-none [field-sizing:content]" rows={1} value={notes} data-testid={`flag-notes-${id}`}
+              onChange={(e) => setNotes(e.target.value)} />
           </label>
           <div className="flex gap-2">
             <button type="submit" className="btn acc sm" disabled={busy} data-testid={`flag-submit-${id}`}>Add to list</button>
-            <button type="button" className="btn ghost sm" onClick={dismiss} data-testid={`flag-cancel-${id}`}>Cancel</button>
+            <button type="button" className="btn ghost sm" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
           </div>
         </form>
       )}
       {error && <ErrorBox error={error} />}
     </>
   );
+  return { button, form };
+}
+
+/** Render prop over the flag: `{(button, form) => ...}`. Put the button in the row's flex line and the form below that line. */
+export function Flagged({ kind, id, pitches, big, children }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean; children(button: React.ReactNode, form: React.ReactNode): React.ReactNode }) {
+  const f = useFlag(kind, id, pitches, { big });
+  return <>{children(f.button, f.form)}</>;
 }
 
 /** View switcher or filter: a tab bar, never a form field. Arrow keys / Home / End move between tabs. */

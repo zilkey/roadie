@@ -8,7 +8,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import {
-  EntityForm, FlagButton, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+  EntityForm, Flagged, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems } from "@/lib/booking";
 import type { User } from "@/schema";
@@ -120,13 +120,16 @@ function Booking() {
               const venuePitchCount = b.pitches.filter((p) => p.target.kind === "venue" && p.target.id === r.id).length;
               return (
                 <div key={r.key} className="card" data-testid={`row-venue-${r.id}`}>
-                  <div className="flex items-center justify-between gap-2" style={{ display: "flex" }}>
-                    <button type="button" className="grid min-w-0 flex-1 gap-0.5 text-left" onClick={() => setExpandedVenue(isExpanded ? null : r.id)} data-testid={`venue-expand-${r.id}`}>
-                      <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
-                    </button>
-                    {pitch && <StatusChip status={pitch.status} />}
-                    <FlagButton kind="venue" id={r.id} pitches={b.pitches} />
-                  </div>
+                  <Flagged kind="venue" id={r.id} pitches={b.pitches}>{(flag, flagForm) => (<>
+                    <div className="flex items-center justify-between gap-2">
+                      <button type="button" className="grid min-w-0 flex-1 gap-0.5 text-left" onClick={() => setExpandedVenue(isExpanded ? null : r.id)} data-testid={`venue-expand-${r.id}`}>
+                        <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
+                      </button>
+                      {pitch && <StatusChip status={pitch.status} />}
+                      {flag}
+                    </div>
+                    {flagForm}
+                  </>)}</Flagged>
                   {isExpanded && venue && (
                     <div className="mt-2 grid gap-1 border-t border-line pt-2" data-testid={`venue-details-${r.id}`}>
                       {venue.capacity && <span className="s">Capacity: {venue.capacity}</span>}
@@ -140,12 +143,17 @@ function Booking() {
               );
             }
             return (
-              <div key={r.key} className={`card flex-row items-center justify-between ${r.kind === "edition" ? "ml-4" : ""}`} style={{ display: "flex" }} data-testid={`row-${r.kind}-${r.id}`}>
-                <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5">
-                  <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
-                </Link>
-                {pitch && <StatusChip status={pitch.status} />}
-                {(r.kind === "promoter" || r.kind === "edition") && <FlagButton kind={r.kind} id={r.id} pitches={b.pitches} />}
+              <div key={r.key} className={`card ${r.kind === "edition" ? "ml-4" : ""}`} data-testid={`row-${r.kind}-${r.id}`}>
+                <FlaggedRow kind={r.kind} id={r.id} pitches={b.pitches}>{(flag, flagForm) => (<>
+                  <div className="flex items-center justify-between gap-2">
+                    <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5">
+                      <b className="truncate">{r.title}</b><span className="s truncate">{r.sub}</span>
+                    </Link>
+                    {pitch && <StatusChip status={pitch.status} />}
+                    {flag}
+                  </div>
+                  {flagForm}
+                </>)}</FlaggedRow>
               </div>
             );
           })}
@@ -165,6 +173,12 @@ function Booking() {
 
 const activeFor = (pitches: PitchRow[], kind: string, id: string) =>
   pitches.find((p) => p.target.kind === kind && p.target.id === id && !["declined", "dropped"].includes(p.status));
+
+/** Promoter and edition rows have a flag; festivals and contacts don't. */
+function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string; pitches: PitchRow[]; children(button: React.ReactNode, form: React.ReactNode): React.ReactNode }) {
+  if (kind !== "promoter" && kind !== "edition") return <>{children(null, null)}</>;
+  return <Flagged kind={kind} id={id} pitches={pitches}>{children}</Flagged>;
+}
 
 function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {
   return (

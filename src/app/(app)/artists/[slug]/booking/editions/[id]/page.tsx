@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, EntityForm, FlagButton, PitchLinks, editionForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, EntityForm, Flagged, PitchLinks, editionForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
 import { ShowLinks } from "@/components/shows/common";
 import type { Edition } from "@/schema";
@@ -27,10 +27,13 @@ function EditionPage() {
       <BackLink href={hrefFor("festival", e.festivalId)} label={e.festivalName} />
       <PageTitle title={`${e.festivalName} ${e.label}`} sub={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"} />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap gap-2">
-        <FlagButton kind="edition" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
-      </div>
+      <Flagged kind="edition" id={id} pitches={b.pitches} big>{(flag, flagForm) => (<>
+        <div className="flex flex-wrap items-start gap-2">
+          {flag}
+          <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
+        </div>
+        {flagForm}
+      </>)}</Flagged>
       {edit ? (
         <EntityForm testid="edition-edit" fields={editionForm.fields} initial={editionForm.initial(e)} build={editionForm.build}
           autosave={{ command: "editions.update", id, rev: e.rev, title: `${e.festivalName} ${e.label}` }} />

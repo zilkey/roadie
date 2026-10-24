@@ -10,6 +10,8 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
 import { fillTemplate, unfilledFields, buildTemplateContext, buildSearchItems, searchItems, appsOpenThisMonth, upcomingDeadlines } from "@/lib/booking";
+import { firestore } from "@/server/admin";
+import { migratePitchedAs } from "../../scripts/migrate-pitched-as";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -221,4 +223,40 @@ test("email templates CRUD and admin-only access over the command API", async ()
   const res = await dispatch("venues.create", `Bearer ${member.token}`, venue("X"));
   assert.equal(res.status, 403);
   assert.equal((await dispatch("pitches.flag", `Bearer ${token}`, { kind: "venue", id: "nope" })).status, 404);
+});
+
+test("migrate-pitched-as: free text matches a configuration by name, otherwise moves to notes; dry run writes nothing; second run is a no-op", async () => {
+  const mk = async (name: string, pitchedAs?: string, notes?: string) => {
+    const { id } = await cmd("pitches.flag", { kind: "venue", id: (await cmd("venues.create", venue(name))).id, ...(notes ? { notes } : {}) });
+    if (pitchedAs !== undefined) await firestore().doc(`pitches/${id}`).update({ pitchedAs });
+    return id;
+  };
+  const duo = await mk("A", " duo ");           // name match, case-insensitive, trimmed
+  const trio = await mk("B", "trio");           // already a configuration id: left alone
+  const odd = await mk("C", "Acoustic ish", "Loves folk");
+  const bare = await mk("D", "Solo");
+  const fine = await mk("E");
+  await cmd("pitches.update", { id: fine, patch: { pitchedAs: "duo" } });
+  const gone = await mk("F", "Quartet");
+  await firestore().doc(`pitches/${gone}`).update({ deletedAt: new Date() });
+
+  const dry = await migratePitchedAs(firestore(), { dryRun: true });
+  assert.deepEqual(dry.matched.map((m) => m.id), [duo]);
+  assert.deepEqual(dry.cleared.map((c) => c.id).sort(), [odd, bare, gone].sort());
+  assert.equal((await db.get("pitches", duo))!.pitchedAs, " duo ", "dry run writes nothing");
+
+  await migratePitchedAs(firestore());
+  assert.equal((await db.get("pitches", duo))!.pitchedAs, "duo");
+  assert.equal((await db.get("pitches", trio))!.pitchedAs, "trio");
+  const o = (await db.get("pitches", odd))!;
+  assert.equal(o.pitchedAs, undefined);
+  assert.equal(o.notes, "Loves folk\nPitched as: Acoustic ish");
+  assert.equal((await db.get("pitches", bare))!.notes, "Pitched as: Solo");
+  assert.equal((await db.get("pitches", fine))!.pitchedAs, "duo");
+  const g = (await firestore().doc(`pitches/${gone}`).get()).data()!;
+  assert.equal("pitchedAs" in g, false);
+  assert.equal(g.notes, "Pitched as: Quartet");
+
+  const again = await migratePitchedAs(firestore());
+  assert.deepEqual([again.matched, again.cleared], [[], []]);
 });

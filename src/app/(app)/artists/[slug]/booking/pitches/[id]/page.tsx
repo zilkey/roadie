@@ -13,7 +13,7 @@ import { newMutationId } from "@/lib/commands";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { BackLink, ConfigurationPicker, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { fmtLong, showName } from "@/lib/shows";
@@ -108,12 +108,7 @@ function PitchPage() {
       </label>
 
       <div className="card">
-        <span className="lbl">Pitching as</span>
-        <select className="select" value={p.pitchedAs ?? ""} data-testid="pitched-as"
-          onChange={(e) => patch({ pitchedAs: e.target.value || null })}>
-          <option value="">Not sure</option>
-          {artist?.configurations.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        <ConfigurationPicker value={p.pitchedAs ?? ""} testid="pitched-as" onChange={(v) => patch({ pitchedAs: v || null })} />
         <span className="lbl">Who&apos;s on it</span>
         <div className="flex flex-wrap gap-1.5" data-testid="personnel">
           {musicians.filter((m) => m.active || people.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {

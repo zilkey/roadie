@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, useBooking, useNotFound, venueForm } from "@/components/booking/common";
+import { BackLink, ContactsPanel, EntityForm, Flagged, PitchLinks, hrefFor, useBooking, useNotFound, venueForm } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
 import type { Show, Venue } from "@/schema";
 
@@ -31,10 +31,13 @@ function VenuePage() {
       <BackLink href="/booking" label="Booking" />
       <PageTitle title={v.name} sub={facts} />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap gap-2">
-        <FlagButton kind="venue" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
-      </div>
+      <Flagged kind="venue" id={id} pitches={b.pitches} big>{(flag, flagForm) => (<>
+        <div className="flex flex-wrap items-start gap-2">
+          {flag}
+          <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
+        </div>
+        {flagForm}
+      </>)}</Flagged>
       {edit && (
         <EntityForm testid="venue-edit" fields={venueForm.fields} initial={venueForm.initial(v)} build={venueForm.build}
           autosave={{ command: "venues.update", id, rev: v.rev, title: v.name }} />

@@ -7,7 +7,7 @@ import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
-import { BackLink, ContactsPanel, EntityForm, FlagButton, editionForm, festivalForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, ContactsPanel, EntityForm, Flagged, editionForm, festivalForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
 import { fmtDate } from "@/lib/booking";
 import type { Festival } from "@/schema";
 
@@ -42,12 +42,17 @@ function FestivalPage() {
       <span className="lbl">Years</span>
       {editions.length === 0 && <span className="s">No dates yet.</span>}
       {editions.map((e) => (
-        <div key={e.id} className="card" style={{ display: "flex" }} data-testid={`edition-${e.id}`}>
-          <Link href={hrefFor("edition", e.id)} className="grid flex-1 gap-0.5">
-            <b>{e.label}</b>
-            <span className="s">{[e.startDate && `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}`, e.appOpens && `opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)} (${e.appDeadline.sure})`].filter(Boolean).join(" · ")}</span>
-          </Link>
-          <FlagButton kind="edition" id={e.id} pitches={b.pitches} />
+        <div key={e.id} className="card" data-testid={`edition-${e.id}`}>
+          <Flagged kind="edition" id={e.id} pitches={b.pitches}>{(flag, flagForm) => (<>
+            <div className="flex items-center gap-2">
+              <Link href={hrefFor("edition", e.id)} className="grid flex-1 gap-0.5">
+                <b>{e.label}</b>
+                <span className="s">{[e.startDate && `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}`, e.appOpens && `opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)} (${e.appDeadline.sure})`].filter(Boolean).join(" · ")}</span>
+              </Link>
+              {flag}
+            </div>
+            {flagForm}
+          </>)}</Flagged>
         </div>
       ))}
       <button className="btn ghost sm justify-self-start" onClick={() => setAddEd(!addEd)} data-testid="add-edition">{addEd ? "Close" : "+ Add a year"}</button>

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, ContactsPanel, EntityForm, FlagButton, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink, ContactsPanel, EntityForm, Flagged, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound } from "@/components/booking/common";
 import type { Promoter } from "@/schema";
 
 export default function Page() { return <AdminOnly><PromoterPage /></AdminOnly>; }
@@ -25,10 +25,13 @@ function PromoterPage() {
       <BackLink href="/booking" label="Booking" />
       <PageTitle title={p.name} sub={`${p.kind === "venueGroup" ? "Venue group" : p.kind[0].toUpperCase() + p.kind.slice(1)}${venues.length ? ` · ${venues.length} venues` : ""}`} />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap gap-2">
-        <FlagButton kind="promoter" id={id} pitches={b.pitches} big />
-        <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
-      </div>
+      <Flagged kind="promoter" id={id} pitches={b.pitches} big>{(flag, flagForm) => (<>
+        <div className="flex flex-wrap items-start gap-2">
+          {flag}
+          <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
+        </div>
+        {flagForm}
+      </>)}</Flagged>
       {edit && (
         <EntityForm testid="promoter-edit" fields={promoterForm.fields} initial={promoterForm.initial(p)} build={promoterForm.build}
           autosave={{ command: "promoters.update", id, rev: p.rev, title: p.name }} />

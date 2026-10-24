@@ -19,6 +19,14 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await flag.click();
   await expect(row.getByTestId(/^flag-form-/)).toBeVisible();
   await expect(flag).toHaveAttribute("data-flagged", "0");
+  // the form sits under the row's button line, Escape closes it and puts focus back on the flag
+  await expect(flag).toHaveAttribute("data-open", "1");
+  await page.keyboard.press("Escape");
+  await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
+  await expect(flag).toBeFocused();
+  await flag.click();
+  // configuration is a dropdown of the artist's configurations; its value is the configuration id
+  await row.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Duo" });
   await row.getByTestId(/^flag-submit-/).click();
   await expect(flag).toHaveAttribute("data-flagged", "1");
   await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
@@ -29,7 +37,7 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await page.getByTestId("group-toPitch").getByText("Swallow Hill Music").click();
 
   await expect(page.getByTestId("pitch-page")).toBeVisible();
-  await page.getByTestId("pitched-as").selectOption("duo");
+  await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
   await expect(page.getByTestId("person-Ingrid")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("person-David")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("next-text").fill("Follow up");
