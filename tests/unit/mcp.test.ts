@@ -267,7 +267,10 @@ test("HTTP sessions are signed: the id carries the runId, is bound to the key, a
   }
   const theirs = await newKey("Someone else");
   assert.equal((await post({ Authorization: `Bearer ${theirs.token}`, [SESSION_HEADER]: sid }, toolsList)).status, 404);
-  // Unknown or missing key: 401, before anything else.
+  // No push stream: GET is 405 even with a valid session, so nothing is held open.
+  const get = await handleMcpRequest(new Request(URL_, { headers: { ...auth, accept: "text/event-stream", [SESSION_HEADER]: sid } }));
+  assert.equal(get.status, 405);
+  // Unknown or missing key: 401.
   assert.equal((await post({ Authorization: "Bearer btk_wrong", [SESSION_HEADER]: sid }, toolsList)).status, 401);
 });
 

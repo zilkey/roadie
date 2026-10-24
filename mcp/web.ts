@@ -47,6 +47,9 @@ export function runIdOf(sessionId: string, tokenHash: string): string | undefine
 }
 
 export async function handleMcpRequest(req: Request): Promise<Response> {
+  // No server-to-client push stream: each request gets a fresh server, so a held-open GET would carry nothing and keep
+  // an instance busy (no scale-to-zero). 405 is the spec's "no SSE here"; clients then use POST replies only.
+  if (req.method === "GET") return new Response(null, { status: 405, headers: { Allow: "POST, DELETE" } });
   try {
     const raw = bearerOf(req.headers.get("authorization"));
     let id;
