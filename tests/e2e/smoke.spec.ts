@@ -30,14 +30,19 @@ test("admin edits artist configurations", async ({ page }) => {
   await expect(page).toHaveURL(/\/home$/);
   await page.goto(A("/admin/artist"));
   await expect(page.getByTestId("config-trio")).toBeVisible();
-  await expect(page.getByTestId("artist-save")).toHaveCount(0); // autosave: no Save button
   await expect(page.getByText("Add gear")).toHaveCount(0); // gear lives on each show, not here
+  // name and address are read-only until Edit, then saved with Save
+  await expect(page.getByTestId("artist-name")).toHaveCount(0);
+  await page.getByTestId("artist-edit").click();
   await page.getByTestId("artist-name").fill("Ingrid Avison Band Test");
-  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+  await page.getByTestId("artist-save").click();
+  await expect(page.getByTestId("artist-name-value")).toHaveText("Ingrid Avison Band Test");
   await page.reload();
-  await expect(page.getByTestId("artist-name")).toHaveValue("Ingrid Avison Band Test");
+  await expect(page.getByTestId("artist-name-value")).toHaveText("Ingrid Avison Band Test");
+  await page.getByTestId("artist-edit").click();
   await page.getByTestId("artist-name").fill("Ingrid Avison Band");
-  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+  await page.getByTestId("artist-save").click();
+  await expect(page.getByTestId("artist-name-value")).toHaveText("Ingrid Avison Band");
   // a new configuration is a draft until Add
   await page.getByTestId("add-config").click();
   await page.getByTestId("new-config-name").fill("Quartet");
@@ -100,21 +105,23 @@ test("settings: Artist comes before People; the artist's web address is validate
   await expect(page.getByTestId(/^side-admin-/)).toHaveText(["Artist", "People", "Claude Code", "History"]);
   await page.getByTestId("side-admin-artist").click();
   await expect(page).toHaveURL(new RegExp(`${A("/admin/artist")}$`));
+  await page.getByTestId("artist-edit").click();
   const slug = page.getByTestId("artist-slug");
   await expect(slug).toHaveValue(ARTIST_SLUG);
   await slug.fill("bad--slug");
   await expect(page.getByTestId("artist-slug-hint")).toContainText("single hyphens");
-  await expect(page.getByTestId("artist-slug-save")).toBeDisabled();
+  await expect(page.getByTestId("artist-save")).toBeDisabled();
   await slug.fill("ingrid-test");
-  await page.getByTestId("artist-slug-save").click();
+  await page.getByTestId("artist-save").click();
   await expect(page).toHaveURL(/\/artists\/ingrid-test\/admin\/artist$/);
   await expect(page.getByTestId("config-trio")).toBeVisible();
   await page.getByTestId("tab-shows").click();
   await expect(page).toHaveURL(/\/artists\/ingrid-test\/shows$/);
   // put it back for the other tests
   await page.goto("/artists/ingrid-test/admin/artist");
+  await page.getByTestId("artist-edit").click();
   await page.getByTestId("artist-slug").fill(ARTIST_SLUG);
-  await page.getByTestId("artist-slug-save").click();
+  await page.getByTestId("artist-save").click();
   await expect(page).toHaveURL(new RegExp(`${A("/admin/artist")}$`));
   await page.goto("/artists/ingrid-test/home");
   await expect(page.getByTestId("not-member")).toBeVisible(); // the old address is gone

@@ -24,34 +24,67 @@ const withScheme = (v: string) => (/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https:/
 
 export default function ArtistPage() { return <AdminOnly><ArtistEditor /></AdminOnly>; }
 
-/** The artist's URL name (/artists/{slug}). Changed on purpose with a button, not autosaved: old links stop working. */
-function SlugEditor({ artist }: { artist: Artist }) {
+/**
+ * Name and web address (/artists/{slug}) in one card: read-only until Edit, then saved together with Save.
+ * Not autosaved: changing the address breaks old links, and the page you're on moves with it.
+ */
+function ArtistCard({ artist }: { artist: Artist }) {
   const router = useRouter();
   const { call, error, busy, setError } = useCommand();
-  const [value, setValue] = useState(artist.slug);
-  useEffect(() => { setValue(artist.slug); }, [artist.slug]);
-  const check = artistSlug.safeParse(value);
-  const hint = value && !check.success ? check.error.issues[0]?.message : null;
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(artist.name);
+  const [slug, setSlug] = useState(artist.slug);
+  const check = artistSlug.safeParse(slug);
+  const hint = slug && !check.success ? check.error.issues[0]?.message : null;
+  const changed = name.trim() !== artist.name || slug !== artist.slug;
+  function open() { setName(artist.name); setSlug(artist.slug); setError(null); setEditing(true); }
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (!name.trim()) return setError("Artist name is required");
     if (!check.success) return setError(hint ?? "Not a valid URL name");
-    if (value === artist.slug) return;
-    const r = await call("artists.update", { id: artist.id, patch: { slug: value } });
-    // The page you're on moved with it.
-    if (r) router.replace(artistPath(value, "/admin/artist"));
+    if (!changed) return setEditing(false);
+    const patch: { name?: string; slug?: string } = {};
+    if (name.trim() !== artist.name) patch.name = name.trim();
+    if (slug !== artist.slug) patch.slug = slug;
+    if (!(await call("artists.update", { id: artist.id, patch }))) return;
+    setEditing(false);
+    if (patch.slug) router.replace(artistPath(patch.slug, "/admin/artist"));
   }
   return (
-    <form className="card" onSubmit={save} data-testid="artist-slug-form">
-      <span className="lbl">Web address</span>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="s">/artists/</span>
-        <input className="input !w-auto flex-1" value={value} onChange={(e) => { setValue(e.target.value.trim().toLowerCase()); setError(null); }}
-          aria-label="Web address" aria-invalid={!!hint} data-testid="artist-slug" spellCheck={false} autoCapitalize="none" />
-        <button className="btn acc sm" disabled={busy || !check.success || value === artist.slug} data-testid="artist-slug-save">Change address</button>
+    <section className={`card${editing ? " editing" : ""}`} data-testid="artist-card" aria-labelledby="artist-card-title">
+      <div className="card-head">
+        <h2 id="artist-card-title">Name and web address</h2>
+        {editing ? <span className="tag">Editing</span>
+          : <button type="button" className="card-edit" onClick={open} data-testid="artist-edit">Edit</button>}
       </div>
-      {hint ? <span className="err" data-testid="artist-slug-hint">{hint}</span> : <span className="s">Lowercase letters, numbers and hyphens. Links with the old address stop working.</span>}
-      <ErrorBox error={error} />
-    </form>
+      {editing ? (
+        <form className="grid gap-4" onSubmit={save} data-testid="artist-form">
+          <div className="grid gap-1.5">
+            <label htmlFor="artist-name" className="lbl">Artist name</label>
+            <input id="artist-name" className="input" value={name} onChange={(e) => { setName(e.target.value); setError(null); }} data-testid="artist-name" autoFocus />
+          </div>
+          <div className="grid gap-1.5">
+            <label htmlFor="artist-slug" className="lbl">Web address</label>
+            <div className="flex items-center gap-2">
+              <span className="s">/artists/</span>
+              <input id="artist-slug" className="input !w-auto flex-1" value={slug} onChange={(e) => { setSlug(e.target.value.trim().toLowerCase()); setError(null); }}
+                aria-invalid={!!hint} data-testid="artist-slug" spellCheck={false} autoCapitalize="none" />
+            </div>
+            {hint ? <span className="err" data-testid="artist-slug-hint">{hint}</span> : <span className="s">Lowercase letters, numbers and hyphens. Links with the old address stop working.</span>}
+          </div>
+          <ErrorBox error={error} />
+          <div className="card-foot"><div className="end">
+            <button type="button" className="btn text" onClick={() => { setEditing(false); setError(null); }} data-testid="artist-cancel">Cancel</button>
+            <button className="btn acc" disabled={busy || !name.trim() || !check.success || !changed} data-testid="artist-save">Save</button>
+          </div></div>
+        </form>
+      ) : (
+        <dl className="grid gap-3 m-0">
+          <div className="grid gap-0.5"><dt className="lbl">Artist name</dt><dd className="m-0" data-testid="artist-name-value">{artist.name}</dd></div>
+          <div className="grid gap-0.5"><dt className="lbl">Web address</dt><dd className="m-0" data-testid="artist-slug-value"><span className="s">/artists/</span>{artist.slug}</dd></div>
+        </dl>
+      )}
+    </section>
   );
 }
 
@@ -97,11 +130,10 @@ function ArtistEditor() {
   const musicians = useCollection<Musician>("musicians");
   const { call, error, busy } = useCommand();
   const artist = useArtist().doc ?? undefined;
-  const [name, setName] = useState("");
   const [cfgs, setCfgs] = useState<Cfg[]>([]);
   const [links, setLinks] = useState<Links>({});
   const ms = (musicians.rows ?? []).filter((m) => m.active).sort((a, b) => a.name.localeCompare(b.name));
-  const resetFrom = (a: Artist) => { setName(a.name); setCfgs(a.configurations); setLinks(a.links ?? {}); };
+  const resetFrom = (a: Artist) => { setCfgs(a.configurations); setLinks(a.links ?? {}); };
   const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
   const cfgDraft = useDraft(draftPath.newIn("configurations"), { name: "", billingName: "", musicianIds: [] as string[] }, { title: (v) => `New configuration${v.name ? ` · ${v.name}` : ""}` });
   const cfgMutation = useRef(newMutationId());
@@ -110,15 +142,12 @@ function ArtistEditor() {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
-  const liveKey = JSON.stringify(artist ? [artist.name, artist.configurations, artist.links] : null);
+  const liveKey = JSON.stringify(artist ? [artist.configurations, artist.links] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return <p className="s">Loading…</p>;
+  const name = artist.name;
 
-  function editName(v: string) {
-    setName(v);
-    if (v.trim()) as.patch({ name: v }); else as.hold("Artist name is required");
-  }
   function editCfgs(next: Cfg[]) {
     setCfgs(next);
     const bad = next.find((c) => !c.name.trim() || !c.billingName.trim());
@@ -166,13 +195,12 @@ function ArtistEditor() {
 
   return (
     <div className="grid gap-5" onBlur={() => void as.flush()}>
-      <PageTitle title="Artist" sub="How we play and who's in each lineup." pill={<SaveStatus {...as.statusProps} />} />
+      <PageTitle title="Artist Settings" pill={<SaveStatus {...as.statusProps} />} />
       <ErrorBox error={error} />
-      <div className="card"><span className="lbl">Artist name</span><input className="input" value={name} onChange={(e) => editName(e.target.value)} data-testid="artist-name" /></div>
-      <SlugEditor artist={artist} />
+      <ArtistCard artist={artist} />
       <section className="card" data-testid="configs" aria-labelledby="cfg-title">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><h2 id="cfg-title" className="text-lg font-bold">Configurations</h2><p className="s">The lineups you book under. Each show uses one.</p></div>
+          <div><h2 id="cfg-title" className="text-lg font-bold">Band Configurations</h2><p className="s">The lineups you book under. Each show uses one.</p></div>
           {!open && <button type="button" className="btn ghost" data-testid="add-config" onClick={() => setForm({ kind: "new" })}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg> New configuration</button>}
         </div>
