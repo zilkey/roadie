@@ -279,3 +279,67 @@ test("Booked it! with Copy over comments unticked leaves the show without commen
   await page.getByTestId("book-submit").click();
   expect(await showCommentsAfterBooking(page, request, pitchId)).toEqual([]);
 });
+
+/** Venue page for Hi-Dive with no open pitch and the flag form open. */
+async function hiDiveFlagForm(page: Page) {
+  page.on("dialog", (d) => d.accept());
+  await signInAs(page, "jeff");
+  await openVenue(page, A, "Hi-Dive");
+  if (await page.getByTestId("pitch-open").count()) await page.getByTestId("pitch-abandon").click();
+  const card = page.getByTestId("venue-pitch-card");
+  await card.locator("[data-testid^='flag-'][data-flagged]").click();
+  return card;
+}
+
+test("a date typed into the possible-dates box is kept without pressing +: flag form, Edit pitch; the x on a card chip removes it right away", async ({ page, request }) => {
+  const card = await hiDiveFlagForm(page);
+  await card.getByTestId(/^flag-dates-.+-date$/).fill("2027-06-04");
+  await card.getByTestId(/^flag-submit-/).click();
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Fri, Jun 4");
+
+  await page.getByTestId("pitch-edit").click();
+  await page.getByTestId("pitch-edit-dates-date").fill("2027-06-11");
+  await page.getByTestId("pitch-edit-save").click(); // no +
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Fri, Jun 4");
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Fri, Jun 11");
+
+  // the x on the read-only card: no confirm, no edit mode
+  await page.getByRole("button", { name: "Remove Fri, Jun 4" }).click();
+  await expect(page.getByTestId("pitch-dates-summary")).not.toContainText("Fri, Jun 4");
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Fri, Jun 11");
+  await expect(page.getByTestId("pitch-edit-form")).toHaveCount(0);
+  const id = (await page.getByTestId("pitch-open-full").getAttribute("href"))!.split("/").pop()!;
+  const doc = await (await request.get(`${FS}/pitches/${id}`, authz)).json();
+  expect(doc.fields.dates.arrayValue.values.map((v: { stringValue: string }) => v.stringValue)).toEqual(["2027-06-11"]);
+  // read-only chips elsewhere (Past pitches) have no x
+  await page.getByTestId("pitch-abandon").click();
+  await expect(page.getByTestId("past-pitches").getByRole("button")).toHaveCount(0);
+});
+
+test("Booked it!: Not sure yet leaves the show without a configuration; the invite list follows the configuration; unticked invites nobody", async ({ page, request }) => {
+  const card = await hiDiveFlagForm(page);
+  await card.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Trio" });
+  await card.getByTestId(/^flag-dates-.+-date$/).fill("2027-07-09");
+  await card.getByTestId(/^flag-submit-/).click();
+  const id = (await page.getByTestId("pitch-open-full").getAttribute("href"))!.split("/").pop()!;
+  await page.getByTestId("booked-it").click();
+  const list = page.getByTestId("book-invite-list");
+  await expect(page.getByTestId("book-invite")).toBeChecked();
+  await expect(list).toContainText("Ingrid");
+  await expect(list).toContainText("David");
+  await page.getByTestId("book-config").selectOption({ label: "Ingrid solo" });
+  await expect(list).toContainText("Ingrid");
+  await expect(list).not.toContainText("David");
+  await page.getByTestId("book-config").selectOption({ label: "Not sure yet" });
+  await expect(list).toContainText("Nobody would be invited");
+  await expect(page.getByTestId("book-invite")).toBeDisabled();
+  await expect(page.getByTestId("book-invite")).not.toBeChecked();
+  await page.getByTestId("book-submit").click();
+  await expect(page.getByTestId("pitch-open")).toHaveCount(0);
+  await expect(page.getByTestId(`past-pitch-${id}`)).toContainText("Became a show");
+  const pitch = await (await request.get(`${FS}/pitches/${id}`, authz)).json();
+  const showId = pitch.fields.showIds.arrayValue.values[0].stringValue;
+  const show = await (await request.get(`${FS}/shows/${showId}`, authz)).json();
+  expect(show.fields.billedAs).toBeUndefined();
+  expect(show.fields.personnel.arrayValue.values ?? []).toHaveLength(0);
+});

@@ -1,4 +1,5 @@
 /** Pure show logic shared by the UI and server commands (no server or browser imports). */
+import { roleIn } from "@/schema/users";
 
 export type Sound = { provider: "venueProvided" | "bandProvided"; notes?: string };
 export type Needs = { poster: boolean; backline: boolean; merch: boolean };
@@ -35,6 +36,24 @@ export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
 export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
 /** "Jerry Champlin & Tania McEvoy" */
 export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
+
+/**
+ * Who a show's calendar invitations go to (musician ids): members of the configuration who are on the team (a signed-in admin or
+ * member of this artist, linked either way: musician.userId or user.musicianId) and have an email to send to.
+ * The Booked it! form shows this list and shows.create sends to exactly it.
+ */
+export function calendarInvitees(
+  configMusicianIds: readonly string[],
+  musicians: readonly { id: string; email?: string | null; userId?: string | null }[],
+  users: readonly { id: string; musicianId?: string | null; artists?: unknown }[],
+  artistId: string,
+): string[] {
+  const team = users.filter((u) => { const r = roleIn(u, artistId); return r === "admin" || r === "member"; });
+  return configMusicianIds.filter((mid) => {
+    const m = musicians.find((x) => x.id === mid);
+    return !!m?.email && team.some((u) => u.id === m.userId || u.musicianId === m.id);
+  });
+}
 
 /** A sensible starting set; scripts/seed.ts creates these as checklistTemplates. */
 export const DEFAULT_CHECKLIST_TEMPLATES: TemplateLike[] = [

@@ -493,3 +493,33 @@ test("Booked it can carry the pitch's comments onto the show, keeping each one's
 test("copyPitchComments needs a pitch", async () => {
   await assert.rejects(cmd("shows.create", { date: "2027-01-16", venueId, copyPitchComments: true }), /pitchId/);
 });
+
+test("billedAs null is an explicit 'not sure': no configuration, no personnel; omitted still falls back to the pitch's", async () => {
+  const none = await create({ billedAs: null, addToCalendar: false });
+  const a = (await db.get("shows", none.id))!;
+  assert.equal(a.billedAs, undefined);
+  assert.deepEqual(a.personnel, []);
+  const fallback = await create({ date: "2027-02-20", addToCalendar: false });
+  assert.equal((await db.get("shows", fallback.id))!.billedAs, "trio");
+});
+
+test("sendInvites: only configuration members who are on the team; unticked invites nobody, and later syncs keep it", async () => {
+  // Ingrid and Jeff are on the team (linked by user.musicianId); David has an email but no login; Sam has neither
+  await makeUser("ingrid@example.com", "member", { musicianId: ids.ingrid, name: "Ingrid" });
+  await db.update(ctx, "musicians", ids.jeff, { userId: ctx.uid });
+  const emails = async (showId: string) => {
+    const ev = await calendarClient().get((await db.get("shows", showId))!.calendarEventId);
+    return ev.attendees.map((x) => x.email).sort();
+  };
+  const on = await create({ sendInvites: true });
+  assert.deepEqual(await emails(on.id), ["ingrid@example.com", "jeff@example.com"]);
+  assert.deepEqual((await db.get("shows", on.id))!.calendarInviteeIds, [ids.ingrid, ids.jeff]);
+
+  const off = await create({ date: "2027-03-20", sendInvites: false });
+  assert.deepEqual(await emails(off.id), []);
+  await cmd("shows.update", { id: off.id, patch: { bandNotes: "bring cables" } });
+  assert.deepEqual(await emails(off.id), [], "a later sync still invites nobody");
+
+  const notSure = await create({ date: "2027-04-20", billedAs: null, sendInvites: true });
+  assert.deepEqual(await emails(notSure.id), []);
+});

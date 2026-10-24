@@ -41,7 +41,8 @@ async function syncCalendar(ctx: Ctx, show: Doc, create: boolean, remove: boolea
   const [artist, musicians] = await Promise.all([db.get("artists", show.artistId), db.list("musicians")]);
   const cfg = (artist?.configurations as { id: string; billingName: string }[] | undefined)?.find((c) => c.id === show.billedAs);
   const who = cfg?.billingName ?? artist?.name ?? "Show";
-  const attendees = musicians.filter((m) => (show.personnel as string[]).includes(m.id) && m.email).map((m) => m.email as string);
+  const invitees = (show.calendarInviteeIds as string[] | undefined) ?? (show.personnel as string[]);
+  const attendees = musicians.filter((m) => invitees.includes(m.id) && m.email).map((m) => m.email as string);
   const t = show.times as { loadIn?: string; soundcheck?: string; doors?: string; set?: string; setLength?: number };
   const lines = [
     t.loadIn && `Load in ${fmtTime(t.loadIn)}`, t.soundcheck && `Soundcheck ${fmtTime(t.soundcheck)}`, t.doors && `Doors ${fmtTime(t.doors)}`,

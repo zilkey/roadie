@@ -10,7 +10,8 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ConfigurationPicker, Flagged, PitchDates, PitchDatesField, StatusChip, type PitchRow } from "@/components/booking/common";
 import { fmtPitchDate, isActive, sortedDates, todayStr } from "@/lib/booking";
-import type { Comment, User } from "@/schema";
+import { calendarInvitees } from "@/lib/shows";
+import type { Comment, Musician, User } from "@/schema";
 
 type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
@@ -116,7 +117,8 @@ function OpenPitch({ p }: { p: PitchRow }) {
         <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)] md:gap-x-8">
           <div className="grid gap-1"><span className="lbl">Configuration</span><b data-testid="pitch-config">{config ?? "Not sure yet"}</b></div>
           <div className="grid gap-1"><span className="lbl">Dates</span>
-            <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="None yet" />
+            <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="None yet" busy={busy}
+              onRemove={(d) => void call("pitches.update", { id: p.id, patch: { dates: sortedDates(p.dates).filter((x) => x !== d) } })} />
           </div>
         </div>
         <div className="flex items-center gap-2"><StatusChip status={p.status} /><button className="btn ghost sm" onClick={openEdit} data-testid="pitch-edit">Edit pitch</button></div>
@@ -170,6 +172,11 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
   const [other, setOther] = useState("");
   const [cfg, setCfg] = useState(p.pitchedAs ?? "");
   const [copy, setCopy] = useState(true);
+  const musicians = useCollection<Musician>("musicians").rows ?? [];
+  const users = useCollection<User>("users").rows ?? [];
+  const [invite, setInvite] = useState<boolean | null>(null); // null = not touched: follows whether anyone would be invited
+  const recipients = artist ? calendarInvitees(artist.configurations.find((c) => c.id === cfg)?.musicianIds ?? [], musicians, users, artist.id) : [];
+  const sendInvites = recipients.length > 0 && (invite ?? true);
   const mutationId = useRef(newMutationId());
   const invalid = date === "other" && !other;
 
@@ -177,7 +184,7 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
     e.preventDefault();
     if (invalid) return;
     await call("shows.create", {
-      pitchId: p.id, venueId: p.target.id, date: date === "other" ? other : date, billedAs: cfg || undefined, copyPitchComments: copy && commentCount > 0,
+      pitchId: p.id, venueId: p.target.id, date: date === "other" ? other : date, billedAs: cfg || null, sendInvites, copyPitchComments: copy && commentCount > 0,
     }, { clientMutationId: mutationId.current });
   }
 
@@ -207,6 +214,17 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
         <input type="checkbox" className="m-0 h-[18px] w-[18px]" checked={copy} onChange={(e) => setCopy(e.target.checked)} data-testid="book-copy" />
         Copy over comments <span className="s">({commentCount})</span>
       </label>
+      <div className="grid gap-1" data-testid="book-invites">
+        <label className={`inline-flex min-h-11 items-center gap-2.5 self-start ${recipients.length ? "cursor-pointer" : "opacity-60"}`}>
+          <input type="checkbox" className="m-0 h-[18px] w-[18px]" checked={sendInvites} disabled={!recipients.length} onChange={(e) => setInvite(e.target.checked)} data-testid="book-invite" />
+          Send calendar invitations
+        </label>
+        <p className="s m-0" data-testid="book-invite-list">
+          {recipients.length
+            ? <>Invites go to: {recipients.map((id) => musicians.find((m) => m.id === id)?.name ?? "Someone").join(", ")}</>
+            : "Nobody would be invited: pick a configuration with band members who are on the team and have an email."}
+        </p>
+      </div>
       <ErrorBox error={error} />
       <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
         <button type="button" className="btn ghost" onClick={onCancel} data-testid="book-cancel">Cancel</button>

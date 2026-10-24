@@ -102,6 +102,7 @@ export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { va
  */
 export function PitchDatesField({ dates, onChange, onBlur, testid, today = todayStr() }: { dates: string[]; onChange(dates: string[]): void; onBlur?(): void; testid: string; today?: string }) {
   const [draft, setDraft] = useState("");
+  // A date typed but not added with + still counts: leaving the input (to Save, or to any other field) adds it.
   function add() {
     if (draft) onChange(sortedDates([...dates, draft]));
     setDraft("");
@@ -112,31 +113,37 @@ export function PitchDatesField({ dates, onChange, onBlur, testid, today = today
       <label className="lbl" htmlFor={`${testid}-date`}>Possible dates</label>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5">
-          <input id={`${testid}-date`} className="input !w-auto" type="date" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={enter} data-testid={`${testid}-date`} />
+          <input id={`${testid}-date`} className="input !w-auto" type="date" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={enter} onBlur={add} data-testid={`${testid}-date`} />
           <button type="button" className="round-btn" aria-label="Add date" disabled={!draft} onClick={add} data-testid={`${testid}-add`}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
           </button>
         </div>
-        {dates.map((d, i) => (
-          <span key={d} className={`chip w lg ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"} data-testid={`${testid}-chip-${i}`}>
-            {fmtPitchDate(d)}
-            <button type="button" aria-label={`Remove ${fmtPitchDate(d)}`} onClick={() => onChange(dates.filter((x) => x !== d))} data-testid={`${testid}-remove-${i}`}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
-            </button>
-          </span>
-        ))}
+        {dates.map((d, i) => <RemovableDateChip key={d} date={d} today={today} onRemove={() => onChange(dates.filter((x) => x !== d))} testid={testid} index={i} />)}
       </div>
     </div>
   );
 }
 
-/** A pitch's dates as read-only chips, past ones dimmed. Nothing when there are none (pass `empty` to say so). */
-export function PitchDates({ dates, today, testid, empty }: { dates?: readonly PitchDateIn[]; today: string; testid?: string; empty?: string }) {
+/** A date chip with its × button: the one used by the editor and by the pitch card's quick-remove. */
+function RemovableDateChip({ date, today, onRemove, testid, index, busy }: { date: string; today: string; onRemove(): void; testid: string; index: number; busy?: boolean }) {
+  return (
+    <span className={`chip w lg ${datePast(date, today) ? "opacity-60" : ""}`} data-past={datePast(date, today) ? "1" : "0"} data-testid={`${testid}-chip-${index}`}>
+      {fmtPitchDate(date)}
+      <button type="button" aria-label={`Remove ${fmtPitchDate(date)}`} disabled={busy} onClick={onRemove} data-testid={`${testid}-remove-${index}`}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </button>
+    </span>
+  );
+}
+
+/** A pitch's dates as read-only chips, past ones dimmed. Nothing when there are none (pass `empty` to say so). With `onRemove` each chip gets a × that calls it with the date. */
+export function PitchDates({ dates, today, testid, empty, onRemove, busy }: { dates?: readonly PitchDateIn[]; today: string; testid?: string; empty?: string; onRemove?(date: string): void; busy?: boolean }) {
   const list = sortedDates(dates);
   if (!list.length) return empty ? <span className="s" data-testid={testid}>{empty}</span> : null;
   return (
     <span className="flex flex-wrap items-center gap-1.5" data-testid={testid}>
-      {list.map((d) => <span key={d} className={`chip w ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}</span>)}
+      {onRemove ? list.map((d, i) => <RemovableDateChip key={d} date={d} today={today} busy={busy} onRemove={() => onRemove(d)} testid={testid ?? "pitch-dates"} index={i} />)
+        : list.map((d) => <span key={d} className={`chip w ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}</span>)}
     </span>
   );
 }
@@ -176,7 +183,7 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
 
   const button = (
     <button ref={btn} type="button" onClick={tap} onKeyDown={(e) => { if (formOpen) escape(e); }} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"} data-open={formOpen ? "1" : "0"}
-      aria-label={open ? "On the Pitch List" : "Add to Pitch List"} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
+      aria-label={open ? "On the Pitch List" : "Add to Pitch List"} title={open ? "Open the pitch" : `Pitch this ${kind === "edition" ? "festival" : kind}`} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
       className={opts.square ? "flag-sq" : `${opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
       <FlagIcon filled={!!open} />{opts.big && (open ? "On the Pitch List" : "Add to Pitch List")}
     </button>

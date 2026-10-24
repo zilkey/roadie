@@ -7,7 +7,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { syncShow, type SyncResult } from "../showSync";
 import { noteOf } from "../venues";
-import { addDays, buildChecklist, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
+import { addDays, buildChecklist, calendarInvitees, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind } from "@/schema";
 import { patchInput } from "./util";
 
@@ -108,12 +108,13 @@ export const showsCreate = defineCommand({
     "editionId links a festival year (sets editionName). " +
     "billedAs (configuration id) fills personnel; gear starts empty (shows.setGear adds it); sound defaults from the venue; needs (poster/backline/merch) and sound build the checklist from checklistTemplates. " +
     "copyPitchComments (needs pitchId) copies the pitch's comments onto the show (shows/{id}/comments), keeping each one's author and time. " +
-    "addToCalendar (default true) adds a Google Calendar event for everyone playing. Public confirmed shows are listed on Bandsintown.",
+    "billedAs null means explicitly no configuration (no fallback to the pitch's, no personnel); omitted falls back to the pitch's. " +
+    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members who are on the team and have an email, false invites nobody (the choice sticks on later syncs); omitted invites everyone in personnel with an email. Public confirmed shows are listed on Bandsintown.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
     kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
     editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
-    billedAs: z.string().min(1).optional(), personnel: z.array(z.string().min(1)).optional(),
+    billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
     public: z.boolean().default(false), ticketUrl: z.string().optional(), bandNotes: z.string().optional(), setlistId: z.string().min(1).optional(),
     addToCalendar: z.boolean().default(true), copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
@@ -127,9 +128,11 @@ export const showsCreate = defineCommand({
       if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
       if (pitch && ctx.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
       const artist = await artistFor(w, pitch?.artistId);
-      const billedAs = i.billedAs ?? pitch?.pitchedAs ?? undefined;
+      const billedAs = i.billedAs === null ? undefined : i.billedAs ?? pitch?.pitchedAs ?? undefined;
       const cfg = configOf(artist, billedAs);
-      const personnel = i.personnel ?? (i.billedAs ? cfg?.musicianIds : pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds) ?? [];
+      const personnel = i.personnel ?? (i.billedAs !== undefined ? cfg?.musicianIds : pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds) ?? [];
+      const calendarInviteeIds = i.sendInvites === undefined ? undefined
+        : i.sendInvites ? calendarInvitees(cfg?.musicianIds ?? [], await w.query("musicians"), await w.query("users"), artist.id) : [];
       const pitchEdition = (pitch?.target as { kind: string; id: string } | undefined)?.kind === "edition" ? (pitch!.target as { id: string }).id : undefined;
       const editionId = i.editionId ?? i.deal.editionId ?? pitchEdition;
       const edition = editionId ? await requireEdition(w, editionId) : null;
@@ -140,7 +143,7 @@ export const showsCreate = defineCommand({
       const r = await w.create("shows", {
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
         editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
-        billedAs, personnel, sound: snd, needs: i.needs,
+        billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
         checklist: buildChecklist(await templates(w), show, newId), gear: [],
         setlistId: i.setlistId, docs: [], public: i.public, ticketUrl: i.ticketUrl, listings: {}, bandNotes: i.bandNotes,
       });
