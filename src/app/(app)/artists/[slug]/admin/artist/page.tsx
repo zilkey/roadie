@@ -14,35 +14,9 @@ import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
 import { artistSlug, type Artist, type Musician } from "@/schema";
 
-type Gear = { label: string; musicianId?: string };
-type Cfg = { id?: string; name: string; billingName: string; musicianIds: string[]; gear: Gear[] };
-type SoundGear = { bandProvided: Gear[]; venueProvided: Gear[] };
+type Cfg = { id?: string; name: string; billingName: string; musicianIds: string[] };
 
 export default function ArtistPage() { return <AdminOnly><ArtistEditor /></AdminOnly>; }
-
-function GearEditor({ title, gear, onChange, musicians, testid }: { title: string; gear: Gear[]; onChange(g: Gear[]): void; musicians: Musician[]; testid: string }) {
-  return (
-    <div className="grid gap-2" data-testid={testid}>
-      <span className="lbl">{title}</span>
-      {gear.map((g, i) => (
-        <div key={i} className="flex gap-2">
-          <input className="input" value={g.label} placeholder="Gear" onChange={(e) => onChange(gear.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
-          <select className="select !w-40" value={g.musicianId ?? ""} aria-label="Who brings it"
-            onChange={(e) => onChange(gear.map((x, j) => (j === i ? { label: x.label, ...(e.target.value ? { musicianId: e.target.value } : {}) } : x)))}>
-            <option value="">Anyone</option>
-            {musicians.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <button type="button" className="btn ghost sm" onClick={() => onChange(gear.filter((_, j) => j !== i))} aria-label="Remove gear">×</button>
-        </div>
-      ))}
-      <button type="button" className="btn ghost sm w-fit" onClick={() => onChange([...gear, { label: "" }])}>+ Add gear</button>
-    </div>
-  );
-}
-
-/** Blank gear rows stay on screen while you type but are not sent (a gear item needs a label). */
-const clean = (gear: Gear[]) => gear.filter((g) => g.label.trim());
-const cleanCfgs = (cfgs: Cfg[]) => cfgs.map((c) => ({ ...c, gear: clean(c.gear) }));
 
 /** The artist's URL name (/artists/{slug}). Changed on purpose with a button, not autosaved: old links stop working. */
 function SlugEditor({ artist }: { artist: Artist }) {
@@ -81,9 +55,8 @@ function ArtistEditor() {
   const artist = useArtist().doc ?? undefined;
   const [name, setName] = useState("");
   const [cfgs, setCfgs] = useState<Cfg[]>([]);
-  const [sound, setSound] = useState<SoundGear>({ bandProvided: [], venueProvided: [] });
   const ms = (musicians.rows ?? []).filter((m) => m.active).sort((a, b) => a.name.localeCompare(b.name));
-  const resetFrom = (a: Artist) => { setName(a.name); setCfgs(a.configurations); setSound(a.soundGear); };
+  const resetFrom = (a: Artist) => { setName(a.name); setCfgs(a.configurations); };
   const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
   const cfgDraft = useDraft(draftPath.newIn("configurations"), { name: "", billingName: "" }, { title: (v) => `New configuration${v.name ? ` · ${v.name}` : ""}` });
   const cfgMutation = useRef(newMutationId());
@@ -91,7 +64,7 @@ function ArtistEditor() {
   const [adding, setAdding] = useState<boolean | null>(null);
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
-  const liveKey = JSON.stringify(artist ? [artist.name, artist.configurations, artist.soundGear] : null);
+  const liveKey = JSON.stringify(artist ? [artist.name, artist.configurations] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return <p className="s">Loading…</p>;
@@ -104,19 +77,14 @@ function ArtistEditor() {
     setCfgs(next);
     const bad = next.find((c) => !c.name.trim() || !c.billingName.trim());
     if (bad) return as.hold("each configuration needs a name and a billing name");
-    as.patch({ configurations: cleanCfgs(next) });
+    as.patch({ configurations: next });
   }
   const setCfg = (i: number, p: Partial<Cfg>) => editCfgs(cfgs.map((c, j) => (j === i ? { ...c, ...p } : c)));
-  function editSound(next: SoundGear) {
-    setSound(next);
-    as.patch({ soundGear: { bandProvided: clean(next.bandProvided), venueProvided: clean(next.venueProvided) } });
-  }
   async function addConfig() {
     await cfgDraft.settle();
     await as.flush();
     const v = cfgDraft.value;
-    const base = cleanCfgs(cfgs);
-    const r = await call("artists.update", { id: artist!.id, patch: { configurations: [...base, { name: v.name.trim(), billingName: v.billingName.trim() || name, musicianIds: [], gear: [] }] } },
+    const r = await call("artists.update", { id: artist!.id, patch: { configurations: [...cfgs, { name: v.name.trim(), billingName: v.billingName.trim() || name, musicianIds: [] }] } },
       { clientMutationId: cfgMutation.current, clearDraft: cfgDraft.draftId });
     if (r) { await cfgDraft.clear({ reset: true }); cfgMutation.current = newMutationId(); setAdding(false); }
   }
@@ -124,7 +92,7 @@ function ArtistEditor() {
 
   return (
     <div className="grid gap-4" onBlur={() => void as.flush()}>
-      <PageTitle title="Artist" sub="How we play, who's in each lineup, and who brings what." />
+      <PageTitle title="Artist" sub="How we play and who's in each lineup." />
       <ErrorBox error={error} />
       <div className="card"><span className="lbl">Artist name</span><input className="input" value={name} onChange={(e) => editName(e.target.value)} data-testid="artist-name" /></div>
       <SlugEditor artist={artist} />
@@ -148,7 +116,6 @@ function ArtistEditor() {
               );
             })}
           </div>
-          <GearEditor title="Gear for this lineup" gear={c.gear} musicians={ms} onChange={(gear) => setCfg(i, { gear })} testid={`gear-${c.id ?? i}`} />
         </div>
       ))}
       {showAdd ? (
@@ -167,10 +134,6 @@ function ArtistEditor() {
           </form>
         )
       ) : <button type="button" className="btn ghost w-fit" data-testid="add-config" onClick={() => setAdding(true)}>+ Add configuration</button>}
-      <div className="card">
-        <GearEditor title="Sound gear we bring (when we provide sound)" gear={sound.bandProvided} musicians={ms} onChange={(g) => editSound({ ...sound, bandProvided: g })} testid="gear-band-sound" />
-        <GearEditor title="Gear for venue-provided sound (monitors, in-ears…)" gear={sound.venueProvided} musicians={ms} onChange={(g) => editSound({ ...sound, venueProvided: g })} testid="gear-venue-sound" />
-      </div>
       <SaveStatus {...as.statusProps} />
     </div>
   );

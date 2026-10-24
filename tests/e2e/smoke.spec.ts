@@ -97,6 +97,7 @@ test("admin edits artist configurations", async ({ page }) => {
   await page.goto(A("/admin/artist"));
   await expect(page.getByTestId("config-trio")).toBeVisible();
   await expect(page.getByTestId("artist-save")).toHaveCount(0); // autosave: no Save button
+  await expect(page.getByText("Add gear")).toHaveCount(0); // gear lives on each show, not here
   await page.getByTestId("artist-name").fill("Ingrid Avison Band Test");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();

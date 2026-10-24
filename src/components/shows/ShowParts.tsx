@@ -76,9 +76,8 @@ export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; m
 // ---------- gear ----------
 
 export function GearPanel({ show, musicians, editable }: { show: ShowRow; musicians: Row<Musician>[]; editable: boolean }) {
-  const { call, error: callError, busy: callBusy } = useCommand();
   const inst = useInstantSave();
-  const busy = callBusy || inst.status === "saving";
+  const busy = inst.status === "saving";
   const add = useDraft(draftPath.newUnder("shows", show.id, "gear"), { label: "", owner: "" }, { title: (v) => `New gear · ${v.label || showName(show)}` });
   const pack = (itemId: string, packed: boolean) => inst.save("shows.packGear", { id: show.id, itemId, packed }, "gear");
   const save = (gear: unknown[]) => inst.save("shows.setGear", { id: show.id, gear }, "gear");
@@ -105,7 +104,7 @@ export function GearPanel({ show, musicians, editable }: { show: ShowRow; musici
           <button className="btn ghost sm" onClick={() => save(show.gear.filter((x) => x.id !== g.id))} aria-label={`Remove ${g.label}`}>Remove</button>
         </div>
       ))}
-      {show.gear.length === 0 && editable && <span className="s">No gear yet. Pick &ldquo;Billed as&rdquo; or add some.</span>}
+      {show.gear.length === 0 && editable && <span className="s">No gear yet.</span>}
       {editable && (
         <>
           <form className="flex flex-wrap gap-2" onSubmit={addGear}>
@@ -117,13 +116,8 @@ export function GearPanel({ show, musicians, editable }: { show: ShowRow; musici
             <button className="btn ghost" disabled={busy || !add.ready || !add.value.label.trim()} data-testid="gear-add-btn">Add</button>
           </form>
           <DraftNote restoredAt={add.restoredAt} status={add.status} onStartOver={() => void add.clear({ reset: true })} />
-          <div className="flex items-center gap-2">
-            <button className="btn ghost sm" disabled={busy} onClick={() => confirm("Rebuild the gear list from Billed as and sound? Your edits to the list are replaced.") && call("shows.update", { id: show.id, patch: { rebuildGear: true } })} data-testid="gear-rebuild">Rebuild from billed as + sound</button>
-            <span className="s">Built from {show.billedAs ? "the configuration" : "sound only"} and who provides sound.</span>
-          </div>
         </>
       )}
-      <ErrorBox error={callError} />
     </Sec>
   );
 }

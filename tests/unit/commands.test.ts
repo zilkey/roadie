@@ -127,7 +127,7 @@ test("artists: configuration ids are assigned", async () => {
   const admin = await makeUser("a@example.com", "admin");
   const r = await dispatch("artists.create", bearer(admin.token), {
     name: "Ingrid Avison Band",
-    configurations: [{ name: "Full band", billingName: "Ingrid Avison Band", musicianIds: [], gear: [] }, { name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: [], gear: [{ label: "Keys rig" }] }],
+    configurations: [{ name: "Full band", billingName: "Ingrid Avison Band", musicianIds: [] }, { name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: [] }],
   });
   assert.equal(r.status, 200);
   const a = (await db.get("artists", (r.json as { result: { id: string } }).result.id))!;

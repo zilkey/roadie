@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
-import { buildChecklist, buildGear, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
+import { buildChecklist, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -51,10 +51,9 @@ beforeEach(async () => {
   }
   artistId = (await db.create(sys, "artists", {
     slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: {},
-    soundGear: { bandProvided: [{ label: "PA speakers", musicianId: ids.jeff }], venueProvided: [{ label: "In-ear rack", musicianId: ids.jeff }] },
     configurations: [
-      { id: "trio", name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: [ids.ingrid, ids.jeff, ids.david], gear: [{ label: "Keys rig", musicianId: ids.jeff }, { label: "Bass rig", musicianId: ids.david }] },
-      { id: "duo", name: "Duo", billingName: "Ingrid Avison Duo", musicianIds: [ids.ingrid, ids.jeff], gear: [{ label: "Keys rig", musicianId: ids.jeff }] },
+      { id: "trio", name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: [ids.ingrid, ids.jeff, ids.david] },
+      { id: "duo", name: "Duo", billingName: "Ingrid Avison Duo", musicianIds: [ids.ingrid, ids.jeff] },
     ],
   }, { id: TEST_ARTIST })).id;
   venueId = (await cmd("venues.create", venue("Hi-Dive", "Denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" }, sound: { provider: "venueProvided", notes: "House engineer" } }))).id;
@@ -66,7 +65,7 @@ beforeEach(async () => {
 const create = (extra: Record<string, unknown> = {}) =>
   cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLength: 40 }, needs: { poster: true, backline: false, merch: true }, ...extra });
 
-test("pure: checklist from templates, gear from configuration + sound, home plan", () => {
+test("pure: checklist from templates, home plan", () => {
   let n = 0;
   const id = () => `i${n++}`;
   const items = buildChecklist(DEFAULT_CHECKLIST_TEMPLATES, { date: "2027-01-16", sound: { provider: "bandProvided" }, needs: { poster: true, backline: false, merch: false } }, id);
@@ -77,10 +76,6 @@ test("pure: checklist from templates, gear from configuration + sound, home plan
   assert.deepEqual(items.map((i) => i.due), [...items.map((i) => i.due)].sort());
   assert.equal(addDays("2027-03-01", -1), "2027-02-28");
   assert.equal(fmtTime("19:05"), "7:05 pm");
-  const art = { configurations: [{ id: "c", name: "C", billingName: "C", musicianIds: [], gear: [{ label: "Keys", musicianId: "m1" }] }], soundGear: { bandProvided: [{ label: "PA" }], venueProvided: [{ label: "IEM" }] } };
-  assert.deepEqual(buildGear(art, "c", "bandProvided", id).map((g) => g.label), ["Keys", "PA"]);
-  assert.deepEqual(buildGear(art, "c", "venueProvided", id).map((g) => g.label), ["Keys", "IEM"]);
-  assert.deepEqual(buildGear(art, undefined, "venueProvided", id).map((g) => g.label), ["IEM"]);
 
   const sh = (i: string, date: string, status: "hold" | "confirmed" | "played" | "canceled" = "confirmed") => ({ id: i, date, status });
   const shows = [sh("t1", "2026-10-23"), sh("t2", "2026-10-23"), sh("y", "2026-10-22"), sh("old", "2026-10-01", "played"), sh("n1", "2026-11-14"), sh("x", "2026-10-30", "canceled")];
@@ -98,7 +93,7 @@ test("pure: checklist from templates, gear from configuration + sound, home plan
   assert.deepEqual(member.recent.map((s) => s.id), ["y"]);
 });
 
-test("Booked it: show + showDeal in one go, pitch linked and booked, checklist, gear, personnel, calendar", async () => {
+test("Booked it: show + showDeal in one go, pitch linked and booked, checklist, empty gear, personnel, calendar", async () => {
   const r = await create({ deal: { deal: "guarantee", guarantee: 30000 } });
   const show = (await db.get("shows", r.id))!;
   const deal = (await db.get("showDeals", r.id))!;
@@ -113,8 +108,7 @@ test("Booked it: show + showDeal in one go, pitch linked and booked, checklist, 
   assert.ok(labels.includes("Post the poster") && labels.includes("Pack merch table") && labels.includes("Send stage plot and input list to the venue"));
   assert.ok(!labels.includes("Book sound engineer"));
   assert.equal(show.checklist.find((c: any) => c.label === "Pack merch table").due, "2027-01-14");
-  assert.deepEqual(show.gear.map((g: any) => g.label).sort(), ["Bass rig", "In-ear rack", "Keys rig"]);
-  assert.ok(show.gear.every((g: any) => g.packed === false));
+  assert.deepEqual(show.gear, [], "a new show starts with no gear");
   const pitch = (await db.get("pitches", pitchId))!;
   assert.deepEqual(pitch.showIds, [r.id]);
   assert.equal(pitch.status, "booked");
@@ -136,24 +130,23 @@ test("Booked it validates and rolls back whole when the venue is missing", async
   assert.equal((await db.get("pitches", pitchId))!.status, "toPitch");
 });
 
-test("billed as fills personnel and gear; sound change rebuilds gear; both stay editable", async () => {
+test("billed as fills personnel and leaves gear alone; gear is edited on the show", async () => {
   const r = await create({ billedAs: "duo", sound: { provider: "bandProvided" } });
   let show = (await db.get("shows", r.id))!;
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff]);
-  assert.deepEqual(show.gear.map((g: any) => g.label).sort(), ["Keys rig", "PA speakers"]);
-  await cmd("shows.packGear", { id: r.id, itemId: show.gear[0].id, packed: true });
+  assert.deepEqual(show.gear, []);
+  await cmd("shows.setGear", { id: r.id, gear: [{ label: "Keys rig", musicianId: ids.jeff, packed: false }] });
   await cmd("shows.update", { id: r.id, patch: { billedAs: "trio" } });
   show = (await db.get("shows", r.id))!;
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff, ids.david]);
-  assert.deepEqual(show.gear.map((g: any) => g.label).sort(), ["Bass rig", "Keys rig", "PA speakers"]);
-  assert.equal(show.gear.find((g: any) => g.label === show.gear[0].label).packed, show.gear[0].packed);
-  // editable: personnel override, then sound change rebuilds gear and adds sound-engineer checklist item
-  await cmd("shows.update", { id: r.id, patch: { personnel: [ids.ingrid], sound: { provider: "venueProvided" }, rebuildGear: true } });
+  assert.deepEqual(show.gear.map((g: any) => g.label), ["Keys rig"], "changing billed as or sound never touches the gear list");
+  await cmd("shows.update", { id: r.id, patch: { personnel: [ids.ingrid], sound: { provider: "venueProvided" } } });
   show = (await db.get("shows", r.id))!;
   assert.deepEqual(show.personnel, [ids.ingrid]);
-  assert.ok(show.gear.some((g: any) => g.label === "In-ear rack") && !show.gear.some((g: any) => g.label === "PA speakers"));
+  assert.deepEqual(show.gear.map((g: any) => g.label), ["Keys rig"]);
   await cmd("shows.setGear", { id: r.id, gear: [...show.gear, { label: "Tuner" }] });
   assert.ok((await db.get("shows", r.id))!.gear.some((g: any) => g.label === "Tuner" && g.id));
+  await assert.rejects(cmd("shows.update", { id: r.id, patch: { rebuildGear: true } }), /Unrecognized key/);
   await assert.rejects(cmd("shows.update", { id: r.id, patch: { billedAs: "nope" } }), /No configuration/);
 });
 
@@ -178,6 +171,7 @@ test("checklist: check off, edit, owner; template merge adds only missing items;
 
 test("members can pack only their own gear", async () => {
   const r = await create();
+  await cmd("shows.setGear", { id: r.id, gear: [{ label: "Bass rig", musicianId: ids.david, packed: false }, { label: "Keys rig", musicianId: ids.jeff, packed: false }] });
   const show = (await db.get("shows", r.id))!;
   const mine = show.gear.find((g: any) => g.musicianId === ids.david);
   const notMine = show.gear.find((g: any) => g.musicianId === ids.jeff);

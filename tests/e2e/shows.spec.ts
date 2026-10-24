@@ -25,7 +25,7 @@ async function cancelShow(page: Page, id: string) {
   await expect(page.getByTestId("show-status")).toHaveText("Canceled");
 }
 
-test("Booked it turns a pitch into a show with checklist, gear, calendar and a deal", async ({ page, request }) => {
+test("Booked it turns a pitch into a show with checklist, an empty gear list, calendar and a deal", async ({ page, request }) => {
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };
   const calIds = new Set(((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).map((e) => e.id)); // fake state outlives runs
   await signInAs(page, "jeff");
@@ -72,11 +72,14 @@ test("Booked it turns a pitch into a show with checklist, gear, calendar and a d
   await expect(checklist.locator('input[value="Send stage plot and input list to the venue"]')).toHaveCount(0);
 
   const gear = page.getByTestId("gear");
+  // nothing is pre-filled: people add gear here
+  await expect(gear.locator('[data-testid^="gear-row-"]')).toHaveCount(0);
+  await expect(gear.locator(".lbl").first()).toContainText("0 of 0");
+  await gear.getByTestId("gear-add").fill("Keys rig");
+  await gear.getByTestId("gear-add-owner").selectOption({ label: "Jeff" });
+  await gear.getByTestId("gear-add-btn").click();
   await expect(gear.locator('input[value="Keys rig"]')).toHaveCount(1);
-  await expect(gear.locator('input[value="Bass rig"]')).toHaveCount(1);
-  await expect(gear.locator('input[value="PA speakers + stands"]')).toHaveCount(1);
-  await expect(gear.locator('input[value="In-ear rack"]')).toHaveCount(0);
-  await expect(gear.locator(".lbl").first()).toContainText("0 of");
+  await expect(gear.locator(".lbl").first()).toContainText("0 of 1");
 
   // check off, give an owner, pack
   const first = checklist.locator('[data-testid^="check-row-"]').first();
@@ -175,6 +178,15 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
+  const gear = page.getByTestId("gear");
+  for (const [label, who] of [["Bass rig", "David"], ["Keys rig", "Jeff"]]) {
+    await gear.getByTestId("gear-add").fill(label);
+    await gear.getByTestId("gear-add-owner").selectOption({ label: who });
+    await gear.getByTestId("gear-add-btn").click();
+    await expect(gear.locator(`input[value="${label}"]`)).toHaveCount(1);
+    await expect(gear.getByTestId("gear-add")).toHaveValue(""); // the draft is cleared before the next one
+    await expect(gear.getByTestId("gear-add")).toBeEnabled();
+  }
 
   // admin Home: show day. Today's card first; the booking to-dos step aside.
   await page.goto(A("/home"));

@@ -40,7 +40,7 @@ beforeEach(async () => {
   }
   ids.sam = (await db.create(ctx, "musicians", { name: "sam", instruments: [], active: true })).id; // no email: not a "member" for sharing
   ids.gone = (await db.create(ctx, "musicians", { name: "gone", instruments: [], active: false, email: "gone@example.com" })).id;
-  await db.create(ctx, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", links: {}, soundGear: { bandProvided: [], venueProvided: [] }, configurations: [] });
+  await db.create(ctx, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", links: {}, configurations: [] });
 });
 
 test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => {

@@ -12,11 +12,11 @@ Consolidated after the final pass. Spec: `docs/blueprint.html`; conventions: `PL
 - Command registry with roles `admin | member | mcp`, `POST /api/commands/[name]` with Firebase ID token, structured errors with Zod issues.
 - Auth: Google sign-in; `/api/session` looks the email up in `users` (invite only) and sets custom claims `{artists: {artistId: role}, musicianId}` (roles are per artist; every band page lives under `/artists/{slug}`); "not invited" page. Dev "Sign in as" buttons when emulators are on.
 - `firestore.rules`: reads per the access table, all client writes denied; rules tests.
-- People admin: users, musicians, artist configurations ("billed as"), gear and sound gear.
+- People admin: users, musicians, artist configurations ("billed as").
 
 **Booking** (admin): venues, promoters, festivals + editions, contacts with one-search box, Pitch List (status flow, assignee, next step, comments, calls, timeline), flag-to-pitch buttons, email templates with fields (incl. Spotify numbers), send email via Gmail and "check for replies".
 
-**Shows**: Booked it (show + private deal in one transaction), billed-as/personnel/sound/needs, checklist from templates, gear and who brings it (packed boxes), Google Calendar event with attendees, Bandsintown listing (public + confirmed only), availability asks (members in-app, subs by hashed no-login link, reminders), after-the-show rating, Home logic ("How Home decides").
+**Shows**: Booked it (show + private deal in one transaction), billed-as/personnel/sound/needs, checklist from templates, a per-show gear list with who brings it (packed boxes; starts empty), Google Calendar event with attendees, Bandsintown listing (public + confirmed only), availability asks (members in-app, subs by hashed no-login link, reminders), after-the-show rating, Home logic ("How Home decides").
 
 **Music**: songs with Drive files (search, kind/key, sharing check, "copy to band folder", "share with band"), inline playback where the URL allows, setlists (drag + buttons, total vs set length, attach to a show), rehearsals.
 

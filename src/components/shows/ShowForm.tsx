@@ -70,7 +70,6 @@ export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, un
   if (b.billedAs !== a.billedAs) p.billedAs = b.billedAs || null;
   if (ne([...a.personnel].sort(), [...b.personnel].sort())) p.personnel = b.personnel;
   if (b.soundProvider !== a.soundProvider || b.soundNotes !== a.soundNotes) p.sound = { provider: b.soundProvider, ...(b.soundNotes.trim() ? { notes: b.soundNotes.trim() } : {}) };
-  if (b.soundProvider !== a.soundProvider) p.rebuildGear = true;
   if (b.poster !== a.poster || b.backline !== a.backline || b.merch !== a.merch) p.needs = { poster: b.poster, backline: b.backline, merch: b.merch };
   if (b.public !== a.public) p.public = b.public;
   if (b.ticketUrl !== a.ticketUrl) p.ticketUrl = b.ticketUrl || null;

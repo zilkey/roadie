@@ -37,22 +37,15 @@ async function main() {
   }
   mid.sam = await create("musicians", { name: "Sam", instruments: ["drums"], phone: "+13035550142", payHandle: "@sam-drums", active: true });
 
-  const gear = (label: string, who?: string) => ({ label, ...(who ? { musicianId: mid[who] } : {}) });
   const artist = await create("artists", {
     name: "Ingrid Avison Band",
     slug: slugForArtist("Ingrid Avison Band"),
     configurations: [
-      { id: "full-band", name: "Full band", billingName: "Ingrid Avison Band", musicianIds: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]),
-        gear: [gear("Keys rig", "jeff"), gear("Bass rig", "david"), gear("Snare, cymbals, pedal", "eric"), gear("Violin + pedalboard", "emma")] },
-      { id: "trio", name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: ["ingrid", "jeff", "david"].map((k) => mid[k]),
-        gear: [gear("Keys rig", "jeff"), gear("Bass rig", "david")] },
-      { id: "duo", name: "Duo", billingName: "Ingrid Avison Duo", musicianIds: ["ingrid", "jeff"].map((k) => mid[k]), gear: [gear("Keys rig", "jeff")] },
-      { id: "ingrid-solo", name: "Ingrid solo", billingName: "Ingrid Avison", musicianIds: [mid.ingrid], gear: [gear("Acoustic guitar", "ingrid")] },
+      { id: "full-band", name: "Full band", billingName: "Ingrid Avison Band", musicianIds: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]) },
+      { id: "trio", name: "Trio", billingName: "Ingrid Avison Trio", musicianIds: ["ingrid", "jeff", "david"].map((k) => mid[k]) },
+      { id: "duo", name: "Duo", billingName: "Ingrid Avison Duo", musicianIds: ["ingrid", "jeff"].map((k) => mid[k]) },
+      { id: "ingrid-solo", name: "Ingrid solo", billingName: "Ingrid Avison", musicianIds: [mid.ingrid] },
     ],
-    soundGear: {
-      bandProvided: [gear("PA speakers + stands", "jeff"), gear("Mixer + snake", "jeff"), gear("Monitor wedges", "eric")],
-      venueProvided: [gear("In-ear rack", "jeff")],
-    },
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/ingridavison", website: "https://ingridavison.example" },
     driveFolderId: "fake-band-folder",
   });

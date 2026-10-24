@@ -5,10 +5,8 @@ export type Needs = { poster: boolean; backline: boolean; merch: boolean };
 export interface TemplateLike { label: string; when: "always" | "bandSound" | "venueSound" | "poster" | "backline" | "merch"; daysBefore: number }
 export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; due?: string }
 export interface GearItem { id: string; label: string; musicianId?: string; packed: boolean }
-export interface GearSpec { label: string; musicianId?: string }
 export interface ArtistLike {
-  configurations: { id: string; name: string; billingName: string; musicianIds: string[]; gear: GearSpec[] }[];
-  soundGear: { bandProvided: GearSpec[]; venueProvided: GearSpec[] };
+  configurations: { id: string; name: string; billingName: string; musicianIds: string[] }[];
 }
 
 // ---------- where a show is ----------
@@ -92,16 +90,6 @@ export function buildChecklist(templates: TemplateLike[], show: { date: string; 
 export function mergeChecklist(existing: ChecklistItem[], built: ChecklistItem[]): ChecklistItem[] {
   const have = new Set(existing.map((i) => i.label.toLowerCase()));
   return [...existing, ...built.filter((i) => !have.has(i.label.toLowerCase()))];
-}
-
-// ---------- gear ----------
-
-export function buildGear(artist: ArtistLike, billedAs: string | undefined, provider: Sound["provider"], newId: () => string, previous: GearItem[] = []): GearItem[] {
-  const cfg = artist.configurations.find((c) => c.id === billedAs);
-  const specs = [...(cfg?.gear ?? []), ...artist.soundGear[provider]];
-  const key = (g: GearSpec) => `${g.label}|${g.musicianId ?? ""}`;
-  const was = new Map(previous.map((g) => [key(g), g]));
-  return specs.map((g) => ({ id: was.get(key(g))?.id ?? newId(), label: g.label, ...(g.musicianId ? { musicianId: g.musicianId } : {}), packed: was.get(key(g))?.packed ?? false }));
 }
 
 // ---------- availability ----------

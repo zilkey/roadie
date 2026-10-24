@@ -36,10 +36,10 @@ beforeEach(async () => {
   mids = [];
   for (const n of ["Ingrid", "Jeff", "David"]) mids.push((await db.create(ctx, "musicians", { name: n, instruments: [], active: true })).id);
   artistId = (await db.create(ctx, "artists", {
-    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: { website: "https://band.example" }, soundGear: { bandProvided: [], venueProvided: [] },
+    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: { website: "https://band.example" },
     configurations: [
-      { id: "trio", name: "Trio", billingName: "Trio", musicianIds: mids, gear: [] },
-      { id: "duo", name: "Duo", billingName: "Duo", musicianIds: mids.slice(0, 2), gear: [] },
+      { id: "trio", name: "Trio", billingName: "Trio", musicianIds: mids },
+      { id: "duo", name: "Duo", billingName: "Duo", musicianIds: mids.slice(0, 2) },
     ],
   }, { id: TEST_ARTIST })).id;
 });

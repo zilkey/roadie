@@ -26,7 +26,7 @@ export async function makeUser(email: string, role: "admin" | "member" | "ai", o
 
 /** An artists doc (default id TEST_ARTIST) with a slug. */
 export async function makeArtist(name: string, slug: string, id = TEST_ARTIST) {
-  await db.create(importCtx(), "artists", { name, slug, configurations: [], soundGear: { bandProvided: [], venueProvided: [] }, links: {}, driveFolderId: "" }, { id });
+  await db.create(importCtx(), "artists", { name, slug, configurations: [], links: {}, driveFolderId: "" }, { id });
   return id;
 }
 

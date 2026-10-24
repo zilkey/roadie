@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { entity, serverMask, id, gearItem } from "./common";
+import { entity, serverMask, id } from "./common";
 import { slug } from "./normalize";
 
 /** URL name of an artist: /artists/{slug}/... Lowercase words joined by single hyphens ("ingrid-avison"). Unique (artists.create/update check). */
@@ -16,13 +16,11 @@ export const Configuration = z.strictObject({
   name: z.string().min(1),
   billingName: z.string().min(1),
   musicianIds: z.array(id),
-  gear: z.array(gearItem),
 });
 export const Artist = entity({
   name: z.string().min(1),
   slug: artistSlug,
   configurations: z.array(Configuration),
-  soundGear: z.strictObject({ bandProvided: z.array(gearItem), venueProvided: z.array(gearItem) }),
   links: z.strictObject({
     spotify: z.string().optional(), instagram: z.string().optional(),
     website: z.string().optional(), bandsintown: z.string().optional(),

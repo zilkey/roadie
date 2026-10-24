@@ -15,6 +15,7 @@ import { artistSlug, slugForArtist } from "@/schema";
 import { artistPath, isLegacyPath, resolveRoute, routeForPath, splitArtistPath } from "@/lib/routes";
 import { proxy } from "@/proxy";
 import { migrateArtists } from "../../scripts/migrate-artists";
+import { stripGear } from "../../scripts/migrate-strip-gear";
 import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
@@ -222,7 +223,7 @@ test("old URLs redirect to /artists with the page as `next` (the picker opens it
 test("migrate-artists: slugs from names, old single roles become memberships, claims re-set; second run is a no-op", async () => {
   const fs = firestore();
   // Old shape: artists without slug, users with `role`, written straight to Firestore.
-  await fs.doc("artists/band").set({ name: "Ingrid Avison Band", configurations: [], soundGear: { bandProvided: [], venueProvided: [] }, links: {}, driveFolderId: "", deletedAt: null, schemaVersion: 1, rev: 1 });
+  await fs.doc("artists/band").set({ name: "Ingrid Avison Band", configurations: [], links: {}, driveFolderId: "", deletedAt: null, schemaVersion: 1, rev: 1 });
   const jeff = await adminAuth().createUser({ email: "jeff@example.com", emailVerified: true });
   await fs.doc(`users/${jeff.uid}`).set({ email: "jeff@example.com", name: "Jeff", role: "admin", mcpAccess: true, deletedAt: null, schemaVersion: 1, rev: 1 });
   await fs.doc("users/gone").set({ email: "gone@example.com", name: "Gone", role: "member", mcpAccess: false, deletedAt: new Date(), schemaVersion: 1, rev: 1 });
@@ -256,4 +257,27 @@ test("migrate-artists: with several artists and old users it refuses unless told
   await assert.rejects(migrateArtists(fs, { dryRun: true }), /--artist/);
   const r = await migrateArtists(fs, { artistId: "two" });
   assert.deepEqual(r.users.map((u) => u.artistId), ["two"]);
+});
+
+test("migrate-strip-gear: drops configuration gear and soundGear; the strict schema rejects them until then; second run is a no-op", async () => {
+  const fs = firestore();
+  const old = { slug: "band", links: {}, driveFolderId: "", schemaVersion: 1, rev: 1,
+    configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [], gear: [{ label: "Keys rig" }] }],
+    soundGear: { bandProvided: [{ label: "PA" }], venueProvided: [] } };
+  await fs.doc("artists/band").set({ ...old, name: "Band", deletedAt: null });
+  await fs.doc("artists/gone").set({ ...old, name: "Gone", slug: "gone", deletedAt: new Date() });
+  await assert.rejects(db.update(importCtx(), "artists", "band", { name: "Renamed" }), /did not validate/);
+
+  const dry = await stripGear(fs, { dryRun: true });
+  assert.deepEqual(dry.artists.map((a) => a.id).sort(), ["band", "gone"]);
+  assert.ok("soundGear" in (await db.get("artists", "band"))!, "dry run writes nothing");
+
+  await stripGear(fs);
+  for (const id of ["band", "gone"]) {
+    const a = (await db.get("artists", id))!;
+    assert.equal("soundGear" in a, false);
+    assert.deepEqual(a.configurations, [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [] }]);
+  }
+  await db.update(importCtx(), "artists", "band", { name: "Renamed" });
+  assert.deepEqual((await stripGear(fs)).artists, []);
 });

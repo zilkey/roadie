@@ -11,8 +11,8 @@ import { resetEmulators, venue } from "./helpers";
 beforeEach(resetEmulators);
 const T0 = new Date("2026-10-01T12:00:00Z");
 const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, role: "admin", via: "app", runId: newRunId(), now: new Date(T0.getTime() + ms), ...extra });
-const cfg = (id: string, name: string) => ({ id, name, billingName: name, musicianIds: [], gear: [] });
-const artist = (configurations: unknown[]) => ({ name: "The Band", slug: "the-band", configurations, soundGear: { bandProvided: [], venueProvided: [] }, links: {}, driveFolderId: "d" });
+const cfg = (id: string, name: string) => ({ id, name, billingName: name, musicianIds: [] });
+const artist = (configurations: unknown[]) => ({ name: "The Band", slug: "the-band", configurations, links: {}, driveFolderId: "d" });
 
 test("each change is an entry at {doc}/history/{rev}, only changed fields, same transaction; nothing at the top level", async () => {
   const ctx = importCtx("tester", "run-1");

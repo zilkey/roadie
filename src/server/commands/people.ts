@@ -188,11 +188,10 @@ async function freeSlugFor(w: Writer, name: string) {
 export const artistsCreate = defineCommand({
   name: "artists.create",
   roles: ["admin"],
-  description: "Create an artist (who gets billed) with its configurations and sound gear. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin.",
+  description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin.",
   input: ArtistIn.extend({
     slug: ArtistInput.shape.slug.optional(),
     links: ArtistInput.shape.links.default({}),
-    soundGear: ArtistInput.shape.soundGear.default({ bandProvided: [], venueProvided: [] }),
     driveFolderId: z.string().default(""),
   }),
   async run(ctx, input) {
@@ -211,7 +210,7 @@ export const artistsCreate = defineCommand({
 export const artistsUpdate = defineCommand({
   name: "artists.update",
   roles: ["admin"],
-  description: "Edit this artist: name, slug (its URL name, unique), configurations (name, billingName, musicianIds, gear), soundGear, links.",
+  description: "Edit this artist: name, slug (its URL name, unique), configurations (name, billingName, musicianIds), links.",
   input: patchInput(ArtistIn),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     if (ctx.artistId && id !== ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);

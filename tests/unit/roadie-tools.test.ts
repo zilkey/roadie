@@ -44,8 +44,8 @@ beforeEach(async () => {
   sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Ingrid", instruments: [], active: true })).id;
   const artist = (await db.create(sys, "artists", {
-    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: {}, soundGear: { bandProvided: [], venueProvided: [] },
-    configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [mus], gear: [] }],
+    slug: "ingrid-avison-band", name: "Ingrid Avison Band", driveFolderId: "", links: {},
+    configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [mus] }],
   }, { id: TEST_ARTIST })).id;
   void artist;
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Hi-Dive")))) as { id: string };

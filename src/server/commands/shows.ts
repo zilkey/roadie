@@ -6,7 +6,7 @@ import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { syncShow, type SyncResult } from "../showSync";
-import { addDays, buildChecklist, buildGear, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
+import { addDays, buildChecklist, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind } from "@/schema";
 import { patchInput } from "./util";
 
@@ -105,7 +105,7 @@ export const showsCreate = defineCommand({
     "Create a show (and its admin-only showDeal) in one step. With pitchId it is the pitch's 'Booked it': links pitch.showIds and sets the pitch to booked. " +
     "Where: venueId, or for a house concert hostContactIds (contacts) + place {city, address?} (no venue). kind: venue|house|festival|radio|other (default from the rest). " +
     "editionId links a festival year (sets editionName). " +
-    "billedAs (configuration id) fills personnel and gear; sound defaults from the venue; needs (poster/backline/merch) and sound build the checklist from checklistTemplates. " +
+    "billedAs (configuration id) fills personnel; gear starts empty (shows.setGear adds it); sound defaults from the venue; needs (poster/backline/merch) and sound build the checklist from checklistTemplates. " +
     "addToCalendar (default true) adds a Google Calendar event for everyone playing. Public confirmed shows are listed on Bandsintown.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
@@ -139,7 +139,7 @@ export const showsCreate = defineCommand({
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
         editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
         billedAs, personnel, sound: snd, needs: i.needs,
-        checklist: buildChecklist(await templates(w), show, newId), gear: buildGear(artist as unknown as ArtistLike, billedAs, snd.provider, newId),
+        checklist: buildChecklist(await templates(w), show, newId), gear: [],
         setlistId: i.setlistId, docs: [], public: i.public, ticketUrl: i.ticketUrl, listings: {}, bandNotes: i.bandNotes,
       });
       const d = i.deal;
@@ -174,22 +174,22 @@ const showPatch = z.strictObject({
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
   setlistId: z.string().min(1).nullable().optional(), docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
   public: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), bandNotes: z.string().nullable().optional(),
-  rebuildGear: z.boolean().optional(), addMissingChecklist: z.boolean().optional(),
+  addMissingChecklist: z.boolean().optional(),
 });
 
 export const showsUpdate = defineCommand({
   name: "shows.update", roles: ["admin", "mcp"],
   description:
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
-    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times, billedAs (also refills personnel and rebuilds gear unless personnel is given), personnel, sound, needs, setlistId, docs, public, ticketUrl, bandNotes. " +
-    "rebuildGear rebuilds the gear list from billedAs + sound (keeps packed marks); addMissingChecklist adds template items for the current sound/needs. " +
+    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, public, ticketUrl, bandNotes. " +
+    "addMissingChecklist adds template items for the current sound/needs. " +
     "Changing date, time, venue, people, status or public re-syncs Google Calendar and Bandsintown (canceled removes both).",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
     let touchesSync = false;
     await run(ctx, async (w) => {
       const before = await requireShow(w, id);
-      const { venueId, hostContactIds, editionId, rebuildGear, addMissingChecklist, ...rest } = patch;
+      const { venueId, hostContactIds, editionId, addMissingChecklist, ...rest } = patch;
       const p: Record<string, unknown> = { ...rest };
       if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
       const artist = await artistFor(w, before.artistId);
@@ -210,9 +210,6 @@ export const showsUpdate = defineCommand({
       }
       const sound = (patch.sound ?? before.sound) as { provider: "venueProvided" | "bandProvided" };
       const billedAs = patch.billedAs === undefined ? before.billedAs : patch.billedAs ?? undefined;
-      if (rebuildGear || (patch.billedAs && patch.billedAs !== before.billedAs)) {
-        p.gear = buildGear(artist as unknown as ArtistLike, billedAs, sound.provider, newId, before.gear as GearItem[]);
-      }
       if (addMissingChecklist || patch.needs || patch.sound || patch.date) {
         const next = { date: (patch.date ?? before.date) as string, sound: { provider: sound.provider }, needs: (patch.needs ?? before.needs) as { poster: boolean; backline: boolean; merch: boolean } };
         let list = before.checklist as ChecklistItem[];
