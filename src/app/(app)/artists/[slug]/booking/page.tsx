@@ -8,7 +8,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import {
-  EntityForm, FlagButton, Seg, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+  EntityForm, FlagButton, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems } from "@/lib/booking";
 import type { User } from "@/schema";
@@ -90,7 +90,7 @@ function Booking() {
     <div className="grid gap-3">
       <PageTitle title="Booking" sub="Everything we could play. The flag adds it to the Pitch List." />
       <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
-      <Seg<Seg> testid="booking-seg" value={seg} onChange={setSeg}
+      <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
         options={[["all", "All"], ["pitches", "Pitch List"], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 

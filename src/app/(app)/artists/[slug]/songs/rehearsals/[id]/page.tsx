@@ -3,7 +3,7 @@ import { draftPath } from "@/schema/drafts";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { BackTo, FileIcon, Missing, bandMembers, fmtDay, useMusic } from "@/components/music/common";
@@ -60,8 +60,8 @@ function RehFields({ value, onChange, onBlur, m, existingRan }: { value: RehForm
       <span className="lbl">Who was there</span>
       <div className="flex flex-wrap gap-1.5">
         {m.musicians.filter((x) => x.active).map((x) => (
-          <button key={x.id} type="button" className={`btn sm ${personnel.includes(x.id) ? "acc" : "ghost"}`} aria-pressed={personnel.includes(x.id)} data-testid={`reh-who-${x.name}`}
-            onClick={() => onChange({ ...value, personnel: personnel.includes(x.id) ? personnel.filter((i) => i !== x.id) : [...personnel, x.id] })}>{x.name}</button>
+          <PickChip key={x.id} on={personnel.includes(x.id)} testid={`reh-who-${x.name}`}
+            onToggle={() => onChange({ ...value, personnel: personnel.includes(x.id) ? personnel.filter((i) => i !== x.id) : [...personnel, x.id] })}>{x.name}</PickChip>
         ))}
       </div>
       <span className="lbl">We ran</span>

@@ -35,3 +35,20 @@ export function useCommand() {
   return { call, error, busy, setError };
 }
 export const ErrorBox = ({ error }: { error: string | null }) => (error ? <div className="err" role="alert" data-testid="error">{error}</div> : null);
+
+/** A single choice from a list. Chips are for picking several; this is for picking one. */
+export function Select<T extends string>({ value, options, onChange, placeholder, testid, label, disabled, className }: {
+  value: T | ""; options: readonly (readonly [T, string])[]; onChange(v: T): void; placeholder?: string; testid?: string; label?: string; disabled?: boolean; className?: string;
+}) {
+  return (
+    <select className={`select${className ? ` ${className}` : ""}`} value={value} disabled={disabled} aria-label={label} data-testid={testid} onChange={(e) => onChange(e.target.value as T)}>
+      {placeholder !== undefined && <option value="">{placeholder}</option>}
+      {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
+  );
+}
+
+/** One toggle in a multiselect: pressed shows a check mark. Pass `on` and flip it in onToggle. */
+export function PickChip({ on, onToggle, testid, children }: { on: boolean; onToggle(): void; testid?: string; children: React.ReactNode }) {
+  return <button type="button" className="pick" aria-pressed={on} data-testid={testid} onClick={onToggle}>{children}</button>;
+}

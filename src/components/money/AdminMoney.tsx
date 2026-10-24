@@ -4,7 +4,7 @@ import Link from "@/lib/artist";
 import { Suspense, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
-import { Seg } from "@/components/booking/common";
+import { Tabs } from "@/components/booking/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -71,7 +71,7 @@ function Admin() {
   return (
     <div className="grid gap-3" data-testid="admin-money">
       <PageTitle title="Money" />
-      <Seg<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["shows", "By show"], ["categories", "By category"], ["ledger", "Ledger"]]} />
+      <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["shows", "By show"], ["categories", "By category"], ["ledger", "Ledger"]]} />
       <ErrorBox error={error} />
 
       {tab === "overview" && (

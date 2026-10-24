@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import { useRef, useState } from "react";
-import { ErrorBox, useCommand } from "@/components/ui";
+import { ErrorBox, PickChip, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft, useHasDraft } from "@/lib/drafts";
@@ -67,8 +67,8 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
           <div className="flex flex-wrap gap-1.5">
             {musicians.filter((m) => m.active || picked.includes(m.id)).sort((a, b) => a.name.localeCompare(b.name)).map((m) => {
               const on = picked.includes(m.id);
-              return <button key={m.id} type="button" aria-pressed={on} data-testid={`ask-person-${m.name}`} className={`btn sm ${on ? "acc" : "ghost"}`}
-                onClick={() => setPicked(on ? picked.filter((x) => x !== m.id) : [...picked, m.id])}>{m.name}</button>;
+              return <PickChip key={m.id} on={on} testid={`ask-person-${m.name}`}
+                onToggle={() => setPicked(on ? picked.filter((x) => x !== m.id) : [...picked, m.id])}>{m.name}</PickChip>;
             })}
           </div>
           <span className="lbl">Message</span>

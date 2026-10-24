@@ -41,7 +41,7 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
   await expect(page.getByTestId("show-venue")).not.toHaveValue("");
   await expect(page.getByTestId("billed-as")).toHaveValue("full-band");
   for (const n of ["Ingrid", "Jeff", "David", "Eric", "Emma"]) await expect(page.getByTestId(`play-${n}`)).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("sound-venueProvided")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("sound")).toHaveValue("venueProvided");
 
   // billed as fills who's playing, and stays editable
   await page.getByTestId("billed-as").selectOption("duo");
@@ -52,7 +52,7 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
   await page.getByTestId("show-date").fill("2027-02-20");
   await page.getByTestId("show-set").fill("20:00");
   await page.getByTestId("show-length").fill("45");
-  await page.getByTestId("sound-bandProvided").click();
+  await page.getByTestId("sound").selectOption("bandProvided");
   await page.getByTestId("need-poster").check();
   await page.getByTestId("need-merch").check();
   await page.getByTestId("deal-guarantee").fill("400");
@@ -273,7 +273,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
 
   // turning it into a hold takes it off
   await page.getByTestId("show-edit").click();
-  await page.getByTestId("status-hold").click();
+  await page.getByTestId("status").selectOption("hold");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.getByTestId("show-edit").click();
   await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
@@ -282,7 +282,7 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
 
   // confirm again, then cancel removes it
   await page.getByTestId("show-edit").click();
-  await page.getByTestId("status-confirmed").click();
+  await page.getByTestId("status").selectOption("confirmed");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.getByTestId("show-edit").click();
   await expect(page.getByTestId("bit-state")).toHaveText("Listed");

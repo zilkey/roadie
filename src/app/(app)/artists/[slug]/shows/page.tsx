@@ -5,7 +5,7 @@ import { useProfile } from "@/lib/auth";
 import { PageTitle } from "@/components/ui";
 import { todayStr } from "@/lib/booking";
 import { SHOW_FILTERS, SHOW_FILTER_LABEL, showFilter, type ShowFilter } from "@/lib/shows";
-import { Seg } from "@/components/booking/common";
+import { Tabs } from "@/components/booking/common";
 import { ShowRowLink, useBand } from "@/components/shows/common";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 
@@ -35,7 +35,7 @@ export default function Shows() {
     <div className="grid gap-3" data-testid="shows-page">
       <PageTitle title="Shows" sub={p.role === "admin" ? "Upcoming, played, canceled and dropped." : "The band's shows."} />
       {p.role === "admin" && <Link href="/shows/new" className="btn acc justify-self-start" data-testid="new-show-btn">New show</Link>}
-      <Seg<ShowFilter> testid="shows-filter" value={filter} onChange={setFilter}
+      <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={setFilter}
         options={SHOW_FILTERS.map((f) => [f, b.loading ? SHOW_FILTER_LABEL[f] : `${SHOW_FILTER_LABEL[f]} · ${count(f)}`])} />
       <div className="grid gap-2" data-testid={`shows-${filter}`}>
         {!b.loading && shown.length === 0 && <span className="s">{EMPTY[filter]}</span>}

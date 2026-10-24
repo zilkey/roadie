@@ -4,7 +4,7 @@ import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
-import { Seg } from "@/components/booking/common";
+import { Tabs } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { fmtLen, mimeGroup } from "@/lib/music";
 import { fmtDur, showName } from "@/lib/shows";
@@ -85,7 +85,7 @@ function Songs() {
     <div className="grid gap-3" data-testid="songs-page">
       <PageTitle title="Songs" sub="Everything we play, with key and length. Tap for charts and recordings." />
       {admin && <Link href="/songs/new" className="btn acc justify-self-start" data-testid="add-song-btn">Add a song</Link>}
-      <Seg<SegKey> testid="songs-seg" value={seg} onChange={setSeg} options={[["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["setlists", "Setlists"], ["rehearsals", "Rehearsals"]]} />
+      <Tabs<SegKey> testid="songs-seg" value={seg} onChange={setSeg} options={[["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["setlists", "Setlists"], ["rehearsals", "Rehearsals"]]} />
       {seg !== "setlists" && seg !== "rehearsals" && (
         <input className="input" placeholder="Search songs…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="songs-filter" aria-label="Filter songs" />
       )}

@@ -5,7 +5,7 @@ import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
-import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { ErrorBox, PageTitle, PickChip, Select, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
@@ -13,7 +13,7 @@ import { newMutationId } from "@/lib/commands";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, Seg, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { BackLink, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { fmtLong, showName } from "@/lib/shows";
@@ -101,13 +101,11 @@ function PitchPage() {
       <ErrorBox error={error} />
       <div className="flex items-center gap-2"><StatusChip status={p.status} /><Link href={targetHref} className="s font-semibold underline" data-testid="target-link">Open {p.target.kind === "edition" ? "festival year" : p.target.kind}</Link></div>
 
-      <div className="grid gap-1.5">
+      <label className="grid gap-1.5">
         <span className="lbl">Where it&apos;s at</span>
-        <Seg<Status> testid="status" value={p.status} onChange={(s) => call("pitches.move", { id, status: s })}
-          options={flow.map((s) => [s, STATUS_LABEL[s]] as [Status, string])} />
-        <Seg<Status> testid="status2" value={p.status} onChange={(s) => call("pitches.move", { id, status: s })}
-          options={STATUSES.filter((s) => !flow.includes(s)).map((s) => [s, STATUS_LABEL[s]] as [Status, string])} />
-      </div>
+        <Select<Status> testid="status" value={p.status} onChange={(s) => call("pitches.move", { id, status: s })}
+          options={[...flow, ...STATUSES.filter((s) => !flow.includes(s))].map((s) => [s, STATUS_LABEL[s]] as [Status, string])} />
+      </label>
 
       <div className="card">
         <span className="lbl">Pitching as</span>
@@ -121,8 +119,8 @@ function PitchPage() {
           {musicians.filter((m) => m.active || people.includes(m.id)).sort((a, c) => a.name.localeCompare(c.name)).map((m) => {
             const on = people.includes(m.id);
             return (
-              <button key={m.id} type="button" aria-pressed={on} data-testid={`person-${m.name}`} className={`btn sm ${on ? "acc" : "ghost"}`}
-                onClick={() => { const next = on ? people.filter((x) => x !== m.id) : [...people, m.id]; setCrew(next); patch({ personnel: next }); }}>{m.name}</button>
+              <PickChip key={m.id} on={on} testid={`person-${m.name}`}
+                onToggle={() => { const next = on ? people.filter((x) => x !== m.id) : [...people, m.id]; setCrew(next); patch({ personnel: next }); }}>{m.name}</PickChip>
             );
           })}
         </div>
@@ -257,7 +255,7 @@ function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; arti
   return (
     <div className="card" data-testid="email-panel">
       <span className="lbl">Template</span>
-      <Seg testid="template" value={tplId} onChange={(v) => { setTplId(v); apply(v, to, true); }} options={templates.map((t) => [t.id, t.name] as [string, string])} />
+      <Select testid="template" label="Template" value={tplId} placeholder="Pick a template" onChange={(v) => { setTplId(v); apply(v, to, true); }} options={templates.map((t) => [t.id, t.name] as [string, string])} />
       {templates.length === 0 && <span className="s">No templates yet. <Link href="/booking/templates" className="underline">Add one</Link>.</span>}
       <span className="lbl">To</span>
       <div className="grid gap-1">

@@ -3,7 +3,7 @@ import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useArtistRouter as useRouter } from "@/lib/artist";
-import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
 import { BackLink } from "@/components/booking/common";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
@@ -61,10 +61,9 @@ function AddExpense() {
       {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
         <label className="grid gap-1"><span className="lbl">How much</span>
           <input className="input font-mono" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="expense-amount" /></label>
-        <span className="lbl">What for</span>
-        <div className="flex flex-wrap gap-1.5" role="group">
-          {CATS.map((c) => <button key={c} type="button" aria-pressed={cat === c} data-testid={`expense-cat-${c}`} onClick={() => setCat(c)} className={`btn sm ${cat === c ? "acc" : "ghost"}`}>{CATEGORY_LABEL[c]}</button>)}
-        </div>
+        <label className="grid gap-1"><span className="lbl">What for</span>
+          <Select testid="expense-cat" value={cat} onChange={setCat} options={CATS.map((c) => [c, CATEGORY_LABEL[c]] as [typeof c, string])} />
+        </label>
         <input className="input" placeholder="Drum heads" value={what} onChange={(e) => setWhat(e.target.value)} data-testid="expense-what" />
         <label className="grid gap-1"><span className="lbl">For a show?</span>
           <select className="select" value={showId} onChange={(e) => setShowId(e.target.value)} data-testid="expense-show">

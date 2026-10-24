@@ -116,12 +116,22 @@ export function FlagButton({ kind, id, pitches, big }: { kind: "venue" | "promot
   );
 }
 
-export function Seg<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, string][]; onChange(v: T): void; testid?: string }) {
+/** View switcher or filter: a tab bar, never a form field. Arrow keys / Home / End move between tabs. */
+export function Tabs<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, string][]; onChange(v: T): void; testid?: string }) {
+  function onKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    const i = options.findIndex(([v]) => v === value);
+    const next = e.key === "ArrowRight" || e.key === "ArrowDown" ? (i + 1) % options.length
+      : e.key === "ArrowLeft" || e.key === "ArrowUp" ? (i - 1 + options.length) % options.length
+      : e.key === "Home" ? 0 : e.key === "End" ? options.length - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    onChange(options[next][0]);
+    (e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
+  }
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" data-testid={testid}>
+    <div className="tabs" role="tablist" data-testid={testid} onKeyDown={onKey}>
       {options.map(([v, l]) => (
-        <button key={v} type="button" onClick={() => onChange(v)} aria-pressed={value === v} data-testid={`${testid}-${v}`}
-          className={`btn sm ${value === v ? "acc" : "ghost"}`}>{l}</button>
+        <button key={v} type="button" role="tab" aria-selected={value === v} tabIndex={value === v ? 0 : -1} onClick={() => onChange(v)} data-testid={`${testid}-${v}`}>{l}</button>
       ))}
     </div>
   );

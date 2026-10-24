@@ -12,7 +12,7 @@ async function signInAs(page: Page, key: string) {
 test("a house concert has hosts and a city, no venue; it can move to a venue and back", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/shows/new"));
-  await page.getByTestId("show-where-house").click();
+  await page.getByTestId("show-where").selectOption("house");
   await expect(page.getByTestId("show-venue")).toHaveCount(0);
   await page.getByTestId("show-host-add").selectOption({ label: "Dana Ortiz" });
   await expect(page.getByTestId("show-hosts")).toContainText("Dana Ortiz");
@@ -30,10 +30,10 @@ test("a house concert has hosts and a city, no venue; it can move to a venue and
 
   // Edit: switch to a venue (autosave), then back to the house.
   await page.getByTestId("show-edit").click();
-  await page.getByTestId("show-where-venue").click();
+  await page.getByTestId("show-where").selectOption("venue");
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hi-Dive");
-  await page.getByTestId("show-where-house").click();
+  await page.getByTestId("show-where").selectOption("house");
   await page.getByTestId("show-city").fill("Lyons"); // the form keeps what was typed; a fresh blur saves it
   await page.getByTestId("show-city").blur();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("House concert · Dana Ortiz");

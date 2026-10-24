@@ -35,8 +35,8 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await page.getByTestId("next-text").fill("Follow up");
   await page.getByTestId("next-due").fill("2026-11-09");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("status-pitched").click();
-  await expect(page.getByTestId("status-pitched")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("status").selectOption("pitched");
+  await expect(page.getByTestId("status")).toHaveValue("pitched");
   await expect(page.getByTestId("timeline")).toContainText("Moved to Pitched");
   await page.getByTestId("comment-input").fill("Great room for the trio");
   await page.getByTestId("comment-send").click();
@@ -74,7 +74,7 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.getByTestId("email-toggle").click();
   const templates = page.getByTestId("template");
   await expect(templates).toBeVisible();
-  await templates.getByRole("button", { name: "First pitch" }).click();
+  await templates.selectOption({ label: "First pitch" });
   await expect(page.getByTestId("email-subject")).toHaveValue("Lost Lake Lounge · Ingrid Avison Band");
   await expect(page.getByTestId("email-body")).toHaveValue(/Hi Haylee,/);
   await expect(page.getByTestId("email-body")).toHaveValue(/Live video: https:\/\/ingridavison\.example/);

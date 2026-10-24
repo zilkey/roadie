@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
-import { ErrorBox } from "@/components/ui";
-import { Seg } from "@/components/booking/common";
+import { ErrorBox, PickChip, Select } from "@/components/ui";
 import { dollarsToCents } from "@/lib/money";
 import type { Row } from "@/lib/firestore-hooks";
 import type { Artist, Contact, Edition, Musician, Venue } from "@/schema";
@@ -102,9 +101,11 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
   return (
     <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }} onBlur={onBlur}>
       <div className="card">
-        <Seg testid="show-where" value={value.where}
-          onChange={(w) => set({ where: w, ...(!soundTouched && w === "house" ? { soundProvider: "bandProvided" } : {}) })}
-          options={[["venue", "Venue"], ["house", "House concert"]]} />
+        <label className="grid gap-1"><L>Where</L>
+          <Select testid="show-where" value={value.where}
+            onChange={(w) => set({ where: w, ...(!soundTouched && w === "house" ? { soundProvider: "bandProvided" } : {}) })}
+            options={[["venue", "Venue"], ["house", "House concert"]]} />
+        </label>
         {value.where === "venue" ? (
           <label className="grid gap-1"><L>Venue</L>
             <select className="select" value={value.venueId} data-testid="show-venue" required
@@ -127,8 +128,10 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
           </select>
         </label>
         {field("date", "Date", "date")}
-        <Seg testid="status" value={value.status === "hold" ? "hold" : value.status} onChange={(v) => set({ status: v })}
-          options={[["confirmed", "Confirmed"], ["hold", "Hold"]]} />
+        <label className="grid gap-1"><L>Status</L>
+          <Select testid="status" value={value.status === "hold" ? "hold" : value.status} onChange={(v) => set({ status: v })}
+            options={[["confirmed", "Confirmed"], ["hold", "Hold"]]} />
+        </label>
         <div className="grid grid-cols-2 gap-2">
           {field("loadIn", "Load in", "time")}{field("soundcheck", "Soundcheck", "time")}
           {field("doors", "Doors", "time")}{field("set", "Set", "time")}
@@ -151,17 +154,18 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
         <div className="flex flex-wrap gap-1.5" data-testid="personnel">
           {musicians.filter((m) => m.active || value.personnel.includes(m.id)).sort((a, b) => a.name.localeCompare(b.name)).map((m) => {
             const on = value.personnel.includes(m.id);
-            return <button key={m.id} type="button" aria-pressed={on} data-testid={`play-${m.name}`} className={`btn sm ${on ? "acc" : "ghost"}`}
-              onClick={() => set({ personnel: on ? value.personnel.filter((x) => x !== m.id) : [...value.personnel, m.id] })}>{m.name}</button>;
+            return <PickChip key={m.id} on={on} testid={`play-${m.name}`}
+              onToggle={() => set({ personnel: on ? value.personnel.filter((x) => x !== m.id) : [...value.personnel, m.id] })}>{m.name}</PickChip>;
           })}
         </div>
         <span className="s">Filling in from the configuration. Tap to change anyone.</span>
       </div>
 
       <div className="card">
-        <L>Sound</L>
-        <Seg testid="sound" value={value.soundProvider} onChange={(v) => { setSoundTouched(true); set({ soundProvider: v }); }}
-          options={[["venueProvided", "Venue provides"], ["bandProvided", "We bring it"]]} />
+        <label className="grid gap-1"><L>Sound</L>
+          <Select testid="sound" value={value.soundProvider} onChange={(v) => { setSoundTouched(true); set({ soundProvider: v }); }}
+            options={[["venueProvided", "Venue provides"], ["bandProvided", "We bring it"]]} />
+        </label>
         {venue?.sound && !soundTouched && <span className="s">From {venue.name}.</span>}
         {field("soundNotes", "Sound notes", "text", "sound-notes")}
         <L>We need</L>

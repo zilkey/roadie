@@ -82,7 +82,7 @@ test("member adds an expense (receipt from Drive search) and sees it as not paid
   await p.getByTestId("tab-money").click();
   await p.getByTestId("add-expense-link").click();
   await p.getByTestId("expense-amount").fill("64");
-  await p.getByTestId("expense-cat-gear").click();
+  await p.getByTestId("expense-cat").selectOption("gear");
   await p.getByTestId("expense-what").fill(WHAT);
   await p.getByTestId("receipt-search").fill("Glass");
   await p.getByTestId("receipt-search-go").click();
