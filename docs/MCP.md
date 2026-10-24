@@ -19,7 +19,7 @@ openssl rand -base64 32 | npx firebase apphosting:secrets:set MCP_SESSION_SECRET
 npx firebase apphosting:secrets:grantaccess MCP_SESSION_SECRET --backend roadie-web-prod --project roadie-prod-iab
 ```
 
-then uncomment the `MCP_SESSION_SECRET` entry in `apphosting.yaml`. Without it `/mcp` answers 500 with a message saying so (dev and tests use a random per-process secret).
+`apphosting.yaml` references it as `MCP_SESSION_SECRET`. Without it `/mcp` answers 500 with a message saying so (dev and tests use a random per-process secret).
 
 There is also a stdio entry for Claude Code on your own machine (`npm run mcp:stdio`, key in `MCP_TOKEN`). It points at the emulators by default; for the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`.
 
