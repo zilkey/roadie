@@ -58,8 +58,8 @@ export function createMcpServer(authorize: () => Promise<Ctx>) {
   const server = new Server({ name: "band-tracker", version: "0.1.0" }, {
     capabilities: { tools: {} },
     instructions:
-      "Band Tracker for the Ingrid Avison Band. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). " +
-      "A venue's name, address and house facts are one shared record that every band using Band Tracker sees: editing them changes the room for all of them. " +
+      "Roadie for the Ingrid Avison Band. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). " +
+      "A venue's name, address and house facts are one shared record that every band using Roadie sees: editing them changes the room for all of them. " +
       "A venue's loadInNotes, notes, contacts and promoters are this band's private notes. Fix a duplicate venue with venues.mergeInto. " +
       "Money is integer cents. Dates are YYYY-MM-DD. You can draft emails (pitches.draftEmail) but never send them. " +
       "Input errors come back as {error:{code:'invalid_input', issues:[{path,message}]}}: fix the fields and retry. " +

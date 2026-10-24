@@ -109,7 +109,7 @@ function PromoterPage() {
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Pitch" icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--admin-label)" }}><FlagIcon filled={!!active} /></span>}>
+        <DetailCard private title="Pitch" icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
           <Flagged kind="promoter" id={id} pitches={mine} label="Add to the Pitch List">
             {(button, form, strip) => (<div className="grid gap-3">
               {active ? (<>

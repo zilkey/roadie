@@ -186,7 +186,7 @@ Venue page `booking/venues/[id]/page.tsx` |
 Read both docs. Drop `AdminOnly` on the page. Two cards: "About the room" (shared, everyone, editable) and "Our notes" (private, admins). Private notes keep autosave. Shared facts switch to an explicit Save, because autosave cannot ask first.
  | 
 Shared-edit confirmation | 
-Save opens a dialog: "This updates Hi-Dive for every band that uses Band Tracker. Your name is recorded in its history." It lists the fields changed, before and after, with Save for everyone and Cancel. Adding a new venue shows a lighter line: "Other bands will see this venue's name, address and details."
+Save opens a dialog: "This updates Hi-Dive for every band that uses Roadie. Your name is recorded in its history." It lists the fields changed, before and after, with Save for everyone and Cancel. Adding a new venue shows a lighter line: "Other bands will see this venue's name, address and details."
  | 
 Merge UI | 
 On the venue page for admins: "Merge into another venue…" opens a venue search, then a confirmation naming both rooms and saying every band's shows, pitches and notes will move. A merged venue's URL redirects to the survivor.

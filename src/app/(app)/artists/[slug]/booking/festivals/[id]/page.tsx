@@ -139,7 +139,7 @@ function FestivalPage() {
 
       <CardGroup kind="private">
         <DetailCard private title="Pitch" testid="festival-pitch"
-          icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--admin-label)" }}><FlagIcon filled={!!active} /></span>}>
+          icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
           {active && activeEd ? (
             <div className="grid gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">

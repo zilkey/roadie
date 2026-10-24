@@ -1,4 +1,4 @@
-# Band Tracker build plan
+# Roadie build plan
 
 Source of truth for WHAT to build: `docs/blueprint.html` (glossary, ER model, ground rules, schema, access table, user stories, wireframes). Read only the parts your slice needs (grep it). This file says HOW.
 

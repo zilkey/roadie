@@ -48,7 +48,7 @@ export const venuesCreate = defineCommand({
   name: "venues.create", roles: [...VENUE_ROLES], input: VenueIn,
   description:
     "Add a venue. A venue with the same name and city merges into the existing one ({id, merged}). Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
-    "every band that uses Band Tracker sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
+    "every band that uses Roadie sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
   run: (ctx, input) => run(ctx, async (w) => {
     const priv = Object.fromEntries(Object.entries(input).filter(([k, v]) => isPrivateField(k) && v !== undefined));
     const shared = Object.fromEntries(Object.entries(input).filter(([k]) => !isPrivateField(k)));
@@ -77,7 +77,7 @@ export const venuesCreate = defineCommand({
 export const venuesUpdate = defineCommand({
   name: "venues.update", roles: [...VENUE_ROLES], input: patchInput(VenueIn),
   description:
-    "Edit a venue. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Band Tracker, " +
+    "Edit a venue. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
     "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const sharedPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => !isPrivateField(k) && v !== undefined));

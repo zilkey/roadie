@@ -4,14 +4,15 @@ import { useArtist } from "@/lib/artist";
 import { FlagIcon } from "./common";
 
 /** Shown at the top of an editing shared card. */
-export const SHARED_WARN = "Every band on Band Tracker sees these details.";
+export const SHARED_WARN = "Every band on Roadie sees these details.";
 /** The venue version points at the band's private notes. */
-export const VENUE_SHARED_WARN = "Every band on Band Tracker sees these details. Keep private notes in “Our notes” below.";
+export const VENUE_SHARED_WARN = "Every band on Roadie sees these details. Keep private notes in “Our notes” below.";
 
 const Svg = ({ children, size = 16 }: { children: ReactNode; size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">{children}</svg>
 );
 const GlobeIcon = ({ size }: { size?: number }) => <Svg size={size}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z" /></Svg>;
+const AlertIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /><path d="M12 9v4M12 17h.01" /></Svg>;
 const LockIcon = ({ size }: { size?: number }) => <Svg size={size}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></Svg>;
 
 /** A detail page: back link, title (+ pill), meta line, a `more` menu at the top right, then a single column of cards. */
@@ -49,9 +50,9 @@ export function CardGroup({ kind, children }: { kind: "shared" | "private"; chil
   const priv = kind === "private";
   return (
     <>
-      <div className={`d-grp${priv ? " priv" : ""}`}>
+      <div className={`d-grp${priv ? "" : " shared"}`}>
         {priv ? <LockIcon /> : <GlobeIcon />}
-        {priv ? `Only ${name} sees this` : "Shared with every band on Band Tracker"}
+        {priv ? `Only ${name} sees this` : "Shared with every band on Roadie"}
       </div>
       {children}
     </>
@@ -68,8 +69,8 @@ export function useSingleEdit<K extends string>() {
 }
 
 /**
- * A card with a title and, if `editKey` + `edit` are given, an Edit link that swaps `children` for `editChildren` plus a Done footer.
- * `warn` (editing only) shows a globe line at the top. `headerExtra` sits beside the Edit link/tag. Autosave: Done just closes (after `onDone`).
+ * A card (yellow top bar when shared with every band, plain when `private`) with a title and, if `editKey` + `edit` are given, an Edit link that swaps `children` for `editChildren` plus a Done footer.
+ * `warn` (editing only) shows a caution banner at the top. `headerExtra` sits beside the Edit link/tag. Autosave: Done just closes (after `onDone`).
  */
 export function DetailCard<K extends string = string>({ title, icon, private: priv, editKey, edit, warn, onDone, testid, editTestid, doneTestid, headerExtra, children, editChildren }: {
   title: ReactNode; icon?: ReactNode; private?: boolean; editKey?: K; edit?: ReturnType<typeof useSingleEdit<K>>; warn?: ReactNode;
@@ -79,7 +80,7 @@ export function DetailCard<K extends string = string>({ title, icon, private: pr
   const canEdit = editKey !== undefined && !!edit;
   const editing = canEdit && edit.is(editKey);
   return (
-    <section className={`d-card${priv ? " priv" : ""}${editing ? " editing" : ""}`} aria-labelledby={id} data-testid={testid}>
+    <section className={`d-card${priv ? "" : " shared"}${editing ? " editing" : ""}`} aria-labelledby={id} data-testid={testid}>
       <div className="d-ch">
         <h2 id={id} className="d-ct">{icon}{title}</h2>
         <div className="flex items-center gap-2">
@@ -90,7 +91,7 @@ export function DetailCard<K extends string = string>({ title, icon, private: pr
       </div>
       {editing ? (
         <>
-          {warn && <div className="d-warn"><GlobeIcon size={14} /><span>{warn}</span></div>}
+          {warn && <div className="d-warn" role="note"><AlertIcon size={18} /><span><b>Proceed with caution.</b> {warn}</span></div>}
           {editChildren}
           <div className="d-foot">
             <button type="button" className="btn acc" data-testid={doneTestid} onClick={() => { onDone?.(); edit.close(); }}>Done</button>

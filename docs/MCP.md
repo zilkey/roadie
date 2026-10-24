@@ -1,6 +1,6 @@
 # Connecting an AI (MCP)
 
-The Band Tracker MCP server lets Claude (or any MCP client) read and update the band's data with the same rules as the app: same Zod schemas, dedupe, soft delete, history. It can **draft** emails but never send them.
+The Roadie MCP server lets Claude (or any MCP client) read and update the band's data with the same rules as the app: same Zod schemas, dedupe, soft delete, history. It can **draft** emails but never send them.
 
 ## 1. Get a key
 

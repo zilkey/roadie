@@ -106,7 +106,7 @@ npx firebase apps:sdkconfig WEB --project roadie-prod-iab
 - `.github/workflows/backup.yml`, `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md` and `docs/MCP.md` say `roadie-prod-iab`.
 - Roadie uses Vertex AI in production (the backend's service account, same Google bill, no key; default model `gemini-3.5-flash-lite` in the `global` location; Gemini 2.5 shut down in October 2026). A `GEMINI_API_KEY` still works for trying it locally.
 
-Not renamed yet: the npm package, the in-app title ("Band Tracker") and the emulator project id.
+Not renamed yet: the npm package and the emulator project id.
 
 ---
 

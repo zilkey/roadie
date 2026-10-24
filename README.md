@@ -1,4 +1,4 @@
-# Band Tracker
+# Roadie
 
 A small web app (phone and desktop) for one working band, the Ingrid Avison Band in Colorado. It replaces the spreadsheets, group texts and Drive folders a band lives in:
 

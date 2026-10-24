@@ -29,7 +29,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
 ];
 /** venues.update fields that are the SHARED room (every band sees them); the rest (loadInNotes, notes, contactIds, promoterIds) are the band's own. */
 const PRIVATE_VENUE_FIELDS = ["loadInNotes", "notes", "contactIds", "promoterIds"];
-/** A venues.update that changes the shared room reaches every band that uses Band Tracker: it asks first. */
+/** A venues.update that changes the shared room reaches every band that uses Roadie: it asks first. */
 export const sharedVenueFields = (input: unknown): string[] =>
   Object.keys(((input as { patch?: Record<string, unknown> } | null)?.patch ?? {})).filter((k) => !PRIVATE_VENUE_FIELDS.includes(k));
 /** `*.remove` archives or deletes something. */
@@ -75,7 +75,7 @@ const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",
   "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
-  "venues.update": (i) => `Change the shared room${i.label ? ` ${i.label}` : ""} (${sharedVenueFields(i).join(", ")}) for every band that uses Band Tracker`,
+  "venues.update": (i) => `Change the shared room${i.label ? ` ${i.label}` : ""} (${sharedVenueFields(i).join(", ")}) for every band that uses Roadie`,
 };
 /** What the confirm card says. `label` is a human name for the record (Roadie adds it from what it looked up). */
 export function summarize(name: string, input: unknown, label?: string): string {

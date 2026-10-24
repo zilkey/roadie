@@ -1,4 +1,4 @@
-# Taking Band Tracker to a real Firebase project (`roadie-prod-iab`)
+# Taking Roadie to a real Firebase project (`roadie-prod-iab`)
 
 One ordered checklist. Everything below is manual; nothing has been run against a real project. Where the app needs code that does not exist yet, the step says **CODE NEEDED**. Replace `YOU` with the first admin's Google email.
 

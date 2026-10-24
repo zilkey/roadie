@@ -1,4 +1,4 @@
-/** The Band Tracker MCP server, served by the app itself: APP_URL/mcp. Everything is in mcp/web.ts. */
+/** The Roadie MCP server, served by the app itself: APP_URL/mcp. Everything is in mcp/web.ts. */
 import { handleMcpRequest } from "../../../mcp/web";
 
 export const runtime = "nodejs";

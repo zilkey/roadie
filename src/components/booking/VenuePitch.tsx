@@ -24,7 +24,7 @@ const when = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US
 export type PitchEdit = { is(k: "pitch"): boolean; open(k: "pitch"): void; close(): void };
 
 const PitchIcon = ({ active }: { active: boolean }) => (
-  <span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--admin-label)" }}><FlagIcon filled={active} /></span>
+  <span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={active} /></span>
 );
 const CheckIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
@@ -59,7 +59,7 @@ function PastPitches({ past }: { past: PitchRow[] }) {
     <>
       <div className="d-sep" />
       <div className="grid gap-1.5" data-testid="past-pitches">
-        <span className="lbl" style={{ color: "var(--admin-label)" }}>Past pitches ({past.length})</span>
+        <span className="lbl" style={{ color: "var(--muted)" }}>Past pitches ({past.length})</span>
         <div className="overflow-x-auto">
           <table className="d-tbl">
             <thead><tr><th scope="col">Configuration</th><th scope="col">Dates</th><th scope="col">Outcome</th><th scope="col" style={{ textAlign: "right" }}>Comments</th></tr></thead>
@@ -125,7 +125,7 @@ function OpenPitch({ p, past, edit }: { p: PitchRow; past: PitchRow[]; edit: Pit
           </div>
 
           <div className="grid gap-2.5" data-testid="pitch-comments">
-            <span className="lbl" style={{ color: "var(--admin-label)" }}>Comments ({comments.length})</span>
+            <span className="lbl" style={{ color: "var(--muted)" }}>Comments ({comments.length})</span>
             {comments.map((c) => {
               const who = users.find((u) => u.id === c.authorId)?.name ?? "Someone";
               return (

@@ -38,7 +38,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   const capacity = String(300 + (STAMP % 100));
   await expect(page.getByTestId("room-capacity")).toHaveText("250");
   await page.getByTestId("room-edit").click();
-  await expect(page.getByTestId("room-card")).toContainText("Every band on Band Tracker sees these details.");
+  await expect(page.getByTestId("room-card")).toContainText("Every band on Roadie sees these details.");
   await expect(page.getByTestId("room-edit")).toHaveCount(0);
   await page.getByTestId("room-capacity").fill(capacity);
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
