@@ -22,7 +22,7 @@ Consolidated after the final pass. Spec: `docs/blueprint.html`; conventions: `PL
 
 **Money + Reach**: ledger (income, spending, payouts, reimbursements, corrections with `reversesId`), expenses and receipts (Drive link), owed per person, settle a show (income + payouts atomically), My money for members, SVG charts, Stats page (Spotify current numbers + charts, Pull now, Spotify for Artists CSV import), `npm run stats:pull`.
 
-**Safety net**: MCP server (HTTP :3300 and stdio; tool per `mcp` command plus read tools; bearer tokens hashed in `mcpTokens`, revocable live); drafts-only email; History page with filters and "Undo this run"; AI keys page; backup/restore scripts and a nightly workflow (never run).
+**Safety net**: MCP server (HTTP at the app's /mcp, stateless with signed session ids, plus stdio; tool per `mcp` command plus read tools; bearer tokens hashed in `mcpTokens`, revocable live); drafts-only email; History page with filters and "Undo this run"; AI keys page; backup/restore scripts and a nightly workflow (never run).
 
 **Final pass**: one timezone constant (`src/lib/timezone.ts`, America/Denver) for "today", date-stamped ledger/expense rows, show-time display, and the Calendar and Bandsintown payloads (`timeZone` field); screenshots in `docs/screenshots/`; `scripts/bootstrap-admin.ts`.
 

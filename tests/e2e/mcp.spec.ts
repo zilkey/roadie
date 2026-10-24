@@ -10,6 +10,6 @@ test("Connect to Claude: users guide by default, developers tab on localhost", a
   await expect(page.getByTestId("mcp-connector-url")).toHaveText(/\/mcp$/);
   await expect(page.getByTestId("mcp-developers")).toHaveCount(0);
   await page.getByTestId("mcp-tab-developers").click();
-  await expect(page.getByTestId("mcp-developers")).toContainText("npm run mcp");
+  await expect(page.getByTestId("mcp-developers")).toContainText("run --silent mcp:stdio");
   await expect(page.getByTestId("mcp-users")).toHaveCount(0);
 });

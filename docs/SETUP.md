@@ -57,6 +57,8 @@ ROADIE_MODEL=gemini GEMINI_API_KEY=<your key> npm run genkit:ui
 
 Because it's public, nothing secret is ever committed: no service-account keys, OAuth secrets or API keys. Those go in App Hosting secrets (`npx firebase apphosting:secrets:set <name> --project roadie-prod-iab`). The web config in `apphosting.yaml` is fine to publish; it only identifies the project.
 
+GitHub secret scanning flags the `NEXT_PUBLIC_FIREBASE_API_KEY` in `apphosting.yaml` as a "Google API Key". It is the Firebase browser key, which every visitor's browser receives anyway; resolve the alert as a false positive. What keeps it harmless is its API restriction, auto-created by Firebase: `gcloud services api-keys list --project roadie-prod-iab` must show it limited to Firebase services (Identity Toolkit, Firestore, etc.) and never `generativelanguage.googleapis.com` or `aiplatform.googleapis.com`. The Gemini key for local `ROADIE_MODEL=gemini` runs is a separate key and stays out of the repo.
+
 ### 2.2 Create the project
 
 ```sh

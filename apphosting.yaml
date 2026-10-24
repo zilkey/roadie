@@ -23,6 +23,9 @@ env:
   # Roadie on Vertex AI with the backend's service account (needs the Vertex AI User role); no API key.
   - variable: ROADIE_MODEL
     value: vertex
+  # Signs MCP session ids (mcp/web.ts) so every instance agrees. Create it first (docs/MCP.md), then uncomment:
+  # - variable: MCP_SESSION_SECRET
+  #   secret: MCP_SESSION_SECRET
   # Base of the "can you play?" links in emails.
   - variable: APP_URL
     value: https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app

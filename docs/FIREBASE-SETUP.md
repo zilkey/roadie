@@ -124,7 +124,7 @@ The id `demo-band-tracker` is correct for local work and tests and should stay i
 
 ## 11. MCP hosting and tokens
 
-- [ ] Host the MCP server (`npm run mcp`, port 3300, Streamable HTTP at `/mcp`) somewhere with a service account and `GCLOUD_PROJECT=roadie-prod-iab`: a small Cloud Run service, or a tunnel from an always-on machine. **CODE NEEDED:** no Dockerfile or deploy config exists. The bearer token is the only credential, so serve it over HTTPS only. It also needs the real integration env from step 6 or its Gmail/Drive/Calendar tools will fail.
+- [ ] MCP: the app serves it at `APP_URL/mcp`, nothing separate to host. Set the `MCP_SESSION_SECRET` secret and uncomment it in `apphosting.yaml` (commands in `docs/MCP.md`). It uses the real integration env from step 6 or its Gmail/Drive/Calendar tools will fail.
 - [ ] In the app: Admin > Users > tick AI access for the person, then Admin > AI keys > create a key (shown once, only its hash is stored; revoke there).
 - [ ] Connect Claude Code as in `docs/MCP.md` (`claude mcp add --transport http roadie-prod-iab https://<host>/mcp --header "Authorization: Bearer btk_..."`).
 

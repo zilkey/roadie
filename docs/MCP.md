@@ -8,22 +8,31 @@ The Band Tracker MCP server lets Claude (or any MCP client) read and update the 
 2. Admin > **AI keys** > label it (for example "Jeff · Claude Code") > Create key.
 3. Copy the key (`btk_...`) now. It is shown once; only its SHA-256 hash is stored. You can revoke it on the same page; a revoked key stops working immediately, even inside a running session. The page shows when each key was last used.
 
-## 2. Run the server
+## 2. Where the server runs
 
-```
-npm run mcp          # Streamable HTTP on http://127.0.0.1:3300/mcp
+The app serves it: Streamable HTTP at **`APP_URL/mcp`**, a Next route handler (`src/app/mcp/route.ts` → `mcp/web.ts`) in the same process as the rest of Roadie. Nothing extra to deploy. In dev that is `http://127.0.0.1:3100/mcp` with `npm run dev` (or `dev:all`), talking to the emulators like the app does.
+
+It is stateless, because App Hosting runs up to two instances and scales to zero: every request re-checks the key, and the one-runId-per-session rule is kept by making the session id the runId, signed and bound to the key (`mcp/web.ts`). Production therefore needs one secret so all instances sign alike:
+
+```sh
+openssl rand -base64 32 | npx firebase apphosting:secrets:set MCP_SESSION_SECRET --project roadie-prod-iab --data-file -
+npx firebase apphosting:secrets:grantaccess MCP_SESSION_SECRET --backend roadie-web-prod --project roadie-prod-iab
 ```
 
-Dev defaults to the local emulators (start them with `npm run emulators`, then `npm run seed`). For the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`, plus the real `*_BASE_URL`s once the Google clients exist. `MCP_PORT` changes the port. `GET /health` answers without a key.
+then uncomment the `MCP_SESSION_SECRET` entry in `apphosting.yaml`. Without it `/mcp` answers 500 with a message saying so (dev and tests use a random per-process secret).
+
+There is also a stdio entry for Claude Code on your own machine (`npm run mcp:stdio`, key in `MCP_TOKEN`). It points at the emulators by default; for the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`.
 
 ## 3. Connect Claude Code
 
 HTTP (one shared server, many clients):
 
 ```
-claude mcp add --transport http band-tracker http://127.0.0.1:3300/mcp \
+claude mcp add --transport http band-tracker https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app/mcp \
   --header "Authorization: Bearer btk_YOUR_KEY"
 ```
+
+(`http://127.0.0.1:3100/mcp` against the dev server.) Users get the same address from Admin > Claude Code in the app.
 
 stdio (Claude Code starts the server itself; the key goes in the environment):
 
@@ -38,7 +47,7 @@ Equivalent `.mcp.json`:
   "mcpServers": {
     "band-tracker": {
       "type": "http",
-      "url": "http://127.0.0.1:3300/mcp",
+      "url": "https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app/mcp",
       "headers": { "Authorization": "Bearer btk_YOUR_KEY" }
     },
     "band-tracker-stdio": {

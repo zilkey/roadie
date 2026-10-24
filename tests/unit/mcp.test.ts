@@ -4,7 +4,6 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AddressInfo } from "node:net";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startAll } from "../../fakes/run-all";
@@ -15,7 +14,7 @@ import { gmailClient } from "@/server/integrations";
 import { hashToken } from "@/server/availability";
 import { authenticateToken } from "../../mcp/auth";
 import { callTool, toolList } from "../../mcp/tools";
-import { createHttpServer } from "../../mcp/http";
+import { handleMcpRequest, sessionIdFor, SESSION_HEADER } from "../../mcp/web";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -192,56 +191,84 @@ test("asking who is free through MCP drafts the emails instead of sending them",
   assert.equal((await gmail.listMessages()).filter((x) => x.direction === "sent").length, 0);
 });
 
-// ---------- over HTTP ----------
+// ---------- over HTTP (the Next route handler, called in-process) ----------
+
+const URL_ = "http://app.test/mcp";
+/** What `fetch` does for the SDK client: hand the request to the route handler, no socket. */
+const viaHandler: typeof fetch = (input, init) => handleMcpRequest(new Request(input, init));
+const connect = async (token: string) => {
+  const client = new Client({ name: "test", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(URL_), { fetch: viaHandler, requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  return client;
+};
+const post = (headers: Record<string, string>, body: unknown) =>
+  handleMcpRequest(new Request(URL_, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers }, body: JSON.stringify(body) }));
+const toolsList = { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} };
 
 test("HTTP: bearer auth, one runId per session, revoking a key stops a live session", async () => {
   const { token, id } = await newKey();
-  const server = createHttpServer();
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-  const url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
-  try {
-    const bad = await fetch(url, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: "{}" });
-    assert.equal(bad.status, 401);
+  const bad = await post({}, {});
+  assert.equal(bad.status, 401);
+  assert.equal(bad.headers.get("www-authenticate"), "Bearer");
 
-    const client = new Client({ name: "test", version: "1" });
-    await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
-    const tools = await client.listTools();
-    assert.deepEqual(tools.tools.map((t) => t.name).sort(), EXPECTED);
+  const client = await connect(token);
+  const tools = await client.listTools();
+  assert.deepEqual(tools.tools.map((t) => t.name).sort(), EXPECTED);
 
-    const text = (r: any) => JSON.parse(r.content[0].text);
-    const a = text(await client.callTool({ name: "venues.create", arguments: venue("Hi-Dive") }));
-    const b = text(await client.callTool({ name: "contacts.create", arguments: { name: "Pat Booker", emails: ["pat@example.com"] } }));
-    assert.equal(a.runId, b.runId);
-    const hist = await db.listGroup("history", (q) => q.where("runId", "==", a.runId));
-    assert.equal(hist.length, 2);
+  const text = (r: any) => JSON.parse(r.content[0].text);
+  const a = text(await client.callTool({ name: "venues.create", arguments: venue("Hi-Dive") }));
+  const b = text(await client.callTool({ name: "contacts.create", arguments: { name: "Pat Booker", emails: ["pat@example.com"] } }));
+  assert.equal(a.runId, b.runId);
+  const hist = await db.listGroup("history", (q) => q.where("runId", "==", a.runId));
+  assert.equal(hist.length, 2);
 
-    const bad2 = await client.callTool({ name: "venues.create", arguments: { name: "x" } });
-    assert.equal(bad2.isError, true);
-    assert.equal(text(bad2).error.code, "invalid_input");
+  const bad2 = await client.callTool({ name: "venues.create", arguments: { name: "x" } });
+  assert.equal(bad2.isError, true);
+  assert.equal(text(bad2).error.code, "invalid_input");
 
-    // undo through MCP: own run only
-    const mine = text(await client.callTool({ name: "history.myRuns", arguments: {} }));
-    assert.equal(mine.result.runs[0].runId, a.runId);
-    const other = await db.create(importCtx("someone-else", "other-run"), "venues", venue("Not Mine"));
-    const refused = await client.callTool({ name: "history.undoRun", arguments: { runId: "other-run" } });
-    assert.equal(refused.isError, true);
-    assert.equal(text(refused).error.code, "forbidden");
-    assert.equal((await db.get("venues", other.id))!.deletedAt, null);
-    const undone = text(await client.callTool({ name: "history.undoRun", arguments: { runId: a.runId } }));
-    assert.equal(undone.result.reverted.length, 2);
-    assert.notEqual(undone.result.undoRunId, a.runId);
+  // undo through MCP: own run only
+  const mine = text(await client.callTool({ name: "history.myRuns", arguments: {} }));
+  assert.equal(mine.result.runs[0].runId, a.runId);
+  const other = await db.create(importCtx("someone-else", "other-run"), "venues", venue("Not Mine"));
+  const refused = await client.callTool({ name: "history.undoRun", arguments: { runId: "other-run" } });
+  assert.equal(refused.isError, true);
+  assert.equal(text(refused).error.code, "forbidden");
+  assert.equal((await db.get("venues", other.id))!.deletedAt, null);
+  const undone = text(await client.callTool({ name: "history.undoRun", arguments: { runId: a.runId } }));
+  assert.equal(undone.result.reverted.length, 2);
+  assert.notEqual(undone.result.undoRunId, a.runId);
 
-    await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
-    await assert.rejects(client.callTool({ name: "stats.current", arguments: {} }), /revoked/);
-    // and at the tool layer a failed re-check is a structured error too
-    const viaTool = await callTool("stats.current", {}, () => authenticateToken(token).then(() => mcpCtx()));
-    assert.equal(viaTool.isError, true);
-    assert.equal(text(viaTool).error.code, "unauthenticated");
-    await client.close().catch(() => {});
-  } finally {
-    server.closeAllConnections();
-    await new Promise((r) => server.close(r));
+  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
+  await assert.rejects(client.callTool({ name: "stats.current", arguments: {} }), /revoked/);
+  // and at the tool layer a failed re-check is a structured error too
+  const viaTool = await callTool("stats.current", {}, () => authenticateToken(token).then(() => mcpCtx()));
+  assert.equal(viaTool.isError, true);
+  assert.equal(text(viaTool).error.code, "unauthenticated");
+  await client.close().catch(() => {});
+});
+
+test("HTTP sessions are signed: the id carries the runId, is bound to the key, and can't be forged", async () => {
+  const { token } = await newKey();
+  const auth = { Authorization: `Bearer ${token}` };
+  // No session and not an initialize: refused.
+  assert.equal((await post(auth, toolsList)).status, 400);
+  // Initialize issues a session id whose first part is the runId used from then on.
+  const init = await post(auth, { jsonrpc: "2.0", id: 0, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "1" } } });
+  assert.equal(init.status, 200);
+  const sid = init.headers.get(SESSION_HEADER)!;
+  const runId = sid.slice(0, sid.lastIndexOf("."));
+  assert.equal(sid, sessionIdFor(runId, hashToken(token)));
+  const ok = await post({ ...auth, [SESSION_HEADER]: sid }, { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "stats.current", arguments: {} } });
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse((await ok.json()).result.content[0].text).runId, runId);
+  // A made-up id, a tampered signature, and another key's id all get 404 (the client then initializes again).
+  for (const forged of [`${runId}.nope`, `other-run.${sid.slice(sid.lastIndexOf(".") + 1)}`, "x"]) {
+    assert.equal((await post({ ...auth, [SESSION_HEADER]: forged }, toolsList)).status, 404, forged);
   }
+  const theirs = await newKey("Someone else");
+  assert.equal((await post({ Authorization: `Bearer ${theirs.token}`, [SESSION_HEADER]: sid }, toolsList)).status, 404);
+  // Unknown or missing key: 401, before anything else.
+  assert.equal((await post({ Authorization: "Bearer btk_wrong", [SESSION_HEADER]: sid }, toolsList)).status, 401);
 });
 
 test("stdio entry: MCP_TOKEN authenticates, tools list, a bad token fails fast", async () => {

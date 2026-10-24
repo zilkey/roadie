@@ -127,19 +127,18 @@ export function DevelopersGuide() {
       </div>
 
       <div className="card grid gap-3">
-        <H>2. Start the MCP server</H>
-        <p className="s">With the emulators running (<Inline>npm run emulators</Inline>, then <Inline>npm run seed</Inline>), run in the repo:</p>
-        <Code>npm run mcp</Code>
+        <H>2. Where it runs</H>
         <p className="s">
-          Streamable HTTP on <Inline>http://127.0.0.1:3300/mcp</Inline> (<Inline>MCP_PORT</Inline> changes the port; <Inline>GET /health</Inline> answers
-          without a key). Leave it running while you work.
+          The app serves it: Streamable HTTP at <Inline>/mcp</Inline> (<Inline>src/app/mcp/route.ts</Inline> → <Inline>mcp/web.ts</Inline>), so the dev
+          server (<Inline>npm run dev</Inline> with the emulators and seed) already answers at <Inline>http://127.0.0.1:3100/mcp</Inline>. It is
+          stateless: the session id is the signed runId, so production needs the <Inline>MCP_SESSION_SECRET</Inline> secret.
         </p>
       </div>
 
       <div className="card grid gap-3">
         <H>3. Connect Claude Code</H>
         <p className="s">HTTP (one shared server):</p>
-        <Code>{`claude mcp add --transport http band-tracker http://127.0.0.1:3300/mcp \\\n  --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
+        <Code>{`claude mcp add --transport http band-tracker http://127.0.0.1:3100/mcp \\\n  --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
         <p className="s">Or stdio (Claude Code starts the server itself; the key goes in <Inline>MCP_TOKEN</Inline>):</p>
         <Code>{"claude mcp add band-tracker --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /path/to/band-tracker run --silent mcp:stdio"}</Code>
         <p className="s">Use one or the other, not both. Run <Inline>/mcp</Inline> inside Claude Code to check it connected.</p>

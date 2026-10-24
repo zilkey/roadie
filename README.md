@@ -38,13 +38,13 @@ For the band's real booking data instead of the demo: `npm run seed -- --reset -
 | fake Calendar | http://127.0.0.1:3203 |
 | fake Bandsintown | http://127.0.0.1:3204 |
 | fake Spotify | http://127.0.0.1:3205 |
-| MCP server (`npm run mcp`, not in dev:all) | http://127.0.0.1:3300/mcp |
+| MCP server (served by the app) | http://127.0.0.1:3100/mcp |
 
 Each fake's page shows its current state (sent mail, events, files...). fake Gmail has a "Simulate reply" button. State lives in `.fake-data/` (reset any fake with `POST /__reset`). Emulator data is kept in `.emulator-data/` between runs. Both are gitignored.
 
 **Signing in.** With the emulators on, the sign-in page shows "Sign in as..." buttons for the seeded people: Jeff and Ingrid (admins), David, Eric and Emma (members), plus a "stranger" who is not invited and gets turned away. The real "Sign in with Google" button is there too but only works against a real project.
 
-Other scripts: `npm run stats:pull` (daily Spotify pull against the fake), `npm run backup` / `npm run restore` (see `docs/BACKUP.md`), `npm run mcp` (see `docs/MCP.md`), `npx tsx scripts/screenshots.ts` (regenerates `docs/screenshots/`, needs dev:all + seed).
+Other scripts: `npm run stats:pull` (daily Spotify pull against the fake), `npm run backup` / `npm run restore` (see `docs/BACKUP.md`), `npm run mcp:stdio` (see `docs/MCP.md`), `npx tsx scripts/screenshots.ts` (regenerates `docs/screenshots/`, needs dev:all + seed).
 
 ## Tests
 

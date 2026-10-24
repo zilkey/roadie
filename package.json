@@ -17,7 +17,6 @@
     "genkit:ui": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-fake} genkit start -- tsx src/server/assistant/dev.ts",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "mcp": "tsx mcp/server.ts",
     "mcp:stdio": "tsx mcp/server.ts --stdio",
     "backup": "tsx scripts/backup.ts",
     "restore": "tsx scripts/restore.ts",

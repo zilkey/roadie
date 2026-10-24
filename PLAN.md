@@ -29,7 +29,7 @@ Reference for Firebase emulator / Playwright patterns: `/Users/jeff/workspace/wo
 | fake-calendar | 3203 |
 | fake-bandsintown | 3204 |
 | fake-spotify | 3205 |
-| MCP server (HTTP) | 3300 |
+| MCP server (HTTP, served by the app at /mcp) | 3100 |
 
 ## Layout
 ```
