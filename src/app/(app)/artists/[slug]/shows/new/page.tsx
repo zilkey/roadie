@@ -64,7 +64,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   // A pitch with several dates: pick which become shows (one show each, sharing everything else). Default: the first upcoming one.
   const pitchDates = sortedDates(pitch?.dates);
   const [picked, setPicked] = useState<string[] | null>(null);
-  const firstUpcoming = (pitchDates.find((d) => (d.endDate ?? d.date) >= todayStr()) ?? pitchDates[0])?.date;
+  const firstUpcoming = pitchDates.find((d) => d >= todayStr()) ?? pitchDates[0];
   const chosen = pitchDates.length ? (picked ?? (firstUpcoming ? [firstUpcoming] : [])).slice().sort() : [];
   const extraIds = useRef<Record<string, string>>({});
 
@@ -102,12 +102,12 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
               <span className="lbl">Which dates are shows?</span>
               <div className="flex flex-wrap gap-1.5">
                 {pitchDates.map((d) => {
-                  const on = chosen.includes(d.date);
-                  return <PickChip key={d.date} on={on} testid={`pick-date-${d.date}`}
-                    onToggle={() => setPicked(on ? chosen.filter((x) => x !== d.date) : [...chosen, d.date])}>{fmtPitchDate(d)}{d.note ? ` · ${d.note}` : ""}</PickChip>;
+                  const on = chosen.includes(d);
+                  return <PickChip key={d} on={on} testid={`pick-date-${d}`}
+                    onToggle={() => setPicked(on ? chosen.filter((x) => x !== d) : [...chosen, d])}>{fmtPitchDate(d)}</PickChip>;
                 })}
               </div>
-              <span className="s">One show per date, all with the details below. A run starts a show on its first day.</span>
+              <span className="s">One show per date, all with the details below.</span>
             </div>
           ) : undefined} />
       </>}

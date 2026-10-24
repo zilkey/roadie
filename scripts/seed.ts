@@ -108,9 +108,9 @@ async function main() {
   const pitch = (target: { kind: string; id: string; name: string }, status: string, extra: Record<string, unknown> = {}) =>
     create("pitches", { target, status, artistId: artist, pitchedAs: "trio", personnel: ["ingrid", "jeff", "david"].map((k) => mid[k]), assigneeId: uid.jeff, showIds: [], ...extra });
   await pitch({ kind: "venue", id: cervantes, name: "Cervantes' Other Side" }, "idea");
-  await pitch({ kind: "venue", id: dairy, name: "Dairy Arts Center" }, "toPitch", { nextStep: { text: "Fill out the spring submission form", due: "2026-11-05" }, dates: [{ date: "2027-03-12", note: "their preferred" }, { date: "2027-03-19" }] });
-  const pLost = await pitch({ kind: "venue", id: lostlake, name: "Lost Lake Lounge" }, "pitched", { nextStep: { text: "Follow up with Haylee", due: "2026-10-28" }, notes: "Support slot, winter.", dates: [{ date: "2026-09-12", note: "fell through" }, { date: "2027-01-16", note: "hold" }, { date: "2027-01-23" }] });
-  await pitch({ kind: "edition", id: folksEd, name: "Rocky Mountain Folks Festival 2027" }, "waiting", { assigneeId: uid.ingrid, nextStep: { text: "Check for decision", due: "2026-12-15" }, dates: [{ date: "2027-07-23", endDate: "2027-07-25", note: "festival weekend" }] });
+  await pitch({ kind: "venue", id: dairy, name: "Dairy Arts Center" }, "toPitch", { nextStep: { text: "Fill out the spring submission form", due: "2026-11-05" }, dates: ["2027-03-12", "2027-03-19"] });
+  const pLost = await pitch({ kind: "venue", id: lostlake, name: "Lost Lake Lounge" }, "pitched", { nextStep: { text: "Follow up with Haylee", due: "2026-10-28" }, notes: "Support slot, winter.", dates: ["2026-09-12", "2027-01-16", "2027-01-23"] });
+  await pitch({ kind: "edition", id: folksEd, name: "Rocky Mountain Folks Festival 2027" }, "waiting", { assigneeId: uid.ingrid, nextStep: { text: "Check for decision", due: "2026-12-15" }, dates: ["2027-07-23"] });
   await pitch({ kind: "venue", id: fox, name: "Fox Theatre" }, "talking", { pitchedAs: "full-band", personnel: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]) });
   const pHidive = await pitch({ kind: "venue", id: hidive, name: "Hi-Dive" }, "booked");
   await pitch({ kind: "venue", id: washingtons, name: "Washington's" }, "declined", { notes: "Booked through spring." });

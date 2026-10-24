@@ -24,7 +24,8 @@
     "migrate:artists": "tsx scripts/migrate-artists.ts",
     "migrate:strip-gear": "tsx scripts/migrate-strip-gear.ts",
     "migrate:pitched-as": "tsx scripts/migrate-pitched-as.ts",
-    "migrate:venue-notes": "tsx scripts/migrate-venue-notes.ts"
+    "migrate:venue-notes": "tsx scripts/migrate-venue-notes.ts",
+    "migrate:pitch-dates": "tsx scripts/migrate-pitch-dates.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

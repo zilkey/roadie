@@ -12,6 +12,7 @@ import { gmailClient } from "@/server/integrations";
 import { fillTemplate, unfilledFields, buildTemplateContext, buildSearchItems, searchItems, appsOpenThisMonth, upcomingDeadlines } from "@/lib/booking";
 import { firestore } from "@/server/admin";
 import { migratePitchedAs } from "../../scripts/migrate-pitched-as";
+import { migratePitchDates } from "../../scripts/migrate-pitch-dates";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -447,14 +448,14 @@ test("migrate-pitched-as: free text matches a configuration by name, otherwise m
   assert.deepEqual([again.matched, again.cleared], [[], []]);
 });
 
-test("pitch dates: flag and update accept a list, stored sorted; ranges and notes; bad ranges rejected; unflagged pitches have none", async () => {
+test("pitch dates: plain date strings; flag and update accept a list, stored sorted and unique; bad dates and the old object shape rejected", async () => {
   const v = await cmd("venues.create", venue("Lost Lake"));
-  const a = await cmd("pitches.flag", { kind: "venue", id: v.id, dates: [{ date: "2027-02-06", note: "hold" }, { date: "2027-01-16" }] });
-  assert.deepEqual((await db.get("pitches", a.id))!.dates, [{ date: "2027-01-16" }, { date: "2027-02-06", note: "hold" }]);
-  await cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "2027-07-25", endDate: "2027-07-27", note: "festival" }, { date: "2027-03-01" }] } });
-  assert.deepEqual((await db.get("pitches", a.id))!.dates, [{ date: "2027-03-01" }, { date: "2027-07-25", endDate: "2027-07-27", note: "festival" }]);
-  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "2027-03-05", endDate: "2027-03-01" }] } }), /endDate/);
-  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "March 5" }] } }), /YYYY-MM-DD/);
+  const a = await cmd("pitches.flag", { kind: "venue", id: v.id, dates: ["2027-02-06", "2027-01-16", "2027-02-06"] });
+  assert.deepEqual((await db.get("pitches", a.id))!.dates, ["2027-01-16", "2027-02-06"]);
+  await cmd("pitches.update", { id: a.id, patch: { dates: ["2027-07-25", "2027-03-01"] } });
+  assert.deepEqual((await db.get("pitches", a.id))!.dates, ["2027-03-01", "2027-07-25"]);
+  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "2027-03-05" }] } }));
+  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: ["March 5"] } }), /YYYY-MM-DD/);
   assert.equal((await db.get("pitches", a.id))!.dates.length, 2, "a rejected edit changes nothing");
   await cmd("pitches.update", { id: a.id, patch: { notes: "only notes" } });
   assert.equal((await db.get("pitches", a.id))!.dates.length, 2, "other edits leave dates alone");
@@ -462,4 +463,20 @@ test("pitch dates: flag and update accept a list, stored sorted; ranges and note
   assert.deepEqual((await db.get("pitches", a.id))!.dates, []);
   const b = await cmd("pitches.flag", { kind: "venue", id: (await cmd("venues.create", venue("Fox", "Boulder"))).id });
   assert.deepEqual((await db.get("pitches", b.id))!.dates, []);
+});
+
+test("migrate-pitch-dates: {date, endDate, note} becomes sorted unique strings, lost ranges and notes go to the pitch notes; dry run writes nothing; second run is a no-op", async () => {
+  const v = await cmd("venues.create", venue("Old Dates"));
+  const a = await cmd("pitches.flag", { kind: "venue", id: v.id });
+  const fs = firestore();
+  const old = [{ date: "2027-02-06", note: "hold" }, { date: "2027-01-16" }, { date: "2027-07-25", endDate: "2027-07-27" }, { date: "2027-01-16" }];
+  await fs.collection("pitches").doc(a.id).update({ dates: old, notes: "keep me" });
+  const dry = await migratePitchDates(fs, { dryRun: true });
+  assert.equal(dry.migrated.length, 1);
+  assert.deepEqual((await fs.collection("pitches").doc(a.id).get()).data()!.dates, old);
+  await migratePitchDates(fs);
+  const after = (await db.get("pitches", a.id))!;
+  assert.deepEqual(after.dates, ["2027-01-16", "2027-02-06", "2027-07-25"]);
+  assert.equal(after.notes, "keep me\nDates: 2027-02-06 (hold), 2027-07-25 to 2027-07-27");
+  assert.deepEqual((await migratePitchDates(fs)).migrated, []);
 });

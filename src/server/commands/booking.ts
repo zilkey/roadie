@@ -8,7 +8,7 @@ import type { MailMessage } from "../integrations/gmail";
 import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
 import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, sharedOf, writeNote } from "../venues";
 import {
-  VenueInput, venueNoteId, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, PitchDate, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
+  VenueInput, venueNoteId, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
 
 const ROLES = ["admin", "mcp"] as const;
@@ -283,7 +283,7 @@ export const contactsDetach = defineCommand({
 
 const target = z.strictObject({ kind: z.enum(["venue", "promoter", "edition"]), id: z.string().min(1) });
 const nextStep = z.strictObject({ text: z.string().min(1), due: dateStr });
-const pitchDates = z.array(PitchDate);
+const pitchDates = z.array(dateStr);
 const COLL = { venue: "venues", promoter: "promoters", edition: "editions" } as const;
 
 async function targetName(w: Writer, kind: keyof typeof COLL, id: string) {
@@ -315,7 +315,7 @@ async function requireUser(w: Writer, uid: string) {
 
 export const pitchesFlag = defineCommand({
   name: "pitches.flag", roles: [...ROLES], description: "Add a venue, promoter or edition to the Pitch List. If it is already there, returns that pitch ({existing: true}). " +
-    "dates: possible dates for the gig [{date, endDate? (last day of a run), note?}], any number; they are stored sorted.",
+    "dates: possible dates for the gig [YYYY-MM-DD, ...], any number; they are stored sorted and unique.",
   input: target.extend({
     pitchedAs: z.string().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().optional(),
     nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
@@ -343,7 +343,7 @@ const pitchPatch = z.strictObject({
   nextStep: nextStep.nullable().optional(), notes: z.string().nullable().optional(), dates: pitchDates.optional(),
 });
 export const pitchesUpdate = defineCommand({
-  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id or null for not sure; fills personnel unless given), personnel, assigneeId, nextStep {text, due}, notes, dates (the whole list of possible dates [{date, endDate?, note?}]; replaces the old list, stored sorted; [] clears).",
+  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id or null for not sure; fills personnel unless given), personnel, assigneeId, nextStep {text, due}, notes, dates (the whole list of possible dates [YYYY-MM-DD, ...]; replaces the old list, stored sorted; [] clears).",
   input: z.strictObject({ id: z.string().min(1), patch: pitchPatch }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requirePitch(w, id);

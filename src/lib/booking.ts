@@ -115,14 +115,14 @@ export const fmtDate = (s?: string) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-export interface PitchDateLike { date: string; endDate?: string; note?: string }
-/** A pitch's dates in date order (missing = none). */
-export const sortedDates = <T extends PitchDateLike>(dates?: T[]): T[] => [...(dates ?? [])].sort((a, b) => a.date.localeCompare(b.date) || (a.endDate ?? "").localeCompare(b.endDate ?? ""));
-/** A date has passed once its last day (endDate, else date) is before today. */
-export const datePast = (d: PitchDateLike, today: string) => (d.endDate ?? d.date) < today;
-/** "Nov 14" or "Nov 14 – 16" / "Nov 30 – Dec 2" for a run. */
-export function fmtPitchDate(d: PitchDateLike): string {
-  if (!d.endDate || d.endDate === d.date) return fmtDate(d.date);
-  const a = new Date(d.date + "T00:00:00"), b = new Date(d.endDate + "T00:00:00");
-  return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear() ? `${fmtDate(d.date)} – ${b.getDate()}` : `${fmtDate(d.date)} – ${fmtDate(d.endDate)}`;
+/** A pitch date is just a "YYYY-MM-DD" string. Docs written before that were `{date, endDate?, note?}`; reading one still works (until migrate:pitch-dates has run). */
+export type PitchDateIn = string | { date: string };
+/** A pitch's dates, sorted and unique (missing = none). */
+export const sortedDates = (dates?: readonly PitchDateIn[]): string[] =>
+  [...new Set((dates ?? []).map((d) => (typeof d === "string" ? d : d.date)))].sort();
+/** A date has passed once it is before today. */
+export const datePast = (d: string, today: string) => d < today;
+/** "Sat, Nov 21". */
+export function fmtPitchDate(d: string): string {
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }

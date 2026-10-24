@@ -181,10 +181,17 @@ test("the venue page's Pitch card: add to the pitch list, edit it, comment, aban
   await expect(page.getByTestId("status-chip").first()).toBeVisible();
 
   await page.getByTestId("pitch-edit").click();
+  await page.getByTestId("pitch-edit-dates-date").fill("2027-02-12");
   await page.getByTestId("pitch-edit-dates-add").click();
-  await page.getByTestId("pitch-edit-dates-date-0").fill("2027-02-12");
+  await expect(page.getByTestId("pitch-edit-dates-date")).toHaveValue("");
+  await page.getByTestId("pitch-edit-dates-date").fill("2027-03-05");
+  await page.getByTestId("pitch-edit-dates-date").press("Enter");
+  await expect(page.getByTestId("pitch-edit-dates-chip-1")).toHaveText("Fri, Mar 5");
+  await page.getByTestId("pitch-edit-dates-remove-1").click();
+  await expect(page.getByTestId("pitch-edit-dates-chip-1")).toHaveCount(0);
+  await expect(page.getByTestId("edit-configurations")).toHaveCSS("text-decoration-line", "underline"); // the Edit next to Configuration is a link
   await page.getByTestId("pitch-edit-save").click();
-  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Feb");
+  await expect(page.getByTestId("pitch-dates-summary")).toContainText("Fri, Feb 12");
 
   const text = `Sent the EPK ${Date.now()}`;
   await page.getByTestId("pitch-comment-input").fill(text);

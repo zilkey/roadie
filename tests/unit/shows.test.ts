@@ -458,7 +458,7 @@ test("showName / publicShowName / showCity", () => {
 });
 
 test("Booked it once per chosen pitch date: each show links to the pitch, the pitch is booked once", async () => {
-  await cmd("pitches.update", { id: pitchId, patch: { dates: [{ date: "2027-01-16" }, { date: "2027-01-17", note: "second night" }] } });
+  await cmd("pitches.update", { id: pitchId, patch: { dates: ["2027-01-16", "2027-01-17"] } });
   const a = await create({ date: "2027-01-16" });
   const b = await create({ date: "2027-01-17" });
   const pitch = (await db.get("pitches", pitchId))!;

@@ -115,8 +115,8 @@ test("Booked it with several pitch dates: pick which become shows, one show per 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("group-waiting").getByText("Rocky Mountain Folks").click();
+  await page.getByTestId("pitch-dates-date").fill("2027-07-16");
   await page.getByTestId("pitch-dates-add").click();
-  await page.getByTestId("pitch-dates-date-1").fill("2027-07-16");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   const pitchUrl = page.url();
   await page.getByTestId("booked-it").click();

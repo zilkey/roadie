@@ -8,8 +8,8 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection } from "@/lib/firestore-hooks";
-import { ConfigurationPicker, Flagged, PitchDates, PitchDatesEditor, StatusChip, completeDates, datesProblem, type DateRow, type PitchRow } from "@/components/booking/common";
-import { fmtPitchDate, isActive, sortedDates, todayStr } from "@/lib/booking";
+import { ConfigurationPicker, Flagged, PitchDates, PitchDatesField, StatusChip, type PitchRow } from "@/components/booking/common";
+import { isActive, sortedDates, todayStr } from "@/lib/booking";
 import type { Comment, User } from "@/schema";
 
 type Stamp = { toMillis(): number };
@@ -57,7 +57,7 @@ function PastRow({ p }: { p: PitchRow }) {
   return (
     <tr className="border-t border-line" data-testid={`past-pitch-${p.id}`}>
       <td className="py-2 pr-3 whitespace-nowrap"><Link href={`/booking/pitches/${p.id}`} className="font-semibold" data-testid={`pitch-link-${p.id}`}>{config}</Link></td>
-      <td className="py-2 pr-3">{sortedDates(p.dates).map(fmtPitchDate).join(", ") || "—"}</td>
+      <td className="py-2 pr-3">{sortedDates(p.dates).length ? <PitchDates dates={p.dates} today={todayStr()} /> : "—"}</td>
       <td className="py-2 pr-3 whitespace-nowrap"><span className={show ? "chip g" : "chip"}>{show ? "Became a show" : "Abandoned"}</span></td>
       <td className="py-2 text-right">{comments?.length ?? ""}</td>
     </tr>
@@ -71,17 +71,15 @@ function OpenPitch({ p }: { p: PitchRow }) {
   const comments = (useCollection<Comment>(`pitches/${p.id}/comments`).rows ?? []).slice().sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
   const [edit, setEdit] = useState(false);
   const [cfg, setCfg] = useState("");
-  const [rows, setRows] = useState<DateRow[]>([]);
+  const [rows, setRows] = useState<string[]>([]);
   const draft = useDraft(draftPath.newUnder("pitches", p.id, "comments"), { text: "" }, { title: (v) => `Comment on ${p.target.name}: ${v.text.slice(0, 40)}` });
   const commentId = useRef(newMutationId());
   const config = artist?.configurations.find((c) => c.id === p.pitchedAs)?.name;
-  const problem = datesProblem(rows);
 
-  function openEdit() { setCfg(p.pitchedAs ?? ""); setRows(sortedDates(p.dates).map((d) => ({ ...d }))); setError(null); setEdit(true); }
+  function openEdit() { setCfg(p.pitchedAs ?? ""); setRows(sortedDates(p.dates)); setError(null); setEdit(true); }
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    if (problem) return;
-    if (await call("pitches.update", { id: p.id, patch: { pitchedAs: cfg || null, dates: completeDates(rows) } })) setEdit(false);
+    if (await call("pitches.update", { id: p.id, patch: { pitchedAs: cfg || null, dates: rows } })) setEdit(false);
   }
   async function post() {
     await draft.settle();
@@ -99,14 +97,13 @@ function OpenPitch({ p }: { p: PitchRow }) {
     return (
       <form className="grid gap-3" onSubmit={save} data-testid="pitch-edit-form">
         <div className="md:max-w-xs"><ConfigurationPicker value={cfg} onChange={setCfg} testid="pitch-edit-config" /></div>
-        <PitchDatesEditor rows={rows} onChange={setRows} testid="pitch-edit-dates" />
-        {problem && <span className="note s" data-testid="pitch-edit-problem">{problem}</span>}
+        <PitchDatesField dates={rows} onChange={setRows} testid="pitch-edit-dates" />
         <ErrorBox error={error} />
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className="btn danger sm" onClick={remove} disabled={busy} data-testid="pitch-remove">Remove from pitch list</button>
           <span className="flex-1" />
           <button type="button" className="btn ghost" onClick={() => setEdit(false)} data-testid="pitch-edit-cancel">Cancel</button>
-          <button type="submit" className="btn acc" disabled={busy || !!problem} data-testid="pitch-edit-save">Save pitch</button>
+          <button type="submit" className="btn acc" disabled={busy} data-testid="pitch-edit-save">Save pitch</button>
         </div>
       </form>
     );
@@ -117,7 +114,7 @@ function OpenPitch({ p }: { p: PitchRow }) {
         <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)] md:gap-x-8">
           <div className="grid gap-1"><span className="lbl">Configuration</span><b data-testid="pitch-config">{config ?? "Not sure yet"}</b></div>
           <div className="grid gap-1"><span className="lbl">Dates</span>
-            {(p.dates ?? []).length ? <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" /> : <span className="s">None yet</span>}
+            <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="None yet" />
           </div>
         </div>
         <div className="flex items-center gap-2"><StatusChip status={p.status} /><button className="btn ghost sm" onClick={openEdit} data-testid="pitch-edit">Edit pitch</button></div>

@@ -3,7 +3,7 @@ import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
-import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type Status } from "@/lib/booking";
+import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type PitchDateIn, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
 import { withNotes, type NoteFields } from "@/lib/venues";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -11,7 +11,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, PitchDate, Comment } from "@/schema";
+import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
 
@@ -81,7 +81,7 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { value: string; onChange(id: string): void; testid?: string; onKeyDown?: React.KeyboardEventHandler }) {
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
-  const edit = artist.role === "admin" && <Link href="/admin/artist" className="s font-semibold" data-testid="edit-configurations">{configs.length === 0 ? "Add configurations" : "Edit"}</Link>;
+  const edit = artist.role === "admin" && <Link href="/admin/artist" className="link text-[13px] font-semibold" data-testid="edit-configurations">{configs.length === 0 ? "Add configurations" : "Edit"}</Link>;
   return (
     <div className="grid gap-1" onKeyDown={onKeyDown}>
       <div className="flex items-baseline justify-between gap-2">
@@ -95,81 +95,48 @@ export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { va
   );
 }
 
-/** A pitch's possible dates, one row each: date, optional last day of a run, optional note. Rows may be blank while being filled in. */
-export type DateRow = { date: string; endDate?: string; note?: string };
-export const completeDates = (rows: DateRow[]): PitchDate[] =>
-  sortedDates(rows.filter((r) => r.date).map((r) => ({ date: r.date, ...(r.endDate ? { endDate: r.endDate } : {}), ...(r.note?.trim() ? { note: r.note.trim() } : {}) })));
-export const datesProblem = (rows: DateRow[]) => rows.some((r) => r.date && r.endDate && r.endDate < r.date) ? "an end date can't be before its start" : null;
-
-export function PitchDatesEditor({ rows, onChange, onBlur, testid }: { rows: DateRow[]; onChange(rows: DateRow[]): void; onBlur?(): void; testid: string }) {
-  const set = (i: number, p: Partial<DateRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+/**
+ * A pitch's possible dates: one date input with a round + beside it, and the dates so far as chips ("Sat, Nov 21") with an x to
+ * remove each. + (or Enter in the input) adds the typed date, the input clears, + is off while it is empty, a date already there is
+ * ignored. `dates` is the sorted, unique list; the one control used by the flag form, the pitch page and the venue page.
+ */
+export function PitchDatesField({ dates, onChange, onBlur, testid, today = todayStr() }: { dates: string[]; onChange(dates: string[]): void; onBlur?(): void; testid: string; today?: string }) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    if (draft) onChange(sortedDates([...dates, draft]));
+    setDraft("");
+  }
+  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); add(); } };
   return (
     <div className="grid gap-2" data-testid={testid} onBlur={onBlur}>
-      <span className="lbl">Possible dates</span>
-      {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-2 items-end gap-2 md:grid-cols-[9rem_9rem_minmax(0,1fr)_auto]" data-testid={`${testid}-row-${i}`}>
-          <label className="grid gap-1"><span className="s">Date</span><input className="input" type="date" value={r.date} onChange={(e) => set(i, { date: e.target.value })} data-testid={`${testid}-date-${i}`} /></label>
-          <label className="grid gap-1"><span className="s">Through (optional)</span><input className="input" type="date" value={r.endDate ?? ""} min={r.date || undefined} onChange={(e) => set(i, { endDate: e.target.value })} data-testid={`${testid}-end-${i}`} /></label>
-          <label className="col-span-2 grid gap-1 md:col-span-1"><span className="s">Note</span><input className="input" placeholder="e.g. their preferred" value={r.note ?? ""} onChange={(e) => set(i, { note: e.target.value })} data-testid={`${testid}-note-${i}`} /></label>
-          <button type="button" className="btn danger sm col-span-2 justify-self-start md:col-span-1" onClick={() => onChange(rows.filter((_, j) => j !== i))} data-testid={`${testid}-remove-${i}`}>Remove</button>
-        </div>
-      ))}
-      <button type="button" className="btn ghost sm justify-self-start" onClick={() => onChange([...rows, { date: "" }])} data-testid={`${testid}-add`}>Add a date</button>
-    </div>
-  );
-}
-
-/**
- * Possible dates as removable chips with a date input and a round + beside it (the flag form). Same data as PitchDatesEditor:
- * a run's last day and a note are optional extras next to the date. A date only joins the list when + is pressed.
- */
-export function PitchDatesChips({ rows, onChange, testid }: { rows: DateRow[]; onChange(rows: DateRow[]): void; testid: string }) {
-  const [draft, setDraft] = useState<DateRow>({ date: "" });
-  const bad = !!draft.endDate && draft.endDate < draft.date;
-  const canAdd = !!draft.date && !bad;
-  function add() {
-    if (!canAdd) return;
-    onChange(completeDates([...rows, draft]));
-    setDraft({ date: "" });
-  }
-  const enter = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
-  return (
-    <div className="grid gap-2" data-testid={testid}>
       <label className="lbl" htmlFor={`${testid}-date`}>Possible dates</label>
       <div className="flex flex-wrap items-center gap-2">
-        <input id={`${testid}-date`} className="input !w-auto" type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} onKeyDown={enter} data-testid={`${testid}-date`} />
-        <input className="input !w-auto" type="date" aria-label="Through (optional)" title="Through (optional)" value={draft.endDate ?? ""} min={draft.date || undefined} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} onKeyDown={enter} data-testid={`${testid}-end`} />
-        <input className="input !w-40" placeholder="Note (optional)" aria-label="Note (optional)" value={draft.note ?? ""} onChange={(e) => setDraft({ ...draft, note: e.target.value })} onKeyDown={enter} data-testid={`${testid}-note`} />
-        <button type="button" className="round-btn" aria-label="Add date" disabled={!canAdd} onClick={add} data-testid={`${testid}-add`}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
-        </button>
-      </div>
-      {(draft.date || draft.endDate) && <span className="s" data-testid={`${testid}-hint`}>{bad ? "An end date can't be before its start." : "Press + to add this date."}</span>}
-      {rows.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {rows.map((r, i) => (
-            <span key={`${r.date}-${i}`} className="chip w lg" data-testid={`${testid}-chip-${i}`}>
-              {fmtPitchDate(r)}{r.note ? ` (${r.note})` : ""}
-              <button type="button" aria-label={`Remove ${fmtPitchDate(r)}`} onClick={() => onChange(rows.filter((_, j) => j !== i))} data-testid={`${testid}-remove-${i}`}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
-              </button>
-            </span>
-          ))}
+        <div className="flex items-center gap-1.5">
+          <input id={`${testid}-date`} className="input !w-auto" type="date" value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={enter} data-testid={`${testid}-date`} />
+          <button type="button" className="round-btn" aria-label="Add date" disabled={!draft} onClick={add} data-testid={`${testid}-add`}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>
+          </button>
         </div>
-      )}
+        {dates.map((d, i) => (
+          <span key={d} className={`chip w lg ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"} data-testid={`${testid}-chip-${i}`}>
+            {fmtPitchDate(d)}
+            <button type="button" aria-label={`Remove ${fmtPitchDate(d)}`} onClick={() => onChange(dates.filter((x) => x !== d))} data-testid={`${testid}-remove-${i}`}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
 
-/** The dates of a pitch as one line of text, past ones dimmed. Nothing when there are none. */
-export function PitchDates({ dates, today, testid }: { dates?: PitchDate[]; today: string; testid?: string }) {
+/** A pitch's dates as read-only chips, past ones dimmed. Nothing when there are none (pass `empty` to say so). */
+export function PitchDates({ dates, today, testid, empty }: { dates?: readonly PitchDateIn[]; today: string; testid?: string; empty?: string }) {
   const list = sortedDates(dates);
-  if (!list.length) return null;
+  if (!list.length) return empty ? <span className="s" data-testid={testid}>{empty}</span> : null;
   return (
-    <span className="s flex flex-wrap gap-x-2" data-testid={testid}>
-      {list.map((d, i) => (
-        <span key={i} className={datePast(d, today) ? "opacity-50" : "font-semibold"} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}{d.note ? ` (${d.note})` : ""}</span>
-      ))}
+    <span className="flex flex-wrap items-center gap-1.5" data-testid={testid}>
+      {list.map((d) => <span key={d} className={`chip w ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}</span>)}
     </span>
   );
 }
@@ -186,7 +153,7 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
   const [showForm, setShowForm] = useState(false);
   const [pitchedAs, setPitchedAs] = useState("");
   const [comment, setComment] = useState("");
-  const [dates, setDates] = useState<DateRow[]>([]);
+  const [dates, setDates] = useState<string[]>([]);
   const btn = useRef<HTMLButtonElement>(null);
   const formOpen = showForm && !open;
 
@@ -197,11 +164,9 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
     if (formOpen) return close();
     setShowForm(true);
   }
-  const problem = datesProblem(dates);
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
-    if (problem) return;
-    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(completeDates(dates).length ? { dates: completeDates(dates) } : {}), ...(pitchedAs ? { pitchedAs } : {}) });
+    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(dates.length ? { dates } : {}), ...(pitchedAs ? { pitchedAs } : {}) });
     if (!r) return;
     // the first comment is a real comment on the new pitch (its timeline), not the pitch's notes field
     if (comment.trim()) await call("pitches.comment", { id: r.id, body: comment.trim() });
@@ -223,17 +188,16 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
           className={opts.square ? "card-tint grid gap-4" : "mt-2 grid w-full gap-2 border-t border-line pt-2"} data-testid={`flag-form-${id}`}>
           <div className="grid gap-4 md:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] md:items-start">
             <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
-            <PitchDatesChips rows={dates} onChange={setDates} testid={`flag-dates-${id}`} />
+            <PitchDatesField dates={dates} onChange={setDates} testid={`flag-dates-${id}`} />
           </div>
           <label className="grid gap-1">
             <span className="lbl">First comment <span className="font-medium">(optional)</span></span>
             <input className="input" type="text" value={comment} placeholder="e.g. Emailed Sam, they book 3 months out" data-testid={`flag-comment-${id}`}
               onChange={(e) => setComment(e.target.value)} />
           </label>
-          {problem && <span className="note s" data-testid={`flag-dates-problem-${id}`}>{problem}</span>}
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn ghost" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
-            <button type="submit" className="btn acc" disabled={busy || !!problem} data-testid={`flag-submit-${id}`}>Add to pitch list</button>
+            <button type="submit" className="btn acc" disabled={busy} data-testid={`flag-submit-${id}`}>Add to pitch list</button>
           </div>
         </form>
       )}
@@ -247,7 +211,7 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
 /** The pitch behind a flagged row: its configuration, possible dates and the latest comment, in the tinted strip under the row. */
 export function PitchStrip({ pitch }: { pitch: PitchRow }) {
   const artist = useArtist();
-  const config = artist.doc?.configurations?.find((c) => c.id === pitch.pitchedAs)?.name ?? "Not sure yet";
+  const config = artist.doc?.configurations?.find((c) => c.id === pitch.pitchedAs)?.name ?? "No configuration yet";
   const dates = sortedDates(pitch.dates);
   const today = todayStr();
   const last = useCollection<Comment>(`pitches/${pitch.id}/comments`, { order: ["createdAt", "desc"], limit: 1 }).rows?.[0];
@@ -256,18 +220,16 @@ export function PitchStrip({ pitch }: { pitch: PitchRow }) {
   return (
     <div className="card-tint grid gap-2" data-testid={`pitch-strip-${pitch.id}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <b data-testid={`pitch-strip-config-${pitch.id}`}>{config}</b>
-        <div className="flex flex-wrap items-center gap-2" data-testid={`pitch-strip-dates-${pitch.id}`}>
-          {dates.map((d, i) => <span key={i} className={`chip w ${datePast(d, today) ? "opacity-60" : ""}`} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}{d.note ? ` (${d.note})` : ""}</span>)}
-          {dates.length === 0 && <span className="s">No dates yet</span>}
+        <b className={pitch.pitchedAs ? "" : "font-medium text-muted"} data-testid={`pitch-strip-config-${pitch.id}`}>{config}</b>
+        <span className="text-muted" aria-hidden>|</span>
+        <PitchDates dates={dates} today={today} testid={`pitch-strip-dates-${pitch.id}`} empty="No dates yet" />
+      </div>
+      {last && (
+        <div className="flex min-w-0 items-baseline gap-2 text-sm" data-testid={`pitch-strip-comment-${pitch.id}`}>
+          <span className="lbl uppercase tracking-wider">Last comment</span>
+          <span className="min-w-0 flex-1 truncate">{last.body}</span><span className="s shrink-0">{when}</span>
         </div>
-      </div>
-      <div className="flex min-w-0 items-baseline gap-2 text-sm" data-testid={`pitch-strip-comment-${pitch.id}`}>
-        <span className="lbl uppercase tracking-wider">Last comment</span>
-        {last
-          ? <><span className="min-w-0 flex-1 truncate">{last.body}</span><span className="s shrink-0">{when}</span></>
-          : <span className="s">None yet</span>}
-      </div>
+      )}
     </div>
   );
 }
