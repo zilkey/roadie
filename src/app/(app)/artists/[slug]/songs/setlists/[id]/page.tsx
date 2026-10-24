@@ -9,6 +9,7 @@ import { todayStr } from "@/lib/booking";
 import { fmtLen, move, parseLen, setlistSlack } from "@/lib/music";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
+import { useDragReorder } from "@/lib/drag-reorder";
 import { Menu } from "@/components/Menu";
 import { Missing, fmtDay, useMusic } from "@/components/music/common";
 import type { SetlistItem } from "@/schema";
@@ -38,7 +39,6 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   // Existing record = autosave through setlists.update: the name saves as you type, list changes save at once (status + Undo toast).
   const as = useAutosave({ command: "setlists.update", id: sl.id, rev: sl.rev, title: sl.name });
   const [items, setItems] = useState<Item[]>(sl.items);
-  const [drag, setDrag] = useState<number | null>(null);
   const [songId, setSongId] = useState("");
   const [breakTitle, setBreakTitle] = useState("Talk / tune");
   const [breakLen, setBreakLen] = useState("1:00");
@@ -55,6 +55,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
 
   const save = async (next: Item[]) => { setItems(next); as.patch({ items: payload(next) }, { now: true }); };
   const reorder = (from: number, to: number) => { const next = move(items, from, to); if (next !== items) save(next); };
+  const dr = useDragReorder(reorder);
   const pickable = m.songs.filter((s) => s.status === "active" || s.status === "learning").sort((a, b) => a.title.localeCompare(b.title));
   const songTitle = (i: Item) => (i.type === "song" ? m.songs.find((s) => s.id === i.songId)?.title ?? i.title : i.title);
 
@@ -82,7 +83,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
         {items.length === 0 && <li className="s">Nothing in this setlist yet.</li>}
         {items.map((it, i) => (
           <li key={`${i}-${it.songId ?? it.title}`} className="flex items-center gap-2 rounded-lg border border-line bg-panel p-2" data-testid={`item-${i}`}
-            draggable={admin} onDragStart={() => setDrag(i)} onDragOver={(e) => admin && e.preventDefault()} onDrop={() => { if (admin && drag != null) reorder(drag, i); setDrag(null); }} onDragEnd={() => setDrag(null)}>
+            {...(admin ? { ...dr.row(i), ...dr.handle(i) } : {})}>
             {admin && <span className="cursor-grab select-none text-muted" aria-hidden>⋮⋮</span>}
             <span className="min-w-0 flex-1 truncate">
               {it.type === "song" && it.songId ? <Link href={`/songs/${it.songId}`} className="font-semibold" data-testid="item-title">{songTitle(it)}</Link> : <span className="italic" data-testid="item-title">{it.title}</span>}

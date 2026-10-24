@@ -17,14 +17,20 @@ export const Configuration = z.strictObject({
   billingName: z.string().min(1),
   musicianIds: z.array(id),
 });
+/** The artist's public links, one per platform, in the order the Artist page lists them. */
+export const ARTIST_LINKS = [
+  ["website", "Website"], ["spotify", "Spotify"], ["appleMusic", "Apple Music"], ["bandcamp", "Bandcamp"],
+  ["youtube", "YouTube"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["facebook", "Facebook"],
+  ["tidal", "Tidal"], ["linktree", "Linktree"], ["bandsintown", "Bandsintown"],
+] as const;
+export type ArtistLinkKey = (typeof ARTIST_LINKS)[number][0];
+const ArtistLinks = z.strictObject(Object.fromEntries(ARTIST_LINKS.map(([k]) => [k, z.string().optional()])) as Record<ArtistLinkKey, z.ZodOptional<z.ZodString>>);
+
 export const Artist = entity({
   name: z.string().min(1),
   slug: artistSlug,
   configurations: z.array(Configuration),
-  links: z.strictObject({
-    spotify: z.string().optional(), instagram: z.string().optional(),
-    website: z.string().optional(), bandsintown: z.string().optional(),
-  }),
+  links: ArtistLinks,
   driveFolderId: z.string(),
 });
 export const ArtistInput = Artist.omit(serverMask);

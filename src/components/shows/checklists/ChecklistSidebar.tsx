@@ -7,6 +7,7 @@ import type { ShowRow } from "../common";
 import { Menu } from "@/components/Menu";
 import { UnfinishedPlaceholder } from "../page/kit";
 import { ChecklistCard } from "./ChecklistCard";
+import { useDragReorder } from "@/lib/drag-reorder";
 import { moved, useChecklistTemplates } from "./shared";
 
 export interface ChecklistSidebarProps {
@@ -28,9 +29,13 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
   const [name, setName] = useState("");
   const [freshId, setFreshId] = useState<string>();
   const [draft, setDraft] = useState<string[] | null>(null);
-  const [dragFrom, setDragFrom] = useState<number | null>(null);
   const liveTemplates = new Set(templates.map((t) => t.id));
   const { done, total } = checklistCount(lists);
+  // While reordering: the draft order, dropping lists since deleted and appending ones since added.
+  const byId = new Map(lists.map((l) => [l.id, l]));
+  const order = (draft ?? []).filter((id) => byId.has(id));
+  if (draft) for (const l of lists) if (!order.includes(l.id)) order.push(l.id);
+  const dr = useDragReorder((from, to) => setDraft(moved(order, from, to)));
 
   async function addTemplate(templateId: string) {
     await call("shows.addChecklist", { id: show.id, templateId });
@@ -64,9 +69,6 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
   );
 
   if (draft) {
-    const byId = new Map(lists.map((l) => [l.id, l]));
-    const order = draft.filter((id) => byId.has(id));
-    for (const l of lists) if (!order.includes(l.id)) order.push(l.id);
     const save = async () => {
       if (await call("shows.reorderChecklists", { id: show.id, listIds: order })) setDraft(null);
     };
@@ -81,12 +83,8 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
           {order.map((id, i) => {
             const l = byId.get(id)!;
             return (
-              <li key={id} draggable className={`flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5${dragFrom === i ? " opacity-50" : ""}`}
-                data-testid={`reorder-row-${id}`}
-                onDragStart={(e) => { setDragFrom(i); e.dataTransfer.effectAllowed = "move"; }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => { e.preventDefault(); if (dragFrom !== null) setDraft(moved(order, dragFrom, i)); setDragFrom(null); }}
-                onDragEnd={() => setDragFrom(null)}>
+              <li key={id} className="flex items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5"
+                data-testid={`reorder-row-${id}`} {...dr.row(i)} {...dr.handle(i)}>
                 <svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" className="shrink-0 cursor-grab text-[var(--muted)]" aria-hidden>
                   {[3, 11].flatMap((x) => [3, 9, 15].map((y) => <circle key={`${x}${y}`} cx={x} cy={y} r="1.5" />))}
                 </svg>

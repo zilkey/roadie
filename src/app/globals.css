@@ -309,3 +309,45 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.hold { background: #3a2414; color: #f2a36b; } }
 /* Who's playing opens Ask who's free from its own button, so the ask's built-in toggle is hidden there */
 .hide-ask-toggle [data-testid="ask-toggle"] { display: none; }
+
+/* Artist configurations */
+.cfg-form { display: grid; gap: 16px; background: var(--empty); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.cfg-form h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.cfg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.cfg-fields label, .cfg-form legend { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.cfg-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.cfg-form legend { padding: 0; }
+.cfg-members { display: flex; flex-wrap: wrap; gap: 8px; }
+.cfg-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.cfg-scroll { overflow-x: auto; }
+.cfg-table { width: 100%; min-width: 640px; border-collapse: collapse; }
+.cfg-table th { text-align: left; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.cfg-table td { padding: 10px 14px; border-bottom: 1px solid var(--divider); vertical-align: middle; }
+.cfg-table tbody tr:last-child td { border-bottom: 0; }
+.cfg-table td.nm { font-weight: 700; color: var(--ink); }
+.cfg-table td.mem { display: table-cell; }
+.cfg-table td.mem .chip { margin: 2px 6px 2px 0; }
+.cfg-table td.act, .cfg-table th.act { text-align: right; white-space: nowrap; }
+/* Links: saved rows and the add row share one grid (label = dropdown width, action = Add width) so the fields line up. */
+.link-list, .link-add { --link-k: 180px; --link-act: 76px; }
+.link-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.link-list li, .link-add { display: grid; grid-template-columns: var(--link-k) minmax(0, 1fr) var(--link-act); align-items: center; gap: 10px; }
+.link-list label { font-size: 14px; font-weight: 600; color: var(--ink); }
+.link-list .icon-btn, .link-add .btn { width: 100%; }
+@media (max-width: 640px) {
+  .link-list li, .link-add { grid-template-columns: minmax(0, 1fr) var(--link-act); }
+  .link-list label { grid-column: 1 / -1; margin-bottom: -4px; }
+  .link-add .select { grid-column: 1 / -1; }
+}
+.cfg-table td.act > * { vertical-align: middle; }
+.cfg-table td.act > span { margin-right: 8px; font-size: 14px; }
+.cfg-table tr[data-editing="1"] td { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.icon-btn.danger { color: var(--danger); }
+.icon-btn.danger:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* Drag to reorder (useDragReorder): the dragged row dims; an accent line shows where it will land. */
+[data-drag-row] { position: relative; }
+[data-drag="from"] { opacity: .4; }
+[data-drag="above"]::before, [data-drag="below"]::after { content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+[data-drag="above"]::before { top: -5px; }
+[data-drag="below"]::after { bottom: -5px; }

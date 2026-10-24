@@ -27,16 +27,17 @@ test("admin: phone layout uses bottom tabs", async ({ page }) => {
 
 test("admin edits artist configurations", async ({ page }) => {
   await signInAs(page, "jeff");
+  await expect(page).toHaveURL(/\/home$/);
   await page.goto(A("/admin/artist"));
   await expect(page.getByTestId("config-trio")).toBeVisible();
   await expect(page.getByTestId("artist-save")).toHaveCount(0); // autosave: no Save button
   await expect(page.getByText("Add gear")).toHaveCount(0); // gear lives on each show, not here
   await page.getByTestId("artist-name").fill("Ingrid Avison Band Test");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
   await page.reload();
   await expect(page.getByTestId("artist-name")).toHaveValue("Ingrid Avison Band Test");
   await page.getByTestId("artist-name").fill("Ingrid Avison Band");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
   // a new configuration is a draft until Add
   await page.getByTestId("add-config").click();
   await page.getByTestId("new-config-name").fill("Quartet");

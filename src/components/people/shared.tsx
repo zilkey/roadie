@@ -82,6 +82,7 @@ export const AlertIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" f
 const ic = (d: string) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{d.split("|").map((p) => <path key={p} d={p} />)}</svg>;
 export const Icons = {
   edit: ic("M4 20h4L19 9l-4-4L4 16z|M13.5 6.5l4 4"),
+  trash: ic("M3 6h18|M8 6V4h8v2|M19 6l-1 14H6L5 6"),
   key: ic("M14 10a4 4 0 11-1 2.6L4 21v-3h3v-3h3l2.4-2.4"),
   band: ic("M9 18V6l10-2v12|M9 18a3 3 0 11-3-3 3 3 0 013 3zM19 16a3 3 0 11-3-3 3 3 0 013 3z"),
   signOut: ic("M15 4h4v16h-4|M10 8l-4 4 4 4|M6 12h10"),
