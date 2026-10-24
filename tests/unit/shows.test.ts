@@ -391,19 +391,19 @@ test("showFilter: every show is upcoming, played, canceled or dropped", () => {
 });
 
 test("house concert: no venue, hosts + place; name, kind and band-PA default; validation", async () => {
-  const host = (await cmd("contacts.create", { name: "Jennifer McCarthy", emails: ["jen@example.com"], phones: [] })).id;
-  const co = (await cmd("contacts.create", { name: "Tom McCarthy", emails: [], phones: [] })).id;
+  const host = (await cmd("contacts.create", { name: "Jennifer Testhost", emails: ["jen@example.com"], phones: [] })).id;
+  const co = (await cmd("contacts.create", { name: "Tom Testhost", emails: [], phones: [] })).id;
   const r = await cmd("shows.create", { date: "2027-03-06", hostContactIds: [host, co], place: { city: "Longmont", address: "12 Pine St" }, addToCalendar: true, billedAs: "duo" });
   const s = (await db.get("shows", r.id))!;
   assert.equal(s.kind, "house");
   assert.equal(s.venue, undefined);
   assert.deepEqual(s.place, { city: "Longmont", address: "12 Pine St" });
   assert.deepEqual(s.hostContactIds, [host, co]);
-  assert.equal(s.hostName, "Jennifer McCarthy & Tom McCarthy");
+  assert.equal(s.hostName, "Jennifer Testhost & Tom Testhost");
   assert.equal(s.sound.provider, "bandProvided", "house concerts default to our PA");
   assert.deepEqual((await db.get("showDeals", r.id))!.contactIds, [host, co], "the deal's contacts are the hosts");
   const ev = (await calendarClient().list())[0];
-  assert.match(ev.title, /at House concert · Jennifer McCarthy & Tom McCarthy$/);
+  assert.match(ev.title, /at House concert · Jennifer Testhost & Tom Testhost$/);
   assert.equal(ev.location, "12 Pine St");
 
   await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: [host] }), /venue, or give the city/);

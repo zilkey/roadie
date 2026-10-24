@@ -143,7 +143,7 @@ const VB_FESTIVALS: Record<string, string> = {
 /** Shows at a real venue that were part of a festival (`venueBookId:date` -> Festival Run id). */
 const VB_SHOW_FESTIVALS: Record<string, string> = { "wolverine:2026-04-24": "focomx" };
 /** House concerts with no host contact in the Venue Book: the host, from the entry's name. */
-const VB_HOSTS: Record<string, string> = { "amy-hc": "Amy", landis: "Landis", "lee-hc": "Lee", poppe: "Kristen Poppe", "shelleys-place": "Shelley" };
+const VB_HOSTS: Record<string, string> = { "amy-hc": "Amy", testhost: "Testhost", "lee-hc": "Lee", poppe: "Kristen Poppe", "shelleys-place": "Shelley" };
 
 /** One edition per festival per year we played it (Festival Run already has 2027). */
 async function editionFor(w: Writer, festivalId: string, year: string, dates: string[], sources: unknown[]) {
