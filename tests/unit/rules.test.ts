@@ -17,8 +17,9 @@ before(async () => {
     const live = { deletedAt: null };
     for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
       "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
-      await setDoc(doc(d, c, "x"), { ...live, n: 1 });
+      await setDoc(doc(d, c, "x"), { ...live, n: 1, ...(c === "checklistTemplates" ? { artistId: "x" } : {}) });
     }
+    await setDoc(doc(d, "checklistTemplates/y"), { ...live, artistId: "y", name: "Fern Valley's" });
     await setDoc(doc(d, "venues/gone"), { deletedAt: new Date() });
     // Private venue notes: id = {artistId}__{venueId}, one per band.
     await setDoc(doc(d, "venueNotes/x__x"), { ...live, artistId: "x", venueId: "x", loadInNotes: "x's" });
@@ -174,6 +175,15 @@ test("unsubmittedDrafts: only the owner reads their own; admins, members and ano
 });
 
 // ---------- venues: a shared directory plus private per-band notes ----------
+
+test("checklist templates: only that artist's admins read them; lists filter by artistId", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "checklistTemplates/x")));
+  await assertFails(getDoc(doc(admin(), "checklistTemplates/y")));
+  await assertFails(getDoc(doc(david(), "checklistTemplates/x")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "checklistTemplates/y")));
+  await assertSucceeds(getDocs(query(collection(admin(), "checklistTemplates"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(collection(admin(), "checklistTemplates")));
+});
 
 test("venues: a member and an admin of another artist read the shared record; venueNotes stay with that artist's admins", async () => {
   await assertSucceeds(getDoc(doc(david(), "venues/x")));

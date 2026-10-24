@@ -6,7 +6,7 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { Tabs, useNotFound } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useDoc } from "@/lib/firestore-hooks";
-import { checklistCount, checklistsOf, fmtLongYear, showName } from "@/lib/shows";
+import { fmtLongYear, showName } from "@/lib/shows";
 import type { ShowRow } from "@/components/shows/common";
 import { ShowEditProvider } from "@/components/shows/page/kit";
 import { StatusPill } from "@/components/shows/page/StatusPill";
@@ -15,15 +15,15 @@ import { WhosPlayingCard } from "@/components/shows/page/WhosPlayingCard";
 import { SoundCard } from "@/components/shows/page/SoundCard";
 import { SetlistCard } from "@/components/shows/page/SetlistCard";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
-import { Checklists } from "@/components/shows/page/Checklists";
+import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import { Comments } from "@/components/shows/page/Comments";
 import { IncomeCard } from "@/components/shows/page/IncomeCard";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
 import { NetCard } from "@/components/shows/page/NetCard";
 import type { Show } from "@/schema";
 
-type Tab = "details" | "prep" | "finances";
-const TABS: Tab[] = ["details", "prep", "finances"];
+type Tab = "details" | "finances";
+const TABS: Tab[] = ["details", "finances"];
 
 export default function ShowPage() { return <Suspense><Page /></Suspense>; }
 
@@ -35,7 +35,10 @@ function Page() {
   return <ShowView show={show} />;
 }
 
-/** "[venue] · [date]" with the status pill; tabs Show Details / Prep / Finances, one column; Comments at the bottom of every tab. */
+/**
+ * "[venue] · [date]" with the status pill; tabs Show Details / Finances. The checklists are a 360px column on the right from lg up
+ * (on both tabs), and stack under the tab's cards, above Comments, below that. Comments and Archive stay in the main column.
+ */
 function ShowView({ show }: { show: ShowRow }) {
   const p = useProfile();
   const admin = p.role === "admin";
@@ -46,7 +49,6 @@ function ShowView({ show }: { show: ShowRow }) {
   // Edit (top right) opens every card on the current tab; each card still saves on its own.
   const [round, setRound] = useState(0);
   const { call, error, busy } = useCommand();
-  const prep = checklistCount(checklistsOf(show));
 
   return (
     <div className="show-page" data-testid="show-page" data-show-id={show.id}>
@@ -61,37 +63,39 @@ function ShowView({ show }: { show: ShowRow }) {
         </div>
       </header>
 
-      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[
-        ["details", "Show Details"],
-        ["prep", <span key="p" className="inline-flex items-center gap-2">Prep{prep.total > 0 && <span className="count" data-testid="prep-count">{prep.done} of {prep.total}</span>}</span>],
-        ["finances", "Finances"],
-      ]} />
+      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["finances", "Finances"]]} />
 
-      <ShowEditProvider key={tab} round={round}>
-        {tab === "details" && <>
-          <WhereWhenCard show={show} admin={admin} />
-          <WhosPlayingCard show={show} admin={admin} />
-          <SoundCard show={show} admin={admin} />
-          <SetlistCard show={show} admin={admin} />
-          <PromotionCard show={show} admin={admin} />
-        </>}
-        {tab === "prep" && <Checklists show={show} admin={admin} />}
-        {tab === "finances" && <>
-          {admin && <IncomeCard show={show} />}
-          <ExpensesCard show={show} admin={admin} />
-          {admin && <NetCard show={show} />}
-        </>}
-      </ShowEditProvider>
-
-      <div className="mt-3"><Comments show={show} admin={admin} /></div>
-
-      {admin && (
-        <div className="grid gap-2">
-          <ErrorBox error={error} />
-          <button type="button" className="btn outline danger justify-self-start" disabled={busy} data-testid="show-archive"
-            onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }}>Archive show</button>
+      <div className="show-cols">
+        <div className="show-main">
+          <ShowEditProvider key={tab} round={round}>
+            {tab === "details" && <>
+              <WhereWhenCard show={show} admin={admin} />
+              <WhosPlayingCard show={show} admin={admin} />
+              <SoundCard show={show} admin={admin} />
+              <SetlistCard show={show} admin={admin} />
+              <PromotionCard show={show} admin={admin} />
+            </>}
+            {tab === "finances" && <>
+              {admin && <IncomeCard show={show} />}
+              <ExpensesCard show={show} admin={admin} />
+              {admin && <NetCard show={show} />}
+            </>}
+          </ShowEditProvider>
         </div>
-      )}
+
+        <aside className="show-side" aria-label="Checklists"><ChecklistSidebar show={show} admin={admin} /></aside>
+
+        <div className="show-main show-after">
+          <div className="mt-3"><Comments show={show} admin={admin} /></div>
+          {admin && (
+            <div className="grid gap-2">
+              <ErrorBox error={error} />
+              <button type="button" className="btn outline danger justify-self-start" disabled={busy} data-testid="show-archive"
+                onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }}>Archive show</button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -8,10 +8,9 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
 import { noteOf } from "../venues";
-import { addDays, buildChecklist, calendarInvitees, checklistsOf, isOff, joinNames, mergeIntoGigPrep, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistLike, type TemplateLike } from "@/lib/shows";
-import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind, incomeCategory, payMethod } from "@/schema";
+import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
+import { dateStr, timeStr, sound as soundSchema, cents, showKind, incomeCategory, payMethod } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
-import { patchInput } from "./util";
 
 const newId = () => randomUUID().slice(0, 8);
 const todayServer = () => dateInBandZone();
@@ -21,8 +20,8 @@ const times = z.strictObject({
   setLengthSec: z.number().int().min(1).optional(),
 });
 const needs = z.strictObject({ poster: z.boolean(), backline: z.boolean(), merch: z.boolean() });
-const checklistItem = z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional(), due: dateStr.optional() });
-const checklistIn = z.strictObject({ id: z.string().min(1).optional(), name: z.string().trim().min(1), items: z.array(checklistItem) });
+const checklistItem = z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional() });
+const checklistIn = z.strictObject({ id: z.string().min(1).optional(), name: z.string().trim().min(1), templateId: z.string().min(1).nullable().optional(), items: z.array(checklistItem) });
 const dayOfContact = z.strictObject({ name: z.string().trim().min(1), phone: z.string().trim().optional(), contactId: z.string().min(1).optional() });
 
 // ---------- helpers ----------
@@ -70,9 +69,6 @@ function configOf(artist: Doc, billedAs?: string | null) {
   if (!c) throw new AppError("invalid_input", `No configuration "${billedAs}"`, 400);
   return c;
 }
-async function templates(w: Writer): Promise<TemplateLike[]> {
-  return (await w.query("checklistTemplates")) as unknown as TemplateLike[];
-}
 const done = (id: string, sync: SyncResult) => ({ id, warnings: sync.warnings, calendar: sync.calendar, bandsintown: sync.bandsintown });
 
 // ---------- list ----------
@@ -111,7 +107,7 @@ export const showsCreate = defineCommand({
     "Create a show (and its admin-only showDeal) in one step. With pitchId it is the pitch's 'Booked it': links pitch.showIds and sets the pitch to booked. " +
     "Where: venueId, or for a house concert hostContactIds (contacts) + place {city, address?} (no venue). kind: venue|house|festival|radio|other (default from the rest). " +
     "editionId links a festival year (sets editionName). " +
-    "billedAs (configuration id) fills personnel; sound defaults from the venue; needs (poster/backline/merch) and sound build the Gig prep checklist from checklistTemplates. " +
+    "billedAs (configuration id) fills personnel; sound defaults from the venue; needs (poster/backline/merch). The show starts with no checklists (add them with shows.setChecklists). " +
     "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee (cents) becomes the deal's first income line (not received). " +
     "copyPitchComments (needs pitchId) copies the pitch's comments onto the show (shows/{id}/comments), keeping each one's author and time. " +
     "billedAs null means explicitly no configuration (no fallback to the pitch's, no personnel); omitted falls back to the pitch's. " +
@@ -145,12 +141,11 @@ export const showsCreate = defineCommand({
       const kind = i.kind ?? (hosts && !venue ? "house" : edition ? "festival" : venue ? "venue" : "other");
       // Most house concerts run on the band's own PA.
       const snd = i.sound ?? venue?.sound ?? { provider: kind === "house" ? "bandProvided" as const : "venueProvided" as const };
-      const show = { date: i.date, sound: snd, needs: i.needs };
       const r = await w.create("shows", {
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
         editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
         billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
-        checklists: mergeIntoGigPrep([], buildChecklist(await templates(w), show, newId), newId),
+        checklists: [],
         setlistId: i.setlistId, docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: i.dayOfContact,
         statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
       });
@@ -195,7 +190,6 @@ const showPatch = z.strictObject({
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
   setlistId: z.string().min(1).nullable().optional(), docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
   publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
-  addMissingChecklist: z.boolean().optional(),
 });
 
 export const showsUpdate = defineCommand({
@@ -204,14 +198,14 @@ export const showsUpdate = defineCommand({
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; prefer shows.cancel / shows.drop), reason (why it was canceled or dropped; null clears), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
     "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times {loadIn, soundcheck, doors, showStart, set, setLengthSec}, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, publishToBandsintown (listed once confirmed), ticketUrl, " +
     "dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
-    "addMissingChecklist adds template items for the current sound/needs to the Gig prep list. " +
+    "Checklists are not touched (shows.setChecklists). " +
     "Changing date, time, venue, people, status or publishToBandsintown re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
     let touchesSync = false;
     await run(ctx, async (w) => {
       const before = await requireShow(w, id);
-      const { venueId, hostContactIds, editionId, addMissingChecklist, ...rest } = patch;
+      const { venueId, hostContactIds, editionId, ...rest } = patch;
       const p: Record<string, unknown> = { ...rest };
       if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
       const artist = await artistFor(w, before.artistId);
@@ -229,19 +223,6 @@ export const showsUpdate = defineCommand({
       if (patch.billedAs !== undefined && patch.billedAs !== null) {
         const cfg = configOf(artist, patch.billedAs);
         if (!patch.personnel) p.personnel = cfg?.musicianIds;
-      }
-      const sound = (patch.sound ?? before.sound) as { provider: "venueProvided" | "bandProvided" };
-      const billedAs = patch.billedAs === undefined ? before.billedAs : patch.billedAs ?? undefined;
-      if (addMissingChecklist || patch.needs || patch.sound || patch.date) {
-        const next = { date: (patch.date ?? before.date) as string, sound: { provider: sound.provider }, needs: (patch.needs ?? before.needs) as { poster: boolean; backline: boolean; merch: boolean } };
-        let lists = checklistsOf(before as never);
-        if (patch.date && patch.date !== before.date) {
-          const shift = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
-          const by = shift(before.date, patch.date);
-          lists = lists.map((l) => ({ ...l, items: l.items.map((c) => (c.due && !c.done ? { ...c, due: addDays(c.due, by) } : c)) }));
-        }
-        if (addMissingChecklist || patch.needs || patch.sound) lists = mergeIntoGigPrep(lists, buildChecklist(await templates(w), next, newId), newId);
-        Object.assign(p, listsPatch(before, lists));
       }
       if (patch.status && patch.status !== before.status) p.statusHistory = historyWith(w, before, patch.status, patch.reason ?? undefined);
       if (patch.publishToBandsintown !== undefined && before.public !== undefined) p.public = null;
@@ -319,28 +300,172 @@ export const showsSync = defineCommand({
 });
 
 // ---------- checklists ----------
+// Members can tick, add, edit and remove to-dos on any show; lists themselves (new, rename, delete, reorder) and templates are admins'.
+
+/** A show of the artist this call is for (any show, for scripts and tests with no artist). */
+async function bandShow(w: Writer, id: string) {
+  const s = await requireShow(w, id);
+  if (w.ctx.artistId && s.artistId && s.artistId !== w.ctx.artistId) throw new AppError("not_found", "Show not found", 404);
+  return s;
+}
+function listOf(lists: ChecklistLike[], listId: string) {
+  const l = lists.find((x) => x.id === listId);
+  if (!l) throw new AppError("not_found", "No such checklist", 404);
+  return l;
+}
+function itemOf(list: ChecklistLike, itemId: string) {
+  const i = list.items.find((x) => x.id === itemId);
+  if (!i) throw new AppError("not_found", "No such checklist item", 404);
+  return i;
+}
+/** Change one list (by id) and write every list back. */
+async function editList(w: Writer, show: Doc, listId: string, f: (l: ChecklistLike) => ChecklistLike | null) {
+  const lists = checklistsOf(show as never);
+  listOf(lists, listId);
+  const next = lists.flatMap((l) => (l.id !== listId ? [l] : (f(l) ?? [])));
+  return w.update("shows", show.id, listsPatch(show, next));
+}
+const editItem = (w: Writer, show: Doc, listId: string, itemId: string, f: (i: ChecklistItem) => ChecklistItem | null) =>
+  editList(w, show, listId, (l) => { itemOf(l, itemId); return { ...l, items: l.items.flatMap((i) => (i.id !== itemId ? [i] : (f(i) ?? []))) }; });
+async function requireMusician(w: Writer, id: string) {
+  const m = await w.get("musicians", id);
+  if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
+}
+/** A live template of the artist this call (or this show) is for. */
+async function requireTemplate(w: Writer, id: string, artistId = w.ctx.artistId) {
+  const t = await w.get("checklistTemplates", id);
+  if (!t || t.deletedAt || (artistId && t.artistId !== artistId)) throw new AppError("not_found", "Checklist template not found", 404);
+  return t;
+}
+const liveTemplates = async (w: Writer, artistId: string) =>
+  (await w.query("checklistTemplates", (q) => q.where("artistId", "==", artistId))).sort((a, b) => (a.order as number) - (b.order as number));
+const nextOrder = (ts: Doc[]) => Math.max(-1, ...ts.map((t) => t.order as number)) + 1;
+const listInput = { id: z.string().min(1), listId: z.string().min(1) };
+const itemInput = { ...listInput, itemId: z.string().min(1) };
+const ownerIn = z.string().min(1).nullable().optional();
 
 export const showsSetChecklists = defineCommand({
   name: "shows.setChecklists", roles: ["admin", "mcp"],
-  description: "Replace all of a show's checklists: [{id?, name, items: [{id?, label, done, ownerId? (musician), due?}]}]. Gear is a checklist named Gear (ownerId = who brings it). Lists and items without an id get one.",
+  description: "Replace all of a show's checklists, in order: [{id?, name, templateId? (the checklist template it came from; null = none), items: [{id?, label, done, ownerId? (musician; none = unassigned)}]}]. Lists and items without an id get one.",
   input: z.strictObject({ id: z.string().min(1), checklists: z.array(checklistIn) }),
   run: (ctx, i) => run(ctx, async (w) => {
-    const before = await requireShow(w, i.id);
-    const lists = i.checklists.map((l) => ({ ...l, id: l.id ?? newId(), items: l.items.map((c) => ({ ...c, id: c.id ?? newId() })) }));
+    const before = await bandShow(w, i.id);
+    const was = new Map(checklistsOf(before as never).flatMap((l) => l.items.map((c) => [c.id, c] as const)));
+    const stamp = (c: z.infer<typeof checklistItem>) => {
+      const old = c.id ? was.get(c.id) : undefined;
+      if (!c.done) return {};
+      return old?.done && old.doneAt ? { doneAt: old.doneAt, doneBy: old.doneBy } : { doneAt: w.now.toDate().toISOString(), doneBy: ctx.uid };
+    };
+    const lists = i.checklists.map((l) => ({ ...l, id: l.id ?? newId(), templateId: l.templateId ?? null, items: l.items.map((c) => ({ ...c, id: c.id ?? newId(), ...stamp(c) })) }));
     return w.update("shows", i.id, listsPatch(before, lists));
   }),
 });
 
-export const showsCheckItem = defineCommand({
-  name: "shows.checkItem", roles: ["admin", "member", "mcp"], description: "Tick one checklist item done (or packed) or not. Members can only tick items assigned to them.",
-  input: z.strictObject({ id: z.string().min(1), listId: z.string().min(1), itemId: z.string().min(1), done: z.boolean() }),
+export const showsAddChecklist = defineCommand({
+  name: "shows.addChecklist", roles: ["admin"],
+  description: "Add a list at the end of a show's checklists: from a template (its name and items, not done, unassigned; templateId set), or a blank list by name. The same template can be added more than once.",
+  input: z.union([
+    z.strictObject({ id: z.string().min(1), templateId: z.string().min(1) }),
+    z.strictObject({ id: z.string().min(1), name: z.string().trim().min(1) }),
+  ]),
   run: (ctx, i) => run(ctx, async (w) => {
-    const s = await requireShow(w, i.id);
-    const lists = checklistsOf(s as never);
-    const item = lists.find((l) => l.id === i.listId)?.items.find((c) => c.id === i.itemId);
-    if (!item) throw new AppError("not_found", "No such checklist item", 404);
-    if (ctx.role === "member" && (!ctx.musicianId || item.ownerId !== ctx.musicianId)) throw new AppError("forbidden", "You can only tick items assigned to you", 403);
-    return w.update("shows", i.id, listsPatch(s, lists.map((l) => (l.id !== i.listId ? l : { ...l, items: l.items.map((c) => (c.id === i.itemId ? { ...c, done: i.done } : c)) }))));
+    const show = await bandShow(w, i.id);
+    const listId = newId();
+    let list: ChecklistLike = { id: listId, name: "", templateId: null, items: [] };
+    if ("templateId" in i) {
+      const t = await requireTemplate(w, i.templateId, show.artistId);
+      list = { ...list, name: t.name as string, templateId: t.id, items: (t.items as { label: string }[]).map((x) => ({ id: newId(), label: x.label, done: false })) };
+    } else list = { ...list, name: i.name };
+    await w.update("shows", i.id, listsPatch(show, [...checklistsOf(show as never), list]));
+    return { id: i.id, listId };
+  }),
+});
+
+export const showsRenameChecklist = defineCommand({
+  name: "shows.renameChecklist", roles: ["admin"], description: "Rename one of a show's checklists.",
+  input: z.strictObject({ ...listInput, name: z.string().trim().min(1) }),
+  run: (ctx, i) => run(ctx, async (w) => editList(w, await bandShow(w, i.id), i.listId, (l) => ({ ...l, name: i.name }))),
+});
+
+export const showsRemoveChecklist = defineCommand({
+  name: "shows.removeChecklist", roles: ["admin"], description: "Delete one of a show's checklists and its items (Undo puts it back).",
+  input: z.strictObject(listInput),
+  run: (ctx, i) => run(ctx, async (w) => editList(w, await bandShow(w, i.id), i.listId, () => null)),
+});
+
+export const showsReorderChecklists = defineCommand({
+  name: "shows.reorderChecklists", roles: ["admin"], description: "Put a show's checklists in this order: listIds is every list's id, once.",
+  input: z.strictObject({ id: z.string().min(1), listIds: z.array(z.string().min(1)) }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await bandShow(w, i.id);
+    const lists = checklistsOf(show as never);
+    const same = i.listIds.length === lists.length && new Set(i.listIds).size === lists.length && lists.every((l) => i.listIds.includes(l.id));
+    if (!same) throw new AppError("invalid_input", "Give every list on the show once (someone may have just added or deleted one)", 409);
+    return w.update("shows", i.id, listsPatch(show, i.listIds.map((lid) => listOf(lists, lid))));
+  }),
+});
+
+export const showsAddChecklistItem = defineCommand({
+  name: "shows.addChecklistItem", roles: ["admin", "member"], description: "Add a to-do at the end of one of a show's checklists, optionally assigned to a musician.",
+  input: z.strictObject({ ...listInput, label: z.string().trim().min(1), ownerId: ownerIn }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await bandShow(w, i.id);
+    if (i.ownerId) await requireMusician(w, i.ownerId);
+    const itemId = newId();
+    await editList(w, show, i.listId, (l) => ({ ...l, items: [...l.items, { id: itemId, label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}) }] }));
+    return { id: i.id, listId: i.listId, itemId };
+  }),
+});
+
+export const showsEditChecklistItem = defineCommand({
+  name: "shows.editChecklistItem", roles: ["admin", "member"], description: "Change a to-do's text and who it's assigned to (ownerId null = unassigned).",
+  input: z.strictObject({ ...itemInput, label: z.string().trim().min(1), ownerId: z.string().min(1).nullable() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await bandShow(w, i.id);
+    if (i.ownerId) await requireMusician(w, i.ownerId);
+    return editItem(w, show, i.listId, i.itemId, ({ ownerId: _o, ...c }) => ({ ...c, label: i.label, ...(i.ownerId ? { ownerId: i.ownerId } : {}) }));
+  }),
+});
+
+export const showsRemoveChecklistItem = defineCommand({
+  name: "shows.removeChecklistItem", roles: ["admin", "member"], description: "Remove one to-do from a show's checklist.",
+  input: z.strictObject(itemInput),
+  run: (ctx, i) => run(ctx, async (w) => editItem(w, await bandShow(w, i.id), i.listId, i.itemId, () => null)),
+});
+
+export const showsCheckItem = defineCommand({
+  name: "shows.checkItem", roles: ["admin", "member", "mcp"], description: "Tick one checklist item done or not. Anyone in the band can tick any item; ticking records who and when.",
+  input: z.strictObject({ ...itemInput, done: z.boolean() }),
+  run: (ctx, i) => run(ctx, async (w) => editItem(w, await bandShow(w, i.id), i.listId, i.itemId, ({ doneAt: _a, doneBy: _b, ...c }) => (
+    i.done ? { ...c, done: true, doneAt: w.now.toDate().toISOString(), doneBy: ctx.uid } : { ...c, done: false }
+  ))),
+});
+
+export const showsSaveChecklistAsTemplate = defineCommand({
+  name: "shows.saveChecklistAsTemplate", roles: ["admin"],
+  description: "Make a new checklist template (last in order) from one of a show's lists: its name and item text (no assignees, nothing done). The list is linked to it (templateId).",
+  input: z.strictObject(listInput),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await bandShow(w, i.id);
+    const list = listOf(checklistsOf(show as never), i.listId);
+    const artistId = (await artistFor(w, show.artistId)).id;
+    const t = await w.create("checklistTemplates", { artistId, name: list.name, order: nextOrder(await liveTemplates(w, artistId)), items: list.items.map((c) => ({ id: newId(), label: c.label })) });
+    await editList(w, show, i.listId, (l) => ({ ...l, templateId: t.id }));
+    return { id: i.id, listId: i.listId, templateId: t.id };
+  }),
+});
+
+export const showsUpdateTemplateFromChecklist = defineCommand({
+  name: "shows.updateTemplateFromChecklist", roles: ["admin"],
+  description: "Overwrite the template a show's list came from with that list's name and item text (no assignees, nothing done). Other shows' lists are not touched.",
+  input: z.strictObject(listInput),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await bandShow(w, i.id);
+    const list = listOf(checklistsOf(show as never), i.listId);
+    if (!list.templateId) throw new AppError("invalid_state", "This list isn't from a template: save it as one instead", 409);
+    const t = await requireTemplate(w, list.templateId, show.artistId);
+    await w.update("checklistTemplates", t.id, { name: list.name, items: list.items.map((c) => ({ id: newId(), label: c.label })) });
+    return { id: i.id, listId: i.listId, templateId: t.id };
   }),
 });
 
@@ -434,23 +559,57 @@ export const showsAfter = defineCommand({
   },
 });
 
-// ---------- checklist templates ----------
+// ---------- checklist templates (admins of the artist) ----------
 
+const templateItems = z.array(z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1) }));
+const withItemIds = (items: z.infer<typeof templateItems>) => items.map((x) => ({ id: x.id ?? newId(), label: x.label }));
+
+export const checklistTemplatesList = defineCommand({
+  name: "checklistTemplates.list", roles: ["admin", "mcp"], input: z.strictObject({}),
+  description: "This artist's checklist templates in order (the 'New list' choices on a show): [{id, name, order, items: [{id, label}]}].",
+  run: (ctx) => run(ctx, async (w) => {
+    const ts = await liveTemplates(w, (await artistFor(w)).id);
+    return { templates: ts.map((t) => ({ id: t.id, name: t.name, order: t.order, items: t.items })) };
+  }),
+});
 export const checklistTemplatesCreate = defineCommand({
-  name: "checklistTemplates.create", roles: ["admin", "mcp"], input: ChecklistTemplateInput,
-  description: "Add a checklist template: label, when (always|bandSound|venueSound|poster|backline|merch), daysBefore the show.",
-  run: (ctx, input) => db.create(ctx, "checklistTemplates", input),
+  name: "checklistTemplates.create", roles: ["admin", "mcp"],
+  description: "Add a checklist template (last in order): name and items [{label}]. Shows can then add it as a new list.",
+  input: z.strictObject({ name: z.string().trim().min(1), items: templateItems.default([]) }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const artistId = (await artistFor(w)).id;
+    return w.create("checklistTemplates", { artistId, name: i.name, order: nextOrder(await liveTemplates(w, artistId)), items: withItemIds(i.items) });
+  }),
 });
 export const checklistTemplatesUpdate = defineCommand({
-  name: "checklistTemplates.update", roles: ["admin", "mcp"], input: patchInput(ChecklistTemplateInput), description: "Edit a checklist template.",
-  run: (ctx, { id, patch }) => db.update(ctx, "checklistTemplates", id, patch as Record<string, unknown>),
+  name: "checklistTemplates.update", roles: ["admin", "mcp"],
+  description: "Edit a checklist template: name, items (the whole list, in order: [{id?, label}]). Lists already on shows are not touched.",
+  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), items: templateItems.optional() }) }),
+  run: (ctx, { id, patch }) => run(ctx, async (w) => {
+    await requireTemplate(w, id);
+    return w.update("checklistTemplates", id, { ...(patch.name ? { name: patch.name } : {}), ...(patch.items ? { items: withItemIds(patch.items) } : {}) });
+  }),
+});
+export const checklistTemplatesReorder = defineCommand({
+  name: "checklistTemplates.reorder", roles: ["admin", "mcp"], description: "Put this artist's checklist templates in this order: ids is every template's id, once.",
+  input: z.strictObject({ ids: z.array(z.string().min(1)) }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const ts = await liveTemplates(w, (await artistFor(w)).id);
+    const same = i.ids.length === ts.length && new Set(i.ids).size === ts.length && ts.every((t) => i.ids.includes(t.id));
+    if (!same) throw new AppError("invalid_input", "Give every template once (someone may have just added or deleted one)", 409);
+    for (const [n, tid] of i.ids.entries()) if (ts.find((t) => t.id === tid)!.order !== n) await w.update("checklistTemplates", tid, { order: n });
+    return { ids: i.ids };
+  }),
 });
 export const checklistTemplatesRemove = defineCommand({
-  name: "checklistTemplates.remove", roles: ["admin", "mcp"], input: idInput, description: "Delete a checklist template.",
-  run: (ctx, { id }) => db.softDelete(ctx, "checklistTemplates", id),
+  name: "checklistTemplates.remove", roles: ["admin", "mcp"], input: idInput, description: "Delete a checklist template. Lists already made from it stay on their shows.",
+  run: (ctx, { id }) => run(ctx, async (w) => { await requireTemplate(w, id); return w.softDelete("checklistTemplates", id); }),
 });
 
 export const showCommands = [
-  showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync, showsSetChecklists, showsCheckItem,
-  showsComment, showsEditComment, showsRemoveComment, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesRemove,
+  showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync,
+  showsSetChecklists, showsAddChecklist, showsRenameChecklist, showsRemoveChecklist, showsReorderChecklists,
+  showsAddChecklistItem, showsEditChecklistItem, showsRemoveChecklistItem, showsCheckItem, showsSaveChecklistAsTemplate, showsUpdateTemplateFromChecklist,
+  showsComment, showsEditComment, showsRemoveComment, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter,
+  checklistTemplatesList, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesReorder, checklistTemplatesRemove,
 ];

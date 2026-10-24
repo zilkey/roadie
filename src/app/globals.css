@@ -275,6 +275,16 @@ dialog.pitch-dlg::backdrop { background: var(--backdrop); }
 
 /* Show page: cards that edit on their own (EditableCard), the yellow "unfinished" placeholder with one-tap starters, admin-only badge */
 .show-page { display: grid; gap: 20px; }
+/* Show page columns (the page is full width): below lg the checklists stack between the tab's cards and Comments; from lg they are a
+   column against the right edge (600px, narrowing to 360px on smaller laptops) and the main column takes the rest. */
+.show-cols { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); }
+.show-main { display: grid; gap: 20px; align-content: start; min-width: 0; }
+@media (min-width: 1024px) {
+  /* The second row takes whatever height the column needs beyond the tab's cards, so Comments sit right under them. */
+  .show-cols { grid-template-columns: minmax(0, 1fr) clamp(360px, 40%, 600px); grid-template-rows: auto 1fr; column-gap: 28px; }
+  .show-side { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+  .show-main { grid-column: 1; }
+}
 .card.editing { border: 2px solid var(--accent); }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
 .card-head h2 { font-size: 18px; font-weight: 700; }

@@ -29,7 +29,8 @@
     "migrate:venue-notes": "tsx scripts/migrate-venue-notes.ts",
     "migrate:pitch-dates": "tsx scripts/migrate-pitch-dates.ts",
     "migrate:mcp-per-band": "tsx scripts/migrate-mcp-per-band.ts",
-    "migrate:show-page": "tsx scripts/migrate-show-page.ts"
+    "migrate:show-page": "tsx scripts/migrate-show-page.ts",
+    "migrate:checklists": "tsx scripts/migrate-checklists.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

@@ -6,6 +6,7 @@ import { adminAuth } from "../admin";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncClaims } from "../session";
+import { seedDefaultTemplates } from "../checklistTemplates";
 import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
@@ -314,7 +315,7 @@ async function freeSlugFor(w: Writer, name: string) {
 export const artistsCreate = defineCommand({
   name: "artists.create",
   roles: ["admin"],
-  description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin.",
+  description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin. It starts with the checklist templates Promo and Follow Up.",
   input: ArtistIn.extend({
     slug: ArtistInput.shape.slug.optional(),
     links: ArtistInput.shape.links.default({}),
@@ -325,6 +326,7 @@ export const artistsCreate = defineCommand({
       if (input.slug) await requireFreeSlug(w, input.slug);
       const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
       const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue }));
+      await seedDefaultTemplates(w, r.id);
       const me = await w.get("users", ctx.uid);
       if (me && !me.deletedAt) await w.update("users", ctx.uid, { artists: withRole(memberships(me), r.id, "admin") });
       return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };

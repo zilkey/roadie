@@ -194,6 +194,10 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
+  // a list from a template: its to-dos are unassigned, so they show on everyone's show-day card
+  await page.getByTestId("new-list-actions").click();
+  await page.getByRole("menuitem", { name: "Promo", exact: true }).click();
+  await expect(page.getByTestId("checklists-count")).toHaveText("0 of 3");
   // admin Home: show day. Today's card first; the booking to-dos step aside.
   await page.goto(A("/home"));
   await expect(page.getByTestId(`today-${id}`)).toBeVisible();
@@ -205,7 +209,11 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(d.getByTestId(`today-${id}`)).toContainText("Hi-Dive");
   await expect(d.getByTestId(`today-${id}`)).toContainText("5:00 pm");
   await expect(d.getByTestId(`today-${id}`)).toContainText("9:15 pm");
-  await expect(d.getByTestId(`today-gear-${id}`)).toBeVisible();
+  const todo = d.getByTestId(`today-todo-${id}`);
+  await expect(todo).toContainText("To do · 3");
+  await expect(todo).toContainText("Make show poster");
+  await todo.getByRole("checkbox").first().check();
+  await expect(todo).toContainText("To do · 2");
   await expect(d.getByTestId(`today-setlist-${id}`)).toHaveCount(0); // no setlist on this show
   // open "Can you play?" (seeded for David) sits below today's show, above anything else
   const askBox = await d.getByTestId(/^ask-[A-Za-z0-9]+$/).first().boundingBox();

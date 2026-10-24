@@ -203,8 +203,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const title = current?.label ?? ADMIN_LINKS.find((l) => on(l.href))?.label ?? artist.name;
   const edit = () => { setSheet(false); setEditing(true); };
   const switchTo = several ? ARTISTS_PATH : undefined;
-  // The shows list tables use the full width; every other page keeps the 1240px column.
-  const wide = path === full("/shows");
+  // The shows list and the booking tabs' tables use the full width, and so does a show's page (its checklists are a column on the right edge);
+  // every other page (other detail pages too) keeps the 1240px column.
+  const showPage = path.startsWith(full("/shows/")) && !path.startsWith(full("/shows/new")) && path.split("/").length === full("/shows/x").split("/").length;
+  const wide = showPage || ["/shows", "/booking", "/booking/pitches", "/booking/venues", "/booking/festivals", "/booking/promoters", "/booking/contacts"].some((p) => path === full(p));
 
   const barLink = (n: NavItem, testid?: string) => (
     <Link key={n.key} href={n.href} data-testid={testid} aria-current={on(n.href) ? "page" : undefined}

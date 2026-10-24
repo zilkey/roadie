@@ -12,6 +12,7 @@ import { newMutationId } from "@/lib/commands";
 import { useRouter } from "next/navigation";
 import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
+import { ChecklistTemplatesEditor } from "@/components/shows/checklists/ChecklistTemplatesEditor";
 import { artistSlug, type Artist, type Musician } from "@/schema";
 
 type Cfg = { id?: string; name: string; billingName: string; musicianIds: string[] };
@@ -135,6 +136,7 @@ function ArtistEditor() {
         )
       ) : <button type="button" className="btn ghost w-fit" data-testid="add-config" onClick={() => setAdding(true)}>+ Add configuration</button>}
       <SaveStatus {...as.statusProps} />
+      <ChecklistTemplatesEditor artistId={artist.id} />
     </div>
   );
 }

@@ -30,6 +30,8 @@ service cloud.firestore {
     // One band's private venue notes, id = {artistId}__{venueId}. Needs that artist's admin role (roleIn, not the best role: an admin of
     // another artist who is only a member of this one gets 'member' here and fails). Lists must filter where('artistId', '==', ...).
     match /venueNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    // An artist's checklist templates: that artist's admins only. Lists must filter where('artistId', '==', ...).
+    match /checklistTemplates/{id} { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // An artist doc is readable by its own members only (the app reads it by id: /artists/[slug] resolves through your session).
     match /artists/{id}          { allow get: if roleIn(id) == 'admin' || (roleIn(id) == 'member' && live()); }
     match /shows/{id} {
@@ -58,7 +60,6 @@ service cloud.firestore {
     match /festivals/{id}          { allow read: if isAdmin(); }
     match /editions/{id}           { allow read: if isAdmin(); }
     match /emailTemplates/{id}     { allow read: if isAdmin(); }
-    match /checklistTemplates/{id} { allow read: if isAdmin(); }
     match /showDeals/{id}          { allow read: if isAdmin(); }
     match /statSnapshots/{id}      { allow read: if isAdmin(); }
     match /mcpTokens/{id}          { allow read: if isAdmin(); }

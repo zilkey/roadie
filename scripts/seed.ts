@@ -7,13 +7,13 @@
  *                             for real data from `npm run import:booking`)
  */
 import { adminAuth } from "../src/server/admin";
-import { db } from "../src/server/db";
+import { db, run } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
 import { syncClaims } from "../src/server/session";
 import { slugForArtist } from "../src/schema/artists";
 import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
 import { execute } from "../src/server/commands/dispatch";
-import { DEFAULT_CHECKLIST_TEMPLATES } from "../src/lib/shows";
+import { seedDefaultTemplates } from "../src/server/checklistTemplates";
 
 const project = "demo-band-tracker";
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
@@ -62,7 +62,7 @@ async function main() {
   }
 
   if (process.argv.includes("--people")) {
-    await seedTemplates(create);
+    await seedTemplates(create, ctx, artist);
     console.log("Seeded: 6 musicians, 5 users, artist with 4 configurations, email and checklist templates (no demo data).");
     return;
   }
@@ -119,7 +119,8 @@ async function main() {
   await create(`pitches/${pLost}/comments`, { authorId: uid.ingrid, body: "Mention the Roots show that drew 95." });
   await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
   await create(`pitches/${pLost}/activity`, { type: "note", text: "Haylee said to check back mid-November." });
-  await seedTemplates(create);
+  const [promoTemplate] = await seedTemplates(create, ctx, artist);
+  await run(ctx, (w) => seedDefaultTemplates(w, other.artist));
 
   // --- music ---
   const songSpecs: [string, string, number, number][] = [
@@ -145,18 +146,21 @@ async function main() {
   } as Record<string, string[]>)[artistCfg].map((k) => mid[k]);
   const showBase = {
     artistId: artist, needs: { poster: true, backline: false, merch: true }, docs: [], publishToBandsintown: true, listings: {},
-    checklists: [{ id: "gigprep", name: "Gig prep", items: [
-      { id: "c1", label: "Confirm load-in time", done: true, due: "2026-11-07" },
-      { id: "c2", label: "Post the poster", done: false, due: "2026-10-31" },
-      { id: "c3", label: "Pack merch table", done: false, due: "2026-11-12" },
+    checklists: [{ id: "promo", name: "Promo", templateId: promoTemplate, items: [
+      { id: "c1", label: "Make show poster", done: true, ownerId: mid.ingrid, doneAt: "2026-10-20T18:00:00.000Z", doneBy: uid.ingrid },
+      { id: "c2", label: "Post on social media", done: false, ownerId: mid.jeff },
+      { id: "c3", label: "Send email to email list", done: false },
     ] }],
   };
-  const gear = (items: [string, string, string, boolean][]) => ({ id: "gear", name: "Gear", items: items.map(([id, label, who, done]) => ({ id, label, ownerId: mid[who], done })) });
+  /** An ordinary list made on the show (no template): [id, label, who or "", done]. */
+  const list = (id: string, name: string, items: [string, string, string, boolean][]) => ({
+    id, name, templateId: null, items: items.map(([iid, label, who, done]) => ({ id: iid, label, done, ...(who ? { ownerId: mid[who] } : {}) })),
+  });
   const hiShow = await create("shows", {
     ...showBase, date: "2026-11-14", status: "confirmed", venue: { id: hidive, name: "Hi-Dive", address: "7 S Broadway, Denver", city: "Denver" },
     times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "full-band", personnel: cfg("full"),
     sound: { provider: "venueProvided", notes: "House engineer" }, setlistId: setlist, dayOfContact: { name: "Hi-Dive door manager", phone: "(303) 555-0142" },
-    checklists: [...showBase.checklists, gear([["g1", "Keys rig", "jeff", true], ["g2", "Bass rig", "david", false], ["g3", "Snare, cymbals, pedal", "eric", false], ["g4", "In-ear rack", "jeff", false]])],
+    checklists: [...showBase.checklists, list("loadout", "Load-out", [["g1", "Get paid before leaving", "jeff", false], ["g2", "Sweep stage for cables", "eric", false], ["g3", "Bass rig", "david", false]])],
   });
   await create(`shows/${hiShow}/comments`, { authorId: uid.ingrid, body: "Street parking on Broadway; dinner provided.", audience: "band" });
   await db.update(ctx, "setlists", setlist, { showId: hiShow });
@@ -167,7 +171,7 @@ async function main() {
     ...showBase, date: "2027-01-16", status: "hold", venue: { id: lostlake, name: "Lost Lake Lounge", address: "3602 E Colfax Ave, Denver", city: "Denver" },
     times: { set: "20:00", setLengthSec: 2400 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
     needs: { poster: true, backline: false, merch: false }, publishToBandsintown: false,
-    checklists: [gear([["g1", "Keys rig", "jeff", false], ["g2", "Bass rig", "david", false]])],
+    checklists: [list("gear", "Gear", [["g1", "Keys rig", "jeff", false], ["g2", "Bass rig", "david", false], ["g3", "Merch table", "", false]])],
   });
   await create("showDeals", { pitchId: pLost, contactIds: [haylee], deal: "doorSplit", doorSplitPct: 70, ticketPrice: 1500 }, lakeShow);
   await create("availability", {
@@ -206,11 +210,11 @@ async function seedOtherBand(create: (path: string, doc: Record<string, unknown>
   return { artist, ctx: importCtx("seed", undefined, artist) };
 }
 
-async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>) {
+async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>, artist: string) {
   await create("emailTemplates", { name: "First pitch", subject: "{{venue.name}} · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nWe're a Denver band... Live video: {{artist.video}}\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter"] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · {{artist.name}}", body: "Hi {{contact.firstName}},\n\nChecking back on {{target.name}}. Live video: {{artist.video}}\n\nThanks,\n{{user.firstName}}", targetKinds: [] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nChecking back on {{venue.name}}.\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter", "edition"] });
-  for (const t of DEFAULT_CHECKLIST_TEMPLATES) await create("checklistTemplates", { ...t });
+  return run(ctx, (w) => seedDefaultTemplates(w, artist));
 }
 
 main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });

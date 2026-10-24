@@ -87,7 +87,7 @@ const EXPECTED = [
   // shows
   "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendar", "showDeals.update",
   "showDeals.setIncome", "shows.comment", "shows.editComment", "shows.removeComment",
-  "shows.afterShow", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.remove",
+  "shows.afterShow", "checklistTemplates.list", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "checklistTemplates.remove",
   // availability: ask and read, not mark
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",
   // songs, setlists, rehearsals, files

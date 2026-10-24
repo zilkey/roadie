@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
-import { buildChecklist, planHome, DEFAULT_CHECKLIST_TEMPLATES, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
+import { planHome, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -57,7 +57,6 @@ beforeEach(async () => {
     ],
   }, { id: TEST_ARTIST })).id;
   venueId = (await cmd("venues.create", venue("Hi-Dive", "Denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" }, sound: { provider: "venueProvided", notes: "House engineer" } }))).id;
-  for (const t of DEFAULT_CHECKLIST_TEMPLATES) await db.create(sys, "checklistTemplates", { ...t });
   pitchId = (await cmd("pitches.flag", { kind: "venue", id: venueId, pitchedAs: "trio" })).id;
   mctx = { uid: "m-david", role: "member", musicianId: ids.david, via: "app", runId: newRunId() };
 });
@@ -65,15 +64,7 @@ beforeEach(async () => {
 const create = (extra: Record<string, unknown> = {}) =>
   cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLengthSec: 2400 }, needs: { poster: true, backline: false, merch: true }, ...extra });
 
-test("pure: checklist from templates, home plan", () => {
-  let n = 0;
-  const id = () => `i${n++}`;
-  const items = buildChecklist(DEFAULT_CHECKLIST_TEMPLATES, { date: "2027-01-16", sound: { provider: "bandProvided" }, needs: { poster: true, backline: false, merch: false } }, id);
-  const labels = items.map((i) => i.label);
-  assert.ok(labels.includes("Book sound engineer") && labels.includes("Post the poster"));
-  assert.ok(!labels.includes("Pack merch table") && !labels.includes("Send stage plot and input list to the venue"));
-  assert.equal(items.find((i) => i.label === "Post the poster")!.due, "2027-01-02");
-  assert.deepEqual(items.map((i) => i.due), [...items.map((i) => i.due)].sort());
+test("pure: dates, home plan", () => {
   assert.equal(addDays("2027-03-01", -1), "2027-02-28");
   assert.equal(fmtTime("19:05"), "7:05 pm");
 
@@ -93,9 +84,7 @@ test("pure: checklist from templates, home plan", () => {
   assert.deepEqual(member.recent.map((s) => s.id), ["y"]);
 });
 
-const gigPrep = (show: any) => show.checklists.find((l: any) => l.name === "Gig prep").items as any[];
-
-test("Booked it: show + showDeal in one go, pitch linked and booked, Gig prep checklist, personnel, calendar", async () => {
+test("Booked it: show + showDeal in one go, pitch linked and booked, no checklists, personnel, calendar", async () => {
   const r = await create({ deal: { deal: "guarantee", guarantee: 30000 }, dayOfContact: { name: "Sam", phone: "(303) 555-0117" } });
   const show = (await db.get("shows", r.id))!;
   const deal = (await db.get("showDeals", r.id))!;
@@ -109,11 +98,7 @@ test("Booked it: show + showDeal in one go, pitch linked and booked, Gig prep ch
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff, ids.david]);
   assert.deepEqual(show.sound, { provider: "venueProvided", notes: "House engineer" });
   assert.equal(show.venue.address, "7 S Broadway, Denver");
-  assert.deepEqual(show.checklists.map((l: any) => l.name), ["Gig prep"], "one list from the templates; no gear list");
-  const labels = gigPrep(show).map((c: any) => c.label);
-  assert.ok(labels.includes("Post the poster") && labels.includes("Pack merch table") && labels.includes("Send stage plot and input list to the venue"));
-  assert.ok(!labels.includes("Book sound engineer"));
-  assert.equal(gigPrep(show).find((c: any) => c.label === "Pack merch table").due, "2027-01-14");
+  assert.deepEqual(show.checklists, [], "lists are picked by hand now: none are built from the show's sound or needs");
   assert.equal(show.checklist, undefined); assert.equal(show.gear, undefined);
   const pitch = (await db.get("pitches", pitchId))!;
   assert.deepEqual(pitch.showIds, [r.id]);
@@ -151,30 +136,6 @@ test("billed as fills personnel and leaves the checklists alone", async () => {
   await assert.rejects(cmd("shows.update", { id: r.id, patch: { billedAs: "nope" } }), /No configuration/);
 });
 
-test("checklists: several lists, ids filled in; template merge adds only missing items to Gig prep; date change shifts open dues", async () => {
-  const r = await create();
-  let show = (await db.get("shows", r.id))!;
-  const gp = show.checklists[0];
-  const items = gp.items.map((c: any, i: number) => (i === 0 ? { ...c, done: true, ownerId: ids.jeff, label: "Confirm times (done)" } : c));
-  await cmd("shows.setChecklists", { id: r.id, checklists: [{ ...gp, items }, { name: "Promo", items: [{ label: "Post on Instagram" }] }] });
-  show = (await db.get("shows", r.id))!;
-  assert.equal(show.checklists.length, 2);
-  assert.ok(show.checklists[1].id && show.checklists[1].items[0].id);
-  assert.equal(show.checklists[1].items[0].done, false);
-  assert.equal(gigPrep(show)[0].done, true);
-  assert.equal(gigPrep(show)[0].ownerId, ids.jeff);
-  const openItem = gigPrep(show).find((c: any) => c.label === "Post the poster");
-  await cmd("shows.update", { id: r.id, patch: { needs: { poster: true, backline: true, merch: true } } });
-  show = (await db.get("shows", r.id))!;
-  assert.ok(gigPrep(show).some((c: any) => c.label === "Confirm backline with the venue"));
-  assert.equal(gigPrep(show).filter((c: any) => c.label === "Post the poster").length, 1);
-  assert.equal(show.checklists[1].name, "Promo", "other lists are left alone");
-  await cmd("shows.update", { id: r.id, patch: { date: "2027-01-23" } });
-  show = (await db.get("shows", r.id))!;
-  assert.equal(gigPrep(show).find((c: any) => c.label === "Post the poster").due, addDays(openItem.due, 7));
-  assert.equal(gigPrep(show)[0].due, items[0].due, "done items keep their date");
-});
-
 test("a show not yet migrated: its old checklist and gear read as lists, and the first change writes the new shape", async () => {
   const r = await create();
   await db.update(ctx, "shows", r.id, {
@@ -185,22 +146,8 @@ test("a show not yet migrated: its old checklist and gear read as lists, and the
   assert.equal(show.checklist, undefined); assert.equal(show.gear, undefined);
   assert.deepEqual(show.checklists.map((l: any) => [l.name, l.items.map((i: any) => [i.label, i.done, i.ownerId ?? null])]),
     [["Gig prep", [["Old item", false, null]]], ["Gear", [["Bass rig", true, ids.david]]]]);
-});
-
-test("members can tick only items assigned to them", async () => {
-  const r = await create();
-  await cmd("shows.setChecklists", { id: r.id, checklists: [{ name: "Gear", items: [{ label: "Bass rig", ownerId: ids.david }, { label: "Keys rig", ownerId: ids.jeff }, { label: "Cords" }] }] });
-  const list = (await db.get("shows", r.id))!.checklists[0];
-  const [mine, notMine, anyone] = list.items;
-  await cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: mine.id, done: true }, mctx);
-  assert.equal((await db.get("shows", r.id))!.checklists[0].items[0].done, true);
-  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: notMine.id, done: true }, mctx), /assigned to you/);
-  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: anyone.id, done: true }, mctx), /assigned to you/);
-  await cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: anyone.id, done: true });
-  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: "nope", done: true }), /No such checklist item/);
-  assert.ok(!registry["shows.update"].roles.includes("member"));
-  assert.ok(!registry["shows.setChecklists"].roles.includes("member"));
-  assert.ok(!registry["shows.afterShow"].roles.includes("member"));
+  assert.deepEqual(show.checklists.map((l: any) => l.templateId), [null, null]);
+  assert.equal(show.checklists[1].items[0].doneBy, "m-david");
 });
 
 test("status changes: setStatus keeps who, when and why; a blank reason clears it", async () => {

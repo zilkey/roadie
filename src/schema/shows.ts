@@ -7,9 +7,10 @@ export type ShowKind = z.infer<typeof showKind>;
 export const showStatus = z.enum(["hold", "confirmed", "played", "canceled", "dropped"]);
 export type ShowStatus = z.infer<typeof showStatus>;
 
-/** One item on a show checklist. ownerId is a musician ("Anyone" = none). Gear is just a checklist: done = packed, owner = who brings it. */
-export const checklistItem = z.strictObject({ id, label: z.string().min(1), done: z.boolean(), ownerId: id.optional(), due: dateStr.optional() });
-export const checklist = z.strictObject({ id, name: z.string().min(1), items: z.array(checklistItem) });
+/** One item on a show checklist. ownerId is a musician (missing = unassigned). doneAt (ISO instant) and doneBy (uid) are set when it is ticked. */
+export const checklistItem = z.strictObject({ id, label: z.string().min(1), done: z.boolean(), ownerId: id.optional(), doneAt: z.string().optional(), doneBy: z.string().optional() });
+/** templateId: the checklist template it was made from or saved as (null = none). List order is array order. */
+export const checklist = z.strictObject({ id, name: z.string().min(1), templateId: id.nullable(), items: z.array(checklistItem) });
 export type ShowChecklist = z.infer<typeof checklist>;
 
 export const Show = entity({
@@ -45,7 +46,7 @@ export const Show = entity({
   personnel: z.array(id),
   sound,
   needs: z.strictObject({ poster: z.boolean(), backline: z.boolean(), merch: z.boolean() }),
-  /** Several named lists (Gig prep, Gear, ...). Missing on shows not yet migrated: read with checklistsOf(). */
+  /** Several named lists, in order. Missing on shows not yet migrated: read with checklistsOf(). */
   checklists: z.array(checklist).optional(),
   /** LEGACY single checklist and gear list, until `npm run migrate:show-page` turns them into checklists. Never written. */
   checklist: z.array(z.strictObject({

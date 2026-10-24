@@ -3,11 +3,12 @@ import { roleIn } from "@/schema/users";
 
 export type Sound = { provider: "venueProvided" | "bandProvided"; notes?: string };
 export type Needs = { poster: boolean; backline: boolean; merch: boolean };
-export interface TemplateLike { label: string; when: "always" | "bandSound" | "venueSound" | "poster" | "backline" | "merch"; daysBefore: number }
-export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; due?: string }
-/** LEGACY gear item (shows not yet migrated); gear is now a checklist named "Gear". */
+export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; doneAt?: string; doneBy?: string }
+/** LEGACY gear item (shows not yet migrated): read as an ordinary list named "Gear". */
 export interface GearItem { id: string; label: string; musicianId?: string; packed: boolean }
-export interface ChecklistLike { id: string; name: string; items: ChecklistItem[] }
+/** templateId is missing only on lists not yet written in the new shape (read: none). */
+export interface ChecklistLike { id: string; name: string; templateId?: string | null; items: ChecklistItem[] }
+export interface ChecklistTemplateLike { id: string; name: string; order: number; items: { id: string; label: string }[] }
 export interface ArtistLike {
   configurations: { id: string; name: string; billingName: string; musicianIds: string[] }[];
 }
@@ -59,19 +60,10 @@ export function calendarInvitees(
   });
 }
 
-/** A sensible starting set; scripts/seed.ts creates these as checklistTemplates. */
-export const DEFAULT_CHECKLIST_TEMPLATES: TemplateLike[] = [
-  { label: "Confirm load-in and set times", when: "always", daysBefore: 7 },
-  { label: "Confirm day-of contact", when: "always", daysBefore: 2 },
-  { label: "Share the setlist with the band", when: "always", daysBefore: 3 },
-  { label: "Book sound engineer", when: "bandSound", daysBefore: 21 },
-  { label: "Load PA and cables", when: "bandSound", daysBefore: 1 },
-  { label: "Send stage plot and input list to the venue", when: "venueSound", daysBefore: 7 },
-  { label: "Post the poster", when: "poster", daysBefore: 14 },
-  { label: "Order or print posters", when: "poster", daysBefore: 21 },
-  { label: "Confirm backline with the venue", when: "backline", daysBefore: 10 },
-  { label: "Pack merch table", when: "merch", daysBefore: 2 },
-  { label: "Count merch stock and card reader", when: "merch", daysBefore: 5 },
+/** The templates every new artist starts with (seedDefaultTemplates: artists.create, scripts/seed.ts, migrate:checklists). */
+export const DEFAULT_TEMPLATES: { name: string; items: string[] }[] = [
+  { name: "Promo", items: ["Make show poster", "Post on social media", "Send email to email list"] },
+  { name: "Follow Up", items: ["Post on social media"] },
 ];
 
 // ---------- dates and times ----------
@@ -96,28 +88,13 @@ export const fmtDur = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.ro
 
 // ---------- checklist ----------
 
-export function templateApplies(when: TemplateLike["when"], show: { sound: Sound; needs: Needs }): boolean {
-  switch (when) {
-    case "always": return true;
-    case "bandSound": return show.sound.provider === "bandProvided";
-    case "venueSound": return show.sound.provider === "venueProvided";
-    default: return show.needs[when];
-  }
-}
-export function buildChecklist(templates: TemplateLike[], show: { date: string; sound: Sound; needs: Needs }, newId: () => string): ChecklistItem[] {
-  return templates.filter((t) => templateApplies(t.when, show))
-    .map((t) => ({ id: newId(), label: t.label, done: false, due: addDays(show.date, -t.daysBefore) }))
-    .sort((a, b) => a.due!.localeCompare(b.due!));
-}
-/** The list template items go into (and the old single checklist became). */
-export const GIG_PREP = "Gig prep";
-/** A show's checklists: `checklists`, or for a show not yet migrated its old checklist ("Gig prep") and gear list ("Gear"). */
-export function checklistsOf(s: { checklists?: ChecklistLike[]; checklist?: ChecklistItem[]; gear?: GearItem[] }): ChecklistLike[] {
+/** A show's checklists: `checklists`, or for a show not yet migrated its old checklist ("Gig prep") and gear list ("Gear"), as ordinary lists. */
+export function checklistsOf(s: { checklists?: ChecklistLike[]; checklist?: (ChecklistItem & { due?: string })[]; gear?: GearItem[] }): ChecklistLike[] {
   if (s.checklists) return s.checklists;
   const out: ChecklistLike[] = [];
-  if (s.checklist?.length) out.push({ id: "gigprep", name: GIG_PREP, items: s.checklist });
+  if (s.checklist?.length) out.push({ id: "gigprep", name: "Gig prep", templateId: null, items: s.checklist.map(({ due: _due, ...i }) => i) });
   if (s.gear?.length) {
-    out.push({ id: "gear", name: "Gear", items: s.gear.map((g) => ({ id: g.id, label: g.label, done: g.packed, ...(g.musicianId ? { ownerId: g.musicianId } : {}) })) });
+    out.push({ id: "gear", name: "Gear", templateId: null, items: s.gear.map((g) => ({ id: g.id, label: g.label, done: g.packed, ...(g.musicianId ? { ownerId: g.musicianId } : {}) })) });
   }
   return out;
 }
@@ -126,18 +103,9 @@ export function checklistCount(lists: ChecklistLike[]) {
   const items = lists.flatMap((l) => l.items);
   return { done: items.filter((i) => i.done).length, total: items.length };
 }
-/** Put built template items into the Gig prep list (made first if missing), skipping labels any list already has. */
-export function mergeIntoGigPrep(lists: ChecklistLike[], built: ChecklistItem[], newId: () => string): ChecklistLike[] {
-  const have = new Set(lists.flatMap((l) => l.items.map((i) => i.label.toLowerCase())));
-  const add = built.filter((i) => !have.has(i.label.toLowerCase()));
-  if (!add.length) return lists;
-  const gp = lists.find((l) => l.name === GIG_PREP);
-  return gp ? lists.map((l) => (l === gp ? { ...l, items: [...l.items, ...add] } : l)) : [{ id: newId(), name: GIG_PREP, items: add }, ...lists];
-}
-/** Add template items not already on the list (matched by label). Existing items are never touched. */
-export function mergeChecklist(existing: ChecklistItem[], built: ChecklistItem[]): ChecklistItem[] {
-  const have = new Set(existing.map((i) => i.label.toLowerCase()));
-  return [...existing, ...built.filter((i) => !have.has(i.label.toLowerCase()))];
+/** Open items for one person across every list, in list order: assigned to them (their musicianId) or to nobody (Home). */
+export function openItemsFor(lists: ChecklistLike[], musicianId?: string): (ChecklistItem & { listId: string; listName: string })[] {
+  return lists.flatMap((l) => l.items.filter((i) => !i.done && (!i.ownerId || i.ownerId === musicianId)).map((i) => ({ ...i, listId: l.id, listName: l.name })));
 }
 
 // ---------- availability ----------
