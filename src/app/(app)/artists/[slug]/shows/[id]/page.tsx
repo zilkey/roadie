@@ -65,7 +65,7 @@ function ShowView({ show }: { show: ShowRow }) {
         {admin && <button className="btn ghost sm" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
         {admin && <SaveStatus {...as.statusProps} />}
         {admin && show.status !== "canceled" && (
-          <button className="btn ghost sm" disabled={busy} data-testid="show-cancel"
+          <button className="btn danger sm" disabled={busy} data-testid="show-cancel"
             onClick={() => confirm("Cancel this show? It comes off the calendar and Bandsintown.") && call("shows.cancel", { id: show.id })}>Cancel show</button>
         )}
         {admin && show.status === "canceled" && <button className="btn ghost sm" disabled={busy} onClick={() => call("shows.update", { id: show.id, patch: { status: "hold" } })} data-testid="show-restore">Bring back as a hold</button>}
@@ -116,7 +116,7 @@ function ShowView({ show }: { show: ShowRow }) {
           </div>
         </div>
       )}
-      {admin && <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }} data-testid="show-remove">Archive show</button>}
+      {admin && <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }} data-testid="show-remove">Archive show</button>}
     </div>
   );
 }

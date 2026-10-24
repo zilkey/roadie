@@ -52,7 +52,7 @@ function TemplateCard({ t, onEdit, onDelete }: { t: Row<EmailTemplate>; onEdit()
     <div className="card" data-testid={`template-${t.name}`}>
       <div className="flex items-center justify-between gap-2">
         <b>{t.name}</b>
-        <span className="flex gap-2"><button className="btn ghost sm" onClick={onEdit} data-testid="template-edit">Edit</button><button className="btn ghost sm" onClick={onDelete}>Delete</button></span>
+        <span className="flex gap-2"><button className="btn ghost sm" onClick={onEdit} data-testid="template-edit">Edit</button><button className="btn danger sm" onClick={onDelete}>Delete</button></span>
       </div>
       <span className="s">{t.subject}</span>
       <pre className="s whitespace-pre-wrap font-sans">{t.body}</pre>

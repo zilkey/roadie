@@ -55,7 +55,7 @@ export function ChecklistPanel({ show, musicians, editable }: { show: ShowRow; m
                 {musicians.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
               <input type="date" className="input !w-auto" value={c.due ?? ""} onChange={(e) => e.target.value && patch(c.id, { due: e.target.value })} />
-              <button className="btn ghost sm" onClick={() => save(list.filter((x) => x.id !== c.id))} aria-label={`Remove ${c.label}`}>Remove</button>
+              <button className="btn danger sm" onClick={() => save(list.filter((x) => x.id !== c.id))} aria-label={`Remove ${c.label}`}>Remove</button>
             </div>
           ) : (c.ownerId || c.due) && <span className="s">{[c.ownerId && nameOf(musicians, c.ownerId), c.due && `due ${fmtLong(c.due)}`].filter(Boolean).join(" · ")}</span>}
         </div>
@@ -101,7 +101,7 @@ export function GearPanel({ show, musicians, editable }: { show: ShowRow; musici
             <option value="">No one</option>
             {musicians.filter((m) => m.active).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button className="btn ghost sm" onClick={() => save(show.gear.filter((x) => x.id !== g.id))} aria-label={`Remove ${g.label}`}>Remove</button>
+          <button className="btn danger sm" onClick={() => save(show.gear.filter((x) => x.id !== g.id))} aria-label={`Remove ${g.label}`}>Remove</button>
         </div>
       ))}
       {show.gear.length === 0 && editable && <span className="s">No gear yet.</span>}
@@ -163,7 +163,7 @@ export function DocsPanel({ show, editable }: { show: ShowRow; editable: boolean
       {show.docs.map((d, i) => (
         <div key={d.url + i} className="flex items-center justify-between gap-2">
           <a href={d.url} target="_blank" rel="noreferrer" className="font-semibold underline">{d.title}</a>
-          {editable && <button className="btn ghost sm" disabled={busy} onClick={() => saveDocs(show.docs.filter((_, j) => j !== i))}>Remove</button>}
+          {editable && <button className="btn danger sm" disabled={busy} onClick={() => saveDocs(show.docs.filter((_, j) => j !== i))}>Remove</button>}
         </div>
       ))}
       {show.docs.length === 0 && <span className="s">Stage plot, poster, etc.</span>}

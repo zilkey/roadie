@@ -99,7 +99,7 @@ function ArtistEditor() {
       {cfgs.map((c, i) => (
         <div key={c.id ?? i} className="card" data-testid={`config-${c.id ?? i}`}>
           <div className="flex items-center justify-between"><span className="lbl">Configuration</span>
-            <button type="button" className="btn ghost sm" onClick={() => editCfgs(cfgs.filter((_, j) => j !== i))}>Remove</button></div>
+            <button type="button" className="btn danger sm" onClick={() => editCfgs(cfgs.filter((_, j) => j !== i))}>Remove</button></div>
           <div className="grid grid-cols-2 gap-2">
             <input className="input" placeholder="Name (Trio)" value={c.name} onChange={(e) => setCfg(i, { name: e.target.value })} aria-label="Configuration name" />
             <input className="input" placeholder="Billing name" value={c.billingName} onChange={(e) => setCfg(i, { billingName: e.target.value })} aria-label="Billing name" />

@@ -50,7 +50,7 @@ function EditionPage() {
       <span className="lbl">Pitches</span>
       <PitchLinks pitches={b.pitches.filter((p) => p.target.kind === "edition" && p.target.id === id)} />
       <Link href={hrefFor("festival", e.festivalId)} className="btn ghost sm justify-self-start">All years of {e.festivalName}</Link>
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm("Archive this year?") && (await call("editions.remove", { id }))) router.replace(hrefFor("festival", e.festivalId)); }}>Archive this year</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm("Archive this year?") && (await call("editions.remove", { id }))) router.replace(hrefFor("festival", e.festivalId)); }}>Archive this year</button>
     </div>
   );
 }

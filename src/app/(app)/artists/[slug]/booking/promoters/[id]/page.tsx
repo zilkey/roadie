@@ -47,7 +47,7 @@ function PromoterPage() {
       ))}
       <span className="lbl">Pitches</span>
       <PitchLinks pitches={b.pitches.filter((x) => x.target.kind === "promoter" && x.target.id === id)} />
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm(`Archive ${p.name}?`) && (await call("promoters.remove", { id }))) router.replace("/booking"); }}>Archive promoter</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm(`Archive ${p.name}?`) && (await call("promoters.remove", { id }))) router.replace("/booking"); }}>Archive promoter</button>
     </div>
   );
 }

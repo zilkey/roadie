@@ -184,7 +184,7 @@ function PitchPage() {
           <DraftNote restoredAt={callDraft.restoredAt} status={callDraft.status} onStartOver={() => void callDraft.clear({ reset: true })} />
         </form>
       )}
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); }}>Remove from Pitch List</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); }}>Remove from Pitch List</button>
     </div>
   );
 }

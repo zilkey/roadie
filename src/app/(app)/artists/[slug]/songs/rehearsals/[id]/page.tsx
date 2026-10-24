@@ -142,7 +142,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
           <span className="min-w-0 flex-1 truncate text-sm font-semibold">{f.title}</span>
           {playerFor(f).mode === "audio" && <audio controls preload="none" src={f.url} className="h-8" />}
           <a className="btn ghost sm" href={f.url} target="_blank" rel="noreferrer" data-testid="file-open">Open in Drive</a>
-          {admin && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">Remove</button>}
+          {admin && <button type="button" className="btn danger sm" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">Remove</button>}
         </div>
       ))}
     </div>
@@ -182,7 +182,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button type="button" className="btn ghost" disabled={busy} data-testid="reh-archive" onClick={async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/songs"); }}>Archive</button>
+        <button type="button" className="btn danger" disabled={busy} data-testid="reh-archive" onClick={async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/songs"); }}>Archive</button>
       </div>
       <ErrorBox error={error} />
     </div>

@@ -88,7 +88,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
               <span className="flex gap-1">
                 <button className="btn ghost sm" disabled={i === 0} onClick={() => reorder(i, i - 1)} aria-label={`Move ${songTitle(it)} up`} data-testid="item-up">↑</button>
                 <button className="btn ghost sm" disabled={i === items.length - 1} onClick={() => reorder(i, i + 1)} aria-label={`Move ${songTitle(it)} down`} data-testid="item-down">↓</button>
-                <button className="btn ghost sm" onClick={() => save(items.filter((_, j) => j !== i))} aria-label={`Remove ${songTitle(it)}`} data-testid="item-remove">✕</button>
+                <button className="btn danger sm" onClick={() => save(items.filter((_, j) => j !== i))} aria-label={`Remove ${songTitle(it)}`} data-testid="item-remove">✕</button>
               </span>
             )}
           </li>
@@ -127,7 +127,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
         {show ? <Link href={`/shows/${show.id}`} className="s font-semibold" data-testid="show-link">{fmtDay(show.date)} · {showName(show)}</Link> : !admin && <span className="s">No show yet.</span>}
       </div>
       {admin && (
-        <button className="btn ghost justify-self-start" disabled={busy} data-testid="setlist-archive" onClick={async () => { if (confirm(`Archive ${sl.name}?`) && (await call("setlists.remove", { id: sl.id }))) router.push("/songs"); }}>Archive setlist</button>
+        <button className="btn danger justify-self-start" disabled={busy} data-testid="setlist-archive" onClick={async () => { if (confirm(`Archive ${sl.name}?`) && (await call("setlists.remove", { id: sl.id }))) router.push("/songs"); }}>Archive setlist</button>
       )}
       <ErrorBox error={error} />
     </div>

@@ -371,7 +371,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
         <div key={c.id} className="card" data-testid={`contact-${c.name}`}>
           <div className="flex items-center justify-between gap-2">
             <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
-            <button className="btn ghost sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
+            <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
           </div>
           {c.title && <span className="s">{c.title}</span>}
           {c.emails.map((e) => (
@@ -386,7 +386,7 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
             {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <button className="btn ghost sm" onClick={() => setAdding(!adding)} data-testid="contact-new">{adding ? "Close" : "New contact"}</button>
+        <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="contact-new">{adding ? "Close" : "New contact"}</button>
       </div>
       {adding && (
         <EntityForm testid="contact-form" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build} submitLabel="Add contact"

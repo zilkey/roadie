@@ -58,7 +58,7 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
         </div>
       )}
       {admin && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
-      {admin && <div><button className="btn ghost sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? The Drive file stays put.`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button></div>}
+      {admin && <div><button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? The Drive file stays put.`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button></div>}
       <ErrorBox error={error} />
     </div>
   );
@@ -125,7 +125,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <div className="flex gap-2">
-            <button type="button" className="btn ghost" disabled={busy} data-testid="song-archive" onClick={async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); }}>Archive song</button>
+            <button type="button" className="btn danger" disabled={busy} data-testid="song-archive" onClick={async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); }}>Archive song</button>
           </div>
         </div>
       )}

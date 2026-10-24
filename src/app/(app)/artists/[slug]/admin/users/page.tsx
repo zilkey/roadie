@@ -75,7 +75,7 @@ function UserRow({ u, isMe, busy, call, musicianName }: { u: Row<User>; isMe: bo
     <div className="card" data-testid={`user-${u.email}`}>
       <div className="flex items-center justify-between gap-2">
         <div><b>{u.name}</b> <span className={`chip ${role === "admin" ? "a" : "m"}`}>{role}</span></div>
-        {!isMe && <button className="btn ghost sm" disabled={busy} onClick={() => confirm(`Remove ${u.name}?`) && call("users.remove", { id: u.id })}>Remove</button>}
+        {!isMe && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${u.name}?`) && call("users.remove", { id: u.id })}>Remove</button>}
       </div>
       <span className="s">{u.email}{u.musicianId ? ` · ${musicianName ?? "musician"}` : ""}</span>
       <div className="flex flex-wrap items-center gap-3">

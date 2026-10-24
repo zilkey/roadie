@@ -78,7 +78,7 @@ function MusicianRow({ m, busy, call }: { m: Row<Musician>; busy: boolean; call:
         <div className="flex gap-2">
           <button className="btn ghost sm" onClick={() => setEdit(!edit)} data-testid="musician-edit">{edit ? "Done" : "Edit"}</button>
           <button className="btn ghost sm" onClick={() => as.patch({ active: !m.active }, { now: true })} data-testid="musician-active">{m.active ? "Set inactive" : "Set active"}</button>
-          <button className="btn ghost sm" disabled={busy} onClick={() => confirm(`Archive ${m.name}?`) && call("musicians.remove", { id: m.id })}>Archive</button>
+          <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Archive ${m.name}?`) && call("musicians.remove", { id: m.id })}>Archive</button>
         </div>
       </div>
       {edit ? (

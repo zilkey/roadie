@@ -57,7 +57,7 @@ function VenuePage() {
           {past.map((s) => <div key={s.id} className="card"><b>{fmtDate(s.date)} {s.date.slice(0, 4)}</b><span className="s">{s.status}{s.editionName ? ` · ${s.editionName}` : ""}</span></div>)}
         </div>
       )}
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm(`Archive ${v.name}?`) && (await call("venues.remove", { id }))) router.replace("/booking"); }}>Archive venue</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm(`Archive ${v.name}?`) && (await call("venues.remove", { id }))) router.replace("/booking"); }}>Archive venue</button>
     </div>
   );
 }

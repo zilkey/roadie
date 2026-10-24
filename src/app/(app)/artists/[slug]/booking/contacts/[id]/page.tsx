@@ -47,7 +47,7 @@ function ContactPage() {
       ))}
       <span className="lbl">House concerts hosted</span>
       <ShowLinks where={["hostContactIds", "array-contains", id]} empty="None." testid="hosted-shows" />
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm(`Archive ${c.name}?`) && (await call("contacts.remove", { id }))) router.replace("/booking"); }}>Archive contact</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm(`Archive ${c.name}?`) && (await call("contacts.remove", { id }))) router.replace("/booking"); }}>Archive contact</button>
     </div>
   );
 }

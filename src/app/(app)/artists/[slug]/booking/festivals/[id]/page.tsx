@@ -57,7 +57,7 @@ function FestivalPage() {
           onSubmit={async (d, meta) => { const r = await call("editions.create", { ...d, festivalId: id }, meta); if (r) setAddEd(false); return !!r; }} />
       )}
       <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} />
-      <button className="btn ghost sm justify-self-start" onClick={async () => { if (confirm(`Archive ${f.name} and its years?`) && (await call("festivals.remove", { id }))) router.replace("/booking"); }}>Archive festival</button>
+      <button className="btn danger sm justify-self-start" onClick={async () => { if (confirm(`Archive ${f.name} and its years?`) && (await call("festivals.remove", { id }))) router.replace("/booking"); }}>Archive festival</button>
     </div>
   );
 }
