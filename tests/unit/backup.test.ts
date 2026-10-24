@@ -18,7 +18,8 @@ test("backup then restore round-trips every collection, subcollections, history 
   const ctx = importCtx("tester", "seed-run");
   const v = await db.create(ctx, "venues", venue("Bluebird", "Denver", { capacity: 500 }));
   const c = await db.create(ctx, "contacts", { name: "Pat", emails: ["pat@example.com"], phones: ["+13035551212"] });
-  await db.update(ctx, "venues", v.id, { contactIds: [c.id], notes: "great room" });
+  await db.update(ctx, "venues", v.id, { website: "https://bluebird.example" });
+  await db.create(ctx, "venueNotes", { artistId: "a", venueId: v.id, contactIds: [c.id], promoterIds: [], notes: "great room" }, { id: `a__${v.id}` });
   const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
   await run(ctx, async (w) => {
     await w.create(`pitches/${p.id}/activity`, { type: "note", text: "called" });
@@ -71,4 +72,24 @@ test("restore validates every document with the Zod schemas", async () => {
   const wrongId = structuredClone(dump);
   wrongId.venues[0].path = "venues/other";
   assert.ok(validateRow(wrongId.venues[0]).some((e) => /does not match/.test(e)));
+});
+
+test("restore validator: venueNotes need their artist and venue, and an old-shape venue (private fields still on it) still restores", async () => {
+  const ctx = importCtx("tester", "r2");
+  const v = await db.create(ctx, "venues", venue("Okay"));
+  await db.create(ctx, "venueNotes", { artistId: "a", venueId: v.id, contactIds: [], promoterIds: [], notes: "n" }, { id: `a__${v.id}` });
+  const dump = await dumpAll(firestore());
+  assert.deepEqual(validateDump(dump), []);
+  assert.ok(dump.venueNotes.some((r) => r.path === `venueNotes/a__${v.id}`), "the new collection is in the dump");
+  const bad = structuredClone(dump);
+  delete bad.venueNotes.find((r) => r.path === `venueNotes/a__${v.id}`)!.data.artistId;
+  assert.ok(validateDump(bad).some((e) => /artistId/.test(e)));
+  // a backup taken before the split has the private fields on the venue itself: it must still restore until migrate:venue-notes has run
+  const old = structuredClone(dump);
+  Object.assign(old.venues.find((r) => r.path === `venues/${v.id}`)!.data, { notes: "old", contactIds: ["c"], promoterIds: [], loadInNotes: "dock" });
+  assert.deepEqual(validateDump(old), []);
+  // history entries from before the artist stamp have none
+  const oldHist = structuredClone(dump);
+  delete oldHist.venues.find((r) => r.path.includes("/history/"))!.data.artistId;
+  assert.deepEqual(validateDump(oldHist), []);
 });

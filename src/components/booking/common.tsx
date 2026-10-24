@@ -1,31 +1,46 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
+import { withNotes, type NoteFields } from "@/lib/venues";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, Promoter, Festival, Edition, Contact, Pitch, PitchDate } from "@/schema";
+import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, PitchDate } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
 
-/** All booking collections, live. Small data set, so every page just loads what it needs. */
+/** A venue as the band sees it: the shared room with this band's private notes laid over it (so `contactIds` etc. are the band's own). */
+export type VenueRow = Row<Omit<Venue, keyof NoteFields>> & NoteFields;
+
+/**
+ * All booking collections, live. Small data set, so every page just loads what it needs.
+ * Venues are the shared directory (everyone reads it); the band's private notes are `venueNotes` (admins only, so for members nothing
+ * but the venues is loaded). `venues` leaves out rooms this band archived and carries the band's notes; `venueNotes` has them all, archived too.
+ */
 export function useBooking() {
+  const { artistId, role } = useArtist();
+  const admin = role === "admin";
   const venues = useCollection<Venue>("venues");
-  const promoters = useCollection<Promoter>("promoters");
-  const festivals = useCollection<Festival>("festivals");
-  const editions = useCollection<Edition>("editions");
-  const contacts = useCollection<Contact>("contacts");
-  const pitches = useCollection<PitchRow>("pitches");
+  const notes = useCollection<VenueNote>("venueNotes", { where: [["artistId", "==", artistId]], includeDeleted: true, skip: !admin });
+  const promoters = useCollection<Promoter>("promoters", { skip: !admin });
+  const festivals = useCollection<Festival>("festivals", { skip: !admin });
+  const editions = useCollection<Edition>("editions", { skip: !admin });
+  const contacts = useCollection<Contact>("contacts", { skip: !admin });
+  const pitches = useCollection<PitchRow>("pitches", { skip: !admin });
+  const venueNotes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.venueId, n])), [notes.rows]);
+  const venueRows = useMemo<VenueRow[]>(
+    () => (venues.rows ?? []).filter((v) => !venueNotes.get(v.id)?.deletedAt).map((v) => withNotes(v, venueNotes.get(v.id)) as VenueRow),
+    [venues.rows, venueNotes]);
   return {
-    venues: venues.rows ?? [], promoters: promoters.rows ?? [], festivals: festivals.rows ?? [],
+    venues: venueRows, venueNotes, promoters: promoters.rows ?? [], festivals: festivals.rows ?? [],
     editions: editions.rows ?? [], contacts: contacts.rows ?? [], pitches: pitches.rows ?? [],
-    loading: [venues, promoters, festivals, editions, contacts, pitches].some((c) => c.loading),
+    loading: [venues, notes, promoters, festivals, editions, contacts, pitches].some((c) => c.loading),
   };
 }
 
@@ -216,7 +231,7 @@ export interface Field {
 export type Values = Record<string, string>;
 
 /** The field grid shared by every EntityForm mode. */
-function FormFields({ fields, v, set, testid, onBlur }: { fields: Field[]; v: Values; set(k: string, val: string): void; testid: string; onBlur?(): void }) {
+export function FormFields({ fields, v, set, testid, onBlur }: { fields: Field[]; v: Values; set(k: string, val: string): void; testid: string; onBlur?(): void }) {
   return (
     <div className="grid grid-cols-2 gap-2" onBlur={onBlur}>
       {fields.map((f) => (
@@ -289,7 +304,7 @@ function PlainEntityForm({ fields, initial, build, submitLabel, onSubmit, testid
 
 const jsonOf = (o: Record<string, unknown>) => JSON.stringify(o);
 /** Top-level keys whose built value differs between two form states (undefined = cleared = null). */
-function changedKeys(build: (v: Values) => Record<string, unknown>, a: Values, b: Values) {
+export function changedKeys(build: (v: Values) => Record<string, unknown>, a: Values, b: Values) {
   const pa = toPatch(build(a)), pb = toPatch(build(b)), out: Record<string, unknown> = {};
   for (const k of new Set([...Object.keys(pa), ...Object.keys(pb)])) if (jsonOf({ v: pa[k] ?? null }) !== jsonOf({ v: pb[k] ?? null })) out[k] = pb[k] ?? null;
   return out;
@@ -347,7 +362,8 @@ const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean
 const o = (...pairs: [string, string][]) => pairs;
 const REGIONS = o(["boulder", "Boulder"], ["denver", "Denver"], ["north", "North"], ["south", "South"], ["mountains", "Mountains"], ["southwest", "Southwest"], ["out", "Out of state"]);
 
-export const venueForm = {
+/** The shared room: name, address and facts every band sees. Edited with an explicit Save (and a confirmation), because it changes the room for every band. */
+export const roomForm = {
   fields: [
     { key: "name", label: "Name", required: true },
     { key: "type", label: "Type", type: "select", half: true, options: o(["bar", "Bar"], ["club", "Club"], ["listening", "Listening room"], ["brewery", "Brewery"], ["theater", "Theater"], ["outdoor", "Outdoor"], ["house", "House"], ["other", "Other"]) },
@@ -359,19 +375,29 @@ export const venueForm = {
     { key: "soundProvider", label: "Sound", type: "select", half: true, options: o(["", "Not sure"], ["venueProvided", "Venue provides"], ["bandProvided", "Band brings"]) },
     { key: "soundNotes", label: "Sound notes", half: true },
     { key: "website", label: "Website", half: true }, { key: "instagram", label: "Instagram", half: true },
-    { key: "loadInNotes", label: "Load-in notes", type: "textarea" }, { key: "notes", label: "Notes", type: "textarea" },
   ] as Field[],
-  blank: { type: "bar", region: "denver", city: "", state: "CO", ages: "", soundProvider: "" } as Values,
-  initial: (d: Venue): Values => ({
+  initial: (d: Pick<Venue, "name" | "type" | "region" | "address" | "capacity" | "ages" | "sound" | "website" | "instagram">): Values => ({
     name: d.name, type: d.type, region: d.region, city: d.address.city, state: d.address.state, street: d.address.street ?? "", zip: d.address.zip ?? "",
     capacity: d.capacity?.toString() ?? "", ages: d.ages ?? "", soundProvider: d.sound?.provider ?? "", soundNotes: d.sound?.notes ?? "",
-    website: d.website ?? "", instagram: d.instagram ?? "", loadInNotes: d.loadInNotes ?? "", notes: d.notes ?? "",
+    website: d.website ?? "", instagram: d.instagram ?? "",
   }),
   build: (v: Values) => ({
     name: v.name, type: v.type, region: v.region, address: { city: v.city, state: v.state, street: opt(v.street ?? ""), zip: opt(v.zip ?? "") },
     capacity: num(v.capacity ?? ""), ages: opt(v.ages ?? ""), sound: v.soundProvider ? { provider: v.soundProvider, notes: opt(v.soundNotes ?? "") } : undefined,
-    website: opt(v.website ?? ""), instagram: opt(v.instagram ?? ""), loadInNotes: opt(v.loadInNotes ?? ""), notes: opt(v.notes ?? ""),
+    website: opt(v.website ?? ""), instagram: opt(v.instagram ?? ""),
   }),
+};
+/** This band's private notes on a venue (admins only). They autosave. */
+export const venueNotesForm = {
+  fields: [{ key: "loadInNotes", label: "Load-in notes", type: "textarea" }, { key: "notes", label: "Notes", type: "textarea" }] as Field[],
+  initial: (d: NoteFields): Values => ({ loadInNotes: d.loadInNotes ?? "", notes: d.notes ?? "" }),
+  build: (v: Values) => ({ loadInNotes: opt(v.loadInNotes ?? ""), notes: opt(v.notes ?? "") }),
+};
+/** The new-venue form: the room plus (for admins) the band's first notes. venues.create splits it across the two documents. */
+export const venueForm = {
+  fields: [...roomForm.fields, ...venueNotesForm.fields],
+  blank: { type: "bar", region: "denver", city: "", state: "CO", ages: "", soundProvider: "" } as Values,
+  build: (v: Values) => ({ ...roomForm.build(v), ...venueNotesForm.build(v) }),
 };
 export const promoterForm = {
   fields: [

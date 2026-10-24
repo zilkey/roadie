@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { usingEmulators } from "@/lib/firebase-client";
-import { DEV_PEOPLE, DEV_STRANGER } from "@/lib/dev-people";
+import { DEV_OTHER_BAND, DEV_PEOPLE, DEV_STRANGER } from "@/lib/dev-people";
 
 export default function SignIn() {
   const { state, signInWithGoogle, devSignIn } = useAuth();
@@ -34,6 +34,9 @@ export default function SignIn() {
                 {p.name} <span className={`chip ${p.role === "admin" ? "a" : "m"}`}>{p.role}</span>
               </button>
             ))}
+            <button className="btn ghost sm" data-testid={`dev-${DEV_OTHER_BAND.person.key}`} onClick={() => go(() => devSignIn(DEV_OTHER_BAND.person))}>
+              {DEV_OTHER_BAND.person.name} <span className="chip a">admin</span> <span className="chip">{DEV_OTHER_BAND.artistName}</span>
+            </button>
             <button className="btn ghost sm" data-testid={`dev-${DEV_STRANGER.key}`} onClick={() => go(() => devSignIn(DEV_STRANGER))}>
               {DEV_STRANGER.name} <span className="chip">not invited</span>
             </button>

@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
+import { useArtist } from "@/lib/artist";
 import type { FieldDiff, History, User } from "@/schema";
 
 export default function HistoryPage() { return <AdminOnly><HistoryView /></AdminOnly>; }
@@ -41,6 +42,7 @@ function HistoryView() {
 
   // Every record keeps its own history/{rev} subcollection: one collection-group listener, newest first, the server does the limit.
   // A run id is looked up alone (it is rare); the other filters are applied here for that case.
+  const { artistId } = useArtist();
   const where = useMemo(() => {
     const w: [string, "==", unknown][] = [];
     if (runId.trim()) w.push(["runId", "==", runId.trim()]);
@@ -50,12 +52,18 @@ function HistoryView() {
     }
     return w;
   }, [runId, via, kind]);
-  const hist = useCollection<History>("history", { group: true, includeDeleted: true, where, order: ["createdAt", "desc"], limit: runId.trim() ? RUN_LIMIT : shown });
+  // Each entry carries the artist of its record: this artist's own, and the ones that belong to no one artist (null). The rules only
+  // let a query through that names one of the two, so it is two listeners, merged by time.
+  const opts = { group: true, includeDeleted: true, order: ["createdAt", "desc"] as ["createdAt", "desc"], limit: runId.trim() ? RUN_LIMIT : shown };
+  const own = useCollection<History>("history", { ...opts, where: [["artistId", "==", artistId], ...where] });
+  const shared = useCollection<History>("history", { ...opts, where: [["artistId", "==", null], ...where] });
+  const hist = { loading: own.loading || shared.loading, error: own.error ?? shared.error };
   const users = useCollection<User>("users");
   const who = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? uid;
-  const rows = useMemo(() => [...(hist.rows ?? [])]
+  const rows = useMemo(() => [...(own.rows ?? []), ...(shared.rows ?? [])]
     .filter((r) => !runId.trim() || ((!via || r.actor.via === via) && (!kind.trim() || r.entity.kind === kind.trim())))
-    .sort((a, b) => ms(b) - ms(a) || (b.seq ?? 0) - (a.seq ?? 0)), [hist.rows, runId, via, kind]);
+    .sort((a, b) => ms(b) - ms(a) || (b.seq ?? 0) - (a.seq ?? 0))
+    .slice(0, runId.trim() ? RUN_LIMIT : shown), [own.rows, shared.rows, runId, via, kind, shown]);
   const runRows = runId.trim() ? rows : [];
 
   async function undo(id: string) {
@@ -132,7 +140,7 @@ function HistoryView() {
           </div>
         ))}
       </div>
-      {!runId.trim() && (hist.rows?.length ?? 0) >= shown && <button className="btn ghost" onClick={() => setShown(shown + PAGE)} data-testid="show-more">Show more</button>}
+      {!runId.trim() && ((own.rows?.length ?? 0) >= shown || (shared.rows?.length ?? 0) >= shown) && <button className="btn ghost" onClick={() => setShown(shown + PAGE)} data-testid="show-more">Show more</button>}
     </div>
   );
 }

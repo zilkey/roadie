@@ -11,6 +11,7 @@ import type { Ctx } from "./ctx";
 import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
+import { diffHasPrivateContent } from "@/lib/venues";
 
 export type Doc = DocumentData & { id: string };
 
@@ -237,7 +238,29 @@ export class Writer {
     return { uid: c.uid, via: c.via, ...(c.sessionId ? { sessionId: c.sessionId } : {}), ...(c.client ? { client: c.client } : {}) };
   }
 
-  private commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
+  /**
+   * The artist a record belongs to, stamped on its history entries (firestore.rules let only that artist's admins read them):
+   * its own `artistId`; a show's deal and sub-collection docs (comments, activity) take their parent's; an artist is its own.
+   * Records of no one artist (contacts, songs, shared venues...) get null.
+   */
+  private async artistIdFor(path: string, id: string, doc: DocumentData, diff?: Diff): Promise<string | null> {
+    if (typeof doc.artistId === "string") return doc.artistId;
+    const kind = kindOf(path);
+    // A not-yet-migrated venue still holds one band's private fields: a change that moves them (migrate:venue-notes) is that band's history.
+    if (kind === "venues" && diff && diffHasPrivateContent(diff)) return this.ctx.artistId ?? null;
+    if (kind === "artists") return id;
+    if (kind === "showDeals") return ((await this.get("shows", id))?.artistId as string | undefined) ?? null;
+    const seg = path.split("/");
+    if (seg.length >= 3) {
+      const parentPath = seg.slice(0, -2).join("/"), parentId = seg[seg.length - 2];
+      const parent = await this.get(parentPath, parentId);
+      return parent ? this.artistIdFor(parentPath, parentId, parent) : null;
+    }
+    return null;
+  }
+
+  private async commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
+    const artistId = await this.artistIdFor(path, id, doc, diff);
     const ref = this.fs.collection(path).doc(id);
     const hist = ref.collection("history").doc(revId(doc.rev as number));
     const seq = this.seq++;
@@ -248,7 +271,7 @@ export class Writer {
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
-        entity: { kind: path, id }, op, diff, seq, actor: this.actor(), docRev: doc.rev,
+        entity: { kind: path, id }, op, artistId, diff, seq, actor: this.actor(), docRev: doc.rev,
         ...(autosave ? { autosave: true } : {}),
       });
     });
@@ -329,7 +352,7 @@ export class Writer {
     const id = opts.id ?? this.fs.collection(path).doc().id;
     if (opts.id && (await this.get(path, id))) throw new AppError("already_exists", `${path}/${id} already exists`, 409);
     const doc = clean(this.stampNew(id, { ...data, ...computed }));
-    this.commit(path, id, doc, "create", diffDocs(null, doc));
+    await this.commit(path, id, doc, "create", diffDocs(null, doc));
     return { id, merged: false };
   }
 
@@ -342,7 +365,7 @@ export class Writer {
     const next = clean(this.stampUpdate(existing, { ...data, ...computed }, existing.deletedAt ?? null));
     const diff = diffDocs(existing, next);
     if (Object.keys(diff).length) {
-      this.commit(path, existing.id, next, "merge", diff);
+      await this.commit(path, existing.id, next, "merge", diff);
       await this.afterChange(path, existing, next);
     }
     return { id: existing.id, merged: true };
@@ -385,7 +408,7 @@ export class Writer {
       this.coalescedRunId = fold.last.runId as string;
       next = { ...next, runId: this.coalescedRunId };
       this.commitFolded(path, id, next, fold);
-    } else this.commit(path, id, next, "update", diff, !!this.ctx.autosave && this.ctx.via === "app");
+    } else await this.commit(path, id, next, "update", diff, !!this.ctx.autosave && this.ctx.via === "app");
     await this.afterChange(path, existing, next);
     return { id, changed: true };
   }
@@ -397,7 +420,7 @@ export class Writer {
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (existing.deletedAt) return { id, changed: false };
     const next = clean(this.stampUpdate(existing, writable(existing), this.now));
-    this.commit(path, id, next, "delete", diffDocs(existing, next));
+    await this.commit(path, id, next, "delete", diffDocs(existing, next));
     return { id, changed: true };
   }
 
@@ -406,7 +429,7 @@ export class Writer {
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (!existing.deletedAt) return { id, changed: false };
     const next = clean(this.stampUpdate(existing, writable(existing), null));
-    this.commit(path, id, next, "restore", diffDocs(existing, next));
+    await this.commit(path, id, next, "restore", diffDocs(existing, next));
     return { id, changed: true };
   }
 
@@ -423,13 +446,13 @@ export class Writer {
     if (op === "create" || op === "restore") {
       if (existing.deletedAt) return { changed: false, as: "delete" };
       const next = clean(this.stampUpdate(existing, writable(existing), this.now));
-      this.commit(path, id, next, "delete", diffDocs(existing, next));
+      await this.commit(path, id, next, "delete", diffDocs(existing, next));
       return { changed: true, as: "delete" };
     }
     if (op === "delete") {
       if (!existing.deletedAt) return { changed: false, as: "restore" };
       const next = clean(this.stampUpdate(existing, writable(existing), null));
-      this.commit(path, id, next, "restore", diffDocs(existing, next));
+      await this.commit(path, id, next, "restore", diffDocs(existing, next));
       return { changed: true, as: "restore" };
     }
     const computed = new Set(computedFields[kind] ?? []);
@@ -451,7 +474,7 @@ export class Writer {
     const next = clean(this.stampUpdate(existing, { ...data, ...comp }, existing.deletedAt ?? null));
     const changes = diffDocs(existing, next);
     if (!Object.keys(changes).length) return { changed: false, as: "update", ...(skipped.length ? { skipped } : {}) };
-    this.commit(path, id, next, "update", changes);
+    await this.commit(path, id, next, "update", changes);
     await this.afterChange(path, existing, next);
     return { changed: true, as: "update", ...(skipped.length ? { skipped } : {}) };
   }
@@ -504,9 +527,9 @@ export const db = {
     const s = await firestore().collection(path).doc(id).get();
     return s.exists ? ({ ...s.data()!, id } as Doc) : null;
   },
-  async list(path: string, build?: (q: Query) => Query): Promise<Doc[]> {
+  async list(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean } = {}): Promise<Doc[]> {
     const s = await (build ? build(firestore().collection(path)) : firestore().collection(path)).get();
-    return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => !d.deletedAt);
+    return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => opts.includeDeleted || !d.deletedAt);
   },
   /** Collection-group query (every collection with this name, at any depth). Rows carry their full `path`. */
   async listGroup(group: string, build?: (q: Query) => Query): Promise<(Doc & { path: string })[]> {

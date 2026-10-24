@@ -6,6 +6,7 @@ import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { syncShow, type SyncResult } from "../showSync";
+import { noteOf } from "../venues";
 import { addDays, buildChecklist, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind } from "@/schema";
 import { patchInput } from "./util";
@@ -147,7 +148,7 @@ export const showsCreate = defineCommand({
       await w.create("showDeals", {
         pitchId: i.pitchId, promoterId: d.promoterId ?? (target?.kind === "promoter" ? target.id : undefined),
         editionId: edition?.id ?? (target?.kind === "edition" ? target.id : undefined),
-        contactIds: d.contactIds ?? (venue?.contactIds as string[] | undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal, guarantee: d.guarantee,
+        contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal, guarantee: d.guarantee,
         doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice, settled: false,
       }, { id: r.id });
       if (pitch && i.pitchId) {

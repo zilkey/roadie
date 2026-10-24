@@ -80,7 +80,7 @@ test("token auth: hashed lookup, lastUsedAt, revoked and no-AI-access are refuse
 
 const EXPECTED = [
   // places and people (read + write, with dedupe)
-  "venues.create", "venues.update", "promoters.create", "promoters.update", "festivals.create", "festivals.update", "editions.create", "editions.update",
+  "venues.create", "venues.update", "venues.mergeInto", "promoters.create", "promoters.update", "festivals.create", "festivals.update", "editions.create", "editions.update",
   "contacts.create", "contacts.update", "contacts.attach", "contacts.detach",
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
@@ -291,10 +291,10 @@ test("stdio entry: MCP_TOKEN authenticates, tools list, a bad token fails fast",
 });
 
 test("read tools: search, follow-ups, availability, missing files, Bandsintown reconcile, stats movement", async () => {
-  const ctx = mcpCtx();
+  const ctx = { ...mcpCtx(), artistId: "a" };
   const call = async (n: string, a: unknown) => parse(await callTool(n, a, async () => ctx)).result;
   const contact = await db.create(admin, "contacts", { name: "Dana Booker", emails: ["dana@example.com"], phones: [] });
-  const v = await db.create(admin, "venues", venue("Fox Theatre", "Boulder", { contactIds: [contact.id] }));
+  const v = await call("venues.create", venue("Fox Theatre", "Boulder", { contactIds: [contact.id] })); // the contact link is this band's private note
   const p = await db.create(admin, "pitches", {
     target: { kind: "venue", id: v.id, name: "Fox Theatre" }, status: "pitched", artistId: "a", personnel: [], showIds: [],
     lastContactAt: new Date(Date.now() - 20 * 86_400_000),

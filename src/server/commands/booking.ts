@@ -6,16 +6,20 @@ import { AppError } from "../errors";
 import { gmailClient, IntegrationError } from "../integrations";
 import type { MailMessage } from "../integrations/gmail";
 import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
+import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, sharedOf, writeNote } from "../venues";
 import {
-  VenueInput, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, PitchDate, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
+  VenueInput, venueNoteId, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, PitchDate, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
 
 const ROLES = ["admin", "mcp"] as const;
+/** The shared venue directory is open to every signed-in band user, members too (the private notes are not: see venues.ts). */
+const VENUE_ROLES = ["admin", "member", "mcp"] as const;
 const arr = <T extends z.ZodType>(s: T) => s.default([] as never);
 
 // ---------- places and people ----------
 
-const VenueIn = VenueInput.extend({ contactIds: arr(VenueInput.shape.contactIds), promoterIds: arr(VenueInput.shape.promoterIds) });
+// The private fields stay optional (no default []): a member may not send them at all, and "not sent" must be told from "sent empty".
+const VenueIn = VenueInput.extend({ contactIds: VenueInput.shape.contactIds.optional(), promoterIds: VenueInput.shape.promoterIds.optional() });
 const PromoterIn = PromoterInput.extend({ contactIds: arr(PromoterInput.shape.contactIds), venueIds: arr(PromoterInput.shape.venueIds) });
 const FestivalIn = FestivalInput.extend({ contactIds: arr(FestivalInput.shape.contactIds) });
 const EditionIn = EditionInput.omit({ festivalName: true }).extend({ venueIds: arr(EditionInput.shape.venueIds) });
@@ -23,7 +27,7 @@ const lowerEmails = z.array(z.string().transform(lowerEmail).pipe(emailSchema));
 const ContactIn = ContactInput.extend({ emails: lowerEmails.default([]), phones: z.array(z.string().transform(e164).pipe(ContactInput.shape.phones.element)).default([]) });
 const parentKind = z.enum(["venues", "promoters", "festivals"]);
 
-/** Keep venue.promoterIds and promoter.venueIds as two views of the same link. */
+/** Keep the band's venue promoterIds (venueNotes) and promoter.venueIds as two views of the same link. */
 async function syncVenuePromoters(w: Writer, venueId: string, promoterIds: string[]) {
   const promoters = await w.query("promoters");
   for (const p of promoters) {
@@ -34,27 +38,127 @@ async function syncVenuePromoters(w: Writer, venueId: string, promoterIds: strin
   }
 }
 
+async function requireVenue(w: Writer, id: string) {
+  const v = await w.get("venues", id);
+  if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
+  return v;
+}
+
 export const venuesCreate = defineCommand({
-  name: "venues.create", roles: [...ROLES], input: VenueIn,
-  description: "Add a venue. A venue with the same name and city merges into the existing one ({id, merged}).",
+  name: "venues.create", roles: [...VENUE_ROLES], input: VenueIn,
+  description:
+    "Add a venue. A venue with the same name and city merges into the existing one ({id, merged}). Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
+    "every band that uses Band Tracker sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
   run: (ctx, input) => run(ctx, async (w) => {
-    const r = await w.create("venues", input);
-    if (input.promoterIds.length) await syncVenuePromoters(w, r.id, (await w.get("venues", r.id))!.promoterIds);
+    const priv = Object.fromEntries(Object.entries(input).filter(([k, v]) => isPrivateField(k) && v !== undefined));
+    const shared = Object.fromEntries(Object.entries(input).filter(([k]) => !isPrivateField(k)));
+    refusePrivate(ctx, Object.keys(priv));
+    const r = await w.create("venues", shared);
+    if (ctx.role !== "member") {
+      const wants = hasPrivate(privateOf(priv));
+      const artistId = wants ? await artistIdOf(w) : await tryArtistId(w);
+      if (artistId) {
+        const venue = (await w.get("venues", r.id))!;
+        const { doc, fields } = await noteOf(w, venue, artistId);
+        if (wants) {
+          // Adding a room that is already in the directory fills what the band has not said yet and links more; it never replaces.
+          const next = await writeNote(w, venue, artistId, {
+            ...(priv.loadInNotes && !fields.loadInNotes ? { loadInNotes: priv.loadInNotes } : {}), ...(priv.notes && !fields.notes ? { notes: priv.notes } : {}),
+            contactIds: [...new Set([...fields.contactIds, ...((priv.contactIds as string[] | undefined) ?? [])])],
+            promoterIds: [...new Set([...fields.promoterIds, ...((priv.promoterIds as string[] | undefined) ?? [])])],
+          });
+          if (priv.promoterIds) await syncVenuePromoters(w, r.id, next.promoterIds);
+        } else if (doc?.deletedAt) await ensureNote(w, venue, artistId); // adding a room this band had archived brings it back
+      }
+    }
     return r;
   }),
 });
 export const venuesUpdate = defineCommand({
-  name: "venues.update", roles: [...ROLES], input: patchInput(VenueIn),
-  description: "Edit a venue. Renaming updates its pitches and shows.",
+  name: "venues.update", roles: [...VENUE_ROLES], input: patchInput(VenueIn),
+  description:
+    "Edit a venue. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Band Tracker, " +
+    "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
-    const r = await w.update("venues", id, patch as Record<string, unknown>);
-    if (patch.promoterIds) await syncVenuePromoters(w, id, patch.promoterIds as string[]);
-    return r;
+    const sharedPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => !isPrivateField(k) && v !== undefined));
+    const privPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => isPrivateField(k) && v !== undefined));
+    refusePrivate(ctx, Object.keys(privPatch));
+    const venue = await requireVenue(w, id);
+    let changed = false;
+    if (Object.keys(sharedPatch).length) changed = (await w.update("venues", id, sharedPatch)).changed;
+    if (Object.keys(privPatch).length) {
+      const artistId = await artistIdOf(w);
+      // The autosave form sends the notes' rev: conflict checks follow the notes doc, not the shared one.
+      if (ctx.baseRev?.id === id && !Object.keys(sharedPatch).length) ctx.baseRev = { id: venueNoteId(artistId, id), rev: ctx.baseRev.rev };
+      await writeNote(w, venue, artistId, privPatch);
+      if (privPatch.promoterIds) await syncVenuePromoters(w, id, privPatch.promoterIds as string[]);
+      changed = true;
+    }
+    return { id, changed };
   }),
 });
 export const venuesRemove = defineCommand({
-  name: "venues.remove", roles: ["admin"], input: idInput, description: "Archive a venue.",
-  run: (ctx, { id }) => db.softDelete(ctx, "venues", id),
+  name: "venues.remove", roles: ["admin"], input: idInput,
+  description: "Archive a venue for this band: it leaves this band's lists. The shared room stays for every other band (to fix a duplicate use venues.mergeInto).",
+  run: (ctx, { id }) => run(ctx, async (w) => {
+    const venue = await requireVenue(w, id);
+    await archiveNote(w, venue, await artistIdOf(w));
+    return { id, changed: true };
+  }),
+});
+
+/** Merge two text notes: both kept, the incoming one after, nothing doubled. */
+const joinText = (a?: string, b?: string) => (!a ? b : !b || a.includes(b) ? a : `${a}\n\n${b}`);
+
+export const venuesMergeInto = defineCommand({
+  name: "venues.mergeInto", roles: ["admin", "mcp"], input: z.strictObject({ from: z.string().min(1), into: z.string().min(1) }),
+  description:
+    "Merge a duplicate venue (from) into the one to keep (into), for EVERY band: their shows, pitches, promoter and festival-year links move to `into`, each band's private notes are joined onto its notes for `into`, " +
+    "empty shared fields on `into` are filled from `from`, and `from` is archived with a pointer to `into` (its page redirects). One run: history.undoRun reverses it. Never returns another band's private notes.",
+  run: (ctx, { from, into }) => run(ctx, async (w) => {
+    if (from === into) throw new AppError("invalid_input", "Pick a different venue to merge into", 400);
+    const src = await requireVenue(w, from), dst = await requireVenue(w, into);
+    const copy = { id: dst.id, name: dst.name as string, address: [dst.address?.street, dst.address?.city].filter(Boolean).join(", "), city: dst.address?.city as string | undefined };
+    const moved = { shows: 0, pitches: 0, promoters: 0, editions: 0, notes: 0 };
+
+    for (const s of await w.query("shows", (q) => q.where("venue.id", "==", from))) { await w.update("shows", s.id, { venue: copy }); moved.shows++; }
+    for (const p of await w.query("pitches", (q) => q.where("target.id", "==", from))) {
+      if (p.target?.kind === "venue") { await w.update("pitches", p.id, { target: { ...p.target, id: into, name: dst.name } }); moved.pitches++; }
+    }
+    for (const [coll, key] of [["promoters", "promoters"], ["editions", "editions"]] as const) {
+      for (const d of await w.query(coll, (q) => q.where("venueIds", "array-contains", from))) {
+        const ids = [...new Set((d.venueIds as string[]).map((x) => (x === from ? into : x)))];
+        await w.update(coll, d.id, { venueIds: ids });
+        moved[key]++;
+      }
+    }
+
+    // Each band's notes move across; where a band already has notes on `into` they are joined. Another band's content is written, never returned.
+    const notes = await w.query("venueNotes", (q) => q.where("venueId", "==", from), { includeDeleted: true });
+    const artists = new Set(notes.map((n) => n.artistId as string));
+    if (ctx.artistId) artists.add(ctx.artistId); // a not-yet-migrated venue keeps its private fields on the doc: they belong to the caller's band
+    for (const artistId of artists) {
+      const mine = await noteOf(w, src, artistId), theirs = await noteOf(w, dst, artistId);
+      if (!mine.doc && !hasPrivate(mine.fields)) continue;
+      const a = theirs.fields, b = mine.fields;
+      const joined = {
+        loadInNotes: joinText(a.loadInNotes, b.loadInNotes) ?? null, notes: joinText(a.notes, b.notes) ?? null,
+        contactIds: [...new Set([...a.contactIds, ...b.contactIds])], promoterIds: [...new Set([...a.promoterIds, ...b.promoterIds])],
+      };
+      const archived = !!mine.doc?.deletedAt && !!theirs.doc?.deletedAt; // the room stays hidden for a band only if it hid both
+      if (mine.doc?.deletedAt && !hasPrivate(mine.fields) && !theirs.doc) continue; // nothing to carry over
+      await writeNote(w, dst, artistId, joined);
+      if (archived) await w.softDelete("venueNotes", venueNoteId(artistId, into));
+      if (mine.doc && !mine.doc.deletedAt) await w.softDelete("venueNotes", venueNoteId(artistId, from));
+      moved.notes++;
+    }
+
+    const fill = sharedOf(src);
+    if (Object.keys(fill).length) await w.merge("venues", into, fill);
+    await w.update("venues", from, { mergedInto: into });
+    await w.softDelete("venues", from);
+    return { id: into, merged: from, moved };
+  }),
 });
 
 export const promotersCreate = defineCommand({
@@ -125,21 +229,45 @@ export const contactsRemove = defineCommand({
   name: "contacts.remove", roles: ["admin"], input: idInput, description: "Archive a contact and unlink them from places.",
   run: (ctx, { id }) => run(ctx, async (w) => {
     for (const kind of parentKind.options) {
+      if (kind === "venues") {
+        // Archiving a contact unlinks them from every band's notes (contacts are shared, admin-only records), and from venues not yet migrated.
+        for (const n of await w.query("venueNotes", (q) => q.where("contactIds", "array-contains", id), { includeDeleted: true })) {
+          await w.update("venueNotes", n.id, { contactIds: (n.contactIds as string[]).filter((x) => x !== id) });
+        }
+        for (const v of await w.query("venues", (q) => q.where("contactIds", "array-contains", id))) {
+          await w.update("venues", v.id, { contactIds: (v.contactIds as string[]).filter((x) => x !== id) });
+        }
+        continue;
+      }
       for (const p of await w.query(kind, (q) => q.where("contactIds", "array-contains", id))) await detach(w, kind, p.id, id);
     }
     return w.softDelete("contacts", id);
   }),
 });
 
+/** A venue's contact links are the band's private notes; promoters' and festivals' stay on the record. */
 async function attach(w: Writer, kind: string, parentId: string, contactId: string) {
   const p = await w.get(kind, parentId);
   if (!p || p.deletedAt) throw new AppError("not_found", "Place not found", 404);
+  if (kind === "venues") {
+    const artistId = await artistIdOf(w);
+    const { fields } = await noteOf(w, p, artistId);
+    if (!fields.contactIds.includes(contactId)) await writeNote(w, p, artistId, { contactIds: [...fields.contactIds, contactId] });
+    return;
+  }
   const ids = (p.contactIds ?? []) as string[];
   if (!ids.includes(contactId)) await w.update(kind, parentId, { contactIds: [...ids, contactId] });
 }
 async function detach(w: Writer, kind: string, parentId: string, contactId: string) {
   const p = await w.get(kind, parentId);
-  if (p && !p.deletedAt) await w.update(kind, parentId, { contactIds: ((p.contactIds ?? []) as string[]).filter((x) => x !== contactId) });
+  if (!p || p.deletedAt) return;
+  if (kind === "venues") {
+    const artistId = await artistIdOf(w);
+    const { fields } = await noteOf(w, p, artistId);
+    if (fields.contactIds.includes(contactId)) await writeNote(w, p, artistId, { contactIds: fields.contactIds.filter((x) => x !== contactId) });
+    return;
+  }
+  await w.update(kind, parentId, { contactIds: ((p.contactIds ?? []) as string[]).filter((x) => x !== contactId) });
 }
 const linkInput = z.strictObject({ contactId: z.string().min(1), kind: parentKind, id: z.string().min(1) });
 export const contactsAttach = defineCommand({
@@ -205,6 +333,7 @@ export const pitchesFlag = defineCommand({
       nextStep: i.nextStep, notes: i.notes, dates: sortedDates(i.dates), showIds: [],
     });
     await w.create(`pitches/${r.id}/activity`, { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
+    if (i.kind === "venue") await ensureNote(w, (await w.get("venues", i.id))!, artist.id); // the band now cares about this room
     return { id: r.id, existing: false };
   }),
 });
@@ -363,7 +492,7 @@ export const pitchesCheckReplies = defineCommand({
 });
 
 export const bookingCommands = [
-  venuesCreate, venuesUpdate, venuesRemove, promotersCreate, promotersUpdate, promotersRemove,
+  venuesCreate, venuesUpdate, venuesRemove, venuesMergeInto, promotersCreate, promotersUpdate, promotersRemove,
   festivalsCreate, festivalsUpdate, festivalsRemove, editionsCreate, editionsUpdate, editionsRemove,
   contactsCreate, contactsUpdate, contactsRemove, contactsAttach, contactsDetach,
   pitchesFlag, pitchesUpdate, pitchesMove, pitchesComment, pitchesLog, pitchesRemove,

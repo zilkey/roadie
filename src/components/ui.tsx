@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CommandError, runCommand, type CommandMeta } from "@/lib/commands";
 
 export function PageTitle({ title, sub }: { title: string; sub?: string }) {
@@ -51,4 +51,21 @@ export function Select<T extends string>({ value, options, onChange, placeholder
 /** One toggle in a multiselect: pressed shows a check mark. Pass `on` and flip it in onToggle. */
 export function PickChip({ on, onToggle, testid, children }: { on: boolean; onToggle(): void; testid?: string; children: React.ReactNode }) {
   return <button type="button" className="pick" aria-pressed={on} data-testid={testid} onClick={onToggle}>{children}</button>;
+}
+
+/** A modal question: the native <dialog>, so focus is trapped and Escape closes it. `onClose` runs for Escape and for the backdrop. */
+export function Dialog({ open, onClose, title, testid, children }: { open: boolean; onClose(): void; title: string; testid?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <dialog ref={ref} className="dlg" data-testid={testid} aria-label={title} onCancel={(e) => { e.preventDefault(); onClose(); }}
+      onClick={(e) => { if (e.target === ref.current) onClose(); }}>
+      {open && <div className="grid gap-3"><h2 className="text-lg">{title}</h2>{children}</div>}
+    </dialog>
+  );
 }

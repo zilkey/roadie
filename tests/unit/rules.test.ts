@@ -19,10 +19,19 @@ before(async () => {
       "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
       await setDoc(doc(d, c, "x"), { ...live, n: 1 });
     }
+    await setDoc(doc(d, "venues/gone"), { deletedAt: new Date() });
+    // Private venue notes: id = {artistId}__{venueId}, one per band.
+    await setDoc(doc(d, "venueNotes/x__x"), { ...live, artistId: "x", venueId: "x", loadInNotes: "x's" });
+    await setDoc(doc(d, "venueNotes/y__x"), { ...live, artistId: "y", venueId: "x", loadInNotes: "y's" });
+    await setDoc(doc(d, "venueNotes/x__gone"), { deletedAt: new Date(), artistId: "x", venueId: "x" });
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
-    await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1" });
-    await setDoc(doc(d, "pitches/x/activity/a1/history/000001"), { ...live, runId: "r1" });
+    // History entries carry the artist of the record they describe (null: the record belongs to no one artist).
+    await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1", artistId: null });
+    await setDoc(doc(d, "pitches/x/activity/a1/history/000001"), { ...live, runId: "r1", artistId: "x" });
+    await setDoc(doc(d, "venueNotes/x__v/history/000001"), { ...live, runId: "r1", artistId: "x" });
+    await setDoc(doc(d, "venueNotes/y__v/history/000001"), { ...live, runId: "r1", artistId: "y" });
+    await setDoc(doc(d, "venues/v/history/000001"), { ...live, runId: "r1", artistId: null });
     await setDoc(doc(d, "songs/gone"), { deletedAt: new Date() });
     await setDoc(doc(d, "availability/asked"), { ...live, askedMusicianIds: ["m-david"] });
     await setDoc(doc(d, "availability/other"), { ...live, askedMusicianIds: ["m-eric"] });
@@ -52,19 +61,21 @@ const legacyAdmin = () => env.authenticatedContext("old", { role: "admin" }).fir
 /** An admin of a different artist. */
 const otherAdmin = () => env.authenticatedContext("olga", { artists: { y: "admin" } }).firestore();
 
-const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
+const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "contacts", "promoters",
   "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"];
-const MEMBER_READS = ["musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals"];
+/** Readable by any signed-in admin or member of any artist (the shared venue directory). */
+const SIGNED_IN_READS = ["venues"];
+const MEMBER_READS = ["musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", ...SIGNED_IN_READS];
 
 test("admin reads everything, including sub-collections", async () => {
-  for (const c of ALL) await assertSucceeds(getDoc(doc(admin(), c, "x")));
+  for (const c of [...ALL, ...SIGNED_IN_READS]) await assertSucceeds(getDoc(doc(admin(), c, "x")));
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/comments/c1")));
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/activity/a1")));
   for (const p of ["availability/asked", "ledger/income", "expenses/theirs"]) await assertSucceeds(getDoc(doc(admin(), p)));
 });
 
 test("members read the band collections but not booking, deals, money, users", async () => {
-  for (const c of ALL) {
+  for (const c of [...ALL, ...SIGNED_IN_READS]) {
     const r = getDoc(doc(david(), c, "x"));
     await (MEMBER_READS.includes(c) ? assertSucceeds(r) : assertFails(r));
   }
@@ -101,8 +112,8 @@ test("signed-out, role-less and ai (AI-tools-only) logins read nothing", async (
     await assertFails(getDoc(doc(anon(), c, "x")));
     await assertFails(getDoc(doc(noRole(), c, "x")));
   }
-  for (const c of ALL) await assertFails(getDoc(doc(aiLogin(), c, "x")));
-  for (const c of ALL) await assertFails(getDoc(doc(legacyAdmin(), c, "x")));
+  for (const c of [...ALL, ...SIGNED_IN_READS]) await assertFails(getDoc(doc(aiLogin(), c, "x")));
+  for (const c of [...ALL, ...SIGNED_IN_READS]) await assertFails(getDoc(doc(legacyAdmin(), c, "x")));
 });
 
 test("artist docs: only that artist's members read them", async () => {
@@ -159,4 +170,91 @@ test("unsubmittedDrafts: only the owner reads their own; admins, members and ano
     await assertFails(deleteDoc(doc(who, uid === "jeff" ? "unsubmittedDrafts/jeff__expenses" : "unsubmittedDrafts/david__shows~x")));
   }
   await assertFails(getDoc(doc(admin(), "users/jeff/drafts/show__new"))); // the old location is gone
+});
+
+// ---------- venues: a shared directory plus private per-band notes ----------
+
+test("venues: a member and an admin of another artist read the shared record; venueNotes stay with that artist's admins", async () => {
+  await assertSucceeds(getDoc(doc(david(), "venues/x")));
+  await assertFails(getDoc(doc(david(), "venueNotes/x__x")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "venues/x")));
+  await assertFails(getDoc(doc(otherAdmin(), "venueNotes/x__x")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "venueNotes/y__x")));
+  await assertSucceeds(getDoc(doc(admin(), "venueNotes/x__x")));
+  await assertFails(getDoc(doc(admin(), "venueNotes/y__x"))); // and x's admin never sees y's
+});
+
+test("venueNotes: the per-artist role decides, not the best role", async () => {
+  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  await assertSucceeds(getDoc(doc(mia, "venues/x")));
+  await assertFails(getDoc(doc(mia, "venueNotes/x__x"))); // admin of y does not make her an admin of x
+  await assertSucceeds(getDoc(doc(mia, "venueNotes/y__x")));
+});
+
+test("venues and venueNotes: signed-out, role-less, ai and legacy-claim logins read neither", async () => {
+  for (const who of [anon(), noRole(), aiLogin(), legacyAdmin()]) {
+    await assertFails(getDoc(doc(who, "venues/x")));
+    await assertFails(getDoc(doc(who, "venueNotes/x__x")));
+  }
+});
+
+test("venues: a member cannot read a soft-deleted one, an admin can; archived notes still read for their admin", async () => {
+  await assertFails(getDoc(doc(david(), "venues/gone")));
+  await assertSucceeds(getDoc(doc(admin(), "venues/gone")));
+  await assertSucceeds(getDoc(doc(admin(), "venueNotes/x__gone")));
+  await assertFails(getDoc(doc(otherAdmin(), "venueNotes/x__gone")));
+});
+
+test("venueNotes lists must filter by artistId: unfiltered fails, the artist's own passes", async () => {
+  await assertFails(getDocs(collection(david(), "venueNotes")));
+  await assertFails(getDocs(collection(admin(), "venueNotes")));
+  await assertSucceeds(getDocs(query(collection(admin(), "venueNotes"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(query(collection(admin(), "venueNotes"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(david(), "venueNotes"), where("artistId", "==", "x"))));
+  await assertSucceeds(getDocs(query(collection(david(), "venues"), where("deletedAt", "==", null)))); // the directory lists for members
+});
+
+test("venues and venueNotes cannot be written from the client", async () => {
+  for (const db of [admin(), david(), otherAdmin()]) {
+    await assertFails(setDoc(doc(db, "venues", "new"), { name: "x" }));
+    await assertFails(updateDoc(doc(db, "venues", "x"), { capacity: 1 }));
+    await assertFails(setDoc(doc(db, "venueNotes", "x__new"), { artistId: "x" }));
+    await assertFails(deleteDoc(doc(db, "venueNotes", "x__x")));
+  }
+});
+
+// ---------- history is readable by the record's artist ----------
+
+test("history: venueNotes entries read only for that artist's admins", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "venueNotes/x__v/history/000001")));
+  await assertFails(getDoc(doc(otherAdmin(), "venueNotes/x__v/history/000001")));
+  await assertFails(getDoc(doc(david(), "venueNotes/x__v/history/000001")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "venueNotes/y__v/history/000001")));
+});
+
+test("history: an entry with artistId null reads for any admin, never for a member", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "venues/v/history/000001")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "venues/v/history/000001")));
+  await assertFails(getDoc(doc(david(), "venues/v/history/000001")));
+  await assertFails(getDoc(doc(anon(), "venues/v/history/000001")));
+  await assertFails(getDoc(doc(aiLogin(), "venues/v/history/000001")));
+});
+
+test("history: a pitch's nested entries follow the pitch's artist", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "pitches/x/activity/a1/history/000001")));
+  await assertFails(getDoc(doc(otherAdmin(), "pitches/x/activity/a1/history/000001")));
+});
+
+test("history: collection-group queries must filter by artist; the other artist's admin and unfiltered queries fail", async () => {
+  const group = (who: ReturnType<typeof admin>, ...c: Parameters<typeof where>[]) => getDocs(query(collectionGroup(who, "history"), ...c.map((x) => where(...x))));
+  await assertSucceeds(group(admin(), ["artistId", "==", "x"]));
+  await assertSucceeds(group(admin(), ["artistId", "==", null]));
+  await assertFails(group(otherAdmin(), ["artistId", "==", "x"]));
+  await assertSucceeds(group(otherAdmin(), ["artistId", "==", "y"]));
+  await assertSucceeds(group(otherAdmin(), ["artistId", "==", null]));
+  await assertFails(group(david(), ["artistId", "==", null]));
+  await assertFails(group(david(), ["artistId", "==", "x"]));
+  await assertFails(getDocs(collectionGroup(admin(), "history")));
+  await assertFails(getDocs(collectionGroup(otherAdmin(), "history")));
+  await assertFails(group(admin(), ["runId", "==", "r1"])); // a run lookup alone no longer passes: the page adds the artist filter
 });

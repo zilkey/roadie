@@ -169,3 +169,30 @@ test("migration moves top-level history under the records, idempotently, with a 
   assert.deepEqual(again, { moved: 0, collisions: 0, remaining: 0 });
   assert.equal((await fs.collection(`venues/${id}/history`).get()).size, 4);
 });
+
+test("every history entry is stamped with the artist of its record: its own artistId, its parent's, an artist's own id, else null", async () => {
+  const ctx = importCtx("tester", "run-artist");
+  const room = await db.create(ctx, "venues", venue("Bluebird"));
+  const note = await db.create(ctx, "venueNotes", { artistId: "A", venueId: room.id, contactIds: [], promoterIds: [] }, { id: `A__${room.id}` });
+  const pitch = await db.create(ctx, "pitches", { target: { kind: "venue", id: room.id, name: "Bluebird" }, status: "toPitch", artistId: "A", personnel: [], showIds: [] });
+  const act = await db.create(ctx, "pitches/" + pitch.id + "/activity", { type: "note", text: "called" });
+  const a = await db.create(ctx, "artists", artist([]), { id: "A" });
+  const show = await db.create(ctx, "shows", {
+    date: "2027-01-01", status: "hold", times: {}, artistId: "A", personnel: [], sound: { provider: "venueProvided" }, kind: "other",
+    needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
+  });
+  await db.create(ctx, "showDeals", { contactIds: [], deal: "free", settled: false }, { id: show.id });
+  await db.update(ctx, "venueNotes", note.id, { notes: "x" });
+  await db.softDelete(ctx, "venueNotes", note.id);
+  const stamp = async (path: string, id: string) => (await db.history(path, id)).map((h) => h.artistId);
+  assert.deepEqual(await stamp("venues", room.id), [null], "a shared venue belongs to no one artist");
+  assert.deepEqual(await stamp("venueNotes", note.id), ["A", "A", "A"], "create, update and delete of a note all carry its artist");
+  assert.deepEqual(await stamp("pitches", pitch.id), ["A"]);
+  assert.deepEqual(await stamp(`pitches/${pitch.id}/activity`, act.id), ["A"], "a sub-collection doc takes its parent's");
+  assert.deepEqual(await stamp("showDeals", show.id), ["A"], "a deal takes its show's");
+  assert.deepEqual(await stamp("artists", a.id), ["A"]);
+  assert.deepEqual(await stamp("musicians", (await db.create(ctx, "musicians", { name: "M", instruments: [], active: true })).id), [null]);
+  // the Admin History page's two queries
+  const mine = await db.listGroup("history", (q) => q.where("artistId", "==", "A")), none = await db.listGroup("history", (q) => q.where("artistId", "==", null));
+  assert.ok(mine.every((h) => h.artistId === "A") && none.every((h) => h.artistId === null) && mine.length > 5 && none.length >= 2);
+});

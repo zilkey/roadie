@@ -96,23 +96,209 @@ test("dedupe: venue, promoter, festival and contact creates merge instead of dup
   assert.ok(hist.some((h) => h.op === "merge"));
 });
 
-test("contacts attach to places, detach, and archive unlinks", async () => {
+test("contacts attach to places, detach, and archive unlinks (a venue's links are the band's private notes)", async () => {
   const v = await cmd("venues.create", venue("Lost Lake"));
   const c = await cmd("contacts.create", { name: "Haylee", emails: ["h@x.com"], attachTo: { kind: "venues", id: v.id } });
-  assert.deepEqual((await db.get("venues", v.id))!.contactIds, [c.id]);
+  const noteId = `${TEST_ARTIST}__${v.id}`;
+  assert.deepEqual((await db.get("venueNotes", noteId))!.contactIds, [c.id]);
+  assert.equal((await db.get("venues", v.id))!.contactIds, undefined, "nothing private on the shared venue");
   await cmd("contacts.detach", { contactId: c.id, kind: "venues", id: v.id });
-  assert.deepEqual((await db.get("venues", v.id))!.contactIds, []);
+  assert.deepEqual((await db.get("venueNotes", noteId))!.contactIds, []);
   await cmd("contacts.attach", { contactId: c.id, kind: "venues", id: v.id });
   await cmd("contacts.remove", { id: c.id });
-  assert.deepEqual((await db.get("venues", v.id))!.contactIds, []);
+  assert.deepEqual((await db.get("venueNotes", noteId))!.contactIds, []);
 });
 
 test("venue promoter links stay in sync both ways", async () => {
   const p = await cmd("promoters.create", { name: "Promo", kind: "promoter" });
   const v = await cmd("venues.create", venue("Room", "Denver", { promoterIds: [p.id] }));
   assert.deepEqual((await db.get("promoters", p.id))!.venueIds, [v.id]);
+  assert.deepEqual((await db.get("venueNotes", `${TEST_ARTIST}__${v.id}`))!.promoterIds, [p.id]);
   await cmd("venues.update", { id: v.id, patch: { promoterIds: [] } });
   assert.deepEqual((await db.get("promoters", p.id))!.venueIds, []);
+});
+
+// ---------- venues: shared directory + private per-band notes ----------
+
+const OTHER = "other-band";
+const asOther = (): Ctx => ({ ...ctx, artistId: OTHER, runId: newRunId() });
+const asMember = (): Ctx => ({ uid: "member-uid", role: "member", via: "app", runId: newRunId(), artistId: TEST_ARTIST });
+const noteDoc = (artist: string, venueId: string) => db.get("venueNotes", `${artist}__${venueId}`);
+const run_ = (name: string, input: unknown, c: Ctx) => cmd(name, input, c);
+
+test("venues.create splits one input across the shared room and the band's private notes", async () => {
+  const p = await cmd("promoters.create", { name: "Promo", kind: "promoter" });
+  const c = await cmd("contacts.create", { name: "Haylee", emails: ["h@x.com"] });
+  const r = await cmd("venues.create", venue("Hi-Dive", "Denver", { capacity: 250, loadInNotes: "Alley door", notes: "Ask for Sam", contactIds: [c.id], promoterIds: [p.id] }));
+  const shared = (await db.get("venues", r.id))!;
+  assert.equal(shared.capacity, 250);
+  for (const f of ["loadInNotes", "notes", "contactIds", "promoterIds"]) assert.equal(f in shared, false, `${f} is not on the shared room`);
+  const note = (await noteDoc(TEST_ARTIST, r.id))!;
+  assert.deepEqual([note.artistId, note.venueId, note.loadInNotes, note.notes, note.contactIds, note.promoterIds], [TEST_ARTIST, r.id, "Alley door", "Ask for Sam", [c.id], [p.id]]);
+  const hist = await db.listGroup("history", (q) => q.where("runId", "==", ctx.runId));
+  assert.ok(hist.some((h) => h.entity.kind === "venues") && hist.some((h) => h.entity.kind === "venueNotes"), "one run covers both docs");
+  // a room with nothing private makes no notes doc
+  const plain = await cmd("venues.create", venue("Plain"));
+  assert.equal(await noteDoc(TEST_ARTIST, plain.id), null);
+});
+
+test("venues.update: shared fields go to the room, private ones to the band's notes, and the notes doc is created on first write", async () => {
+  const v = await cmd("venues.create", venue("Fox"));
+  assert.equal(await noteDoc(TEST_ARTIST, v.id), null);
+  await cmd("venues.update", { id: v.id, patch: { capacity: 600, loadInNotes: "Dock on 14th" } });
+  assert.equal((await db.get("venues", v.id))!.capacity, 600);
+  assert.equal((await noteDoc(TEST_ARTIST, v.id))!.loadInNotes, "Dock on 14th");
+  await cmd("venues.update", { id: v.id, patch: { loadInNotes: null } });
+  assert.equal("loadInNotes" in (await noteDoc(TEST_ARTIST, v.id))!, false);
+  // a different band's notes are separate
+  await run_("venues.update", { id: v.id, patch: { notes: "their own" } }, asOther());
+  assert.equal((await noteDoc(OTHER, v.id))!.notes, "their own");
+  assert.equal((await noteDoc(TEST_ARTIST, v.id))!.notes, undefined);
+});
+
+test("a member edits the shared room but is refused private fields (403 naming them)", async () => {
+  const v = await cmd("venues.create", venue("Fox"));
+  await run_("venues.update", { id: v.id, patch: { capacity: 700 } }, asMember());
+  assert.equal((await db.get("venues", v.id))!.capacity, 700);
+  const made = await run_("venues.create", venue("Member Found It", "Boulder"), asMember());
+  assert.ok((await db.get("venues", made.id))!);
+  assert.equal(await noteDoc(TEST_ARTIST, made.id), null, "a member leaves no notes");
+  for (const [name, input] of [
+    ["venues.update", { id: v.id, patch: { notes: "x", capacity: 1 } }],
+    ["venues.update", { id: v.id, patch: { contactIds: [] } }],
+    ["venues.create", venue("Sneaky", "Denver", { loadInNotes: "x" })],
+  ] as [string, unknown][]) {
+    await assert.rejects(run_(name, input, asMember()), (e: { status: number; message: string }) => e.status === 403 && /notes|contactIds|loadInNotes/.test(e.message));
+  }
+  assert.equal((await db.get("venues", v.id))!.capacity, 700, "a refused call writes nothing");
+  // over HTTP: members may run venues.create/update but not remove or merge
+  const m = await makeUser("mem@example.com", "member", { name: "Mem" });
+  assert.equal((await dispatch("venues.update", `Bearer ${m.token}`, { id: v.id, patch: { capacity: 710 } })).status, 200);
+  assert.equal((await dispatch("venues.update", `Bearer ${m.token}`, { id: v.id, patch: { notes: "no" } })).status, 403);
+  assert.equal((await dispatch("venues.remove", `Bearer ${m.token}`, { id: v.id })).status, 403);
+  assert.equal((await dispatch("venues.mergeInto", `Bearer ${m.token}`, { from: v.id, into: made.id })).status, 403);
+});
+
+test("venues.remove hides the room for this band only; adding it again brings it back", async () => {
+  const v = await cmd("venues.create", venue("Gone For Us", "Denver", { notes: "ours" }));
+  await run_("venues.update", { id: v.id, patch: { notes: "theirs" } }, asOther());
+  await cmd("venues.remove", { id: v.id });
+  assert.equal((await db.get("venues", v.id))!.deletedAt, null, "the shared room stays");
+  assert.ok((await noteDoc(TEST_ARTIST, v.id))!.deletedAt, "this band's notes are archived");
+  assert.equal((await noteDoc(OTHER, v.id))!.deletedAt, null, "the other band is untouched");
+  // the band's list hides it, the other band's keeps it
+  const mine = await cmd("records.list", { kind: "venues" }), theirs = await run_("records.list", { kind: "venues" }, asOther());
+  assert.equal(mine.rows.some((r: { id: string }) => r.id === v.id), false);
+  assert.equal(theirs.rows.some((r: { id: string }) => r.id === v.id), true);
+  // a room nobody wrote notes for can be hidden too
+  const bare = await cmd("venues.create", venue("Bare"));
+  await cmd("venues.remove", { id: bare.id });
+  assert.ok((await noteDoc(TEST_ARTIST, bare.id))!.deletedAt);
+  // adding it again (same name and city) is the same room, back on the list with its old notes
+  const again = await cmd("venues.create", venue("Gone For Us", "Denver"));
+  assert.equal(again.id, v.id);
+  assert.equal((await noteDoc(TEST_ARTIST, v.id))!.deletedAt, null);
+  assert.equal((await noteDoc(TEST_ARTIST, v.id))!.notes, "ours");
+  // Undo of the remove brings it back too
+  const rm = { ...ctx, runId: newRunId() };
+  await cmd("venues.remove", { id: v.id }, rm);
+  assert.ok((await noteDoc(TEST_ARTIST, v.id))!.deletedAt);
+  const { undoRun } = await import("@/server/undo");
+  await undoRun(ctx, rm.runId);
+  assert.equal((await noteDoc(TEST_ARTIST, v.id))!.deletedAt, null);
+});
+
+test("records.get and records.list show the shared room plus only the caller's band's notes", async () => {
+  const v = await cmd("venues.create", venue("Fox", "Boulder", { notes: "ours", loadInNotes: "front" }));
+  await run_("venues.update", { id: v.id, patch: { notes: "theirs" } }, asOther());
+  const mine = await cmd("records.get", { kind: "venues", id: v.id }), theirs = await run_("records.get", { kind: "venues", id: v.id }, asOther());
+  assert.deepEqual([mine.notes, mine.loadInNotes], ["ours", "front"]);
+  assert.deepEqual([theirs.notes, theirs.loadInNotes], ["theirs", undefined]);
+  assert.deepEqual(theirs.contactIds, []);
+  const list = await run_("records.list", { kind: "venues" }, asOther());
+  assert.equal(list.rows.find((r: { id: string }) => r.id === v.id).notes, "theirs");
+});
+
+test("venues.mergeInto: moves every band's shows, pitches and notes, fills the survivor, archives the duplicate, one Undo", async () => {
+  const promo = await cmd("promoters.create", { name: "Promo", kind: "promoter" });
+  const c1 = await cmd("contacts.create", { name: "Ann", emails: ["a@x.com"] }), c2 = await cmd("contacts.create", { name: "Bo", emails: ["b@x.com"] });
+  const keep = await cmd("venues.create", venue("Hi-Dive", "Denver", { capacity: 250, notes: "keep notes", contactIds: [c1.id] }));
+  const dup = await cmd("venues.create", venue("The Hi-Dive", "Denver", { capacity: 999, website: "https://hidive.example", notes: "dup notes", contactIds: [c2.id], loadInNotes: "back door", promoterIds: [promo.id] }));
+  await run_("venues.update", { id: dup.id, patch: { notes: "other band's secret", contactIds: [c1.id] } }, asOther());
+  const pitch = await cmd("pitches.flag", { kind: "venue", id: dup.id });
+  const show = await db.create(ctx, "shows", {
+    date: "2027-01-01", status: "confirmed", venue: { id: dup.id, name: "The Hi-Dive", address: "Denver", city: "Denver" }, times: {}, artistId: TEST_ARTIST, personnel: [],
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
+  });
+  const m = asOther(); // a different band's admin merges: allowed, and it moves everyone's records
+  const res = await run_("venues.mergeInto", { from: dup.id, into: keep.id }, m);
+  assert.equal(JSON.stringify(res).includes("secret"), false, "no band's private content comes back");
+  assert.equal(res.moved.shows, 1); assert.equal(res.moved.pitches, 1);
+  // references moved
+  assert.deepEqual((await db.get("shows", show.id))!.venue, { id: keep.id, name: "Hi-Dive", address: "Denver", city: "Denver" });
+  assert.deepEqual([(await db.get("pitches", pitch.id))!.target.id, (await db.get("pitches", pitch.id))!.target.name], [keep.id, "Hi-Dive"]);
+  assert.deepEqual((await db.get("promoters", promo.id))!.venueIds, [keep.id]);
+  // each band's notes joined onto its notes for the survivor; the other band's stay its own
+  const mine = (await noteDoc(TEST_ARTIST, keep.id))!, theirs = (await noteDoc(OTHER, keep.id))!;
+  assert.equal(mine.notes, "keep notes\n\ndup notes"); assert.equal(mine.loadInNotes, "back door");
+  assert.deepEqual(mine.contactIds.sort(), [c1.id, c2.id].sort()); assert.deepEqual(mine.promoterIds, [promo.id]);
+  assert.equal(theirs.notes, "other band's secret"); assert.deepEqual(theirs.contactIds, [c1.id]);
+  assert.ok((await noteDoc(TEST_ARTIST, dup.id))!.deletedAt && (await noteDoc(OTHER, dup.id))!.deletedAt, "the duplicate's notes are archived");
+  // survivor: existing wins, empty fields filled; the duplicate points at it and is archived
+  const k = (await db.get("venues", keep.id))!;
+  assert.deepEqual([k.capacity, k.website], [250, "https://hidive.example"]);
+  const d = (await db.get("venues", dup.id))!;
+  assert.deepEqual([d.mergedInto, !!d.deletedAt], [keep.id, true]);
+  // one run, one Undo
+  const { undoRun } = await import("@/server/undo");
+  const rep = await undoRun(ctx, m.runId);
+  assert.equal(rep.failed.length, 0);
+  assert.deepEqual((await db.get("shows", show.id))!.venue.id, dup.id);
+  assert.equal((await db.get("pitches", pitch.id))!.target.id, dup.id);
+  assert.equal((await db.get("venues", dup.id))!.deletedAt, null);
+  assert.equal((await db.get("venues", dup.id))!.mergedInto, undefined);
+  assert.equal((await db.get("venues", keep.id))!.website, undefined);
+  assert.equal((await noteDoc(TEST_ARTIST, keep.id))!.notes, "keep notes");
+  assert.equal((await noteDoc(OTHER, dup.id))!.notes, "other band's secret");
+  assert.deepEqual((await db.get("promoters", promo.id))!.venueIds, [dup.id]);
+  // refused: same venue, a merged-away venue
+  await assert.rejects(cmd("venues.mergeInto", { from: keep.id, into: keep.id }), (e: { status: number }) => e.status === 400);
+  await cmd("venues.mergeInto", { from: dup.id, into: keep.id });
+  await assert.rejects(cmd("venues.mergeInto", { from: keep.id, into: dup.id }), (e: { status: number }) => e.status === 404);
+});
+
+test("shows.create seeds the deal's contacts from the band's venue notes, not another band's", async () => {
+  const c = await cmd("contacts.create", { name: "Ann", emails: ["a@x.com"] });
+  const o = await cmd("contacts.create", { name: "Other", emails: ["o@x.com"] });
+  const v = await cmd("venues.create", venue("Fox", "Boulder", { contactIds: [c.id] }));
+  await run_("venues.update", { id: v.id, patch: { contactIds: [o.id] } }, asOther());
+  const s = await cmd("shows.create", { venueId: v.id, date: "2027-02-02", addToCalendar: false });
+  assert.deepEqual((await db.get("showDeals", s.id))!.contactIds, [c.id]);
+});
+
+test("pitches.flag on a venue gives the band a notes doc, so the room is theirs", async () => {
+  const v = await cmd("venues.create", venue("Flagged"));
+  assert.equal(await noteDoc(TEST_ARTIST, v.id), null);
+  await cmd("pitches.flag", { kind: "venue", id: v.id });
+  assert.ok(await noteDoc(TEST_ARTIST, v.id));
+});
+
+test("a venue not yet migrated (private fields still on the doc) reads, updates and links without losing them", async () => {
+  // As written before the split, straight to the database.
+  const v = await db.create(ctx, "venues", venue("Old Room", "Denver", { notes: "old notes", loadInNotes: "old dock", contactIds: ["c-old"], promoterIds: [] }));
+  const got = await cmd("records.get", { kind: "venues", id: v.id });
+  assert.deepEqual([got.notes, got.loadInNotes, got.contactIds], ["old notes", "old dock", ["c-old"]]);
+  await cmd("venues.update", { id: v.id, patch: { capacity: 120 } }); // shared edit on a strict doc with legacy fields: no failure
+  assert.equal((await db.get("venues", v.id))!.capacity, 120);
+  assert.equal((await db.get("venues", v.id))!.notes, "old notes", "the legacy fields are left for the migration");
+  // the first private write starts from the legacy values
+  await cmd("venues.update", { id: v.id, patch: { notes: "new notes" } });
+  const n = (await noteDoc(TEST_ARTIST, v.id))!;
+  assert.deepEqual([n.notes, n.loadInNotes, n.contactIds], ["new notes", "old dock", ["c-old"]]);
+  // a show booked here takes its contacts from the legacy link too
+  const v2 = await db.create(ctx, "venues", venue("Old Room 2", "Denver", { contactIds: ["c-old2"], promoterIds: [] }));
+  const s = await cmd("shows.create", { venueId: v2.id, date: "2027-03-03", addToCalendar: false });
+  assert.deepEqual((await db.get("showDeals", s.id))!.contactIds, ["c-old2"]);
 });
 
 test("renames keep denormalized names in sync (venue -> pitch, festival -> edition -> pitch)", async () => {
@@ -220,8 +406,8 @@ test("email templates CRUD and admin-only access over the command API", async ()
   await cmd("emailTemplates.remove", { id: t.id });
   assert.equal((await db.list("emailTemplates")).length, 0);
   const member = await makeUser("m@example.com", "member");
-  const res = await dispatch("venues.create", `Bearer ${member.token}`, venue("X"));
-  assert.equal(res.status, 403);
+  assert.equal((await dispatch("promoters.create", `Bearer ${member.token}`, { name: "X", kind: "promoter" })).status, 403);
+  assert.equal((await dispatch("venues.create", `Bearer ${member.token}`, venue("X"))).status, 200, "the venue directory is open to members");
   assert.equal((await dispatch("pitches.flag", `Bearer ${token}`, { kind: "venue", id: "nope" })).status, 404);
 });
 

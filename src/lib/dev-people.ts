@@ -9,3 +9,5 @@ export const DEV_PEOPLE: DevPerson[] = [
 ];
 /** Not invited: used to test the turn-away path. */
 export const DEV_STRANGER = { key: "stranger", name: "Pat Stranger", email: "stranger@example.com" };
+/** A second band that shares the venue directory with the first (scripts/seed.ts): an admin of its own, with her own private venue notes. */
+export const DEV_OTHER_BAND = { artistName: "Fern Valley Trio", person: { key: "olga", name: "Olga Park", email: "olga@example.com", role: "admin", instruments: ["guitar"] } as DevPerson };

@@ -45,7 +45,7 @@ beforeEach(async () => {
   memberUid = m.uid;
   await db.update(ctx, "musicians", ids.david, { userId: m.uid });
   mctx = { uid: m.uid, role: "member", musicianId: ids.david, via: "app", runId: newRunId() };
-  const venue = (await db.create(ctx, "venues", { name: "Hi-Dive", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver", contactIds: [], promoterIds: [] })).id;
+  const venue = (await db.create(ctx, "venues", { name: "Hi-Dive", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" })).id;
   showId = (await db.create(ctx, "shows", {
     date: "2026-10-10", status: "played", venue: { id: venue, name: "Hi-Dive" }, times: {}, artistId: "a", personnel: [ids.ingrid, ids.jeff, ids.david],
     sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},

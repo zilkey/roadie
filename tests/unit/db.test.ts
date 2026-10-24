@@ -59,12 +59,13 @@ test("soft delete hides from list; restore brings back", async () => {
 });
 
 test("dedupe: a matching create merges into the existing venue", async () => {
-  const a = await db.create(ctx(), "venues", venue("Lost Lake", "Denver", { contactIds: ["c1"], capacity: 300 }));
-  const b = await db.create(ctx(), "venues", venue("  lost lake ", "denver", { contactIds: ["c2"], capacity: 999, website: "https://lostlake.example" }));
+  const src = (url: string) => ({ url, checkedAt: "2026-10-01" });
+  const a = await db.create(ctx(), "venues", venue("Lost Lake", "Denver", { sources: [src("https://a.example")], capacity: 300 }));
+  const b = await db.create(ctx(), "venues", venue("  lost lake ", "denver", { sources: [src("https://b.example")], capacity: 999, website: "https://lostlake.example" }));
   assert.equal(b.merged, true);
   assert.equal(b.id, a.id);
   const d = (await db.get("venues", a.id))!;
-  assert.deepEqual(d.contactIds, ["c1", "c2"]);
+  assert.deepEqual(d.sources.map((x: { url: string }) => x.url), ["https://a.example", "https://b.example"], "lists are unioned");
   assert.equal(d.capacity, 300, "existing values win");
   assert.equal(d.website, "https://lostlake.example");
   assert.equal((await db.list("venues")).length, 1);

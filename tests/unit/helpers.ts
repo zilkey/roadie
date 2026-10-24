@@ -40,5 +40,5 @@ export async function idToken(uid: string) {
 }
 
 export const venue = (name: string, city = "Denver", extra: Record<string, unknown> = {}) => ({
-  name, type: "bar", address: { city, state: "CO" }, region: "denver", contactIds: [], promoterIds: [], ...extra,
+  name, type: "bar", address: { city, state: "CO" }, region: "denver", ...extra,
 });

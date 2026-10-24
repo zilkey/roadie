@@ -25,7 +25,13 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "shows.cancel", "shows.sync", "shows.calendar",                                        // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stats.pull",                                                                          // calls out
+  "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
 ];
+/** venues.update fields that are the SHARED room (every band sees them); the rest (loadInNotes, notes, contactIds, promoterIds) are the band's own. */
+const PRIVATE_VENUE_FIELDS = ["loadInNotes", "notes", "contactIds", "promoterIds"];
+/** A venues.update that changes the shared room reaches every band that uses Band Tracker: it asks first. */
+export const sharedVenueFields = (input: unknown): string[] =>
+  Object.keys(((input as { patch?: Record<string, unknown> } | null)?.patch ?? {})).filter((k) => !PRIVATE_VENUE_FIELDS.includes(k));
 /** `*.remove` archives or deletes something. */
 const isRemove = (name: string) => name.endsWith(".remove");
 
@@ -40,6 +46,7 @@ const READ_ONLY = new Set(["records.get", "records.list", "shows.list", "search"
 /** True when `name` with this input must not run without the person's yes. TODO: count touched records after a dry run instead of guessing from the input. */
 export function needsConfirm(name: string, input: unknown): boolean {
   if (ALWAYS_CONFIRM.includes(name) || isRemove(name)) return true;
+  if (name === "venues.update" && sharedVenueFields(input).length) return true;
   if (READ_ONLY.has(name) || ONE_RECORD_LISTS.has(name)) return false;
   const walk = (v: unknown, depth: number): boolean => {
     if (Array.isArray(v)) return v.length > BULK_LIMIT || (depth < 2 && v.some((x) => walk(x, depth + 1)));
@@ -66,6 +73,8 @@ const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",
+  "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
+  "venues.update": (i) => `Change the shared room${i.label ? ` ${i.label}` : ""} (${sharedVenueFields(i).join(", ")}) for every band that uses Band Tracker`,
 };
 /** What the confirm card says. `label` is a human name for the record (Roadie adds it from what it looked up). */
 export function summarize(name: string, input: unknown, label?: string): string {

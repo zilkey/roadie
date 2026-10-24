@@ -19,6 +19,11 @@ export const FieldDiff = z.union([
 export const History = entity({
   entity: z.strictObject({ kind: z.string(), id: z.string() }),
   op: z.enum(["create", "update", "delete", "merge", "restore"]),
+  /**
+   * The artist whose record this is (the record's own `artistId`, or its parent's), null for records that belong to no one artist.
+   * firestore.rules read it: only that artist's admins read the entry. Entries from before it existed have none (migrate:venue-notes backfills it).
+   */
+  artistId: z.string().nullable().optional(),
   /** Only the changed fields: field -> {before, after}, or {byId, order?} for id-keyed lists. (Blueprint says [before, after]; Firestore forbids nested arrays.) */
   diff: z.record(z.string(), FieldDiff),
   /** Order of this change inside one transaction (undo replays a run newest-first). */

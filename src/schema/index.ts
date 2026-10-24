@@ -3,7 +3,8 @@ import { UserInput } from "./users";
 import { MusicianInput } from "./musicians";
 import { ArtistInput } from "./artists";
 import { ContactInput } from "./contacts";
-import { VenueInput } from "./venues";
+import { VenueRecord } from "./venues";
+import { VenueNoteInput } from "./venueNotes";
 import { PromoterInput } from "./promoters";
 import { FestivalInput } from "./festivals";
 import { EditionInput } from "./editions";
@@ -31,6 +32,7 @@ export * from "./musicians";
 export * from "./artists";
 export * from "./contacts";
 export * from "./venues";
+export * from "./venueNotes";
 export * from "./promoters";
 export * from "./festivals";
 export * from "./editions";
@@ -66,7 +68,8 @@ export const collections: Record<string, CollectionDef> = {
   musicians: { input: MusicianInput },
   artists: { input: ArtistInput },
   contacts: { input: ContactInput, dedupe: true },
-  venues: { input: VenueInput, dedupe: true },
+  venues: { input: VenueRecord, dedupe: true },
+  venueNotes: { input: VenueNoteInput },
   promoters: { input: PromoterInput, dedupe: true },
   festivals: { input: FestivalInput, dedupe: true },
   editions: { input: EditionInput },

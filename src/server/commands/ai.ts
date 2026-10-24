@@ -12,6 +12,7 @@ import { buildSearchItems, searchItems, isActive, todayStr } from "@/lib/booking
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { bandsintownEligible } from "../showSync";
 import { bandmates } from "../music";
+import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
 import { dateStr } from "@/schema";
 import { publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
 
@@ -28,10 +29,13 @@ export const search = defineCommand({
     "Search booking records by name, city or person (every word must match): venues, promoters, festivals, festival editions (years), contacts and pitches. " +
     "Returns {kind, id, name, sub} rows; use records.get with the id for the whole record. Search before creating anything so you do not make duplicates.",
   input: strict({ q: z.string().min(1), kinds: z.array(z.enum(SEARCH_KINDS)).optional(), limit: z.number().int().min(1).max(100).default(25) }),
-  async run(_ctx, i) {
-    const [venues, promoters, festivals, contacts, editions, pitches] = await Promise.all(
+  async run(ctx, i) {
+    const [allVenues, promoters, festivals, contacts, editions, pitches] = await Promise.all(
       ["venues", "promoters", "festivals", "contacts", "editions", "pitches"].map((c) => db.list(c)),
     );
+    // The shared directory with this band's notes laid over it (their contacts are searchable); a room the band archived is hidden.
+    const notes = ctx.role === "member" ? new Map() : await notesByVenue(await callerArtistId(ctx));
+    const venues = allVenues.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
     const items = buildSearchItems({ venues, promoters, festivals, contacts } as never) as { kind: string; id: string; name: string; sub: string; haystack: string }[];
     for (const e of editions) items.push({ kind: "edition", id: e.id, name: `${e.festivalName} ${e.label}`, sub: ["Festival year", e.appDeadline?.date && `deadline ${e.appDeadline.date}`].filter(Boolean).join(" · "), haystack: `${e.festivalName} ${e.label} ${e.year}` });
     for (const p of pitches) items.push({ kind: "pitch", id: p.id, name: p.target.name, sub: `Pitch · ${p.status}`, haystack: `${p.target.name} ${p.status} ${p.notes ?? ""}` });
@@ -76,6 +80,10 @@ export const recordsGet = defineCommand({
     const d = await db.get(i.kind, i.id);
     if (!d || d.deletedAt || !inArtist(ctx, i.kind, d)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
     const out: Record<string, unknown> = present(i.kind, d);
+    if (i.kind === "venues") {
+      // The shared room plus this band's private notes (loadInNotes, notes, contactIds, promoterIds). Never another band's.
+      Object.assign(out, withNotes(d, (await notesByVenue(await callerArtistId(ctx))).get(d.id) ?? null));
+    }
     if (i.kind === "pitches") {
       out.activity = (await db.list(`pitches/${i.id}/activity`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
       out.comments = (await db.list(`pitches/${i.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
@@ -89,7 +97,12 @@ export const recordsList = defineCommand({
   description: "List records of one kind (newest changes first), live ones only. Use search to find specific ones.",
   input: strict({ kind: kindEnum, limit: z.number().int().min(1).max(200).default(50) }),
   async run(ctx, i) {
-    const rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d)).sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
+    let rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d));
+    if (i.kind === "venues") {
+      const notes = await notesByVenue(await callerArtistId(ctx));
+      rows = rows.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
+    }
+    rows = rows.sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
     return { count: rows.length, rows: rows.slice(0, i.limit).map((r) => present(i.kind, r)) };
   },
 });
@@ -102,7 +115,7 @@ export const pitchesNeedingFollowUp = defineCommand({
     "Active pitches that need a nudge: next step due or overdue, or pitched/waiting with no contact for `quietDays` (default 10). " +
     "Returns the pitch, why, days since last contact, and the people on the venue/promoter/festival with emails, ready for pitches.draftEmail.",
   input: strict({ quietDays: z.number().int().min(1).default(10), today: dateStr.optional() }),
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const today = i.today ?? todayStr();
     const day = (ms: number) => Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(new Date(ms).toISOString().slice(0, 10) + "T00:00:00Z")) / 86_400_000);
     const pitches = (await db.list("pitches")).filter((p) => isActive(p.status));
@@ -117,7 +130,7 @@ export const pitchesNeedingFollowUp = defineCommand({
       if (!reasons.length) continue;
       const kind = p.target.kind as string;
       const target = await db.get(kind === "venue" ? "venues" : kind === "promoter" ? "promoters" : "editions", p.target.id);
-      let contactIds: string[] = (target?.contactIds as string[]) ?? [];
+      let contactIds: string[] = kind === "venue" && target ? privateOf((await notesByVenue(await callerArtistId(ctx))).get(target.id) ?? target).contactIds : (target?.contactIds as string[]) ?? [];
       if (kind === "edition" && target?.festivalId) contactIds = ((await db.get("festivals", target.festivalId))?.contactIds as string[]) ?? [];
       out.push({
         id: p.id, target: p.target, status: p.status, nextStep: p.nextStep ?? null, daysSinceContact: quiet ?? null, reasons,
@@ -193,7 +206,7 @@ export const bandsintownReconcile = defineCommand({
     "Compare our shows with what Bandsintown lists. Reports: confirmed public upcoming shows not listed (fix with shows.sync), listings with no matching eligible show " +
     "(holds, private, canceled or unknown), and listings whose date, time, venue or ticket link differ from the show.",
   input: strict({ today: dateStr.optional() }),
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const today = i.today ?? todayStr();
     const [shows, events] = await Promise.all([db.list("shows"), bandsintownClient().list()]);
     const byId = new Map(events.map((e) => [e.id, e]));
@@ -234,7 +247,7 @@ export const statsMovementCmd = defineCommand({
     windowDays: z.number().int().min(1).max(90).default(14),
     includeShows: z.boolean().default(true), today: dateStr.optional(),
   }),
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const today = i.today ?? todayStr();
     const [snaps, shows] = await Promise.all([db.list("statSnapshots"), db.list("shows")]);
     const s = snaps as unknown as StatLike[];

@@ -11,7 +11,7 @@ import {
   EntityForm, Flagged, PitchDates, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems, todayStr } from "@/lib/booking";
-import type { User } from "@/schema";
+import type { Show, User } from "@/schema";
 
 export default function BookingPage() { return <AdminOnly><Booking /></AdminOnly>; }
 
@@ -30,13 +30,24 @@ function Booking() {
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
   const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival", "contact"] as const).find((k) => drafts[k]) ?? null;
 
+  // Rooms this band has something on (notes, a pitch, a show) come first; the rest of the shared directory follows.
+  const shows = useCollection<Show>("shows");
+  const ours = useMemo(() => {
+    const ids = new Set<string>();
+    for (const [id, n] of b.venueNotes) if (!n.deletedAt) ids.add(id);
+    for (const p of b.pitches) if (p.target.kind === "venue") ids.add(p.target.id);
+    for (const s of shows.rows ?? []) if (s.venue) ids.add(s.venue.id);
+    return ids;
+  }, [b.venueNotes, b.pitches, shows.rows]);
+
   const rows = useMemo(() => {
     const items = searchItems(buildSearchItems(b), q);
     const hit = new Set(items.map((i) => `${i.kind}:${i.id}`));
     const searching = q.trim().length > 0;
     const all: ListRow[] = [];
     const sorted = <T extends { name: string }>(x: T[]) => [...x].sort((a, c) => a.name.localeCompare(c.name));
-    for (const v of sorted(b.venues)) all.push({ key: `venue:${v.id}`, kind: "venue", id: v.id, ownerId: v.id, title: v.name, sub: ["Venue", v.address.city, v.capacity].filter(Boolean).join(" · ") });
+    const venuesFirst = [...sorted(b.venues)].sort((x, y) => Number(ours.has(y.id)) - Number(ours.has(x.id)));
+    for (const v of venuesFirst) all.push({ key: `venue:${v.id}`, kind: "venue", id: v.id, ownerId: v.id, title: v.name, sub: ["Venue", v.address.city, v.capacity].filter(Boolean).join(" · ") });
     for (const p of sorted(b.promoters)) all.push({ key: `promoter:${p.id}`, kind: "promoter", id: p.id, ownerId: p.id, title: p.name, sub: `Promoter · ${p.venueIds.length} venue${p.venueIds.length === 1 ? "" : "s"}` });
     for (const f of sorted(b.festivals)) {
       all.push({ key: `festival:${f.id}`, kind: "festival", id: f.id, ownerId: f.id, title: f.name, sub: f.type === "series" ? "Series" : "Festival" });
@@ -52,7 +63,7 @@ function Booking() {
         : seg === "all" ? (searching || (r.kind !== "contact" && r.kind !== "festival")) : false;
     // editions follow their festival's match, so searching "UMS" shows the festival and its years
     return all.filter((r) => inSeg(r) && (!searching || hit.has(`${r.kind === "edition" ? "festival" : r.kind}:${r.ownerId}`)));
-  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, q, seg]);
+  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, ours, q, seg]);
 
   const open = appsOpenThisMonth(b.editions);
   const users = useCollection<User>("users");
@@ -69,9 +80,12 @@ function Booking() {
   const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, contact: contactForm };
 
   const form = add && (
+    <>
     <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
       submitLabel={`Add ${add}`} onSubmit={(d, meta) => create(add, d, meta)} onCancel={() => setAdd("none")}
       draft={{ path: draftPath.newIn(`${add}s`), title: (v) => `New ${add}${v.name ? ` · ${v.name}` : ""}` }} />
+    {add === "venue" && <p className="s" data-testid="new-venue-shared-note">Other bands will see this venue&apos;s name, address and details.</p>}
+    </>
   );
   // No data at all: only the welcome card (and the open "new X" form), none of the usual search, tabs and lists.
   const nothingYet = !b.loading && [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches].every((x) => x.length === 0);

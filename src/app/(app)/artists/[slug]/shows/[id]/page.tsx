@@ -77,7 +77,9 @@ function ShowView({ show }: { show: ShowRow }) {
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid content-start gap-3">
             <div className="card" data-testid="show-info">
-              <b>{showName(show)}</b>
+              {show.venue
+                ? <Link href={`/booking/venues/${show.venue.id}`} className="font-bold underline" data-testid="show-venue-link">{showName(show)}</Link>
+                : <b>{showName(show)}</b>}
               {showAddress(show) ? <span className="font-mono text-sm" data-testid="show-address">{showAddress(show)}</span> : showCity(show) && <span className="font-mono text-sm">{showCity(show)}</span>}
               <Times times={show.times} />
             </div>

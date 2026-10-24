@@ -34,6 +34,9 @@ a { color: inherit; }
 
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 8px; }
 .card.hi { border-color: var(--accent); background: var(--accent-soft); }
+dialog.dlg { padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); width: min(32rem, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; }
+dialog.dlg > div { padding: 16px; }
+dialog.dlg::backdrop { background: rgb(10 14 30 / .55); }
 .lbl { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 .s { color: var(--muted); font-size: 13px; }
 .input, .select { width: 100%; min-width: 0; min-height: var(--ctl-h); background: var(--panel); color: var(--ink); border: 1.5px solid var(--line); border-radius: 10px; padding: 9px 12px; font: inherit; line-height: 1.25; }
