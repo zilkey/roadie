@@ -9,7 +9,12 @@ import { entity, serverMask, email, id } from "./common";
 export const ArtistRole = z.enum(["admin", "member", "ai"]);
 export type ArtistRole = z.infer<typeof ArtistRole>;
 /** One artist this person belongs to, and their role there. */
-export const Membership = z.strictObject({ artistId: id, role: ArtistRole });
+export const Membership = z.strictObject({
+  artistId: id,
+  role: ArtistRole,
+  /** AI (MCP) access in THIS artist; only admins can have it. Absent on old memberships: see mcpIn. */
+  mcpAccess: z.boolean().optional(),
+});
 export type Membership = z.infer<typeof Membership>;
 
 export const User = entity({
@@ -18,7 +23,8 @@ export const User = entity({
   /** The artists this login belongs to (at most one entry per artist). Set by users.add / users.update / users.remove. */
   artists: z.array(Membership).refine((ms) => new Set(ms.map((m) => m.artistId)).size === ms.length, "One entry per artist"),
   musicianId: id.optional(),
-  mcpAccess: z.boolean(),
+  /** Legacy, read-only: the old global AI flag. Per-artist access lives on the membership (mcpIn); migrate:mcp-per-band moves it. */
+  mcpAccess: z.boolean().optional(),
   prefs: z.strictObject({ assistant: AssistantPrefs.optional() }).optional(),
 });
 export const UserInput = User.omit(serverMask);
@@ -29,6 +35,20 @@ export function roleIn(user: object | null | undefined, artistId: string | null 
   const ms = (user as { artists?: unknown } | null | undefined)?.artists;
   if (!artistId || !Array.isArray(ms)) return "";
   return ((ms as Membership[]).find((m) => m.artistId === artistId)?.role) ?? "";
+}
+/**
+ * Whether this user has AI (MCP) access in one artist. Reads that artist's membership only: its own `mcpAccess` (admins
+ * only), or, on a membership written before the flag moved there, the old top-level `user.mcpAccess` (admins only).
+ * Legacy "ai" memberships always have it.
+ */
+export function mcpIn(user: object | null | undefined, artistId: string | null | undefined): boolean {
+  const u = user as { artists?: unknown; mcpAccess?: unknown } | null | undefined;
+  if (!artistId || !Array.isArray(u?.artists)) return false;
+  const m = (u.artists as Membership[]).find((x) => x.artistId === artistId);
+  if (!m) return false;
+  if (m.role === "ai") return true;
+  if (m.role !== "admin") return false;
+  return typeof m.mcpAccess === "boolean" ? m.mcpAccess : u.mcpAccess === true;
 }
 /** The app roles (not "ai") a user holds, as the `artists` custom claim: {artistId: role}. Firestore rules read it. */
 export function artistClaims(user: object): Record<string, "admin" | "member"> {

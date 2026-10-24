@@ -29,6 +29,7 @@ export * from "./normalize";
 export * from "./users";
 export * from "./assistant";
 export * from "./musicians";
+export * from "./people";
 export * from "./artists";
 export * from "./contacts";
 export * from "./venues";

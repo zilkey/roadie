@@ -1,7 +1,7 @@
 import { adminAuth } from "./admin";
 import { db, type Doc } from "./db";
 import { AppError } from "./errors";
-import { artistClaims, type Membership } from "@/schema/users";
+import { artistClaims, mcpIn, type Membership } from "@/schema/users";
 
 /** One artist the signed-in person can open in the app (admin or member there). */
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
@@ -37,7 +37,7 @@ export async function startSession(authHeader: string | null) {
   } catch {
     throw new AppError("unauthenticated", "Invalid or expired token", 401);
   }
-  const email = decoded.email?.toLowerCase();
+  const email = decoded.email?.trim().toLowerCase();
   if (!email || decoded.email_verified === false) throw new AppError("unauthenticated", "A verified email is required", 401);
   const [user] = await db.list("users", (q) => q.where("email", "==", email).limit(5));
   if (!user) throw new AppError("not_invited", "This email hasn't been invited", 403);
@@ -49,6 +49,6 @@ export async function startSession(authHeader: string | null) {
   return {
     uid: decoded.uid, userId: user.id, name: user.name as string, email,
     ...(user.musicianId ? { musicianId: user.musicianId as string } : {}),
-    mcpAccess: !!user.mcpAccess, artists: await artistsFor(user),
+    mcpAccess: ((user.artists ?? []) as Membership[]).some((x) => mcpIn(user, x.artistId)), artists: await artistsFor(user),
   };
 }

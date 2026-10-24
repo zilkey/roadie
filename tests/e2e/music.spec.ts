@@ -22,6 +22,24 @@ async function newSong(page: Page, title: string) {
   await page.getByTestId("song-title").fill(title);
 }
 
+/** A Band Member "Foo" with an email, made through the People page (add, then edit for the email). */
+async function addFoo(page: Page) {
+  await page.getByTestId("people-add-open").click();
+  const startOver = page.getByTestId("draft-start-over");
+  if (await startOver.isVisible()) await startOver.click();
+  await page.getByTestId("user-name").fill("Foo");
+  await page.getByTestId("user-band-member").check();
+  await page.getByTestId("user-instruments").fill("guitar");
+  await page.getByTestId("user-add").click();
+  const row = page.getByTestId("person-row-Foo");
+  await row.getByTestId("person-actions").click();
+  await page.getByTestId("person-menu-edit").click();
+  await page.getByTestId("person-sheet-email").fill("foo@example.com");
+  await page.getByTestId("person-sheet-save").click();
+  await expect(page.getByTestId("person-sheet")).toBeHidden();
+  await expect(page.getByTestId("person-row-foo@example.com").first()).toBeVisible();
+}
+
 test("add a song and attach files picked from a Drive search", async ({ page }) => {
   await signInAs(page, "jeff");
   await newSong(page, "Last Train");
@@ -321,10 +339,7 @@ test("a new setlist name is a draft; the name and the item list autosave, with U
 test("a musician added after seeding: attach with the gap, then share with the band", async ({ page, request }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/admin/people"));
-  await page.getByTestId("musician-name").fill("Foo");
-  await page.getByPlaceholder("Email (optional)").fill("foo@example.com");
-  await page.getByTestId("musician-add").click();
-  await expect(page.getByTestId("musician-Foo")).toBeVisible();
+  await addFoo(page);
 
   await page.getByTestId("tab-songs").click();
   await page.getByTestId("songs-filter").fill("cottonwood");
@@ -350,10 +365,7 @@ test("a musician added after seeding: attach with the gap, then share with the b
 test("a sharing gap never blocks attaching: attach first, fix later", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/admin/people"));
-  await page.getByTestId("musician-name").fill("Foo");
-  await page.getByPlaceholder("Email (optional)").fill("foo@example.com");
-  await page.getByTestId("musician-add").click();
-  await expect(page.getByTestId("musician-Foo")).toBeVisible();
+  await addFoo(page);
   await page.getByTestId("tab-songs").click();
   await page.getByTestId("songs-filter").fill("kerosene");
   await page.getByTestId("songs-list").getByText("Kerosene").first().click();

@@ -97,24 +97,15 @@ test("users.add with musician: one call makes the band member and the login, lin
   assert.equal(both.status, 400);
 });
 
-test("ai role: always has AI access, can't sign in to the app or call commands, can't be self-assigned", async () => {
+test("legacy ai role: can't be created or set any more, but an existing ai login still can't use the app", async () => {
   const admin = await makeUser("a@example.com", "admin");
-  const add = await dispatch("users.add", bearer(admin.token), { email: "bot@example.com", name: "Bot", role: "ai" });
-  assert.equal(add.status, 200);
-  const uid = (add.json as { result: { id: string } }).result.id;
-  const u = (await db.get("users", uid))!;
-  assert.deepEqual(u.artists, [{ artistId: TEST_ARTIST, role: "ai" }]);
-  assert.equal(u.mcpAccess, true);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: {} }); // ai is never a Firestore-reading role
-  await assert.rejects(startSession(bearer(await idToken(uid))), (e: AppError) => e.code === "ai_only" && e.status === 403);
-  assert.equal((await dispatch("musicians.create", bearer(await idToken(uid)), { name: "x", instruments: [] })).status, 403);
-  // turning AI access off doesn't stick for an ai login; moving a member to ai turns it on
-  await dispatch("users.update", bearer(admin.token), { id: uid, patch: { mcpAccess: false } });
-  assert.equal((await db.get("users", uid))!.mcpAccess, true);
+  assert.equal((await dispatch("users.add", bearer(admin.token), { email: "bot@example.com", name: "Bot", role: "ai" })).status, 400);
+  const bot = await makeUser("bot@example.com", "ai");
+  assert.deepEqual((await adminAuth().getUser(bot.uid)).customClaims, { artists: {} }); // ai is never a Firestore-reading role
+  await assert.rejects(startSession(bearer(bot.token)), (e: AppError) => e.code === "ai_only" && e.status === 403);
+  assert.equal((await dispatch("musicians.create", bearer(bot.token), { name: "x", instruments: ["a"] })).status, 403);
   const member = await makeUser("m@example.com", "member");
-  assert.equal((await dispatch("users.update", bearer(admin.token), { id: member.uid, patch: { role: "ai" } })).status, 200);
-  assert.equal((await db.get("users", member.uid))!.mcpAccess, true);
-  assert.equal((await dispatch("users.update", bearer(admin.token), { id: admin.uid, patch: { role: "ai" } })).status, 403);
+  assert.equal((await dispatch("users.update", bearer(admin.token), { id: member.uid, patch: { role: "ai" } })).status, 400);
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "z@example.com", name: "Z", role: "robot" })).status, 400);
 });
 

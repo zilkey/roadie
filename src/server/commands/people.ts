@@ -6,10 +6,7 @@ import { adminAuth } from "../admin";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncClaims } from "../session";
-import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, email as emailSchema, slug, slugForArtist, lowerEmail, roleIn, type Membership } from "@/schema";
-
-/** An "ai" login is for AI tools only (MCP), so it always has AI access. */
-const mcpFor = (role: string, mcpAccess?: boolean | null) => (role === "ai" ? true : mcpAccess);
+import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
 function artistOfCtx(ctx: Ctx): string {
@@ -17,22 +14,74 @@ function artistOfCtx(ctx: Ctx): string {
   return ctx.artistId;
 }
 const memberships = (u: Doc | null | undefined) => ((u?.artists ?? []) as Membership[]);
-const withRole = (ms: Membership[], artistId: string, role: ArtistRole) =>
-  ms.some((m) => m.artistId === artistId) ? ms.map((m) => (m.artistId === artistId ? { artistId, role } : m)) : [...ms, { artistId, role }];
+/** Set this artist's membership (adding it if missing). AI access is stored on the membership, written for admins only (members and legacy "ai" carry none). */
+const withRole = (ms: Membership[], artistId: string, role: ArtistRole, mcp = false): Membership[] => {
+  const entry: Membership = { artistId, role, ...(role === "admin" ? { mcpAccess: mcp } : {}) };
+  return ms.some((m) => m.artistId === artistId) ? ms.map((m) => (m.artistId === artistId ? entry : m)) : [...ms, entry];
+};
+
+const MSG = {
+  lastAdmin: "Roadie needs at least one Admin",
+  lastBandMember: "The band needs at least one Band Member",
+  ownTeam: "You can't remove your own Team access",
+  demoteSelf: "You can't demote yourself",
+} as const;
+
+/** Admins of this artist (live users only). */
+async function adminsOf(w: Writer, artistId: string): Promise<Doc[]> {
+  return (await w.query("users")).filter((u) => !u.deletedAt && roleIn(u, artistId) === "admin");
+}
+/** Band Members who are still in the band: not archived and active. */
+async function bandOf(w: Writer): Promise<Doc[]> {
+  return (await w.query("musicians")).filter((m) => !m.deletedAt && !m.archivedAt && m.active !== false);
+}
+const mcpIssue = () => new AppError("invalid_input", PEOPLE_MESSAGES.mcpAccess, 400, [{ path: ["mcpAccess"], message: PEOPLE_MESSAGES.mcpAccess }]);
+
+/**
+ * Take this artist's Team access away from a user (guards included). The login is soft-deleted once they belong to no
+ * artist. Returns true when the login was deleted (the caller unlinks the musician).
+ */
+async function dropTeam(ctx: Ctx, w: Writer, user: Doc, artistId: string): Promise<boolean> {
+  if (user.id === ctx.uid) throw new AppError("forbidden", MSG.ownTeam, 403);
+  if (roleIn(user, artistId) === "admin" && (await adminsOf(w, artistId)).every((a) => a.id === user.id)) throw new AppError("forbidden", MSG.lastAdmin, 409);
+  const rest = memberships(user).filter((m) => m.artistId !== artistId);
+  if (rest.length) { await w.update("users", user.id, { artists: rest }); return false; }
+  await w.softDelete("users", user.id);
+  return true;
+}
+/** The live login linked to a musician (by either side of the link). */
+async function userOfMusician(w: Writer, m: Doc): Promise<Doc | null> {
+  if (m.userId) { const u = await w.get("users", m.userId as string); if (u && !u.deletedAt) return u; }
+  return (await w.query("users", (q) => q.where("musicianId", "==", m.id).limit(1)))[0] ?? null;
+}
+async function liveMusician(w: Writer, id: string): Promise<Doc> {
+  const m = await w.get("musicians", id);
+  if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
+  return m;
+}
+async function afterTeamChange(uid: string) {
+  await syncClaims(uid);
+  await adminAuth().revokeRefreshTokens(uid);
+}
+
+const personName = z.string().trim().min(1, PEOPLE_MESSAGES.name);
 
 export const usersAdd = defineCommand({
   name: "users.add",
   roles: ["admin"],
-  description: "Invite a person by email to this artist as admin, member, or ai (AI tools only). Someone already in another artist joins this one too. Link an existing musician with musicianId, or pass musician to add them to the band at the same time.",
+  description: "Give a person Team access to this artist (role admin, or member shown as Standard; AI access only for admins). Someone already in another artist joins this one too. Link an existing Band Member with musicianId, or pass musician to make them a Band Member at the same time.",
   input: z.strictObject({
-    email: z.string().transform(lowerEmail).pipe(emailSchema),
-    name: z.string().min(1),
-    role: ArtistRole,
+    email: TeamEmail,
+    name: personName,
+    role: TeamRole,
     mcpAccess: z.boolean().default(false),
     musicianId: z.string().optional(),
     /** Also make them a band member: a new musician record linked to this login. */
-    musician: z.strictObject({ instruments: MusicianInput.shape.instruments }).optional(),
-  }).refine((i) => !(i.musicianId && i.musician), { message: "Pass musicianId or musician, not both", path: ["musician"] }),
+    musician: z.strictObject({ instruments: InstrumentList }).optional(),
+  }).superRefine((i, ctx) => {
+    if (i.musicianId && i.musician) ctx.addIssue({ code: "custom", path: ["musician"], message: "Pass musicianId or musician, not both" });
+    if (i.mcpAccess && i.role !== "admin") ctx.addIssue({ code: "custom", path: ["mcpAccess"], message: PEOPLE_MESSAGES.mcpAccess });
+  }),
   async run(ctx, input) {
     const artistId = artistOfCtx(ctx);
     const auth = adminAuth();
@@ -45,35 +94,37 @@ export const usersAdd = defineCommand({
     const out = await run(ctx, async (w) => {
       const dupes = await w.query("users", (q) => q.where("email", "==", input.email));
       if (dupes.some((d) => d.id !== uid)) throw new AppError("duplicate", "That email is already a user", 409);
+      let linked: Doc | null = null;
       if (input.musicianId) {
-        const m = await w.get("musicians", input.musicianId);
-        if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
-        if (m.userId && m.userId !== uid) throw new AppError("conflict", "That musician already has a login", 409);
+        linked = await w.get("musicians", input.musicianId);
+        if (!linked || linked.deletedAt) throw new AppError("not_found", "Musician not found", 404);
+        if (linked.archivedAt) throw new AppError("conflict", `${linked.name} is archived. Restore them first`, 409);
+        if (linked.userId && linked.userId !== uid) throw new AppError("conflict", "That musician already has a login", 409);
       }
       const existing = await w.get("users", uid);
       const live = existing && !existing.deletedAt ? existing : null;
       if (live && roleIn(live, artistId)) throw new AppError("duplicate", "That email is already a user", 409);
-      if (live?.musicianId && (input.musicianId || input.musician)) throw new AppError("conflict", "That person is already linked to a musician", 409);
+      if (live?.musicianId && ((input.musicianId && input.musicianId !== live.musicianId) || input.musician)) throw new AppError("conflict", "That person is already linked to a musician", 409);
       const musicianId = input.musician
         ? (await w.create("musicians", { name: input.name, email: input.email, instruments: input.musician.instruments, active: true, userId: uid })).id
         : input.musicianId;
+      const mcpAccess = input.role === "admin" && input.mcpAccess;
       if (live) {
         // Already a login in another artist: join this one too, keeping their name and other memberships.
         await w.update("users", uid, {
-          artists: withRole(memberships(live), artistId, input.role),
-          ...(input.role === "ai" || input.mcpAccess ? { mcpAccess: true } : {}),
+          artists: withRole(memberships(live), artistId, input.role, mcpAccess),
           ...(musicianId ? { musicianId } : {}),
         });
       } else {
-        const doc = { email: input.email, name: input.name, artists: [{ artistId, role: input.role }], mcpAccess: mcpFor(input.role, input.mcpAccess), musicianId };
+        const doc = { email: input.email, name: input.name, artists: withRole([], artistId, input.role, mcpAccess), musicianId };
         if (existing?.deletedAt) {
           await w.restore("users", uid);
-          await w.update("users", uid, { ...doc, role: null }); // `role: null` drops the pre-membership field from old docs
+          await w.update("users", uid, { ...doc, role: null, mcpAccess: null }); // null drops the pre-membership role and the old global AI flag
         } else {
           await w.create("users", doc, { id: uid });
         }
       }
-      if (input.musicianId) await w.update("musicians", input.musicianId, { userId: uid });
+      if (input.musicianId) await w.update("musicians", input.musicianId, { userId: uid, ...(linked?.email ? {} : { email: input.email }) });
       return { id: uid, musicianId };
     });
     await syncClaims(uid);
@@ -81,24 +132,30 @@ export const usersAdd = defineCommand({
   },
 });
 
-const userPatch = z.strictObject({ name: UserInput.shape.name, role: ArtistRole, mcpAccess: UserInput.shape.mcpAccess, musicianId: UserInput.shape.musicianId });
+const userPatch = z.strictObject({ name: personName, role: TeamRole, mcpAccess: UserInput.shape.mcpAccess, musicianId: UserInput.shape.musicianId });
 
 export const usersUpdate = defineCommand({
   name: "users.update",
   roles: ["admin"],
-  description: "Change a person's name, role in this artist (admin, member, ai), AI access, or musician link. An ai login always keeps AI access.",
+  description: "Change a person's name, Team role in this artist (admin, or member shown as Standard), AI access (admins only; demoting an admin clears it), or Band Member link.",
   input: patchInput(userPatch),
   async run(ctx, { id, patch }) {
     const artistId = artistOfCtx(ctx);
-    if (id === ctx.uid && patch.role && patch.role !== "admin") throw new AppError("forbidden", "You can't demote yourself", 403);
+    if (id === ctx.uid && patch.role && patch.role !== "admin") throw new AppError("forbidden", MSG.demoteSelf, 403);
     if (patch.role === null) throw new AppError("invalid_input", "Role can't be cleared; remove the person instead", 400);
     const out = await run(ctx, async (w) => {
       const before = await w.get("users", id);
       if (!before || before.deletedAt || !roleIn(before, artistId)) throw new AppError("not_found", "User not found", 404);
-      const { role, ...rest } = patch;
+      const { role, mcpAccess: wantMcp, ...rest } = patch;
+      const current = roleIn(before, artistId);
+      const effective = (role as ArtistRole | undefined) ?? current;
+      if (current === "admin" && effective !== "admin" && (await adminsOf(w, artistId)).every((a) => a.id === id)) throw new AppError("forbidden", MSG.lastAdmin, 409);
       const next: Record<string, unknown> = { ...rest };
-      if (role) next.artists = withRole(memberships(before), artistId, role as ArtistRole);
-      if ((role ?? roleIn(before, artistId)) === "ai") next.mcpAccess = true;
+      if (effective === "member" && wantMcp === true) throw mcpIssue();
+      // AI access lives on this artist's membership only; other artists' memberships are left as they are.
+      if (effective !== "ai" && (role || wantMcp !== undefined)) {
+        next.artists = withRole(memberships(before), artistId, effective as ArtistRole, effective === "admin" && !!(wantMcp ?? mcpIn(before, artistId)));
+      }
       const res = await w.update("users", id, next);
       const mid = patch.musicianId as string | null | undefined;
       if (mid !== undefined) {
@@ -116,45 +173,114 @@ export const usersUpdate = defineCommand({
 export const usersRemove = defineCommand({
   name: "users.remove",
   roles: ["admin"],
-  description: "Take a person out of this artist. Their login is removed (soft delete) once they belong to no artist; their musician record stays.",
+  description: "Remove Team access: take a person out of this artist. Their Band Member record stays (with its email) so access can be given again. Their login is deleted once they belong to no artist. Refused for yourself and for the last Admin.",
   input: idInput,
   async run(ctx, { id }) {
     const artistId = artistOfCtx(ctx);
-    if (id === ctx.uid) throw new AppError("forbidden", "You can't remove yourself", 403);
     await run(ctx, async (w) => {
       const u = await w.get("users", id);
       if (!u || u.deletedAt || !roleIn(u, artistId)) throw new AppError("not_found", "User not found", 404);
-      const rest = memberships(u).filter((m) => m.artistId !== artistId);
-      if (rest.length) return void (await w.update("users", id, { artists: rest }));
-      await w.softDelete("users", id);
-      if (u.musicianId) await w.update("musicians", u.musicianId, { userId: null });
+      const deleted = await dropTeam(ctx, w, u, artistId);
+      if (deleted && u.musicianId) await w.update("musicians", u.musicianId, { userId: null });
     });
-    await syncClaims(id);
-    await adminAuth().revokeRefreshTokens(id);
+    await afterTeamChange(id);
     return { id };
   },
+});
+
+export const usersAddToBand = defineCommand({
+  name: "users.addToBand",
+  roles: ["admin"],
+  description: "Make a Team-only person a Band Member. Un-archives their linked musician record (with these instruments) if they have one, otherwise creates and links one.",
+  input: z.strictObject({ id: z.string().min(1), instruments: InstrumentList }),
+  async run(ctx, { id, instruments }) {
+    const artistId = artistOfCtx(ctx);
+    return run(ctx, async (w) => {
+      const u = await w.get("users", id);
+      if (!u || u.deletedAt || !roleIn(u, artistId)) throw new AppError("not_found", "User not found", 404);
+      const m = u.musicianId ? await w.get("musicians", u.musicianId as string) : null;
+      if (m && !m.deletedAt) {
+        if (!m.archivedAt && m.active !== false) throw new AppError("conflict", `${m.name} is already in the band`, 409);
+        await w.update("musicians", m.id, { archivedAt: null, active: true, instruments, userId: id });
+        return { id, musicianId: m.id };
+      }
+      const created = await w.create("musicians", { name: u.name, email: u.email, instruments, active: true, userId: id });
+      await w.update("users", id, { musicianId: created.id });
+      return { id, musicianId: created.id };
+    });
+  },
+});
+
+const musicianFields = MusicianInput.omit({ userId: true, archivedAt: true }).extend({
+  name: personName,
+  instruments: InstrumentList,
+  email: OptionalEmail.optional(),
 });
 
 export const musiciansCreate = defineCommand({
   name: "musicians.create",
   roles: ["admin"],
-  description: "Add a musician (member or sub). No login needed.",
-  input: MusicianInput.omit({ userId: true }).extend({ active: z.boolean().default(true) }),
+  description: "Add a Band Member (member or sub) with at least one instrument. No login needed; use users.add with musician to also give Team access.",
+  input: musicianFields.extend({ active: z.boolean().default(true) }),
   run: (ctx, input) => db.create(ctx, "musicians", input),
 });
 export const musiciansUpdate = defineCommand({
   name: "musicians.update",
   roles: ["admin"],
-  description: "Edit a musician.",
-  input: patchInput(MusicianInput.omit({ userId: true })),
+  description: "Edit a Band Member (name, instruments, email, phone, pay handle). Archive and restore have their own commands.",
+  input: patchInput(musicianFields),
   run: (ctx, { id, patch }) => db.update(ctx, "musicians", id, patch as Record<string, unknown>),
 });
+
+/** Archive-like writes shared by musicians.archive / removeFromBand. dropTeamAccess also removes their Team access. */
+async function leaveBand(ctx: Ctx, id: string, dropTeamAccess: boolean) {
+  const artistId = artistOfCtx(ctx);
+  const out = await run(ctx, async (w) => {
+    const m = await liveMusician(w, id);
+    const user = dropTeamAccess ? await userOfMusician(w, m) : null;
+    const team = user && roleIn(user, artistId) ? user : null;
+    const archiving = !m.archivedAt;
+    if (archiving && !(await bandOf(w)).some((x) => x.id !== id)) throw new AppError("forbidden", MSG.lastBandMember, 409);
+    const unlink = team ? await dropTeam(ctx, w, team, artistId) : false;
+    if (!archiving && !unlink) return { changed: false, uid: team?.id };
+    await w.update("musicians", id, { ...(archiving ? { archivedAt: new Date(), active: false } : {}), ...(unlink ? { userId: null } : {}) });
+    return { changed: true, uid: team?.id };
+  });
+  if (out.uid) await afterTeamChange(out.uid);
+  return { id, changed: out.changed };
+}
+
+export const musiciansArchive = defineCommand({
+  name: "musicians.archive",
+  roles: ["admin"],
+  description: "Archive a person: they leave the band and lose this artist's Team access. They stay on past shows and pay by name. Refused for yourself, the last Admin, and the last Band Member.",
+  input: idInput,
+  run: (ctx, { id }) => leaveBand(ctx, id, true),
+});
+export const musiciansRemoveFromBand = defineCommand({
+  name: "musicians.removeFromBand",
+  roles: ["admin"],
+  description: "Remove a person from the band (archives their Band Member record) but keep their Team access. Refused for the last Band Member.",
+  input: idInput,
+  run: (ctx, { id }) => leaveBand(ctx, id, false),
+});
+export const musiciansRestore = defineCommand({
+  name: "musicians.restore",
+  roles: ["admin"],
+  description: "Bring an archived person back into the band. Does not give Team access back.",
+  input: idInput,
+  run: (ctx, { id }) => run(ctx, async (w) => {
+    await liveMusician(w, id);
+    return w.update("musicians", id, { archivedAt: null, active: true });
+  }),
+});
+/** Kept for older callers: musicians are never deleted, so this archives (same as musicians.archive). */
 export const musiciansRemove = defineCommand({
   name: "musicians.remove",
   roles: ["admin"],
-  description: "Archive a musician (soft delete).",
+  description: "Archive a person (same as musicians.archive). Musicians are never deleted.",
   input: idInput,
-  run: (ctx, { id }) => db.softDelete(ctx, "musicians", id),
+  run: (ctx, { id }) => leaveBand(ctx, id, true),
 });
 
 const ConfigIn = Configuration.extend({ id: z.string().optional() });
@@ -220,5 +346,5 @@ export const artistsUpdate = defineCommand({
 });
 
 export const peopleCommands = [
-  usersAdd, usersUpdate, usersRemove, musiciansCreate, musiciansUpdate, musiciansRemove, artistsCreate, artistsUpdate,
+  usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
 ];

@@ -68,7 +68,7 @@ export const availabilityAsk = defineCommand({
     const place = ((show ? showName(show as ShowPlaceLike) : undefined) ?? pitch?.target?.name) as string | undefined;
     const label = i.label ?? `${place ? `${place} · ` : ""}${fmtLong(i.date)}`;
     const ids = [...new Set(i.musicianIds)];
-    for (const m of ids) { const d = await db.get("musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); }
+    for (const m of ids) { const d = await db.get("musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); if (d.archivedAt) throw new AppError("invalid_input", `${d.name} is archived`, 400); }
     const tokens = Object.fromEntries(ids.map((m) => [m, newToken()]));
     const message = i.message ?? `We have an option for a show${place ? ` at ${place}` : ""} on ${fmtLong(i.date)}. Tap here to say if you're available.`;
     const created = await db.create(ctx, "availability", {

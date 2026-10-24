@@ -56,7 +56,7 @@ async function main() {
   for (const p of DEV_PEOPLE) {
     const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
     uid[p.key] = u.uid;
-    await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role }], mcpAccess: p.key === "jeff", musicianId: mid[p.key] }, u.uid);
+    await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: p.role === "admin" && p.key === "jeff" }], musicianId: mid[p.key] }, u.uid);
     await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
     await syncClaims(u.uid);
   }
@@ -198,7 +198,7 @@ async function seedOtherBand(create: (path: string, doc: Record<string, unknown>
     configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [mid] }], links: {}, driveFolderId: "",
   });
   const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
-  await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role }], mcpAccess: false, musicianId: mid }, u.uid);
+  await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: false }], musicianId: mid }, u.uid);
   await db.update(ctx, "musicians", mid, { userId: u.uid });
   await syncClaims(u.uid);
   return { artist, ctx: importCtx("seed", undefined, artist) };

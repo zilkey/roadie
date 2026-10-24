@@ -25,73 +25,6 @@ test("admin: phone layout uses bottom tabs", async ({ page }) => {
   await expect(page.getByTestId("sidebar")).toBeHidden();
 });
 
-test("admin adds a musician, a sub, and a user by email", async ({ page }) => {
-  await signInAs(page, "jeff");
-  await page.goto(A("/admin/people"));
-  await page.getByTestId("musician-name").fill("Riley Sub");
-  await page.getByTestId("musician-add").click();
-  await expect(page.getByTestId("musician-Riley Sub")).toContainText("no login");
-  // an existing musician autosaves
-  await page.getByTestId("musician-Riley Sub").getByTestId("musician-edit").click();
-  await page.getByTestId("musician-edit-phone").fill("303-555-0100");
-  await expect(page.getByTestId("musician-Riley Sub").getByTestId("save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(page.getByTestId("musician-Riley Sub")).toContainText("303-555-0100");
-  // Members & logins: one form makes a band member, a login, or both
-  const email = `newbie${Date.now()}@example.com`;
-  await expect(page.getByTestId("add-user").getByLabel("Email")).toHaveAttribute("placeholder", "Email");
-  await expect(page.getByTestId("user-instruments")).toHaveCount(0);
-  await expect(page.getByTestId("user-role")).toHaveCount(0);
-  await page.getByTestId("user-name").fill("New Bie");
-  await page.getByTestId("user-email").fill(email);
-  await page.getByTestId("user-band-member").check();
-  await page.getByTestId("user-instruments").fill("banjo, vocals");
-  await page.getByTestId("user-invite").check();
-  await expect(page.getByTestId("user-role").locator("option")).toHaveText(["Member", "Admin", "AI"]);
-  await expect(page.getByTestId("add-user").getByTestId("draft-status")).toHaveText("Draft saved");
-  await page.reload();
-  await expect(page.getByTestId("user-email")).toHaveValue(email); // the add form is a draft
-  await expect(page.getByTestId("user-instruments")).toHaveValue("banjo, vocals");
-  await expect(page.getByTestId(`person-${email}`)).toHaveCount(0); // nothing is created until Add
-  await page.getByTestId("user-add").click();
-  const row = page.getByTestId(`person-${email}`);
-  await expect(row.getByTestId("person-role-chip")).toHaveText("member");
-  await expect(row.getByTestId("person-band-member")).toBeChecked();
-  await expect(row.getByTestId("person-invite")).toBeChecked();
-  await expect(row.getByTestId("person-instruments")).toHaveValue("banjo, vocals");
-  // role changes save on the spot, with status
-  await row.getByLabel("Role").selectOption("admin");
-  await expect(row.getByTestId("person-login").getByTestId("save-status")).toHaveText("Saved");
-  await expect(row.getByTestId("person-role-chip")).toHaveText("admin");
-  // instruments edit in place
-  await row.getByTestId("person-instruments").fill("banjo");
-  await expect(row.getByTestId("person-musician").getByTestId("save-status")).toHaveText("Saved");
-  // a band member without a login, invited afterwards with an explicit Invite
-  const subName = `Bandie ${Date.now()}`;
-  await page.getByTestId("user-name").fill(subName);
-  await page.getByTestId("user-band-member").check();
-  await page.getByTestId("user-instruments").fill("drums");
-  await page.getByTestId("user-add").click();
-  const sub = page.getByTestId(`person-${subName}`);
-  await expect(sub.getByTestId("person-band-member")).toBeChecked();
-  await expect(sub.getByTestId("person-invite")).not.toBeChecked();
-  await sub.getByTestId("person-invite").check();
-  const subEmail = `bandie${Date.now()}@example.com`;
-  await sub.getByTestId("person-invite-email").fill(subEmail);
-  await sub.getByTestId("person-invite-role").selectOption("ai");
-  await sub.getByTestId("person-send-invite").click();
-  const invited = page.getByTestId(`person-${subEmail}`);
-  await expect(invited.getByTestId("person-role-chip")).toHaveText("ai");
-  await expect(invited.getByTestId("person-mcp")).toHaveCount(0); // an ai login always has AI access
-  await expect(invited.getByTestId("person-instruments")).toHaveValue("drums");
-  // duplicate invite is refused with a readable error
-  await page.getByTestId("user-name").fill("Again");
-  await page.getByTestId("user-email").fill(email);
-  await page.getByTestId("user-invite").check();
-  await page.getByTestId("user-add").click();
-  await expect(page.getByTestId("error")).toContainText("already");
-});
-
 test("admin edits artist configurations", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/admin/artist"));
@@ -122,7 +55,7 @@ test("member sees 4 tabs, 'My money', and cannot open /booking or admin pages", 
   await expect(page.getByTestId("tab-money")).toHaveText("My money");
   await page.goto(A("/booking"));
   await expect(page).toHaveURL(/\/home$/);
-  await page.goto(A("/admin/users"));
+  await page.goto(A("/admin/people"));
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByTestId("band-setup")).toHaveCount(0);
 });

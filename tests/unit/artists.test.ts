@@ -55,7 +55,7 @@ test("artists.create: slug from the name, unique (suffixes when free-picked, 409
   // the creator is an admin of each new artist (and keeps their first one)
   const me = (await db.get("users", admin.uid))!;
   assert.deepEqual(me.artists, [
-    { artistId: TEST_ARTIST, role: "admin" }, { artistId: result(a).id, role: "admin" }, { artistId: result(b).id, role: "admin" },
+    { artistId: TEST_ARTIST, role: "admin" }, { artistId: result(a).id, role: "admin", mcpAccess: false }, { artistId: result(b).id, role: "admin", mcpAccess: false },
   ]);
   assert.equal(((await adminAuth().getUser(admin.uid)).customClaims!.artists as Record<string, string>)[result(a).id], "admin");
 });
@@ -142,7 +142,7 @@ test("users.*: per artist. Adding someone from another artist joins them; removi
   assert.equal((await dispatch("users.add", bearer(ben.token), { email: "anna@example.com", name: "Anna", role: "member" })).status, 409);
   // a role change in B leaves A alone
   assert.equal((await dispatch("users.update", bearer(ben.token), { id: anna.uid, patch: { role: "admin" } })).status, 200);
-  assert.deepEqual((await db.get("users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "admin" }]);
+  assert.deepEqual((await db.get("users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "admin", mcpAccess: false }]);
   // B can't touch someone who isn't in B
   const carl = await makeUser("carl@example.com", "member", { artistId: "a" });
   assert.equal((await dispatch("users.update", bearer(ben.token), { id: carl.uid, patch: { role: "admin" } })).status, 404);
@@ -153,7 +153,7 @@ test("users.*: per artist. Adding someone from another artist joins them; removi
   assert.equal(after.deletedAt, null);
   assert.deepEqual(after.artists, [{ artistId: "a", role: "admin" }]);
   assert.equal((await dispatch("musicians.create", bearer(await idToken(anna.uid)), { name: "x", instruments: [] }, "b")).status, 403);
-  assert.equal((await dispatch("musicians.create", bearer(await idToken(anna.uid)), { name: "x", instruments: [] }, "a")).status, 200);
+  assert.equal((await dispatch("musicians.create", bearer(await idToken(anna.uid)), { name: "x", instruments: ["x"] }, "a")).status, 200);
 });
 
 test("records.get / records.list: artist docs and other artists' shows and pitches stay in their artist", async () => {
