@@ -96,6 +96,7 @@ const READBACK: Record<string, (i: Record<string, any>, r: any, s: Session) => s
   "expenses.add": (i, _r, s) => `Logged ${dollars(i.amount)} ${i.what}, paid by ${s.name}`,
   "shows.update": (i) => `Updated show: ${Object.keys(i.patch ?? {}).map((k) => (k === "times" ? Object.entries(i.patch.times).map(([t, v]) => `${t} ${v}`).join(", ") : `${k} ${JSON.stringify(i.patch[k])}`)).join(", ")}`,
   "shows.cancel": () => "Canceled the show",
+  "shows.drop": () => "Dropped the show",
 };
 export function readback(name: string, input: unknown, result: unknown, s: Session): string {
   const f = READBACK[name];

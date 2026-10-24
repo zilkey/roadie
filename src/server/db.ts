@@ -449,12 +449,14 @@ export class Writer {
       if (existing.deletedAt) return { changed: false, as: "delete" };
       const next = clean(this.stampUpdate(existing, writable(existing), this.now));
       await this.commit(path, id, next, "delete", diffDocs(existing, next));
+      await this.afterChange(path, existing, next);
       return { changed: true, as: "delete" };
     }
     if (op === "delete") {
       if (!existing.deletedAt) return { changed: false, as: "restore" };
       const next = clean(this.stampUpdate(existing, writable(existing), null));
       await this.commit(path, id, next, "restore", diffDocs(existing, next));
+      await this.afterChange(path, existing, next);
       return { changed: true, as: "restore" };
     }
     const computed = new Set(computedFields[kind] ?? []);

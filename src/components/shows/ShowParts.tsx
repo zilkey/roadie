@@ -7,7 +7,7 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { CopyButton } from "@/components/booking/common";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { formatCents, dollarsToCents } from "@/lib/money";
-import { fmtDur, fmtLong, type ChecklistItem, showName } from "@/lib/shows";
+import { fmtDur, fmtLong, isOff, type ChecklistItem, showName } from "@/lib/shows";
 import { GearChecklist, nameOf, packedCount, type ShowRow } from "./common";
 import { PanelStatus, useInstantSave } from "./saved";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
@@ -209,7 +209,7 @@ export function ListingsPanel({ show, editable }: { show: ShowRow; editable: boo
           <b>Google Calendar</b>
           <span className={`chip ${show.calendarEventId ? "g" : ""}`} data-testid="cal-state">{show.calendarEventId ? "On calendar" : "Not on calendar"}</span>
         </div>
-        {editable && show.status !== "canceled" && (
+        {editable && !isOff(show) && (
           <div className="flex flex-wrap gap-2">
             {eligible && <button className="btn ghost sm" disabled={busy} onClick={sync} data-testid="bit-sync">Sync Bandsintown now</button>}
             <button className="btn ghost sm" disabled={busy} data-testid="cal-toggle"

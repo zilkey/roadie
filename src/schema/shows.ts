@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { entity, serverMask, id, dateStr, timeStr, sound, cents } from "./common";
+import { entity, serverMask, id, dateStr, timeStr, sound, cents, ts } from "./common";
 
 export const showKind = z.enum(["venue", "house", "festival", "radio", "other"]);
 export type ShowKind = z.infer<typeof showKind>;
 
 export const Show = entity({
   date: dateStr,
-  status: z.enum(["hold", "confirmed", "played", "canceled"]),
+  status: z.enum(["hold", "confirmed", "played", "canceled", "dropped"]),
+  /** Why it was canceled or dropped. Members can read it. */
+  reason: z.string().optional(),
   /** What kind of show. Missing = "venue" (documents written before this existed). */
   kind: showKind.optional(),
   /** Copy of the venue. Optional: a house concert has hosts and a place instead. A show has a venue or a place. */
@@ -68,6 +70,8 @@ export const ShowDeal = entity({
   settled: z.boolean(),
   /** Payouts agreed at settle time but not yet paid; paid ones become ledger payout entries. */
   owedPayouts: z.array(z.strictObject({ musicianId: id, amount: cents.positive() })).optional(),
+  /** Server-kept (written only by refreshDealTotals): the show's income and expenses for the Played table. */
+  totals: z.strictObject({ income: cents, expenses: cents, updatedAt: ts }).optional(),
 });
 export const ShowDealInput = ShowDeal.omit(serverMask);
 export type ShowDeal = z.infer<typeof ShowDeal>;

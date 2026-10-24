@@ -6,7 +6,7 @@
 import { db, type Doc } from "./db";
 import type { Ctx } from "./ctx";
 import { IntegrationError, bandsintownClient, calendarClient } from "./integrations";
-import { addDays, fmtTime, publicShowName, showAddress, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
+import { addDays, fmtTime, isOff, publicShowName, showAddress, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 
 export interface SyncResult { warnings: string[]; calendar?: "created" | "updated" | "removed"; bandsintown?: "listed" | "updated" | "removed" | "error" }
@@ -29,7 +29,7 @@ export const bandsintownEligible = (s: Doc) => !!s.public && s.status === "confi
 
 async function syncCalendar(ctx: Ctx, show: Doc, create: boolean, remove: boolean, out: SyncResult) {
   const cal = calendarClient();
-  const gone = !!show.deletedAt || show.status === "canceled" || remove;
+  const gone = !!show.deletedAt || isOff(show) || remove;
   if (gone) {
     if (!show.calendarEventId) return;
     try { await cal.delete(show.calendarEventId); } catch (e) { if (!notFound(e)) throw e; }
@@ -66,7 +66,7 @@ async function syncBandsintown(ctx: Ctx, show: Doc, out: SyncResult) {
   const cur = show.listings?.bandsintown as { eventId?: string; state: string } | undefined;
   const eligible = !show.deletedAt && bandsintownEligible(show);
   if (!eligible) {
-    // A played show stays on the page as history; hold, private, canceled and deleted shows come off.
+    // A played show stays on the page as history; hold, private, canceled, dropped and deleted shows come off.
     if (show.status === "played" && !show.deletedAt) return;
     if (!cur) return;
     if (cur.eventId) { try { await bit.delete(cur.eventId); } catch (e) { if (!notFound(e)) throw e; } }

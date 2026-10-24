@@ -5,6 +5,7 @@
  */
 import type { Doc, Writer } from "./db";
 import { joinNames } from "@/lib/shows";
+import { refreshDealTotals } from "./dealTotals";
 
 export interface Denormalizer {
   source: string;
@@ -20,6 +21,8 @@ const retarget = (kind: "venue" | "promoter" | "edition") => async (w: Writer, i
 };
 
 export const denormalizers: Denormalizer[] = [
+  // Undoing (or redoing) an expense on a show: its deal's totals follow.
+  { source: "expenses", watch: ["deletedAt"], refresh: async (w, _id, after) => { if (after.showId) await refreshDealTotals(w, String(after.showId)); } },
   {
     source: "venues", watch: ["name", "address"],
     async refresh(w, id, after) {

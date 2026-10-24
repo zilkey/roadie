@@ -20,7 +20,7 @@ test("enter money after the played seeded show: ledger entries, payouts, settled
   await signInAs(page, "jeff");
   await page.goto(A("/shows"));
   await page.getByTestId("shows-filter-played").click();
-  await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
+  await page.getByTestId("shows-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).locator("td.date a").click();
   await page.getByTestId("after-show").click();
   const id = page.url().split("/shows/")[1].split("/")[0];
 

@@ -375,13 +375,45 @@ test("shows.remove archives the show and its deal and clears the listings", asyn
 
 test("showFilter: every show is upcoming, played, canceled or dropped", () => {
   const today = "2026-10-23";
-  const f = (status: "hold" | "confirmed" | "played" | "canceled", date: string) => showFilter({ id: "x", status, date }, today);
+  const f = (status: "hold" | "confirmed" | "played" | "canceled" | "dropped", date: string) => showFilter({ id: "x", status, date }, today);
   assert.equal(f("confirmed", "2026-11-01"), "upcoming");
   assert.equal(f("hold", "2026-10-23"), "upcoming");
   assert.equal(f("played", "2026-10-01"), "played");
   assert.equal(f("confirmed", "2026-10-01"), "played");
   assert.equal(f("canceled", "2026-11-01"), "canceled");
   assert.equal(f("hold", "2026-10-22"), "dropped");
+  assert.equal(f("dropped", "2026-11-01"), "dropped");
+  assert.equal(f("dropped", "2026-10-01"), "dropped");
+});
+
+test("cancel and drop: status and reason in one write (blank = no reason); update clears it; listings come off", async () => {
+  const a = await create({ public: true, status: "confirmed" });
+  await cmd("shows.cancel", { id: a.id, reason: "  They double-booked the patio.  " });
+  let s = (await db.get("shows", a.id))!;
+  assert.equal(s.status, "canceled"); assert.equal(s.reason, "They double-booked the patio.");
+  const h = await db.history("shows", a.id, 5);
+  const write = h.find((e) => e.diff.status)!;
+  assert.ok(write.diff.reason, "status and reason are one history entry");
+  assert.deepEqual(s.listings, {});
+  const b = await create({ date: "2027-02-01" });
+  await cmd("shows.drop", { id: b.id, reason: "   " });
+  s = (await db.get("shows", b.id))!;
+  assert.equal(s.status, "dropped"); assert.equal(s.reason, undefined);
+  await cmd("shows.drop", { id: b.id, reason: "The money's not there." });
+  assert.equal((await db.get("shows", b.id))!.reason, "The money's not there.");
+  await cmd("shows.update", { id: b.id, patch: { status: "hold" } }); // bring back as a hold keeps the reason
+  assert.equal((await db.get("shows", b.id))!.reason, "The money's not there.");
+  await cmd("shows.update", { id: b.id, patch: { reason: null } });
+  assert.equal((await db.get("shows", b.id))!.reason, undefined);
+  assert.deepEqual(registry["shows.drop"].roles, ["admin", "mcp"]);
+});
+
+test("shows.list rows carry the reason; afterShow refuses a dropped show", async () => {
+  const a = await create({ date: "2026-10-10" });
+  await cmd("shows.drop", { id: a.id, reason: "Van broke down" });
+  const r = await cmd("shows.list", { filter: "dropped" });
+  assert.equal(r.shows.find((x: { id: string }) => x.id === a.id).reason, "Van broke down");
+  await assert.rejects(cmd("shows.afterShow", { id: a.id, show: 3, venue: 3 }), /dropped/);
 });
 
 test("house concert: no venue, hosts + place; name, kind and band-PA default; validation", async () => {

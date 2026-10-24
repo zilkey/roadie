@@ -10,7 +10,7 @@ export interface ShowFormState {
   where: "venue" | "house"; venueId: string; hostContactIds: string[]; city: string; address: string;
   /** The festival year this show is part of ("" = none). */
   editionId: string;
-  date: string; status: "hold" | "confirmed" | "played" | "canceled";
+  date: string; status: "hold" | "confirmed" | "played" | "canceled" | "dropped";
   loadIn: string; soundcheck: string; doors: string; set: string; setLength: string;
   billedAs: string; personnel: string[]; soundProvider: "venueProvided" | "bandProvided"; soundNotes: string;
   poster: boolean; backline: boolean; merch: boolean; calendar: boolean; public: boolean; ticketUrl: string; bandNotes: string;

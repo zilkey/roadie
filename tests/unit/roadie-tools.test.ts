@@ -89,7 +89,7 @@ test("tool list comes from the registry and leaves out what Roadie must not do",
 });
 
 test("confirm rules: sends, money, deletes, cancels and more than 5 records", () => {
-  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "payouts.pay", "expenses.reimburse", "shows.settle", "ledger.record", "ledger.correct", "shows.cancel", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "payouts.pay", "expenses.reimburse", "shows.settle", "ledger.record", "ledger.correct", "shows.cancel", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 5000, what: "gas", category: "travel" }), false);
   // a shared venue edit reaches every band: it asks. The band's own notes and links do not. Merging always asks.
   assert.equal(needsConfirm("venues.update", { id: "v", patch: { capacity: 300 } }), true);

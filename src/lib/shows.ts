@@ -125,17 +125,20 @@ export const ASK_LABEL: Record<AskState, string> = { yes: "Yes", no: "No", maybe
 
 // ---------- Home ----------
 
-interface ShowLike { id: string; date: string; status: "hold" | "confirmed" | "played" | "canceled" }
+interface ShowLike { id: string; date: string; status: "hold" | "confirmed" | "played" | "canceled" | "dropped" }
 export const RECENT_DAYS = 3;
 /** A show whose date has passed counts as played even if nobody has rated it yet. */
+/** Canceled (they called it off) or dropped (we pulled out). */
+export const isOff = (s: { status: string } | { [k: string]: unknown }) => s.status === "canceled" || s.status === "dropped";
 export const isPlayed = (s: ShowLike, today: string) => s.status === "played" || (s.status === "confirmed" && s.date < today);
 
-/** The Shows filter. Every show is in exactly one: dropped is a hold whose date passed without being confirmed. */
+/** The Shows filter. Every show is in exactly one: dropped is status "dropped", or a hold whose date passed without being confirmed. */
 export const SHOW_FILTERS = ["upcoming", "played", "canceled", "dropped"] as const;
 export type ShowFilter = (typeof SHOW_FILTERS)[number];
 export const SHOW_FILTER_LABEL: Record<ShowFilter, string> = { upcoming: "Upcoming", played: "Played", canceled: "Canceled", dropped: "Dropped" };
 export function showFilter(s: ShowLike, today: string): ShowFilter {
   if (s.status === "canceled") return "canceled";
+  if (s.status === "dropped") return "dropped";
   if (isPlayed(s, today)) return "played";
   return s.status === "hold" && s.date < today ? "dropped" : "upcoming";
 }
@@ -152,7 +155,7 @@ export interface HomePlan<S extends ShowLike, A> {
 export function planHome<S extends ShowLike, A extends AvLike & { id: string }>(i: {
   role: "admin" | "member"; musicianId?: string; shows: S[]; asks: A[]; today: string; unsettled?: Set<string>;
 }): HomePlan<S, A> {
-  const live = i.shows.filter((s) => s.status !== "canceled");
+  const live = i.shows.filter((s) => !isOff(s));
   const today = live.filter((s) => s.date === i.today).sort((a, b) => a.id.localeCompare(b.id));
   const since = addDays(i.today, -RECENT_DAYS);
   const recent = live.filter((s) => s.date < i.today && s.date >= since && isPlayed(s, i.today) && (i.role === "member" || i.unsettled?.has(s.id)))

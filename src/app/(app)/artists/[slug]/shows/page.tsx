@@ -1,26 +1,43 @@
 "use client";
 import Link from "@/lib/artist";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { PageTitle } from "@/components/ui";
 import { todayStr } from "@/lib/booking";
 import { SHOW_FILTERS, SHOW_FILTER_LABEL, showFilter, type ShowFilter } from "@/lib/shows";
 import { Tabs } from "@/components/booking/common";
-import { ShowRowLink, useBand } from "@/components/shows/common";
+import { useBand } from "@/components/shows/common";
+import { ShowTable } from "@/components/shows/ShowTables";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 
-const EMPTY: Record<ShowFilter, string> = { upcoming: "No shows coming up.", played: "Nothing yet.", canceled: "No canceled shows.", dropped: "No dropped holds." };
+const fromHash = (): ShowFilter => {
+  const h = typeof window === "undefined" ? "" : window.location.hash.slice(1);
+  return (SHOW_FILTERS as readonly string[]).includes(h) ? (h as ShowFilter) : "upcoming";
+};
 
 export default function Shows() {
   const p = useProfile();
   const b = useBand();
+  // The tab lives in the URL hash (#played...) so it survives a reload; each tab keeps its own scroll position.
   const [filter, setFilter] = useState<ShowFilter>("upcoming");
+  const scrolls = useRef<Partial<Record<ShowFilter, number>>>({});
+  useEffect(() => {
+    const sync = () => setFilter(fromHash());
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  useEffect(() => { window.scrollTo(0, scrolls.current[filter] ?? 0); }, [filter]);
+  function pick(f: ShowFilter) {
+    scrolls.current[filter] = window.scrollY;
+    window.history.replaceState(null, "", `#${f}`);
+    setFilter(f);
+  }
   const today = todayStr();
   const count = (f: ShowFilter) => b.shows.filter((s) => showFilter(s, today) === f).length;
   // Upcoming soonest first; the rest most recent first.
   const shown = b.shows.filter((s) => showFilter(s, today) === filter)
     .sort((a, c) => (filter === "upcoming" ? a.date.localeCompare(c.date) : c.date.localeCompare(a.date)));
-  const note = (s: { personnel: string[] }) => (p.musicianId ? <span className={`chip ${s.personnel.includes(p.musicianId) ? "m" : ""}`}>{s.personnel.includes(p.musicianId) ? "Playing" : "Not playing"}</span> : null);
   // No shows at all: only the welcome card, no filter or list.
   if (!b.loading && b.shows.length === 0) {
     return (
@@ -33,14 +50,11 @@ export default function Shows() {
   }
   return (
     <div className="grid gap-5" data-testid="shows-page">
-      <PageTitle title="Shows" sub={p.role === "admin" ? "Upcoming, played, canceled and dropped." : "The band's shows."} />
-      {p.role === "admin" && <Link href="/shows/new" className="btn acc justify-self-start" data-testid="new-show-btn">New show</Link>}
-      <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={setFilter}
+      <PageTitle title="Shows" center
+        actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">New show</Link> : undefined} />
+      <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={pick}
         options={SHOW_FILTERS.map((f) => [f, b.loading ? SHOW_FILTER_LABEL[f] : `${SHOW_FILTER_LABEL[f]} · ${count(f)}`])} />
-      <div className="grid gap-2" data-testid={`shows-${filter}`}>
-        {!b.loading && shown.length === 0 && <div className="empty"><span>{EMPTY[filter]}</span></div>}
-        {shown.map((s) => <ShowRowLink key={s.id} show={s} artist={b.artist} note={filter === "upcoming" ? note(s) : undefined} />)}
-      </div>
+      {!b.loading && <ShowTable tab={filter} shows={shown} setlists={b.setlists} admin={p.role === "admin"} />}
     </div>
   );
 }

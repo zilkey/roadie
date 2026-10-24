@@ -6,11 +6,13 @@ import { CommandError, runCommand, type CommandMeta } from "@/lib/commands";
  * The page header: optional "← All <section>" back link, the title with a status pill beside it, the meta line (date · place) under it,
  * and the header actions on the right. Destructive actions go in a "More ▾" menu among `actions`, not as standalone red buttons.
  */
-export function PageTitle({ title, sub, back, pill, actions }: {
+export function PageTitle({ title, sub, back, pill, actions, center }: {
   title: React.ReactNode; sub?: React.ReactNode; back?: React.ReactNode; pill?: React.ReactNode; actions?: React.ReactNode;
+  /** Actions vertically centered on the title (a title-only header) instead of on its bottom line. */
+  center?: boolean;
 }) {
   return (
-    <div className="page-head">
+    <div className={center ? "page-head center" : "page-head"}>
       <div className="grid min-w-0 gap-1">
         {back}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

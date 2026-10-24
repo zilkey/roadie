@@ -55,6 +55,25 @@ export const byMonth = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.date.slice
 export const byShow = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.showId)).sort((a, b) => b.net - a.net);
 export const byCategory = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.category)).sort((a, b) => b.in + b.out - (a.in + a.out));
 
+/**
+ * A show's totals for the Played table (showDeals.totals). income = income lines less corrections of them;
+ * expenses = expense and payout lines less corrections of them, plus member expenses on the show.
+ * Reimbursements are left out: the expense they pay back is already counted.
+ */
+export function showTotals(i: { ledger: LedgerLike[]; expenses: { amount: number; deletedAt?: unknown }[] }): { income: number; expenses: number } {
+  const by = indexLedger(i.ledger);
+  const kindOf = (e: LedgerLike) => (e.kind === "correction" ? (e.reversesId ? by.get(e.reversesId)?.kind : undefined) : e.kind);
+  let income = 0, expenses = 0;
+  for (const e of i.ledger) {
+    const k = kindOf(e), n = e.kind === "correction" ? -e.amount : e.amount;
+    if (k === "income") income += n;
+    else if (k === "expense" || k === "payout") expenses += n;
+  }
+  for (const x of i.expenses) if (!x.deletedAt) expenses += x.amount;
+  // Tour expenses (tourEntryId on this show's entry) go here once touring is built.
+  return { income, expenses };
+}
+
 /** Latest live reimbursement for an expense that has not been reversed, if any. */
 export function reimbursementFor(expenseId: string, l: LedgerLike[]): LedgerLike | undefined {
   const rev = reversedIds(l);

@@ -18,13 +18,16 @@ async function as(browser: Browser, key: string) {
 const localToday = () => dateInBandZone();
 const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 
-async function cancelShow(page: Page, id: string) {
+async function cancelShow(page: Page, id: string, reason?: string) {
   await page.goto(A(`/shows/${id}`));
-  page.once("dialog", (d) => d.accept());
   await page.getByTestId("show-actions").click();
   await page.getByTestId("show-menu-cancel").click();
+  if (reason) await page.getByTestId("show-off-reason").fill(reason);
+  await page.getByTestId("show-off-go").click();
   await expect(page.getByTestId("show-status")).toHaveText("Canceled");
 }
+const row = (page: Page, id: string) => page.locator(`[data-testid="shows-row"][data-id="${id}"]`);
+const heads = (page: Page, tab: string) => page.getByTestId(`shows-table-${tab}`).locator("th");
 
 test("Booked it turns a pitch into a show with checklist, an empty gear list, calendar and a deal", async ({ page, request }) => {
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };
@@ -264,7 +267,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await d.goto(A("/shows/new"));
   await expect(d).toHaveURL(/\/home$/);
   await d.goto(A("/shows"));
-  await expect(d.getByTestId(`show-${id}`)).toBeVisible();
+  await expect(row(d, id)).toBeVisible();
   await david.close();
 
   await cancelShow(page, id);
@@ -336,7 +339,70 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
   await expect(page.getByTestId("bit-detail")).toContainText("Private shows stay off");
   expect((await list()).filter((e) => e.datetime.startsWith("2027-04-11"))).toHaveLength(0);
-  await cancelShow(page, showId(page));
+  const priv = showId(page);
+  await cancelShow(page, priv, "Room double-booked.");
+  await expect(page.getByTestId("show-reason")).toHaveText("Room double-booked.");
+  await page.goto(A("/shows#canceled"));
+  await expect(row(page, priv).locator("td.reason")).toHaveText("Room double-booked.");
+});
+
+test("Shows list: title row with New show and no subtitle; one table per tab; the tab survives a reload", async ({ page, browser }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/shows"));
+  const head = page.locator(".page-head");
+  await expect(head.getByTestId("page-title")).toHaveText("Shows");
+  await expect(head.getByTestId("new-show-btn")).toBeVisible();
+  await expect(head.locator(".page-meta")).toHaveCount(0);
+  await expect(page.getByText("Upcoming, played, canceled and dropped.")).toHaveCount(0);
+  const t = await head.getByTestId("page-title").boundingBox(), b = await head.getByTestId("new-show-btn").boundingBox();
+  expect(Math.abs((t!.y + t!.height / 2) - (b!.y + b!.height / 2))).toBeLessThan(4); // same row, centered
+
+  await expect(heads(page, "upcoming")).toHaveText(["Date", "Venue", "Address", "Show start", "Load in", "Sound check", "Downbeat", "Sound", "Setlist"]);
+  const hi = page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" });
+  await expect(hi.locator("td").nth(3)).toHaveText("8:30 pm");
+  await expect(hi.locator("td.addr a")).toHaveAttribute("href", /google\.com\/maps\/search\/\?api=1&query=7%20S%20Broadway/);
+  await expect(hi.locator("td").nth(7)).toHaveText("They provide");
+  const lake = page.getByTestId("shows-row").filter({ hasText: "Lost Lake Lounge" }).first();
+  await expect(lake.locator("td").nth(4)).toHaveText("—"); // no load-in
+  await expect(lake.locator("td").nth(4).locator(".dash")).toHaveCount(1);
+
+  await page.getByTestId("shows-filter-played").click();
+  await expect(page).toHaveURL(/#played$/);
+  await expect(heads(page, "played")).toHaveText(["Date", "Venue", "Duration", "Total income", "Total expenses"]);
+  const dairy = page.getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" });
+  await expect(dairy.locator("td").nth(2)).toHaveText("50m");
+  await expect(page.getByTestId("shows-totals")).toContainText("Showing");
+  await expect(page.getByTestId("shows-more")).toHaveCount(0); // fewer than 50 played
+  await page.reload();
+  await expect(page.getByTestId("shows-filter-played")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("shows-table-played")).toBeVisible();
+  await page.getByTestId("shows-filter-dropped").click();
+  await expect(page).toHaveURL(/#dropped$/);
+  await page.getByTestId("shows-filter-canceled").click();
+  await expect(page).toHaveURL(/#canceled$/);
+
+  const david = await as(browser, "david");
+  await david.page.goto(A("/shows#played"));
+  await expect(heads(david.page, "played")).toHaveText(["Date", "Venue", "Duration"]);
+  await expect(david.page.getByTestId("new-show-btn")).toHaveCount(0);
+  await expect(david.page.locator(".page-meta")).toHaveCount(0);
+  await david.close();
+});
+
+test("Shows list on a phone: the table scrolls inside its box with the date pinned; the page never scrolls sideways", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await signInAs(page, "jeff");
+  await page.goto(A("/shows#upcoming"));
+  await expect(page.getByTestId("shows-table-upcoming")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const box = page.locator(".show-scroll");
+  expect(await box.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  await box.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  const date = page.getByTestId("shows-row").first().locator("td.date");
+  const b = (await box.boundingBox())!, d = (await date.boundingBox())!;
+  expect(d.x).toBeGreaterThanOrEqual(b.x - 1);
+  expect(d.x).toBeLessThan(b.x + 4);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("after the show: rating and attendance saved", async ({ page }) => {
@@ -344,7 +410,7 @@ test("after the show: rating and attendance saved", async ({ page }) => {
   // the seeded played show (Dairy Arts, Oct 10) is unsettled
   await page.goto(A("/shows"));
   await page.getByTestId("shows-filter-played").click();
-  await page.getByTestId("shows-played").getByText("Dairy Arts Center").click();
+  await page.getByTestId("shows-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).locator("td.date a").click();
   await page.getByTestId("after-show").click();
   await page.getByTestId("rate-show-4").click();
   await page.getByTestId("rate-venue-5").click();

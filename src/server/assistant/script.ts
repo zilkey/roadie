@@ -42,12 +42,35 @@ type Page = { kind?: string; id?: string };
 // "How many shows were canceled?" -> shows.list with that filter. Checked before the cancel command.
 const FILTER_WORDS: [RegExp, string][] = [[/\bcancel(?:l?ed)?\b/, "canceled"], [/\bplayed\b/, "played"], [/\bdropped\b/, "dropped"], [/\b(upcoming|coming up)\b/, "upcoming"]];
 const ASKS_LIST = /^(how many|which|what|list|any)\b/;
-const FILTER_SAID: Record<string, string> = { upcoming: "coming up", played: "played", canceled: "canceled", dropped: "dropped (holds that never confirmed)" };
+const FILTER_SAID: Record<string, string> = { upcoming: "coming up", played: "played", canceled: "canceled", dropped: "dropped" };
+
+// "Oskar Blues canceled, they double-booked the patio." / "We're dropping the Drifters show, the money's not there." -> search, then cancel/drop with the reason.
+const CANCELED = /^(.+?)\s+(?:canceled|cancelled|called it off)\s*(?:[,:;-]\s*(.*))?$/;
+const DROPPING = /^we(?:['’]re| are)? (?:dropping|pulling out of)\s+(.+?)\s*(?:[,:;-]\s*(.*))?$/;
+// "Why did we cancel Gold Hill?" -> search, records.get, read back the reason.
+const WHY = /^why (?:did|was|were) (?:we |it |they )?(?:cancel(?:l?ed)?|drop(?:ped)?)\s+(.+?)[.!?]*$/;
+const clip = (s?: string) => s?.replace(/[.!?]+$/, "").trim() || undefined;
+const showQuery = (s: string) => s.replace(/\b(the|this|show|gig)\b/g, "").replace(/\s+/g, " ").trim();
+/** What the person asked to do to a show by name, from their words: cancel or drop, with the reason they gave. */
+function offIntent(t: string): { name: "shows.cancel" | "shows.drop"; q: string; reason?: string } | undefined {
+  const d = DROPPING.exec(t);
+  if (d) return { name: "shows.drop", q: showQuery(d[1]), reason: clip(d[2]) };
+  const c = CANCELED.exec(t);
+  if (c && !/^(how many|which|what|why)\b/.test(t)) return { name: "shows.cancel", q: showQuery(c[1]), reason: clip(c[2]) };
+  return undefined;
+}
+/** The reason as the person wrote it (case kept). */
+function reasonIn(raw: string, lower?: string) {
+  if (!lower) return undefined;
+  const i = raw.toLowerCase().lastIndexOf(lower);
+  return i < 0 ? lower : clip(raw.slice(i, i + lower.length));
+}
 
 export function script(input: { text: string; steps?: Step[]; page?: Page }): Scripted {
-  const t = input.text.toLowerCase().trim();
+  const raw = input.text.trim();
+  const t = raw.toLowerCase();
   const steps = input.steps ?? [];
-  return steps.length ? followUp(t, steps, input.page) : first(t, input.page);
+  return steps.length ? followUp(t, steps, input.page, raw) : first(t, input.page);
 }
 
 function first(t: string, page?: Page): Scripted {
@@ -70,6 +93,11 @@ function first(t: string, page?: Page): Scripted {
     if (!q) return { text: "Which show? I won't guess on a time." };
     return { text: "On it.", calls: [{ name: "search", input: { q, kinds: ["show"] } }] };
   }
+
+  const why = WHY.exec(t);
+  if (why) return { calls: [{ name: "search", input: { q: showQuery(why[1]), kinds: ["show"] } }] };
+  const off = offIntent(t);
+  if (off) return off.q ? { calls: [{ name: "search", input: { q: off.q, kinds: ["show"] } }] } : { text: "Which show? I won't guess on that." };
 
   if (/\bcancel\b/.test(t)) {
     const q = t.replace(/^.*?\bcancel\b/, "").replace(/\b(the|this|show)\b/g, "").replace(/[.!?]+$/, "").trim();
@@ -104,7 +132,7 @@ function pick(hits: Hit[], prefer: string[]): Hit | undefined {
   return undefined;
 }
 
-function followUp(t: string, steps: Step[], page?: Page): Scripted {
+function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
   const last = steps[steps.length - 1];
   const err = errorOf(last.output);
   const out = unwrap(last.output);
@@ -116,11 +144,17 @@ function followUp(t: string, steps: Step[], page?: Page): Scripted {
   if (last.name === "search") {
     const hits = (out?.results ?? []) as Hit[];
     if (err || !hits.length) return { text: "I can't do that. I don't know that one: nothing by that name in the book." };
-    const wantsCancel = /\bcancel\b/.test(t);
+    const off = WHY.test(t) ? undefined : offIntent(t);
+    const wantsWhy = WHY.test(t);
+    const wantsCancel = /\bcancel\b/.test(t) && !wantsWhy;
     const wantsMove = /\bmove\b/.test(t);
-    if (wantsCancel || wantsMove) {
+    if (off || wantsWhy || wantsCancel || wantsMove) {
       const shows = hits.filter((h) => h.kind === "show");
       if (shows.length !== 1) return { text: shows.length ? `Which one: ${shows.map((s) => s.name).join(" or ")}?` : "I can't find that show." };
+      if (off) {
+        const reason = reasonIn(raw, off.reason);
+        return { calls: [{ name: off.name, input: { id: shows[0].id, ...(reason ? { reason } : {}) } }] };
+      }
       return wantsCancel ? { calls: [{ name: "shows.cancel", input: { id: shows[0].id } }] } : { calls: [{ name: "records.get", input: { kind: "shows", id: shows[0].id } }] };
     }
     const asked = Object.keys(KIND_WORDS).find((k) => new RegExp(`\\b${k}\\b`).test(t));
@@ -146,6 +180,12 @@ function followUp(t: string, steps: Step[], page?: Page): Scripted {
     return { calls: [{ name: "payouts.pay", input: { showId: unsettled[0].id, musicianId: "all" } }] };
   }
 
+  if (last.name === "records.get" && WHY.test(t)) {
+    if (err || !out) return { text: "I can't find that show." };
+    const what = out.status === "dropped" ? "dropped" : out.status === "canceled" ? "canceled" : undefined;
+    if (!what) return { text: "That show isn't canceled or dropped." };
+    return { text: out.reason ? `It was ${what}: ${out.reason}` : `It was ${what}, but nobody wrote down why.` };
+  }
   if (last.name === "records.get") {
     const m = /to\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b/.exec(t);
     if (err || !m) return { text: "I can't find that show." };

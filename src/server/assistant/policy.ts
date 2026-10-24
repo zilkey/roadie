@@ -22,7 +22,7 @@ export const isExcluded = (name: string) => EXCLUDED.some((e) => (e.endsWith("."
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "availability.ask", "availability.remind",                      // sends
   "payouts.pay", "expenses.reimburse", "shows.settle", "ledger.record", "ledger.correct", // money
-  "shows.cancel", "shows.sync", "shows.calendar",                                        // cancels, leaves the app
+  "shows.cancel", "shows.drop", "shows.sync", "shows.calendar",                          // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stats.pull",                                                                          // calls out
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
@@ -66,7 +66,8 @@ export const isEligible = (name: string, role: Role) => !!registry[name] && !isE
 
 const dollars = (cents: unknown) => (typeof cents === "number" ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "");
 const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
-  "shows.cancel": (i) => `Cancel the show${i.label ? ` ${i.label}` : ""}`,
+  "shows.cancel": (i) => `Cancel the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
+  "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "payouts.pay": (i) => `Pay a show payout${i.amount ? ` of ${dollars(i.amount)}` : ""}`,
   "expenses.reimburse": () => "Mark an expense as paid back",
   "shows.settle": () => "Enter the money for a show and settle it",

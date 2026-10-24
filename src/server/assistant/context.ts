@@ -1,6 +1,6 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
-import { addDays, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
+import { addDays, isOff, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
 import { reimbursementFor } from "@/lib/money";
 import type { Ctx } from "../ctx";
 import { runAs, type Session } from "./run";
@@ -21,7 +21,7 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   const now = ctx.now ?? new Date();
   const today = dateInBandZone(now);
   const [shows, deals, expenses, ledger] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses"), list(ctx, "ledger")]);
-  const live = shows.filter((x) => x.status !== "canceled");
+  const live = shows.filter((x) => !isOff(x));
   const settled = new Set(deals.filter((d) => d.settled).map((d) => d.id));
   const tonight = tonightDate(now);
   return {

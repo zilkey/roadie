@@ -25,7 +25,7 @@ export function useBand() {
 }
 
 export const STATUS_CHIP: Record<string, [string, string]> = {
-  hold: ["Hold", "a"], confirmed: ["Confirmed", "g"], played: ["Played", ""], canceled: ["Canceled", ""],
+  hold: ["Hold", "a"], confirmed: ["Confirmed", "g"], played: ["Played", ""], canceled: ["Canceled", ""], dropped: ["Dropped", ""],
 };
 export function ShowStatusChip({ status }: { status: string }) {
   const [l, c] = STATUS_CHIP[status] ?? [status, ""];
@@ -52,18 +52,6 @@ export function Times({ times }: { times: Show["times"] }) {
 export const configName = (a: Row<Artist> | undefined, id?: string) => a?.configurations.find((c) => c.id === id)?.name;
 export const billingName = (a: Row<Artist> | undefined, id?: string) => a?.configurations.find((c) => c.id === id)?.billingName ?? a?.name;
 export const nameOf = (ms: Row<Musician>[], id?: string) => ms.find((m) => m.id === id)?.name ?? "Someone";
-
-export function ShowRowLink({ show, artist, note }: { show: ShowRow; artist?: Row<Artist>; note?: React.ReactNode }) {
-  return (
-    <Link href={`/shows/${show.id}`} className="card" data-testid={`show-${show.id}`}>
-      <div className="flex items-center justify-between gap-2">
-        <b>{fmtLong(show.date)} · {showName(show)}</b>
-        <span className="flex items-center gap-1.5">{note}{show.status !== "confirmed" && <span className={`chip ${show.status === "hold" ? "a" : ""}`}>{STATUS_CHIP[show.status]?.[0]}</span>}</span>
-      </div>
-      <span className="s">{[showCity(show), show.times.set && `Set ${fmtTime(show.times.set)}`, configName(artist, show.billedAs)].filter(Boolean).join(" · ")}</span>
-    </Link>
-  );
-}
 
 /** Gear with packed checkboxes. Members can tick only what they bring. `onPack` is the shows.packGear command. */
 export function GearChecklist({ show, musicians, onPack, mineOnly, testidPrefix = "gear" }: {

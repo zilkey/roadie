@@ -14,7 +14,7 @@ import { bandsintownEligible } from "../showSync";
 import { bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
 import { dateStr } from "@/schema";
-import { publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
+import { isOff, publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
 const strict = z.strictObject;
@@ -183,7 +183,7 @@ export const availabilityCheck = defineCommand({
     const name = new Map(musicians.map((m) => [m.id, m.name as string]));
     return {
       dates: [...new Set(i.dates)].sort().map((date) => {
-        const onDay = shows.filter((s) => s.date === date && s.status !== "canceled");
+        const onDay = shows.filter((s) => s.date === date && !isOff(s));
         const qs = asks.filter((a) => a.date === date).map((a) => ({
           id: a.id, label: a.label, closed: !!a.closedAt,
           answers: Object.fromEntries(Object.entries(a.responses as Record<string, { answer: string }>).map(([m, r]) => [name.get(m) ?? m, r.answer])),
@@ -205,7 +205,7 @@ export const bandsintownReconcile = defineCommand({
   name: "bandsintown.reconcile", roles: [...READ],
   description:
     "Compare our shows with what Bandsintown lists. Reports: confirmed public upcoming shows not listed (fix with shows.sync), listings with no matching eligible show " +
-    "(holds, private, canceled or unknown), and listings whose date, time, venue or ticket link differ from the show.",
+    "(holds, private, canceled, dropped or unknown), and listings whose date, time, venue or ticket link differ from the show.",
   input: strict({ today: dateStr.optional() }),
   async run(ctx, i) {
     const today = i.today ?? todayStr();

@@ -85,7 +85,7 @@ const EXPECTED = [
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows
-  "shows.create", "shows.update", "shows.cancel", "shows.sync", "shows.setChecklist", "shows.setGear", "shows.packGear", "shows.calendar", "showDeals.update",
+  "shows.create", "shows.update", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklist", "shows.setGear", "shows.packGear", "shows.calendar", "showDeals.update",
   "shows.afterShow", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.remove",
   // availability: ask and read, not mark
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",

@@ -2,11 +2,11 @@
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useState } from "react";
-import { PageTitle, ErrorBox, useCommand } from "@/components/ui";
+import { PageTitle, Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { useNotFound } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { fmtLongYear, showName, showCity, showAddress } from "@/lib/shows";
+import { fmtLongYear, isOff, showName, showCity, showAddress } from "@/lib/shows";
 import { billingName, configName, nameOf, ShowStatusPill, Times, useBand, type ShowRow } from "@/components/shows/common";
 import { ChecklistPanel, DealPanel, DocsPanel, GearPanel, ListingsPanel, SetlistPanel } from "@/components/shows/ShowParts";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
@@ -42,6 +42,13 @@ function ShowView({ show }: { show: ShowRow }) {
   const b = useBand();
   const { call, error, busy } = useCommand();
   const [editing, setEditing] = useState(false);
+  // Cancel (they called it off) or drop (we pulled out): asks for an optional reason first.
+  const [off, setOff] = useState<"cancel" | "drop" | null>(null);
+  const [reason, setReason] = useState("");
+  async function goOff() {
+    const r = await call(off === "drop" ? "shows.drop" : "shows.cancel", { id: show.id, ...(reason.trim() ? { reason: reason.trim() } : {}) });
+    if (r) { setOff(null); setReason(""); }
+  }
   const [form, setForm] = useState<ShowFormState>(() => formOf(show));
   // Existing record = autosave: no Save button, each field is a patch through shows.update, "Saved" + Undo toast after.
   const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, title: `${showName(show)} · ${show.date}`, onUseTheirs: () => setForm(formOf(show)) });
@@ -54,7 +61,10 @@ function ShowView({ show }: { show: ShowRow }) {
 
   const city = showCity(show);
   const moreItems: MenuItem[] = [
-    ...(show.status !== "canceled" ? [{ key: "cancel", label: "Cancel show", danger: true, disabled: busy, onSelect: () => { if (confirm("Cancel this show? It comes off the calendar and Bandsintown.")) void call("shows.cancel", { id: show.id }); } }] : []),
+    ...(!isOff(show) ? [
+      { key: "cancel", label: "Cancel show", danger: true, disabled: busy, onSelect: () => setOff("cancel") },
+      { key: "drop", label: "Drop show", danger: true, disabled: busy, onSelect: () => setOff("drop") },
+    ] : []),
     { key: "remove", label: "Archive show", danger: true, onSelect: async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); } },
   ];
 
@@ -63,7 +73,10 @@ function ShowView({ show }: { show: ShowRow }) {
       <PageTitle
         back={<Link href="/shows" className="back-link" data-testid="back">← All shows</Link>}
         title={showName(show)}
-        pill={<ShowStatusPill status={show.status} />}
+        pill={<>
+          <ShowStatusPill status={show.status} />
+          {isOff(show) && show.reason && <span className="s" data-testid="show-reason">{show.reason}</span>}
+        </>}
         sub={[fmtLongYear(show.date), city].filter(Boolean).join(" · ")}
         actions={<>
           {show.editionName && (admin && show.editionId
@@ -71,11 +84,21 @@ function ShowView({ show }: { show: ShowRow }) {
             : <span className="chip m">{show.editionName}</span>)}
           {!admin && p.musicianId && <span className={`chip ${playing ? "m" : ""}`}>{playing ? "You're playing" : "Not playing"}</span>}
           {admin && <SaveStatus {...as.statusProps} />}
-          {admin && show.status === "canceled" && <button className="btn ghost sm" disabled={busy} onClick={() => call("shows.update", { id: show.id, patch: { status: "hold" } })} data-testid="show-restore">Bring back as a hold</button>}
+          {admin && isOff(show) && <button className="btn ghost sm" disabled={busy} onClick={() => call("shows.update", { id: show.id, patch: { status: "hold" } })} data-testid="show-restore">Bring back as a hold</button>}
           {admin && <button className="btn ghost" onClick={() => { void as.flush(); setForm(formOf(show)); setEditing(!editing); }} data-testid="show-edit">{editing ? "Done" : "Edit"}</button>}
           {admin && <Menu label="More actions" testid="show" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={moreItems} />}
         </>} />
       <ErrorBox error={error} />
+      <Dialog open={!!off} onClose={() => setOff(null)} title={off === "drop" ? "Drop this show?" : "Cancel this show?"} testid="show-off-dialog">
+        <p className="s">{off === "drop" ? "We're pulling out." : "They called it off."} It comes off the calendar and Bandsintown.</p>
+        <label className="grid gap-1"><span className="lbl">Reason (optional)</span>
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} data-testid="show-off-reason" />
+        </label>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className="btn outline" onClick={() => setOff(null)} data-testid="show-off-back">Keep it</button>
+          <button type="button" className="btn danger" disabled={busy} onClick={() => void goOff()} data-testid="show-off-go">{off === "drop" ? "Drop show" : "Cancel show"}</button>
+        </div>
+      </Dialog>
 
       {editing && admin ? (
         <ShowForm mode="edit" value={form} onChange={edit} onBlur={() => void as.flush()} venues={venues} contacts={contacts} editions={editions} artist={b.artist} musicians={b.musicians} error={null} busy={busy} />

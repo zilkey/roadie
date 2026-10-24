@@ -21,7 +21,7 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
 test("a member opens the venue from a show, sees the address but no notes, and fixes the capacity through the confirmation; another band's admin sees the fix but only their own notes", async ({ page, browser }) => {
   await signInAs(page, "david"); // a member of Ingrid Avison Band
   await page.goto(A("/shows"));
-  await page.locator("a[data-testid^='show-']", { hasText: "Hi-Dive" }).first().click();
+  await page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" }).first().locator("td.date a").click();
   await page.getByTestId("show-venue-link").click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   const venueUrl = page.url();
@@ -159,7 +159,7 @@ test("the venue page's Pitch card: add to the pitch list, edit it, comment, aban
   page.on("dialog", (d) => d.accept());
   await signInAs(page, "jeff");
   await page.goto(A("/shows"));
-  await page.locator("a[data-testid^='show-']", { hasText: "Hi-Dive" }).first().click();
+  await page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" }).first().locator("td.date a").click();
   await page.getByTestId("show-venue-link").click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   // Edit is in the header and swaps the facts for the form; Cancel puts them back

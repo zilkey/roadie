@@ -8,7 +8,10 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
-import { byCategory, byMonth, netOf, indexLedger, owedLines, splitEvenly, totals, type LedgerLike } from "@/lib/money";
+import { byCategory, byMonth, netOf, indexLedger, owedLines, showTotals, splitEvenly, totals, type LedgerLike } from "@/lib/money";
+import { firestore } from "@/server/admin";
+import { undoRun } from "@/server/undo";
+import { migrateDealTotals } from "../../scripts/migrate-deal-totals";
 import { parseSpotifyCsv, parseStatDate, statsCurrent, statsTemplateFields } from "@/lib/stats";
 import { buildTemplateContext, fillTemplate } from "@/lib/booking";
 import { resetEmulators, makeUser } from "./helpers";
@@ -216,4 +219,65 @@ test("members cannot run admin money or stats commands", async () => {
   for (const n of ["ledger.record", "ledger.correct", "shows.settle", "payouts.pay", "expenses.reimburse", "stats.pull", "stats.importCsv", "stats.current"]) {
     assert.equal(registry[n].roles.includes("member"), false, n);
   }
+});
+
+test("showTotals: income less its corrections; expenses + payouts + member expenses; reimbursements left out", () => {
+  const l = (id: string, kind: LedgerLike["kind"], amount: number, reversesId?: string): LedgerLike => ({ id, date: "2026-10-10", kind, amount, category: "other", ...(reversesId ? { reversesId } : {}) });
+  assert.deepEqual(showTotals({ ledger: [], expenses: [] }), { income: 0, expenses: 0 });
+  assert.deepEqual(showTotals({ ledger: [l("i1", "income", 30000), l("i2", "income", 5000)], expenses: [] }), { income: 35000, expenses: 0 });
+  assert.deepEqual(showTotals({ ledger: [l("i1", "income", 30000), l("c1", "correction", 30000, "i1")], expenses: [] }), { income: 0, expenses: 0 });
+  assert.deepEqual(showTotals({ ledger: [l("e1", "expense", 2000), l("p1", "payout", 9000)], expenses: [] }), { income: 0, expenses: 11000 });
+  assert.deepEqual(showTotals({ ledger: [], expenses: [{ amount: 6400 }, { amount: 100, deletedAt: new Date() }] }), { income: 0, expenses: 6400 });
+  // paying back a member's expense doesn't count it twice, nor does correcting that payback
+  const r = [l("r1", "reimbursement", 6400), l("c2", "correction", 6400, "r1")];
+  assert.deepEqual(showTotals({ ledger: [r[0]], expenses: [{ amount: 6400 }] }), { income: 0, expenses: 6400 });
+  assert.deepEqual(showTotals({ ledger: r, expenses: [{ amount: 6400 }] }), { income: 0, expenses: 6400 });
+  assert.deepEqual(showTotals({ ledger: [l("p1", "payout", 9000), l("c3", "correction", 9000, "p1")], expenses: [] }), { income: 0, expenses: 0 });
+});
+
+test("showDeals.totals follow settle, corrections, expenses on the show and undoing them", async () => {
+  const totalsNow = async () => { const t = ((await db.get("showDeals", showId)) as any).totals; return t && { income: t.income, expenses: t.expenses }; };
+  assert.equal(await totalsNow(), undefined);
+  await cmd("shows.settle", { id: showId, income: [{ category: "guarantee", amount: 30000 }, { category: "merch", amount: 4500 }], payouts: [{ musicianId: ids.ingrid, amount: 10000 }] });
+  assert.deepEqual(await totalsNow(), { income: 34500, expenses: 10000 });
+  const merch = (await ledger()).find((x) => x.category === "merch")!;
+  await cmd("ledger.correct", { reversesId: merch.id });
+  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 10000 });
+  await cmd("ledger.record", entry({ showId, amount: 2500 }));
+  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 12500 });
+  const run = { ...mctx, runId: newRunId() };
+  const x = await cmd("expenses.add", { amount: 6400, what: "Drum heads", category: "gear", showId }, run);
+  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 18900 });
+  await cmd("expenses.reimburse", { id: x.id });
+  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 18900 });
+  await undoRun(ctx, run.runId);
+  assert.ok(((await db.get("expenses", x.id)) as any).deletedAt);
+  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 12500 });
+});
+
+test("settle refuses a canceled or dropped show", async () => {
+  for (const status of ["dropped", "canceled"]) {
+    await db.update(ctx, "shows", showId, { status });
+    await assert.rejects(cmd("shows.settle", { id: showId, income: [{ category: "door", amount: 100 }] }), (e: AppError) => e.code === "invalid_state");
+  }
+  assert.equal((await ledger()).length, 0);
+});
+
+test("backfill: totals for played shows with a deal, once; a second run changes nothing", async () => {
+  await cmd("ledger.record", entry({ showId, kind: "income", amount: 30000, category: "guarantee" }));
+  await db.update(ctx, "showDeals", showId, { totals: null }); // as before totals existed
+  const upcoming = (await db.create(ctx, "shows", {
+    date: "2030-01-01", status: "confirmed", times: {}, artistId: "a", personnel: [], place: { city: "Denver" },
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
+  })).id;
+  await db.create(ctx, "showDeals", { contactIds: [], deal: "guarantee", settled: false }, { id: upcoming });
+  const dry = await migrateDealTotals(firestore(), { dryRun: true, today: "2026-10-24" });
+  assert.deepEqual(dry.updated, [{ id: showId, income: 30000, expenses: 0 }]);
+  assert.equal(((await db.get("showDeals", showId)) as any).totals, undefined);
+  const r = await migrateDealTotals(firestore(), { today: "2026-10-24" });
+  assert.deepEqual(r.updated, [{ id: showId, income: 30000, expenses: 0 }]);
+  const t = ((await db.get("showDeals", showId)) as any).totals;
+  assert.equal(t.income, 30000); assert.equal(t.expenses, 0); assert.ok(t.updatedAt);
+  assert.equal(((await db.get("showDeals", upcoming)) as any).totals, undefined);
+  assert.deepEqual((await migrateDealTotals(firestore(), { today: "2026-10-24" })).updated, []);
 });

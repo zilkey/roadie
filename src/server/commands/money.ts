@@ -6,7 +6,8 @@ import { defineCommand } from "./types";
 import { driveClient } from "../integrations";
 import { LedgerInput, ledgerCategory, driveRef } from "@/schema";
 import { reversedIds, reimbursementFor, owedLines, type LedgerLike } from "@/lib/money";
-import { showName, type ShowPlaceLike } from "@/lib/shows";
+import { showName, isOff, type ShowPlaceLike } from "@/lib/shows";
+import { refreshDealTotals } from "../dealTotals";
 
 const todayServer = () => dateInBandZone();
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -24,9 +25,10 @@ async function userIdForMusician(w: Writer, musicianId: string): Promise<string 
 
 /**
  * The one place ledger entries are created. Entries are immutable (db.ts refuses update/delete);
- * mistakes get a `correction` that reverses exactly one earlier entry.
+ * mistakes get a `correction` that reverses exactly one earlier entry. An entry on a show refreshes showDeals.totals
+ * (`refresh: false` when the caller writes several and refreshes once itself).
  */
-export async function addLedgerEntry(w: Writer, entry: Record<string, unknown>) {
+export async function addLedgerEntry(w: Writer, entry: Record<string, unknown>, opts: { refresh?: boolean } = {}) {
   const e = entry as { kind: string; amount: number; reversesId?: string; expenseId?: string; showId?: string; payeeUserId?: string; payeeMusicianId?: string };
   if (e.kind !== "correction" && e.reversesId) throw new AppError("invalid_input", "Only a correction can have reversesId", 400);
   if (e.showId && !(await w.get("shows", e.showId))) throw new AppError("not_found", `Show ${e.showId} not found`, 404);
@@ -51,7 +53,9 @@ export async function addLedgerEntry(w: Writer, entry: Record<string, unknown>) 
     const u = await userIdForMusician(w, e.payeeMusicianId);
     if (u) out.payeeUserId = u;
   }
-  return w.create("ledger", out);
+  const r = await w.create("ledger", out);
+  if (e.showId && opts.refresh !== false) await refreshDealTotals(w, e.showId, { ledger: [(await w.get("ledger", r.id))!] });
+  return r;
 }
 
 // ---------- ledger ----------
@@ -97,7 +101,7 @@ export const showsSettle = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     const show = await w.get("shows", i.id);
     if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
-    if (show.status === "canceled") throw new AppError("invalid_state", "This show was canceled", 409);
+    if (isOff(show)) throw new AppError("invalid_state", `This show was ${show.status}`, 409);
     const deal = await w.get("showDeals", i.id);
     if (!deal) throw new AppError("not_found", "Show deal not found", 404);
     if (deal.settled) throw new AppError("already_settled", "The money for this show is already entered", 409);
@@ -107,7 +111,7 @@ export const showsSettle = defineCommand({
     if (new Set(i.payouts.map((p) => p.musicianId)).size !== i.payouts.length) throw new AppError("invalid_input", "Each person can appear once in payouts", 400);
     const ids: string[] = [];
     for (const l of i.income) {
-      ids.push((await addLedgerEntry(w, { date: show.date, kind: "income", amount: l.amount, category: l.category, method: l.method ?? DEFAULT_METHOD[l.category], showId: i.id, ...(l.memo ? { memo: l.memo } : {}) })).id);
+      ids.push((await addLedgerEntry(w, { date: show.date, kind: "income", amount: l.amount, category: l.category, method: l.method ?? DEFAULT_METHOD[l.category], showId: i.id, ...(l.memo ? { memo: l.memo } : {}) }, { refresh: false })).id);
     }
     const owed: { musicianId: string; amount: number }[] = [];
     for (const p of i.payouts) {
@@ -116,10 +120,11 @@ export const showsSettle = defineCommand({
         ids.push((await addLedgerEntry(w, {
           date: todayServer(), kind: "payout", amount: p.amount, category: "other", method: p.method, showId: i.id, payeeMusicianId: p.musicianId,
           ...(userId ? { payeeUserId: userId } : {}), memo: `${showName(show as ShowPlaceLike)} payout`,
-        })).id);
+        }, { refresh: false })).id);
       } else owed.push({ musicianId: p.musicianId, amount: p.amount });
     }
     await w.update("showDeals", i.id, { settled: true, owedPayouts: owed.length ? owed : null });
+    await refreshDealTotals(w, i.id, { ledger: (await Promise.all(ids.map((x) => w.get("ledger", x)))).filter((d) => !!d) });
     return { id: i.id, ledgerIds: ids, in: inTotal, paidOut: i.payouts.filter((p) => p.paid).reduce((n, p) => n + p.amount, 0), owed: owed.length };
   }),
 });
@@ -161,7 +166,9 @@ export const expensesAdd = defineCommand({
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
     if (i.showId && !(await w.get("shows", i.showId))) throw new AppError("not_found", "Show not found", 404);
     const { userId: _u, ...rest } = i;
-    return w.create("expenses", { ...rest, userId, date: i.date ?? todayServer() });
+    const r = await w.create("expenses", { ...rest, userId, date: i.date ?? todayServer() });
+    if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
+    return r;
   }),
 });
 

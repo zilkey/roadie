@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, collectionGroup, doc, limit as limitTo, onSnapshot, orderBy, query, where, type WhereFilterOp } from "firebase/firestore";
+import { collection, collectionGroup, doc, documentId, limit as limitTo, onSnapshot, orderBy, query, where, type WhereFilterOp } from "firebase/firestore";
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
 
@@ -49,4 +49,33 @@ export function useDoc<T = Record<string, unknown>>(path: string, id: string, op
     );
   }, [ready, path, id, opts.includeDeleted]); // eslint-disable-line react-hooks/exhaustive-deps
   return { doc: value?.doc ?? null, loading: value === null && !error, error };
+}
+
+/**
+ * Live read-only listener on a set of docs by id (in chunks of 30, Firestore's `in` limit): one read per doc, however big the
+ * collection. Soft-deleted and missing docs are left out. `skip` subscribes to nothing.
+ */
+export function useDocs<T = Record<string, unknown>>(path: string, ids: readonly string[], opts: { skip?: boolean } = {}) {
+  const { state } = useAuth();
+  const ready = state.status === "ready" && !opts.skip;
+  const [byChunk, setByChunk] = useState<Record<number, Row<T>[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const key = [...new Set(ids)].sort().join(",");
+  useEffect(() => {
+    setByChunk({});
+    if (!ready || !key) return;
+    const all = key.split(",");
+    const offs: (() => void)[] = [];
+    for (let i = 0; i < all.length; i += 30) {
+      const n = i;
+      offs.push(onSnapshot(
+        query(collection(clientDb(), path), where(documentId(), "in", all.slice(i, i + 30))),
+        (s) => { setByChunk((m) => ({ ...m, [n]: s.docs.filter((d) => !d.data().deletedAt).map((d) => ({ ...(d.data() as T), id: d.id })) })); setError(null); },
+        (e) => setError(e.message),
+      ));
+    }
+    return () => offs.forEach((f) => f());
+  }, [ready, path, key]);
+  const rows = Object.values(byChunk).flat();
+  return { rows, byId: new Map(rows.map((r) => [r.id, r])), error, loading: ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error };
 }

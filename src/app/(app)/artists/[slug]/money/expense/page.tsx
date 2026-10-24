@@ -9,7 +9,7 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, dollarsToCents } from "@/lib/money";
-import { fmtLong, showName } from "@/lib/shows";
+import { fmtLong, isOff, showName } from "@/lib/shows";
 import type { Show } from "@/schema";
 
 const CATS = ["gear", "travel", "space", "marketing", "fees", "other"] as const;
@@ -38,7 +38,7 @@ function AddExpense() {
   const [hits, setHits] = useState<Hit[] | null>(null);
   const search = useCommand();
   const cents = amount.trim() && !isNaN(Number(amount)) ? dollarsToCents(amount) : 0;
-  const sorted = [...(shows.rows ?? [])].filter((s) => s.status !== "canceled").sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
+  const sorted = [...(shows.rows ?? [])].filter((s) => !isOff(s)).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
 
   async function find() {
     const r = await search.call<{ files: Hit[] }>("receipts.search", { q: q.trim() });

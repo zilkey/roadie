@@ -12,7 +12,7 @@ import { Menu } from "@/components/Menu";
 import { Missing, fmtDay, useMusic } from "@/components/music/common";
 import type { SetlistItem } from "@/schema";
 import type { z } from "zod";
-import { showName } from "@/lib/shows";
+import { isOff, showName } from "@/lib/shows";
 
 type Item = z.infer<typeof SetlistItem>;
 
@@ -46,7 +46,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
 
   const today = todayStr();
   const show = m.shows.find((s) => s.setlistId === sl.id);
-  const candidates = m.shows.filter((s) => s.status !== "canceled" && s.status !== "played" && s.date >= today).sort((a, b) => a.date.localeCompare(b.date));
+  const candidates = m.shows.filter((s) => !isOff(s) && s.status !== "played" && s.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   if (show && !candidates.includes(show)) candidates.unshift(show);
   const slack = setlistSlack(sl.totalSec, show?.times.setLength);
   const over = slack != null && slack < 0;

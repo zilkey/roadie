@@ -5,9 +5,10 @@ import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
+import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
 import { noteOf } from "../venues";
-import { addDays, buildChecklist, calendarInvitees, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
+import { addDays, buildChecklist, calendarInvitees, isOff, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind } from "@/schema";
 import { patchInput } from "./util";
 
@@ -76,7 +77,8 @@ const done = (id: string, sync: SyncResult) => ({ id, warnings: sync.warnings, c
 export const showsList = defineCommand({
   name: "shows.list", roles: ["admin", "mcp"],
   description:
-    "List shows by filter: upcoming, played (or confirmed with the date passed), canceled, or dropped (a hold whose date passed unconfirmed). " +
+    "List shows by filter: upcoming, played (or confirmed with the date passed), canceled (they called it off), or dropped (we pulled out, or a hold whose date passed unconfirmed). " +
+    "Rows carry reason (why it was canceled or dropped) when one was given. " +
     "Always returns counts for every filter, so 'how many shows were canceled?' is one call. Without a filter, rows are every show. Upcoming soonest first, the rest newest first.",
   input: z.strictObject({ filter: z.enum(SHOW_FILTERS).optional(), limit: z.number().int().min(1).max(200).default(50) }),
   async run(_ctx, i) {
@@ -87,7 +89,7 @@ export const showsList = defineCommand({
       .sort((a, b) => (i.filter === "upcoming" ? a.s.date.localeCompare(b.s.date) : b.s.date.localeCompare(a.s.date)));
     return {
       today, filter: i.filter ?? null, counts, count: rows.length,
-      shows: rows.slice(0, i.limit).map(({ s, f }) => ({ id: s.id, name: showName(s as never), date: s.date, status: s.status, filter: f, city: showCity(s as never) })),
+      shows: rows.slice(0, i.limit).map(({ s, f }) => ({ id: s.id, name: showName(s as never), date: s.date, status: s.status, filter: f, city: showCity(s as never), ...(s.reason ? { reason: s.reason } : {}) })),
     };
   },
 });
@@ -180,7 +182,7 @@ export const showsCreate = defineCommand({
 
 const SHOW_SYNC_FIELDS = ["date", "status", "venue", "place", "hostName", "times", "personnel", "billedAs", "public", "ticketUrl", "sound", "editionName", "bandNotes"];
 const showPatch = z.strictObject({
-  date: dateStr.optional(), status: z.enum(["hold", "confirmed", "played", "canceled"]).optional(), kind: showKind.optional(),
+  date: dateStr.optional(), status: z.enum(["hold", "confirmed", "played", "canceled", "dropped"]).optional(), reason: z.string().nullable().optional(), kind: showKind.optional(),
   venueId: z.string().min(1).nullable().optional(), place: place.nullable().optional(), hostContactIds: z.array(z.string().min(1)).optional(),
   editionId: z.string().min(1).nullable().optional(), editionName: z.string().nullable().optional(), times: times.optional(), billedAs: z.string().min(1).nullable().optional(),
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
@@ -192,10 +194,10 @@ const showPatch = z.strictObject({
 export const showsUpdate = defineCommand({
   name: "shows.update", roles: ["admin", "mcp"],
   description:
-    "Edit a show. Patch: date, status (hold|confirmed|played|canceled), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
+    "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; prefer shows.cancel / shows.drop), reason (why it was canceled or dropped; null clears), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
     "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, public, ticketUrl, bandNotes. " +
     "addMissingChecklist adds template items for the current sound/needs. " +
-    "Changing date, time, venue, people, status or public re-syncs Google Calendar and Bandsintown (canceled removes both).",
+    "Changing date, time, venue, people, status or public re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
     let touchesSync = false;
@@ -244,13 +246,24 @@ export const showsUpdate = defineCommand({
   },
 });
 
+const offInput = z.strictObject({ id: z.string().min(1), reason: z.string().optional() });
+/** Set a show canceled or dropped, with its reason, in one write. A blank reason leaves it unset. */
+async function setOff(ctx: Ctx, i: z.infer<typeof offInput>, status: "canceled" | "dropped") {
+  const reason = i.reason?.trim();
+  await run(ctx, async (w) => { await requireShow(w, i.id); return w.update("shows", i.id, { status, ...(reason ? { reason } : {}) }); });
+  return done(i.id, await syncShow(ctx, i.id));
+}
+
 export const showsCancel = defineCommand({
-  name: "shows.cancel", roles: ["admin", "mcp"], input: idInput,
-  description: "Cancel a show. Removes its Google Calendar event and Bandsintown listing.",
-  async run(ctx, { id }) {
-    await run(ctx, async (w) => { await requireShow(w, id); return w.update("shows", id, { status: "canceled" }); });
-    return done(id, await syncShow(ctx, id));
-  },
+  name: "shows.cancel", roles: ["admin", "mcp"], input: offInput,
+  description: "Cancel a show: they called it off (dropped means we pulled out). Optional reason. Removes its Google Calendar event and Bandsintown listing.",
+  run: (ctx, i) => setOff(ctx, i, "canceled"),
+});
+
+export const showsDrop = defineCommand({
+  name: "shows.drop", roles: ["admin", "mcp"], input: offInput,
+  description: "Drop a show: we pulled out (canceled means they called it off). Optional reason. Removes its Calendar event and Bandsintown listing.",
+  run: (ctx, i) => setOff(ctx, i, "dropped"),
 });
 
 export const showsRemove = defineCommand({
@@ -339,7 +352,7 @@ export const showsAfter = defineCommand({
   async run(ctx, i) {
     await run(ctx, async (w) => {
       const s = await requireShow(w, i.id);
-      if (s.status === "canceled") throw new AppError("invalid_state", "This show was canceled", 409);
+      if (isOff(s)) throw new AppError("invalid_state", `This show was ${s.status}`, 409);
       if (s.date > addDays(todayServer(), 1)) throw new AppError("too_early", "This show hasn't happened yet", 409);
       const deal = await w.get("showDeals", i.id);
       if (!deal) throw new AppError("not_found", "Show deal not found", 404);
@@ -370,6 +383,6 @@ export const checklistTemplatesRemove = defineCommand({
 });
 
 export const showCommands = [
-  showsList, showsCreate, showsUpdate, showsCancel, showsRemove, showsSync, showsSetChecklist, showsSetGear, showsPackGear, showsCalendar,
+  showsList, showsCreate, showsUpdate, showsCancel, showsDrop, showsRemove, showsSync, showsSetChecklist, showsSetGear, showsPackGear, showsCalendar,
   showDealsUpdate, showsAfter, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesRemove,
 ];

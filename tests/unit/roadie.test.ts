@@ -66,6 +66,23 @@ test("script: show questions use shows.list with the filter, and answer from its
   assert.equal(script({ text: "how many shows were canceled?", steps: steps(out([])) }).text, "No shows canceled.");
 });
 
+test("script: \"X canceled, <reason>\" cancels and \"we're dropping X, <reason>\" drops, with the reason as typed; \"why\" reads it back", () => {
+  const hit = (id: string, name: string) => [{ name: "search", input: {}, output: { untrustedContent: { results: [{ kind: "show", id, name }] } } }];
+  const cancel = "Oskar Blues canceled, they double-booked the patio.";
+  assert.deepEqual(script({ text: cancel }).calls, [{ name: "search", input: { q: "oskar blues", kinds: ["show"] } }]);
+  assert.deepEqual(script({ text: cancel, steps: hit("s1", "Oskar Blues") }).calls, [{ name: "shows.cancel", input: { id: "s1", reason: "they double-booked the patio" } }]);
+  const drop = "We're dropping the Drifters show, the money's not there.";
+  assert.deepEqual(script({ text: drop }).calls, [{ name: "search", input: { q: "drifters", kinds: ["show"] } }]);
+  assert.deepEqual(script({ text: drop, steps: hit("s2", "Drifters Thrift Bar") }).calls, [{ name: "shows.drop", input: { id: "s2", reason: "the money's not there" } }]);
+  assert.deepEqual(script({ text: "Oskar Blues canceled", steps: hit("s1", "Oskar Blues") }).calls, [{ name: "shows.cancel", input: { id: "s1" } }]);
+  const why = "Why did we cancel Gold Hill?";
+  assert.deepEqual(script({ text: why }).calls, [{ name: "search", input: { q: "gold hill", kinds: ["show"] } }]);
+  assert.deepEqual(script({ text: why, steps: hit("s3", "Gold Hill Inn") }).calls, [{ name: "records.get", input: { kind: "shows", id: "s3" } }]);
+  const got = (o: unknown) => [...hit("s3", "Gold Hill Inn"), { name: "records.get", input: {}, output: { untrustedContent: o } }];
+  assert.equal(script({ text: why, steps: got({ id: "s3", status: "canceled", reason: "Venue double-booked the room." }) }).text, "It was canceled: Venue double-booked the room.");
+  assert.equal(script({ text: why, steps: got({ id: "s3", status: "canceled" }) }).text, "It was canceled, but nobody wrote down why.");
+});
+
 test("flow: greeting streams text word by word", async () => {
   const { events, out } = await run("hi");
   assert.ok(events.filter((e) => e.type === "text").length > 2);
