@@ -456,3 +456,14 @@ test("showName / publicShowName / showCity", () => {
   assert.equal(publicShowName({ kind: "house", hostName: "Mary", place: { city: "Boulder" } }), "House concert");
   assert.equal(showCity({ kind: "house", place: { city: "Boulder" } }), "Boulder");
 });
+
+test("Booked it once per chosen pitch date: each show links to the pitch, the pitch is booked once", async () => {
+  await cmd("pitches.update", { id: pitchId, patch: { dates: [{ date: "2027-01-16" }, { date: "2027-01-17", note: "second night" }] } });
+  const a = await create({ date: "2027-01-16" });
+  const b = await create({ date: "2027-01-17" });
+  const pitch = (await db.get("pitches", pitchId))!;
+  assert.deepEqual(pitch.showIds, [a.id, b.id]);
+  assert.equal(pitch.status, "booked");
+  assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((x) => x.toStatus === "booked").length, 1);
+  assert.deepEqual([(await db.get("shows", a.id))!.date, (await db.get("shows", b.id))!.date], ["2027-01-16", "2027-01-17"]);
+});

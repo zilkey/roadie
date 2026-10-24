@@ -3,14 +3,14 @@ import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
-import { STATUS_LABEL, isActive, type Status } from "@/lib/booking";
+import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, Promoter, Festival, Edition, Contact, Pitch } from "@/schema";
+import type { Venue, Promoter, Festival, Edition, Contact, Pitch, PitchDate } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
 
@@ -80,6 +80,43 @@ export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { va
   );
 }
 
+/** A pitch's possible dates, one row each: date, optional last day of a run, optional note. Rows may be blank while being filled in. */
+export type DateRow = { date: string; endDate?: string; note?: string };
+export const completeDates = (rows: DateRow[]): PitchDate[] =>
+  sortedDates(rows.filter((r) => r.date).map((r) => ({ date: r.date, ...(r.endDate ? { endDate: r.endDate } : {}), ...(r.note?.trim() ? { note: r.note.trim() } : {}) })));
+export const datesProblem = (rows: DateRow[]) => rows.some((r) => r.date && r.endDate && r.endDate < r.date) ? "an end date can't be before its start" : null;
+
+export function PitchDatesEditor({ rows, onChange, onBlur, testid }: { rows: DateRow[]; onChange(rows: DateRow[]): void; onBlur?(): void; testid: string }) {
+  const set = (i: number, p: Partial<DateRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  return (
+    <div className="grid gap-2" data-testid={testid} onBlur={onBlur}>
+      <span className="lbl">Possible dates</span>
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-2 items-end gap-2 md:grid-cols-[9rem_9rem_minmax(0,1fr)_auto]" data-testid={`${testid}-row-${i}`}>
+          <label className="grid gap-1"><span className="s">Date</span><input className="input" type="date" value={r.date} onChange={(e) => set(i, { date: e.target.value })} data-testid={`${testid}-date-${i}`} /></label>
+          <label className="grid gap-1"><span className="s">Through (optional)</span><input className="input" type="date" value={r.endDate ?? ""} min={r.date || undefined} onChange={(e) => set(i, { endDate: e.target.value })} data-testid={`${testid}-end-${i}`} /></label>
+          <label className="col-span-2 grid gap-1 md:col-span-1"><span className="s">Note</span><input className="input" placeholder="e.g. their preferred" value={r.note ?? ""} onChange={(e) => set(i, { note: e.target.value })} data-testid={`${testid}-note-${i}`} /></label>
+          <button type="button" className="btn danger sm col-span-2 justify-self-start md:col-span-1" onClick={() => onChange(rows.filter((_, j) => j !== i))} data-testid={`${testid}-remove-${i}`}>Remove</button>
+        </div>
+      ))}
+      <button type="button" className="btn ghost sm justify-self-start" onClick={() => onChange([...rows, { date: "" }])} data-testid={`${testid}-add`}>Add a date</button>
+    </div>
+  );
+}
+
+/** The dates of a pitch as one line of text, past ones dimmed. Nothing when there are none. */
+export function PitchDates({ dates, today, testid }: { dates?: PitchDate[]; today: string; testid?: string }) {
+  const list = sortedDates(dates);
+  if (!list.length) return null;
+  return (
+    <span className="s flex flex-wrap gap-x-2" data-testid={testid}>
+      {list.map((d, i) => (
+        <span key={i} className={datePast(d, today) ? "opacity-50" : "font-semibold"} data-past={datePast(d, today) ? "1" : "0"}>{fmtPitchDate(d)}{d.note ? ` (${d.note})` : ""}</span>
+      ))}
+    </span>
+  );
+}
+
 /**
  * Flag = add to the Pitch List. `button` is the flag itself (filled = already there; tapping it opens the pitch, unflagged opens
  * the form). `form` is the small add form: render it on its own line under the row, never inside the button's flex row.
@@ -91,19 +128,22 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
   const [showForm, setShowForm] = useState(false);
   const [pitchedAs, setPitchedAs] = useState("");
   const [notes, setNotes] = useState("");
+  const [dates, setDates] = useState<DateRow[]>([]);
   const btn = useRef<HTMLButtonElement>(null);
   const formOpen = showForm && !open;
 
-  function close() { setShowForm(false); setPitchedAs(""); setNotes(""); btn.current?.focus(); }
+  function close() { setShowForm(false); setPitchedAs(""); setNotes(""); setDates([]); btn.current?.focus(); }
   function tap(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     if (open) return router.push(`/booking/pitches/${open.id}`);
     if (formOpen) return close();
     setShowForm(true);
   }
+  const problem = datesProblem(dates);
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
-    const r = await call("pitches.flag", { kind, id, ...(pitchedAs ? { pitchedAs } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
+    if (problem) return;
+    const r = await call("pitches.flag", { kind, id, ...(completeDates(dates).length ? { dates: completeDates(dates) } : {}), ...(pitchedAs ? { pitchedAs } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}) });
     if (r) close();
   }
   const escape = (e: React.KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
@@ -119,15 +159,17 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
     <>
       {formOpen && (
         <form onSubmit={submit} onClick={(e) => e.stopPropagation()} onKeyDown={escape}
-          className="mt-2 grid w-full gap-2 border-t border-line pt-2 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)_auto] md:items-end" data-testid={`flag-form-${id}`}>
+          className="mt-2 grid w-full gap-2 border-t border-line pt-2 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] md:items-end" data-testid={`flag-form-${id}`}>
           <ConfigurationPicker value={pitchedAs} onChange={setPitchedAs} testid={`flag-pitchedAs-${id}`} />
           <label className="grid gap-1">
             <span className="lbl">Notes</span>
             <textarea className="input max-h-40 resize-none [field-sizing:content]" rows={1} value={notes} data-testid={`flag-notes-${id}`}
               onChange={(e) => setNotes(e.target.value)} />
           </label>
-          <div className="flex gap-2">
-            <button type="submit" className="btn acc sm" disabled={busy} data-testid={`flag-submit-${id}`}>Add to list</button>
+          <div className="md:col-span-2"><PitchDatesEditor rows={dates} onChange={setDates} testid={`flag-dates-${id}`} /></div>
+          {problem && <span className="note s md:col-span-2" data-testid={`flag-dates-problem-${id}`}>{problem}</span>}
+          <div className="flex gap-2 md:col-span-2">
+            <button type="submit" className="btn acc sm" disabled={busy || !!problem} data-testid={`flag-submit-${id}`}>Add to list</button>
             <button type="button" className="btn ghost sm" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
           </div>
         </form>

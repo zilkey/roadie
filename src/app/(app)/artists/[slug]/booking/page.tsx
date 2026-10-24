@@ -8,9 +8,9 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import {
-  EntityForm, Flagged, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+  EntityForm, Flagged, PitchDates, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
 } from "@/components/booking/common";
-import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems } from "@/lib/booking";
+import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems, todayStr } from "@/lib/booking";
 import type { User } from "@/schema";
 
 export default function BookingPage() { return <AdminOnly><Booking /></AdminOnly>; }
@@ -181,6 +181,7 @@ function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string;
 }
 
 function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {
+  const today = todayStr();
   return (
     <div className="grid gap-3" data-testid="pitch-list">
       {pitches.length === 0 && <span className="s">Nothing on the Pitch List. Tap a flag to add something.</span>}
@@ -194,6 +195,7 @@ function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: s
               <Link key={p.id} href={`/booking/pitches/${p.id}`} className="card" data-testid={`pitch-${p.id}`}>
                 <div className="flex items-center justify-between gap-2"><b>{p.target.name}</b><StatusChip status={p.status} /></div>
                 <span className="s">{[userName(p.assigneeId), p.nextStep ? `${p.nextStep.text} · ${fmtDate(p.nextStep.due)}` : null].filter(Boolean).join(" · ")}</span>
+                <PitchDates dates={p.dates} today={today} testid={`pitch-dates-${p.id}`} />
               </Link>
             ))}
           </div>

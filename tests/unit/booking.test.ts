@@ -260,3 +260,20 @@ test("migrate-pitched-as: free text matches a configuration by name, otherwise m
   const again = await migratePitchedAs(firestore());
   assert.deepEqual([again.matched, again.cleared], [[], []]);
 });
+
+test("pitch dates: flag and update accept a list, stored sorted; ranges and notes; bad ranges rejected; unflagged pitches have none", async () => {
+  const v = await cmd("venues.create", venue("Lost Lake"));
+  const a = await cmd("pitches.flag", { kind: "venue", id: v.id, dates: [{ date: "2027-02-06", note: "hold" }, { date: "2027-01-16" }] });
+  assert.deepEqual((await db.get("pitches", a.id))!.dates, [{ date: "2027-01-16" }, { date: "2027-02-06", note: "hold" }]);
+  await cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "2027-07-25", endDate: "2027-07-27", note: "festival" }, { date: "2027-03-01" }] } });
+  assert.deepEqual((await db.get("pitches", a.id))!.dates, [{ date: "2027-03-01" }, { date: "2027-07-25", endDate: "2027-07-27", note: "festival" }]);
+  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "2027-03-05", endDate: "2027-03-01" }] } }), /endDate/);
+  await assert.rejects(cmd("pitches.update", { id: a.id, patch: { dates: [{ date: "March 5" }] } }), /YYYY-MM-DD/);
+  assert.equal((await db.get("pitches", a.id))!.dates.length, 2, "a rejected edit changes nothing");
+  await cmd("pitches.update", { id: a.id, patch: { notes: "only notes" } });
+  assert.equal((await db.get("pitches", a.id))!.dates.length, 2, "other edits leave dates alone");
+  await cmd("pitches.update", { id: a.id, patch: { dates: [] } });
+  assert.deepEqual((await db.get("pitches", a.id))!.dates, []);
+  const b = await cmd("pitches.flag", { kind: "venue", id: (await cmd("venues.create", venue("Fox", "Boulder"))).id });
+  assert.deepEqual((await db.get("pitches", b.id))!.dates, []);
+});

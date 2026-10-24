@@ -1,14 +1,15 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import { Suspense, useRef } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
-import { PageTitle, useCommand } from "@/components/ui";
+import { PageTitle, PickChip, useCommand } from "@/components/ui";
 import { BackLink } from "@/components/booking/common";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
+import { fmtPitchDate, sortedDates, todayStr } from "@/lib/booking";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { ShowForm, dealOf, timesOf, whereInput, type ShowFormState } from "@/components/shows/ShowForm";
 import type { Artist, Availability, Contact, Edition, Musician, Pitch, Promoter, Venue } from "@/schema";
@@ -60,19 +61,33 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   });
   const s = draft.value;
   const mutationId = useRef(newMutationId());
+  // A pitch with several dates: pick which become shows (one show each, sharing everything else). Default: the first upcoming one.
+  const pitchDates = sortedDates(pitch?.dates);
+  const [picked, setPicked] = useState<string[] | null>(null);
+  const firstUpcoming = (pitchDates.find((d) => (d.endDate ?? d.date) >= todayStr()) ?? pitchDates[0])?.date;
+  const chosen = pitchDates.length ? (picked ?? (firstUpcoming ? [firstUpcoming] : [])).slice().sort() : [];
+  const extraIds = useRef<Record<string, string>>({});
 
   async function save() {
     await draft.settle();
-    const r = await call<{ id: string }>("shows.create", {
-      pitchId: pitchId || undefined, date: s.date, status: s.status === "hold" ? "hold" : "confirmed", ...whereInput(s),
+    const dates = pitchDates.length ? chosen : [s.date];
+    let r: { id: string } | undefined;
+    for (const [n, date] of dates.entries()) {
+      const last = n === dates.length - 1;
+      extraIds.current[date] ??= n === 0 ? mutationId.current : newMutationId();
+      const made = await call<{ id: string }>("shows.create", {
+      pitchId: pitchId || undefined, date, status: s.status === "hold" ? "hold" : "confirmed", ...whereInput(s),
       editionId: s.editionId || undefined, times: timesOf(s),
       billedAs: s.billedAs || undefined, personnel: s.personnel,
       sound: { provider: s.soundProvider, ...(s.soundNotes.trim() ? { notes: s.soundNotes.trim() } : {}) },
       needs: { poster: s.poster, backline: s.backline, merch: s.merch }, public: s.public, ticketUrl: s.public && s.ticketUrl ? s.ticketUrl : undefined,
       bandNotes: s.bandNotes.trim() || undefined, addToCalendar: s.calendar,
       deal: dealOf(s),
-    }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r) { await draft.clear(); router.push(`/shows/${r.id}`); }
+    }, { clientMutationId: extraIds.current[date], ...(last ? { clearDraft: draft.draftId } : {}) });
+      if (!made) return;
+      r ??= made;
+    }
+    if (r) { await draft.clear(); router.push(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
   }
 
   return (
@@ -81,7 +96,20 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       <PageTitle title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
       {!draft.ready ? <span className="s">Loading…</span> : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-        <ShowForm mode="create" value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy} submitLabel="Add show" onSubmit={save} />
+        <ShowForm mode="create" value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}
+          dateSlot={pitchDates.length ? (
+            <div className="grid gap-1.5" data-testid="pitch-date-picker">
+              <span className="lbl">Which dates are shows?</span>
+              <div className="flex flex-wrap gap-1.5">
+                {pitchDates.map((d) => {
+                  const on = chosen.includes(d.date);
+                  return <PickChip key={d.date} on={on} testid={`pick-date-${d.date}`}
+                    onToggle={() => setPicked(on ? chosen.filter((x) => x !== d.date) : [...chosen, d.date])}>{fmtPitchDate(d)}{d.note ? ` · ${d.note}` : ""}</PickChip>;
+                })}
+              </div>
+              <span className="s">One show per date, all with the details below. A run starts a show on its first day.</span>
+            </div>
+          ) : undefined} />
       </>}
     </div>
   );

@@ -13,8 +13,8 @@ import { newMutationId } from "@/lib/commands";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, ConfigurationPicker, StatusChip, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
-import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, unfilledFields, type Status } from "@/lib/booking";
+import { BackLink, ConfigurationPicker, PitchDates, PitchDatesEditor, StatusChip, completeDates, datesProblem, type DateRow, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, sortedDates, todayStr, unfilledFields, type Status } from "@/lib/booking";
 import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
 import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
@@ -48,6 +48,10 @@ function PitchPage() {
   const [crew, setCrew] = useState<string[] | null>(null);
   const livePeople = JSON.stringify(p?.personnel ?? []);
   useEffect(() => { if (!as.isBusy()) setCrew(null); }, [livePeople]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Dates being edited, blank rows included; only complete rows are saved.
+  const [dateRows, setDateRows] = useState<DateRow[] | null>(null);
+  const liveDates = JSON.stringify(p?.dates ?? []);
+  useEffect(() => { if (!as.isBusy()) setDateRows(null); }, [liveDates]); // eslint-disable-line react-hooks/exhaustive-deps
   const pitchName = p?.target.name ?? "pitch";
   const commentDraft = useDraft(draftPath.newUnder("pitches", id, "comments"), { text: "" }, { title: (v) => `Comment on ${pitchName}: ${v.text.slice(0, 40)}` });
   const callDraft = useDraft(draftPath.newUnder("pitches", id, "calls"), { text: "" }, { title: (v) => `Call log for ${pitchName}: ${v.text.slice(0, 40)}` });
@@ -77,6 +81,12 @@ function PitchPage() {
     if (next.text.trim() && next.due) as.patch({ nextStep: { text: next.text, due: next.due } });
     else if (!next.text.trim() && !next.due) as.patch({ nextStep: null });
     else as.hold("a next step needs words and a date");
+  }
+  function editDates(rows: DateRow[]) {
+    setDateRows(rows);
+    const bad = datesProblem(rows);
+    if (bad) as.hold(bad);
+    else as.patch({ dates: completeDates(rows) });
   }
   async function post() {
     await commentDraft.settle();
@@ -125,6 +135,11 @@ function PitchPage() {
           <option value="">No one</option>
           {users.filter((u) => roleIn(u, current.artistId) === "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
+      </div>
+
+      <div className="card" data-testid="pitch-dates-card">
+        <PitchDatesEditor rows={dateRows ?? sortedDates(p.dates)} onChange={editDates} onBlur={() => void as.flush()} testid="pitch-dates" />
+        {(p.dates ?? []).length > 0 && <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" />}
       </div>
 
       <div className="card" data-testid="next-step">

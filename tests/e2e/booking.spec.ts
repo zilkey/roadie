@@ -27,6 +27,17 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await flag.click();
   // configuration is a dropdown of the artist's configurations; its value is the configuration id
   await row.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Duo" });
+  // possible dates: add two (out of order, one a run), remove a blank one; they save sorted with the pitch
+  const dates = row.getByTestId(/^flag-dates-[^-]+$/);
+  await dates.getByTestId(/-add$/).click();
+  await dates.getByTestId(/-date-0$/).fill("2099-05-01");
+  await dates.getByTestId(/-end-0$/).fill("2099-05-03");
+  await dates.getByTestId(/-note-0$/).fill("their preferred");
+  await dates.getByTestId(/-add$/).click();
+  await dates.getByTestId(/-date-1$/).fill("2020-05-01");
+  await dates.getByTestId(/-add$/).click();
+  await dates.getByTestId(/-remove-2$/).click();
+  await expect(dates.getByTestId(/-row-\d$/)).toHaveCount(2);
   await row.getByTestId(/^flag-submit-/).click();
   await expect(flag).toHaveAttribute("data-flagged", "1");
   await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
@@ -40,6 +51,23 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
   await expect(page.getByTestId("person-Ingrid")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("person-David")).toHaveAttribute("aria-pressed", "false");
+  // dates from the flag form: sorted, the past one dimmed, the run and its note shown
+  const summary = page.getByTestId("pitch-dates-summary").locator("span");
+  await expect(summary).toHaveCount(2);
+  await expect(summary.nth(0)).toHaveAttribute("data-past", "1");
+  await expect(summary.nth(1)).toHaveAttribute("data-past", "0");
+  await expect(summary.nth(1)).toHaveText("May 1 – 3 (their preferred)");
+  // add and remove on the pitch page autosave
+  await page.getByTestId("pitch-dates-add").click();
+  await page.getByTestId("pitch-dates-date-2").fill("2099-04-01");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("pitch-dates-summary").locator("span")).toHaveCount(3);
+  await expect(page.getByTestId("pitch-dates-date-1")).toHaveValue("2099-04-01"); // sorted: past, April, May
+  await page.getByTestId("pitch-dates-remove-1").click();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("pitch-dates-summary").locator("span")).toHaveCount(2);
   await page.getByTestId("next-text").fill("Follow up");
   await page.getByTestId("next-due").fill("2026-11-09");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
@@ -251,4 +279,16 @@ test("pitch comments and email templates: existing templates autosave, new ones 
   await expect(page.getByTestId("draft-status").first()).toHaveText("Draft saved");
   await page.reload();
   await expect(page.getByTestId("comment-input")).toHaveValue(`typing ${stamp}`);
+});
+
+test("the Pitch List shows each pitch's dates, sorted, past ones dimmed", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-pitches").click();
+  const lost = page.getByTestId("group-pitched").locator("a", { hasText: "Lost Lake Lounge" }).locator('[data-testid^="pitch-dates-"]');
+  await expect(lost.locator("span")).toHaveCount(3);
+  await expect(lost.locator("span").nth(0)).toHaveAttribute("data-past", "1");
+  await expect(lost.locator("span").nth(1)).toHaveText("Jan 16 (hold)");
+  await expect(lost.locator("span").nth(2)).toHaveAttribute("data-past", "0");
+  await expect(page.getByTestId("group-waiting")).toContainText("Jul 23 – 25 (festival weekend)");
 });

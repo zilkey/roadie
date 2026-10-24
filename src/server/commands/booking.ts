@@ -5,9 +5,9 @@ import { db, run, type Writer, type Doc } from "../db";
 import { AppError } from "../errors";
 import { gmailClient, IntegrationError } from "../integrations";
 import type { MailMessage } from "../integrations/gmail";
-import { unfilledFields, isActive } from "@/lib/booking";
+import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
 import {
-  VenueInput, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
+  VenueInput, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, PitchDate, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
 
 const ROLES = ["admin", "mcp"] as const;
@@ -155,6 +155,7 @@ export const contactsDetach = defineCommand({
 
 const target = z.strictObject({ kind: z.enum(["venue", "promoter", "edition"]), id: z.string().min(1) });
 const nextStep = z.strictObject({ text: z.string().min(1), due: dateStr });
+const pitchDates = z.array(PitchDate);
 const COLL = { venue: "venues", promoter: "promoters", edition: "editions" } as const;
 
 async function targetName(w: Writer, kind: keyof typeof COLL, id: string) {
@@ -185,10 +186,11 @@ async function requireUser(w: Writer, uid: string) {
 }
 
 export const pitchesFlag = defineCommand({
-  name: "pitches.flag", roles: [...ROLES], description: "Add a venue, promoter or edition to the Pitch List. If it is already there, returns that pitch ({existing: true}).",
+  name: "pitches.flag", roles: [...ROLES], description: "Add a venue, promoter or edition to the Pitch List. If it is already there, returns that pitch ({existing: true}). " +
+    "dates: possible dates for the gig [{date, endDate? (last day of a run), note?}], any number; they are stored sorted.",
   input: target.extend({
     pitchedAs: z.string().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().optional(),
-    nextStep: nextStep.optional(), notes: z.string().optional(),
+    nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.target.kind === i.kind && isActive(p.status));
@@ -200,7 +202,7 @@ export const pitchesFlag = defineCommand({
     const r = await w.create("pitches", {
       target: { kind: i.kind, id: i.id, name }, status: "toPitch", artistId: artist.id,
       pitchedAs: i.pitchedAs, personnel: i.personnel ?? personnelFor(artist, i.pitchedAs) ?? [], assigneeId,
-      nextStep: i.nextStep, notes: i.notes, showIds: [],
+      nextStep: i.nextStep, notes: i.notes, dates: sortedDates(i.dates), showIds: [],
     });
     await w.create(`pitches/${r.id}/activity`, { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
     return { id: r.id, existing: false };
@@ -209,16 +211,17 @@ export const pitchesFlag = defineCommand({
 
 const pitchPatch = z.strictObject({
   pitchedAs: z.string().nullable().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().nullable().optional(),
-  nextStep: nextStep.nullable().optional(), notes: z.string().nullable().optional(),
+  nextStep: nextStep.nullable().optional(), notes: z.string().nullable().optional(), dates: pitchDates.optional(),
 });
 export const pitchesUpdate = defineCommand({
-  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id or null for not sure; fills personnel unless given), personnel, assigneeId, nextStep {text, due}, notes.",
+  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id or null for not sure; fills personnel unless given), personnel, assigneeId, nextStep {text, due}, notes, dates (the whole list of possible dates [{date, endDate?, note?}]; replaces the old list, stored sorted; [] clears).",
   input: z.strictObject({ id: z.string().min(1), patch: pitchPatch }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requirePitch(w, id);
     const p: Record<string, unknown> = { ...patch };
     if (patch.pitchedAs && !patch.personnel) p.personnel = personnelFor(await artistOf(w), patch.pitchedAs);
     if (patch.assigneeId) await requireUser(w, patch.assigneeId);
+    if (patch.dates) p.dates = sortedDates(patch.dates);
     return w.update("pitches", id, p);
   }),
 });

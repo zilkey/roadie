@@ -114,3 +114,15 @@ export const fmtDate = (s?: string) => {
   const d = new Date(s + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
+
+export interface PitchDateLike { date: string; endDate?: string; note?: string }
+/** A pitch's dates in date order (missing = none). */
+export const sortedDates = <T extends PitchDateLike>(dates?: T[]): T[] => [...(dates ?? [])].sort((a, b) => a.date.localeCompare(b.date) || (a.endDate ?? "").localeCompare(b.endDate ?? ""));
+/** A date has passed once its last day (endDate, else date) is before today. */
+export const datePast = (d: PitchDateLike, today: string) => (d.endDate ?? d.date) < today;
+/** "Nov 14" or "Nov 14 – 16" / "Nov 30 – Dec 2" for a run. */
+export function fmtPitchDate(d: PitchDateLike): string {
+  if (!d.endDate || d.endDate === d.date) return fmtDate(d.date);
+  const a = new Date(d.date + "T00:00:00"), b = new Date(d.endDate + "T00:00:00");
+  return a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear() ? `${fmtDate(d.date)} – ${b.getDate()}` : `${fmtDate(d.date)} – ${fmtDate(d.endDate)}`;
+}

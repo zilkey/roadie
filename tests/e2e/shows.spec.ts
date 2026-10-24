@@ -110,6 +110,41 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
   expect(after.some((e) => e.id === ev!.id)).toBe(false);
 });
 
+test("Booked it with several pitch dates: pick which become shows, one show per date", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-pitches").click();
+  await page.getByTestId("group-waiting").getByText("Rocky Mountain Folks").click();
+  await page.getByTestId("pitch-dates-add").click();
+  await page.getByTestId("pitch-dates-date-1").fill("2027-07-16");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  const pitchUrl = page.url();
+  await page.getByTestId("booked-it").click();
+  await expect(page.getByTestId("pitch-date-picker")).toBeVisible();
+  await expect(page.getByTestId("show-date")).toHaveCount(0);
+  // the first upcoming date is chosen; add the other
+  await expect(page.getByTestId("pick-date-2027-07-16")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("pick-date-2027-07-23")).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("pick-date-2027-07-23").click();
+  await page.getByTestId("show-venue").selectOption({ label: "Lost Lake Lounge · Denver" });
+  await page.getByTestId("show-calendar").uncheck();
+  await expect(page.getByTestId("show-save")).toHaveText("Add 2 shows");
+  await page.getByTestId("show-save").click();
+
+  // back on the pitch with a show for each chosen date
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId("status-chip")).toHaveText("Booked");
+  await expect(page.getByTestId("pitch-shows").locator('[data-testid^="pitch-show-"]')).toHaveCount(2);
+  await expect(page.getByTestId("pitch-shows")).toContainText("Fri, Jul 16");
+  await expect(page.getByTestId("pitch-shows")).toContainText("Fri, Jul 23");
+  expect(page.url()).toBe(pitchUrl);
+  for (const l of await page.getByTestId("pitch-shows").locator('[data-testid^="pitch-show-"]').all()) {
+    const href = (await l.getAttribute("href"))!;
+    await cancelShow(page, href.split("/shows/")[1]);
+    await page.goto(pitchUrl);
+  }
+});
+
 test("Ask who's free: emails go out, a sub answers by link without logging in", async ({ page, browser, request }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));

@@ -4,6 +4,11 @@ import { entity, serverMask, id, dateStr, ts, sourcesShape } from "./common";
 export const pitchStatus = z.enum(["idea", "toPitch", "pitched", "waiting", "talking", "booked", "declined", "dropped"]);
 export type PitchStatus = z.infer<typeof pitchStatus>;
 
+/** One possible date for a pitch: a day, or a run (endDate, for festivals and multi-night stands). Kept sorted by date. */
+export const PitchDate = z.strictObject({ date: dateStr, endDate: dateStr.optional(), note: z.string().min(1).optional() })
+  .refine((d) => !d.endDate || d.endDate >= d.date, { message: "endDate must not be before date" });
+export type PitchDate = z.infer<typeof PitchDate>;
+
 export const Pitch = entity({
   target: z.strictObject({ kind: z.enum(["venue", "promoter", "edition"]), id, name: z.string().min(1) }),
   status: pitchStatus,
@@ -14,6 +19,7 @@ export const Pitch = entity({
   nextStep: z.strictObject({ text: z.string().min(1), due: dateStr }).optional(),
   lastContactAt: ts.optional(),
   showIds: z.array(id),
+  dates: z.array(PitchDate).default([]),
   notes: z.string().optional(),
   ...sourcesShape,
 });

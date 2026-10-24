@@ -79,7 +79,7 @@ export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, un
 const L = ({ children }: { children: React.ReactNode }) => <span className="lbl">{children}</span>;
 
 /** Shared by "New show" (Booked it) and editing a show. Controlled by the parent so it can diff what changed. */
-export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, editions, artist, musicians, error, busy, submitLabel, onSubmit, onCancel }: {
+export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, editions, artist, musicians, error, busy, submitLabel, onSubmit, onCancel, dateSlot }: {
   mode: "create" | "edit"; value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[];
   /** House concert hosts are picked from contacts; festival years from editions. */
   contacts: Row<Contact>[]; editions: Row<Edition>[];
@@ -89,6 +89,8 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
   onBlur?(): void;
   /** Create mode: the explicit button ("Add show"). */
   submitLabel?: string; onSubmit?(): void; onCancel?(): void;
+  /** Replaces the single Date field (a pitch with several dates picks which become shows). */
+  dateSlot?: React.ReactNode;
 }) {
   const [soundTouched, setSoundTouched] = useState(mode === "edit");
   const set = (p: Partial<ShowFormState>) => onChange({ ...value, ...p });
@@ -127,7 +129,7 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
               .map((e) => <option key={e.id} value={e.id}>{e.festivalName} {e.label}</option>)}
           </select>
         </label>
-        {field("date", "Date", "date")}
+        {dateSlot ?? field("date", "Date", "date")}
         <label className="grid gap-1"><L>Status</L>
           <Select testid="status" value={value.status === "hold" ? "hold" : value.status} onChange={(v) => set({ status: v })}
             options={[["confirmed", "Confirmed"], ["hold", "Hold"]]} />
