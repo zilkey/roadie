@@ -13,6 +13,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, run, type Doc, type Writer } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
+import { isPrivateField } from "../src/lib/venues";
+import { hasPrivate, noteOf, writeNote } from "../src/server/venues";
 import { email as emailSchema } from "../src/schema/common";
 import { e164 } from "../src/schema/normalize";
 import { roleIn } from "../src/schema/users";
@@ -75,6 +77,25 @@ async function ensure(w: Writer, path: string, id: string, doc: Record<string, u
   const r = await w.create(path, doc, { id });
   bump(r.merged ? `${path} (merged into existing)` : path);
   return r.id;
+}
+
+/**
+ * A venue from the trackers: the room goes in the shared directory, its contacts/promoters/notes are this artist's private venueNotes
+ * (the same split venues.create makes). Where the room already exists (dedupe merge or a rerun) the band's notes are filled in, never replaced.
+ */
+async function ensureVenue(w: Writer, id: string, doc: Record<string, unknown>): Promise<string> {
+  const priv = Object.fromEntries(Object.entries(doc).filter(([k, v]) => isPrivateField(k) && v !== undefined));
+  const vid = await ensure(w, "venues", id, Object.fromEntries(Object.entries(doc).filter(([k]) => !isPrivateField(k))));
+  const venue = (await w.get("venues", vid))!;
+  const { doc: noteDoc, fields } = await noteOf(w, venue, artist.id);
+  const union = (a: string[], b: unknown) => [...new Set([...a, ...((b as string[] | undefined) ?? [])])];
+  const next = {
+    contactIds: union(fields.contactIds, priv.contactIds), promoterIds: union(fields.promoterIds, priv.promoterIds),
+    ...(!fields.notes && priv.notes ? { notes: priv.notes as string } : {}), ...(!fields.loadInNotes && priv.loadInNotes ? { loadInNotes: priv.loadInNotes as string } : {}),
+  };
+  const changed = next.contactIds.length !== fields.contactIds.length || next.promoterIds.length !== fields.promoterIds.length || "notes" in next || "loadInNotes" in next;
+  if (changed && (noteDoc || hasPrivate({ ...fields, ...next }))) await writeNote(w, venue, artist.id, next);
+  return vid;
 }
 
 interface ContactIn { name: string; emails: string[]; phones: string[]; notes?: string; title?: string }
@@ -193,15 +214,11 @@ async function importVenueBook() {
         const missing = contactIds.filter((c) => !(fest.contactIds as string[]).includes(c));
         if (missing.length) await w.update("festivals", festivalId, { contactIds: [...(fest.contactIds as string[]), ...missing] });
       } else if (!house) {
-        venueId = await ensure(w, "venues", `vb-${v.id}`, {
+        venueId = await ensureVenue(w, `vb-${v.id}`, {
           name: v.name.trim(), type: VB_TYPES[v.type] ?? "other", address: { city, state }, region,
           website: v.link || undefined, contactIds, promoterIds: [], sources,
           notes: lines(v.type && !VB_TYPES[v.type] && v.type !== "Other" && `Kind: ${v.type}`, v.lead && `Booking window: ${v.lead}`, v.notes),
         });
-        // A dedupe merge keeps the existing doc's contact list; add ours to it.
-        const venue = (await w.get("venues", venueId))!;
-        const missing = contactIds.filter((c) => !(venue.contactIds as string[]).includes(c));
-        if (missing.length) await w.update("venues", venueId, { contactIds: [...(venue.contactIds as string[]), ...missing] });
       }
       const venueName = venueId ? String((await w.get("venues", venueId))!.name) : undefined;
       const hostName = house ? joinNames(await Promise.all(contactIds.map(async (id) => String((await w.get("contacts", id))!.name)))) : undefined;
@@ -372,7 +389,7 @@ async function importSupportSlots() {
       const phone = v.ct.match(/\d{3}-\d{3}-\d{4}/)?.[0];
       if (phone && !contactIds.length) contactIds.push(await contact(w, `ss-${v.id}-c1`, { name: `${v.n} booking`, emails: [], phones: [phone] }));
       const cap = v.cap.match(/\d+/g)?.map(Number);
-      const id = await ensure(w, "venues", `ss-${v.id}`, {
+      const id = await ensureVenue(w, `ss-${v.id}`, {
         name: v.n, type: SS_TYPES[v.id] ?? "other", address: { city, state: "CO", ...(street ? { street } : {}) }, region: regionForCity(city) ?? "denver",
         capacity: cap ? Math.max(...cap) : undefined, ages: /all members 21\+|21\+ only|mostly 21\+/i.test(v.ask ?? "") ? "21" : /all ages/i.test(v.ask ?? "") ? "all" : undefined,
         website: /^[a-z0-9-]+\.[a-z]{2,}(\/|$)/i.test(v.ct) ? v.ct.split(/\s/)[0] : undefined,
@@ -381,8 +398,6 @@ async function importSupportSlots() {
       });
       venueIds[v.id] = id;
       const venue = (await w.get("venues", id))!;
-      const missing = contactIds.filter((c) => !(venue.contactIds as string[]).includes(c));
-      if (missing.length) await w.update("venues", id, { contactIds: [...(venue.contactIds as string[]), ...missing] });
       const t = tracking[v.id] ?? {};
       await pitch(w, `ss-${v.id}`, { kind: "venue", id, name: venue.name as string }, t.status ? SS_STATUS[t.status] ?? "toPitch" : v.tier === 3 ? "idea" : "toPitch",
         { notes: lines("Local support slot on a touring indie bill.", t.notes), pitchedOn: t.date });
@@ -397,7 +412,8 @@ async function importSupportSlots() {
       if (add.length) await w.update("promoters", id, { venueIds: [...(prom.venueIds as string[]), ...add] });
       for (const vid of ids) {
         const venue = (await w.get("venues", vid))!;
-        if (!(venue.promoterIds as string[]).includes(id)) await w.update("venues", vid, { promoterIds: [...(venue.promoterIds as string[]), id] });
+        const { fields } = await noteOf(w, venue, artist.id);
+        if (!fields.promoterIds.includes(id)) await writeNote(w, venue, artist.id, { promoterIds: [...fields.promoterIds, id] });
       }
     });
   }

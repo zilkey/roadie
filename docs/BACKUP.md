@@ -33,3 +33,12 @@ npm run migrate:history                # emulator
 npm run migrate:history -- --yes       # real Firestore (refused without --yes)
 ```
 Each old entry becomes `{entity.kind}/{entity.id}/history/{docRev padded}` (entries from before `docRev` existed become `000000-{time}-{oldId}`; two entries claiming one rev are kept side by side). Safe to re-run: ids are derived from the entry, and every move is one batch that writes the new doc and deletes the old, so it finishes where a failed run stopped. Deploy the new rules, indexes and code first.
+
+## Splitting venues into the shared room and the band's notes (one time)
+A venue is now two documents: the shared `venues/{id}` (readable by every band user) and each band's private `venueNotes/{artistId}__{venueId}` (load-in notes, notes, contacts, promoters; only that artist's admins read it). Venues written before the split still carry those four fields; the code reads and updates them either way, and this migration moves them. Run it **before** deploying the widened `firestore.rules`.
+```
+npm run migrate:venue-notes -- --dry-run              # count only, writes nothing
+npm run migrate:venue-notes                           # emulator
+npm run migrate:venue-notes -- --artist=<slug> --yes  # real Firestore (refused without --yes; --artist only needed with more than one artist)
+```
+It writes `venueNotes` docs through `db.ts` under one History run (Admin -> History -> that run id -> Undo reverses the venue part), removes the four fields from the venues, and stamps `artistId` (the record's artist, else null) on every existing history entry, which the tightened history rule and the History page's two queries need. History entries that show a band's old private notes are stamped with that band, so other bands' admins cannot read them. Safe to run again. Order for production: backup; deploy the code and `firestore.indexes.json` (the History page's new `artistId` queries need those collection-group indexes, which build for a few minutes); `--dry-run`; `--yes`; then deploy `firestore.rules` last. The tolerated legacy fields in `src/schema/venues.ts` (`venueLegacyShape`) can be deleted after that.

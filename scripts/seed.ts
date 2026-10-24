@@ -11,7 +11,8 @@ import { db } from "../src/server/db";
 import { importCtx } from "../src/server/ctx";
 import { syncClaims } from "../src/server/session";
 import { slugForArtist } from "../src/schema/artists";
-import { DEV_PEOPLE } from "../src/lib/dev-people";
+import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
+import { execute } from "../src/server/commands/dispatch";
 import { DEFAULT_CHECKLIST_TEMPLATES } from "../src/lib/shows";
 
 const project = "demo-band-tracker";
@@ -73,17 +74,28 @@ async function main() {
   const priya = await create("contacts", { name: "Priya Shah", title: "Festival producer", emails: ["priya@umsfest.example"], phones: [] });
   const promo1 = await create("promoters", { name: "Front Range Presents", kind: "promoter", website: "https://frontrangepresents.example", contactIds: [marcus], venueIds: [], howToPitch: "Email Marcus with live video and two dates.", sources: src("https://frontrangepresents.example") });
   const promo2 = await create("promoters", { name: "Dairy Arts Center", kind: "nonprofit", contactIds: [dana], venueIds: [], howToPitch: "Online submission form, twice a year." });
-  const v = (name: string, type: string, city: string, region: string, extra: Record<string, unknown> = {}) =>
-    create("venues", { name, type, address: { city, state: "CO" }, region, contactIds: [], promoterIds: [], ...extra });
+  // Venues go through venues.create: the room is the shared directory record, contactIds/promoterIds/notes become this band's private venueNotes.
+  const bandCtx = importCtx("seed", undefined, artist);
+  const v = async (name: string, type: string, city: string, region: string, extra: Record<string, unknown> = {}) =>
+    ((await execute(bandCtx, "venues.create", { name, type, address: { city, state: "CO" }, region, ...extra })).result as { id: string }).id;
   const hidive = await v("Hi-Dive", "bar", "Denver", "denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" }, capacity: 250, ages: "21", sound: { provider: "venueProvided", notes: "House engineer" } });
   const lostlake = await v("Lost Lake Lounge", "club", "Denver", "denver", { address: { street: "3602 E Colfax Ave", city: "Denver", state: "CO" }, capacity: 300, ages: "21", contactIds: [haylee], sources: src("https://lostlake.example") });
   const fox = await v("Fox Theatre", "theater", "Boulder", "boulder", { capacity: 625, ages: "all", contactIds: [marcus], promoterIds: [promo1] });
   const dairy = await v("Dairy Arts Center", "listening", "Boulder", "boulder", { capacity: 200, ages: "all", sound: { provider: "venueProvided" }, contactIds: [dana], promoterIds: [promo2] });
+  await db.update(ctx, "venues", hidive, { instagram: "hidivedenver" });
   const cervantes = await v("Cervantes' Other Side", "club", "Denver", "denver", { capacity: 400, ages: "21" });
   const washingtons = await v("Washington's", "club", "Fort Collins", "north", { capacity: 450, ages: "21" });
   await v("Swallow Hill Music", "listening", "Denver", "denver", { capacity: 250, ages: "all" });
   await db.update(ctx, "promoters", promo1, { venueIds: [fox] });
   await db.update(ctx, "promoters", promo2, { venueIds: [dairy] });
+
+  // --- a second band on the same directory: its own notes on a shared room, and a duplicate room to merge ---
+  const other = await seedOtherBand(create, ctx);
+  await execute(bandCtx, "venues.update", { id: hidive, patch: { loadInNotes: "Alley door on Broadway; 20 minutes to load in.", notes: "Ask for Sam at the bar." } });
+  await execute(other.ctx, "venues.update", { id: hidive, patch: { loadInNotes: "Fern Valley loads in the side door.", notes: "Ask for Rae. Fern Valley's own notes." } });
+  // The same room entered twice ("The Hi-Dive" does not dedupe against "Hi-Dive"): venues.mergeInto fixes it.
+  const hidiveDup = await v("The Hi-Dive", "bar", "Denver", "denver", { website: "https://hi-dive.example", notes: "Possible duplicate of Hi-Dive." });
+  await execute(other.ctx, "venues.update", { id: hidiveDup, patch: { notes: "Fern Valley saw this room as The Hi-Dive." } });
 
   const ums = await create("festivals", { name: "Underground Music Showcase", type: "festival", region: "denver", genres: "Indie, rock, folk", contactIds: [priya], typicalMonth: 7, website: "https://umsfest.example", sources: src("https://umsfest.example") });
   const levitt = await create("festivals", { name: "Levitt Pavilion Summer Series", type: "series", region: "denver", contactIds: [], typicalMonth: 6 });
@@ -174,7 +186,22 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 6 musicians, 5 users, artist with 4 configurations, 6 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 setlist.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 8 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 setlist.");
+}
+
+/** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */
+async function seedOtherBand(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>) {
+  const p = DEV_OTHER_BAND.person;
+  const mid = await create("musicians", { name: p.name, instruments: p.instruments, active: true }); // no email: the first band's Drive sharing checks list musicians with an email
+  const artist = await create("artists", {
+    name: DEV_OTHER_BAND.artistName, slug: slugForArtist(DEV_OTHER_BAND.artistName),
+    configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [mid] }], links: {}, driveFolderId: "",
+  });
+  const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
+  await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role }], mcpAccess: false, musicianId: mid }, u.uid);
+  await db.update(ctx, "musicians", mid, { userId: u.uid });
+  await syncClaims(u.uid);
+  return { artist, ctx: importCtx("seed", undefined, artist) };
 }
 
 async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>) {

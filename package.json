@@ -23,7 +23,8 @@
     "migrate:history": "tsx scripts/migrate-history.ts",
     "migrate:artists": "tsx scripts/migrate-artists.ts",
     "migrate:strip-gear": "tsx scripts/migrate-strip-gear.ts",
-    "migrate:pitched-as": "tsx scripts/migrate-pitched-as.ts"
+    "migrate:pitched-as": "tsx scripts/migrate-pitched-as.ts",
+    "migrate:venue-notes": "tsx scripts/migrate-venue-notes.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

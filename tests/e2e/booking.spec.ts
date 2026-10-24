@@ -141,7 +141,7 @@ test("members cannot reach booking pages", async ({ page }) => {
   await expect(page.getByTestId("booking-home")).toHaveCount(0);
 });
 
-test("a venue's edit form autosaves (no Save button), survives a reload, and a new contact is a draft until Add", async ({ page }) => {
+test("a venue's notes autosave (no Save button) and survive a reload, and a new contact is a draft until Add", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("lost lake");
@@ -150,23 +150,17 @@ test("a venue's edit form autosaves (no Save button), survives a reload, and a n
   await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   const url = page.url();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("venue-edit-submit")).toHaveCount(0);
+  // "Our notes" is the band's private part of the venue: always open, autosaves
+  await expect(page.getByTestId("notes-submit")).toHaveCount(0);
   const note = `Load in through the alley ${Date.now()}`;
-  await page.getByTestId("venue-edit-loadInNotes").fill(note);
+  await page.getByTestId("notes-loadInNotes").fill(note);
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("venue-edit-loadInNotes")).toHaveValue(note);
-  // an empty required field is not saved (and does not blank the venue)
-  await page.getByTestId("venue-edit-city").fill("");
-  await page.getByTestId("venue-edit-notes").fill("still here");
-  await expect(page.getByTestId("save-status")).toContainText("City is required");
-  await page.getByTestId("venue-edit-city").fill("Denver");
+  await expect(page.getByTestId("notes-loadInNotes")).toHaveValue(note);
+  await page.getByTestId("notes-notes").fill("still here");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("venue-edit-notes")).toHaveValue("still here");
+  await expect(page.getByTestId("notes-notes")).toHaveValue("still here");
   await expect(page.getByTestId("page-title")).toHaveText("Lost Lake Lounge");
 
   // inline "New contact" = draft: closed and reopened, the typing is still there; Add creates it and clears the draft
