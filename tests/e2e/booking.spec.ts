@@ -165,25 +165,29 @@ test("a venue's notes autosave (no Save button) and survive a reload, and a new 
   await page.getByTestId(/^row-venue-/).getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
   const url = page.url();
-  // "Our notes" is the band's private part of the venue: always open, autosaves
+  // "Our notes" is the band's private part of the venue: Edit opens it in place, it autosaves (Done just closes)
+  await page.getByTestId("notes-edit").click();
   await expect(page.getByTestId("notes-submit")).toHaveCount(0);
   const note = `Load in through the alley ${Date.now()}`;
   await page.getByTestId("notes-loadInNotes").fill(note);
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
+  await page.getByTestId("notes-edit").click();
   await expect(page.getByTestId("notes-loadInNotes")).toHaveValue(note);
   await page.getByTestId("notes-notes").fill("still here");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
+  await page.getByTestId("notes-edit").click();
   await expect(page.getByTestId("notes-notes")).toHaveValue("still here");
   await expect(page.getByTestId("page-title")).toHaveText("Lost Lake Lounge");
 
   // inline "New contact" = draft: closed and reopened, the typing is still there; Add creates it and clears the draft
+  await page.getByTestId("contacts-edit").click();
   await page.getByTestId("contact-new").click();
   await page.getByTestId("contact-form-name").fill("Draft Person");
   await expect(page.getByTestId("contact-form").getByTestId("draft-status")).toHaveText("Draft saved");
   await page.reload();
-  await expect(page.getByTestId("contact-form-name")).toHaveValue("Draft Person"); // form reopens by itself
+  await expect(page.getByTestId("contact-form-name")).toHaveValue("Draft Person"); // the card and the form reopen by themselves
   await page.getByTestId("contact-form-submit").click();
   await expect(page.getByTestId("contact-Draft Person")).toBeVisible();
   await page.goto(url);
@@ -211,13 +215,14 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill(name);
   await page.getByTestId(/^row-promoter-/).getByRole("link").click();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("promoter-edit-submit")).toHaveCount(0);
-  await page.getByTestId("promoter-edit-notes").fill("Books Fridays");
+  await page.getByTestId("notes-edit").click();
+  await expect(page.getByTestId("promoter-notes-submit")).toHaveCount(0);
+  await page.getByTestId("promoter-notes-notes").fill("Books Fridays");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("promoter-edit-notes")).toHaveValue("Books Fridays");
+  await expect(page.getByTestId("promoter-page")).toContainText("Books Fridays");
+  await page.getByTestId("notes-edit").click();
+  await expect(page.getByTestId("promoter-notes-notes")).toHaveValue("Books Fridays");
 
   // a festival: edit autosaves, "Add a year" is a draft until Add year
   await page.goto(A("/booking"));
@@ -228,12 +233,15 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await page.getByTestId("edit-toggle").click();
   await page.getByTestId("festival-edit-genres").fill("folk");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("years-edit").click(); // one card edits at a time: this closes About
+  await expect(page.getByTestId("festival-edit")).toHaveCount(0);
   await page.getByTestId("add-edition").click();
   await page.getByTestId("new-edition-label").fill("2099");
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   await page.reload();
-  await expect(page.getByTestId("new-edition-label")).toHaveValue("2099");
+  await expect(page.getByTestId("new-edition-label")).toHaveValue("2099"); // the unfinished year reopens the Years card and its form
   await page.getByTestId("new-edition-submit").click();
+  await page.getByTestId("years-done").click();
   await expect(page.getByTestId(/^edition-/).first()).toContainText("2099");
   await page.getByTestId(/^edition-/).first().getByRole("link").click();
   await expect(page.getByTestId("edition-page")).toBeVisible();
@@ -253,13 +261,14 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   await page.getByTestId("booking-seg-contacts").click();
   await page.getByTestId(/^row-contact-/).first().getByTestId(/^contact-full-/).click();
   await expect(page.getByTestId("contact-page")).toBeVisible();
-  await page.getByTestId("edit-toggle").click();
+  await page.getByTestId("notes-edit").click();
   const note = `call after 5 ${stamp}`;
-  await page.getByTestId("contact-edit-notes").fill(note);
+  await page.getByTestId("contact-notes-notes").fill(note);
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await page.getByTestId("edit-toggle").click();
-  await expect(page.getByTestId("contact-edit-notes")).toHaveValue(note);
+  await expect(page.getByTestId("contact-page")).toContainText(note);
+  await page.getByTestId("notes-edit").click();
+  await expect(page.getByTestId("contact-notes-notes")).toHaveValue(note);
 });
 
 test("pitch comments and email templates: existing templates autosave, new ones and comments are drafts", async ({ page }) => {

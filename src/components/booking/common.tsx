@@ -73,7 +73,8 @@ export function StatusPill({ status }: { status: string }) {
   return <span className={`pill${status === "booked" ? " ok" : ""}`} data-testid="status-chip">{STATUS_LABEL[status as Status] ?? status}</span>;
 }
 
-const FlagIcon = ({ filled }: { filled: boolean }) => (
+/** The flag used for the pitch list; `filled` when the thing is on it. */
+export const FlagIcon = ({ filled }: { filled: boolean }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M6 3v18M6 4h12l-3 4 3 4H6" />
   </svg>
@@ -158,7 +159,7 @@ export function PitchDates({ dates, today, testid, empty, onRemove, busy }: { da
  * the form). `form` is the add form: render it under the row's button line, never inside the button's flex row.
  * `strip` is the summary of the open pitch (configuration, dates, last comment); it is empty while there is no pitch.
  */
-function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: PitchRow[], opts: { big?: boolean; square?: boolean } = {}) {
+function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: PitchRow[], opts: { big?: boolean; square?: boolean; label?: string } = {}) {
   const { call, error, busy } = useCommand();
   const router = useRouter();
   const open = pitches.find((p) => p.target.kind === kind && p.target.id === id && isActive(p.status));
@@ -188,9 +189,9 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
 
   const button = (
     <button ref={btn} type="button" onClick={tap} onKeyDown={(e) => { if (formOpen) escape(e); }} disabled={busy} data-testid={`flag-${id}`} data-flagged={open ? "1" : "0"} data-open={formOpen ? "1" : "0"}
-      aria-label={open ? "On the Pitch List" : "Add to Pitch List"} title={open ? "Open the pitch" : `Pitch this ${kind === "edition" ? "festival" : kind}`} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
-      className={opts.square ? "flag-sq" : `${opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
-      <FlagIcon filled={!!open} />{opts.big && (open ? "On the Pitch List" : "Add to Pitch List")}
+      aria-label={opts.label ? undefined : open ? "On the Pitch List" : "Add to Pitch List"} title={open ? "Open the pitch" : `Pitch this ${kind === "edition" ? "festival" : kind}`} aria-pressed={!!open || formOpen} aria-expanded={open ? undefined : formOpen}
+      className={opts.square ? "flag-sq" : `${opts.label ? "btn acc" : opts.big ? `btn ${open ? "ghost" : "acc"}` : `btn sm ${open ? "acc" : "ghost"}`} flag-btn`}>
+      <FlagIcon filled={opts.label ? false : !!open} />{opts.label ?? (opts.big && (open ? "On the Pitch List" : "Add to Pitch List"))}
     </button>
   );
   const form = (
@@ -248,8 +249,8 @@ export function PitchStrip({ pitch }: { pitch: PitchRow }) {
 }
 
 /** Render prop over the flag: `{(button, form, strip) => ...}`. Put the button in the row's flex line and the form (or, once pitched, the strip) below that line. `square` is the list row's 44px flag button and tinted panels. */
-export function Flagged({ kind, id, pitches, big, square, children }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean; square?: boolean; children(button: React.ReactNode, form: React.ReactNode, strip: React.ReactNode): React.ReactNode }) {
-  const f = useFlag(kind, id, pitches, { big, square });
+export function Flagged({ kind, id, pitches, big, square, label, children }: { kind: "venue" | "promoter" | "edition"; id: string; pitches: PitchRow[]; big?: boolean; square?: boolean; label?: string; children(button: React.ReactNode, form: React.ReactNode, strip: React.ReactNode): React.ReactNode }) {
+  const f = useFlag(kind, id, pitches, { big, square, label });
   return <>{children(f.button, f.form, f.strip)}</>;
 }
 
@@ -403,7 +404,7 @@ function DraftEntityForm({ fields, initial, build, submitLabel, onSubmit, testid
     <form onSubmit={submit} className="card" data-testid={testid}>
       <FormFields fields={fields} v={d.value} set={(k, val) => d.setValue((x) => ({ ...x, [k]: val }))} testid={testid} />
       <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
-      <SubmitRow busy={busy} label={submitLabel} testid={testid} onCancel={onCancel} />
+      <SubmitRow busy={busy} label={submitLabel} testid={testid} onCancel={onCancel && (() => { void d.clear({ reset: true }); onCancel(); })} />
     </form>
   );
 }
@@ -510,45 +511,61 @@ export const contactForm = {
 /** Turn builder output into a patch: undefined means clear. */
 export const toPatch = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === undefined ? null : v]));
 
-/** A place's people: copy emails in one tap, link an existing contact, or add a new one. */
-export function ContactsPanel({ kind, parentId, contactIds, contacts }: {
-  kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
+/**
+ * A place's people, for the body of a "Contacts" DetailCard. View: name, title, emails with a copy button. `editing`: Remove buttons,
+ * plus linking an existing contact or adding a new one (a draft, with an explicit "Add contact"). An unfinished draft calls `onWantEdit`
+ * so the card can switch to editing.
+ */
+export function ContactsPanel({ kind, parentId, contactIds, contacts, editing = false, onWantEdit }: {
+  kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[]; editing?: boolean; onWantEdit?(): void;
 }) {
   const { call, error, busy } = useCommand();
   const hasDraft = useHasDraft(draftPath.newUnder(kind, parentId, "contacts"));
   const [explicit, setAdding] = useState<boolean | null>(null);
-  const adding = explicit ?? hasDraft; // an unfinished contact opens the form
+  const adding = editing && (explicit ?? hasDraft); // an unfinished contact opens the form
+  useEffect(() => { if (hasDraft && !editing) onWantEdit?.(); }, [hasDraft, editing, onWantEdit]);
   const mine = contactIds.map((id) => contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
   const others = contacts.filter((c) => !contactIds.includes(c.id)).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div className="grid gap-2" data-testid="contacts-panel">
-      <span className="lbl">Contacts</span>
       <ErrorBox error={error} />
-      {mine.length === 0 && <div className="empty"><span>No one yet.</span></div>}
-      {mine.map((c) => (
-        <div key={c.id} className="card" data-testid={`contact-${c.name}`}>
-          <div className="flex items-center justify-between gap-2">
-            <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
-            <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
-          </div>
-          {c.title && <span className="s">{c.title}</span>}
-          {c.emails.map((e) => (
-            <div key={e} className="flex items-center justify-between gap-2"><span className="font-mono text-sm break-all">{e}</span><CopyButton text={e} /></div>
+      {mine.length === 0 && <div className="empty">No one yet.</div>}
+      {mine.length > 0 && (
+        <div>
+          {mine.map((c) => (
+            <div key={c.id} className="d-row" data-testid={`contact-${c.name}`}>
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
+                {c.title && <span className="s">{c.title}</span>}
+              </div>
+              {editing
+                ? <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
+                : c.emails.length > 0 && (
+                  <div className="grid w-full gap-1">
+                    {c.emails.map((e) => (
+                      <div key={e} className="flex items-center justify-between gap-2"><span className="font-mono text-sm break-all">{e}</span><CopyButton text={e} label="Copy email" /></div>
+                    ))}
+                  </div>
+                )}
+            </div>
           ))}
         </div>
-      ))}
-      <div className="flex gap-2">
-        {others.length > 0 && (
-          <select className="select" value="" data-testid="contact-link" onChange={(e) => e.target.value && call("contacts.attach", { contactId: e.target.value, kind, id: parentId })}>
-            <option value="">Link an existing contact…</option>
-            {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        )}
-        <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="contact-new">{adding ? "Close" : "New contact"}</button>
-      </div>
+      )}
+      {editing && (
+        <div className="flex gap-2">
+          {others.length > 0 && (
+            <select className="select" value="" data-testid="contact-link" onChange={(e) => e.target.value && call("contacts.attach", { contactId: e.target.value, kind, id: parentId })}>
+              <option value="">Link an existing contact…</option>
+              {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
+          <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="contact-new">{adding ? "Close" : "New contact"}</button>
+        </div>
+      )}
       {adding && (
         <EntityForm testid="contact-form" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build} submitLabel="Add contact"
           draft={{ path: draftPath.newUnder(kind, parentId, "contacts"), title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }}
+          onCancel={() => setAdding(false)}
           onSubmit={async (d, meta) => { const r = await call("contacts.create", { ...d, attachTo: { kind, id: parentId } }, meta); if (r) setAdding(false); return !!r; }} />
       )}
     </div>

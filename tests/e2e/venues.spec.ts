@@ -18,7 +18,7 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 
-test("a member opens the venue from a show, sees the address but no notes, and fixes the capacity through the confirmation; another band's admin sees the fix but only their own notes", async ({ page, browser }) => {
+test("a member opens the venue from a show, sees the address but no notes, and fixes the capacity (autosaved, with a shared-for-everyone warning); another band's admin sees the fix but only their own notes", async ({ page, browser }) => {
   await signInAs(page, "david"); // a member of Ingrid Avison Band
   await page.goto(A("/shows"));
   await page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" }).first().locator("td.date a").click();
@@ -31,30 +31,19 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await expect(page.getByTestId("notes-loadInNotes")).toHaveCount(0);
   await expect(page.getByTestId("notes-private")).toHaveCount(0);
   await expect(page.getByTestId("contacts-panel")).toHaveCount(0);
-  await expect(page.getByTestId("merge-open")).toHaveCount(0);
+  await expect(page.getByTestId("venue-actions")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("Alley door on Broadway");
 
-  // fixing a fact: explicit Save, then a dialog that says who it reaches and lists before and after
+  // fixing a fact: Edit opens the shared card in place with a warning that every band sees it; it autosaves, Done closes it
   const capacity = String(300 + (STAMP % 100));
-  await page.getByTestId("room-edit").click();
-  await expect(page.getByTestId("room-save")).toBeVisible();
-  await page.getByTestId("room-capacity").fill(capacity);
-  await page.getByTestId("room-save").click();
-  const dialog = page.getByTestId("room-confirm-dialog");
-  await expect(dialog).toContainText("for every band that uses Band Tracker");
-  await expect(dialog).toContainText("Your name is recorded in its history");
-  await expect(page.getByTestId("room-change-capacity")).toContainText(`250`);
-  await expect(page.getByTestId("room-change-capacity")).toContainText(capacity);
-  // Cancel changes nothing
-  await page.getByTestId("room-confirm-cancel").click();
-  await expect(dialog).toBeHidden();
-  await page.getByTestId("room-cancel").click();
   await expect(page.getByTestId("room-capacity")).toHaveText("250");
   await page.getByTestId("room-edit").click();
+  await expect(page.getByTestId("room-card")).toContainText("Every band on Band Tracker sees these details.");
+  await expect(page.getByTestId("room-edit")).toHaveCount(0);
   await page.getByTestId("room-capacity").fill(capacity);
-  await page.getByTestId("room-save").click();
-  await page.getByTestId("room-confirm").click();
-  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("room-save").click(); // Done
+  await expect(page.getByTestId("room-form")).toHaveCount(0);
   await expect(page.getByTestId("room-capacity")).toHaveText(capacity);
   await page.reload();
   await expect(page.getByTestId("room-capacity")).toHaveText(capacity);
@@ -65,6 +54,8 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await signInAs(op, "olga");
   await openVenue(op, OTHER, "hi-dive", "Hi-Dive");
   await expect(op.getByTestId("room-capacity")).toHaveText(capacity);
+  await expect(op.getByTestId("notes-private")).toContainText("Fern Valley loads in the side door.");
+  await op.getByTestId("notes-edit").click();
   await expect(op.getByTestId("notes-loadInNotes")).toHaveValue("Fern Valley loads in the side door.");
   await expect(op.getByTestId("notes-notes")).toHaveValue(/Ask for Rae/);
   await expect(op.locator("body")).not.toContainText("Alley door on Broadway");
@@ -78,6 +69,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await signInAs(jp, "jeff");
   await jp.goto(venueUrl);
   await expect(jp.getByTestId("room-capacity")).toHaveText(capacity);
+  await jp.getByTestId("notes-edit").click();
   await expect(jp.getByTestId("notes-loadInNotes")).toHaveValue("Alley door on Broadway; 20 minutes to load in.");
   await expect(jp.locator("body")).not.toContainText("Fern Valley");
 
@@ -95,7 +87,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await olga.close(); await jeff.close();
 });
 
-test("adding a venue says other bands will see it; a shared edit that changes nothing just closes", async ({ page }) => {
+test("adding a venue says other bands will see it; opening the shared card and pressing Done just closes it", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("add-venue").click();
@@ -104,8 +96,8 @@ test("adding a venue says other bands will see it; a shared edit that changes no
   await openVenue(page, A, "dairy arts");
   await page.getByTestId("room-edit").click();
   await page.getByTestId("room-save").click();
-  await expect(page.getByTestId("room-confirm-dialog")).toBeHidden();
-  await expect(page.getByTestId("room-card")).toBeVisible();
+  await expect(page.getByTestId("room-form")).toHaveCount(0);
+  await expect(page.getByTestId("room-edit")).toBeVisible();
 });
 
 test("merge a duplicate venue into the room to keep: every band's notes move, the old page redirects, and Undo from History restores it", async ({ page, browser }) => {
@@ -113,7 +105,8 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   await signInAs(page, "jeff");
   await openVenue(page, A, "the hi-dive", "The Hi-Dive");
   const dupUrl = page.url();
-  await page.getByTestId("merge-open").click();
+  await page.getByTestId("venue-actions").click();
+  await page.getByTestId("venue-menu-merge").click();
   await page.getByTestId("merge-search").fill("hi-dive");
   await expect(page.getByTestId("merge-results")).not.toContainText("The Hi-Dive"); // not into itself
   await page.getByTestId(/^merge-pick-/).first().click();
@@ -123,6 +116,7 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   const keepUrl = page.url();
   expect(keepUrl).not.toBe(dupUrl);
   // the band's notes were joined onto the survivor's; the duplicate's website filled the survivor's empty one
+  await page.getByTestId("notes-edit").click();
   await expect(page.getByTestId("notes-notes")).toHaveValue(/Possible duplicate of Hi-Dive\./);
   await expect(page.getByTestId("notes-notes")).toHaveValue(/Ask for Sam/);
   await expect(page.getByTestId("room-website")).toContainText("hi-dive.example");
@@ -138,6 +132,7 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   const op = await olga.newPage();
   await signInAs(op, "olga");
   await op.goto(keepUrl.replace("/artists/ingrid-avison-band", "/artists/fern-valley-trio"));
+  await op.getByTestId("notes-edit").click();
   await expect(op.getByTestId("notes-notes")).toHaveValue(/Fern Valley saw this room as The Hi-Dive\./);
   await expect(op.locator("body")).not.toContainText("Ask for Sam");
   await olga.close();
@@ -155,19 +150,22 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   await expect(page.getByTestId("page-title")).toHaveText("The Hi-Dive");
 });
 
-test("the venue page's Pitch card: add to the pitch list, edit it, comment, abandon it into Past pitches; Edit sits in the header", async ({ page }) => {
+test("the venue page's Pitch card: add to the pitch list, edit it, comment, abandon it into Past pitches; each card edits in place", async ({ page }) => {
   page.on("dialog", (d) => d.accept());
   await signInAs(page, "jeff");
   await page.goto(A("/shows"));
   await page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" }).first().locator("td.date a").click();
   await page.getByTestId("show-venue-link").click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
-  // Edit is in the header and swaps the facts for the form; Cancel puts them back
+  // a card's Edit swaps its facts for the form; opening another card closes it; Done puts the facts back
   await page.getByTestId("room-edit").click();
   await expect(page.getByTestId("room-form")).toBeVisible();
   await expect(page.getByTestId("room-edit")).toHaveCount(0);
-  await page.getByTestId("room-cancel").click();
+  await page.getByTestId("notes-edit").click();
+  await expect(page.getByTestId("room-form")).toHaveCount(0);
   await expect(page.getByTestId("room-edit")).toBeVisible();
+  await page.getByTestId("notes-done").click();
+  await expect(page.getByTestId("notes-edit")).toBeVisible();
 
   const card = page.getByTestId("venue-pitch-card");
   if (await page.getByTestId("pitch-open").count()) await page.getByTestId("pitch-abandon").click();
@@ -178,7 +176,7 @@ test("the venue page's Pitch card: add to the pitch list, edit it, comment, aban
   await expect(page.getByTestId("pitch-open")).toHaveCount(0);
   await card.getByTestId(/^flag-submit-/).click();
   await expect(page.getByTestId("pitch-open")).toBeVisible();
-  await expect(page.getByTestId("status-chip").first()).toBeVisible();
+  await expect(page.getByTestId("page-title").locator("..")).toContainText("On the Pitch List");
 
   await page.getByTestId("pitch-edit").click();
   await page.getByTestId("pitch-edit-dates-date").fill("2027-02-12");

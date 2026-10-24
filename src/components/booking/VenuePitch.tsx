@@ -5,10 +5,13 @@ import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useDraft } from "@/lib/drafts";
+import { useAutosave } from "@/lib/autosave";
+import { SaveStatus } from "@/components/SaveStatus";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection } from "@/lib/firestore-hooks";
-import { ConfigurationPicker, Flagged, PitchDates, PitchDatesField, StatusChip, type PitchRow } from "@/components/booking/common";
+import { ConfigurationPicker, Flagged, FlagIcon, PitchDates, PitchDatesField, type PitchRow } from "@/components/booking/common";
+import { DetailCard, type useSingleEdit } from "@/components/booking/DetailCards";
 import { fmtPitchDate, isActive, sortedDates, todayStr } from "@/lib/booking";
 import { calendarInvitees } from "@/lib/shows";
 import type { Comment, Musician, User } from "@/schema";
@@ -17,36 +20,54 @@ type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
 const when = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
 
+/** The page's single-edit controller, as much of it as this card uses (a page with more keys passes its own). */
+export type PitchEdit = { is(k: "pitch"): boolean; open(k: "pitch"): void; close(): void };
+
+const PitchIcon = ({ active }: { active: boolean }) => (
+  <span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--admin-label)" }}><FlagIcon filled={active} /></span>
+);
+const CheckIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+);
+
 /**
- * The Pitch part of a venue page. One open pitch at most: empty (add to the Pitch List), or a card with its configuration, dates, comments,
- * Edit pitch, Abandon and "Booked it!". Pitches that ended (booked, declined, dropped) sit underneath as Past pitches.
+ * The Pitch card of a venue page (private to the artist). One open pitch at most: empty (add to the Pitch List), or its configuration, dates,
+ * comments, Abandon and "Booked it!"; Edit changes configuration and dates (autosaved). Pitches that ended sit underneath as Past pitches.
  */
-export function VenuePitch({ venueId, pitches }: { venueId: string; pitches: PitchRow[] }) {
-  const open = pitches.find((p) => isActive(p.status));
-  const past = pitches.filter((p) => !isActive(p.status) && (p.status === "booked" || p.status === "declined" || p.status === "dropped"));
+export function VenuePitch({ venueId, pitches, edit }: { venueId: string; pitches: PitchRow[]; edit: PitchEdit }) {
+  const { artistId } = useArtist();
+  const mine = pitches.filter((p) => p.artistId === artistId);
+  const open = mine.find((p) => isActive(p.status));
+  const past = mine.filter((p) => !isActive(p.status) && (p.status === "booked" || p.status === "declined" || p.status === "dropped"));
+  if (open) return <OpenPitch key={open.id} p={open} past={past} edit={edit} />;
   return (
-    <div className="grid gap-3" data-testid="venue-pitch">
-      <span className="lbl">Pitch</span>
-      <div className={open ? "card hi" : "card"} data-testid="venue-pitch-card">
-        {open ? <OpenPitch key={open.id} p={open} /> : (
-          <Flagged kind="venue" id={venueId} pitches={pitches} big>{(flag, form) => (<>
-            <div className="flex flex-wrap items-center justify-between gap-2"><span className="s" data-testid="not-on-pitch-list">Not on the pitch list.</span>{flag}</div>
-            {form}
-          </>)}</Flagged>
-        )}
-        {past.length > 0 && (
-          <div className={open ? "grid gap-2 border-t border-line pt-3" : "grid gap-2"} data-testid="past-pitches">
-            <span className="lbl">Past pitches ({past.length})</span>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="s text-left"><th className="py-1 pr-3">Configuration</th><th className="py-1 pr-3">Dates</th><th className="py-1 pr-3">Outcome</th><th className="py-1 text-right">Comments</th></tr></thead>
-                <tbody>{past.map((p) => <PastRow key={p.id} p={p} />)}</tbody>
-              </table>
-            </div>
-          </div>
-        )}
+    <DetailCard private title="Pitch" icon={<PitchIcon active={false} />} testid="venue-pitch">
+      <div className="grid gap-3" data-testid="venue-pitch-card">
+        <Flagged kind="venue" id={venueId} pitches={mine} label="Add to the Pitch List">{(flag, form) => (<>
+          <div className="flex flex-wrap items-center justify-between gap-3"><span className="d-muted" data-testid="not-on-pitch-list">Not on the pitch list.</span>{flag}</div>
+          {form}
+        </>)}</Flagged>
+        <PastPitches past={past} />
       </div>
-    </div>
+    </DetailCard>
+  );
+}
+
+function PastPitches({ past }: { past: PitchRow[] }) {
+  if (!past.length) return null;
+  return (
+    <>
+      <div className="d-sep" />
+      <div className="grid gap-1.5" data-testid="past-pitches">
+        <span className="lbl" style={{ color: "var(--admin-label)" }}>Past pitches ({past.length})</span>
+        <div className="overflow-x-auto">
+          <table className="d-tbl">
+            <thead><tr><th scope="col">Configuration</th><th scope="col">Dates</th><th scope="col">Outcome</th><th scope="col" style={{ textAlign: "right" }}>Comments</th></tr></thead>
+            <tbody>{past.map((p) => <PastRow key={p.id} p={p} />)}</tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -56,33 +77,26 @@ function PastRow({ p }: { p: PitchRow }) {
   const config = artist?.configurations.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet";
   const show = p.status === "booked" || p.showIds.length > 0;
   return (
-    <tr className="border-t border-line" data-testid={`past-pitch-${p.id}`}>
-      <td className="py-2 pr-3 whitespace-nowrap"><Link href={`/booking/pitches/${p.id}`} className="font-semibold" data-testid={`pitch-link-${p.id}`}>{config}</Link></td>
-      <td className="py-2 pr-3">{sortedDates(p.dates).length ? <PitchDates dates={p.dates} today={todayStr()} /> : "—"}</td>
-      <td className="py-2 pr-3 whitespace-nowrap"><span className={show ? "chip g" : "chip"}>{show ? "Became a show" : "Abandoned"}</span></td>
-      <td className="py-2 text-right">{comments?.length ?? ""}</td>
+    <tr data-testid={`past-pitch-${p.id}`}>
+      <td className="whitespace-nowrap"><Link href={`/booking/pitches/${p.id}`} className="font-semibold" data-testid={`pitch-link-${p.id}`}>{config}</Link></td>
+      <td>{sortedDates(p.dates).length ? <PitchDates dates={p.dates} today={todayStr()} /> : "—"}</td>
+      <td className="whitespace-nowrap"><span className={show ? "chip g" : "chip"}>{show ? "Became a show" : "Abandoned"}</span></td>
+      <td style={{ textAlign: "right" }}>{comments?.length ?? ""}</td>
     </tr>
   );
 }
 
-function OpenPitch({ p }: { p: PitchRow }) {
+function OpenPitch({ p, past, edit }: { p: PitchRow; past: PitchRow[]; edit: PitchEdit }) {
   const { doc: artist } = useArtist();
-  const { call, error, busy, setError } = useCommand();
+  const { call, error, busy } = useCommand();
   const users = useCollection<User>("users").rows ?? [];
   const comments = (useCollection<Comment>(`pitches/${p.id}/comments`).rows ?? []).slice().sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
-  const [edit, setEdit] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [cfg, setCfg] = useState("");
-  const [rows, setRows] = useState<string[]>([]);
   const draft = useDraft(draftPath.newUnder("pitches", p.id, "comments"), { text: "" }, { title: (v) => `Comment on ${p.target.name}: ${v.text.slice(0, 40)}` });
   const commentId = useRef(newMutationId());
   const config = artist?.configurations.find((c) => c.id === p.pitchedAs)?.name;
+  const icon = <PitchIcon active />;
 
-  function openEdit() { setCfg(p.pitchedAs ?? ""); setRows(sortedDates(p.dates)); setError(null); setEdit(true); }
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (await call("pitches.update", { id: p.id, patch: { pitchedAs: cfg || null, dates: rows } })) setEdit(false);
-  }
   async function post() {
     await draft.settle();
     const r = await call("pitches.comment", { id: p.id, body: draft.value.text }, { clientMutationId: commentId.current, clearDraft: draft.draftId });
@@ -91,71 +105,83 @@ function OpenPitch({ p }: { p: PitchRow }) {
   async function abandon() {
     if (confirm("Abandon this pitch? It moves to Past pitches.")) await call("pitches.move", { id: p.id, status: "dropped" });
   }
-  async function remove() {
-    if (confirm("Take this off the Pitch List?")) await call("pitches.remove", { id: p.id });
-  }
 
-  if (booking) return <BookedItForm p={p} commentCount={comments.length} onCancel={() => setBooking(false)} />;
-  if (edit) {
+  if (booking) {
     return (
-      <form className="grid gap-3" onSubmit={save} data-testid="pitch-edit-form">
-        <div className="md:max-w-xs"><ConfigurationPicker value={cfg} onChange={setCfg} testid="pitch-edit-config" /></div>
-        <PitchDatesField dates={rows} onChange={setRows} testid="pitch-edit-dates" />
-        <ErrorBox error={error} />
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className="btn danger sm" onClick={remove} disabled={busy} data-testid="pitch-remove">Remove from pitch list</button>
-          <span className="flex-1" />
-          <button type="button" className="btn ghost" onClick={() => setEdit(false)} data-testid="pitch-edit-cancel">Cancel</button>
-          <button type="submit" className="btn acc" disabled={busy} data-testid="pitch-edit-save">Save pitch</button>
-        </div>
-      </form>
+      <DetailCard private title="Pitch" icon={icon} testid="venue-pitch">
+        <div data-testid="venue-pitch-card"><BookedItForm p={p} commentCount={comments.length} onCancel={() => setBooking(false)} /></div>
+      </DetailCard>
     );
   }
   return (
-    <div className="grid gap-3" data-testid="pitch-open">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)] md:gap-x-8">
-          <div className="grid gap-1"><span className="lbl">Configuration</span><b data-testid="pitch-config">{config ?? "Not sure yet"}</b></div>
-          <div className="grid gap-1"><span className="lbl">Dates</span>
-            <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="None yet" busy={busy}
+    <DetailCard private title="Pitch" icon={icon} testid="venue-pitch" editKey="pitch" edit={edit as ReturnType<typeof useSingleEdit<"pitch">>} editTestid="pitch-edit" doneTestid="pitch-edit-save"
+      editChildren={<div data-testid="venue-pitch-card"><PitchEditFields p={p} /></div>}>
+      <div className="grid gap-4" data-testid="venue-pitch-card">
+        <div className="grid gap-4" data-testid="pitch-open">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <b className="text-[16px]" data-testid="pitch-config">{config ?? "Not sure yet"}</b>
+            <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="No dates yet" busy={busy}
               onRemove={(d) => void call("pitches.update", { id: p.id, patch: { dates: sortedDates(p.dates).filter((x) => x !== d) } })} />
           </div>
+
+          <div className="grid gap-2.5" data-testid="pitch-comments">
+            <span className="lbl" style={{ color: "var(--admin-label)" }}>Comments ({comments.length})</span>
+            {comments.map((c) => {
+              const who = users.find((u) => u.id === c.authorId)?.name ?? "Someone";
+              return (
+                <div key={c.id} className="flex items-start gap-3" data-testid="pitch-comment">
+                  <span className="avatar" aria-hidden>{who.charAt(0).toUpperCase()}</span>
+                  <div className="d-bubble">
+                    <span className="d-muted text-[13px]"><b className="text-ink">{who}</b>{when(c.createdAt) && ` · ${when(c.createdAt)}`}</span>
+                    <p className="m-0 whitespace-pre-wrap">{c.body}</p>
+                  </div>
+                </div>
+              );
+            })}
+            {draft.ready && (
+              <form className="grid gap-1" style={{ paddingLeft: 40 }} onSubmit={(e) => { e.preventDefault(); void post(); }}>
+                <div className="flex gap-2">
+                  <input className="input min-w-0 flex-1" placeholder="Add a comment…" aria-label="Add a comment" value={draft.value.text} onChange={(e) => draft.setValue({ text: e.target.value })} data-testid="pitch-comment-input" />
+                  <button className="btn acc" disabled={busy || !draft.value.text.trim()} data-testid="pitch-comment-send">Post</button>
+                </div>
+                <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
+              </form>
+            )}
+          </div>
+
+          <ErrorBox error={error} />
+          <div className="d-sep" />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button>
+            <span className="flex-1" />
+            <Link href={`/booking/pitches/${p.id}`} className="d-muted text-[13px] underline" data-testid="pitch-open-full">Open pitch</Link>
+            <button className="btn acc" onClick={() => setBooking(true)} disabled={busy} data-testid="booked-it"><CheckIcon />Booked it!</button>
+          </div>
         </div>
-        <div className="flex items-center gap-2"><StatusChip status={p.status} /><button className="btn ghost sm" onClick={openEdit} data-testid="pitch-edit">Edit pitch</button></div>
+        <PastPitches past={past} />
       </div>
+    </DetailCard>
+  );
+}
 
-      <div className="grid gap-2 border-t border-line pt-3" data-testid="pitch-comments">
-        <span className="lbl">Comments ({comments.length})</span>
-        {comments.map((c) => {
-          const who = users.find((u) => u.id === c.authorId)?.name ?? "Someone";
-          return (
-            <div key={c.id} className="flex items-start gap-2" data-testid="pitch-comment">
-              <span className="avatar" aria-hidden>{who.charAt(0).toUpperCase()}</span>
-              <div className="grid min-w-0 flex-1 gap-0.5 rounded-xl border border-line bg-panel px-3 py-2">
-                <span className="s"><b className="text-ink">{who}</b>{when(c.createdAt) && ` · ${when(c.createdAt)}`}</span>
-                <p className="m-0 whitespace-pre-wrap">{c.body}</p>
-              </div>
-            </div>
-          );
-        })}
-        {draft.ready && (
-          <form className="grid gap-1" onSubmit={(e) => { e.preventDefault(); void post(); }}>
-            <div className="flex gap-2">
-              <input className="input" placeholder="Add a comment…" aria-label="Add a comment" value={draft.value.text} onChange={(e) => draft.setValue({ text: e.target.value })} data-testid="pitch-comment-input" />
-              <button className="btn acc" disabled={busy || !draft.value.text.trim()} data-testid="pitch-comment-send">Post</button>
-            </div>
-            <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-          </form>
-        )}
+/** Edit mode of the active pitch: configuration and dates save as you change them. Mounted only while editing, so it starts from the live pitch. */
+function PitchEditFields({ p }: { p: PitchRow }) {
+  const { call, error, busy } = useCommand();
+  const as = useAutosave({ command: "pitches.update", id: p.id, rev: p.rev, title: p.target.name });
+  const [cfg, setCfg] = useState(p.pitchedAs ?? "");
+  const [rows, setRows] = useState<string[]>(sortedDates(p.dates));
+  async function remove() {
+    if (confirm("Take this off the Pitch List?")) await call("pitches.remove", { id: p.id });
+  }
+  return (
+    <div className="grid gap-4" data-testid="pitch-edit-form">
+      <div style={{ maxWidth: 280 }}>
+        <ConfigurationPicker value={cfg} onChange={(id) => { setCfg(id); as.patch({ pitchedAs: id || null }); }} testid="pitch-edit-config" />
       </div>
-
+      <PitchDatesField dates={rows} onChange={(d) => { setRows(d); as.patch({ dates: d }); }} onBlur={() => void as.flush()} testid="pitch-edit-dates" />
+      <SaveStatus {...as.statusProps} />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
-        <button className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button>
-        <span className="flex-1" />
-        <Link href={`/booking/pitches/${p.id}`} className="s font-semibold underline" data-testid="pitch-open-full">Open pitch</Link>
-        <button className="btn acc" onClick={() => setBooking(true)} disabled={busy} data-testid="booked-it">Booked it!</button>
-      </div>
+      <div><button type="button" className="btn danger sm" onClick={remove} disabled={busy} data-testid="pitch-remove">Remove from pitch list</button></div>
     </div>
   );
 }
@@ -191,8 +217,8 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
   return (
     <form className="grid gap-4" onSubmit={create} aria-labelledby={`book-h-${p.id}`} data-testid="book-form">
       <div className="grid gap-1">
-        <h3 id={`book-h-${p.id}`} className="m-0 text-xl font-extrabold">Booked it! Turn this pitch into a show</h3>
-        <p className="s m-0">The pitch moves to Past pitches as “Became a show”.</p>
+        <h3 id={`book-h-${p.id}`} className="m-0 text-[18px] font-bold">Booked it! Turn this pitch into a show</h3>
+        <p className="d-muted m-0 text-[14px]">The pitch moves to Past pitches as “Became a show”.</p>
       </div>
       <fieldset className="m-0 grid gap-2 border-0 p-0">
         <legend className="lbl mb-2 p-0">Which date?</legend>
@@ -226,7 +252,8 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
         </p>
       </div>
       <ErrorBox error={error} />
-      <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
+      <div className="d-sep" />
+      <div className="flex flex-wrap justify-end gap-2">
         <button type="button" className="btn ghost" onClick={onCancel} data-testid="book-cancel">Cancel</button>
         <button type="submit" className="btn acc" disabled={busy || invalid} data-testid="book-submit">Create show</button>
       </div>
