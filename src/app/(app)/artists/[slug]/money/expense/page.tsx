@@ -23,16 +23,18 @@ function AddExpense() {
   const sp = useSearchParams();
   const shows = useCollection<Show>("shows");
   const { call, error, busy } = useCommand();
-  // A new expense is a draft with an explicit Send button (expenses can't be edited once sent).
+  // A new expense is a draft with an explicit Send button (you can still fix it until it's paid back).
   const fromShow = sp.get("show") ?? "";
-  const draft = useDraft(fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : draftPath.newIn("expenses"), { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "" },
+  const draft = useDraft(fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : draftPath.newIn("expenses"), { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "", payBack: true },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
   const { amount, what, cat, showId, link } = draft.value;
+  const payBack = draft.value.payBack !== false;
   const setAmount = (v: string) => draft.setValue({ ...draft.value, amount: v });
   const setWhat = (v: string) => draft.setValue({ ...draft.value, what: v });
   const setCat = (v: (typeof CATS)[number]) => draft.setValue({ ...draft.value, cat: v });
   const setShowId = (v: string) => draft.setValue({ ...draft.value, showId: v });
+  const setPayBack = (v: boolean) => draft.setValue((d) => ({ ...d, payBack: v }));
   const setLink = (v: string) => draft.setValue((d) => ({ ...d, link: v }));
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
@@ -48,7 +50,7 @@ function AddExpense() {
     const url = link.trim();
     await draft.settle();
     const r = await call("expenses.add", {
-      amount: cents, what: what.trim(), category: cat, ...(showId ? { showId } : {}),
+      amount: cents, what: what.trim(), category: cat, payBack, ...(showId ? { showId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
     if (r) { await draft.clear(); router.push("/money"); }
@@ -79,7 +81,8 @@ function AddExpense() {
         {hits?.map((h) => (
           <button key={h.driveFileId} type="button" className="btn ghost sm justify-start" onClick={() => { setLink(h.url); setHits(null); }} data-testid={`receipt-hit-${h.driveFileId}`}>{h.name}</button>
         ))}
-        <span className="s">You can't change it after sending. Ask Jeff or Ingrid to fix mistakes.</span>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => setPayBack(e.target.checked)} data-testid="expense-payback" /><span>Pay me back</span></label>
+        <span className="s">You can edit or remove it on My money until it's been paid back.</span>
         <ErrorBox error={error} />
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <button className="btn acc" disabled={busy || cents <= 0 || !what.trim()} onClick={send} data-testid="expense-send">Send</button>

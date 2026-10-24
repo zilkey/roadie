@@ -203,6 +203,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const title = current?.label ?? ADMIN_LINKS.find((l) => on(l.href))?.label ?? artist.name;
   const edit = () => { setSheet(false); setEditing(true); };
   const switchTo = several ? ARTISTS_PATH : undefined;
+  // The shows list tables use the full width; every other page keeps the 1240px column.
+  const wide = path === full("/shows");
 
   const barLink = (n: NavItem, testid?: string) => (
     <Link key={n.key} href={n.href} data-testid={testid} aria-current={on(n.href) ? "page" : undefined}
@@ -255,7 +257,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Dropdown>
         </header>
 
-        <main className="w-full max-w-[1240px] flex-1 px-4 pb-[calc(var(--tabbar-h)+76px)] pt-5 min-[900px]:px-8 min-[900px]:pb-14 min-[900px]:pt-6">{children}</main>
+        <main className={`w-full ${wide ? "" : "max-w-[1240px] "}flex-1 px-4 pb-[calc(var(--tabbar-h)+76px)] pt-5 min-[900px]:px-8 min-[900px]:pb-14 min-[900px]:pt-6`}>{children}</main>
 
         <nav className="fixed inset-x-0 bottom-0 z-10 grid h-[var(--tabbar-h)] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] min-[900px]:hidden"
           style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, 1fr)` }} data-testid="bottom-tabs">

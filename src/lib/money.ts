@@ -6,102 +6,72 @@ export function formatCents(c: number): string {
   const abs = Math.abs(c);
   return `${sign}$${Math.floor(abs / 100).toLocaleString("en-US")}.${String(abs % 100).padStart(2, "0")}`;
 }
-
-// ---------- ledger math (pure; used by the server and the UI) ----------
-
-export interface LedgerLike {
-  id: string; date: string; kind: "income" | "expense" | "payout" | "reimbursement" | "correction"; amount: number; category: string;
-  method?: string; showId?: string; payeeUserId?: string; payeeMusicianId?: string; expenseId?: string; reversesId?: string; memo?: string;
+/** "$1,234.50", "1234.5", "12" -> cents; null when it isn't a non-negative amount. */
+export function parseDollars(text: string): number | null {
+  const s = text.trim().replace(/[$,\s]/g, "");
+  if (!/^\d+(\.\d{0,2})?$|^\.\d{1,2}$/.test(s)) return null;
+  return dollarsToCents(s);
 }
-export interface ExpenseLike { id: string; userId: string; date: string; amount: number; category: string; what: string; showId?: string }
 
-/** Signed effect on the band's balance: income is +, everything else -; a correction undoes the entry it reverses. */
-export function netOf(e: LedgerLike, byId: Map<string, LedgerLike>, depth = 0): number {
-  if (e.kind === "income") return e.amount;
-  if (e.kind !== "correction") return -e.amount;
-  const orig = e.reversesId ? byId.get(e.reversesId) : undefined;
-  if (!orig || depth > 3) return 0;
-  return -netOf(orig, byId, depth + 1);
-}
-export const indexLedger = <T extends LedgerLike>(l: T[]) => new Map<string, LedgerLike>(l.map((e) => [e.id, e]));
-export const reversedIds = (l: LedgerLike[]) => new Set(l.filter((e) => e.kind === "correction" && e.reversesId).map((e) => e.reversesId!));
+// ---------- show money: income lines (on the deal) and expenses (pure; used by the server and the UI) ----------
+// There is no ledger: a show's income is the lines on its deal, what was spent is the expenses on it.
 
-/** Entries that count in reports: a reversed entry and its correction cancel out, so neither is counted. */
-export function effective<T extends LedgerLike>(l: T[]): T[] {
-  const rev = reversedIds(l);
-  return l.filter((e) => e.kind !== "correction" && !rev.has(e.id));
+export interface IncomeLineLike { id: string; category: string; amount: number; method?: string; received: boolean }
+export interface ExpenseLike {
+  id: string; userId: string; date: string; amount: number; category: string; what: string; showId?: string;
+  payBack?: boolean; paidBackAt?: string; deletedAt?: unknown;
 }
-export function totals(l: LedgerLike[]) {
-  const by = indexLedger(l);
-  let inn = 0, out = 0;
-  for (const e of effective(l)) { const n = netOf(e, by); if (n >= 0) inn += n; else out -= n; }
-  return { in: inn, out, left: inn - out };
+
+export const INCOME_LABEL: Record<string, string> = { guarantee: "Guarantee", door: "Door split", tips: "Tips", merch: "Merch", other: "Other" };
+export const METHOD_LABEL: Record<string, string> = { cash: "Cash", venmo: "Venmo", check: "Check", square: "Square", card: "Card", bank: "Bank", other: "Other" };
+
+export const sumIncome = (lines: readonly { amount: number }[] = []) => lines.reduce((n, l) => n + l.amount, 0);
+const live = <T extends { deletedAt?: unknown }>(xs: readonly T[]) => xs.filter((x) => !x.deletedAt);
+export const sumExpenses = (xs: readonly { amount: number; deletedAt?: unknown }[]) => live(xs).reduce((n, x) => n + x.amount, 0);
+
+/** The band owes this back: it's a pay-back expense (the default) not yet marked paid back. */
+export const owesBack = (x: Pick<ExpenseLike, "payBack" | "paidBackAt">) => x.payBack !== false && !x.paidBackAt;
+
+/** A show's totals (showDeals.totals, the Played table, Net): every income line, and every live expense on the show. */
+export function showTotals(i: { income?: readonly { amount: number }[]; expenses: readonly { amount: number; deletedAt?: unknown }[] }): { income: number; expenses: number } {
+  return { income: sumIncome(i.income), expenses: sumExpenses(i.expenses) };
 }
-/** Net (income positive, spending negative) summed per key. */
-function groupNet(l: LedgerLike[], key: (e: LedgerLike) => string | undefined) {
-  const by = indexLedger(l);
-  const m = new Map<string, { in: number; out: number }>();
-  for (const e of effective(l)) {
-    const k = key(e); if (k === undefined) continue;
-    const n = netOf(e, by);
-    const r = m.get(k) ?? { in: 0, out: 0 };
-    if (n >= 0) r.in += n; else r.out -= n;
-    m.set(k, r);
+
+/** What the band owes people: live pay-back expenses not yet paid back. */
+export const owedExpenses = <T extends ExpenseLike>(xs: readonly T[]) => live(xs).filter(owesBack);
+
+/** One amount in or out, for the Money page's totals and charts. */
+export interface MoneyRow { date: string; showId?: string; category: string; in: number; out: number }
+export function moneyRows(i: {
+  deals: readonly { id: string; income?: readonly IncomeLineLike[]; deletedAt?: unknown }[];
+  expenses: readonly ExpenseLike[];
+  showDate(id: string): string | undefined;
+}): MoneyRow[] {
+  const out: MoneyRow[] = [];
+  for (const d of live(i.deals)) {
+    const date = i.showDate(d.id);
+    if (!date) continue;
+    for (const l of d.income ?? []) out.push({ date, showId: d.id, category: l.category, in: l.amount, out: 0 });
   }
-  return m;
-}
-const rows = (m: Map<string, { in: number; out: number }>) => [...m].map(([key, v]) => ({ key, ...v, net: v.in - v.out }));
-export const byMonth = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.date.slice(0, 7))).sort((a, b) => (a.key < b.key ? -1 : 1));
-export const byShow = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.showId)).sort((a, b) => b.net - a.net);
-export const byCategory = (l: LedgerLike[]) => rows(groupNet(l, (e) => e.category)).sort((a, b) => b.in + b.out - (a.in + a.out));
-
-/**
- * A show's totals for the Played table (showDeals.totals). income = income lines less corrections of them;
- * expenses = expense and payout lines less corrections of them, plus member expenses on the show.
- * Reimbursements are left out: the expense they pay back is already counted.
- */
-export function showTotals(i: { ledger: LedgerLike[]; expenses: { amount: number; deletedAt?: unknown }[] }): { income: number; expenses: number } {
-  const by = indexLedger(i.ledger);
-  const kindOf = (e: LedgerLike) => (e.kind === "correction" ? (e.reversesId ? by.get(e.reversesId)?.kind : undefined) : e.kind);
-  let income = 0, expenses = 0;
-  for (const e of i.ledger) {
-    const k = kindOf(e), n = e.kind === "correction" ? -e.amount : e.amount;
-    if (k === "income") income += n;
-    else if (k === "expense" || k === "payout") expenses += n;
-  }
-  for (const x of i.expenses) if (!x.deletedAt) expenses += x.amount;
-  // Tour expenses (tourEntryId on this show's entry) go here once touring is built.
-  return { income, expenses };
-}
-
-/** Latest live reimbursement for an expense that has not been reversed, if any. */
-export function reimbursementFor(expenseId: string, l: LedgerLike[]): LedgerLike | undefined {
-  const rev = reversedIds(l);
-  return l.find((e) => e.kind === "reimbursement" && e.expenseId === expenseId && !rev.has(e.id));
-}
-
-export interface OwedLine { key: string; kind: "expense" | "payout"; userId?: string; musicianId?: string; label: string; amount: number; expenseId?: string; showId?: string }
-/** What the band owes: unreimbursed expenses plus agreed-but-unpaid show payouts. */
-export function owedLines(i: {
-  expenses: ExpenseLike[]; ledger: LedgerLike[];
-  deals: { id: string; owedPayouts?: { musicianId: string; amount: number }[] }[];
-  showName?(id: string): string;
-}): OwedLine[] {
-  const out: OwedLine[] = [];
-  for (const x of i.expenses) {
-    if (reimbursementFor(x.id, i.ledger)) continue;
-    out.push({ key: `e-${x.id}`, kind: "expense", userId: x.userId, label: x.what, amount: x.amount, expenseId: x.id, showId: x.showId });
-  }
-  const rev = reversedIds(i.ledger);
-  for (const d of i.deals) {
-    for (const o of d.owedPayouts ?? []) {
-      const paid = i.ledger.filter((e) => e.kind === "payout" && e.showId === d.id && e.payeeMusicianId === o.musicianId && !rev.has(e.id)).reduce((n, e) => n + e.amount, 0);
-      const left = o.amount - paid;
-      if (left > 0) out.push({ key: `p-${d.id}-${o.musicianId}`, kind: "payout", musicianId: o.musicianId, label: `${i.showName?.(d.id) ?? "Show"} payout`, amount: left, showId: d.id });
-    }
-  }
+  for (const x of live(i.expenses)) out.push({ date: x.date, showId: x.showId, category: x.category, in: 0, out: x.amount });
   return out;
 }
+export function totals(rows: readonly MoneyRow[]) {
+  const inn = rows.reduce((n, r) => n + r.in, 0), out = rows.reduce((n, r) => n + r.out, 0);
+  return { in: inn, out, left: inn - out };
+}
+function group(rows: readonly MoneyRow[], key: (r: MoneyRow) => string | undefined) {
+  const m = new Map<string, { in: number; out: number }>();
+  for (const r of rows) {
+    const k = key(r); if (k === undefined) continue;
+    const g = m.get(k) ?? { in: 0, out: 0 };
+    g.in += r.in; g.out += r.out; m.set(k, g);
+  }
+  return [...m].map(([k, v]) => ({ key: k, ...v, net: v.in - v.out }));
+}
+export const byMonth = (rows: readonly MoneyRow[]) => group(rows, (r) => r.date.slice(0, 7)).sort((a, b) => (a.key < b.key ? -1 : 1));
+export const byShow = (rows: readonly MoneyRow[]) => group(rows, (r) => r.showId).sort((a, b) => b.net - a.net);
+export const byCategory = (rows: readonly MoneyRow[]) => group(rows, (r) => r.category).sort((a, b) => b.in + b.out - (a.in + a.out));
 
 /** Split `total` cents evenly over n people; the first people get the leftover cents. */
 export function splitEvenly(total: number, n: number): number[] {
@@ -110,7 +80,6 @@ export function splitEvenly(total: number, n: number): number[] {
   return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
 }
 export const CATEGORY_LABEL: Record<string, string> = {
-  guarantee: "Guarantee", door: "Tickets / door", merch: "Merch", tips: "Cash tips", venmo: "Venmo", photo: "Photo shoot", video: "Video",
+  guarantee: "Guarantee", door: "Door split", merch: "Merch", tips: "Tips", venmo: "Venmo", photo: "Photo shoot", video: "Video",
   space: "Room rental", gear: "Gear", marketing: "Marketing", travel: "Travel", fees: "Fees", other: "Other",
 };
-export const KIND_LABEL: Record<string, string> = { income: "Income", expense: "Spent", payout: "Payout", reimbursement: "Reimbursed", correction: "Correction" };

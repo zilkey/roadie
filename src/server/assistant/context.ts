@@ -1,7 +1,7 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { addDays, isOff, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
-import { reimbursementFor } from "@/lib/money";
+import { owesBack } from "@/lib/money";
 import type { Ctx } from "../ctx";
 import { runAs, type Session } from "./run";
 
@@ -20,9 +20,10 @@ export function tonightDate(now: Date): string {
 export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "role" | "musicianId">) {
   const now = ctx.now ?? new Date();
   const today = dateInBandZone(now);
-  const [shows, deals, expenses, ledger] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses"), list(ctx, "ledger")]);
+  const [shows, deals, expenses] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses")]);
   const live = shows.filter((x) => !isOff(x));
-  const settled = new Set(deals.filter((d) => d.settled).map((d) => d.id));
+  // Money is entered once the deal has income lines.
+  const settled = new Set(deals.filter((d) => ((d.income as unknown[] | undefined) ?? []).length > 0).map((d) => d.id));
   const tonight = tonightDate(now);
   return {
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
@@ -30,7 +31,7 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
     today, tonight,
     todaysShows: live.filter((x) => x.date === today || x.date === tonight).map(showLine),
     unsettledShows: live.filter((x) => isPlayed(x as never, today) && !settled.has(x.id)).map(showLine),
-    openExpenses: expenses.filter((e) => !e.deletedAt && !reimbursementFor(e.id, ledger as never))
+    openExpenses: expenses.filter((e) => !e.deletedAt && owesBack(e as never))
       .map((e) => ({ id: e.id, what: e.what, amountCents: e.amount, userId: e.userId, date: e.date, showId: e.showId ?? null })),
   };
 }

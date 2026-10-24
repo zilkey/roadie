@@ -1,6 +1,6 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useMemo, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -8,17 +8,18 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import {
-  EntityForm, Flagged, PitchDates, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm, type PitchRow,
+  EntityForm, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
 } from "@/components/booking/common";
-import { STATUSES, STATUS_LABEL, appsOpenThisMonth, buildSearchItems, fmtDate, searchItems, todayStr } from "@/lib/booking";
-import type { Show, User } from "@/schema";
+import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
+import { fmtPhone, listRows, type ListRow, type Ref } from "@/components/booking/listRows";
+import { appsOpenThisMonth, buildSearchItems, fmtDate, fmtPitchDate, isActive, searchItems, sortedDates } from "@/lib/booking";
+import type { Show } from "@/schema";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
 export function BookingIndex({ seg }: { seg: Seg }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
 
 export type Seg = "all" | "pitches" | "venues" | "festivals" | "promoters" | "contacts";
 type Add = null | "venue" | "promoter" | "festival" | "contact";
-interface ListRow { key: string; kind: "venue" | "promoter" | "festival" | "edition" | "contact"; id: string; title: string; sub: string; ownerId: string }
 
 function Booking({ seg }: { seg: Seg }) {
   const router = useRouter();
@@ -43,34 +44,15 @@ function Booking({ seg }: { seg: Seg }) {
   }, [b.venueNotes, b.pitches, shows.rows]);
 
   const rows = useMemo(() => {
-    const items = searchItems(buildSearchItems(b), q);
-    const hit = new Set(items.map((i) => `${i.kind}:${i.id}`));
     const searching = q.trim().length > 0;
-    const all: ListRow[] = [];
-    const sorted = <T extends { name: string }>(x: T[]) => [...x].sort((a, c) => a.name.localeCompare(c.name));
-    const venuesFirst = [...sorted(b.venues)].sort((x, y) => Number(ours.has(y.id)) - Number(ours.has(x.id)));
-    for (const v of venuesFirst) all.push({ key: `venue:${v.id}`, kind: "venue", id: v.id, ownerId: v.id, title: v.name, sub: ["Venue", v.address.city, v.capacity].filter(Boolean).join(" · ") });
-    for (const p of sorted(b.promoters)) all.push({ key: `promoter:${p.id}`, kind: "promoter", id: p.id, ownerId: p.id, title: p.name, sub: `Promoter · ${p.venueIds.length} venue${p.venueIds.length === 1 ? "" : "s"}` });
-    for (const f of sorted(b.festivals)) {
-      all.push({ key: `festival:${f.id}`, kind: "festival", id: f.id, ownerId: f.id, title: f.name, sub: f.type === "series" ? "Series" : "Festival" });
-      for (const e of b.editions.filter((x) => x.festivalId === f.id).sort((x, y) => y.year - x.year)) {
-        all.push({ key: `edition:${e.id}`, kind: "edition", id: e.id, ownerId: f.id, title: `${f.name} ${e.label}`,
-          sub: `${f.type === "series" ? "Series" : "Festival"}${e.startDate ? ` · ${fmtDate(e.startDate)}${e.endDate && e.endDate !== e.startDate ? `–${fmtDate(e.endDate)}` : ""}` : ""}` });
-      }
-    }
-    for (const c of sorted(b.contacts)) all.push({ key: `contact:${c.id}`, kind: "contact", id: c.id, ownerId: c.id, title: c.name, sub: ["Contact", c.title].filter(Boolean).join(" · ") });
-    const inSeg = (r: ListRow) =>
-      seg === "venues" ? r.kind === "venue" : seg === "promoters" ? r.kind === "promoter" : seg === "contacts" ? r.kind === "contact"
-        : seg === "festivals" ? r.kind === "festival" || r.kind === "edition"
-        : seg === "all" ? (searching || (r.kind !== "contact" && r.kind !== "festival")) : false;
-    // editions follow their festival's match, so searching "UMS" shows the festival and its years
-    return all.filter((r) => inSeg(r) && (!searching || hit.has(`${r.kind === "edition" ? "festival" : r.kind}:${r.ownerId}`)));
-  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, ours, q, seg]);
+    const hit = searching ? new Set(searchItems(buildSearchItems(b), q).map((i) => `${i.kind}:${i.id}`)) : null;
+    return listRows(b, seg, ours, hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches, ours, q, seg]);
+  const [target, setTarget] = useState<PitchTarget | null>(null);
+  const activeCount = b.pitches.filter((p) => isActive(p.status)).length;
 
   const open = appsOpenThisMonth(b.editions);
-  const users = useCollection<User>("users");
-  const userName = (id?: string) => users.rows?.find((u) => u.id === id)?.name;
-  const pitchesFiltered = q.trim() ? b.pitches.filter((p) => p.target.name.toLowerCase().includes(q.toLowerCase())) : b.pitches;
 
   async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
     const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", contact: "contacts.create" }[kind];
@@ -106,47 +88,31 @@ function Booking({ seg }: { seg: Seg }) {
       <PageTitle title="Booking" />
       <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
-        options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{b.pitches.length}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
+        options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 
-      {open.length > 0 && (
-        <div className="card hi" data-testid="apps-open">
-          <span className="text-xs font-bold uppercase tracking-wider text-[color:var(--acc-btn)]">Applications open this month</span>
-          {open.map((e) => (
-            <Link key={e.id} href={hrefFor("edition", e.id)} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1" data-testid={`apps-open-${e.id}`}>
-              <b className="text-lg">{e.festivalName} {e.label}</b>
-              <span className="s">{[e.appOpens && `Opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)}`].filter(Boolean).join(" · ")}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {seg === "pitches" ? (
-        <PitchList pitches={pitchesFiltered} userName={userName} />
-      ) : (
-        <div className="grid gap-3" data-testid="booking-list">
+      {/* The table takes the width; "Applications open this month" is a fixed-width column on its right (on top on phones). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="grid min-w-0 flex-1 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
           {b.loading && <span className="s">Loading…</span>}
-          {!b.loading && rows.length === 0 && <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>}
-          {rows.map((r) => {
-            const pitch = r.kind === "contact" || r.kind === "festival" ? undefined : activeFor(b.pitches, r.kind, r.id);
-            return (
-              <div key={r.key} className={`card ${r.kind === "edition" ? "ml-4" : ""}`} data-testid={`row-${r.kind}-${r.id}`}>
-                <FlaggedRow kind={r.kind} id={r.id} pitches={b.pitches}>{(flag, flagForm, strip) => (<>
-                  <div className="flex items-center justify-between gap-3">
-                    <Link href={hrefFor(r.kind, r.id)} className="grid min-w-0 flex-1 gap-0.5 no-underline" data-testid={`${r.kind}-full-${r.id}`}>
-                      <b className="truncate text-lg">{r.title}</b><span className="s truncate">{r.sub}</span>
-                    </Link>
-                    {pitch && <StatusChip status={pitch.status} />}
-                    {flag}
-                  </div>
-                  {flagForm}
-                  {strip}
-                </>)}</FlaggedRow>
-              </div>
-            );
-          })}
+          {!b.loading && rows.length === 0 && (seg === "pitches" && !q.trim()
+            ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
+            : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
+          {rows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={rows} onFlag={setTarget} /></div>}
         </div>
-      )}
+        {open.length > 0 && (
+          <aside className="card hi order-first lg:order-none lg:w-[300px] lg:flex-none" data-testid="apps-open">
+            <span className="text-xs font-bold uppercase tracking-wider text-[color:var(--acc-btn)]">Applications open this month</span>
+            {open.map((e) => (
+              <Link key={e.id} href={hrefFor("edition", e.id)} className="grid gap-0.5" data-testid={`apps-open-${e.id}`}>
+                <b className="text-lg leading-snug">{e.festivalName} {e.label}</b>
+                <span className="s">{[e.appOpens && `Opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)}`].filter(Boolean).join(" · ")}</span>
+              </Link>
+            ))}
+          </aside>
+        )}
+      </div>
+      <PitchModal target={target} onClose={() => setTarget(null)} />
 
       <div className="flex flex-wrap gap-2">
         {(["venue", "promoter", "festival", "contact"] as const).map((k) => (
@@ -159,36 +125,90 @@ function Booking({ seg }: { seg: Seg }) {
   );
 }
 
-const activeFor = (pitches: PitchRow[], kind: string, id: string) =>
-  pitches.find((p) => p.target.kind === kind && p.target.id === id && !["declined", "dropped"].includes(p.status));
+const Dash = () => <span className="dash">—</span>;
 
-/** Venue, promoter and edition rows have a flag; festivals and contacts don't. */
-function FlaggedRow({ kind, id, pitches, children }: { kind: string; id: string; pitches: PitchRow[]; children(button: React.ReactNode, form: React.ReactNode, strip: React.ReactNode): React.ReactNode }) {
-  if (kind !== "promoter" && kind !== "edition" && kind !== "venue") return <>{children(null, null, null)}</>;
-  return <Flagged kind={kind} id={id} pitches={pitches} square>{children}</Flagged>;
-}
+const FlagIcon = ({ filled }: { filled: boolean }) => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M5 21V4" /><path d="M5 4h12l-2.5 4L17 12H5" />
+  </svg>
+);
 
-function PitchList({ pitches, userName }: { pitches: PitchRow[]; userName(id?: string): string | undefined }) {
-  const today = todayStr();
+function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void }) {
+  const router = useRouter();
+  const artist = useArtist();
+  const configs = artist.doc?.configurations ?? [];
+  const flagged = seg !== "contacts";
+  const heads: string[] = seg === "venues" ? ["Name", "City", "Email", "Phone", "Pitch"]
+    : seg === "festivals" ? ["Festival", "Edition", "City", "Email", "Phone", "Pitch"]
+    : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
+    : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
+    : ["Name", "Type", "City", "Email", "Phone", "Pitch"];
+  const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{r.name}</Link>;
+  const flag = (r: ListRow) => {
+    if (!r.flag) return <td className="flag" />;
+    const on = !!r.pitch;
+    return (
+      <td className="flag">
+        <button type="button" className="flag-ic" data-testid={`flag-${r.id}`} data-flagged={on ? "1" : "0"} aria-pressed={on}
+          aria-label={on ? `${r.name} is on the Pitch List` : `Add ${r.name} to the Pitch List`}
+          onClick={() => r.pitch ? router.push(`/booking/pitches/${r.pitch.id}`)
+            : onFlag({ kind: r.kind as PitchTarget["kind"], id: r.id, name: r.name, meta: [r.type, r.city].filter(Boolean).join(" · ") })}>
+          <FlagIcon filled={on} />
+        </button>
+      </td>
+    );
+  };
+  const pitchCell = (r: ListRow) => {
+    const p = r.pitch;
+    return (
+      <td className="pitch" data-testid={`pitch-cell-${r.id}`}>
+        {p && <><span className="pc">{configs.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet"}</span>{" "}
+          <span className="pd">{sortedDates(p.dates).map(fmtPitchDate).join(", ") || "No dates yet"}</span></>}
+      </td>
+    );
+  };
+  const status = (r: ListRow) => r.pitch && <> <StatusChip status={r.pitch.status} /></>;
+  const reach = (r: ListRow) => (<>
+    <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{r.email}</a> : <Dash />}</td>
+    <td className="nw">{r.phone ? <a className="ph" href={`tel:${r.phone}`}>{fmtPhone(r.phone)}</a> : <Dash />}</td>
+  </>);
+  const city = (r: ListRow) => <td className="nw">{r.city || <Dash />}</td>;
+  const nameCell = (r: ListRow) => (
+    <td>
+      {link(r.to, `${r.kind}-full-${r.id}`)}{status(r)}
+      {r.promoters.length > 0 && <span className="sub">promoted by {r.promoters.map((p, i) => <span key={p.id}>{i > 0 && ", "}<Link href={hrefFor("promoter", p.id)}>{p.name}</Link></span>)}</span>}
+    </td>
+  );
+
   return (
-    <div className="grid gap-5" data-testid="pitch-list">
-      {pitches.length === 0 && <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>}
-      {STATUSES.map((s) => {
-        const group = pitches.filter((p) => p.status === s).sort((a, b) => (a.nextStep?.due ?? "9").localeCompare(b.nextStep?.due ?? "9"));
-        if (!group.length) return null;
-        return (
-          <div key={s} className="grid gap-2" data-testid={`group-${s}`}>
-            <span className="lbl">{STATUS_LABEL[s]} · {group.length}</span>
-            {group.map((p) => (
-              <Link key={p.id} href={`/booking/pitches/${p.id}`} className="card" data-testid={`pitch-${p.id}`}>
-                <div className="flex items-center justify-between gap-2"><b>{p.target.name}</b><StatusChip status={p.status} /></div>
-                <span className="s">{[userName(p.assigneeId), p.nextStep ? `${p.nextStep.text} · ${fmtDate(p.nextStep.due)}` : null].filter(Boolean).join(" · ")}</span>
-                <PitchDates dates={p.dates} today={today} testid={`pitch-dates-${p.id}`} />
-              </Link>
-            ))}
-          </div>
-        );
-      })}
-    </div>
+    <table className="book-table">
+      <thead><tr>
+        {flagged && <th className="flag" aria-label="Pitch List flag" />}
+        {heads.map((h) => <th key={h} className={h === "Pitch" ? "pitch" : undefined}>{h}</th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={`${r.kind}:${r.id}`} data-testid={`row-${r.kind}-${r.id}`}>
+            {flagged && flag(r)}
+            {seg === "festivals" ? (<>
+              <td>{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
+              <td>{r.edition ? <>{link(r.edition, `edition-full-${r.id}`)}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
+            </>) : seg === "promoters" ? (<>
+              <td>{link(r.to, `promoter-full-${r.id}`)}{status(r)}</td>
+              <td>{r.person ?? <Dash />}</td>
+            </>) : seg === "contacts" ? (<>
+              <td>{link(r.to, `contact-full-${r.id}`)}</td>
+              <td>{r.organization ? link(r.organization) : <Dash />}</td>
+            </>) : (<>
+              {nameCell(r)}
+              {(seg === "all" || seg === "pitches") && <td className="nw">{r.type}</td>}
+            </>)}
+            {city(r)}
+            {reach(r)}
+            {seg !== "contacts" && pitchCell(r)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

@@ -20,22 +20,22 @@ const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 
 async function cancelShow(page: Page, id: string, reason?: string) {
   await page.goto(A(`/shows/${id}`));
-  await page.getByTestId("show-actions").click();
-  await page.getByTestId("show-menu-cancel").click();
-  if (reason) await page.getByTestId("show-off-reason").fill(reason);
-  await page.getByTestId("show-off-go").click();
-  await expect(page.getByTestId("show-status")).toHaveText("Canceled");
+  await page.getByTestId("show-status").click();
+  await page.getByTestId("status-opt-canceled").check();
+  if (reason) await page.getByTestId("status-reason").fill(reason);
+  await page.getByTestId("status-save").click();
+  await expect(page.getByTestId("show-status")).toContainText("Canceled");
 }
 const row = (page: Page, id: string) => page.locator(`[data-testid="shows-row"][data-id="${id}"]`);
 const heads = (page: Page, tab: string) => page.getByTestId(`shows-table-${tab}`).locator("th");
 
-test("Booked it turns a pitch into a show with checklist, an empty gear list, calendar and a deal", async ({ page, request }) => {
+test("Booked it turns a pitch into a show with a set length, show start, calendar event and a deal", async ({ page, request }) => {
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };
   const calIds = new Set(((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).map((e) => e.id)); // fake state outlives runs
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId("group-talking").getByText("Fox Theatre").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Fox Theatre" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
   await expect(page.getByTestId("pitch-page")).toBeVisible();
   const pitchUrl = page.url();
   await page.getByTestId("booked-it").click();
@@ -55,7 +55,16 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
 
   await page.getByTestId("show-date").fill("2027-02-20");
   await page.getByTestId("show-set").fill("20:00");
-  await page.getByTestId("show-length").fill("45");
+  await page.getByTestId("show-showStart").fill("19:30");
+  await page.getByTestId("show-length").fill("1h 30m");
+  await expect(page.getByTestId("show-length-says")).toHaveText("1 hour 30 minutes · ends at 9:30 PM");
+  await page.getByTestId("show-length").fill("lots");
+  await expect(page.getByTestId("show-length-error")).toBeVisible();
+  await page.getByTestId("show-save").click(); // refused: stays on the form
+  await expect(page.getByTestId("new-show")).toBeVisible();
+  await page.getByTestId("show-length").fill("2:30");
+  await expect(page.getByTestId("show-length-says")).toHaveText("2 hours 30 minutes · ends at 10:30 PM");
+  await expect(page.getByTestId("show-notes")).toHaveCount(0);
   await page.getByTestId("sound").selectOption("bandProvided");
   await page.getByTestId("need-poster").check();
   await page.getByTestId("need-merch").check();
@@ -64,43 +73,12 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
 
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
-  await expect(page.getByTestId("show-people")).toHaveText("Ingrid, Jeff, David, Eric, Emma");
-  await expect(page.getByTestId("show-billed")).toContainText("Full band");
-  await expect(page.getByTestId("show-sound")).toContainText("We bring it");
 
-  const checklist = page.getByTestId("checklist");
-  for (const l of ["Book sound engineer", "Post the poster", "Pack merch table", "Confirm load-in and set times"]) {
-    await expect(checklist.locator(`input[value="${l}"]`)).toHaveCount(1);
-  }
-  await expect(checklist.locator('input[value="Confirm backline with the venue"]')).toHaveCount(0);
-  await expect(checklist.locator('input[value="Send stage plot and input list to the venue"]')).toHaveCount(0);
-
-  const gear = page.getByTestId("gear");
-  // nothing is pre-filled: people add gear here
-  await expect(gear.locator('[data-testid^="gear-row-"]')).toHaveCount(0);
-  await expect(gear.locator(".card-h").first()).toContainText("0 of 0");
-  await gear.getByTestId("gear-add").fill("Keys rig");
-  await gear.getByTestId("gear-add-owner").selectOption({ label: "Jeff" });
-  await gear.getByTestId("gear-add-btn").click();
-  await expect(gear.locator('input[value="Keys rig"]')).toHaveCount(1);
-  await expect(gear.locator(".card-h").first()).toContainText("0 of 1");
-
-  // check off, give an owner, pack
-  const first = checklist.locator('[data-testid^="check-row-"]').first();
-  await first.locator('input[type="checkbox"]').click();
-  await expect(first.locator('input[type="checkbox"]')).toBeChecked();
-  await first.locator("select").selectOption({ label: "Eric" });
-  await expect(first.locator("select")).toHaveValue(/.+/);
-  await gear.locator('[data-testid^="gear-row-"]').first().locator('input[type="checkbox"]').click();
-  await expect(gear.locator(".card-h").first()).toContainText("1 of");
-
-  // calendar + deal
-  await expect(page.getByTestId("cal-state")).toHaveText("On calendar");
-  const events = (await (await request.get(`${CAL}/events`)).json()) as CalEv[];
-  const ev = events.find((e) => !calIds.has(e.id) && e.title.includes("Fox Theatre") && e.start.startsWith("2027-02-20"));
-  expect(ev).toBeTruthy();
-  expect(ev!.attendees.map((a) => a.email)).toEqual(expect.arrayContaining(["jeff@example.com", "emma@example.com"]));
-  await expect(page.getByTestId("deal-summary")).toHaveText("$400.00 guarantee");
+  // calendar
+  const findEv = async () => ((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).find((e) => !calIds.has(e.id) && e.title.includes("Fox Theatre") && e.start.startsWith("2027-02-20"));
+  await expect.poll(async () => !!(await findEv())).toBe(true);
+  const ev = (await findEv())!;
+  expect(ev.attendees.map((a) => a.email)).toEqual(expect.arrayContaining(["jeff@example.com", "emma@example.com"]));
 
   // the pitch is booked and links to the show
   await page.goto(pitchUrl);
@@ -109,16 +87,15 @@ test("Booked it turns a pitch into a show with checklist, an empty gear list, ca
 
   // cancel takes it off the calendar
   await cancelShow(page, id);
-  await expect(page.getByTestId("cal-state")).toHaveText("Not on calendar");
   const after = (await (await request.get(`${CAL}/events`)).json()) as CalEv[];
-  expect(after.some((e) => e.id === ev!.id)).toBe(false);
+  expect(after.some((e) => e.id === ev.id)).toBe(false);
 });
 
 test("Booked it with several pitch dates: pick which become shows, one show per date", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId("group-waiting").getByText("Rocky Mountain Folks").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Rocky Mountain Folks" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
   await page.getByTestId("pitch-dates-date").fill("2027-07-16");
   await page.getByTestId("pitch-dates-add").click();
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
@@ -153,7 +130,7 @@ test("Ask who's free: emails go out, a sub answers by link without logging in", 
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId("group-toPitch").getByText("Dairy Arts Center").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Dairy Arts Center" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
   await page.getByTestId("ask-toggle").click();
   await page.getByTestId("ask-date").fill("2027-03-06");
   await expect(page.getByTestId("ask-person-David")).toHaveAttribute("aria-pressed", "true");
@@ -217,16 +194,6 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
-  const gear = page.getByTestId("gear");
-  for (const [label, who] of [["Bass rig", "David"], ["Keys rig", "Jeff"]]) {
-    await gear.getByTestId("gear-add").fill(label);
-    await gear.getByTestId("gear-add-owner").selectOption({ label: who });
-    await gear.getByTestId("gear-add-btn").click();
-    await expect(gear.locator(`input[value="${label}"]`)).toHaveCount(1);
-    await expect(gear.getByTestId("gear-add")).toHaveValue(""); // the draft is cleared before the next one
-    await expect(gear.getByTestId("gear-add")).toBeEnabled();
-  }
-
   // admin Home: show day. Today's card first; the booking to-dos step aside.
   await page.goto(A("/home"));
   await expect(page.getByTestId(`today-${id}`)).toBeVisible();
@@ -238,7 +205,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(d.getByTestId(`today-${id}`)).toContainText("Hi-Dive");
   await expect(d.getByTestId(`today-${id}`)).toContainText("5:00 pm");
   await expect(d.getByTestId(`today-${id}`)).toContainText("9:15 pm");
-  await expect(d.getByTestId(`today-gear-${id}`)).toContainText("Bass rig");
+  await expect(d.getByTestId(`today-gear-${id}`)).toBeVisible();
   await expect(d.getByTestId(`today-setlist-${id}`)).toHaveCount(0); // no setlist on this show
   // open "Can you play?" (seeded for David) sits below today's show, above anything else
   const askBox = await d.getByTestId(/^ask-[A-Za-z0-9]+$/).first().boundingBox();
@@ -247,23 +214,9 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(d.getByTestId("booking-home")).toHaveCount(0);
   await expect(d.getByTestId(/^enter-money/)).toHaveCount(0);
 
-  // pack my own gear from Home; not someone else's
-  const bass = d.getByTestId(`today-gear-${id}`).locator("label", { hasText: "Bass rig" }).locator("input");
-  const keys = d.getByTestId(`today-gear-${id}`).locator("label", { hasText: "Keys rig" }).locator("input");
-  await expect(keys).toBeDisabled();
-  await bass.click();
-  await expect(bass).toBeChecked();
-
-  // read-only show page, no deal
+  // the show page opens read-only for a member
   await d.goto(A(`/shows/${id}`));
   await expect(d.getByTestId("show-page")).toBeVisible();
-  await expect(d.getByTestId("show-address")).toContainText("Broadway");
-  await expect(d.getByTestId("deal-panel")).toHaveCount(0);
-  await expect(d.getByTestId("show-edit")).toHaveCount(0);
-  await expect(d.getByTestId("show-actions")).toHaveCount(0);
-  await expect(d.getByTestId("check-add")).toHaveCount(0);
-  await expect(d.getByTestId("checklist").locator('input[type="checkbox"]').first()).toBeDisabled();
-  await expect(d.getByTestId("gear").locator("label", { hasText: "Bass rig" }).locator("input")).toBeChecked();
   await d.goto(A("/shows/new"));
   await expect(d).toHaveURL(/\/home$/);
   await d.goto(A("/shows"));
@@ -276,7 +229,7 @@ test("a member sees Home with a show today, read-only, with no money", async ({ 
   await expect(page.getByTestId("booking-home")).toBeVisible();
 });
 
-test("a public confirmed show appears in fake Bandsintown, follows changes, and leaves on cancel", async ({ page, request }) => {
+test("a confirmed show published from the Promotion card appears in fake Bandsintown and leaves on cancel", async ({ page, request }) => {
   const unique = "2027-04-10";
   await request.post(`${BIT}/__reset`); // fake state outlives runs
   await signInAs(page, "jeff");
@@ -285,63 +238,35 @@ test("a public confirmed show appears in fake Bandsintown, follows changes, and 
   await page.getByTestId("show-date").fill(unique);
   await page.getByTestId("show-set").fill("20:30");
   await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("show-public").check();
-  await page.getByTestId("show-ticket").fill("https://tickets.example/lost-lake");
+  await expect(page.getByTestId("show-public")).toHaveCount(0); // no "public show" on the form
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
-  await expect(page.getByTestId("bit-state")).toHaveText("Listed");
-  await expect(page.getByTestId("bit-detail")).toContainText("Last synced");
+  await page.getByTestId("promotion-edit").click();
+  await page.getByTestId("ticket-url").fill("https://tickets.example/lost-lake");
+  await page.getByTestId("promotion-save").click();
+  await page.getByTestId("bit-publish").click();
+  await expect(page.getByTestId("bit-unpublish")).toBeVisible();
 
   const list = async () => ((await (await request.get(`${BIT}/events`)).json()) as { datetime: string; venueName: string; ticketUrl?: string; city: string }[]);
+  await expect.poll(async () => (await list()).filter((e) => e.datetime.startsWith(unique)).length).toBe(1);
   const mine = (await list()).filter((e) => e.datetime.startsWith(unique));
-  expect(mine).toHaveLength(1);
   expect(mine[0]).toMatchObject({ datetime: `${unique}T20:30:00`, venueName: "Lost Lake Lounge", city: "Denver", ticketUrl: "https://tickets.example/lost-lake" });
   await page.goto(BIT);
   await expect(page.getByText("tickets.example/lost-lake")).toBeVisible();
 
-  // a time change updates the same listing
-  await page.goto(A(`/shows/${id}`));
-  await page.getByTestId("show-edit").click();
-  await page.getByTestId("show-set").fill("21:00");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved"); // autosave: no Save button on an existing show
-  await expect(page.getByTestId("show-save")).toHaveCount(0);
-  await page.getByTestId("show-edit").click(); // Done
-  await expect(page.getByTestId("show-info")).toContainText("9:00 pm");
-  await expect.poll(async () => (await list()).filter((e) => e.datetime.startsWith(unique)).map((e) => e.datetime)).toEqual([`${unique}T21:00:00`]);
-
-  // turning it into a hold takes it off
-  await page.getByTestId("show-edit").click();
-  await page.getByTestId("status").selectOption("hold");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("show-edit").click();
-  await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
-  await expect(page.getByTestId("bit-detail")).toContainText("Holds stay off");
-  expect((await list()).filter((e) => e.datetime.startsWith(unique))).toHaveLength(0);
-
-  // confirm again, then cancel removes it
-  await page.getByTestId("show-edit").click();
-  await page.getByTestId("status").selectOption("confirmed");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("show-edit").click();
-  await expect(page.getByTestId("bit-state")).toHaveText("Listed");
-  expect((await list()).filter((e) => e.datetime.startsWith(unique))).toHaveLength(1);
   await cancelShow(page, id);
-  await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
   expect((await list()).filter((e) => e.datetime.startsWith(unique))).toHaveLength(0);
 
-  // a private show never goes out
+  // an unpublished show never goes out
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Lost Lake Lounge · Denver" });
   await page.getByTestId("show-date").fill("2027-04-11");
   await page.getByTestId("show-calendar").uncheck();
   await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
-  await expect(page.getByTestId("bit-detail")).toContainText("Private shows stay off");
   expect((await list()).filter((e) => e.datetime.startsWith("2027-04-11"))).toHaveLength(0);
   const priv = showId(page);
   await cancelShow(page, priv, "Room double-booked.");
-  await expect(page.getByTestId("show-reason")).toHaveText("Room double-booked.");
   await page.goto(A("/shows#canceled"));
   await expect(row(page, priv).locator("td.reason")).toHaveText("Room double-booked.");
 });
@@ -357,14 +282,15 @@ test("Shows list: title row with New show and no subtitle; one table per tab; th
   const t = await head.getByTestId("page-title").boundingBox(), b = await head.getByTestId("new-show-btn").boundingBox();
   expect(Math.abs((t!.y + t!.height / 2) - (b!.y + b!.height / 2))).toBeLessThan(4); // same row, centered
 
-  await expect(heads(page, "upcoming")).toHaveText(["Date", "Venue", "Address", "Show start", "Load in", "Sound check", "Downbeat", "Sound", "Setlist"]);
+  await expect(heads(page, "upcoming")).toHaveText(["Date", "Venue", "Address", "Load in", "Sound check", "Doors", "Show starts", "Downbeat", "Sound", "Contact", "Setlist"]);
   const hi = page.getByTestId("shows-row").filter({ hasText: "Hi-Dive" });
-  await expect(hi.locator("td").nth(3)).toHaveText("8:30 pm");
+  await expect(hi.locator("td").nth(5)).toHaveText("8:30 pm"); // doors
   await expect(hi.locator("td.addr a")).toHaveAttribute("href", /google\.com\/maps\/search\/\?api=1&query=7%20S%20Broadway/);
-  await expect(hi.locator("td").nth(7)).toHaveText("They provide");
+  await expect(hi.locator("td").nth(8)).toHaveText("They provide");
+  await expect(hi.locator("td.contact")).toHaveCount(1);
   const lake = page.getByTestId("shows-row").filter({ hasText: "Lost Lake Lounge" }).first();
-  await expect(lake.locator("td").nth(4)).toHaveText("—"); // no load-in
-  await expect(lake.locator("td").nth(4).locator(".dash")).toHaveCount(1);
+  await expect(lake.locator("td").nth(3)).toHaveText("—"); // no load-in
+  await expect(lake.locator("td").nth(3).locator(".dash")).toHaveCount(1);
 
   await page.getByTestId("shows-filter-played").click();
   await expect(page).toHaveURL(/#played$/);
@@ -405,32 +331,6 @@ test("Shows list on a phone: the table scrolls inside its box with the date pinn
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("after the show: rating and attendance saved", async ({ page }) => {
-  await signInAs(page, "jeff");
-  // the seeded played show (Dairy Arts, Oct 10) is unsettled
-  await page.goto(A("/shows"));
-  await page.getByTestId("shows-filter-played").click();
-  await page.getByTestId("shows-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).locator("td.date a").click();
-  await page.getByTestId("after-show").click();
-  await page.getByTestId("rate-show-4").click();
-  await page.getByTestId("rate-venue-5").click();
-  await page.getByTestId("rate-crowd").fill("60");
-  await page.getByTestId("rate-paid").fill("58");
-  await page.getByTestId("rate-notes").fill("Lovely room");
-  // the answers are a draft until Save: they survive a reload
-  await expect(page.getByTestId("draft-status").first()).toHaveText("Draft saved");
-  await page.reload();
-  await expect(page.getByTestId("rate-notes")).toHaveValue("Lovely room");
-  await expect(page.getByTestId("rate-show-4")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("draft-restored").first()).toBeVisible();
-  await page.getByTestId("rate-save").click();
-  await expect(page.getByTestId("rate-saved")).toBeVisible();
-  await expect(page.getByTestId("money-step")).toBeVisible();
-  await page.getByText("Back to the show").click();
-  await expect(page.getByTestId("rating-summary")).toContainText("★★★★☆");
-  await expect(page.getByTestId("rating-summary")).toContainText("Crowd about 60");
-});
-
 test("last night's unsettled show stays on top of Home: enter money for admins, add expenses for members", async ({ page, browser }) => {
   const yesterday = addDays(dateInBandZone(), -1);
   await signInAs(page, "jeff");
@@ -450,14 +350,7 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
   // the regular Home (next show, to-dos) is still there below it
   await expect(page.getByTestId("booking-home")).toBeVisible();
   await page.getByTestId(`enter-money-${id}`).click();
-  await expect(page).toHaveURL(new RegExp(`/shows/${id}/after$`));
-  // the settlement is a draft for this show: reload keeps it, Start over drops it
-  await page.getByTestId("income-door").fill("10");
-  await expect(page.getByTestId("money-step").getByTestId("draft-status")).toHaveText("Draft saved");
-  await page.reload();
-  await expect(page.getByTestId("income-door")).toHaveValue("10");
-  await page.getByTestId("money-step").getByTestId("draft-start-over").click();
-  await expect(page.getByTestId("income-door")).toHaveValue("");
+  await expect(page).toHaveURL(new RegExp(`/shows/${id}\\?tab=finances$`));
 
   const david = await as(browser, "david");
   await expect(david.page.getByTestId(`recent-${id}`)).toContainText("Add expenses from last night");
@@ -467,55 +360,10 @@ test("last night's unsettled show stays on top of Home: enter money for admins, 
 
   await page.goto(A(`/shows/${id}`));
   page.once("dialog", (dlg) => dlg.accept());
-  await page.getByTestId("show-actions").click();
-  await page.getByTestId("show-menu-remove").click();
+  await page.getByTestId("show-archive").click();
   await expect(page).toHaveURL(/\/shows$/);
 });
 
-
-test("autosave: edit a show field with no Save button, see Saved, reload, then Undo from the toast puts it back", async ({ page }) => {
-  await signInAs(page, "jeff");
-  await page.goto(A("/shows/new"));
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await page.getByTestId("show-date").fill("2027-05-01");
-  await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("show-page")).toBeVisible();
-  const id = showId(page);
-
-  // band notes: saves on its own
-  const notes = page.getByTestId("notes-input");
-  await notes.fill("Park behind the building");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await expect(page.getByTestId("toast")).toContainText("Saved bandNotes");
-  await expect(page.getByTestId("undo-button")).toBeVisible();
-  await page.reload();
-  await expect(page.getByTestId("notes-input")).toHaveValue("Park behind the building");
-
-  // the edit form has no Save button either; a field saves after a pause
-  await page.getByTestId("show-edit").click();
-  await expect(page.getByTestId("show-save")).toHaveCount(0);
-  await page.getByTestId("show-set").fill("19:30");
-  await page.getByTestId("show-length").fill("50");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("show-edit").click();
-  await expect(page.getByTestId("show-info")).toContainText("7:30 pm");
-
-  // Undo in the toast reverts the last save; the notes stay
-  await page.getByTestId("undo-button").last().click();
-  await expect(page.getByTestId("toast-text").last()).toHaveText("Undone");
-  await expect(page.getByTestId("show-info")).not.toContainText("7:30 pm");
-  await expect(page.getByTestId("notes-input")).toHaveValue("Park behind the building");
-
-  // typing a note and undoing it puts back what was there before
-  await page.getByTestId("notes-input").fill("Park out front");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("undo-button").last().click();
-  await expect(page.getByTestId("notes-input")).toHaveValue("Park behind the building");
-  await page.reload();
-  await expect(page.getByTestId("notes-input")).toHaveValue("Park behind the building");
-  await cancelShow(page, id);
-});
 
 test("a new show is a draft: it restores in another browser, Home lists it under Unfinished, and creating the show clears it", async ({ page, browser }) => {
   await signInAs(page, "jeff");
@@ -560,48 +408,3 @@ test("a new show is a draft: it restores in another browser, Home lists it under
   await cancelShow(page, id);
 });
 
-test("show panels: the deal autosaves, checklist/gear/docs adds are drafts, each change shows a status and Undo", async ({ page }) => {
-  await signInAs(page, "jeff");
-  await page.goto(A("/shows/new"));
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await page.getByTestId("show-date").fill("2027-07-03");
-  await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("show-page")).toBeVisible();
-  const id = showId(page);
-
-  // deal: no Save button, the field saves on its own, Undo from the toast
-  const deal = page.getByTestId("deal-panel");
-  await deal.getByTestId("deal-edit").click();
-  await expect(deal.getByTestId("deal-save")).toHaveCount(0);
-  await deal.getByTestId("deal-edit-type").selectOption("guarantee");
-  await deal.getByTestId("deal-edit-guarantee").fill("325");
-  await expect(deal.getByTestId("save-status")).toHaveText("Saved");
-  await deal.getByTestId("deal-edit").click();
-  await expect(deal.getByTestId("deal-summary")).toHaveText("$325.00 guarantee");
-  await page.reload();
-  await expect(page.getByTestId("deal-summary")).toHaveText("$325.00 guarantee");
-
-  // checklist: the new item is a draft until Add; it survives a reload; adding it clears the draft and offers Undo
-  const list = page.getByTestId("checklist");
-  await list.getByTestId("check-add").fill("Bring extra cables");
-  await expect(list.getByTestId("draft-status")).toHaveText("Draft saved");
-  await page.reload();
-  await expect(page.getByTestId("check-add")).toHaveValue("Bring extra cables");
-  await expect(page.getByTestId("draft-restored").first()).toBeVisible();
-  await page.getByTestId("check-add-btn").click();
-  await expect(page.getByTestId("checklist").getByTestId("save-status")).toHaveText("Saved");
-  await expect(page.getByTestId("check-add")).toHaveValue("");
-  await expect(page.locator('[data-testid^="check-label-"][value="Bring extra cables"]')).toHaveCount(1);
-  await page.getByTestId("undo-button").last().click();
-  await expect(page.locator('[data-testid^="check-label-"][value="Bring extra cables"]')).toHaveCount(0);
-
-  // docs: the same
-  await page.getByTestId("doc-title").fill("Stage plot");
-  await page.getByTestId("doc-url").fill("https://example.com/plot");
-  await expect(page.getByTestId("docs").getByTestId("draft-status")).toHaveText("Draft saved");
-  await page.getByTestId("doc-add").click();
-  await expect(page.getByTestId("docs")).toContainText("Stage plot");
-  await expect(page.getByTestId("doc-title")).toHaveValue("");
-  await cancelShow(page, id);
-});

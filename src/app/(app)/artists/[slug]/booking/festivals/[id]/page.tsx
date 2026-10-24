@@ -23,7 +23,8 @@ function FestivalPage() {
   const [edit, setEdit] = useState(false);
   const hasEdDraft = useHasDraft(draftPath.newUnder("festivals", id, "editions"));
   const [addEdX, setAddEd] = useState<boolean | null>(null);
-  const addEd = addEdX ?? hasEdDraft; // an unfinished year opens the form
+  const [askedEd] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("addEdition") === "1");
+  const addEd = addEdX ?? (askedEd || hasEdDraft); // an unfinished year, or ?addEdition=1 (the Festivals tab's "Add edition"), opens the form
   const nf = useNotFound(loading, f, "festival");
   if (nf || !f) return nf;
   const editions = b.editions.filter((e) => e.festivalId === id).sort((a, c) => c.year - a.year);

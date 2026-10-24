@@ -10,7 +10,7 @@ beforeEach(resetEmulators);
 const as = (uid: string, via: Ctx["via"] = "mcp", runId = newRunId()): Ctx => ({ uid, role: via === "mcp" ? "mcp" : "admin", via, runId });
 const hist = (runId: string) => db.listGroup("history", (q) => q.where("runId", "==", runId));
 
-test("undo of a mixed run restores state; reversals are history under a new run; ledger is reported", async () => {
+test("undo of a mixed run restores state; reversals are history under a new run; immutable docs are reported", async () => {
   const setup = importCtx("setup", "setup-run");
   const keep = await db.create(setup, "venues", venue("Keep Me", "Denver", { capacity: 100, notes: "original" }));
   const gone = await db.create(setup, "venues", venue("Delete Me"));
@@ -19,7 +19,7 @@ test("undo of a mixed run restores state; reversals are history under a new run;
   const beforeKeep = (await db.get("venues", keep.id))!;
 
   const ctx = as("ai-user");
-  // one run: create, merge-update, update + clear a field, delete, atomic multi-doc unit, append-only activity, ledger entry
+  // one run: create, merge-update, update + clear a field, delete, atomic multi-doc unit, append-only activity, an immutable stat snapshot
   const created = await db.create(ctx, "venues", venue("Brand New"));
   await db.update(ctx, "venues", keep.id, { capacity: 999, notes: null, website: "https://x.example" });
   await db.update(ctx, "venues", keep.id, { capacity: 1234 });
@@ -29,9 +29,8 @@ test("undo of a mixed run restores state; reversals are history under a new run;
     await w.create(`pitches/${pitch.id}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched" });
     await w.update("contacts", people.id, { title: "Booker" });
   });
-  await registry["ledger.record"].run(ctx, registry["ledger.record"].input.parse({ kind: "expense", amount: 1500, category: "gear", method: "card", date: "2026-10-01", memo: "strings" }));
-  const ledgerBefore = await db.list("ledger");
-  assert.equal(ledgerBefore.length, 1);
+  await db.create(ctx, "statSnapshots", { source: "spotifyApi", date: "2026-10-01", followers: 10, popularity: 1 });
+  assert.equal((await db.list("statSnapshots")).length, 1);
 
   const admin = as("jeff", "app");
   const report = await undoRun(admin, ctx.runId);
@@ -49,10 +48,10 @@ test("undo of a mixed run restores state; reversals are history under a new run;
   assert.equal((await db.list(`pitches/${pitch.id}/activity`)).length, 0, "created activity is archived");
   assert.equal(k.matchKey, beforeKeep.matchKey);
 
-  // ledger is untouched and reported
-  assert.equal((await db.list("ledger")).length, 1);
+  // the snapshot is untouched and reported
+  assert.equal((await db.list("statSnapshots")).length, 1);
   assert.equal(report.needsManualCorrection.length, 1);
-  assert.equal(report.needsManualCorrection[0].kind, "ledger");
+  assert.equal(report.needsManualCorrection[0].kind, "statSnapshots");
   assert.equal(report.failed.length, 0);
   assert.ok(report.reverted.length === 7);
 

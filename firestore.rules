@@ -34,8 +34,9 @@ service cloud.firestore {
     match /artists/{id}          { allow get: if roleIn(id) == 'admin' || (roleIn(id) == 'member' && live()); }
     match /shows/{id} {
       allow read: if band();
-      // Comments carried over from the pitch ("Booked it!"): booking talk, so admins only like the pitch's own.
-      match /comments/{cid}      { allow read: if isAdmin(); }
+      // The band's own comments (audience "band", shows.comment) are read by the whole band. Comments carried over from the pitch
+      // ("Booked it!") have no audience: booking talk, so admins only like the pitch's own. Member queries must filter audience == "band".
+      match /comments/{cid}      { allow read: if isAdmin() || (isMember() && live() && resource.data.get('audience', '') == 'band'); }
     }
     match /songs/{id}            { allow read: if band(); }
     match /files/{id}            { allow read: if band(); }
@@ -46,11 +47,7 @@ service cloud.firestore {
       allow read: if isAdmin()
         || (isMember() && live() && request.auth.token.get('musicianId', '') in resource.data.askedMusicianIds);
     }
-    match /ledger/{id} {
-      allow read: if isAdmin()
-        || (isMember() && live() && resource.data.kind in ['payout', 'reimbursement', 'correction']
-            && resource.data.get('payeeUserId', '') == request.auth.uid);
-    }
+    // Expenses: members see only their own; admins all. A show's income is on its showDeals doc (admins only, below), so income and net never reach members.
     match /expenses/{id} {
       allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);
     }

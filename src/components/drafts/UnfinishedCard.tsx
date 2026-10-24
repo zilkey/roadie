@@ -5,7 +5,7 @@ import type { SaveState } from "@/lib/autosave";
 
 const NOUN: Record<string, string> = {
   shows: "Show", venues: "Venue", promoters: "Promoter", festivals: "Festival", editions: "Edition", contacts: "Contact", songs: "Song",
-  emailTemplates: "Email template", musicians: "Musician", users: "User", configurations: "Configuration", expenses: "Expense", ledger: "Ledger entry",
+  emailTemplates: "Email template", musicians: "Musician", users: "User", configurations: "Configuration", expenses: "Expense",
   setlists: "Setlist", rehearsals: "Rehearsal", pitches: "Pitch", comments: "Pitch comment", calls: "Pitch call", checklist: "Checklist item",
   gear: "Gear item", docs: "Show doc", after: "After-show notes", settlement: "Settlement", availability: "Availability ask", artists: "Artist", showDeals: "Deal",
 };

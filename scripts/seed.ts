@@ -144,30 +144,32 @@ async function main() {
     full: ["ingrid", "jeff", "david", "eric", "emma"], trio: ["ingrid", "jeff", "david"],
   } as Record<string, string[]>)[artistCfg].map((k) => mid[k]);
   const showBase = {
-    artistId: artist, needs: { poster: true, backline: false, merch: true }, docs: [], public: true, listings: {},
-    checklist: [
+    artistId: artist, needs: { poster: true, backline: false, merch: true }, docs: [], publishToBandsintown: true, listings: {},
+    checklists: [{ id: "gigprep", name: "Gig prep", items: [
       { id: "c1", label: "Confirm load-in time", done: true, due: "2026-11-07" },
       { id: "c2", label: "Post the poster", done: false, due: "2026-10-31" },
       { id: "c3", label: "Pack merch table", done: false, due: "2026-11-12" },
-    ],
+    ] }],
   };
+  const gear = (items: [string, string, string, boolean][]) => ({ id: "gear", name: "Gear", items: items.map(([id, label, who, done]) => ({ id, label, ownerId: mid[who], done })) });
   const hiShow = await create("shows", {
     ...showBase, date: "2026-11-14", status: "confirmed", venue: { id: hidive, name: "Hi-Dive", address: "7 S Broadway, Denver", city: "Denver" },
-    times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLength: 45 }, billedAs: "full-band", personnel: cfg("full"),
-    sound: { provider: "venueProvided", notes: "House engineer" }, setlistId: setlist, bandNotes: "Street parking on Broadway; dinner provided.",
-    gear: [{ id: "g1", label: "Keys rig", musicianId: mid.jeff, packed: true }, { id: "g2", label: "Bass rig", musicianId: mid.david, packed: false }, { id: "g3", label: "Snare, cymbals, pedal", musicianId: mid.eric, packed: false }, { id: "g4", label: "In-ear rack", musicianId: mid.jeff, packed: false }],
+    times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "full-band", personnel: cfg("full"),
+    sound: { provider: "venueProvided", notes: "House engineer" }, setlistId: setlist, dayOfContact: { name: "Hi-Dive door manager", phone: "(303) 555-0142" },
+    checklists: [...showBase.checklists, gear([["g1", "Keys rig", "jeff", true], ["g2", "Bass rig", "david", false], ["g3", "Snare, cymbals, pedal", "eric", false], ["g4", "In-ear rack", "jeff", false]])],
   });
+  await create(`shows/${hiShow}/comments`, { authorId: uid.ingrid, body: "Street parking on Broadway; dinner provided.", audience: "band" });
   await db.update(ctx, "setlists", setlist, { showId: hiShow });
-  await create("showDeals", { pitchId: pHidive, contactIds: [], deal: "guarantee", guarantee: 30000, settled: false }, hiShow);
+  await create("showDeals", { pitchId: pHidive, contactIds: [], deal: "guarantee" }, hiShow);
   await db.update(ctx, "pitches", pHidive, { showIds: [hiShow] });
 
   const lakeShow = await create("shows", {
     ...showBase, date: "2027-01-16", status: "hold", venue: { id: lostlake, name: "Lost Lake Lounge", address: "3602 E Colfax Ave, Denver", city: "Denver" },
-    times: { set: "20:00", setLength: 40 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
-    needs: { poster: true, backline: false, merch: false }, checklist: [], public: false,
-    gear: [{ id: "g1", label: "Keys rig", musicianId: mid.jeff, packed: false }, { id: "g2", label: "Bass rig", musicianId: mid.david, packed: false }],
+    times: { set: "20:00", setLengthSec: 2400 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
+    needs: { poster: true, backline: false, merch: false }, publishToBandsintown: false,
+    checklists: [gear([["g1", "Keys rig", "jeff", false], ["g2", "Bass rig", "david", false]])],
   });
-  await create("showDeals", { pitchId: pLost, contactIds: [haylee], deal: "doorSplit", doorSplitPct: 70, ticketPrice: 1500, settled: false }, lakeShow);
+  await create("showDeals", { pitchId: pLost, contactIds: [haylee], deal: "doorSplit", doorSplitPct: 70, ticketPrice: 1500 }, lakeShow);
   await create("availability", {
     date: "2027-01-16", label: "Lost Lake · Sat Jan 16", pitchId: pLost, showId: lakeShow, askedMusicianIds: ["ingrid", "jeff", "david"].map((k) => mid[k]),
     responses: { [mid.ingrid]: { answer: "yes", by: "self", at: new Date() }, [mid.jeff]: { answer: "yes", by: "self", at: new Date() } },
@@ -176,10 +178,10 @@ async function main() {
 
   const playedShow = await create("shows", {
     ...showBase, date: "2026-10-10", status: "played", venue: { id: dairy, name: "Dairy Arts Center", address: "Boulder", city: "Boulder" },
-    times: { loadIn: "17:00", set: "20:00", setLength: 50 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
-    needs: { poster: false, backline: false, merch: true }, checklist: [], gear: [], public: true,
+    times: { loadIn: "17:00", set: "20:00", setLengthSec: 3000 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
+    needs: { poster: false, backline: false, merch: true }, checklists: [], publishToBandsintown: true,
   });
-  await create("showDeals", { contactIds: [dana], deal: "guarantee", guarantee: 45000, paidAttendance: 112, settled: false }, playedShow);
+  await create("showDeals", { contactIds: [dana], deal: "guarantee", paidAttendance: 112, income: [{ id: "i1", category: "guarantee", amount: 45000, method: "check", received: true }] }, playedShow);
 
   // --- money + reach (small) ---
   await create("expenses", { userId: uid.david, date: "2026-10-10", amount: 2850, category: "gear", what: "Bass strings and cables", showId: playedShow });

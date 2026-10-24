@@ -2,7 +2,7 @@
  * Undo a whole run: every history entry with the runId is reversed, newest first, through Writer.revert, so the
  * reversals are themselves written to history under a NEW runId (which can be undone in turn = redo).
  * A field that was edited again after the run is left alone (reported in changedSince / skippedFields), never overwritten.
- * Immutable collections (ledger, statSnapshots) are skipped and reported; add a correction instead.
+ * Immutable collections (statSnapshots) are skipped and reported.
  * Things outside Firestore (sent email, Calendar events, Bandsintown listings, Drive copies) are not undone.
  */
 import type { Timestamp } from "firebase-admin/firestore";

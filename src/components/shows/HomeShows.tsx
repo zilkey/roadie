@@ -6,9 +6,9 @@ import { CopyButton } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
-import { addDays, fmtDur, fmtLong, fmtTime, planHome, type Answer, showName, showCity, showAddress } from "@/lib/shows";
-import { GearChecklist, Times, billingName, configName, packedCount, useBand, type ShowRow } from "./common";
-import type { Availability, Contact, ShowDeal } from "@/schema";
+import { addDays, checklistCount, checklistsOf, fmtDur, fmtLong, fmtTime, planHome, type Answer, showName, showCity, showAddress } from "@/lib/shows";
+import { Times, billingName, configName, nameOf, useBand, type ShowRow } from "./common";
+import type { Availability, Contact, Musician, ShowDeal } from "@/schema";
 
 /**
  * "How Home decides": today's shows first (one card each); then open "Can you play?" questions;
@@ -22,16 +22,19 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
   const deals = useCollection<ShowDeal>("showDeals", { skip: !admin });
   const contacts = useCollection<Contact>("contacts", { skip: !admin });
   const today = todayStr();
-  const unsettled = new Set((deals.rows ?? []).filter((d) => !d.settled).map((d) => d.id));
+  const unsettled = new Set((deals.rows ?? []).filter((d) => !d.income?.length).map((d) => d.id));
   const plan = planHome({ role: p.role, musicianId: p.musicianId, shows: b.shows, asks: b.asks, today, unsettled });
   const { call, error } = useCommand();
-  const pack = (showId: string) => (itemId: string, packed: boolean) => call("shows.packGear", { id: showId, itemId, packed });
+  const pack = (show: ShowRow) => (itemId: string, packed: boolean) => {
+    const list = checklistsOf(show).find((l) => l.name === "Gear");
+    if (list) void call("shows.checkItem", { id: show.id, listId: list.id, itemId, done: packed });
+  };
 
   return (
     <div className="grid gap-3" data-testid="home-shows">
       <ErrorBox error={error} />
       {plan.today.map((s) => (
-        <TodayCard key={s.id} show={s} b={b} onPack={pack(s.id)} deal={(deals.rows ?? []).find((d) => d.id === s.id)} contacts={contacts.rows ?? []} />
+        <TodayCard key={s.id} show={s} b={b} onPack={pack(s)} deal={(deals.rows ?? []).find((d) => d.id === s.id)} contacts={contacts.rows ?? []} />
       ))}
       {plan.asks.map((a) => <AskCard key={a.id} av={a} />)}
       {plan.recent.map((s) => (
@@ -40,8 +43,8 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
           {admin ? (
             <>
               <b>How&apos;d it go?</b>
-              <span className="s">Rate it and enter the money</span>
-              <Link href={`/shows/${s.id}/after`} className="btn acc" data-testid={`enter-money-${s.id}`}>Enter money</Link>
+              <span className="s">Enter the money</span>
+              <Link href={`/shows/${s.id}?tab=finances`} className="btn acc" data-testid={`enter-money-${s.id}`}>Enter money</Link>
             </>
           ) : (
             <>
@@ -54,7 +57,7 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
       ))}
       {plan.today.length === 0 && !b.loading && (
         <>
-          <NextShow next={plan.next} upcoming={plan.upcoming} b={b} onPack={plan.next ? pack(plan.next.id) : () => undefined} />
+          <NextShow next={plan.next} upcoming={plan.upcoming} b={b} onPack={plan.next ? pack(plan.next) : () => undefined} />
           {admin ? regular : <Link href="/money/expense" className="btn acc" data-testid="add-expense">Add an expense</Link>}
         </>
       )}
@@ -66,7 +69,8 @@ function TodayCard({ show: s, b, onPack, deal, contacts }: { show: ShowRow; b: R
   const p = useProfile();
   const sl = b.setlists.find((x) => x.id === s.setlistId);
   const people = contacts.filter((c) => deal?.contactIds.includes(c.id));
-  const open = s.checklist.filter((c) => !c.done);
+  const gear = checklistsOf(s).find((l) => l.name === "Gear")?.items ?? [];
+  const open = checklistsOf(s).filter((l) => l.name !== "Gear").flatMap((l) => l.items).filter((c) => !c.done);
   return (
     <div className="grid gap-3" data-testid={`today-${s.id}`}>
       <div className="card hi">
@@ -77,8 +81,8 @@ function TodayCard({ show: s, b, onPack, deal, contacts }: { show: ShowRow; b: R
         <Link href={`/shows/${s.id}`} className="s font-semibold underline" data-testid={`today-open-${s.id}`}>Open show ›</Link>
       </div>
       <div className="grid gap-1.5" data-testid={`today-gear-${s.id}`}>
-        <span className="lbl">Gear · {packedCount(s)}</span>
-        <GearChecklist show={s} musicians={b.musicians} onPack={onPack} testidPrefix={`home-gear`} />
+        <span className="lbl">Gear · {gear.filter((g) => g.done).length} of {gear.length} packed</span>
+        <GearList items={gear} musicians={b.musicians} onPack={onPack} testidPrefix="home-gear" />
       </div>
       {sl && (
         <div className="grid gap-1.5">
@@ -98,6 +102,26 @@ function TodayCard({ show: s, b, onPack, deal, contacts }: { show: ShowRow; b: R
           {people.map((c) => <div key={c.id} className="flex items-center justify-between"><b>{c.name}</b>{c.emails[0] && <CopyButton text={c.emails[0]} />}</div>)}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Gear items (the "Gear" checklist) with packed checkboxes. Members can tick only what they bring. */
+function GearList({ items, musicians, onPack, testidPrefix }: { items: { id: string; label: string; done: boolean; ownerId?: string }[]; musicians: Row<Musician>[]; onPack(itemId: string, packed: boolean): void; testidPrefix: string }) {
+  const p = useProfile();
+  if (!items.length) return <span className="s">No gear listed.</span>;
+  return (
+    <div className="grid gap-1.5">
+      {items.map((g) => {
+        const mine = !!p.musicianId && g.ownerId === p.musicianId;
+        return (
+          <label key={g.id} className={`flex items-center gap-2 text-sm ${mine ? "font-semibold" : ""}`} data-testid={`${testidPrefix}-row-${g.id}`}>
+            <input type="checkbox" checked={g.done} disabled={p.role !== "admin" && !mine} data-testid={`${testidPrefix}-${g.id}`} onChange={(e) => onPack(g.id, e.target.checked)} />
+            <span>{g.label}</span>
+            {g.ownerId && <span className="s">· {mine ? "you" : nameOf(musicians, g.ownerId)}</span>}
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -124,7 +148,8 @@ function AskCard({ av }: { av: Row<Availability> }) {
 function NextShow({ next, upcoming, b, onPack }: { next?: ShowRow; upcoming: ShowRow[]; b: ReturnType<typeof useBand>; onPack(itemId: string, packed: boolean): void }) {
   const p = useProfile();
   if (!next) return <div className="card" data-testid="no-next-show"><span className="lbl">Next show</span><span className="s">Nothing on the calendar yet.</span></div>;
-  const done = next.checklist.filter((c) => c.done).length, total = next.checklist.length;
+  const { done, total } = checklistCount(checklistsOf(next));
+  const myGear = (checklistsOf(next).find((l) => l.name === "Gear")?.items ?? []).filter((g) => g.ownerId === p.musicianId);
   const playing = !!p.musicianId && next.personnel.includes(p.musicianId);
   const rest = upcoming.filter((s) => s.id !== next.id).slice(0, 4);
   return (
@@ -140,10 +165,10 @@ function NextShow({ next, upcoming, b, onPack }: { next?: ShowRow; upcoming: Sho
           </>}
         </Link>
       </div>
-      {p.role === "member" && playing && next.gear.some((g) => g.musicianId === p.musicianId) && (
+      {p.role === "member" && playing && myGear.length > 0 && (
         <div className="grid gap-1.5" data-testid="bringing">
           <span className="lbl">You&apos;re bringing</span>
-          <GearChecklist show={next} musicians={b.musicians} onPack={onPack} mineOnly testidPrefix="bring" />
+          <GearList items={myGear} musicians={b.musicians} onPack={onPack} testidPrefix="bring" />
         </div>
       )}
       {p.role === "member" && rest.length > 0 && (

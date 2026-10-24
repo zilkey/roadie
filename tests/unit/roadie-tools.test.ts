@@ -72,7 +72,7 @@ const expenses = async () => (await db.list("expenses")).filter((e) => !e.delete
 
 test("tool list comes from the registry and leaves out what Roadie must not do", () => {
   const names = toolDefs("admin").map((t) => t.name);
-  for (const must of ["expenses.add", "shows.update", "shows.cancel", "payouts.pay", "records.get", "context.now", "search", "history.undoRun", "ui.navigate"]) assert.ok(names.includes(must), must);
+  for (const must of ["expenses.add", "shows.update", "shows.cancel", "shows.setStatus", "records.get", "context.now", "search", "history.undoRun", "ui.navigate"]) assert.ok(names.includes(must), must);
   for (const bad of ["users.add", "users.update", "users.remove", "mcpTokens.create", "mcpTokens.revoke", "artists.update", "artists.create", "assistant.setPrefs", "drafts.save", "drafts.list", "history.myRuns", "pitches.checkReplies"]) {
     assert.equal(names.includes(bad), false, bad);
     assert.ok(EXCLUDED.some((e) => bad === e || (e.endsWith(".") && bad.startsWith(e))), `${bad} is in the explicit list`);
@@ -89,7 +89,7 @@ test("tool list comes from the registry and leaves out what Roadie must not do",
 });
 
 test("confirm rules: sends, money, deletes, cancels and more than 5 records", () => {
-  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "payouts.pay", "expenses.reimburse", "shows.settle", "ledger.record", "ledger.correct", "shows.cancel", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "showDeals.setIncome", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 5000, what: "gas", category: "travel" }), false);
   // a shared venue edit reaches every band: it asks. The band's own notes and links do not. Merging always asks.
   assert.equal(needsConfirm("venues.update", { id: "v", patch: { capacity: 300 } }), true);
@@ -98,7 +98,7 @@ test("confirm rules: sends, money, deletes, cancels and more than 5 records", ()
   assert.equal(needsConfirm("venues.mergeInto", { from: "a", into: "b" }), true);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { personnel: ["a", "b", "c"] } }), false);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { personnel: ["a", "b", "c", "d", "e", "f"] } }), true);
-  assert.equal(needsConfirm("shows.setChecklist", { id: "x", items: Array.from({ length: 9 }, (_, i) => ({ label: String(i) })) }), false);
+  assert.equal(needsConfirm("shows.setChecklists", { id: "x", checklists: [{ name: "Gear", items: Array.from({ length: 9 }, (_, i) => ({ label: String(i) })) }] }), false);
   assert.equal(needsConfirm("availability.check", { dates: Array.from({ length: 9 }, () => "2026-01-01") }), false);
 });
 
@@ -288,7 +288,8 @@ test("canned model: add $50 gas, move load-in, show me, pay everyone, cancel, in
   assert.equal(await status(), "hold");
 
   const pay = await chat("pay everyone", undefined, { route: "show", recordKind: "show", recordId: showId });
-  assert.equal((pay.events.find((e) => e.type === "confirm") as { command: string }).command, "payouts.pay");
+  assert.match(pay.text, /doesn't track payouts/);
+  assert.equal(pay.events.some((e) => e.type === "confirm"), false);
 
   const inv = await chat("invite Mae");
   assert.match(inv.text, /can't do that/);

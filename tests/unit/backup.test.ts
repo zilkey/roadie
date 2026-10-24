@@ -25,11 +25,11 @@ test("backup then restore round-trips every collection, subcollections, history 
     await w.create(`pitches/${p.id}/activity`, { type: "note", text: "called" });
     await w.create(`pitches/${p.id}/comments`, { authorId: "u", body: "hi" });
   });
-  await registry["ledger.record"].run(ctx as never, registry["ledger.record"].input.parse({ kind: "income", amount: 5000, category: "door", method: "cash", date: "2026-10-01" }));
+  await db.create(ctx, "statSnapshots", { source: "spotifyApi", date: "2026-10-01", followers: 10, popularity: 1 });
   await db.softDelete(ctx, "contacts", c.id);
 
   const before = await dumpAll(firestore());
-  assert.ok([before.venues, before.ledger].every((rows) => rows.filter((r) => !r.path.includes("/history/")).length === 1));
+  assert.ok([before.venues, before.statSnapshots].every((rows) => rows.filter((r) => !r.path.includes("/history/")).length === 1));
   const histRows = (d: typeof before) => Object.values(d).flat().filter((r) => r.path.includes("/history/"));
   assert.ok(histRows(before).length >= 6 && !before.history, "history lives in each record's subcollection, so it is in the parent's file");
   assert.ok(before.venues.some((r) => r.path === `venues/${v.id}/history/000002`) && before.pitches.some((r) => r.path.includes("/activity/") && r.path.includes("/history/")));

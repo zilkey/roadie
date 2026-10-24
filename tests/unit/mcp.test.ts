@@ -85,7 +85,8 @@ const EXPECTED = [
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows
-  "shows.create", "shows.update", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklist", "shows.setGear", "shows.packGear", "shows.calendar", "showDeals.update",
+  "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendar", "showDeals.update",
+  "showDeals.setIncome", "shows.comment", "shows.editComment", "shows.removeComment",
   "shows.afterShow", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.remove",
   // availability: ask and read, not mark
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",
@@ -93,7 +94,7 @@ const EXPECTED = [
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
   "songs.create", "songs.update", "setlists.create", "setlists.update", "setlists.attach", "rehearsals.create", "rehearsals.update",
   // money, stats
-  "ledger.record", "ledger.correct", "shows.settle", "payouts.pay", "expenses.reimburse", "stats.pull", "stats.importCsv", "stats.current",
+  "expenses.setPaidBack", "stats.pull", "stats.importCsv", "stats.current",
   // read tools and undo
   "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
   "history.undoRun", "history.myRuns",

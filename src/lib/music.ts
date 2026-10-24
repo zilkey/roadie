@@ -58,7 +58,7 @@ export function parseLen(s: string): number | undefined {
 
 export const setlistTotal = (items: { lengthSec?: number }[]) => items.reduce((n, i) => n + (i.lengthSec ?? 0), 0);
 /** Positive when under the set length, negative when over. */
-export const setlistSlack = (totalSec: number, setLengthMin?: number) => (setLengthMin ? setLengthMin * 60 - totalSec : undefined);
+export const setlistSlack = (totalSec: number, setLengthSec?: number) => (setLengthSec ? setLengthSec - totalSec : undefined);
 
 export function move<T>(list: T[], from: number, to: number): T[] {
   if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;

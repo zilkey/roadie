@@ -15,20 +15,20 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(row).toHaveCount(1);
   const flag = row.locator("[data-testid^='flag-'][data-flagged]"); // the flag button itself, not its form's fields
   await expect(flag).toHaveAttribute("data-flagged", "0");
-  // tapping the flag opens a small form; nothing is added until "Add to list"
+  // tapping the flag opens a modal dialog (outside the row); nothing is added until "Add to Pitch List"
+  const form = page.getByTestId(/^flag-form-/);
   await flag.click();
-  await expect(row.getByTestId(/^flag-form-/)).toBeVisible();
+  await expect(form).toBeVisible();
   await expect(flag).toHaveAttribute("data-flagged", "0");
-  // the form sits under the row's button line, Escape closes it and puts focus back on the flag
-  await expect(flag).toHaveAttribute("data-open", "1");
+  // Escape closes it
   await page.keyboard.press("Escape");
-  await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
-  await expect(flag).toBeFocused();
+  await expect(form).toHaveCount(0);
+  await expect(flag).toHaveAttribute("data-flagged", "0");
   await flag.click();
   // configuration is a dropdown of the artist's configurations; its value is the configuration id
-  await row.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Duo" });
+  await page.getByTestId(/^flag-pitchedAs-/).selectOption({ label: "Duo" });
   // possible dates: one date input and a round +; chips are sorted, the + is off while the input is empty, duplicates are ignored
-  const dates = row.getByTestId(/^flag-dates-[^-]+$/);
+  const dates = page.getByTestId(/^flag-dates-[^-]+$/);
   const dateInput = dates.getByTestId(/-date$/);
   const plus = dates.getByTestId(/-add$/);
   await expect(plus).toBeDisabled();
@@ -48,22 +48,21 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(dates.getByTestId(/-chip-0$/)).toHaveText("Fri, May 1");
   await dates.getByTestId(/-remove-1$/).click(); // chips are sorted: 2020-05-01, 2020-06-01, 2099...; drop the middle one
   await expect(dates.getByTestId(/-chip-\d$/)).toHaveCount(2);
-  await row.getByTestId(/^flag-comment-/).fill("Emailed Sam, they book 3 months out");
-  await row.getByTestId(/^flag-submit-/).click();
+  await page.getByTestId(/^flag-comment-/).fill("Emailed Sam, they book 3 months out");
+  await page.getByTestId(/^flag-submit-/).click();
+  await expect(form).toHaveCount(0);
   await expect(flag).toHaveAttribute("data-flagged", "1");
-  await expect(row.getByTestId(/^flag-form-/)).toHaveCount(0);
-  // the row now shows the pitch strip: configuration, dates and the first comment
-  const strip = row.getByTestId(/^pitch-strip-[^-]+$/);
-  await expect(strip).toContainText("Duo");
-  await expect(strip).toContainText("Fri, May 1"); // dates are chips like "Sat, Nov 21"
-  await expect(strip.getByText("Last comment")).toBeVisible();
-  await expect(strip).toContainText("Emailed Sam, they book 3 months out");
+  // the row's Pitch cell now shows the configuration and the dates as plain text
+  const cell = row.getByTestId(/^pitch-cell-/);
+  await expect(cell).toContainText("Duo");
+  await expect(cell).toContainText("Fri, May 1"); // dates are text like "Sat, Nov 21"
   await expect(page.getByTestId("pitch-count")).toBeVisible();
 
   await page.getByTestId("booking-search").fill("");
   await page.getByTestId("booking-seg-pitches").click();
-  await expect(page.getByTestId("group-toPitch")).toContainText("Swallow Hill Music");
-  await page.getByTestId("group-toPitch").getByText("Swallow Hill Music").click();
+  const swallow = page.getByTestId("pitch-list").locator("tr", { hasText: "Swallow Hill Music" });
+  await expect(swallow).toHaveCount(1);
+  await swallow.locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
 
   await expect(page.getByTestId("pitch-page")).toBeVisible();
   await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
@@ -123,7 +122,7 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId("group-pitched").getByText("Lost Lake Lounge").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Lost Lake Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
   await page.getByTestId("email-toggle").click();
   const templates = page.getByTestId("template");
   await expect(templates).toBeVisible();
@@ -252,7 +251,7 @@ test("a new promoter and a new year are drafts; existing promoter, festival and 
   // a contact page autosaves too
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-contacts").click();
-  await page.getByTestId(/^row-contact-/).first().getByRole("link").click();
+  await page.getByTestId(/^row-contact-/).first().getByTestId(/^contact-full-/).click();
   await expect(page.getByTestId("contact-page")).toBeVisible();
   await page.getByTestId("edit-toggle").click();
   const note = `call after 5 ${stamp}`;
@@ -284,39 +283,35 @@ test("pitch comments and email templates: existing templates autosave, new ones 
 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId(/^pitch-(?!list|count)/).first().click();
+  await page.getByTestId("pitch-list").locator("[data-testid^='flag-'][data-flagged='1']").first().click(); // the filled flag opens the pitch
   await page.getByTestId("comment-input").fill(`typing ${stamp}`);
   await expect(page.getByTestId("draft-status").first()).toHaveText("Draft saved");
   await page.reload();
   await expect(page.getByTestId("comment-input")).toHaveValue(`typing ${stamp}`);
 });
 
-test("the Pitch List shows each pitch's dates as chips, sorted, past ones dimmed", async ({ page }) => {
+test("the Pitch List shows each pitch's configuration and dates as plain text, sorted", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
-  const lost = page.getByTestId("group-pitched").locator("a", { hasText: "Lost Lake Lounge" }).locator('[data-testid^="pitch-dates-"]');
-  await expect(lost.locator("span")).toHaveCount(3);
-  await expect(lost.locator("span").nth(0)).toHaveAttribute("data-past", "1");
-  await expect(lost.locator("span").nth(1)).toHaveText("Sat, Jan 16");
-  await expect(lost.locator("span").nth(2)).toHaveAttribute("data-past", "0");
-  await expect(page.getByTestId("group-waiting")).toContainText("Fri, Jul 23");
+  const lost = page.getByTestId("pitch-list").locator("tr", { hasText: "Lost Lake Lounge" }).getByTestId(/^pitch-cell-/);
+  await expect(lost.locator(".pc")).toHaveText("Trio");
+  await expect(lost.locator(".pd")).toHaveText("Sat, Sep 12, Sat, Jan 16, Sat, Jan 23"); // sorted: 2026-09-12, 2027-01-16, 2027-01-23
+  await expect(page.getByTestId("pitch-list").locator("tr", { hasText: "Rocky Mountain Folks" }).getByTestId(/^pitch-cell-/)).toContainText("Fri, Jul 23");
 });
 
-test("the pitch strip: 'No configuration yet | No dates yet' and no Last comment line until there is a comment", async ({ page }) => {
+test("the Pitch cell: flagging with nothing chosen shows 'Not sure yet' and 'No dates yet'", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-search").fill("washington");
   const row = page.getByTestId(/^row-venue-/);
   await expect(row).toHaveCount(1);
   const flag = row.locator("[data-testid^='flag-'][data-flagged]");
+  await expect(row.getByTestId(/^pitch-cell-/)).toBeEmpty();
   await flag.click();
-  await row.getByTestId(/^flag-submit-/).click(); // no configuration, no dates, no comment
+  await page.getByTestId(/^flag-submit-/).click(); // no configuration, no dates, no comment
   await expect(flag).toHaveAttribute("data-flagged", "1");
-  const strip = row.getByTestId(/^pitch-strip-[^-]+$/);
-  await expect(strip).toContainText("No configuration yet");
-  await expect(strip).toContainText("|");
-  await expect(strip).toContainText("No dates yet");
-  await expect(strip.getByText("Last comment")).toHaveCount(0);
-  await expect(strip.getByText("None yet")).toHaveCount(0);
+  const cell = row.getByTestId(/^pitch-cell-/);
+  await expect(cell).toContainText("Not sure yet");
+  await expect(cell).toContainText("No dates yet");
 });

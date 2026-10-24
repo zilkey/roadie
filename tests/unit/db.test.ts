@@ -82,13 +82,11 @@ test("contacts: emails lowercased, matchKey from primary email", async () => {
   assert.equal(b.id, a.id);
 });
 
-test("ledger is append-only and corrections need reversesId", async () => {
-  const entry = { date: "2026-10-01", kind: "income", amount: 30000, category: "guarantee", method: "check" };
-  const { id } = await db.create(ctx(), "ledger", entry);
-  await assert.rejects(db.update(ctx(), "ledger", id, { amount: 1 }), (e: AppError) => e.code === "immutable");
-  await assert.rejects(db.softDelete(ctx(), "ledger", id), (e: AppError) => e.code === "immutable");
-  await assert.rejects(db.create(ctx(), "ledger", { ...entry, kind: "correction" }), (e: AppError) => e.code === "invalid_input");
-  await db.create(ctx(), "ledger", { ...entry, kind: "correction", reversesId: id });
+test("immutable collections are never edited or deleted; the ledger is gone", async () => {
+  const { id } = await db.create(ctx(), "statSnapshots", { source: "spotifyApi", date: "2026-10-01", followers: 10, popularity: 1 });
+  await assert.rejects(db.update(ctx(), "statSnapshots", id, { followers: 1 }), (e: AppError) => e.code === "immutable");
+  await assert.rejects(db.softDelete(ctx(), "statSnapshots", id), (e: AppError) => e.code === "immutable");
+  await assert.rejects(db.create(ctx(), "ledger", { date: "2026-10-01", kind: "income", amount: 1, category: "door", method: "cash" }));
 });
 
 test("setlist totalSec is computed", async () => {
@@ -126,7 +124,7 @@ test("denormalization: renaming a venue/song/festival refreshes copies", async (
   const v = await db.create(ctx(), "venues", venue("Lost Lake"));
   const show = await db.create(ctx(), "shows", {
     date: "2027-01-16", status: "confirmed", venue: { id: v.id, name: "Lost Lake", city: "Denver" }, times: {}, artistId: "a1", personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], listings: {},
   });
   const pitch = await db.create(ctx(), "pitches", { target: { kind: "venue", id: v.id, name: "Lost Lake" }, status: "idea", artistId: "a1", personnel: [], showIds: [] });
   await db.update(ctx(), "venues", v.id, { name: "Lost Lake Lounge" });

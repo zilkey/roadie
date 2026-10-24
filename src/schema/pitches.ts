@@ -22,8 +22,11 @@ export const Pitch = entity({
 export const PitchInput = Pitch.omit(serverMask);
 export type Pitch = z.infer<typeof Pitch>;
 
-/** pitches/{id}/comments/{id}. Also shows/{id}/comments/{id}: the pitch's comments copied over when it is booked (same author, same time). */
-export const Comment = entity({ authorId: id, body: z.string().min(1) });
+/**
+ * pitches/{id}/comments/{id}. Also shows/{id}/comments/{id}: the pitch's comments copied over when it is booked (same author, same time),
+ * and the band's own comments on the show (audience "band", written by shows.comment). Missing audience = admins only.
+ */
+export const Comment = entity({ authorId: id, body: z.string().min(1), audience: z.literal("band").optional() });
 export const CommentInput = Comment.omit(serverMask);
 export type Comment = z.infer<typeof Comment>;
 

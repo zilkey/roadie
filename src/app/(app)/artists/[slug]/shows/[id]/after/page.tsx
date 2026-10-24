@@ -11,7 +11,6 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { fmtLong, showName } from "@/lib/shows";
-import { EnterMoney } from "@/components/money/EnterMoney";
 import type { Show, ShowDeal } from "@/schema";
 
 export default function Page() { return <AdminOnly><After /></AdminOnly>; }
@@ -78,7 +77,6 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
           {saved && <span className="chip g self-start" data-testid="rate-saved">Saved</span>}
         </div>
       )}
-      <EnterMoney show={show} deal={deal} />
       {rated && <Link href={`/shows/${id}`} className="s font-semibold underline">Back to the show</Link>}
     </div>
   );

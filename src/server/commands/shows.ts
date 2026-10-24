@@ -8,19 +8,22 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
 import { noteOf } from "../venues";
-import { addDays, buildChecklist, calendarInvitees, isOff, joinNames, mergeChecklist, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type GearItem, type TemplateLike } from "@/lib/shows";
-import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind } from "@/schema";
+import { addDays, buildChecklist, calendarInvitees, checklistsOf, isOff, joinNames, mergeIntoGigPrep, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistLike, type TemplateLike } from "@/lib/shows";
+import { dateStr, timeStr, sound as soundSchema, cents, ChecklistTemplateInput, showKind, incomeCategory, payMethod } from "@/schema";
+import { refreshDealTotals } from "../dealTotals";
 import { patchInput } from "./util";
 
 const newId = () => randomUUID().slice(0, 8);
 const todayServer = () => dateInBandZone();
 
 const times = z.strictObject({
-  loadIn: timeStr.optional(), soundcheck: timeStr.optional(), doors: timeStr.optional(), set: timeStr.optional(), setLength: z.number().int().min(1).optional(),
+  loadIn: timeStr.optional(), soundcheck: timeStr.optional(), doors: timeStr.optional(), showStart: timeStr.optional(), set: timeStr.optional(),
+  setLengthSec: z.number().int().min(1).optional(),
 });
 const needs = z.strictObject({ poster: z.boolean(), backline: z.boolean(), merch: z.boolean() });
-const checklistItem = z.strictObject({ id: z.string().min(1).optional(), label: z.string().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional(), due: dateStr.optional() });
-const gearItem = z.strictObject({ id: z.string().min(1).optional(), label: z.string().min(1), musicianId: z.string().min(1).optional(), packed: z.boolean().default(false) });
+const checklistItem = z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional(), due: dateStr.optional() });
+const checklistIn = z.strictObject({ id: z.string().min(1).optional(), name: z.string().trim().min(1), items: z.array(checklistItem) });
+const dayOfContact = z.strictObject({ name: z.string().trim().min(1), phone: z.string().trim().optional(), contactId: z.string().min(1).optional() });
 
 // ---------- helpers ----------
 
@@ -108,17 +111,18 @@ export const showsCreate = defineCommand({
     "Create a show (and its admin-only showDeal) in one step. With pitchId it is the pitch's 'Booked it': links pitch.showIds and sets the pitch to booked. " +
     "Where: venueId, or for a house concert hostContactIds (contacts) + place {city, address?} (no venue). kind: venue|house|festival|radio|other (default from the rest). " +
     "editionId links a festival year (sets editionName). " +
-    "billedAs (configuration id) fills personnel; gear starts empty (shows.setGear adds it); sound defaults from the venue; needs (poster/backline/merch) and sound build the checklist from checklistTemplates. " +
+    "billedAs (configuration id) fills personnel; sound defaults from the venue; needs (poster/backline/merch) and sound build the Gig prep checklist from checklistTemplates. " +
+    "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee (cents) becomes the deal's first income line (not received). " +
     "copyPitchComments (needs pitchId) copies the pitch's comments onto the show (shows/{id}/comments), keeping each one's author and time. " +
     "billedAs null means explicitly no configuration (no fallback to the pitch's, no personnel); omitted falls back to the pitch's. " +
-    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members who are on the team and have an email, false invites nobody (the choice sticks on later syncs); omitted invites everyone in personnel with an email. Public confirmed shows are listed on Bandsintown.",
+    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members who are on the team and have an email, false invites nobody (the choice sticks on later syncs); omitted invites everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once it is confirmed.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
     kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
     editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
     billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
-    public: z.boolean().default(false), ticketUrl: z.string().optional(), bandNotes: z.string().optional(), setlistId: z.string().min(1).optional(),
+    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), setlistId: z.string().min(1).optional(), dayOfContact: dayOfContact.optional(),
     addToCalendar: z.boolean().default(true), copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
   }),
   async run(ctx, i) {
@@ -146,17 +150,20 @@ export const showsCreate = defineCommand({
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
         editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
         billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
-        checklist: buildChecklist(await templates(w), show, newId), gear: [],
-        setlistId: i.setlistId, docs: [], public: i.public, ticketUrl: i.ticketUrl, listings: {}, bandNotes: i.bandNotes,
+        checklists: mergeIntoGigPrep([], buildChecklist(await templates(w), show, newId), newId),
+        setlistId: i.setlistId, docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: i.dayOfContact,
+        statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
       });
       const d = i.deal;
       const target = pitch?.target as { kind: string; id: string } | undefined;
       await w.create("showDeals", {
         pitchId: i.pitchId, promoterId: d.promoterId ?? (target?.kind === "promoter" ? target.id : undefined),
         editionId: edition?.id ?? (target?.kind === "edition" ? target.id : undefined),
-        contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal, guarantee: d.guarantee,
-        doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice, settled: false,
+        contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal,
+        doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice,
+        income: d.guarantee ? [{ id: newId(), category: "guarantee", amount: d.guarantee, received: false }] : [],
       }, { id: r.id });
+      if (d.guarantee) await refreshDealTotals(w, r.id);
       if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
       if (pitch && i.pitchId) {
         if (i.copyPitchComments) {
@@ -180,14 +187,14 @@ export const showsCreate = defineCommand({
 
 // ---------- update ----------
 
-const SHOW_SYNC_FIELDS = ["date", "status", "venue", "place", "hostName", "times", "personnel", "billedAs", "public", "ticketUrl", "sound", "editionName", "bandNotes"];
+const SHOW_SYNC_FIELDS = ["date", "status", "venue", "place", "hostName", "times", "personnel", "billedAs", "publishToBandsintown", "public", "ticketUrl", "sound", "editionName", "dayOfContact"];
 const showPatch = z.strictObject({
   date: dateStr.optional(), status: z.enum(["hold", "confirmed", "played", "canceled", "dropped"]).optional(), reason: z.string().nullable().optional(), kind: showKind.optional(),
   venueId: z.string().min(1).nullable().optional(), place: place.nullable().optional(), hostContactIds: z.array(z.string().min(1)).optional(),
   editionId: z.string().min(1).nullable().optional(), editionName: z.string().nullable().optional(), times: times.optional(), billedAs: z.string().min(1).nullable().optional(),
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
   setlistId: z.string().min(1).nullable().optional(), docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
-  public: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), bandNotes: z.string().nullable().optional(),
+  publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
   addMissingChecklist: z.boolean().optional(),
 });
 
@@ -195,9 +202,10 @@ export const showsUpdate = defineCommand({
   name: "shows.update", roles: ["admin", "mcp"],
   description:
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; prefer shows.cancel / shows.drop), reason (why it was canceled or dropped; null clears), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
-    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, public, ticketUrl, bandNotes. " +
-    "addMissingChecklist adds template items for the current sound/needs. " +
-    "Changing date, time, venue, people, status or public re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
+    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times {loadIn, soundcheck, doors, showStart, set, setLengthSec}, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, publishToBandsintown (listed once confirmed), ticketUrl, " +
+    "dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
+    "addMissingChecklist adds template items for the current sound/needs to the Gig prep list. " +
+    "Changing date, time, venue, people, status or publishToBandsintown re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
     let touchesSync = false;
@@ -226,14 +234,17 @@ export const showsUpdate = defineCommand({
       const billedAs = patch.billedAs === undefined ? before.billedAs : patch.billedAs ?? undefined;
       if (addMissingChecklist || patch.needs || patch.sound || patch.date) {
         const next = { date: (patch.date ?? before.date) as string, sound: { provider: sound.provider }, needs: (patch.needs ?? before.needs) as { poster: boolean; backline: boolean; merch: boolean } };
-        let list = before.checklist as ChecklistItem[];
+        let lists = checklistsOf(before as never);
         if (patch.date && patch.date !== before.date) {
           const shift = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
           const by = shift(before.date, patch.date);
-          list = list.map((c) => (c.due && !c.done ? { ...c, due: addDays(c.due, by) } : c));
+          lists = lists.map((l) => ({ ...l, items: l.items.map((c) => (c.due && !c.done ? { ...c, due: addDays(c.due, by) } : c)) }));
         }
-        p.checklist = addMissingChecklist || patch.needs || patch.sound ? mergeChecklist(list, buildChecklist(await templates(w), next, newId)) : list;
+        if (addMissingChecklist || patch.needs || patch.sound) lists = mergeIntoGigPrep(lists, buildChecklist(await templates(w), next, newId), newId);
+        Object.assign(p, listsPatch(before, lists));
       }
+      if (patch.status && patch.status !== before.status) p.statusHistory = historyWith(w, before, patch.status, patch.reason ?? undefined);
+      if (patch.publishToBandsintown !== undefined && before.public !== undefined) p.public = null;
       const r = await w.update("shows", id, p);
       const after = (await w.get("shows", id))!;
       touchesSync = SHOW_SYNC_FIELDS.some((f) => JSON.stringify(before[f]) !== JSON.stringify(after[f]));
@@ -246,13 +257,34 @@ export const showsUpdate = defineCommand({
   },
 });
 
+/** Checklists written back in the new shape: a not-yet-migrated show drops its legacy checklist and gear in the same write. */
+function listsPatch(before: Doc, lists: ChecklistLike[]) {
+  return { checklists: lists, ...(before.checklist ? { checklist: null } : {}), ...(before.gear ? { gear: null } : {}) };
+}
+type StatusEntry = { status: string; reason?: string; by: string; at: string };
+const historyWith = (w: Writer, before: Doc, status: string, reason?: string): StatusEntry[] =>
+  [...((before.statusHistory as StatusEntry[] | undefined) ?? []), { status, ...(reason ? { reason } : {}), by: w.ctx.uid, at: w.now.toDate().toISOString() }];
+
 const offInput = z.strictObject({ id: z.string().min(1), reason: z.string().optional() });
-/** Set a show canceled or dropped, with its reason, in one write. A blank reason leaves it unset. */
-async function setOff(ctx: Ctx, i: z.infer<typeof offInput>, status: "canceled" | "dropped") {
-  const reason = i.reason?.trim();
-  await run(ctx, async (w) => { await requireShow(w, i.id); return w.update("shows", i.id, { status, ...(reason ? { reason } : {}) }); });
+/** Change a show's status with an optional reason, recorded in statusHistory with who and when, in one write. A blank reason clears it. */
+async function setStatus(ctx: Ctx, i: { id: string; reason?: string }, status: "hold" | "confirmed" | "canceled" | "dropped") {
+  const reason = i.reason?.trim() || undefined;
+  await run(ctx, async (w) => {
+    const before = await requireShow(w, i.id);
+    if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
+    return w.update("shows", i.id, { status, reason: reason ?? null, statusHistory: historyWith(w, before, status, reason) });
+  });
   return done(i.id, await syncShow(ctx, i.id));
 }
+const setOff = (ctx: Ctx, i: z.infer<typeof offInput>, status: "canceled" | "dropped") => setStatus(ctx, i, status);
+
+export const showsSetStatus = defineCommand({
+  name: "shows.setStatus", roles: ["admin", "mcp"],
+  description: "Change a show's status: hold (penciled in), confirmed, canceled (the venue called it off) or dropped (we called it off), with an optional reason. " +
+    "Each change is kept in statusHistory with who and when. Canceled or dropped removes its Calendar event and Bandsintown listing.",
+  input: z.strictObject({ id: z.string().min(1), status: z.enum(["hold", "confirmed", "canceled", "dropped"]), reason: z.string().optional() }),
+  run: (ctx, i) => setStatus(ctx, i, i.status),
+});
 
 export const showsCancel = defineCommand({
   name: "shows.cancel", roles: ["admin", "mcp"], input: offInput,
@@ -286,37 +318,55 @@ export const showsSync = defineCommand({
   async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id, { createCalendar: i.calendar })); },
 });
 
-// ---------- checklist and gear ----------
+// ---------- checklists ----------
 
-export const showsSetChecklist = defineCommand({
-  name: "shows.setChecklist", roles: ["admin", "mcp"], description: "Replace a show's checklist (check off, rename, give an owner or due date, add or remove items). Items without an id get one.",
-  input: z.strictObject({ id: z.string().min(1), checklist: z.array(checklistItem) }),
+export const showsSetChecklists = defineCommand({
+  name: "shows.setChecklists", roles: ["admin", "mcp"],
+  description: "Replace all of a show's checklists: [{id?, name, items: [{id?, label, done, ownerId? (musician), due?}]}]. Gear is a checklist named Gear (ownerId = who brings it). Lists and items without an id get one.",
+  input: z.strictObject({ id: z.string().min(1), checklists: z.array(checklistIn) }),
   run: (ctx, i) => run(ctx, async (w) => {
-    await requireShow(w, i.id);
-    return w.update("shows", i.id, { checklist: i.checklist.map((c) => ({ ...c, id: c.id ?? newId() })) });
+    const before = await requireShow(w, i.id);
+    const lists = i.checklists.map((l) => ({ ...l, id: l.id ?? newId(), items: l.items.map((c) => ({ ...c, id: c.id ?? newId() })) }));
+    return w.update("shows", i.id, listsPatch(before, lists));
   }),
 });
 
-export const showsSetGear = defineCommand({
-  name: "shows.setGear", roles: ["admin", "mcp"], description: "Replace a show's gear list (edit labels, who brings what, packed). Items without an id get one.",
-  input: z.strictObject({ id: z.string().min(1), gear: z.array(gearItem) }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    await requireShow(w, i.id);
-    return w.update("shows", i.id, { gear: i.gear.map((g) => ({ ...g, id: g.id ?? newId() })) });
-  }),
-});
-
-export const showsPackGear = defineCommand({
-  name: "shows.packGear", roles: ["admin", "member", "mcp"], description: "Mark one gear item packed or not. Members can only mark gear they are bringing.",
-  input: z.strictObject({ id: z.string().min(1), itemId: z.string().min(1), packed: z.boolean() }),
+export const showsCheckItem = defineCommand({
+  name: "shows.checkItem", roles: ["admin", "member", "mcp"], description: "Tick one checklist item done (or packed) or not. Members can only tick items assigned to them.",
+  input: z.strictObject({ id: z.string().min(1), listId: z.string().min(1), itemId: z.string().min(1), done: z.boolean() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const s = await requireShow(w, i.id);
-    const gear = s.gear as GearItem[];
-    const item = gear.find((g) => g.id === i.itemId);
-    if (!item) throw new AppError("not_found", "No such gear item", 404);
-    if (ctx.role === "member" && (!ctx.musicianId || item.musicianId !== ctx.musicianId)) throw new AppError("forbidden", "You can only mark your own gear", 403);
-    return w.update("shows", i.id, { gear: gear.map((g) => (g.id === i.itemId ? { ...g, packed: i.packed } : g)) });
+    const lists = checklistsOf(s as never);
+    const item = lists.find((l) => l.id === i.listId)?.items.find((c) => c.id === i.itemId);
+    if (!item) throw new AppError("not_found", "No such checklist item", 404);
+    if (ctx.role === "member" && (!ctx.musicianId || item.ownerId !== ctx.musicianId)) throw new AppError("forbidden", "You can only tick items assigned to you", 403);
+    return w.update("shows", i.id, listsPatch(s, lists.map((l) => (l.id !== i.listId ? l : { ...l, items: l.items.map((c) => (c.id === i.itemId ? { ...c, done: i.done } : c)) }))));
   }),
+});
+
+// ---------- comments (the whole band) ----------
+
+const ownComment = async (w: Writer, showId: string, commentId: string) => {
+  await requireShow(w, showId);
+  const c = await w.get(`shows/${showId}/comments`, commentId);
+  if (!c || c.deletedAt) throw new AppError("not_found", "Comment not found", 404);
+  if (c.authorId !== w.ctx.uid) throw new AppError("forbidden", "You can only change your own comments", 403);
+  return c;
+};
+export const showsComment = defineCommand({
+  name: "shows.comment", roles: ["admin", "member", "mcp"], description: "Comment on a show. The whole band reads it (audience band).",
+  input: z.strictObject({ id: z.string().min(1), body: z.string().trim().min(1) }),
+  run: (ctx, i) => run(ctx, async (w) => { await requireShow(w, i.id); return w.create(`shows/${i.id}/comments`, { authorId: ctx.uid, body: i.body, audience: "band" }); }),
+});
+export const showsEditComment = defineCommand({
+  name: "shows.editComment", roles: ["admin", "member", "mcp"], description: "Edit your own comment on a show.",
+  input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1), body: z.string().trim().min(1) }),
+  run: (ctx, i) => run(ctx, async (w) => { await ownComment(w, i.id, i.commentId); return w.update(`shows/${i.id}/comments`, i.commentId, { body: i.body }); }),
+});
+export const showsRemoveComment = defineCommand({
+  name: "shows.removeComment", roles: ["admin", "member", "mcp"], description: "Delete your own comment on a show.",
+  input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1) }),
+  run: (ctx, i) => run(ctx, async (w) => { await ownComment(w, i.id, i.commentId); return w.softDelete(`shows/${i.id}/comments`, i.commentId); }),
 });
 
 export const showsCalendar = defineCommand({
@@ -329,13 +379,31 @@ export const showsCalendar = defineCommand({
 
 const dealPatch = z.strictObject({
   promoterId: z.string().nullable().optional(), editionId: z.string().nullable().optional(), contactIds: z.array(z.string()).optional(),
-  deal: z.enum(["guarantee", "doorSplit", "flat", "tips", "free"]).optional(), guarantee: cents.nullable().optional(),
+  deal: z.enum(["guarantee", "doorSplit", "flat", "tips", "free"]).optional(),
   doorSplitPct: z.number().int().min(0).max(100).nullable().optional(), ticketPrice: cents.nullable().optional(),
 });
 export const showDealsUpdate = defineCommand({
   name: "showDeals.update", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), patch: dealPatch }),
-  description: "Edit the admin-only deal for a show (id is the show id): deal type, guarantee, door split, ticket price, day-of contacts.",
+  description: "Edit the admin-only deal for a show (id is the show id): deal type, door split, ticket price, contacts. Money in is showDeals.setIncome.",
   run: (ctx, { id, patch }) => db.update(ctx, "showDeals", id, patch as Record<string, unknown>),
+});
+
+export const showDealsSetIncome = defineCommand({
+  name: "showDeals.setIncome", roles: ["admin", "mcp"],
+  description: "Replace a show's income lines (admin-only; id is the show id): [{id?, category: guarantee|door|tips|merch|other, amount (cents), method?: cash|venmo|check|square|card|bank|other, received}], and incomeNotes (null clears). Lines without an id get one.",
+  input: z.strictObject({
+    id: z.string().min(1),
+    income: z.array(z.strictObject({ id: z.string().min(1).optional(), category: incomeCategory, amount: cents.nonnegative(), method: payMethod.optional(), received: z.boolean() })),
+    incomeNotes: z.string().nullable().optional(),
+  }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    await requireShow(w, i.id);
+    if (!(await w.get("showDeals", i.id))) throw new AppError("not_found", "Show deal not found", 404);
+    const notes = i.incomeNotes === undefined ? {} : { incomeNotes: i.incomeNotes?.trim() || null };
+    const r = await w.update("showDeals", i.id, { income: i.income.map((l) => ({ ...l, id: l.id ?? newId() })), ...notes });
+    await refreshDealTotals(w, i.id);
+    return r;
+  }),
 });
 
 // ---------- after the show ----------
@@ -344,7 +412,7 @@ export const showsAfter = defineCommand({
   name: "shows.afterShow", roles: ["admin", "mcp"],
   description:
     "How'd it go? Rate the show and venue (1-5), optional crowd size and notes, and paid attendance. Marks the show played. " +
-    "Does NOT enter money: use shows.settle for that.",
+    "Does NOT enter money: income lines are showDeals.setIncome, expenses shows.setExpenses.",
   input: z.strictObject({
     id: z.string().min(1), show: z.number().int().min(1).max(5), venue: z.number().int().min(1).max(5),
     crowd: z.number().int().min(0).optional(), notes: z.string().optional(), paidAttendance: z.number().int().min(0).optional(),
@@ -383,6 +451,6 @@ export const checklistTemplatesRemove = defineCommand({
 });
 
 export const showCommands = [
-  showsList, showsCreate, showsUpdate, showsCancel, showsDrop, showsRemove, showsSync, showsSetChecklist, showsSetGear, showsPackGear, showsCalendar,
-  showDealsUpdate, showsAfter, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesRemove,
+  showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync, showsSetChecklists, showsCheckItem,
+  showsComment, showsEditComment, showsRemoveComment, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesRemove,
 ];

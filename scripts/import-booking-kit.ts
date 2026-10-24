@@ -246,20 +246,28 @@ async function importVenueBook() {
           ...(venueId ? { venue: { id: venueId, name: venueName!, city } } : { place: { city } }),
           ...(house && contactIds.length ? { hostContactIds: contactIds, hostName } : {}),
           editionId: edition?.id, editionName: edition?.name ?? (s.billedAs?.trim() || undefined),
-          times: { ...(set ? { set } : {}), ...(setLength ? { setLength } : {}) },
+          times: { ...(set ? { set } : {}), ...(setLength ? { setLengthSec: setLength * 60 } : {}) },
           artistId: artist.id, billedAs: cfg && hasConfig(cfg) ? cfg : undefined, personnel: personnelFor(s.who, cfg),
           sound: { provider: /band|ours|we bring|jeff/i.test(soundText ?? "") || (house && !soundText) ? "bandProvided" : "venueProvided", notes: soundText || undefined },
-          needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
-          bandNotes: lines(
+          needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [], listings: {},
+        });
+        // What the Venue Book said about the show goes on it as the band's first comment.
+        const notes = lines(
             s.dateLabel && `Dates: ${s.dateLabel}`, s.event, edition && s.billedAs && s.billedAs, hold && past && "Hold that didn't confirm",
             house && !contactIds.length && `Was in the Venue Book as "${v.name}"`,
             s.who && `Who: ${s.who}`, s.time && !set && `Time: ${s.time}`, s.setLength && !setLength && `Set: ${s.setLength}`,
             s.pay && `Pay: ${s.pay}`, s.olive && `Olive: ${s.olive}`, s.where && s.where !== v.city && `Where: ${s.where}`, s.notes,
-          ),
-        });
+        );
+        if (notes && !(await w.query(`shows/${created}/comments`, (q) => q.limit(1))).length) {
+          await w.create(`shows/${created}/comments`, { authorId: w.ctx.uid, body: notes, audience: "band" });
+        }
         if (status === "canceled") continue;
-        // Past shows count as settled so Home and Roadie don't ask for their money; the pay text is in the notes.
-        await ensure(w, "showDeals", created, { contactIds: house ? contactIds : [], editionId: edition?.id, ...dealFor(s.pay), settled: past });
+        // A guarantee becomes the show's income line: received for past shows (the pay text is in the comment too).
+        const { guarantee, ...deal } = dealFor(s.pay);
+        await ensure(w, "showDeals", created, {
+          contactIds: house ? contactIds : [], editionId: edition?.id, ...deal,
+          income: guarantee ? [{ id: "g", category: "guarantee", amount: guarantee, received: past }] : [],
+        });
       }
     });
   }

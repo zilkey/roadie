@@ -16,66 +16,7 @@ async function as(browser: Browser, key: string) {
 
 const WHAT = `Drum heads ${Date.now()}`;
 
-test("enter money after the played seeded show: ledger entries, payouts, settled", async ({ page }) => {
-  await signInAs(page, "jeff");
-  await page.goto(A("/shows"));
-  await page.getByTestId("shows-filter-played").click();
-  await page.getByTestId("shows-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).locator("td.date a").click();
-  await page.getByTestId("after-show").click();
-  const id = page.url().split("/shows/")[1].split("/")[0];
-
-  // the guarantee ($450) is prefilled from the deal; add the door
-  await expect(page.getByTestId("income-guarantee")).toHaveValue("450");
-  await page.getByTestId("income-door").fill("100");
-  await page.getByTestId("income-merch").fill("55.50");
-  await expect(page.getByTestId("income-total")).toHaveText("$605.50");
-  // trio: three people, split evenly with leftover cents on the first
-  await expect(page.locator('[data-testid^="payout-row-"]')).toHaveCount(3);
-  const first = page.locator('input[data-testid^="payout-"]').first();
-  await expect(first).toHaveValue("201.84");
-  await first.fill("200");
-  await page.getByTestId("enter-money").click();
-  await expect(page.getByTestId("settled")).toBeVisible();
-  await expect(page.getByTestId("money-step")).toContainText("Guarantee");
-  await expect(page.getByTestId("money-step")).toContainText("$450.00");
-
-  // Home no longer shows it as unsettled
-  await page.goto(A("/home"));
-  await expect(page.getByTestId(`recent-${id}`)).toHaveCount(0);
-
-  // the ledger on the Money tab has it, and entering again is refused
-  await page.getByTestId("tab-money").click();
-  await page.getByTestId("money-tab-ledger").click();
-  await expect(page.getByTestId("ledger-list")).toContainText("Tickets / door");
-  await expect(page.getByTestId("ledger-list")).toContainText("Dairy Arts Center");
-  await page.getByTestId("money-tab-overview").click();
-  await expect(page.getByTestId("total-in")).toHaveText("$605.50");
-  await expect(page.getByTestId("chart-months")).toBeVisible();
-  await page.getByTestId("money-tab-shows").click();
-  await expect(page.getByTestId("chart-shows")).toContainText("Dairy Arts Center");
-  await page.getByTestId("money-tab-categories").click();
-  await expect(page.getByTestId("chart-categories")).toContainText("Guarantee");
-});
-
-test("admin records a photo shoot and corrects it; the original stays", async ({ page }) => {
-  await signInAs(page, "ingrid");
-  await page.getByTestId("tab-money").click();
-  await page.getByTestId("money-tab-ledger").click();
-  await page.getByTestId("rec-category").selectOption("photo");
-  await page.getByTestId("rec-amount").fill("120");
-  await page.getByTestId("rec-memo").fill("Press photos");
-  await page.getByTestId("rec-save").click();
-  await expect(page.getByTestId("rec-saved")).toBeVisible();
-  const row = page.getByTestId("ledger-list").locator("div.card", { hasText: "Press photos" });
-  await expect(row).toHaveCount(1);
-  page.once("dialog", (d) => d.accept());
-  await row.getByRole("button", { name: /Correct/ }).click();
-  await expect(page.getByTestId("ledger-list").locator("div.card", { hasText: "Reverses expense" })).toHaveCount(1);
-  await expect(row.locator('[data-testid^="reversed-"]')).toBeVisible();
-  await expect(row.getByRole("button", { name: /Correct/ })).toHaveCount(0);
-});
-
-test("member adds an expense (receipt from Drive search) and sees it as not paid back", async ({ browser }) => {
+test("member adds an expense (receipt from Drive search) and sees it as owed", async ({ browser }) => {
   const david = await as(browser, "david");
   const p = david.page;
   await expect(p.getByTestId("tab-money")).toHaveText("My money");
@@ -92,24 +33,44 @@ test("member adds an expense (receipt from Drive search) and sees it as not paid
   await expect(p).toHaveURL(/\/money$/);
   const card = p.locator('[data-testid^="expense-"]', { hasText: WHAT }).first();
   await expect(card).toContainText("$64.00");
-  await expect(card).toContainText("Not yet");
+  await expect(card).toContainText("Owed");
   await david.close();
 });
 
-test("admin reimburses it; the member then sees it paid back and the payment", async ({ page, browser }) => {
+test("admin marks it paid back from Money; the member then sees Paid back and can no longer edit it", async ({ page, browser }) => {
   await signInAs(page, "jeff");
   await page.getByTestId("tab-money").click();
   const owed = page.getByTestId("owed");
   await expect(owed).toContainText(WHAT);
-  await owed.locator("div.items-center", { hasText: WHAT }).getByRole("button", { name: "Mark reimbursed" }).click();
+  await owed.locator("div.items-center", { hasText: WHAT }).getByRole("button", { name: "Mark paid back" }).click();
   await expect(owed).not.toContainText(WHAT);
 
   const david = await as(browser, "david");
   await david.page.getByTestId("tab-money").click();
   const card = david.page.locator('[data-testid^="expense-"]', { hasText: WHAT }).first();
   await expect(card).toContainText("Paid back");
-  await expect(david.page.getByText("Payments to me").locator("..")).toContainText(WHAT);
-  await expect(david.page.getByText("Payments to me").locator("..")).toContainText("Reimbursed");
+  await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  await david.close();
+});
+
+test("member edits their own unpaid expense", async ({ browser }) => {
+  const david = await as(browser, "david");
+  const p = david.page;
+  const what = `Cables ${Date.now()}`;
+  await p.getByTestId("tab-money").click();
+  await p.getByTestId("add-expense-link").first().click();
+  await p.getByTestId("expense-amount").fill("20");
+  await p.getByTestId("expense-what").fill(what);
+  await p.getByTestId("expense-send").click();
+  await expect(p).toHaveURL(/\/money$/);
+  const card = p.locator('[data-testid^="expense-"]', { hasText: what }).first();
+  await expect(card).toContainText("$20.00");
+  await card.getByRole("button", { name: "Edit" }).click();
+  await card.locator('input[data-testid^="expense-edit-amount-"]').fill("25.50");
+  await card.getByRole("button", { name: "Save" }).click();
+  await expect(card).toContainText("$25.50");
+  await expect(card).toContainText("Owed");
   await david.close();
 });
 
@@ -140,7 +101,7 @@ test("members cannot open the stats page", async ({ browser }) => {
   await david.close();
 });
 
-test("drafts: a half-entered expense and ledger entry survive a reload and clear with Start over", async ({ page, browser }) => {
+test("drafts: a half-entered expense survives a reload and clear with Start over", async ({ browser }) => {
   // a member's expense
   const david = await as(browser, "david");
   const p = david.page;
@@ -160,18 +121,4 @@ test("drafts: a half-entered expense and ledger entry survive a reload and clear
   await expect(p.getByTestId("expense-what")).toHaveValue("");
   await expect(p.getByTestId("draft-restored")).toHaveCount(0);
   await david.close();
-
-  // an admin's ledger entry
-  await signInAs(page, "ingrid");
-  await page.getByTestId("tab-money").click();
-  await page.getByTestId("money-tab-ledger").click();
-  await page.getByTestId("rec-amount").fill("77");
-  await page.getByTestId("rec-memo").fill("Half typed entry");
-  await expect(page.getByTestId("record-form").getByTestId("draft-status")).toHaveText("Draft saved");
-  await page.reload();
-  await page.getByTestId("money-tab-ledger").click();
-  await expect(page.getByTestId("rec-amount")).toHaveValue("77");
-  await expect(page.getByTestId("rec-memo")).toHaveValue("Half typed entry");
-  await page.getByTestId("draft-start-over").click();
-  await expect(page.getByTestId("rec-amount")).toHaveValue("");
 });

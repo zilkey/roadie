@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "@/lib/artist";
 import { useDocs } from "@/lib/firestore-hooks";
 import { fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
+import { fmtDuration, setLengthOf } from "@/lib/duration";
 import type { ShowDeal, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ShowRow } from "./common";
@@ -11,8 +12,6 @@ const PAGE = 50;
 const Dash = () => <span className="dash">—</span>;
 const orDash = (v?: React.ReactNode) => (v ? v : <Dash />);
 
-/** Set length in minutes: "45m", "1h", "1h 3m". */
-export const fmtDuration = (m?: number) => (!m ? "" : m < 60 ? `${m}m` : m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`);
 /** Whole dollars: 72500 -> "$725". Nothing entered (missing or 0) -> "". */
 export const fmtDollars = (c?: number) => (c ? `${c < 0 ? "-" : ""}$${Math.round(Math.abs(c) / 100).toLocaleString("en-US")}` : "");
 const mapsUrl = (a: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}`;
@@ -45,7 +44,7 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
   if (!shows.length) return <Empty tab="upcoming">No shows coming up.</Empty>;
   return (
     <Wrap tab="upcoming">
-      <Head cols={[["Date"], ["Venue"], ["Address"], ["Show start"], ["Load in"], ["Sound check"], ["Downbeat"], ["Sound"], ["Setlist"]]} />
+      <Head cols={[["Date"], ["Venue"], ["Address"], ["Load in"], ["Sound check"], ["Doors"], ["Show starts"], ["Downbeat"], ["Sound"], ["Contact"], ["Setlist"]]} />
       <tbody>
         {shows.map((s) => {
           const addr = addressOf(s);
@@ -54,12 +53,13 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
             <tr key={s.id} data-testid="shows-row" data-id={s.id}>
               <DateCell s={s} /><VenueCell s={s} />
               <td className="addr">{addr ? <a href={mapsUrl(addr)} target="_blank" rel="noopener noreferrer">{addr}</a> : <Dash />}</td>
-              {/* Show start: the module's run-of-show isn't built yet, so doors stands in. */}
-              <td className="t">{orDash(fmtTime(s.times.doors))}</td>
               <td className="t">{orDash(fmtTime(s.times.loadIn))}</td>
               <td className="t">{orDash(fmtTime(s.times.soundcheck))}</td>
+              <td className="t">{orDash(fmtTime(s.times.doors))}</td>
+              <td className="t">{orDash(fmtTime(s.times.showStart))}</td>
               <td className="t">{orDash(fmtTime(s.times.set))}</td>
               <td>{s.sound.provider === "bandProvided" ? <span className="chip a">We provide</span> : <span className="chip">They provide</span>}</td>
+              <td className="contact" data-testid="shows-contact">{s.dayOfContact ? <>{s.dayOfContact.name}{s.dayOfContact.phone && <> · <a href={`tel:${s.dayOfContact.phone.replace(/[^\d+]/g, "")}`}>{s.dayOfContact.phone}</a></>}</> : <Dash />}</td>
               <td>{sl ? <Link href={`/songs/setlists/${sl.id}`}>{sl.name}</Link> : <Dash />}</td>
             </tr>
           );
@@ -91,7 +91,7 @@ function Played({ shows, admin }: { shows: ShowRow[]; admin: boolean }) {
           {rows.map((s) => (
             <tr key={s.id} data-testid="shows-row" data-id={s.id}>
               <DateCell s={s} /><VenueCell s={s} />
-              <td className="t">{orDash(fmtDuration(s.times.setLength))}</td>
+              <td className="t">{orDash(fmtDuration(setLengthOf(s.times)))}</td>
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.income))}</td>}
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.expenses))}</td>}
             </tr>

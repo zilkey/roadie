@@ -24,19 +24,22 @@ test("a house concert has hosts and a city, no venue; it can move to a venue and
   await page.getByTestId("show-save").click();
 
   await expect(page.getByTestId("show-page")).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("House concert · Dana Ortiz");
-  await expect(page.getByTestId("show-address")).toHaveText("4 Canyon Rd");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("House concert · Dana Ortiz");
+  await expect(page.getByTestId("where-maps")).toContainText("4 Canyon Rd");
   const url = page.url();
 
-  // Edit: switch to a venue (autosave), then back to the house.
-  await page.getByTestId("show-edit").click();
-  await page.getByTestId("show-where").selectOption("venue");
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hi-Dive");
-  await page.getByTestId("show-where").selectOption("house");
-  await page.getByTestId("show-city").fill("Lyons"); // the form keeps what was typed; a fresh blur saves it
-  await page.getByTestId("show-city").blur();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("House concert · Dana Ortiz");
+  // Where & when: switch to a venue (Save), then back to the house.
+  const ww = page.getByTestId("where-when");
+  await ww.getByTestId("where-when-edit").click();
+  await ww.getByTestId("where-kind").selectOption("venue");
+  await ww.getByTestId("where-venue-select").selectOption({ label: "Hi-Dive · Denver" });
+  await ww.getByTestId("where-when-save").click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Hi-Dive");
+  await ww.getByTestId("where-when-edit").click();
+  await ww.getByTestId("where-kind").selectOption("house");
+  await ww.getByTestId("where-city").fill("Lyons");
+  await ww.getByTestId("where-when-save").click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("House concert · Dana Ortiz");
 
   // The host's contact page lists the show.
   await page.goto(A("/booking"));

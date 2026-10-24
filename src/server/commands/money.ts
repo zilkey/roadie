@@ -1,163 +1,38 @@
 import { z } from "zod";
 import { dateInBandZone } from "@/lib/timezone";
-import { run, type Writer } from "../db";
+import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { defineCommand } from "./types";
 import { driveClient } from "../integrations";
-import { LedgerInput, ledgerCategory, driveRef } from "@/schema";
-import { reversedIds, reimbursementFor, owedLines, type LedgerLike } from "@/lib/money";
-import { showName, isOff, type ShowPlaceLike } from "@/lib/shows";
+import { ledgerCategory, driveRef } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
 
 const todayServer = () => dateInBandZone();
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const method = z.enum(["cash", "venmo", "check", "card", "bank", "other"]);
 
-const ledgerOf = (w: Writer, expenseId: string) => w.query("ledger", (q) => q.where("expenseId", "==", expenseId)) as Promise<LedgerLike[]>;
+// There is no ledger: a show's income is the lines on its deal (showDeals.setIncome), money spent is expenses.
+// An expense can be changed or removed by its owner (or an admin) until an admin marks it paid back.
 
-async function userIdForMusician(w: Writer, musicianId: string): Promise<string | undefined> {
-  const m = await w.get("musicians", musicianId);
-  if (!m || m.deletedAt) throw new AppError("not_found", `Musician ${musicianId} not found`, 404);
-  if (m.userId) return m.userId as string;
-  const us = await w.query("users", (q) => q.where("musicianId", "==", musicianId).limit(1));
-  return us[0]?.id;
+async function requireExpense(w: Writer, id: string) {
+  const x = await w.get("expenses", id);
+  if (!x || x.deletedAt) throw new AppError("not_found", "Expense not found", 404);
+  return x;
 }
-
-/**
- * The one place ledger entries are created. Entries are immutable (db.ts refuses update/delete);
- * mistakes get a `correction` that reverses exactly one earlier entry. An entry on a show refreshes showDeals.totals
- * (`refresh: false` when the caller writes several and refreshes once itself).
- */
-export async function addLedgerEntry(w: Writer, entry: Record<string, unknown>, opts: { refresh?: boolean } = {}) {
-  const e = entry as { kind: string; amount: number; reversesId?: string; expenseId?: string; showId?: string; payeeUserId?: string; payeeMusicianId?: string };
-  if (e.kind !== "correction" && e.reversesId) throw new AppError("invalid_input", "Only a correction can have reversesId", 400);
-  if (e.showId && !(await w.get("shows", e.showId))) throw new AppError("not_found", `Show ${e.showId} not found`, 404);
-  if (e.kind === "correction") {
-    const orig = await w.get("ledger", e.reversesId!);
-    if (!orig) throw new AppError("not_found", "The entry to correct does not exist", 404);
-    if (orig.kind === "correction") throw new AppError("invalid_state", "A correction cannot be corrected; record a new entry instead", 409);
-    if (reversedIds(await w.query("ledger", (q) => q.where("reversesId", "==", orig.id)) as LedgerLike[]).has(orig.id)) {
-      throw new AppError("already_corrected", "That entry was already corrected", 409);
-    }
-    if (e.amount !== orig.amount) throw new AppError("invalid_input", "A correction must have the same amount as the entry it reverses", 400);
-  }
-  if (e.kind === "reimbursement") {
-    if (!e.expenseId) throw new AppError("invalid_input", "A reimbursement needs expenseId", 400);
-    const x = await w.get("expenses", e.expenseId);
-    if (!x) throw new AppError("not_found", "Expense not found", 404);
-    if (reimbursementFor(e.expenseId, await ledgerOf(w, e.expenseId))) throw new AppError("already_reimbursed", "That expense was already paid back", 409);
-  }
-  if (e.kind === "payout" && !e.payeeUserId && !e.payeeMusicianId) throw new AppError("invalid_input", "A payout needs payeeUserId or payeeMusicianId", 400);
-  const out = { ...entry };
-  if (e.payeeMusicianId && !e.payeeUserId) {
-    const u = await userIdForMusician(w, e.payeeMusicianId);
-    if (u) out.payeeUserId = u;
-  }
-  const r = await w.create("ledger", out);
-  if (e.showId && opts.refresh !== false) await refreshDealTotals(w, e.showId, { ledger: [(await w.get("ledger", r.id))!] });
-  return r;
+/** The caller may change this expense: theirs (or they're an admin) and not paid back yet. */
+function assertCanChange(w: Writer, x: Doc) {
+  if (w.ctx.role === "member" && x.userId !== w.ctx.uid) throw new AppError("forbidden", "You can only change your own expenses", 403);
+  if (x.paidBackAt) throw new AppError("paid_back", "That expense was already paid back", 409);
 }
-
-// ---------- ledger ----------
-
-export const ledgerRecord = defineCommand({
-  name: "ledger.record", roles: ["admin", "mcp"], input: LedgerInput,
-  description:
-    "Record any money in or out (photo shoot, video, room rental, tips...). kind: income|expense|payout|reimbursement|correction; amount in cents, always positive. " +
-    "Entries are never edited or deleted: a correction needs reversesId and the same amount (prefer ledger.correct).",
-  run: (ctx, input) => run(ctx, (w) => addLedgerEntry(w, input as Record<string, unknown>)),
-});
-
-export const ledgerCorrect = defineCommand({
-  name: "ledger.correct", roles: ["admin", "mcp"],
-  description: "Reverse a ledger entry by adding a correction entry (same amount, reversesId set). The original stays. Record the right entry afterwards if needed.",
-  input: z.strictObject({ reversesId: z.string().min(1), memo: z.string().optional(), date: dateStr.optional() }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const o = await w.get("ledger", i.reversesId);
-    if (!o) throw new AppError("not_found", "The entry to correct does not exist", 404);
-    const keep = ["category", "method", "showId", "rehearsalId", "payeeUserId", "payeeMusicianId", "expenseId"] as const;
-    return addLedgerEntry(w, {
-      date: i.date ?? todayServer(), kind: "correction", amount: o.amount, reversesId: o.id, memo: i.memo ?? `Reverses ${o.kind} of ${o.date}`,
-      ...Object.fromEntries(keep.filter((k) => o[k] !== undefined).map((k) => [k, o[k]])),
-    });
-  }),
-});
-
-// ---------- settle a show ----------
-
-const IncomeLine = z.strictObject({
-  category: z.enum(["guarantee", "door", "merch", "tips", "venmo"]), amount: z.number().int().positive(),
-  method: method.optional(), memo: z.string().optional(),
-});
-const PayoutLine = z.strictObject({ musicianId: z.string().min(1), amount: z.number().int().positive(), paid: z.boolean().default(true), method: method.default("venmo") });
-const DEFAULT_METHOD = { guarantee: "check", door: "cash", merch: "cash", tips: "cash", venmo: "venmo" } as const;
-
-export const showsSettle = defineCommand({
-  name: "shows.settle", roles: ["admin", "mcp"],
-  description:
-    "Enter the money after a show: income lines (guarantee|door|merch|tips|venmo, cents) and payouts to people who played. paid:true writes a payout ledger entry, " +
-    "paid:false remembers it as owed. All entries and showDeals.settled=true are written in one transaction. Payouts cannot exceed income.",
-  input: z.strictObject({ id: z.string().min(1), income: z.array(IncomeLine).min(1), payouts: z.array(PayoutLine).default([]) }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const show = await w.get("shows", i.id);
-    if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
-    if (isOff(show)) throw new AppError("invalid_state", `This show was ${show.status}`, 409);
-    const deal = await w.get("showDeals", i.id);
-    if (!deal) throw new AppError("not_found", "Show deal not found", 404);
-    if (deal.settled) throw new AppError("already_settled", "The money for this show is already entered", 409);
-    const inTotal = i.income.reduce((n, l) => n + l.amount, 0);
-    const outTotal = i.payouts.reduce((n, l) => n + l.amount, 0);
-    if (outTotal > inTotal) throw new AppError("over_allocated", "Payouts add up to more than the money in", 400);
-    if (new Set(i.payouts.map((p) => p.musicianId)).size !== i.payouts.length) throw new AppError("invalid_input", "Each person can appear once in payouts", 400);
-    const ids: string[] = [];
-    for (const l of i.income) {
-      ids.push((await addLedgerEntry(w, { date: show.date, kind: "income", amount: l.amount, category: l.category, method: l.method ?? DEFAULT_METHOD[l.category], showId: i.id, ...(l.memo ? { memo: l.memo } : {}) }, { refresh: false })).id);
-    }
-    const owed: { musicianId: string; amount: number }[] = [];
-    for (const p of i.payouts) {
-      const userId = await userIdForMusician(w, p.musicianId);
-      if (p.paid) {
-        ids.push((await addLedgerEntry(w, {
-          date: todayServer(), kind: "payout", amount: p.amount, category: "other", method: p.method, showId: i.id, payeeMusicianId: p.musicianId,
-          ...(userId ? { payeeUserId: userId } : {}), memo: `${showName(show as ShowPlaceLike)} payout`,
-        }, { refresh: false })).id);
-      } else owed.push({ musicianId: p.musicianId, amount: p.amount });
-    }
-    await w.update("showDeals", i.id, { settled: true, owedPayouts: owed.length ? owed : null });
-    await refreshDealTotals(w, i.id, { ledger: (await Promise.all(ids.map((x) => w.get("ledger", x)))).filter((d) => !!d) });
-    return { id: i.id, ledgerIds: ids, in: inTotal, paidOut: i.payouts.filter((p) => p.paid).reduce((n, p) => n + p.amount, 0), owed: owed.length };
-  }),
-});
-
-export const payoutsPay = defineCommand({
-  name: "payouts.pay", roles: ["admin", "mcp"],
-  description: "Pay a show payout that was left owed when the show was settled (writes a payout ledger entry; amount defaults to what is still owed).",
-  input: z.strictObject({ showId: z.string().min(1), musicianId: z.string().min(1), amount: z.number().int().positive().optional(), method: method.default("venmo") }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const deal = await w.get("showDeals", i.showId);
-    const show = await w.get("shows", i.showId);
-    if (!deal || !show) throw new AppError("not_found", "Show not found", 404);
-    const led = (await w.query("ledger", (q) => q.where("showId", "==", i.showId))) as LedgerLike[];
-    const line = owedLines({ expenses: [], ledger: led, deals: [{ id: i.showId, owedPayouts: deal.owedPayouts }] }).find((l) => l.musicianId === i.musicianId);
-    if (!line) throw new AppError("nothing_owed", "Nothing is owed to that person for this show", 409);
-    const amount = i.amount ?? line.amount;
-    if (amount > line.amount) throw new AppError("over_allocated", "That is more than is owed", 400);
-    const userId = await userIdForMusician(w, i.musicianId);
-    return addLedgerEntry(w, {
-      date: todayServer(), kind: "payout", amount, category: "other", method: i.method, showId: i.showId, payeeMusicianId: i.musicianId,
-      ...(userId ? { payeeUserId: userId } : {}), memo: `${showName(show as ShowPlaceLike)} payout`,
-    });
-  }),
-});
+const refresh = (w: Writer, ...showIds: unknown[]) => Promise.all([...new Set(showIds.filter((s): s is string => typeof s === "string"))].map((s) => refreshDealTotals(w, s)));
 
 // ---------- expenses ----------
 
 export const expensesAdd = defineCommand({
   name: "expenses.add", roles: ["admin", "member"],
-  description: "Add an expense: amount in cents, what it was for, category, optional showId and receipt (Drive link). Cannot be changed afterwards. Members add their own; admins may pass userId.",
+  description: "Add an expense: amount in cents, what it was for, category, optional showId and receipt (Drive link), payBack (default true: the band owes it back). Members add their own; admins may pass userId.",
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), category: ledgerCategory, date: dateStr.optional(),
-    showId: z.string().min(1).optional(), receipt: driveRef.optional(), userId: z.string().min(1).optional(),
+    showId: z.string().min(1).optional(), receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     if (i.userId && i.userId !== ctx.uid && ctx.role === "member") throw new AppError("forbidden", "You can only add your own expenses", 403);
@@ -172,19 +47,89 @@ export const expensesAdd = defineCommand({
   }),
 });
 
-export const expensesReimburse = defineCommand({
-  name: "expenses.reimburse", roles: ["admin", "mcp"],
-  description: "Mark an expense paid back: writes a reimbursement ledger entry with expenseId. Once per expense unless that entry is corrected.",
-  input: z.strictObject({ id: z.string().min(1), method: method.default("venmo") }),
+export const expensesUpdate = defineCommand({
+  name: "expenses.update", roles: ["admin", "member"],
+  description: "Fix an expense until it's paid back: what, amount, payBack, receipt (null clears), showId (null clears). Members only their own.",
+  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
+    what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(),
+    receipt: driveRef.nullable().optional(), showId: z.string().min(1).nullable().optional(), category: ledgerCategory.optional(),
+  }) }),
+  run: (ctx, { id, patch }) => run(ctx, async (w) => {
+    const x = await requireExpense(w, id);
+    assertCanChange(w, x);
+    if (patch.showId && !(await w.get("shows", patch.showId))) throw new AppError("not_found", "Show not found", 404);
+    const r = await w.update("expenses", id, patch as Record<string, unknown>);
+    await refresh(w, x.showId, patch.showId);
+    return r;
+  }),
+});
+
+export const expensesRemove = defineCommand({
+  name: "expenses.remove", roles: ["admin", "member"], description: "Remove an expense that hasn't been paid back. Members only their own.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  run: (ctx, { id }) => run(ctx, async (w) => {
+    const x = await requireExpense(w, id);
+    assertCanChange(w, x);
+    const r = await w.softDelete("expenses", id);
+    await refresh(w, x.showId);
+    return r;
+  }),
+});
+
+export const expensesSetPaidBack = defineCommand({
+  name: "expenses.setPaidBack", roles: ["admin", "mcp"], description: "Mark an expense paid back (paid:true, today, by you) or not paid back after all (paid:false).",
+  input: z.strictObject({ id: z.string().min(1), paid: z.boolean() }),
   run: (ctx, i) => run(ctx, async (w) => {
-    const x = await w.get("expenses", i.id);
-    if (!x || x.deletedAt) throw new AppError("not_found", "Expense not found", 404);
-    const u = await w.get("users", x.userId);
-    return addLedgerEntry(w, {
-      date: todayServer(), kind: "reimbursement", amount: x.amount, category: x.category, method: i.method, expenseId: x.id,
-      payeeUserId: x.userId, ...(u?.musicianId ? { payeeMusicianId: u.musicianId } : {}), ...(x.showId ? { showId: x.showId } : {}),
-      memo: x.what, ...(x.receipt ? { receipt: x.receipt } : {}),
-    });
+    await requireExpense(w, i.id);
+    return w.update("expenses", i.id, i.paid ? { paidBackAt: todayServer(), paidBackBy: ctx.uid } : { paidBackAt: null, paidBackBy: null });
+  }),
+});
+
+const ExpenseLine = z.strictObject({
+  id: z.string().min(1).optional(), what: z.string().trim().min(1), amount: z.number().int().positive(), userId: z.string().min(1).optional(),
+  payBack: z.boolean().default(true), receipt: driveRef.nullable().optional(),
+});
+export const showsSetExpenses = defineCommand({
+  name: "shows.setExpenses", roles: ["admin", "member"],
+  description: "Save a show's expense lines as the caller sees them (members: their own; admins: all): lines without an id are added, changed ones updated, " +
+    "and the caller's expenses on the show that are missing are removed. Paid-back expenses can't change (send them as they are). userId is for admins only.",
+  input: z.strictObject({ id: z.string().min(1), lines: z.array(ExpenseLine) }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const show = await w.get("shows", i.id);
+    if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
+    const mine = (await w.query("expenses", (q) => q.where("showId", "==", i.id)))
+      .filter((x) => !x.deletedAt && (ctx.role !== "member" || x.userId === ctx.uid));
+    const byId = new Map(mine.map((x) => [x.id, x]));
+    const out = { added: [] as string[], updated: [] as string[], removed: [] as string[] };
+    for (const l of i.lines) {
+      if (l.userId && l.userId !== ctx.uid && ctx.role === "member") throw new AppError("forbidden", "You can only add your own expenses", 403);
+      if (!l.id) {
+        const userId = l.userId ?? ctx.uid;
+        const u = await w.get("users", userId);
+        if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
+        const { id: _i, receipt, ...rest } = l;
+        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: todayServer(), showId: i.id })).id);
+        continue;
+      }
+      const x = byId.get(l.id);
+      if (!x) throw new AppError("not_found", "Expense not found on this show", 404);
+      const patch: Record<string, unknown> = {};
+      for (const k of ["what", "amount", "payBack", "userId"] as const) if (l[k] !== undefined && l[k] !== (k === "payBack" ? x.payBack ?? true : x[k])) patch[k] = l[k];
+      if (l.receipt !== undefined && JSON.stringify(l.receipt) !== JSON.stringify(x.receipt ?? null)) patch.receipt = l.receipt;
+      if (!Object.keys(patch).length) continue;
+      assertCanChange(w, x);
+      await w.update("expenses", x.id, patch);
+      out.updated.push(x.id);
+    }
+    const kept = new Set(i.lines.map((l) => l.id).filter(Boolean));
+    for (const x of mine) {
+      if (kept.has(x.id)) continue;
+      assertCanChange(w, x);
+      await w.softDelete("expenses", x.id);
+      out.removed.push(x.id);
+    }
+    await refreshDealTotals(w, i.id);
+    return { id: i.id, ...out };
   }),
 });
 
@@ -198,4 +143,4 @@ export const receiptsSearch = defineCommand({
   },
 });
 
-export const moneyCommands = [ledgerRecord, ledgerCorrect, showsSettle, payoutsPay, expensesAdd, expensesReimburse, receiptsSearch];
+export const moneyCommands = [expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, showsSetExpenses, receiptsSearch];

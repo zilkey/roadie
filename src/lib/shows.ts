@@ -5,7 +5,9 @@ export type Sound = { provider: "venueProvided" | "bandProvided"; notes?: string
 export type Needs = { poster: boolean; backline: boolean; merch: boolean };
 export interface TemplateLike { label: string; when: "always" | "bandSound" | "venueSound" | "poster" | "backline" | "merch"; daysBefore: number }
 export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; due?: string }
+/** LEGACY gear item (shows not yet migrated); gear is now a checklist named "Gear". */
 export interface GearItem { id: string; label: string; musicianId?: string; packed: boolean }
+export interface ChecklistLike { id: string; name: string; items: ChecklistItem[] }
 export interface ArtistLike {
   configurations: { id: string; name: string; billingName: string; musicianIds: string[] }[];
 }
@@ -34,6 +36,8 @@ export function showName(s: ShowPlaceLike): string {
 export const publicShowName = (s: ShowPlaceLike) => (s.venue ? s.venue.name : kindOf(s) === "house" ? "House concert" : showName(s));
 export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
 export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
+/** Published to Bandsintown (or, on a show not yet migrated, the old "public show" flag). */
+export const isPublished = (s: object) => { const x = s as { publishToBandsintown?: boolean; public?: boolean }; return x.publishToBandsintown ?? x.public ?? false; };
 /** "Jerry Champlin & Tania McEvoy" */
 export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
 
@@ -104,6 +108,31 @@ export function buildChecklist(templates: TemplateLike[], show: { date: string; 
   return templates.filter((t) => templateApplies(t.when, show))
     .map((t) => ({ id: newId(), label: t.label, done: false, due: addDays(show.date, -t.daysBefore) }))
     .sort((a, b) => a.due!.localeCompare(b.due!));
+}
+/** The list template items go into (and the old single checklist became). */
+export const GIG_PREP = "Gig prep";
+/** A show's checklists: `checklists`, or for a show not yet migrated its old checklist ("Gig prep") and gear list ("Gear"). */
+export function checklistsOf(s: { checklists?: ChecklistLike[]; checklist?: ChecklistItem[]; gear?: GearItem[] }): ChecklistLike[] {
+  if (s.checklists) return s.checklists;
+  const out: ChecklistLike[] = [];
+  if (s.checklist?.length) out.push({ id: "gigprep", name: GIG_PREP, items: s.checklist });
+  if (s.gear?.length) {
+    out.push({ id: "gear", name: "Gear", items: s.gear.map((g) => ({ id: g.id, label: g.label, done: g.packed, ...(g.musicianId ? { ownerId: g.musicianId } : {}) })) });
+  }
+  return out;
+}
+/** "5 of 9" across every list. */
+export function checklistCount(lists: ChecklistLike[]) {
+  const items = lists.flatMap((l) => l.items);
+  return { done: items.filter((i) => i.done).length, total: items.length };
+}
+/** Put built template items into the Gig prep list (made first if missing), skipping labels any list already has. */
+export function mergeIntoGigPrep(lists: ChecklistLike[], built: ChecklistItem[], newId: () => string): ChecklistLike[] {
+  const have = new Set(lists.flatMap((l) => l.items.map((i) => i.label.toLowerCase())));
+  const add = built.filter((i) => !have.has(i.label.toLowerCase()));
+  if (!add.length) return lists;
+  const gp = lists.find((l) => l.name === GIG_PREP);
+  return gp ? lists.map((l) => (l === gp ? { ...l, items: [...l.items, ...add] } : l)) : [{ id: newId(), name: GIG_PREP, items: add }, ...lists];
 }
 /** Add template items not already on the list (matched by label). Existing items are never touched. */
 export function mergeChecklist(existing: ChecklistItem[], built: ChecklistItem[]): ChecklistItem[] {

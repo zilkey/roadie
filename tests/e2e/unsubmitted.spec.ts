@@ -22,26 +22,37 @@ async function newShow(page: Page, date: string) {
   return page.url().split("/shows/")[1].split(/[/?]/)[0];
 }
 
+// An existing record autosaves (no Save button); the show page's cards now save explicitly, so these use a song.
+async function openSongEdit(page: Page, title: string) {
+  await page.goto(A("/songs"));
+  await page.getByText(title, { exact: true }).first().click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await page.getByTestId("song-edit").click();
+  return page.url().split("/songs/")[1].split(/[/?]/)[0];
+}
+
 test("an edit that never reached the server survives a closed tab: it comes back in a new browser and saves", async ({ browser }) => {
   const a = await as(browser, "jeff");
-  const id = await newShow(a.page, "2027-08-14");
+  const id = await openSongEdit(a.page, "Glass Coast");
   // The autosave request never gets through (the tab is going away); the draft copy still lands.
-  await a.page.route("**/api/commands/shows.update", (r) => r.abort());
+  await a.page.route("**/api/commands/songs.update", (r) => r.abort());
   const saved = a.page.waitForResponse(isDraftCall("drafts.save"));
-  await a.page.getByTestId("notes-input").fill("Load in through the alley");
+  await a.page.getByTestId("edit-notes").fill("Capo 2 on the bridge");
   await saved;
   await a.close();
 
   const b = await as(browser, "jeff");
   await b.page.goto(A("/home"));
-  await expect(b.page.getByTestId("unfinished")).toContainText("Unsaved changes to Hi-Dive");
+  await expect(b.page.getByTestId("unfinished")).toContainText("Unsaved changes to Glass Coast");
   const cleared = b.page.waitForResponse(isDraftCall("drafts.clear"));
-  await b.page.goto(A(`/shows/${id}`));
-  await expect(b.page.getByTestId("notes-input")).toHaveValue("Load in through the alley");
+  await b.page.goto(A(`/songs/${id}`));
+  await b.page.getByTestId("song-edit").click();
+  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Capo 2 on the bridge");
   await expect(b.page.getByTestId("save-status")).toHaveText("Saved");
   await cleared; // every patch saved: the draft is gone
   await b.page.reload();
-  await expect(b.page.getByTestId("notes-input")).toHaveValue("Load in through the alley");
+  await b.page.getByTestId("song-edit").click();
+  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Capo 2 on the bridge");
   await b.page.goto(A("/home"));
   await expect(b.page.getByTestId("unfinished")).toHaveCount(0);
   await b.close();
@@ -49,12 +60,13 @@ test("an edit that never reached the server survives a closed tab: it comes back
 
 test("closing the page right after typing does not lose the edit", async ({ browser }) => {
   const a = await as(browser, "jeff");
-  const id = await newShow(a.page, "2027-08-15");
-  await a.page.getByTestId("notes-input").fill("Bring the long cables");
+  const id = await openSongEdit(a.page, "Ruby Hill");
+  await a.page.getByTestId("edit-notes").fill("Slower intro");
   await a.page.close(); // before the 500ms / 800ms timers
   const b = await as(browser, "jeff");
-  await b.page.goto(A(`/shows/${id}`));
-  await expect(b.page.getByTestId("notes-input")).toHaveValue("Bring the long cables", { timeout: 20_000 });
+  await b.page.goto(A(`/songs/${id}`));
+  await b.page.getByTestId("song-edit").click();
+  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Slower intro", { timeout: 20_000 });
   await expect(b.page.getByTestId("save-status")).toHaveText("Saved");
   await b.close(); await a.close();
 });

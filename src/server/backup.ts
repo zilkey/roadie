@@ -55,12 +55,15 @@ export async function dumpAll(fs: Firestore): Promise<Dump> {
 }
 
 const common = z.strictObject(commonShape);
+/** Collections kept as data but no longer written or read by the app (the ledger, removed for now): backed up and restored as they are, not validated. */
+export const ARCHIVED_COLLECTIONS = new Set(["ledger"]);
 
 /** Check a decoded document against the collection's Zod schema. Returns error messages (empty = valid). */
 export function validateRow(row: BackupRow): string[] {
   const parts = row.path.split("/");
   if (parts.length % 2 !== 0) return [`${row.path}: not a document path`];
   const kind = kindOf(parts.slice(0, -1).join("/"));
+  if (ARCHIVED_COLLECTIONS.has(parts[0])) return [];
   const def = collections[kind];
   if (!def) return [`${row.path}: no schema for collection "${kind}"`];
   const data = decode(row.data) as Record<string, unknown>;

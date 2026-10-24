@@ -59,8 +59,8 @@ test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => 
   assert.deepEqual(move([1, 2, 3, 4], 0, 2), [2, 3, 1, 4]);
   assert.deepEqual(move([1, 2], 0, 5), [1, 2]);
   assert.equal(setlistTotal([{ lengthSec: 60 }, {}, { lengthSec: 30 }]), 90);
-  assert.equal(setlistSlack(2400, 45), 300);
-  assert.equal(setlistSlack(3000, 45), -300);
+  assert.equal(setlistSlack(2400, 2700), 300);
+  assert.equal(setlistSlack(3000, 2700), -300);
   assert.equal(playerFor({ url: "https://x.test/a.mp3", mimeType: "audio/mpeg" }).mode, "audio");
   assert.equal(playerFor({ url: "https://x.test/a.mp4", mimeType: "video/mp4" }).mode, "video");
   assert.deepEqual(playerFor({ url: "https://drive.google.com/file/d/abc/view?usp=sharing", mimeType: "audio/mp4" }), { mode: "embed", src: "https://drive.google.com/file/d/abc/preview" });
@@ -189,7 +189,7 @@ test("setlists: totalSec computed, song data copied, rename keeps titles in sync
   const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
   const mk = async (date: string) => {
     const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
-    return (await cmd("shows.create", { pitchId: p, date, venueId: v, addToCalendar: false, times: { set: "20:00", setLength: 45 }, needs: { poster: false, backline: false, merch: false } })).id as string;
+    return (await cmd("shows.create", { pitchId: p, date, venueId: v, addToCalendar: false, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
   };
   const s1 = await mk("2027-01-16");
   const s2 = await mk("2027-02-20");

@@ -21,8 +21,8 @@ export const isExcluded = (name: string) => EXCLUDED.some((e) => (e.endsWith("."
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "availability.ask", "availability.remind",                      // sends
-  "payouts.pay", "expenses.reimburse", "shows.settle", "ledger.record", "ledger.correct", // money
-  "shows.cancel", "shows.drop", "shows.sync", "shows.calendar",                          // cancels, leaves the app
+  "expenses.setPaidBack", "showDeals.setIncome",                                          // money
+  "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar",                          // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stats.pull",                                                                          // calls out
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
@@ -38,7 +38,7 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklist", "shows.setGear", "setlists.update", "setlists.create", "artists.update", "rehearsals.create", "rehearsals.update", "songs.create", "files.attach"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setExpenses", "showDeals.setIncome", "setlists.update", "setlists.create", "artists.update", "rehearsals.create", "rehearsals.update", "songs.create", "files.attach"]);
 
 /** Reads never ask, whatever they are given. */
 const READ_ONLY = new Set(["records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search"]);
@@ -68,9 +68,9 @@ const dollars = (cents: unknown) => (typeof cents === "number" ? `$${(cents / 10
 const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
   "shows.cancel": (i) => `Cancel the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
-  "payouts.pay": (i) => `Pay a show payout${i.amount ? ` of ${dollars(i.amount)}` : ""}`,
-  "expenses.reimburse": () => "Mark an expense as paid back",
-  "shows.settle": () => "Enter the money for a show and settle it",
+  "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,
+  "expenses.setPaidBack": (i) => (i.paid === false ? "Mark an expense as not paid back" : "Mark an expense as paid back"),
+  "showDeals.setIncome": (i) => `Set the show's income${Array.isArray(i.income) ? ` (${dollars((i.income as { amount: number }[]).reduce((n, l) => n + l.amount, 0))} in all)` : ""}`,
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",

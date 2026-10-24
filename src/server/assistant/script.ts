@@ -107,8 +107,7 @@ function first(t: string, page?: Page): Scripted {
   }
 
   if (/\bpay (everyone|everybody|the band|all)\b/.test(t)) {
-    if (page?.kind === "show" && page.id) return { calls: [{ name: "payouts.pay", input: { showId: page.id, musicianId: "all" } }] };
-    return { calls: [{ name: "context.now", input: {} }] };
+    return { text: "Band Tracker doesn't track payouts right now. Enter the show's income on its Finances tab." };
   }
 
   const go = GO.exec(t);
@@ -176,8 +175,8 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
 
   if (last.name === "context.now") {
     const unsettled = (out?.unsettledShows ?? []) as { id: string }[];
-    if (!unsettled.length) return { text: "No show is waiting on payouts." };
-    return { calls: [{ name: "payouts.pay", input: { showId: unsettled[0].id, musicianId: "all" } }] };
+    if (!unsettled.length) return { text: "Every played show has its money in." };
+    return { text: `${unsettled.length} played show${unsettled.length === 1 ? " has" : "s have"} no income entered yet.` };
   }
 
   if (last.name === "records.get" && WHY.test(t)) {

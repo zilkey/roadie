@@ -17,7 +17,6 @@ import { SongInput } from "./songs";
 import { FileInput } from "./files";
 import { SetlistInput } from "./setlists";
 import { RehearsalInput } from "./rehearsals";
-import { LedgerInput } from "./ledger";
 import { ExpenseInput } from "./expenses";
 import { StatSnapshotInput } from "./statSnapshots";
 import { HistoryInput } from "./history";
@@ -46,7 +45,6 @@ export * from "./songs";
 export * from "./files";
 export * from "./setlists";
 export * from "./rehearsals";
-export * from "./ledger";
 export * from "./expenses";
 export * from "./statSnapshots";
 export * from "./history";
@@ -86,7 +84,6 @@ export const collections: Record<string, CollectionDef> = {
   files: { input: FileInput },
   setlists: { input: SetlistInput },
   rehearsals: { input: RehearsalInput },
-  ledger: { input: LedgerInput, immutable: true },
   expenses: { input: ExpenseInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },
   history: { input: HistoryInput, immutable: true },

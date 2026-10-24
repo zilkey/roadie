@@ -63,7 +63,7 @@ beforeEach(async () => {
 });
 
 const create = (extra: Record<string, unknown> = {}) =>
-  cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLength: 40 }, needs: { poster: true, backline: false, merch: true }, ...extra });
+  cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLengthSec: 2400 }, needs: { poster: true, backline: false, merch: true }, ...extra });
 
 test("pure: checklist from templates, home plan", () => {
   let n = 0;
@@ -93,22 +93,28 @@ test("pure: checklist from templates, home plan", () => {
   assert.deepEqual(member.recent.map((s) => s.id), ["y"]);
 });
 
-test("Booked it: show + showDeal in one go, pitch linked and booked, checklist, empty gear, personnel, calendar", async () => {
-  const r = await create({ deal: { deal: "guarantee", guarantee: 30000 } });
+const gigPrep = (show: any) => show.checklists.find((l: any) => l.name === "Gig prep").items as any[];
+
+test("Booked it: show + showDeal in one go, pitch linked and booked, Gig prep checklist, personnel, calendar", async () => {
+  const r = await create({ deal: { deal: "guarantee", guarantee: 30000 }, dayOfContact: { name: "Sam", phone: "(303) 555-0117" } });
   const show = (await db.get("shows", r.id))!;
   const deal = (await db.get("showDeals", r.id))!;
   assert.equal(deal.pitchId, pitchId);
-  assert.equal(deal.guarantee, 30000);
-  assert.equal(deal.settled, false);
+  assert.equal(deal.guarantee, undefined, "the guarantee is an income line now");
+  assert.deepEqual(deal.income.map((l: any) => [l.category, l.amount, l.received]), [["guarantee", 30000, false]]);
+  assert.equal(deal.totals.income, 30000);
+  assert.deepEqual(show.dayOfContact, { name: "Sam", phone: "(303) 555-0117" });
+  assert.deepEqual(show.statusHistory.map((h: any) => [h.status, h.by]), [["confirmed", ctx.uid]]);
   assert.equal(show.billedAs, "trio");
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff, ids.david]);
   assert.deepEqual(show.sound, { provider: "venueProvided", notes: "House engineer" });
   assert.equal(show.venue.address, "7 S Broadway, Denver");
-  const labels = show.checklist.map((c: any) => c.label);
+  assert.deepEqual(show.checklists.map((l: any) => l.name), ["Gig prep"], "one list from the templates; no gear list");
+  const labels = gigPrep(show).map((c: any) => c.label);
   assert.ok(labels.includes("Post the poster") && labels.includes("Pack merch table") && labels.includes("Send stage plot and input list to the venue"));
   assert.ok(!labels.includes("Book sound engineer"));
-  assert.equal(show.checklist.find((c: any) => c.label === "Pack merch table").due, "2027-01-14");
-  assert.deepEqual(show.gear, [], "a new show starts with no gear");
+  assert.equal(gigPrep(show).find((c: any) => c.label === "Pack merch table").due, "2027-01-14");
+  assert.equal(show.checklist, undefined); assert.equal(show.gear, undefined);
   const pitch = (await db.get("pitches", pitchId))!;
   assert.deepEqual(pitch.showIds, [r.id]);
   assert.equal(pitch.status, "booked");
@@ -130,67 +136,111 @@ test("Booked it validates and rolls back whole when the venue is missing", async
   assert.equal((await db.get("pitches", pitchId))!.status, "toPitch");
 });
 
-test("billed as fills personnel and leaves gear alone; gear is edited on the show", async () => {
+test("billed as fills personnel and leaves the checklists alone", async () => {
   const r = await create({ billedAs: "duo", sound: { provider: "bandProvided" } });
   let show = (await db.get("shows", r.id))!;
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff]);
-  assert.deepEqual(show.gear, []);
-  await cmd("shows.setGear", { id: r.id, gear: [{ label: "Keys rig", musicianId: ids.jeff, packed: false }] });
+  await cmd("shows.setChecklists", { id: r.id, checklists: [...show.checklists, { name: "Gear", items: [{ label: "Keys rig", ownerId: ids.jeff }] }] });
   await cmd("shows.update", { id: r.id, patch: { billedAs: "trio" } });
   show = (await db.get("shows", r.id))!;
   assert.deepEqual(show.personnel, [ids.ingrid, ids.jeff, ids.david]);
-  assert.deepEqual(show.gear.map((g: any) => g.label), ["Keys rig"], "changing billed as or sound never touches the gear list");
-  await cmd("shows.update", { id: r.id, patch: { personnel: [ids.ingrid], sound: { provider: "venueProvided" } } });
-  show = (await db.get("shows", r.id))!;
-  assert.deepEqual(show.personnel, [ids.ingrid]);
-  assert.deepEqual(show.gear.map((g: any) => g.label), ["Keys rig"]);
-  await cmd("shows.setGear", { id: r.id, gear: [...show.gear, { label: "Tuner" }] });
-  assert.ok((await db.get("shows", r.id))!.gear.some((g: any) => g.label === "Tuner" && g.id));
+  assert.deepEqual(show.checklists.find((l: any) => l.name === "Gear").items.map((g: any) => g.label), ["Keys rig"], "changing billed as never touches the lists");
+  await cmd("shows.update", { id: r.id, patch: { personnel: [ids.ingrid] } });
+  assert.deepEqual((await db.get("shows", r.id))!.personnel, [ids.ingrid]);
   await assert.rejects(cmd("shows.update", { id: r.id, patch: { rebuildGear: true } }), /Unrecognized key/);
   await assert.rejects(cmd("shows.update", { id: r.id, patch: { billedAs: "nope" } }), /No configuration/);
 });
 
-test("checklist: check off, edit, owner; template merge adds only missing items; date change shifts open dues", async () => {
+test("checklists: several lists, ids filled in; template merge adds only missing items to Gig prep; date change shifts open dues", async () => {
   const r = await create();
   let show = (await db.get("shows", r.id))!;
-  const list = show.checklist.map((c: any, i: number) => (i === 0 ? { ...c, done: true, ownerId: ids.jeff, label: "Confirm times (done)" } : c));
-  await cmd("shows.setChecklist", { id: r.id, checklist: list });
+  const gp = show.checklists[0];
+  const items = gp.items.map((c: any, i: number) => (i === 0 ? { ...c, done: true, ownerId: ids.jeff, label: "Confirm times (done)" } : c));
+  await cmd("shows.setChecklists", { id: r.id, checklists: [{ ...gp, items }, { name: "Promo", items: [{ label: "Post on Instagram" }] }] });
   show = (await db.get("shows", r.id))!;
-  assert.equal(show.checklist[0].done, true);
-  assert.equal(show.checklist[0].ownerId, ids.jeff);
-  const openItem = show.checklist.find((c: any) => c.label === "Post the poster");
+  assert.equal(show.checklists.length, 2);
+  assert.ok(show.checklists[1].id && show.checklists[1].items[0].id);
+  assert.equal(show.checklists[1].items[0].done, false);
+  assert.equal(gigPrep(show)[0].done, true);
+  assert.equal(gigPrep(show)[0].ownerId, ids.jeff);
+  const openItem = gigPrep(show).find((c: any) => c.label === "Post the poster");
   await cmd("shows.update", { id: r.id, patch: { needs: { poster: true, backline: true, merch: true } } });
   show = (await db.get("shows", r.id))!;
-  assert.ok(show.checklist.some((c: any) => c.label === "Confirm backline with the venue"));
-  assert.equal(show.checklist.filter((c: any) => c.label === "Post the poster").length, 1);
+  assert.ok(gigPrep(show).some((c: any) => c.label === "Confirm backline with the venue"));
+  assert.equal(gigPrep(show).filter((c: any) => c.label === "Post the poster").length, 1);
+  assert.equal(show.checklists[1].name, "Promo", "other lists are left alone");
   await cmd("shows.update", { id: r.id, patch: { date: "2027-01-23" } });
   show = (await db.get("shows", r.id))!;
-  assert.equal(show.checklist.find((c: any) => c.label === "Post the poster").due, addDays(openItem.due, 7));
-  assert.equal(show.checklist[0].due, list[0].due, "done items keep their date");
+  assert.equal(gigPrep(show).find((c: any) => c.label === "Post the poster").due, addDays(openItem.due, 7));
+  assert.equal(gigPrep(show)[0].due, items[0].due, "done items keep their date");
 });
 
-test("members can pack only their own gear", async () => {
+test("a show not yet migrated: its old checklist and gear read as lists, and the first change writes the new shape", async () => {
   const r = await create();
-  await cmd("shows.setGear", { id: r.id, gear: [{ label: "Bass rig", musicianId: ids.david, packed: false }, { label: "Keys rig", musicianId: ids.jeff, packed: false }] });
+  await db.update(ctx, "shows", r.id, {
+    checklists: null, checklist: [{ id: "c1", label: "Old item", done: false }], gear: [{ id: "g1", label: "Bass rig", musicianId: ids.david, packed: false }],
+  });
+  await cmd("shows.checkItem", { id: r.id, listId: "gear", itemId: "g1", done: true }, mctx);
   const show = (await db.get("shows", r.id))!;
-  const mine = show.gear.find((g: any) => g.musicianId === ids.david);
-  const notMine = show.gear.find((g: any) => g.musicianId === ids.jeff);
-  await cmd("shows.packGear", { id: r.id, itemId: mine.id, packed: true }, mctx);
-  assert.equal((await db.get("shows", r.id))!.gear.find((g: any) => g.id === mine.id).packed, true);
-  await assert.rejects(cmd("shows.packGear", { id: r.id, itemId: notMine.id, packed: true }, mctx), /your own gear/);
+  assert.equal(show.checklist, undefined); assert.equal(show.gear, undefined);
+  assert.deepEqual(show.checklists.map((l: any) => [l.name, l.items.map((i: any) => [i.label, i.done, i.ownerId ?? null])]),
+    [["Gig prep", [["Old item", false, null]]], ["Gear", [["Bass rig", true, ids.david]]]]);
+});
+
+test("members can tick only items assigned to them", async () => {
+  const r = await create();
+  await cmd("shows.setChecklists", { id: r.id, checklists: [{ name: "Gear", items: [{ label: "Bass rig", ownerId: ids.david }, { label: "Keys rig", ownerId: ids.jeff }, { label: "Cords" }] }] });
+  const list = (await db.get("shows", r.id))!.checklists[0];
+  const [mine, notMine, anyone] = list.items;
+  await cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: mine.id, done: true }, mctx);
+  assert.equal((await db.get("shows", r.id))!.checklists[0].items[0].done, true);
+  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: notMine.id, done: true }, mctx), /assigned to you/);
+  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: anyone.id, done: true }, mctx), /assigned to you/);
+  await cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: anyone.id, done: true });
+  await assert.rejects(cmd("shows.checkItem", { id: r.id, listId: list.id, itemId: "nope", done: true }), /No such checklist item/);
   assert.ok(!registry["shows.update"].roles.includes("member"));
-  assert.ok(!registry["shows.setChecklist"].roles.includes("member"));
+  assert.ok(!registry["shows.setChecklists"].roles.includes("member"));
   assert.ok(!registry["shows.afterShow"].roles.includes("member"));
 });
 
+test("status changes: setStatus keeps who, when and why; a blank reason clears it", async () => {
+  const r = await create({ status: "hold", addToCalendar: false });
+  await cmd("shows.setStatus", { id: r.id, status: "canceled", reason: "  Venue double-booked  " });
+  let show = (await db.get("shows", r.id))!;
+  assert.equal(show.status, "canceled"); assert.equal(show.reason, "Venue double-booked");
+  await cmd("shows.setStatus", { id: r.id, status: "confirmed", reason: " " });
+  show = (await db.get("shows", r.id))!;
+  assert.equal(show.reason, undefined);
+  await cmd("shows.update", { id: r.id, patch: { status: "hold" } });
+  show = (await db.get("shows", r.id))!;
+  assert.deepEqual(show.statusHistory.map((h: any) => [h.status, h.reason ?? null, h.by]),
+    [["hold", null, ctx.uid], ["canceled", "Venue double-booked", ctx.uid], ["confirmed", null, ctx.uid], ["hold", null, ctx.uid]]);
+  assert.ok(show.statusHistory.every((h: any) => !isNaN(Date.parse(h.at))));
+  await assert.rejects(cmd("shows.setStatus", { id: r.id, status: "played" }), /Invalid/);
+  assert.ok(!registry["shows.setStatus"].roles.includes("member"));
+});
+
+test("comments: the whole band posts; only the author edits or deletes", async () => {
+  const r = await create();
+  const c = await cmd("shows.comment", { id: r.id, body: "Parking is behind the building" }, mctx);
+  const doc = (await db.get(`shows/${r.id}/comments`, c.id))!;
+  assert.equal(doc.audience, "band"); assert.equal(doc.authorId, "m-david");
+  await cmd("shows.editComment", { id: r.id, commentId: c.id, body: "Parking is behind the building, not on Terry" }, mctx);
+  assert.match((await db.get(`shows/${r.id}/comments`, c.id))!.body, /not on Terry/);
+  await assert.rejects(cmd("shows.editComment", { id: r.id, commentId: c.id, body: "x" }), /your own comments/);
+  await assert.rejects(cmd("shows.removeComment", { id: r.id, commentId: c.id }), /your own comments/);
+  await cmd("shows.removeComment", { id: r.id, commentId: c.id }, mctx);
+  assert.ok((await db.get(`shows/${r.id}/comments`, c.id))!.deletedAt);
+});
+
 test("Bandsintown: public + confirmed lists it; holds and private stay off; changes update; cancel removes", async () => {
-  const hold = await create({ status: "hold", public: true, addToCalendar: false });
+  const hold = await create({ status: "hold", publishToBandsintown: true, addToCalendar: false });
   assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
-  const priv = await create({ date: "2027-02-06", public: false });
+  const priv = await create({ date: "2027-02-06", publishToBandsintown: false });
   assert.equal((await db.get("shows", priv.id))!.listings.bandsintown, undefined);
   assert.equal((await bandsintownClient().list()).length, 0);
 
-  const r = await create({ date: "2027-02-13", public: true, ticketUrl: "https://tix.example/1", times: { set: "21:15", setLength: 45 } });
+  const r = await create({ date: "2027-02-13", publishToBandsintown: true, ticketUrl: "https://tix.example/1", times: { set: "21:15", setLengthSec: 2700 } });
   let show = (await db.get("shows", r.id))!;
   const bit = show.listings.bandsintown;
   assert.equal(bit.state, "listed");
@@ -210,13 +260,13 @@ test("Bandsintown: public + confirmed lists it; holds and private stay off; chan
   assert.equal((await bandsintownClient().list()).length, 2);
 
   // date and time change updates the same event, not a new one
-  await cmd("shows.update", { id: r.id, patch: { date: "2027-02-14", times: { set: "20:30", setLength: 45 } } });
+  await cmd("shows.update", { id: r.id, patch: { date: "2027-02-14", times: { set: "20:30", setLengthSec: 2700 } } });
   events = (await bandsintownClient().list()).filter((e) => e.id === bit.eventId);
   assert.equal(events[0].datetime, "2027-02-14T20:30:00");
   assert.equal((await bandsintownClient().list()).length, 2);
 
   // going private removes it
-  await cmd("shows.update", { id: hold.id, patch: { public: false } });
+  await cmd("shows.update", { id: hold.id, patch: { publishToBandsintown: false } });
   assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
   assert.equal((await bandsintownClient().list()).length, 1);
 
@@ -236,7 +286,7 @@ test("Bandsintown: public + confirmed lists it; holds and private stay off; chan
 test("Bandsintown failure is recorded on the show, not thrown; retry works", async () => {
   const good = process.env.BANDSINTOWN_BASE_URL;
   process.env.BANDSINTOWN_BASE_URL = "http://127.0.0.1:1";
-  const r = await create({ public: true });
+  const r = await create({ publishToBandsintown: true });
   assert.ok(r.warnings.some((w: string) => w.startsWith("Bandsintown")));
   const bad = (await db.get("shows", r.id))!.listings.bandsintown;
   assert.equal(bad.state, "error");
@@ -254,7 +304,7 @@ test("Calendar: update on change, delete on cancel, optional on create, toggle f
   await cmd("shows.calendar", { id: none.id, on: true });
   const evId = (await db.get("shows", none.id))!.calendarEventId;
   assert.ok(evId);
-  await cmd("shows.update", { id: none.id, patch: { times: { loadIn: "17:00", set: "19:30", setLength: 60 }, personnel: [ids.ingrid] } });
+  await cmd("shows.update", { id: none.id, patch: { times: { loadIn: "17:00", set: "19:30", setLengthSec: 3600 }, personnel: [ids.ingrid] } });
   const ev = await calendarClient().get(evId);
   assert.equal(ev.start, "2027-03-01T17:00:00");
   assert.equal(ev.end, "2027-03-01T20:30:00");
@@ -265,7 +315,7 @@ test("Calendar: update on change, delete on cancel, optional on create, toggle f
   assert.equal((await db.get("shows", none.id))!.calendarEventId, undefined);
 });
 
-test("After the show: ratings, paid attendance, played; money stays unsettled; future shows refused", async () => {
+test("After the show: ratings, paid attendance, played; no money entered; future shows refused", async () => {
   const past = await create({ date: "2026-10-10" });
   await cmd("shows.afterShow", { id: past.id, show: 4, venue: 5, crowd: 60, notes: "Great room", paidAttendance: 58 });
   const show = (await db.get("shows", past.id))!;
@@ -273,7 +323,7 @@ test("After the show: ratings, paid attendance, played; money stays unsettled; f
   assert.equal(show.status, "played");
   assert.deepEqual(deal.rating, { show: 4, venue: 5, crowd: 60, notes: "Great room" });
   assert.equal(deal.paidAttendance, 58);
-  assert.equal(deal.settled, false);
+  assert.deepEqual(deal.income, []);
   const future = await create({ date: "2030-01-01" });
   await assert.rejects(cmd("shows.afterShow", { id: future.id, show: 3, venue: 3 }), /hasn't happened/);
   await assert.rejects(cmd("shows.afterShow", { id: past.id, show: 6, venue: 3 }));
@@ -365,7 +415,7 @@ test("booking a pitch with an open ask links the ask to the show", async () => {
 });
 
 test("shows.remove archives the show and its deal and clears the listings", async () => {
-  const r = await create({ public: true });
+  const r = await create({ publishToBandsintown: true });
   assert.equal((await bandsintownClient().list()).length, 1);
   await cmd("shows.remove", { id: r.id });
   assert.equal(await db.list("shows").then((l) => l.length), 0);
@@ -387,7 +437,7 @@ test("showFilter: every show is upcoming, played, canceled or dropped", () => {
 });
 
 test("cancel and drop: status and reason in one write (blank = no reason); update clears it; listings come off", async () => {
-  const a = await create({ public: true, status: "confirmed" });
+  const a = await create({ publishToBandsintown: true, status: "confirmed" });
   await cmd("shows.cancel", { id: a.id, reason: "  They double-booked the patio.  " });
   let s = (await db.get("shows", a.id))!;
   assert.equal(s.status, "canceled"); assert.equal(s.reason, "They double-booked the patio.");
@@ -438,7 +488,7 @@ test("house concert: no venue, hosts + place; name, kind and band-PA default; va
 
 test("house concert: renaming a host updates the show; Bandsintown never sees the host or address", async () => {
   const host = (await cmd("contacts.create", { name: "Laura", emails: [], phones: [] })).id;
-  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, public: true, addToCalendar: false });
+  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, publishToBandsintown: true, addToCalendar: false });
   await cmd("contacts.update", { id: host, patch: { name: "Laura Brandt" } });
   assert.equal((await db.get("shows", r.id))!.hostName, "Laura Brandt");
   const [ev] = await bandsintownClient().list();
@@ -549,7 +599,7 @@ test("sendInvites: only configuration members who are on the team; unticked invi
 
   const off = await create({ date: "2027-03-20", sendInvites: false });
   assert.deepEqual(await emails(off.id), []);
-  await cmd("shows.update", { id: off.id, patch: { bandNotes: "bring cables" } });
+  await cmd("shows.update", { id: off.id, patch: { dayOfContact: { name: "Sam" } } });
   assert.deepEqual(await emails(off.id), [], "a later sync still invites nobody");
 
   const notSure = await create({ date: "2027-04-20", billedAs: null, sendInvites: true });

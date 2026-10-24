@@ -1,5 +1,6 @@
 "use client";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import { fmtDuration, setLengthOf } from "@/lib/duration";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -48,7 +49,8 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const show = m.shows.find((s) => s.setlistId === sl.id);
   const candidates = m.shows.filter((s) => !isOff(s) && s.status !== "played" && s.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   if (show && !candidates.includes(show)) candidates.unshift(show);
-  const slack = setlistSlack(sl.totalSec, show?.times.setLength);
+  const setLen = show ? setLengthOf(show.times) : undefined;
+  const slack = setlistSlack(sl.totalSec, setLen);
   const over = slack != null && slack < 0;
 
   const save = async (next: Item[]) => { setItems(next); as.patch({ items: payload(next) }, { now: true }); };
@@ -59,10 +61,10 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
   const totalCard = (
     <div className={`card ${over ? "" : slack != null ? "hi" : ""}`} data-testid="setlist-total" data-over={over ? "1" : "0"}>
       <div className="flex items-baseline justify-between gap-2">
-        <b className="font-mono text-xl" style={over ? { color: "var(--danger)" } : undefined} data-testid="total-time">{fmtLen(sl.totalSec)}{show?.times.setLength ? ` of ${fmtLen(show.times.setLength * 60)}` : ""}</b>
+        <b className="font-mono text-xl" style={over ? { color: "var(--danger)" } : undefined} data-testid="total-time">{fmtLen(sl.totalSec)}{setLen ? ` of ${fmtLen(setLen)}` : ""}</b>
         {slack != null && <span className={`chip ${over ? "" : "g"}`} style={over ? { background: "var(--danger-soft)", color: "var(--danger)" } : undefined} data-testid="fit">{over ? `${fmtLen(-slack)} over` : "Fits"}</span>}
       </div>
-      <span className="s">{items.filter((i) => i.type === "song").length} songs{show && !show.times.setLength ? " · the show has no set length yet" : ""}{!show ? " · not attached to a show" : ""}</span>
+      <span className="s">{items.filter((i) => i.type === "song").length} songs{show && !setLen ? " · the show has no set length yet" : ""}{!show ? " · not attached to a show" : ""}</span>
     </div>
   );
 
@@ -135,7 +137,7 @@ function View({ sl, m }: { sl: ReturnType<typeof useMusic>["setlists"][number]; 
         {admin ? (
           <select className="select" value={show?.id ?? ""} onChange={(e) => e.target.value ? call("setlists.attach", { showId: e.target.value, setlistId: sl.id }) : show && call("setlists.attach", { showId: show.id, setlistId: null })} data-testid="attach-show" aria-label="Attach to a show">
             <option value="">No show</option>
-            {candidates.map((s) => <option key={s.id} value={s.id}>{fmtDay(s.date)} · {showName(s)}{s.times.setLength ? ` · ${s.times.setLength} min` : ""}</option>)}
+            {candidates.map((s) => <option key={s.id} value={s.id}>{fmtDay(s.date)} · {showName(s)}{setLengthOf(s.times) ? ` · ${fmtDuration(setLengthOf(s.times))}` : ""}</option>)}
           </select>
         ) : null}
         {show ? <Link href={`/shows/${show.id}`} className="s font-semibold" data-testid="show-link">{fmtDay(show.date)} · {showName(show)}</Link> : !admin && <span className="s">No show yet.</span>}

@@ -48,10 +48,10 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   const cfg = artist?.configurations.find((c) => c.id === pitch?.pitchedAs);
   const v0 = venues.find((v) => v.id === venueId);
   const blank: ShowFormState = {
-    where: "venue", venueId, hostContactIds: [], city: "", address: "", editionId: edition?.id ?? "", date: ask?.date ?? edition?.startDate ?? "", status: "confirmed", loadIn: "", soundcheck: "", doors: "", set: "", setLength: "",
+    where: "venue", venueId, hostContactIds: [], city: "", address: "", editionId: edition?.id ?? "", date: ask?.date ?? edition?.startDate ?? "", status: "confirmed", loadIn: "", soundcheck: "", doors: "", showStart: "", set: "", setLength: "",
     billedAs: pitch?.pitchedAs ?? "", personnel: pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds ?? [],
     soundProvider: v0?.sound?.provider ?? "venueProvided", soundNotes: v0?.sound?.notes ?? "",
-    poster: false, backline: false, merch: false, calendar: true, public: false, ticketUrl: "", bandNotes: "",
+    poster: false, backline: false, merch: false, calendar: true,
     dealType: "guarantee", guarantee: "", doorSplitPct: "", ticketPrice: "",
   };
   // New record = draft: saved as you type (device, then server), restored on any machine, deleted when the show is created.
@@ -79,8 +79,8 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       editionId: s.editionId || undefined, times: timesOf(s),
       billedAs: s.billedAs || undefined, personnel: s.personnel,
       sound: { provider: s.soundProvider, ...(s.soundNotes.trim() ? { notes: s.soundNotes.trim() } : {}) },
-      needs: { poster: s.poster, backline: s.backline, merch: s.merch }, public: s.public, ticketUrl: s.public && s.ticketUrl ? s.ticketUrl : undefined,
-      bandNotes: s.bandNotes.trim() || undefined, addToCalendar: s.calendar,
+      needs: { poster: s.poster, backline: s.backline, merch: s.merch },
+      addToCalendar: s.calendar,
       deal: dealOf(s),
     }, { clientMutationId: extraIds.current[date], ...(last ? { clearDraft: draft.draftId } : {}) });
       if (!made) return;
@@ -94,7 +94,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       <PageTitle back={<Link href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} className="back-link" data-testid="back">{pitchId ? "← Pitch" : "← All shows"}</Link>} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
       {!draft.ready ? <span className="s">Loading…</span> : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-        <ShowForm mode="create" value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}
+        <ShowForm value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}
           dateSlot={pitchDates.length ? (
             <div className="grid gap-1.5" data-testid="pitch-date-picker">
               <span className="lbl">Which dates are shows?</span>

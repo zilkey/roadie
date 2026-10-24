@@ -10,7 +10,8 @@
   --roadie-bg: #efece5; --roadie-border: #e0dbd0; --roadie-chip: #e4e0d6; --roadie-control-border: #d6d0c3; --roadie-bubble: #ffffff;
   --success-bg: #e3f4ea; --success-text: #146c43; --success-dot: #1f8a55;
   --admin-bg: #fdf6e7; --admin-border: #efdcb2; --admin-label: #7a5200;
-  --danger: #A8281A; --danger-soft: #FBE1DD;
+  --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #d6336c;
+  --unfinished: #fff6dc; --unfinished-text: #3d3a2e; --owed-text: #6e5410;
   --shadow: rgb(28 27 34 / .14); --backdrop: rgb(28 27 34 / .5);
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235f5d6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
   --ctl-h: 44px;
@@ -29,7 +30,8 @@
     --roadie-bg: #1f1d19; --roadie-border: #33302a; --roadie-chip: #2c2a24; --roadie-control-border: #3d3a33; --roadie-bubble: #2a2823;
     --success-bg: #13301f; --success-text: #6fd39a; --success-dot: #3fb874;
     --admin-bg: #2b2312; --admin-border: #4a3c1c; --admin-label: #e7b85a;
-    --danger: #FF9C90; --danger-soft: #4A2326;
+    --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #f06595;
+    --unfinished: #2e2814; --unfinished-text: #ecdfb8; --owed-text: #e7c870;
     --shadow: rgb(0 0 0 / .45); --backdrop: rgb(0 0 0 / .6);
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
     color-scheme: dark;
@@ -223,6 +225,35 @@ fieldset.sec { margin: 0; }
 .page-head.center { align-items: center; }
 .show-tw { min-width: 0; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .show-scroll { overflow-x: auto; }
+/* Booking lists: one table per tab, 100% wide with a min width; the card scrolls sideways on phones. */
+.book-tw { min-width: 0; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow-x: auto; }
+.book-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 15px; }
+.book-table th { text-align: left; padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--empty); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.book-table td { padding: 12px 14px; border-bottom: 1px solid var(--divider); vertical-align: middle; color: var(--nav-text); }
+.book-table tbody tr:last-child td { border-bottom: 0; }
+.book-table td.flag, .book-table th.flag { width: 44px; padding: 4px 0 4px 10px; }
+.book-table td.flag + td, .book-table th.flag + th { padding-left: 8px; }
+.book-table th:first-child:not(.flag), .book-table td:first-child:not(.flag) { padding-left: 22px; }
+.book-table th.pitch, .book-table td.pitch { width: 30%; padding-right: 22px; }
+.book-table td.nw { white-space: nowrap; }
+.book-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
+.book-table .nm:hover { color: var(--accent-text); }
+.book-table .sub { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }
+.book-table .sub a { color: var(--muted); }
+.book-table a.em { font-size: 14px; color: var(--accent-text); text-decoration: none; }
+.book-table a.ph { font-size: 14px; color: var(--nav-text); text-decoration: none; }
+.book-table .dash { color: var(--muted); opacity: .7; }
+.book-table .pc { font-size: 14px; font-weight: 700; color: var(--ink); }
+.book-table .pd { font-size: 14px; color: var(--nav-text); margin-left: 8px; }
+/* The list flag: a bare icon button (no box), 44x44. Hollow accent = not pitched; filled pink = on the Pitch List. */
+.flag-ic { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; padding: 0; background: transparent; color: var(--accent-text); cursor: pointer; border-radius: 10px; }
+.flag-ic[data-flagged="1"] { color: var(--pitched); }
+.flag-ic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.flag-ic:disabled { opacity: .5; cursor: default; }
+/* Add to Pitch List modal */
+dialog.pitch-dlg { padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--ink); width: min(580px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: 96px auto auto; box-shadow: 0 24px 60px var(--shadow); }
+dialog.pitch-dlg::backdrop { background: var(--backdrop); }
+@media (max-width: 719px) { dialog.pitch-dlg { margin-top: 16px; } }
 .show-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
 .show-table th { text-align: left; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 11px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--panel); }
 .show-table td { padding: 11px 12px; border-bottom: 1px solid var(--soft); vertical-align: top; white-space: nowrap; background: var(--panel); }
@@ -241,3 +272,30 @@ fieldset.sec { margin: 0; }
 .dash { color: var(--muted); }
 .show-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; padding: 10px 12px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); }
 .show-foot b { color: var(--ink); font-family: var(--f-mono); font-weight: 500; }
+
+/* Show page: cards that edit on their own (EditableCard), the yellow "unfinished" placeholder with one-tap starters, admin-only badge */
+.show-page { display: grid; gap: 20px; }
+.card.editing { border: 2px solid var(--accent); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.card-head h2 { font-size: 18px; font-weight: 700; }
+.card-edit { font: inherit; font-size: 15px; font-weight: 600; color: var(--accent-text); background: none; border: 0; padding: 0 8px; min-height: 44px; cursor: pointer; }
+.card-edit:focus-visible { outline: 2px solid var(--accent); border-radius: 8px; }
+.tag { font-size: 12px; font-weight: 700; color: var(--accent-soft-text); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; }
+.card-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.card-foot .end { display: flex; gap: 10px; margin-left: auto; }
+.todo { background: var(--unfinished); color: var(--unfinished-text); border-radius: 12px; padding: 16px; font-size: 15px; line-height: 1.45; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.todo.row { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.todo .btn.ghost { border-color: transparent; }
+.admin-only { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--nav-text); background: var(--divider); border-radius: 999px; padding: 4px 10px; }
+.count { font-size: 12px; font-weight: 700; background: var(--divider); color: var(--nav-text); border-radius: 999px; padding: 2px 8px; }
+textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
+.money-row { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; padding: 10px 0; border-bottom: 1px solid var(--divider); }
+.money-row:last-child { border-bottom: 0; }
+.chip.owed { background: var(--unfinished); color: var(--owed-text); }
+/* Show status pill colors (beside the title; .pill.ok is Confirmed) */
+.pill.hold { background: #fdeee3; color: #9a3f0c; } .pill.hold::before { background: #d0661f; }
+.pill.canceled { background: var(--danger-soft); color: var(--danger); } .pill.canceled::before { background: #b23a26; }
+.pill.dropped { background: var(--divider); color: var(--nav-text); } .pill.dropped::before { background: #6b6a73; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pill.hold { background: #3a2414; color: #f2a36b; } }
+/* Who's playing opens Ask who's free from its own button, so the ask's built-in toggle is hidden there */
+.hide-ask-toggle [data-testid="ask-toggle"] { display: none; }

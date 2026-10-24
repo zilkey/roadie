@@ -14,7 +14,7 @@ import { bandsintownEligible } from "../showSync";
 import { bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
 import { dateStr } from "@/schema";
-import { isOff, publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
+import { isOff, publicShowName, showName, type ShowPlaceLike, isPublished } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
 const strict = z.strictObject;
@@ -50,7 +50,7 @@ export const search = defineCommand({
 /** What an AI may read. Not users, AI keys or history; musicians are trimmed to names and ids. */
 const READABLE = [
   "venues", "promoters", "festivals", "editions", "contacts", "pitches", "emailTemplates", "shows", "showDeals", "availability",
-  "checklistTemplates", "songs", "files", "setlists", "rehearsals", "ledger", "expenses", "statSnapshots", "artists", "musicians",
+  "checklistTemplates", "songs", "files", "setlists", "rehearsals", "expenses", "statSnapshots", "artists", "musicians",
 ] as const;
 const kindEnum = z.enum(READABLE);
 
@@ -204,8 +204,8 @@ export const availabilityCheck = defineCommand({
 export const bandsintownReconcile = defineCommand({
   name: "bandsintown.reconcile", roles: [...READ],
   description:
-    "Compare our shows with what Bandsintown lists. Reports: confirmed public upcoming shows not listed (fix with shows.sync), listings with no matching eligible show " +
-    "(holds, private, canceled, dropped or unknown), and listings whose date, time, venue or ticket link differ from the show.",
+    "Compare our shows with what Bandsintown lists. Reports: confirmed published upcoming shows not listed (fix with shows.sync), listings with no matching eligible show " +
+    "(holds, unpublished, canceled, dropped or unknown), and listings whose date, time, venue or ticket link differ from the show.",
   input: strict({ today: dateStr.optional() }),
   async run(ctx, i) {
     const today = i.today ?? todayStr();
@@ -230,7 +230,7 @@ export const bandsintownReconcile = defineCommand({
     }
     const unexpected = events.filter((e) => !matched.has(e.id)).map((e) => {
       const s = shows.find((x) => x.listings?.bandsintown?.eventId === e.id) ?? shows.find((x) => x.date === e.datetime.slice(0, 10) && publicShowName(x as ShowPlaceLike) === e.venueName);
-      return { eventId: e.id, datetime: e.datetime, venue: e.venueName, showId: s?.id ?? null, why: !s ? "No show matches" : s.deletedAt ? "Show is archived" : s.status === "played" ? "Played show (history)" : !s.public ? "Show is private" : s.status !== "confirmed" ? `Show is ${s.status}` : "Show is eligible but this listing does not match it" };
+      return { eventId: e.id, datetime: e.datetime, venue: e.venueName, showId: s?.id ?? null, why: !s ? "No show matches" : s.deletedAt ? "Show is archived" : s.status === "played" ? "Played show (history)" : !isPublished(s) ? "Show isn't published to Bandsintown" : s.status !== "confirmed" ? `Show is ${s.status}` : "Show is eligible but this listing does not match it" };
     }).filter((u) => u.why !== "Played show (history)");
     return { today, ok, missingOnBandsintown: missing, notExpected: unexpected, mismatches };
   },

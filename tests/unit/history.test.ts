@@ -179,7 +179,7 @@ test("every history entry is stamped with the artist of its record: its own arti
   const a = await db.create(ctx, "artists", artist([]), { id: "A" });
   const show = await db.create(ctx, "shows", {
     date: "2027-01-01", status: "hold", times: {}, artistId: "A", personnel: [], sound: { provider: "venueProvided" }, kind: "other",
-    needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], public: false, listings: {},
+    needs: { poster: false, backline: false, merch: false }, checklist: [], gear: [], docs: [], listings: {},
   });
   await db.create(ctx, "showDeals", { contactIds: [], deal: "free", settled: false }, { id: show.id });
   await db.update(ctx, "venueNotes", note.id, { notes: "x" });

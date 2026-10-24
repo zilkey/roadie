@@ -36,12 +36,9 @@ before(async () => {
     await setDoc(doc(d, "songs/gone"), { deletedAt: new Date() });
     await setDoc(doc(d, "availability/asked"), { ...live, askedMusicianIds: ["m-david"] });
     await setDoc(doc(d, "availability/other"), { ...live, askedMusicianIds: ["m-eric"] });
-    await setDoc(doc(d, "ledger/mine"), { ...live, kind: "payout", payeeUserId: "david" });
-    await setDoc(doc(d, "ledger/theirs"), { ...live, kind: "payout", payeeUserId: "eric" });
-    await setDoc(doc(d, "ledger/income"), { ...live, kind: "income" });
-    await setDoc(doc(d, "ledger/reimb"), { ...live, kind: "reimbursement", payeeUserId: "david" });
-    await setDoc(doc(d, "ledger/reimbTheirs"), { ...live, kind: "reimbursement", payeeUserId: "eric" });
-    await setDoc(doc(d, "ledger/spend"), { ...live, kind: "expense" });
+    await setDoc(doc(d, "shows/x/comments/band"), { ...live, audience: "band" });
+    await setDoc(doc(d, "shows/x/comments/bandGone"), { deletedAt: new Date(), audience: "band" });
+    await setDoc(doc(d, "ledger/old"), { ...live, kind: "payout", payeeUserId: "david" });
     await setDoc(doc(d, "expenses/mine"), { ...live, userId: "david" });
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
     await setDoc(doc(d, "unsubmittedDrafts/jeff__expenses"), { uid: "jeff", path: "expenses", values: { a: 1 } });
@@ -73,7 +70,7 @@ test("admin reads everything, including sub-collections", async () => {
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/comments/c1")));
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/activity/a1")));
   await assertSucceeds(getDoc(doc(admin(), "shows/x/comments/c1")));
-  for (const p of ["availability/asked", "ledger/income", "expenses/theirs"]) await assertSucceeds(getDoc(doc(admin(), p)));
+  for (const p of ["availability/asked", "expenses/theirs", "shows/x/comments/band"]) await assertSucceeds(getDoc(doc(admin(), p)));
 });
 
 test("members read the band collections but not booking, deals, money, users", async () => {
@@ -83,6 +80,10 @@ test("members read the band collections but not booking, deals, money, users", a
   }
   await assertFails(getDoc(doc(david(), "pitches/x/comments/c1")));
   await assertFails(getDoc(doc(david(), "shows/x/comments/c1"))); // carried-over booking talk is admin only
+  await assertSucceeds(getDoc(doc(david(), "shows/x/comments/band"))); // the band's own comments
+  await assertFails(getDoc(doc(david(), "shows/x/comments/bandGone")));
+  await assertSucceeds(getDocs(query(collection(david(), "shows/x/comments"), where("audience", "==", "band"), where("deletedAt", "==", null))));
+  await assertFails(getDocs(collection(david(), "shows/x/comments")));
   await assertSucceeds(getDocs(query(collection(david(), "songs"), where("deletedAt", "==", null))));
 });
 
@@ -96,13 +97,9 @@ test("availability: members read only where they are asked", async () => {
   await assertFails(getDoc(doc(david(), "availability/other")));
 });
 
-test("ledger: members read only their own payouts", async () => {
-  await assertSucceeds(getDoc(doc(david(), "ledger/mine")));
-  await assertSucceeds(getDoc(doc(david(), "ledger/reimb")));
-  await assertFails(getDoc(doc(david(), "ledger/reimbTheirs")));
-  await assertFails(getDoc(doc(david(), "ledger/spend")));
-  await assertFails(getDoc(doc(david(), "ledger/theirs")));
-  await assertFails(getDoc(doc(david(), "ledger/income")));
+test("the old ledger is unreadable from the app, even to admins", async () => {
+  await assertFails(getDoc(doc(david(), "ledger/old")));
+  await assertFails(getDoc(doc(admin(), "ledger/old")));
 });
 
 test("expenses: members read only their own", async () => {

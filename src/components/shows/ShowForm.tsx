@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ErrorBox, PickChip, Select } from "@/components/ui";
 import { dollarsToCents } from "@/lib/money";
+import { describeDuration, endsAt, parseDuration } from "@/lib/duration";
 import type { Row } from "@/lib/firestore-hooks";
 import type { Artist, Contact, Edition, Musician, Venue } from "@/schema";
 
@@ -11,16 +12,19 @@ export interface ShowFormState {
   /** The festival year this show is part of ("" = none). */
   editionId: string;
   date: string; status: "hold" | "confirmed" | "played" | "canceled" | "dropped";
-  loadIn: string; soundcheck: string; doors: string; set: string; setLength: string;
+  loadIn: string; soundcheck: string; doors: string; showStart: string; set: string;
+  /** Typed as text ("2h", "2:30", "90m"); read with parseDuration. */
+  setLength: string;
   billedAs: string; personnel: string[]; soundProvider: "venueProvided" | "bandProvided"; soundNotes: string;
-  poster: boolean; backline: boolean; merch: boolean; calendar: boolean; public: boolean; ticketUrl: string; bandNotes: string;
+  poster: boolean; backline: boolean; merch: boolean; calendar: boolean;
   dealType: "guarantee" | "doorSplit" | "flat" | "tips" | "free"; guarantee: string; doorSplitPct: string; ticketPrice: string;
 }
 
 export function timesOf(s: ShowFormState) {
   const t: Record<string, string | number> = {};
-  for (const k of ["loadIn", "soundcheck", "doors", "set"] as const) if (s[k]) t[k] = s[k];
-  if (s.setLength) t.setLength = Number(s.setLength);
+  for (const k of ["loadIn", "soundcheck", "doors", "showStart", "set"] as const) if (s[k]) t[k] = s[k];
+  const sec = parseDuration(s.setLength);
+  if (sec) t.setLengthSec = sec;
   return t;
 }
 export function dealOf(s: ShowFormState) {
@@ -42,66 +46,32 @@ export function whereInput(s: ShowFormState) {
     ? { venueId: s.venueId, ...(s.editionId ? { kind: "festival" as const } : {}) }
     : { kind: "house" as const, place: placeOf(s), hostContactIds: s.hostContactIds };
 }
-/**
- * The `shows.update` patch for ONE edit: only the fields that differ between the form before (`a`) and after (`b`).
- * Diffing consecutive form states (not form vs. the live show) is what makes A -> B -> A save correctly while the
- * live document is still catching up. Invalid half-typed values (no venue, partial date) are left out.
- */
-export function showPatch(a: ShowFormState, b: ShowFormState): Record<string, unknown> {
-  const p: Record<string, unknown> = {};
-  const ne = (x: unknown, y: unknown) => JSON.stringify(x) !== JSON.stringify(y);
-  // Where: only send a switch once it is complete (a venue picked, or a city typed), so the show always has a place.
-  if (b.where === "venue" && b.venueId && (a.where !== "venue" || a.venueId !== b.venueId)) {
-    p.venueId = b.venueId;
-    if (a.where !== "venue") Object.assign(p, { place: null, hostContactIds: [], kind: b.editionId ? "festival" : "venue" });
-  }
-  if (b.where === "house" && hasPlace(b)) {
-    if (a.where !== "house" || !hasPlace(a)) Object.assign(p, { venueId: null, kind: "house", place: placeOf(b), hostContactIds: b.hostContactIds });
-    else {
-      if (ne(placeOf(a), placeOf(b))) p.place = placeOf(b);
-      if (ne(a.hostContactIds, b.hostContactIds)) p.hostContactIds = b.hostContactIds;
-    }
-  }
-  if (b.editionId !== a.editionId) p.editionId = b.editionId || null;
-  if (b.date !== a.date && DATE.test(b.date)) p.date = b.date;
-  if (b.status !== a.status) p.status = b.status;
-  if (ne(timesOf(a), timesOf(b))) p.times = timesOf(b);
-  if (b.billedAs !== a.billedAs) p.billedAs = b.billedAs || null;
-  if (ne([...a.personnel].sort(), [...b.personnel].sort())) p.personnel = b.personnel;
-  if (b.soundProvider !== a.soundProvider || b.soundNotes !== a.soundNotes) p.sound = { provider: b.soundProvider, ...(b.soundNotes.trim() ? { notes: b.soundNotes.trim() } : {}) };
-  if (b.poster !== a.poster || b.backline !== a.backline || b.merch !== a.merch) p.needs = { poster: b.poster, backline: b.backline, merch: b.merch };
-  if (b.public !== a.public) p.public = b.public;
-  if (b.ticketUrl !== a.ticketUrl) p.ticketUrl = b.ticketUrl || null;
-  if (b.bandNotes !== a.bandNotes) p.bandNotes = b.bandNotes.trim() || null;
-  return p;
-}
-
 const L = ({ children }: { children: React.ReactNode }) => <span className="lbl">{children}</span>;
 
-/** Shared by "New show" (Booked it) and editing a show. Controlled by the parent so it can diff what changed. */
-export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, editions, artist, musicians, error, busy, submitLabel, onSubmit, onCancel, dateSlot }: {
-  mode: "create" | "edit"; value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[];
+/** The "New show" (Booked it) form. Controlled by the parent. */
+export function ShowForm({ value, onChange, venues, contacts, editions, artist, musicians, error, busy, submitLabel, onSubmit, onCancel, dateSlot }: {
+  value: ShowFormState; onChange(v: ShowFormState): void; venues: Row<Venue>[];
   /** House concert hosts are picked from contacts; festival years from editions. */
   contacts: Row<Contact>[]; editions: Row<Edition>[];
   artist?: Row<Artist>; musicians: Row<Musician>[];
   error: string | null; busy: boolean;
-  /** Edit mode (autosave): leave out onSubmit, there is no Save button. Called when focus leaves a field. */
-  onBlur?(): void;
-  /** Create mode: the explicit button ("Add show"). */
+  /** The explicit button ("Add show"): a draft never creates a show by itself. */
   submitLabel?: string; onSubmit?(): void; onCancel?(): void;
   /** Replaces the single Date field (a pitch with several dates picks which become shows). */
   dateSlot?: React.ReactNode;
 }) {
-  const [soundTouched, setSoundTouched] = useState(mode === "edit");
+  const [soundTouched, setSoundTouched] = useState(false);
   const set = (p: Partial<ShowFormState>) => onChange({ ...value, ...p });
   const venue = venues.find((v) => v.id === value.venueId);
+  const lengthSec = parseDuration(value.setLength);
+  const lengthBad = !!value.setLength.trim() && lengthSec === null;
   const field = (k: keyof ShowFormState, label: string, type = "text", testid?: string) => (
     <label className="grid gap-1"><L>{label}</L>
       <input className="input" type={type} value={value[k] as string} onChange={(e) => set({ [k]: e.target.value } as Partial<ShowFormState>)} data-testid={testid ?? `show-${k}`} />
     </label>
   );
   return (
-    <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }} onBlur={onBlur}>
+    <form className="grid gap-3" data-testid="show-form" onSubmit={(e) => { e.preventDefault(); if (!lengthBad) onSubmit?.(); }}>
       <div className="card">
         <label className="grid gap-1"><L>Where</L>
           <Select testid="show-where" value={value.where}
@@ -136,9 +106,14 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
         </label>
         <div className="grid grid-cols-2 gap-2">
           {field("loadIn", "Load in", "time")}{field("soundcheck", "Soundcheck", "time")}
-          {field("doors", "Doors", "time")}{field("set", "Set", "time")}
+          {field("doors", "Doors", "time")}{field("showStart", "Show starts", "time")}
+          {field("set", "Set", "time")}
         </div>
-        {field("setLength", "Set length (minutes)", "number", "show-length")}
+        <label className="grid gap-1"><L>Set length</L>
+          <input className="input" value={value.setLength} placeholder="2h, 2:30, 90m" onChange={(e) => set({ setLength: e.target.value })} data-testid="show-length" aria-invalid={lengthBad} />
+        </label>
+        {lengthBad && <span className="text-sm text-red-600" role="alert" data-testid="show-length-error">Couldn&apos;t read that. Try 2h, 2:30 or 90m.</span>}
+        {lengthSec !== null && <span className="s" data-testid="show-length-says">{describeDuration(lengthSec)}{value.set ? ` · ends at ${endsAt(value.set, lengthSec)}` : ""}</span>}
       </div>
 
       <div className="card">
@@ -175,35 +150,23 @@ export function ShowForm({ mode, value, onChange, onBlur, venues, contacts, edit
           <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value[k]} data-testid={`need-${k}`} onChange={(e) => set({ [k]: e.target.checked })} />
             {k === "poster" ? "Posters" : k === "backline" ? "Backline" : "Merch table"}</label>
         ))}
-        {mode === "create" && (
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.calendar} data-testid="show-calendar" onChange={(e) => set({ calendar: e.target.checked })} />Add to everyone&apos;s calendar</label>
-        )}
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.calendar} data-testid="show-calendar" onChange={(e) => set({ calendar: e.target.checked })} />Add to everyone&apos;s calendar</label>
       </div>
 
-      <div className="card">
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.public} data-testid="show-public" onChange={(e) => set({ public: e.target.checked })} />Public show (list on Bandsintown when confirmed)</label>
-        {value.public && field("ticketUrl", "Ticket link", "url", "show-ticket")}
-        <label className="grid gap-1"><L>Notes for the band</L>
-          <textarea className="input" rows={3} placeholder="Parking, dress, food" value={value.bandNotes} onChange={(e) => set({ bandNotes: e.target.value })} data-testid="show-notes" />
-        </label>
+      <div className="card" data-testid="deal-fields">
+        <L>Deal (only admins see this)</L>
+        <select className="select" value={value.dealType} onChange={(e) => set({ dealType: e.target.value as ShowFormState["dealType"] })} data-testid="deal-type">
+          <option value="guarantee">Guarantee</option><option value="doorSplit">Door split</option><option value="flat">Flat fee</option><option value="tips">Tips</option><option value="free">Free</option>
+        </select>
+        {value.dealType === "guarantee" && field("guarantee", "Guarantee ($)", "number", "deal-guarantee")}
+        {value.dealType === "doorSplit" && field("doorSplitPct", "Our share of the door (%)", "number", "deal-split")}
+        {(value.dealType === "doorSplit") && field("ticketPrice", "Ticket price ($)", "number", "deal-ticket")}
       </div>
-
-      {mode === "create" && (
-        <div className="card" data-testid="deal-fields">
-          <L>Deal (only admins see this)</L>
-          <select className="select" value={value.dealType} onChange={(e) => set({ dealType: e.target.value as ShowFormState["dealType"] })} data-testid="deal-type">
-            <option value="guarantee">Guarantee</option><option value="doorSplit">Door split</option><option value="flat">Flat fee</option><option value="tips">Tips</option><option value="free">Free</option>
-          </select>
-          {value.dealType === "guarantee" && field("guarantee", "Guarantee ($)", "number", "deal-guarantee")}
-          {value.dealType === "doorSplit" && field("doorSplitPct", "Our share of the door (%)", "number", "deal-split")}
-          {(value.dealType === "doorSplit") && field("ticketPrice", "Ticket price ($)", "number", "deal-ticket")}
-        </div>
-      )}
 
       <ErrorBox error={error} />
       {onSubmit && (
         <div className="flex gap-2">
-          <button className="btn acc" disabled={busy || !hasPlace(value) || !value.date} data-testid="show-save">{submitLabel ?? "Save"}</button>
+          <button className="btn acc" disabled={busy || lengthBad || !hasPlace(value) || !value.date} data-testid="show-save">{submitLabel ?? "Save"}</button>
           {onCancel && <button type="button" className="btn ghost" onClick={onCancel}>Cancel</button>}
         </div>
       )}
