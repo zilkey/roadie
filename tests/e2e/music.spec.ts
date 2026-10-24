@@ -317,3 +317,54 @@ test("a new setlist name is a draft; the name and the item list autosave, with U
   await page.getByTestId("setlist-archive").click();
   await expect(page).toHaveURL(/\/songs$/);
 });
+
+test("a musician added after seeding: attach with the gap, then share with the band", async ({ page, request }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/admin/people"));
+  await page.getByTestId("musician-name").fill("Foo");
+  await page.getByPlaceholder("Email (optional)").fill("foo@example.com");
+  await page.getByTestId("musician-add").click();
+  await expect(page.getByTestId("musician-Foo")).toBeVisible();
+
+  await page.getByTestId("tab-songs").click();
+  await page.getByTestId("songs-filter").fill("cottonwood");
+  await page.getByTestId("songs-list").getByText("Cottonwood").first().click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await page.getByTestId("add-from-drive").click();
+  await page.getByTestId("drive-q").fill("Cottonwood");
+  await page.getByTestId("drive-search").click();
+  const demo = page.getByTestId("hit-Cottonwood demo.m4a");
+  await expect(demo.getByTestId("cant-open")).toHaveText("Can't open: Foo"); // Sam has no email: never listed
+  await demo.getByTestId("hit-check").check();
+  await expect(page.getByTestId("picker-gap")).toBeVisible();
+  await page.getByTestId("picker-share").click();
+  await expect(demo.getByTestId("cant-open")).toHaveCount(0);
+  await expect(page.getByTestId("picker-gap")).toHaveCount(0);
+  const perms = await (await request.get(`${DRIVE}/files/fake-demo-11/permissions`)).json() as { email: string }[];
+  expect(perms.map((p) => p.email)).toContain("foo@example.com");
+  await page.getByTestId("attach-files").click();
+  await expect(page.getByTestId("files-demo")).toContainText("Cottonwood demo.m4a");
+  await expect(page.getByTestId("files-demo").getByTestId("file-ok")).toBeVisible();
+});
+
+test("a sharing gap never blocks attaching: attach first, fix later", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/admin/people"));
+  await page.getByTestId("musician-name").fill("Foo");
+  await page.getByPlaceholder("Email (optional)").fill("foo@example.com");
+  await page.getByTestId("musician-add").click();
+  await expect(page.getByTestId("musician-Foo")).toBeVisible();
+  await page.getByTestId("tab-songs").click();
+  await page.getByTestId("songs-filter").fill("kerosene");
+  await page.getByTestId("songs-list").getByText("Kerosene").first().click();
+  await page.getByTestId("add-from-drive").click();
+  await page.getByTestId("drive-q").fill("Kerosene");
+  await page.getByTestId("drive-search").click();
+  await page.getByTestId("hit-Kerosene demo.m4a").getByTestId("hit-check").check();
+  await page.getByTestId("attach-files").click();
+  const file = page.getByTestId("files-demo");
+  await expect(file).toContainText("Kerosene demo.m4a");
+  await expect(file.getByTestId("cant-open")).toContainText("Can't open: Foo");
+  await page.getByTestId("fix-share").first().click();
+  await expect(file.getByTestId("file-ok")).toBeVisible();
+});

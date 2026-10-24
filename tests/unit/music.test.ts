@@ -257,3 +257,18 @@ test("drive.fix copies or shares before anything is attached", async () => {
   assert.deepEqual(c.files[0].missing, []);
   await assert.rejects(cmd("drive.fix", { driveFileIds: ["nope"], fix: "share" }), /nope/);
 });
+
+test("a musician added after seeding: gap never blocks attach, share adds their permission, no-email people are never counted", async () => {
+  const foo = (await db.create(ctx, "musicians", { name: "Foo", instruments: [], active: true, email: "Foo@Example.com" })).id;
+  const hit = ((await cmd("drive.search", { q: "Cottonwood" })).files as any[]).find((f) => f.name === "Cottonwood demo.m4a");
+  assert.deepEqual(hit.missing, [foo]); // Foo only: Sam (no email) and the inactive one are not counted
+  const song = (await db.create(ctx, "songs", { title: "Cottonwood", status: "active" } as any)).id;
+  const att = await cmd("files.attach", { songId: song, files: [{ driveFileId: hit.driveFileId, kind: "demo" }] });
+  assert.equal(att.ids.length, 1); // attaching with a sharing gap goes through
+  assert.deepEqual((await db.list("files"))[0].sharing, { missing: [foo] });
+  const fix = await cmd("drive.fix", { driveFileIds: [hit.driveFileId], fix: "share" });
+  assert.deepEqual(fix.files[0].missing, []);
+  const perms = (await driveClient().get(hit.driveFileId)).permissions.map((p) => p.email);
+  assert.ok(perms.includes("foo@example.com"));
+  assert.deepEqual(((await cmd("drive.search", { q: "Cottonwood" })).files as any[]).find((f) => f.name === "Cottonwood demo.m4a").missing, []);
+});
