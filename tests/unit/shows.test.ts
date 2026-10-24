@@ -467,3 +467,29 @@ test("Booked it once per chosen pitch date: each show links to the pitch, the pi
   assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((x) => x.toStatus === "booked").length, 1);
   assert.deepEqual([(await db.get("shows", a.id))!.date, (await db.get("shows", b.id))!.date], ["2027-01-16", "2027-01-17"]);
 });
+
+test("Booked it can carry the pitch's comments onto the show, keeping each one's author and time; off by default", async () => {
+  const other = await makeUser("ingrid@example.com", "admin", { name: "Ingrid" });
+  await cmd("pitches.comment", { id: pitchId, body: "first" }, { ...ctx, uid: other.uid });
+  await new Promise((r) => setTimeout(r, 20));
+  await cmd("pitches.comment", { id: pitchId, body: "second" });
+  const before = await db.list(`pitches/${pitchId}/comments`);
+
+  const plain = await create({ date: "2027-01-16" });
+  assert.deepEqual(await db.list(`shows/${plain.id}/comments`), [], "not copied unless asked");
+
+  const withC = await create({ date: "2027-01-17", copyPitchComments: true });
+  const copied = (await db.list(`shows/${withC.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+  assert.deepEqual(copied.map((c) => c.body), ["first", "second"]);
+  assert.deepEqual(copied.map((c) => c.authorId), [other.uid, ctx.uid]);
+  const orig = before.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+  assert.deepEqual(copied.map((c) => c.createdAt.toMillis()), orig.map((c) => c.createdAt.toMillis()));
+  assert.deepEqual(copied.map((c) => c.createdBy), orig.map((c) => c.createdBy));
+  assert.equal((await db.list(`pitches/${pitchId}/comments`)).length, 2, "the pitch keeps its own");
+  const hist = await db.list(`shows/${withC.id}/comments/${copied[0].id}/history`);
+  assert.equal(hist.length, 1, "the copy has its own history");
+});
+
+test("copyPitchComments needs a pitch", async () => {
+  await assert.rejects(cmd("shows.create", { date: "2027-01-16", venueId, copyPitchComments: true }), /pitchId/);
+});

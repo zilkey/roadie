@@ -74,7 +74,7 @@ function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, un
 
 export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
-  description: "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments.",
+  description: "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {
     const d = await db.get(i.kind, i.id);
@@ -88,6 +88,7 @@ export const recordsGet = defineCommand({
       out.activity = (await db.list(`pitches/${i.id}/activity`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
       out.comments = (await db.list(`pitches/${i.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
     }
+    if (i.kind === "shows") out.comments = (await db.list(`shows/${i.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
     return out;
   },
 });

@@ -22,7 +22,7 @@ export const Pitch = entity({
 export const PitchInput = Pitch.omit(serverMask);
 export type Pitch = z.infer<typeof Pitch>;
 
-/** pitches/{id}/comments/{id} */
+/** pitches/{id}/comments/{id}. Also shows/{id}/comments/{id}: the pitch's comments copied over when it is booked (same author, same time). */
 export const Comment = entity({ authorId: id, body: z.string().min(1) });
 export const CommentInput = Comment.omit(serverMask);
 export type Comment = z.infer<typeof Comment>;

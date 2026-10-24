@@ -496,6 +496,10 @@ const groups = [
     ["rating","{show 1–5, venue 1–5, crowd?: int, notes?}?","After the show"],
     ["settled","bool","Money entered"],
   ]),
+  C("showComments","shows/{id}/comments/{id}","Comments carried over from the pitch when it is booked, with the author and time they had there.",["admin"],[
+    ["authorId","ref(users)",""],
+    ["body","str",""],
+  ]),
   C("availability","availability/{id}","Asking who can play a date.",["admin","member: own"],[
     ["date","date",""],
     ["label","str","e.g. Lost Lake · Sat Jan 16"],

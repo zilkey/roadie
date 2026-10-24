@@ -341,7 +341,7 @@ export class Writer {
   }
 
   /** Create. For dedupe collections a matching live doc is merged into instead (merged: true). */
-  async create(path: string, input: Record<string, unknown>, opts: { id?: string } = {}): Promise<{ id: string; merged: boolean }> {
+  async create(path: string, input: Record<string, unknown>, opts: { id?: string; keep?: { createdAt: Timestamp; createdBy: string } } = {}): Promise<{ id: string; merged: boolean }> {
     const kind = kindOf(path);
     const d = def(kind);
     const { data, computed } = prepare(kind, input);
@@ -352,6 +352,8 @@ export class Writer {
     const id = opts.id ?? this.fs.collection(path).doc().id;
     if (opts.id && (await this.get(path, id))) throw new AppError("already_exists", `${path}/${id} already exists`, 409);
     const doc = clean(this.stampNew(id, { ...data, ...computed }));
+    // A copy of an older record (comments carried from a pitch to its show) keeps the original's creation time and creator.
+    if (opts.keep) Object.assign(doc, opts.keep);
     await this.commit(path, id, doc, "create", diffDocs(null, doc));
     return { id, merged: false };
   }

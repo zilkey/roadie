@@ -107,6 +107,7 @@ export const showsCreate = defineCommand({
     "Where: venueId, or for a house concert hostContactIds (contacts) + place {city, address?} (no venue). kind: venue|house|festival|radio|other (default from the rest). " +
     "editionId links a festival year (sets editionName). " +
     "billedAs (configuration id) fills personnel; gear starts empty (shows.setGear adds it); sound defaults from the venue; needs (poster/backline/merch) and sound build the checklist from checklistTemplates. " +
+    "copyPitchComments (needs pitchId) copies the pitch's comments onto the show (shows/{id}/comments), keeping each one's author and time. " +
     "addToCalendar (default true) adds a Google Calendar event for everyone playing. Public confirmed shows are listed on Bandsintown.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
@@ -115,7 +116,7 @@ export const showsCreate = defineCommand({
     billedAs: z.string().min(1).optional(), personnel: z.array(z.string().min(1)).optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
     public: z.boolean().default(false), ticketUrl: z.string().optional(), bandNotes: z.string().optional(), setlistId: z.string().min(1).optional(),
-    addToCalendar: z.boolean().default(true), deal: DealIn.default({ deal: "guarantee" }),
+    addToCalendar: z.boolean().default(true), copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
   }),
   async run(ctx, i) {
     const id = await run(ctx, async (w) => {
@@ -151,7 +152,14 @@ export const showsCreate = defineCommand({
         contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal, guarantee: d.guarantee,
         doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice, settled: false,
       }, { id: r.id });
+      if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
       if (pitch && i.pitchId) {
+        if (i.copyPitchComments) {
+          const found = await w.query(`pitches/${i.pitchId}/comments`, (q) => q);
+          for (const c of found.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())) {
+            await w.create(`shows/${r.id}/comments`, { authorId: c.authorId, body: c.body }, { keep: { createdAt: c.createdAt, createdBy: c.createdBy } });
+          }
+        }
         await w.update("pitches", i.pitchId, { showIds: [...(pitch.showIds as string[]), r.id], ...(pitch.status === "booked" ? {} : { status: "booked" }) });
         if (pitch.status !== "booked") await w.create(`pitches/${i.pitchId}/activity`, { type: "status", fromStatus: pitch.status, toStatus: "booked", text: "Booked it" });
         for (const av of await w.query("availability", (q) => q.where("pitchId", "==", i.pitchId))) {

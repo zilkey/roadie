@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { A } from "./env";
+import { A, FIRESTORE } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -202,4 +202,80 @@ test("the venue page's Pitch card: add to the pitch list, edit it, comment, aban
   await page.getByTestId("pitch-abandon").click();
   await expect(page.getByTestId("pitch-open")).toHaveCount(0);
   await expect(page.getByTestId("past-pitches")).toContainText("Abandoned");
+});
+
+const FS = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents`;
+const authz = { headers: { authorization: "Bearer owner" } };
+
+/** Venue page with an open pitch that has the two dates and the given comments; returns the pitch id. */
+async function pitchWithComments(page: Page, comments: string[]) {
+  await signInAs(page, "jeff");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-search").fill("Hi-Dive");
+  await page.getByTestId(/^row-venue-/).filter({ hasText: "Hi-Dive" }).first().getByTestId(/^venue-full-/).click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  const card = page.getByTestId("venue-pitch-card");
+  if (await page.getByTestId("pitch-open").count()) {
+    page.once("dialog", (d) => d.accept());
+    await page.getByTestId("pitch-abandon").click();
+  }
+  await card.locator("[data-testid^='flag-'][data-flagged]").click();
+  await card.getByTestId(/^flag-submit-/).click();
+  await expect(page.getByTestId("pitch-open")).toBeVisible();
+  await page.getByTestId("pitch-edit").click();
+  for (const d of ["2027-04-09", "2027-04-16"]) {
+    await page.getByTestId("pitch-edit-dates-date").fill(d);
+    await page.getByTestId("pitch-edit-dates-add").click();
+  }
+  await page.getByTestId("pitch-edit-save").click();
+  for (const c of comments) {
+    await page.getByTestId("pitch-comment-input").fill(c);
+    await page.getByTestId("pitch-comment-send").click();
+    await expect(page.getByTestId("pitch-comments")).toContainText(c);
+  }
+  return (await page.getByTestId("pitch-open-full").getAttribute("href"))!.split("/").pop()!; // the pitch's id
+}
+
+/** After booking: the pitch sits in Past pitches as "Became a show"; returns the comments on the one show it made. */
+async function showCommentsAfterBooking(page: Page, request: import("@playwright/test").APIRequestContext, pitchId: string) {
+  await expect(page.getByTestId("pitch-open")).toHaveCount(0);
+  await expect(page.getByTestId(`past-pitch-${pitchId}`)).toContainText("Became a show");
+  const pitch = await (await request.get(`${FS}/pitches/${pitchId}`, authz)).json();
+  const showIds = (pitch.fields.showIds.arrayValue.values ?? []).map((v: { stringValue: string }) => v.stringValue);
+  expect(showIds).toHaveLength(1);
+  const show = await (await request.get(`${FS}/shows/${showIds[0]}`, authz)).json();
+  expect(show.fields.date.stringValue).toBe("2027-04-09");
+  const list = await (await request.get(`${FS}/shows/${showIds[0]}/comments`, authz)).json();
+  return ((list.documents ?? []) as { fields: { body: { stringValue: string } } }[]).map((d) => d.fields.body.stringValue).sort();
+}
+
+test("Booked it! on the venue page: choose the date and configuration, copy the comments over, and nothing happens until Create show", async ({ page, request }) => {
+  const stamp = Date.now();
+  const pitchId = await pitchWithComments(page, [`Sent the EPK ${stamp}`, `They want 90 minutes ${stamp}`]);
+  await page.getByTestId("booked-it").click();
+  await expect(page.getByTestId("book-form")).toBeVisible();
+  await expect(page.getByTestId("pitch-open")).toHaveCount(0);
+  // the first date is chosen, the pitch's configuration is filled in, and the comments are set to come along
+  await expect(page.getByTestId("book-date-2027-04-09")).toBeChecked();
+  await expect(page.getByTestId("book-copy")).toBeChecked();
+  await expect(page.getByTestId("book-form")).toContainText("Copy over comments (2)");
+  await expect(page.getByTestId("book-date-other")).not.toBeChecked();
+  await page.getByTestId("book-date-other").check();
+  await expect(page.getByTestId("book-submit")).toBeDisabled(); // another date needs a date
+  await page.getByTestId("book-date-2027-04-09").check();
+  await expect(page.getByTestId("book-other-date")).toHaveCount(0);
+  // Cancel backs out without making anything
+  await page.getByTestId("book-cancel").click();
+  await expect(page.getByTestId("pitch-open")).toBeVisible();
+  await page.getByTestId("booked-it").click();
+  await page.getByTestId("book-submit").click();
+  expect(await showCommentsAfterBooking(page, request, pitchId)).toEqual([`Sent the EPK ${stamp}`, `They want 90 minutes ${stamp}`].sort());
+});
+
+test("Booked it! with Copy over comments unticked leaves the show without comments", async ({ page, request }) => {
+  const pitchId = await pitchWithComments(page, [`Only on the pitch ${Date.now()}`]);
+  await page.getByTestId("booked-it").click();
+  await page.getByTestId("book-copy").uncheck();
+  await page.getByTestId("book-submit").click();
+  expect(await showCommentsAfterBooking(page, request, pitchId)).toEqual([]);
 });

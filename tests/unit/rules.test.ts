@@ -26,6 +26,7 @@ before(async () => {
     await setDoc(doc(d, "venueNotes/x__gone"), { deletedAt: new Date(), artistId: "x", venueId: "x" });
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
+    await setDoc(doc(d, "shows/x/comments/c1"), { ...live });
     // History entries carry the artist of the record they describe (null: the record belongs to no one artist).
     await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1", artistId: null });
     await setDoc(doc(d, "pitches/x/activity/a1/history/000001"), { ...live, runId: "r1", artistId: "x" });
@@ -71,6 +72,7 @@ test("admin reads everything, including sub-collections", async () => {
   for (const c of [...ALL, ...SIGNED_IN_READS]) await assertSucceeds(getDoc(doc(admin(), c, "x")));
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/comments/c1")));
   await assertSucceeds(getDoc(doc(admin(), "pitches/x/activity/a1")));
+  await assertSucceeds(getDoc(doc(admin(), "shows/x/comments/c1")));
   for (const p of ["availability/asked", "ledger/income", "expenses/theirs"]) await assertSucceeds(getDoc(doc(admin(), p)));
 });
 
@@ -80,6 +82,7 @@ test("members read the band collections but not booking, deals, money, users", a
     await (MEMBER_READS.includes(c) ? assertSucceeds(r) : assertFails(r));
   }
   await assertFails(getDoc(doc(david(), "pitches/x/comments/c1")));
+  await assertFails(getDoc(doc(david(), "shows/x/comments/c1"))); // carried-over booking talk is admin only
   await assertSucceeds(getDocs(query(collection(david(), "songs"), where("deletedAt", "==", null))));
 });
 
@@ -142,6 +145,7 @@ test("ALL client writes are denied, even for admins", async () => {
     await assertFails(deleteDoc(doc(db, "songs", "x")));
     await assertFails(setDoc(doc(db, "expenses", "new"), { userId: "david" }));
     await assertFails(setDoc(doc(db, "pitches/x/comments/new"), { body: "x" }));
+    await assertFails(setDoc(doc(db, "shows/x/comments/new"), { body: "x" }));
     await assertFails(setDoc(doc(db, "unlisted", "new"), { a: 1 }));
   }
 });

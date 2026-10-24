@@ -3,13 +3,13 @@ import { useRef, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
 import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
-import { ErrorBox, useCommand } from "@/components/ui";
+import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ConfigurationPicker, Flagged, PitchDates, PitchDatesField, StatusChip, type PitchRow } from "@/components/booking/common";
-import { isActive, sortedDates, todayStr } from "@/lib/booking";
+import { fmtPitchDate, isActive, sortedDates, todayStr } from "@/lib/booking";
 import type { Comment, User } from "@/schema";
 
 type Stamp = { toMillis(): number };
@@ -70,6 +70,7 @@ function OpenPitch({ p }: { p: PitchRow }) {
   const users = useCollection<User>("users").rows ?? [];
   const comments = (useCollection<Comment>(`pitches/${p.id}/comments`).rows ?? []).slice().sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
   const [edit, setEdit] = useState(false);
+  const [booking, setBooking] = useState(false);
   const [cfg, setCfg] = useState("");
   const [rows, setRows] = useState<string[]>([]);
   const draft = useDraft(draftPath.newUnder("pitches", p.id, "comments"), { text: "" }, { title: (v) => `Comment on ${p.target.name}: ${v.text.slice(0, 40)}` });
@@ -93,6 +94,7 @@ function OpenPitch({ p }: { p: PitchRow }) {
     if (confirm("Take this off the Pitch List?")) await call("pitches.remove", { id: p.id });
   }
 
+  if (booking) return <BookedItForm p={p} commentCount={comments.length} onCancel={() => setBooking(false)} />;
   if (edit) {
     return (
       <form className="grid gap-3" onSubmit={save} data-testid="pitch-edit-form">
@@ -150,8 +152,66 @@ function OpenPitch({ p }: { p: PitchRow }) {
         <button className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button>
         <span className="flex-1" />
         <Link href={`/booking/pitches/${p.id}`} className="s font-semibold underline" data-testid="pitch-open-full">Open pitch</Link>
-        <Link href={`/shows/new?pitch=${p.id}`} className="btn acc" data-testid="booked-it">Booked it!</Link>
+        <button className="btn acc" onClick={() => setBooking(true)} disabled={busy} data-testid="booked-it">Booked it!</button>
       </div>
     </div>
+  );
+}
+
+/**
+ * "Booked it! Turn this pitch into a show": which of the pitch's dates (or another one), the final configuration (starts as the pitch's)
+ * and whether to copy the comments. Nothing happens until Create show; the pitch then moves to Past pitches as "Became a show".
+ */
+function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount: number; onCancel(): void }) {
+  const { doc: artist } = useArtist();
+  const { call, error, busy } = useCommand();
+  const dates = sortedDates(p.dates);
+  const [date, setDate] = useState(dates[0] ?? "other");
+  const [other, setOther] = useState("");
+  const [cfg, setCfg] = useState(p.pitchedAs ?? "");
+  const [copy, setCopy] = useState(true);
+  const mutationId = useRef(newMutationId());
+  const invalid = date === "other" && !other;
+
+  async function create(e: React.FormEvent) {
+    e.preventDefault();
+    if (invalid) return;
+    await call("shows.create", {
+      pitchId: p.id, venueId: p.target.id, date: date === "other" ? other : date, billedAs: cfg || undefined, copyPitchComments: copy && commentCount > 0,
+    }, { clientMutationId: mutationId.current });
+  }
+
+  return (
+    <form className="grid gap-4" onSubmit={create} aria-labelledby={`book-h-${p.id}`} data-testid="book-form">
+      <div className="grid gap-1">
+        <h3 id={`book-h-${p.id}`} className="m-0 text-xl font-extrabold">Booked it! Turn this pitch into a show</h3>
+        <p className="s m-0">The pitch moves to Past pitches as “Became a show”.</p>
+      </div>
+      <fieldset className="m-0 grid gap-2 border-0 p-0">
+        <legend className="lbl mb-2 p-0">Which date?</legend>
+        <div className="flex flex-wrap items-center gap-2">
+          {[...dates.map((d) => [d, fmtPitchDate(d)] as const), ["other", "Another date"] as const].map(([v, label]) => (
+            <label key={v} className="pick" aria-pressed={date === v}>
+              <input type="radio" name={`book-date-${p.id}`} className="m-0" checked={date === v} onChange={() => setDate(v)} data-testid={`book-date-${v}`} />{label}
+            </label>
+          ))}
+          {date === "other" && <input className="input w-auto" type="date" aria-label="Other date" value={other} onChange={(e) => setOther(e.target.value)} data-testid="book-other-date" />}
+        </div>
+      </fieldset>
+      <label className="grid max-w-xs gap-1">
+        <span className="lbl">Final configuration</span>
+        <Select<string> value={cfg} onChange={setCfg} placeholder="Not sure yet" label="Final configuration" testid="book-config"
+          options={(artist?.configurations ?? []).map((c) => [c.id, c.name] as [string, string])} />
+      </label>
+      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 self-start">
+        <input type="checkbox" className="m-0 h-[18px] w-[18px]" checked={copy} onChange={(e) => setCopy(e.target.checked)} data-testid="book-copy" />
+        Copy over comments <span className="s">({commentCount})</span>
+      </label>
+      <ErrorBox error={error} />
+      <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
+        <button type="button" className="btn ghost" onClick={onCancel} data-testid="book-cancel">Cancel</button>
+        <button type="submit" className="btn acc" disabled={busy || invalid} data-testid="book-submit">Create show</button>
+      </div>
+    </form>
   );
 }

@@ -32,7 +32,11 @@ service cloud.firestore {
     match /venueNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // An artist doc is readable by its own members only (the app reads it by id: /artists/[slug] resolves through your session).
     match /artists/{id}          { allow get: if roleIn(id) == 'admin' || (roleIn(id) == 'member' && live()); }
-    match /shows/{id}            { allow read: if band(); }
+    match /shows/{id} {
+      allow read: if band();
+      // Comments carried over from the pitch ("Booked it!"): booking talk, so admins only like the pitch's own.
+      match /comments/{cid}      { allow read: if isAdmin(); }
+    }
     match /songs/{id}            { allow read: if band(); }
     match /files/{id}            { allow read: if band(); }
     match /setlists/{id}         { allow read: if band(); }
