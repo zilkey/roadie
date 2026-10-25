@@ -21,7 +21,7 @@ export async function sectionOrder(uid: string): Promise<SectionId[]> {
   return normalizeOrder((await ref(uid).get()).data()?.order);
 }
 
-/** Saves the caller's section order (Home is always first and is not part of it); sections left out keep their default place at the end. */
+/** Saves the caller's section order ; sections left out keep their default place at the end. */
 export async function setSectionOrder(uid: string, order: SectionId[]): Promise<SectionId[]> {
   const next = normalizeOrder(order);
   await ref(uid).set({ uid, order: next }, { merge: true });

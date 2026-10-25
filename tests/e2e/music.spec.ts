@@ -5,7 +5,7 @@ import { DRIVE, A } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 const idFromUrl = (page: Page, seg: string) => page.url().split(`/${seg}/`)[1].split(/[/?]/)[0];
 
@@ -138,7 +138,7 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Glass Coast");
   // add-a-song is admin only
   await page.goto(A("/songs/new"));
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 });
 
 test("log a rehearsal, tick the songs run, attach the recording from Drive", async ({ page }) => {
@@ -178,9 +178,6 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await expect(page.getByTestId("song-title")).toHaveValue("Draft Song");
   await expect(page.getByTestId("song-key")).toHaveValue("A");
   await expect(page.getByTestId("draft-restored")).toBeVisible();
-  await page.goto(A("/home"));
-  await expect(page.getByTestId("unfinished")).toContainText("New song · Draft Song");
-  await page.goBack();
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
   await page.goto(A("/songs/new"));

@@ -55,12 +55,12 @@ beforeEach(async () => {
 
 async function thread() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "home" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return threadId;
 }
 const sess = async (over: Partial<ReturnType<typeof sessionFor>> = {}) => ({ ...sessionFor(who, await thread()), ...over });
 
-async function chat(message: string, threadId?: string, pageContext: { route: string; recordKind?: string; recordId?: string } = { route: "home" }) {
+async function chat(message: string, threadId?: string, pageContext: { route: string; recordKind?: string; recordId?: string } = { route: "calendar" }) {
   const res = await handleChat(`Bearer ${admin.token}`, { message, threadId, pageContext });
   const events = (await res.text()).split("\n\n").filter(Boolean).map((l) => JSON.parse(l.replace(/^data: /, "")) as AssistantEvent);
   const done = events.at(-1) as Extract<AssistantEvent, { type: "done" }>;
@@ -138,7 +138,7 @@ test("a member (or any non-admin) can't use any of it", async () => {
     assert.equal((out.output as { error: { code: string } }).error.code, "forbidden", name);
   }
   assert.equal((await expenses()).length, 0);
-  const res = await handleChat(`Bearer ${m.token}`, { message: "add $5 gas", pageContext: { route: "home" } });
+  const res = await handleChat(`Bearer ${m.token}`, { message: "add $5 gas", pageContext: { route: "calendar" } });
   assert.equal(res.status, 403);
   assert.equal((await handleConfirm(`Bearer ${m.token}`, { threadId: "t", pendingId: "p", decision: "yes" })).status, 403);
   assert.equal((await handleUndo(`Bearer ${m.token}`, { threadId: "t", runId: "r" })).status, 403);

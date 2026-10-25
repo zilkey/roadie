@@ -4,7 +4,7 @@ import { A, openTab } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 async function ask(page: Page, text: string) {
   await page.getByTestId("roadie-input").fill(text);

@@ -4,7 +4,7 @@ import { A } from "./env";
 test("Finances tab: income from a starter and an expense with a receipt; the total and Net follow", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-jeff").click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 
   // The seeded played show (Dairy Arts Center): only the date cell links.
   await page.goto(A("/shows#played"));

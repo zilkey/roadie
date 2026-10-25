@@ -12,7 +12,7 @@ const uniq = () => {
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 async function openPeople(page: Page, key = "jeff") {
   await signInAs(page, key);

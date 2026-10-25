@@ -23,7 +23,7 @@ export const A = (path: string) => `/artists/${ARTIST_SLUG}${path}`;
 
 /**
  * Opens a main section by its nav key ("shows", "money", ...): the top-bar tab when it fits, else its row in More.
- * At the 1280px test viewport the admin bar fits Home, Shows, Booking, Songs and Money. The helper falls back to More for sections that are hidden or overflow.
+ * At the 1280px test viewport the admin bar fits Shows, Booking, Songs and Money. The helper falls back to More for sections that are hidden or overflow.
  */
 export async function openTab(page: Page, key: string) {
   const tab = page.getByTestId(`tab-${key}`);

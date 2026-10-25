@@ -10,7 +10,7 @@ async function signInAs(page: Page, key: string) {
 
 async function openSettings(page: Page) {
   await signInAs(page, "jeff");
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/admin/lineups"));
   await expect(page.getByTestId("configs")).toBeVisible();
   await expect(page.getByTestId("config-trio")).toBeVisible(); // seeded, so the card has loaded
@@ -18,7 +18,7 @@ async function openSettings(page: Page) {
 
 async function openArtist(page: Page) {
   await signInAs(page, "jeff");
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/admin/artist"));
   await expect(page.getByTestId("links")).toBeVisible();
 }

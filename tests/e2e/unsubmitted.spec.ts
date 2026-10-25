@@ -7,7 +7,7 @@ async function as(browser: Browser, key: string) {
   const page = await ctx.newPage();
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   return { ctx, page, close: () => ctx.close() };
 }
 const isDraftCall = (name: string) => (r: { url(): string; status(): number }) => r.url().endsWith(`/api/commands/${name}`) && r.status() === 200;
@@ -33,8 +33,6 @@ test("an edit that never reached the server survives a closed tab: it comes back
   await a.close();
 
   const b = await as(browser, "jeff");
-  await b.page.goto(A("/home"));
-  await expect(b.page.getByTestId("unfinished")).toContainText("Unsaved changes to Glass Coast");
   const cleared = b.page.waitForResponse(isDraftCall("drafts.clear"));
   await b.page.goto(A(`/songs/${id}`));
   await b.page.getByTestId("song-edit").click();
@@ -44,12 +42,10 @@ test("an edit that never reached the server survives a closed tab: it comes back
   await b.page.reload();
   await b.page.getByTestId("song-edit").click();
   await expect(b.page.getByTestId("edit-notes")).toHaveValue("Capo 2 on the bridge");
-  await b.page.goto(A("/home"));
-  await expect(b.page.getByTestId("unfinished")).toHaveCount(0);
   await b.close();
 });
 
-test("a new expense typed and abandoned comes back in a new browser; Add clears it and Home stops listing it", async ({ browser }) => {
+test("a new expense typed and abandoned comes back in a new browser; Add clears it", async ({ browser }) => {
   const a = await as(browser, "david");
   await a.page.goto(A("/money/expense"));
   await a.page.getByTestId("expense-what").fill("Spare snare stand");
@@ -58,15 +54,12 @@ test("a new expense typed and abandoned comes back in a new browser; Add clears 
   await a.close();
 
   const b = await as(browser, "david");
-  await expect(b.page.getByTestId("unfinished")).toContainText("New expense · Spare snare stand");
-  await b.page.getByTestId("unfinished").getByRole("link").first().click();
+  await b.page.goto(A("/money/expense"));
   await expect(b.page.getByTestId("expense-what")).toHaveValue("Spare snare stand");
   await expect(b.page.getByTestId("exp-amount")).toHaveValue("34.50");
   await expect(b.page.getByTestId("draft-restored")).toBeVisible();
   await b.page.getByTestId("exp-save").click();
   await expect(b.page).toHaveURL(/\/money$/);
-  await b.page.goto(A("/home"));
-  await expect(b.page.getByTestId("unfinished")).toHaveCount(0);
 
   // the form starts empty again
   await b.page.goto(A("/money/expense"));

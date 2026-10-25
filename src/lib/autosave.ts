@@ -37,7 +37,7 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
    * clears the other's pending patch nor restores fields it doesn't know how to show.
    */
   scope?: string;
-  /** Name of the record, for Home's "Unsaved changes to <title>". */
+  /** Name of the record, for "Unsaved changes to <title>". */
   title?: string;
   /** Called with the unsaved patch found when the record opens (already on its way to the server): show it in your form state. */
   onRestore?(patch: Record<string, unknown>): void;

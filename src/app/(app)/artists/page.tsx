@@ -17,7 +17,7 @@ function Picker() {
   const { state, signOut } = useAuth();
   const router = useRouter();
   const raw = useSearchParams().get("next") ?? "";
-  const next = isLegacyPath(raw) ? raw : "/home";
+  const next = isLegacyPath(raw) ? raw : "/calendar";
   const artists = state.status === "ready" ? state.profile.artists : [];
   const only = artists.length === 1 ? artists[0] : null;
   useEffect(() => { if (only) router.replace(artistPath(only.slug, next)); }, [only, next, router]);

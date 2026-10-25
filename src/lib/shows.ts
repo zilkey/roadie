@@ -103,7 +103,7 @@ export function checklistCount(lists: ChecklistLike[]) {
   const items = lists.flatMap((l) => l.items);
   return { done: items.filter((i) => i.done).length, total: items.length };
 }
-/** Open items for one person across every list, in list order: assigned to them (their musicianId) or to nobody (Home). */
+/** Open items for one person across every list, in list order: assigned to them (their musicianId) or to nobody (nobody). */
 export function openItemsFor(lists: ChecklistLike[], musicianId?: string): (ChecklistItem & { listId: string; listName: string })[] {
   return lists.flatMap((l) => l.items.filter((i) => !i.done && (!i.ownerId || i.ownerId === musicianId)).map((i) => ({ ...i, listId: l.id, listName: l.name })));
 }
@@ -120,7 +120,7 @@ export function askState(av: AvLike, musicianId: string): AskState {
 }
 export const ASK_LABEL: Record<AskState, string> = { yes: "Yes", no: "No", maybe: "Maybe", waiting: "Waiting", notAsked: "Not asked" };
 
-// ---------- Home ----------
+// ---------- shows ----------
 
 interface ShowLike { id: string; date: string; status: "hold" | "confirmed" | "played" | "canceled" | "dropped" }
 export const RECENT_DAYS = 3;

@@ -16,11 +16,11 @@ export function SignedIn({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Page-level role gate: admins of the current artist only. Everyone else goes back to the artist's Home. */
+/** Page-level role gate: admins of the current artist only. Everyone else goes back to the artist's Calendar. */
 export function AdminOnly({ children }: { children: React.ReactNode }) {
   const artist = useMaybeArtist();
   const router = useArtistRouter();
   const ok = artist?.role === "admin";
-  useEffect(() => { if (artist && !ok) router.replace("/home"); }, [artist, ok, router]);
+  useEffect(() => { if (artist && !ok) router.replace("/calendar"); }, [artist, ok, router]);
   return ok ? <>{children}</> : null;
 }

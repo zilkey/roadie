@@ -4,7 +4,7 @@ import { A, openTab } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 
 /** Seeded in scripts/seed.ts: a confirmed show and a pitched Bluebird Room pitch date on 2026-12-12, and the Folks deadline on 2026-12-01. */
@@ -29,14 +29,7 @@ test("admin sees shows, pitch dates and deadlines, and a day with a show and a p
 
 test("a member sees the Calendar nav link, and no Booking filter tab", async ({ page }) => {
   await signInAs(page, "david");
-  const calTab = page.getByTestId("tab-calendar");
-  if (await calTab.isVisible()) {
-    await expect(calTab).toBeVisible();
-  } else {
-    await page.getByTestId("more-toggle").click();
-    await expect(page.getByTestId("more-calendar")).toBeVisible();
-    await page.getByTestId("more-toggle").click();
-  }
+  await expect(page.getByTestId("tab-calendar")).toBeVisible(); // fixed first item: never in More
 
   await page.goto(A("/calendar?m=2026-12"));
   await expect(page.getByRole("heading", { name: "Calendar", exact: true })).toBeVisible();

@@ -45,23 +45,26 @@ function Calendar() {
 
   return (
     <div className="grid gap-5" data-testid="calendar-page">
-      <PageTitle title="Calendar" actions={<>
-        <button type="button" className={`btn ghost ${s.nav}`} aria-label="Previous month" onClick={() => go(shiftMonth(ym, -1))}>‹</button>
-        <span className={s.month} data-testid="calendar-month" aria-live="polite">{monthTitle(ym)}</span>
-        <button type="button" className={`btn ghost ${s.nav}`} aria-label="Next month" onClick={() => go(shiftMonth(ym, 1))}>›</button>
-        <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => go(today.slice(0, 7))}>Today</button>
-      </>} />
-      <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
+      <PageTitle title="Calendar" />
+      <div className={s.bar}>
+        <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
+        <div className={s.controls}>
+          <button type="button" className={`btn ghost ${s.nav}`} aria-label="Previous month" onClick={() => go(shiftMonth(ym, -1))}>‹</button>
+          <span className={s.month} data-testid="calendar-month" aria-live="polite">{monthTitle(ym)}</span>
+          <button type="button" className={`btn ghost ${s.nav}`} aria-label="Next month" onClick={() => go(shiftMonth(ym, 1))}>›</button>
+          <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => go(today.slice(0, 7))}>Today</button>
+        </div>
+      </div>
       <div className={s.layout}>
         <div className={s.main}>
           <MonthGrid ym={ym} allByDay={allByDay} shownByDay={shownByDay} today={today} selected={selected}
             onSelect={(d) => setPick({ ym, date: d })} />
           {loading && <p className="s">Loading…</p>}
+          {admin && <ComingUp items={comingUp} today={today} />}
         </div>
         <aside className={s.side}>
           <Legend admin={admin} />
           <DayPanel date={selected} allItems={allByDay.get(selected) ?? []} items={shownByDay.get(selected) ?? []} />
-          {admin && <ComingUp items={comingUp} today={today} />}
         </aside>
       </div>
     </div>

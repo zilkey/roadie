@@ -6,7 +6,6 @@
 export interface RouteDef { title: string; path: string; params?: readonly string[] }
 
 export const ROUTES = {
-  home: { title: "Home", path: "/home" },
   shows: { title: "Shows", path: "/shows" },
   calendar: { title: "Calendar", path: "/calendar" },
   show: { title: "Show", path: "/shows/:id", params: ["id"] },
@@ -53,14 +52,14 @@ export const isRouteName = (n: unknown): n is RouteName => typeof n === "string"
 export const ARTISTS_PATH = "/artists";
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** An app path inside an artist: artistPath("ingrid-avison", "/shows/1") -> "/artists/ingrid-avison/shows/1". */
-export function artistPath(slug: string, path = "/home"): string {
+export function artistPath(slug: string, path = "/calendar"): string {
   return `${ARTISTS_PATH}/${encodeURIComponent(slug)}${path.startsWith("/") ? path : `/${path}`}`;
 }
-/** Split "/artists/{slug}/rest?q" into the slug and the artist-relative rest ("/home" when bare). Null for other paths. */
+/** Split "/artists/{slug}/rest?q" into the slug and the artist-relative rest ("/calendar" when bare). Null for other paths. */
 export function splitArtistPath(path: string): { slug: string; rest: string } | null {
   const m = /^\/artists\/([^/?#]+)(\/[^?#]*)?([?#].*)?$/.exec(path);
   if (!m || !SLUG_RE.test(m[1])) return null;
-  const rest = m[2] && m[2] !== "/" ? m[2] : "/home";
+  const rest = m[2] && m[2] !== "/" ? m[2] : "/calendar";
   return { slug: m[1], rest: rest + (m[3] ?? "") };
 }
 /**
@@ -68,7 +67,7 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
  * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
  * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["home", "shows", "calendar", "booking", "songs", "setlists", "rehearsals", "money", "stats", "admin", "me"] as const;
+export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "setlists", "rehearsals", "money", "stats", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**

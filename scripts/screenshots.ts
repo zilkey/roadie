@@ -15,7 +15,7 @@ async function session(browser: Browser, who: string, size: keyof typeof SIZES, 
   const page = await ctx.newPage();
   await page.goto(`${BASE}/signin`);
   await page.getByTestId(`dev-${who}`).click();
-  await page.waitForURL(/\/home$/);
+  await page.waitForURL(/\/calendar$/);
   return { ctx, page };
 }
 
@@ -50,8 +50,7 @@ async function main() {
     await admin.ctx.close();
 
     const shots: { name: string; who: string; path: string; prep?: (p: Page) => Promise<void> }[] = [
-      { name: "home-admin", who: "jeff", path: "/home" },
-      { name: "home-member", who: "david", path: "/home" },
+      { name: "calendar-admin", who: "jeff", path: "/calendar" },
       { name: "booking-list", who: "jeff", path: "/booking", prep: async (p) => { await p.getByTestId("booking-seg-pitches").click(); } },
       { name: "pitch", who: "jeff", path: pitch },
       { name: "show", who: "jeff", path: show! },

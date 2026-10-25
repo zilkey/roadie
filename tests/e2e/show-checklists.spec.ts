@@ -4,7 +4,7 @@ import { A } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 /** The seeded Hi-Dive show (Nov 14): other specs add Hi-Dive shows, so match the date too. Only the date cell links. */
 async function openHiDive(page: Page) {

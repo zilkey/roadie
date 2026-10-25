@@ -194,19 +194,20 @@ test("MCP keys work on one artist: the one they name, or the person's only one",
 // ---------- URLs ----------
 
 test("routes resolve inside the artist; paths map back to named routes", () => {
+  assert.equal(artistPath("ingrid-avison"), "/artists/ingrid-avison/calendar");
   assert.equal(artistPath("ingrid-avison", "/shows/1"), "/artists/ingrid-avison/shows/1");
   assert.equal(resolveRoute("show", { id: "abc" }, "ingrid-avison")?.href, "/artists/ingrid-avison/shows/abc");
   assert.equal(resolveRoute("mcp", {}, "ingrid-avison")?.title, "Connect Roadie to Claude");
-  assert.equal(resolveRoute("home", {}, "../evil"), null);
+  assert.equal(resolveRoute("calendar", {}, "../evil"), null);
   assert.deepEqual(routeForPath("/artists/ingrid-avison/shows/abc"), { route: "show", params: { id: "abc" }, artist: "ingrid-avison" });
   assert.deepEqual(routeForPath("/artists/ingrid-avison/admin/people"), { route: "people", params: {}, artist: "ingrid-avison" });
   assert.equal(routeForPath("/artists/ingrid-avison/nope"), null);
-  assert.deepEqual(splitArtistPath("/artists/ingrid-avison"), { slug: "ingrid-avison", rest: "/home" });
+  assert.deepEqual(splitArtistPath("/artists/ingrid-avison"), { slug: "ingrid-avison", rest: "/calendar" });
   assert.deepEqual(splitArtistPath("/artists/ingrid-avison/setlists?q=hi"), { slug: "ingrid-avison", rest: "/setlists?q=hi" });
   assert.equal(splitArtistPath("/shows/1"), null);
   // every section root: a section missing here renders its links unscoped (toArtistHref), and they 404
-  for (const p of ["/home", "/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
-  for (const p of ["/", "/artists", "/artists/x/home", "/signin", "/api/session", "/ask/1/2/3", "//evil.example", "/homes"]) assert.equal(isLegacyPath(p), false, p);
+  for (const p of ["/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
+  for (const p of ["/", "/artists", "/home", "/artists/x/home", "/signin", "/api/session", "/ask/1/2/3", "//evil.example", "/homes"]) assert.equal(isLegacyPath(p), false, p);
 });
 
 test("old URLs redirect to /artists with the page as `next` (the picker opens it in your artist)", () => {
@@ -215,8 +216,8 @@ test("old URLs redirect to /artists with the page as `next` (the picker opens it
   const to = new URL(res.headers.get("location")!);
   assert.equal(to.pathname, "/artists");
   assert.equal(to.searchParams.get("next"), "/shows/123/after?x=1");
-  const home = new URL(proxy(new NextRequest("http://localhost:3100/home")).headers.get("location")!);
-  assert.equal(home.searchParams.get("next"), "/home");
+  const booking = new URL(proxy(new NextRequest("http://localhost:3100/booking")).headers.get("location")!);
+  assert.equal(booking.searchParams.get("next"), "/booking");
 });
 
 // ---------- migration ----------

@@ -3,7 +3,7 @@ import { openTab } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 async function as(browser: Browser, key: string) {
   const ctx = await browser.newContext();

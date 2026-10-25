@@ -4,7 +4,7 @@ import { A } from "./env";
 async function openShow(page: Page, venue: string, date: string) {
   await page.goto("/signin");
   await page.getByTestId("dev-jeff").click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/shows"));
   await page.getByTestId("shows-row").filter({ hasText: venue }).filter({ hasText: date }).first().locator("td.date a").click();
   await expect(page.getByTestId("sound")).toBeVisible();

@@ -2,7 +2,6 @@ import type { SectionId } from "@/schema/sections";
 
 /** SVG path data for the nav and menu icons. */
 export const I = {
-  home: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
   shows: "M4 7h16v13H4zM4 11h16M8 3v4M16 3v4",
   calendar: "M3 5h18v16H3zM3 9h18M8 2v4M16 2v4M3 13h18M3 17h18M9 9v12M15 9v12",
   booking: "M6 3v18M6 4h12l-3 4 3 4H6",
@@ -17,13 +16,12 @@ export const I = {
   up: "M6 15l6-6 6 6",
 };
 
-export type NavItem = { key: "home" | SectionId; href: string; label: string; icon: string };
+export type NavItem = { key: "calendar" | SectionId; href: string; label: string; icon: string };
 
-/** Every section this role can open, Home first, the rest in the person's own order. */
+/** Every section this role can open, Calendar first, the rest in the person's own order. */
 export function navFor(role: "admin" | "member", order: SectionId[]): NavItem[] {
   const all: Record<SectionId, NavItem> = {
     shows: { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
-    calendar: { key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar },
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
     templates: { key: "templates", href: "/booking/templates", label: "Email templates", icon: I.templates },
     songs: { key: "songs", href: "/songs", label: "Songs", icon: I.songs },
@@ -33,5 +31,5 @@ export function navFor(role: "admin" | "member", order: SectionId[]): NavItem[] 
   };
   // Booking and its email templates are admin-only.
   const adminOnly = new Set<SectionId>(["booking", "templates"]);
-  return [{ key: "home", href: "/home", label: "Home", icon: I.home }, ...order.filter((k) => !adminOnly.has(k) || role === "admin").map((k) => all[k])];
+  return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => !adminOnly.has(k) || role === "admin").map((k) => all[k])];
 }

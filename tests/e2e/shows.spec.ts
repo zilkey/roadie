@@ -1,13 +1,11 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { dateInBandZone } from "../../src/lib/timezone";
-import { addDays } from "../../src/lib/shows";
 import { CAL, GMAIL, A } from "./env";
 
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 async function as(browser: Browser, key: string) {
   const ctx = await browser.newContext();
@@ -15,7 +13,6 @@ async function as(browser: Browser, key: string) {
   await signInAs(page, key);
   return { page, close: () => ctx.close() };
 }
-const localToday = () => dateInBandZone();
 const showId = (page: Page) => page.url().split("/shows/")[1].split(/[/?]/)[0];
 
 async function cancelShow(page: Page, id: string, reason?: string) {
@@ -143,86 +140,6 @@ test("Ask who's free: emails go out, a sub answers by link without logging in", 
   await expect(page.getByTestId("ask-result").last()).toContainText("Emailed");
   await page.getByTestId("ask-close").click();
   await expect(page.getByTestId("ask-closed")).toBeVisible();
-});
-
-test("a member sees Home with a show today, read-only, with no money", async ({ page, browser }) => {
-  const yesterday = addDays(dateInBandZone(), -1);
-  await signInAs(page, "jeff");
-  // last night's unsettled show stays on top of Home
-  await page.goto(A("/shows/new"));
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await page.getByTestId("show-date").fill(yesterday);
-  await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("show-page")).toBeVisible();
-  const lastId = showId(page);
-  await page.goto(A("/home"));
-  const card = page.getByTestId(`recent-${lastId}`);
-  await expect(card).toContainText("Last night");
-  await expect(page.getByTestId(`enter-money-${lastId}`)).toHaveAttribute("href", new RegExp(`/shows/${lastId}\\?tab=finances$`));
-  const dv = await as(browser, "david");
-  await expect(dv.page.getByTestId(`recent-${lastId}`)).toContainText("Add expenses from last night");
-  await expect(dv.page.getByTestId(`enter-money-${lastId}`)).toHaveCount(0);
-  await expect(dv.page.getByTestId(`add-expenses-${lastId}`)).toBeVisible();
-  await dv.close();
-
-  await page.goto(A("/shows/new"));
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await page.getByTestId("show-date").fill(localToday());
-  await page.getByTestId("show-loadIn").fill("17:00");
-  await page.getByTestId("show-set").fill("21:15");
-  await page.getByTestId("billed-as").selectOption("full-band");
-  await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("deal-guarantee").fill("300");
-  await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("show-page")).toBeVisible();
-  const id = showId(page);
-  // a list from a template: its to-dos are unassigned, so they show on everyone's show-day card
-  await page.getByTestId("new-list-actions").click();
-  await page.getByRole("menuitem", { name: "Promo", exact: true }).click();
-  await expect(page.getByTestId("checklists-count")).toHaveText("0 of 3");
-  // admin Home: show day. Today's card first; the booking to-dos step aside.
-  await page.goto(A("/home"));
-  await expect(page.getByTestId(`today-${id}`)).toBeVisible();
-  await expect(page.getByTestId("booking-home")).toHaveCount(0);
-
-  const david = await as(browser, "david");
-  const d = david.page;
-  await expect(d.getByTestId(`today-${id}`)).toBeVisible();
-  await expect(d.getByTestId(`today-${id}`)).toContainText("Hi-Dive");
-  await expect(d.getByTestId(`today-${id}`)).toContainText("5:00 pm");
-  await expect(d.getByTestId(`today-${id}`)).toContainText("9:15 pm");
-  const todo = d.getByTestId(`today-todo-${id}`);
-  await expect(todo).toContainText("To do · 3");
-  await expect(todo).toContainText("Make show poster");
-  // a ticked to-do drops out of Home's open list on the next live update, so assert on the list, not the checkbox
-  const first = todo.locator("label").first();
-  const label = (await first.locator("span").first().textContent())!;
-  await first.getByRole("checkbox").click();
-  await expect(todo).toContainText("To do · 2");
-  await expect(todo).not.toContainText(label);
-  await expect(d.getByTestId(`today-setlist-${id}`)).toHaveCount(0); // no setlist on this show
-  // open "Can you play?" (seeded for David) sits below today's show, above anything else
-  const askBox = await d.getByTestId(/^ask-[A-Za-z0-9]+$/).first().boundingBox();
-  const todayBox = await d.getByTestId(`today-${id}`).boundingBox();
-  expect(todayBox!.y).toBeLessThan(askBox!.y);
-  await expect(d.getByTestId("booking-home")).toHaveCount(0);
-  await expect(d.getByTestId(/^enter-money/)).toHaveCount(0);
-
-  // the show page opens read-only for a member
-  await d.goto(A(`/shows/${id}`));
-  await expect(d.getByTestId("show-page")).toBeVisible();
-  await d.goto(A("/shows/new"));
-  await expect(d).toHaveURL(/\/home$/);
-  await d.goto(A("/shows"));
-  await expect(row(d, id)).toBeVisible();
-  await david.close();
-
-  await cancelShow(page, id);
-  await cancelShow(page, lastId);
-  await page.goto(A("/home"));
-  await expect(page.getByTestId(`today-${id}`)).toHaveCount(0);
-  await expect(page.getByTestId("booking-home")).toBeVisible();
 });
 
 test("Shows list: title row with New show and no subtitle; one table per tab; the tab survives a reload", async ({ page, browser }) => {

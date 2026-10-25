@@ -33,7 +33,7 @@ export const setSectionOrder = (order: SectionId[]) => runCommand("sections.setO
 export const setSectionHidden = (section: SectionId, hidden: boolean) => runCommand("sections.setHidden", { section, hidden });
 
 /**
- * "I don't need this right now": hides the section from the main nav (it moves to More), says so in a toast and goes Home.
+ * "I don't need this right now": hides the section from the main nav (it moves to More), says so in a toast and goes to the Calendar.
  *   const hide = useHideSection("booking");  <button onClick={hide.run} disabled={hide.busy}>
  */
 export function useHideSection(section: SectionId) {
@@ -44,7 +44,7 @@ export function useHideSection(section: SectionId) {
     try {
       await setSectionHidden(section, true);
       toast({ key: `hide:${section}`, text: `${SECTION_LABEL[section]} is tucked away in More.`, ms: 5000 });
-      router.push("/home");
+      router.push("/calendar");
     } catch (e) {
       toast({ key: `hide:${section}`, text: `Couldn't hide ${SECTION_LABEL[section]}: ${e instanceof Error ? e.message : "error"}`, ms: 6000 });
     } finally { setBusy(false); }

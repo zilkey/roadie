@@ -316,7 +316,7 @@ interface EntityFormProps {
   /** Resolves true to reset the form (create forms). `meta` has clientMutationId (+ clearDraft with `draft`): pass it to `call`. */
   onSubmit?(data: Record<string, unknown>, meta: SubmitMeta): Promise<boolean | void>;
   /** EXISTING record: no Save button; each field saves as a patch through `command` (a `<kind>.update`) on blur / after a pause. */
-  autosave?: { command: string; id: string; rev?: number; /** Name of the record, for Home's "Unsaved changes to ..." */ title?: string };
+  autosave?: { command: string; id: string; rev?: number; /** Name of the record, for the "Unsaved changes to ..." note */ title?: string };
   /** NEW record: values are kept as a draft (device + server) and restored on any machine. The explicit create button stays. */
   draft?: { path: string; title?(v: Values): string; route?: string };
 }

@@ -15,7 +15,7 @@ import type { AssistantEvent } from "@/schema/assistant";
 import { resetEmulators, makeUser } from "./helpers";
 
 beforeEach(resetEmulators);
-const ctx = { route: "home" };
+const ctx = { route: "calendar" };
 
 let n = 0;
 async function session() {

@@ -4,7 +4,7 @@ import { A } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 
 test("Custom fields: define a show field in admin, fill it on a show, see it; deleting the field clears it", async ({ page }) => {

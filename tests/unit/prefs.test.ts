@@ -24,6 +24,7 @@ test("sections.setHidden: per user, idempotent, can be brought back; unknown sec
   await call(jeff.token, "sections.setHidden", { section: "booking", hidden: false });
   assert.deepEqual(await hiddenSections(jeff.uid), ["money"]);
   assert.equal((await call(jeff.token, "sections.setHidden", { section: "home", hidden: true })).status, 400);
+  assert.equal((await call(jeff.token, "sections.setHidden", { section: "calendar", hidden: true })).status, 400);
 });
 
 test("Roadie is offered sections.setHidden", () => {
@@ -34,12 +35,13 @@ test("sections.setOrder: per user, completed with the default order, duplicates 
   const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
   const jeff = await makeUser("jeff@example.com", "admin");
   const david = await makeUser("david@example.com", "member");
-  assert.deepEqual(await sectionOrder(jeff.uid), ["shows", "calendar", "booking", "templates", "songs", "setlists", "rehearsals", "money"]);
+  assert.deepEqual(await sectionOrder(jeff.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money"]);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "songs"] })).status, 200);
-  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "calendar", "booking", "templates", "setlists", "rehearsals"]);
-  assert.deepEqual(await sectionOrder(david.uid), ["shows", "calendar", "booking", "templates", "songs", "setlists", "rehearsals", "money"], "someone else's menu is untouched");
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals"]);
+  assert.deepEqual(await sectionOrder(david.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money"], "someone else's menu is untouched");
   await call(jeff.token, "sections.setHidden", { section: "booking", hidden: true });
-  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "calendar", "booking", "templates", "setlists", "rehearsals"], "hiding keeps the order");
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals"], "hiding keeps the order");
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "money"] })).status, 400);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["home"] })).status, 400);
+  assert.equal((await call(jeff.token, "sections.setOrder", { order: ["calendar"] })).status, 400);
 });

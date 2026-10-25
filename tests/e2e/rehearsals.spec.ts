@@ -6,7 +6,7 @@ async function as(browser: Browser, key: string) {
   const page = await ctx.newPage();
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   return { page, close: () => ctx.close() };
 }
 
@@ -66,7 +66,7 @@ test("a member adds an expense on a rehearsal and an admin sees it", async ({ br
 test("your profile: the driving and gas card shows the seeded values and an MPG change sticks", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-jeff").click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
   await page.getByTestId("account-menu").click();
   await page.getByRole("menuitem", { name: "Your profile" }).click();
   await expect(page.getByTestId("me-driving-card")).toBeVisible();

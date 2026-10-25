@@ -20,7 +20,7 @@ export function sessionFor(who: Who, threadId: string, replyId = newMessageId(),
   return { ...who, threadId, runId: newRunId(), replyId, model: modelLabel(), now };
 }
 
-const HERE = { route: "home" };
+const HERE = { route: "calendar" };
 
 async function requireOwner(who: Who, threadId: string) {
   if (who.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);

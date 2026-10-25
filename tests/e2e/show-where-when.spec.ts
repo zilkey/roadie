@@ -4,7 +4,7 @@ import { A } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
-  await expect(page).toHaveURL(/\/home$/);
+  await expect(page).toHaveURL(/\/calendar$/);
 }
 
 /** A fresh show at Hi-Dive with no times (its own date, so other specs are not touched). */

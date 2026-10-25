@@ -29,7 +29,7 @@ function Booking({ seg }: { seg: Seg }) {
   // The search survives switching tabs: it rides along as ?q= on the tab's route.
   const [q, setQ] = useState(() => (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("q") ?? ""));
   const setSeg = (s: Seg) => router.push(`/booking${s === "all" ? "" : `/${s}`}${q.trim() ? `?q=${encodeURIComponent(q)}` : ""}`);
-  // An unfinished "new X" opens its form by itself (Home's Unfinished card links here).
+  // An unfinished "new X" opens its form by itself (a draft link to it opens the form).
   const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")), contact: useHasDraft(draftPath.newIn("contacts")) };
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
   const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival", "contact"] as const).find((k) => drafts[k]) ?? null;

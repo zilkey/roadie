@@ -17,7 +17,7 @@ function Icon({ d, size = 22 }: { d: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>;
 }
 
-/** The artist-settings sections (artist-relative), named as in the settings sub-nav. Home's band setup card, the phone title and `useOn` read this. */
+/** The artist-settings sections (artist-relative), named as in the settings sub-nav. the band setup card, the phone title and `useOn` read this. */
 export const ADMIN_LINKS = [
   { href: "/admin/artist", label: "General", testid: "admin-artist" },
   { href: "/admin/lineups", label: "Lineups", testid: "admin-lineups" },
@@ -94,7 +94,7 @@ function MoreItems({ items, testidPrefix = "more" }: { items: NavItem[]; testidP
 
 /** "Customize menu": per section an on/off switch and up/down. Saved per user as it changes. */
 function EditMenuDialog({ open, onClose, role, hidden, order }: { open: boolean; onClose(): void; role: string; hidden: SectionId[]; order: SectionId[] }) {
-  const rows = navFor(role as "admin" | "member", order).filter((n) => n.key !== "home") as (NavItem & { key: SectionId })[];
+  const rows = navFor(role as "admin" | "member", order).filter((n) => n.key !== "calendar") as (NavItem & { key: SectionId })[];
   const fail = (what: string, e: unknown) => toast({ key: "menu-edit", text: `Couldn't ${what}: ${e instanceof Error ? e.message : "error"}`, ms: 6000 });
   async function toggle(n: NavItem & { key: SectionId }) {
     try { await setSectionHidden(n.key, !hidden.includes(n.key)); } catch (e) { fail(`change ${n.label}`, e); }
@@ -111,7 +111,7 @@ function EditMenuDialog({ open, onClose, role, hidden, order }: { open: boolean;
   }
   return (
     <Dialog open={open} onClose={onClose} title="Customize menu" testid="menu-dialog">
-      <p className="s">Switch sections off to tuck them into More, and move them up or down. Home is always there.</p>
+      <p className="s">Switch sections off to tuck them into More, and move them up or down. Calendar is always first.</p>
       <ul className="grid gap-1" aria-label="Sections">
         {rows.map((n, i) => {
           const off = hidden.includes(n.key);

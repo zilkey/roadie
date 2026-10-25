@@ -5,7 +5,7 @@ import { defineCommand } from "./types";
 
 export const sectionsSetHidden = defineCommand({
   name: "sections.setHidden", roles: ["admin", "member"], input: SectionSetInput,
-  description: "Hide a main section (shows, booking, templates, songs, setlists, rehearsals, money) from the caller's main nav into the More menu, or bring it back (hidden:false). Nothing is deleted and the pages still work.",
+  description: "Hide a main section (shows, booking, templates, songs, setlists, rehearsals, money; not Calendar, which is always first) from the caller's main nav into the More menu, or bring it back (hidden:false). Nothing is deleted and the pages still work.",
   async run(ctx, i) { return { section: i.section, hidden: i.hidden, hiddenSections: await setSectionHidden(ctx.uid, i.section, i.hidden) }; },
 });
 export const sectionsHidden = defineCommand({
@@ -16,12 +16,12 @@ export const sectionsHidden = defineCommand({
 
 export const sectionsSetOrder = defineCommand({
   name: "sections.setOrder", roles: ["admin", "member"], input: SectionOrderInput,
-  description: "Set the order of the caller's main sections after Home (shows, booking, templates, songs, setlists, rehearsals, money). Sections left out go to the end in their default order.",
+  description: "Set the order of the caller's main sections after Calendar, which is always first (shows, booking, templates, songs, setlists, rehearsals, money). Sections left out go to the end in their default order.",
   async run(ctx, i) { return { order: await setSectionOrder(ctx.uid, i.order) }; },
 });
 export const sectionsOrder = defineCommand({
   name: "sections.order", roles: ["admin", "member"], input: z.strictObject({}),
-  description: "The order of the caller's main sections after Home.",
+  description: "The order of the caller's main sections.",
   async run(ctx) { return { order: await sectionOrder(ctx.uid) }; },
 });
 
