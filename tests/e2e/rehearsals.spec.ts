@@ -47,11 +47,12 @@ test("admin logs gas from the rehearsal: round trip estimate, toggle one way, sa
 test("the rehearsal expenses card opens the full expense form for that rehearsal", async ({ browser }) => {
   const { page, close } = await as(browser, "david");
   await openRehearsal(page, "Oct 29");
+  await page.getByTestId("reh-tab-money").click();
   await page.getByTestId("expenses").getByTestId("expenses-full-form").click();
   await expect(page).toHaveURL(/\/money\/expense\?rehearsalId=/);
   await expect(page.getByText(/^Rehearsal · /)).toContainText("Oct 29");
   await page.getByTestId("back").click();
-  await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/);
+  await expect(page).toHaveURL(/\/rehearsals\/[^/]+\?tab=money$/);
   await close();
 });
 
@@ -59,6 +60,7 @@ test("the rehearsal expenses card opens the full expense form for that rehearsal
 test("a member adds an expense on a rehearsal and an admin sees it", async ({ browser }) => {
   const david = await as(browser, "david");
   await openRehearsal(david.page, "Oct 29");
+  await david.page.getByTestId("reh-tab-money").click();
   const card = david.page.getByTestId("expenses");
   await card.getByTestId("expenses-full-form").click();
   await david.page.getByTestId("exp-cat-space").click();
@@ -71,6 +73,7 @@ test("a member adds an expense on a rehearsal and an admin sees it", async ({ br
 
   const jeff = await as(browser, "jeff");
   await openRehearsal(jeff.page, "Oct 29");
+  await jeff.page.getByTestId("reh-tab-money").click();
   await expect(jeff.page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
   await jeff.close();
 });

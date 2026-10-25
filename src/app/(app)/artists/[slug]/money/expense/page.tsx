@@ -58,7 +58,7 @@ function AddExpense() {
   const rehLoc = rehearsal?.location;
   const rehHasLoc = !!(rehLoc && (rehLoc.address || rehLoc.lat !== undefined));
   // Opened from a rehearsal or show page: Save, Cancel and Back go back there.
-  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}` : fromShow ? `/shows/${fromShow}?tab=finances` : "/money";
+  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}?tab=money` : fromShow ? `/shows/${fromShow}?tab=finances` : "/money";
   const draft = useDraft(
     fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
     {

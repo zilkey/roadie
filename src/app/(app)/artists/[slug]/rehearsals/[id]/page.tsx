@@ -1,8 +1,8 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
-import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
@@ -20,8 +20,12 @@ import { useDoc } from "@/lib/firestore-hooks";
 import type { Rehearsal, RehearsalLocation, SetlistTemplate } from "@/schema";
 import ImportSetlistDialog from "./ImportSetlistDialog";
 import { ExpensesCardFor } from "@/components/money/ExpensesCard";
+import { Tabs } from "@/components/booking/common";
+import { DetailCard, DetailPage, KV, useSingleEdit } from "@/components/booking/DetailCards";
 
-export default function RehearsalPage() {
+export default function RehearsalPage() { return <Suspense><Page /></Suspense>; }
+
+function Page() {
   const { id } = useParams<{ slug: string; id: string }>();
   const m = useMusic();
   const admin = useProfile().role === "admin";
@@ -126,52 +130,6 @@ function LocationSearch({ initial, onType, onPick, testid = "reh-location-input"
   );
 }
 
-/** Location card: the place and address, Open in Maps; admins change it (saved at once) or, with none yet, add it. */
-function LocationCard({ r, admin }: { r: Row; admin: boolean }) {
-  const { call, error, busy } = useCommand();
-  const [changing, setChanging] = useState(false);
-  const [pending, setPending] = useState<Place | null>(null);
-  const loc = r.location;
-  const hasLoc = !!(loc?.name || loc?.address);
-  const mapsQuery = loc?.address ?? (loc?.lat !== undefined && loc?.lng !== undefined ? `${loc.lat},${loc.lng}` : loc?.name);
-
-  async function save(p: Place) {
-    const ok = await call("rehearsals.setLocation", { id: r.id, location: placeOf(p) });
-    if (ok) { setChanging(false); setPending(null); }
-  }
-
-  return (
-    <section className="card" data-testid="reh-location-card">
-      <div className="flex items-center justify-between gap-2">
-        <span className="card-h">Location</span>
-        {admin && hasLoc && (
-          <button type="button" className="btn ghost sm" onClick={() => setChanging(!changing)} data-testid="reh-location-change">{changing ? "Cancel" : "Change"}</button>
-        )}
-      </div>
-      {hasLoc && !changing ? (
-        <div className="grid gap-1">
-          {loc?.name && <span className="font-semibold" data-testid="reh-location-name">{loc.name}</span>}
-          {loc?.address && <span className="text-sm" data-testid="reh-location-address">{loc.address}</span>}
-          {mapsQuery && (
-            <a className="text-sm" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`}>Open in Maps</a>
-          )}
-        </div>
-      ) : admin ? (
-        <div className="grid gap-2">
-          {!hasLoc && <p className="text-sm s">No address yet. Add one so members can get directions and log gas in one tap.</p>}
-          <LocationSearch initial="" onPick={(p) => (hasLoc ? void save(p) : setPending(p))} />
-          {!hasLoc && (
-            <button type="button" className="btn acc justify-self-start" disabled={!pending || busy} onClick={() => pending && save(pending)} data-testid="reh-location-save">Save</button>
-          )}
-          <ErrorBox error={error} />
-        </div>
-      ) : (
-        <p className="text-sm s">No address yet. An admin will add it. You can still log gas by typing where you drove.</p>
-      )}
-    </section>
-  );
-}
-
 // ---------- new rehearsal ----------
 
 interface NewForm { date: string; location: RehearsalLocation | null; notes: string; personnel: string[]; ran: Record<string, string> }
@@ -249,153 +207,177 @@ function NewRehearsal({ m }: { m: Music }) {
 
 // ---------- existing rehearsal ----------
 
+type Tab = "info" | "money";
+const TABS: Tab[] = ["info", "money"];
+type CardKey = "when" | "songs" | "notes";
+
+/**
+ * One column of cards, like the booking detail pages, with Info and Money tabs like a show. Info: When & where, Band members,
+ * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; a card's Edit opens it and Done closes it.
+ */
 function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: boolean }) {
   const router = useRouter();
+  const sp = useSearchParams();
+  const tab: Tab = TABS.includes(sp.get("tab") as Tab) ? (sp.get("tab") as Tab) : "info";
+  const setTab = (t: Tab) => router.replace(`/rehearsals/${id}${t === "info" ? "" : `?tab=${t}`}`);
   const { call, error, busy } = useCommand();
   const existing = m.rehearsals.find((x) => x.id === id)!;
   const [form, setForm] = useState<RehForm>(() => formOf(existing));
   const [picks, setPicks] = useState<Pick[]>([]);
   const [adding, setAdding] = useState(false); // Drive picker for recordings
-  const [picking, setPicking] = useState(false); // song picker
-  const [editing, setEditing] = useState(false); // song notes and the notes field
+  const edit = useSingleEdit<CardKey>();
   const setlist = useDoc<SetlistTemplate>("setlistTemplates", existing.fromSetlistId ?? "none");
   // Existing record = autosave through rehearsals.update; no Save button.
   const as = useAutosave({ command: "rehearsals.update", id, rev: existing.rev, onUseTheirs: () => setForm(formOf(existing)) });
   // Keep the form in step with the record when it changes under us (Undo, someone else), unless we have unsaved edits.
   const serverKey = JSON.stringify(formOf(existing));
   useEffect(() => { if (!as.isBusy()) setForm(JSON.parse(serverKey)); }, [serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const edit = (next: RehForm) => {
+  const change = (next: RehForm) => {
     if (!next.date) as.hold("Date is required"); else as.patch(rehPatch(form, next));
     setForm(next);
   };
+  const flush = () => void as.flush();
 
   const files = m.files.filter((f) => f.rehearsalId === existing.id);
   const activeMusicians = m.musicians.filter((x) => x.active);
   const fullBand = activeMusicians.length > 0 && activeMusicians.every((x) => form.personnel.includes(x.id));
-  const toggleMember = (mid: string) => edit({ ...form, personnel: form.personnel.includes(mid) ? form.personnel.filter((i) => i !== mid) : [...form.personnel, mid] });
-  const toggleSong = (sid: string) => { const { [sid]: on, ...rest } = form.ran; edit({ ...form, ran: on !== undefined ? rest : { ...form.ran, [sid]: "" } }); };
+  const toggleMember = (mid: string) => change({ ...form, personnel: form.personnel.includes(mid) ? form.personnel.filter((i) => i !== mid) : [...form.personnel, mid] });
+  const toggleSong = (sid: string) => { const { [sid]: on, ...rest } = form.ran; change({ ...form, ran: on !== undefined ? rest : { ...form.ran, [sid]: "" } }); };
   const timeLine = form.startTime && form.endTime ? `${fmtTime(form.startTime)} – ${fmtTime(form.endTime)}` : form.startTime ? fmtTime(form.startTime) : "";
   const songs = pickableSongs(m, form.ran);
+  const ranIds = Object.keys(form.ran);
+
+  const loc = existing.location;
+  const hasLoc = !!(loc?.name || loc?.address);
+  const mapsQuery = loc?.address ?? (loc?.lat !== undefined && loc?.lng !== undefined ? `${loc.lat},${loc.lng}` : loc?.name);
+  const setLocation = (p: Place) => void call("rehearsals.setLocation", { id: existing.id, location: placeOf(p) });
+  const where = hasLoc ? (
+    <div className="grid gap-1">
+      {loc?.name && <span className="font-semibold" data-testid="reh-location-name">{loc.name}</span>}
+      {loc?.address && <span data-testid="reh-location-address">{loc.address}</span>}
+      {mapsQuery && <a className="text-sm underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`}>Open in Maps</a>}
+    </div>
+  ) : <span className="d-muted">{admin ? "No address yet. Add one so members can get directions and log gas in one tap." : "No address yet. An admin will add it. You can still log gas by typing where you drove."}</span>;
+  const archive = async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); };
 
   return (
-    <div className="grid gap-5" data-testid="rehearsal-page">
-      <PageTitle
-        back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
-        title={`Rehearsal · ${fmtLong(form.date)}`}
-        sub={admin ? (
-          <span className="flex flex-wrap items-center gap-2">
-            <input type="date" className="input !w-auto" value={form.date} onChange={(e) => edit({ ...form, date: e.target.value })} onBlur={() => void as.flush()} required aria-label="Date" data-testid="reh-date" />
-            <input type="time" className="input !w-auto" value={form.startTime} onChange={(e) => edit({ ...form, startTime: e.target.value })} onBlur={() => void as.flush()} aria-label="Start time" data-testid="reh-start" />
-            <span className="s">–</span>
-            <input type="time" className="input !w-auto" value={form.endTime} onChange={(e) => edit({ ...form, endTime: e.target.value })} onBlur={() => void as.flush()} aria-label="End time" data-testid="reh-end" />
-            {fullBand && <span className="s">· Full band</span>}
-          </span>
-        ) : <span data-testid="reh-times">{[timeLine, fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
-        actions={<>
-          {admin && <SaveStatus {...as.statusProps} />}
-          {admin && <button type="button" className="btn ghost" onClick={() => setEditing(!editing)} data-testid="reh-edit">{editing ? "Done" : "Edit"}</button>}
-          <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>
-          {admin && (
-            <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
-              items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); } }]} />
-          )}
-        </>} />
+    <DetailPage testid="rehearsal-page" back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
+      title={`Rehearsal · ${fmtLong(form.date)}`}
+      meta={<span data-testid="reh-times">{[timeLine, loc?.name ?? loc?.address ?? "", fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
+      more={<div className="flex flex-wrap items-center gap-2">
+        {admin && <SaveStatus {...as.statusProps} />}
+        <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>
+        {admin && <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+          items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: archive }]} />}
+      </div>}>
+      <Tabs<Tab> testid="reh-tab" value={tab} onChange={setTab} options={[["info", "Info"], ["money", "Money"]]} />
+      <ErrorBox error={error} />
 
-      <div className="cols">
-        <div className="col-main">
-          <LocationCard r={existing} admin={admin} />
-
-          <section className="card" data-testid="reh-songs-card">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="card-h">Songs <span className="s font-medium">· {Object.keys(form.ran).length}</span></span>
-              {admin && (
-                <div className="flex flex-wrap gap-2">
-                  <ImportSetlistDialog rehearsalId={existing.id} songCount={existing.songs.length} />
-                  <button type="button" className="btn ghost sm" onClick={() => setPicking(!picking)} data-testid="reh-add-song">{picking ? "Done" : "+ Song"}</button>
-                </div>
-              )}
+      {tab === "info" && <>
+        <DetailCard private title="When & where" testid="reh-when-card" editKey="when" edit={admin ? edit : undefined} editTestid="reh-when-edit" doneTestid="reh-when-done" onDone={flush}
+          editChildren={
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="grid gap-1"><span className="lbl">Date</span>
+                  <input type="date" className="input !w-auto" value={form.date} onChange={(e) => change({ ...form, date: e.target.value })} onBlur={flush} required data-testid="reh-date" /></label>
+                <label className="grid gap-1"><span className="lbl">Start</span>
+                  <input type="time" className="input !w-auto" value={form.startTime} onChange={(e) => change({ ...form, startTime: e.target.value })} onBlur={flush} data-testid="reh-start" /></label>
+                <span className="s pb-3">–</span>
+                <label className="grid gap-1"><span className="lbl">End</span>
+                  <input type="time" className="input !w-auto" value={form.endTime} onChange={(e) => change({ ...form, endTime: e.target.value })} onBlur={flush} data-testid="reh-end" /></label>
+              </div>
+              <div className="grid gap-1"><span className="lbl">Where</span>
+                {hasLoc && <div className="text-sm s">Now: {loc?.name ? `${loc.name}, ` : ""}{loc?.address}</div>}
+                {/* Picking a suggestion saves it at once (rehearsals.setLocation). */}
+                <LocationSearch initial="" onPick={setLocation} />
+              </div>
             </div>
-            {picking && (
-              <div className="grid gap-1.5 rounded-lg border border-line p-2.5" data-testid="reh-song-picker">
-                {songs.map((s) => (
-                  <label key={s.id} className="flex items-center gap-2 text-sm">
+          }>
+          <KV rows={[["Date", fmtLong(form.date)], ["Time", timeLine, "reh-time"], ["Location", where]]} />
+        </DetailCard>
+
+        <DetailCard private title="Band members" testid="reh-members-card" headerExtra={fullBand ? <span className="d-muted text-sm">Full band</span> : undefined}>
+          <ul className="m-0 grid list-none p-0">
+            {activeMusicians.map((x) => (
+              <li key={x.id} className="d-row" data-testid="reh-member-row">
+                <span className="flex min-w-0 flex-1 items-center gap-3">
+                  <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold">{x.name.charAt(0)}</span>
+                  <span className="min-w-0 font-semibold">{x.name}{x.instruments.length > 0 && <span className="d-muted font-normal"> · {x.instruments.join(", ")}</span>}</span>
+                </span>
+                <label className="flex min-h-[44px] items-center gap-1.5 text-sm">
+                  <input type="checkbox" checked={form.personnel.includes(x.id)} disabled={!admin} onChange={() => toggleMember(x.id)} data-testid="reh-member-coming" />Coming
+                </label>
+              </li>
+            ))}
+          </ul>
+        </DetailCard>
+
+        <DetailCard private title={<>Songs <span className="d-muted font-medium">· {ranIds.length}</span></>} testid="reh-songs-card"
+          editKey="songs" edit={admin ? edit : undefined} editTestid="reh-add-song" doneTestid="reh-songs-done" onDone={flush}
+          headerExtra={admin && !edit.is("songs") ? <ImportSetlistDialog rehearsalId={existing.id} songCount={existing.songs.length} /> : undefined}
+          editChildren={
+            <div className="grid gap-1.5" data-testid="reh-song-picker">
+              {songs.map((s) => (
+                <div key={s.id} className="flex min-h-[44px] items-center gap-2">
+                  <label className="flex flex-1 items-center gap-2 text-sm">
                     <input type="checkbox" checked={form.ran[s.id] !== undefined} onChange={() => toggleSong(s.id)} data-testid={`reh-song-${s.title}`} />{s.title}
                   </label>
-                ))}
-                {songs.length === 0 && <span className="s">No songs to add.</span>}
-              </div>
-            )}
+                  {form.ran[s.id] !== undefined && <input className="input !w-1/2" placeholder="Note" value={form.ran[s.id]} onChange={(e) => change({ ...form, ran: { ...form.ran, [s.id]: e.target.value } })} onBlur={flush} aria-label={`Note for ${s.title}`} data-testid={`reh-note-${s.title}`} />}
+                </div>
+              ))}
+              {songs.length === 0 && <span className="s">No songs to add.</span>}
+            </div>
+          }>
+          {ranIds.length === 0 ? <div className="d-muted">No songs yet.{admin ? " Import a setlist or tick what you ran." : ""}</div> : (
             <ol className="m-0 grid list-none p-0" data-testid="rehearsal-songs">
-              {Object.keys(form.ran).map((sid, i) => (
-                <li key={sid} className="flex items-center gap-3 border-t border-line py-2.5">
-                  <span className="w-5 text-sm s">{i + 1}</span>
-                  <Link href={`/songs/${sid}`} className="min-w-0 flex-1 truncate text-sm font-semibold">{titleOf(m, sid)}</Link>
-                  {editing ? (
-                    <input className="input !w-1/2" placeholder="Note" value={form.ran[sid]} onChange={(e) => edit({ ...form, ran: { ...form.ran, [sid]: e.target.value } })} onBlur={() => void as.flush()} aria-label={`Note for ${titleOf(m, sid)}`} data-testid={`reh-note-${titleOf(m, sid)}`} />
-                  ) : form.ran[sid] ? <span className="text-xs s">{form.ran[sid]}</span> : null}
+              {ranIds.map((sid, i) => (
+                <li key={sid} className="d-row !flex-nowrap">
+                  <span className="flex min-w-0 flex-1 items-center gap-3">
+                    <span className="w-5 shrink-0 text-sm d-muted">{i + 1}</span>
+                    <Link href={`/songs/${sid}`} className="min-w-0 truncate font-semibold">{titleOf(m, sid)}</Link>
+                  </span>
+                  {form.ran[sid] && <span className="text-sm d-muted">{form.ran[sid]}</span>}
                 </li>
               ))}
             </ol>
-            {editing ? (
-              <label className="grid gap-1"><span className="lbl">Notes</span>
-                <textarea className="input" rows={2} value={form.notes} onChange={(e) => edit({ ...form, notes: e.target.value })} onBlur={() => void as.flush()} data-testid="reh-notes" />
-              </label>
-            ) : form.notes ? <p className="text-sm">{form.notes}</p> : null}
-            {existing.fromSetlistId && (
-              <div className="text-xs s">Imported from template &quot;{setlist.doc?.name ?? "Setlist"}&quot; · edits here don&apos;t change the setlist</div>
-            )}
-          </section>
-        </div>
+          )}
+          {existing.fromSetlistId && (
+            <div className="text-xs s">Imported from template &quot;{setlist.doc?.name ?? "Setlist"}&quot; · edits here don&apos;t change the setlist</div>
+          )}
+        </DetailCard>
 
-        <div className="col-side">
-          <section className="card" data-testid="reh-members-card">
-            <div className="flex items-center justify-between gap-2">
-              <span className="card-h">Band members</span>
-              <span className="s">From band settings</span>
-            </div>
-            <ul className="m-0 grid list-none p-0">
-              {activeMusicians.map((x) => (
-                <li key={x.id} className="flex items-center gap-3 border-t border-line py-2" data-testid="reh-member-row">
-                  <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold">{x.name.charAt(0)}</span>
-                  <span className="min-w-0 flex-1 text-sm font-semibold">{x.name}{x.instruments.length > 0 && <span className="s font-normal"> · {x.instruments.join(", ")}</span>}</span>
-                  <label className="flex min-h-[44px] items-center gap-1.5 text-sm">
-                    <input type="checkbox" checked={form.personnel.includes(x.id)} disabled={!admin} onChange={() => toggleMember(x.id)} data-testid="reh-member-coming" />Coming
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </section>
+        <DetailCard private title="Notes" testid="reh-notes-card" editKey="notes" edit={admin ? edit : undefined} editTestid="reh-edit" doneTestid="reh-notes-done" onDone={flush}
+          editChildren={<textarea className="input" rows={3} aria-label="Notes" value={form.notes} onChange={(e) => change({ ...form, notes: e.target.value })} onBlur={flush} data-testid="reh-notes" />}>
+          {form.notes ? <p className="m-0 whitespace-pre-wrap">{form.notes}</p> : <span className="d-muted">No notes.</span>}
+        </DetailCard>
 
-          <section className="card" data-testid="reh-recordings-card">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="card-h">Recordings</span>
-              {admin && <button type="button" className="btn ghost sm" onClick={() => setAdding(!adding)} data-testid="reh-add-recording">{adding ? "Cancel" : "Attach from Google Drive"}</button>}
+        <DetailCard private title="Recordings" testid="reh-recordings-card"
+          headerExtra={admin ? <button type="button" className="btn ghost sm" onClick={() => setAdding(!adding)} data-testid="reh-add-recording">{adding ? "Cancel" : "Attach from Google Drive"}</button> : undefined}>
+          {adding && (
+            <div className="grid gap-2">
+              <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.flatMap((f) => f.driveFileId ?? [])} defaultKind="rehearsal" onChange={setPicks} />
+              <button type="button" className="btn acc justify-self-start" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
             </div>
-            {adding && (
-              <div className="grid gap-2">
-                <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.flatMap((f) => f.driveFileId ?? [])} defaultKind="rehearsal" onChange={setPicks} />
-                <button type="button" className="btn acc" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
-              </div>
-            )}
-            <div className="grid gap-2" data-testid="rehearsal-files">
-              {files.map((f: FileRow) => (
-                <div key={f.id} className="flex items-center gap-2 border-t border-line pt-2" data-testid={`file-${f.id}`}>
+          )}
+          <div className="grid" data-testid="rehearsal-files">
+            {files.map((f: FileRow) => (
+              <div key={f.id} className="d-row !flex-nowrap" data-testid={`file-${f.id}`}>
+                <span className="flex min-w-0 flex-1 items-center gap-2">
                   <FileIcon mime={f.mimeType} />
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{f.title}</span>
-                  {playerFor(f).mode === "audio" && <audio controls preload="none" src={f.url} className="h-8 max-w-[160px]" />}
-                  <a className="text-xs font-semibold" href={f.url} target="_blank" rel="noreferrer" data-testid="file-open">Open in Drive</a>
-                  {admin && <button type="button" aria-label="Remove recording" className="min-h-[44px] min-w-[44px] border-0 bg-transparent text-lg s" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">×</button>}
-                </div>
-              ))}
-              {files.length === 0 && <span className="text-sm s">No recordings yet.</span>}
-            </div>
-            <div className="text-xs s">Files stay in Drive — the app stores links only.</div>
-          </section>
-        </div>
-      </div>
+                  <span className="min-w-0 truncate font-semibold">{f.title}</span>
+                </span>
+                {playerFor(f).mode === "audio" && <audio controls preload="none" src={f.url} className="h-8 max-w-[160px]" />}
+                <a className="text-sm font-semibold" href={f.url} target="_blank" rel="noreferrer" data-testid="file-open">Open in Drive</a>
+                {admin && <button type="button" aria-label="Remove recording" className="min-h-[44px] min-w-[44px] border-0 bg-transparent text-lg s" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">×</button>}
+              </div>
+            ))}
+            {files.length === 0 && <span className="d-muted">No recordings yet.</span>}
+          </div>
+          <div className="text-xs s">Files stay in Drive — the app stores links only.</div>
+        </DetailCard>
+      </>}
 
-      <ExpensesCardFor target={{ kind: "rehearsal", id: existing.id }} admin={admin} />
-      <ErrorBox error={error} />
-    </div>
+      {tab === "money" && <ExpensesCardFor target={{ kind: "rehearsal", id: existing.id }} admin={admin} />}
+    </DetailPage>
   );
 }
