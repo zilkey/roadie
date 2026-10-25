@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
+import { Icons } from "@/components/people/shared";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import { useDragReorder } from "@/lib/drag-reorder";
@@ -107,7 +108,7 @@ function TemplateCard({ t, onRemove, row, handle: grip }: {
         <span className={handle} {...grip} aria-hidden="true"><Grip /></span>
         <input className="min-h-11 min-w-0 flex-1 border border-transparent border-b-line bg-transparent px-0.5 py-1.5 text-lg font-bold outline-none focus:border-b-accent"
           value={name} onChange={(e) => editName(e.target.value)} aria-label="Template name" data-testid={`template-name-${t.id}`} />
-        <button type="button" className="btn outline danger" onClick={onRemove} data-testid={`template-delete-${t.id}`}>Delete</button>
+        <button type="button" className="icon-btn danger" aria-label={`Delete ${t.name}`} onClick={onRemove} data-testid={`template-delete-${t.id}`}>{Icons.trash}</button>
       </div>
       <SaveStatus {...as.statusProps} />
       {items.map((c, i) => (

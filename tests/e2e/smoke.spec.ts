@@ -67,7 +67,7 @@ test("settings: General edits the artist name", async ({ page }) => {
   const saved = page.getByTestId("checklist-templates").locator('[data-testid^="template-"]', { has: page.locator('input[value="E2E Soundcheck"]') }).first();
   await expect(saved).toBeVisible();
   await expect(saved.locator('input[data-testid^="template-item-"]').first()).toHaveValue("Line check");
-  await saved.locator('button[data-testid^="template-delete-"]').click();
+  await saved.getByRole("button", { name: "Delete E2E Soundcheck" }).click();
   await expect(page.locator('input[value="E2E Soundcheck"]')).toHaveCount(0);
 });
 
