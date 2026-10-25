@@ -99,7 +99,7 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
         <span className="s">{plural(songCount(items))}{!setLen ? " · the show has no set length yet" : ""}</span>
       </div>
 
-      <SetlistItemsEditor items={items} onChange={save} songs={m.songs} admin={admin}
+      <SetlistItemsEditor items={items} onChange={save} songs={m.songs} admin={admin} bpm
         empty={admin ? "No setlist yet. Seed one from a template or another show, or add songs below." : "No setlist yet."} />
 
       <ErrorBox error={error} />

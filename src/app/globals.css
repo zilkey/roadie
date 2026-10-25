@@ -268,6 +268,7 @@ fieldset.sec { margin: 0; }
 .song-table th:first-child, .song-table td:first-child { padding-left: 20px; }
 .song-table th:last-child, .song-table td:last-child { padding-right: 20px; }
 .song-table th.key, .song-table td.key { width: 90px; font-weight: 600; color: var(--ink); }
+.song-table th.bpm, .song-table td.bpm { width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
 .song-table th.len, .song-table td.len { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
 .song-table th.lyr, .song-table td.lyr { width: 140px; padding-left: 24px; }
 .song-table td.cf { white-space: nowrap; }

@@ -27,9 +27,10 @@ export const itemsPayload = (items: SetlistItemT[]) => items.map((i) => {
 /**
  * The ordered list of songs and breaks, shared by the template editor and a show's Setlist tab: drag / arrows to reorder,
  * remove, add a song, add a break. Stateless about saving: every change calls `onChange(next)` with the whole new list.
+ * `bpm` shows each song's tempo before its time, read live from the song (items don't carry a copy).
  */
-export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Nothing in this setlist yet." }: {
-  items: SetlistItemT[]; onChange(next: SetlistItemT[]): void; songs: SongRow[]; admin: boolean; empty?: string;
+export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Nothing in this setlist yet.", bpm = false }: {
+  items: SetlistItemT[]; onChange(next: SetlistItemT[]): void; songs: SongRow[]; admin: boolean; empty?: string; bpm?: boolean;
 }) {
   const [songId, setSongId] = useState("");
   const [breakTitle, setBreakTitle] = useState("Talk / tune");
@@ -37,6 +38,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
   const reorder = (from: number, to: number) => { const next = move(items, from, to); if (next !== items) onChange(next); };
   const dr = useDragReorder(reorder);
   const pickable = songs.filter((s) => s.status === "active" || s.status === "learning").sort((a, b) => a.title.localeCompare(b.title));
+  const songBpm = (i: SetlistItemT) => (i.type === "song" && i.songId ? songs.find((s) => s.id === i.songId)?.bpm : undefined);
   const songTitle = (i: SetlistItemT) => (i.type === "song" ? songs.find((s) => s.id === i.songId)?.title ?? i.title : i.title);
 
   return (
@@ -51,6 +53,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
               {it.type === "song" && it.songId ? <Link href={`/songs/${it.songId}`} className="font-semibold" data-testid="item-title">{songTitle(it)}</Link> : <span className="italic" data-testid="item-title">{it.title}</span>}
               {it.key && <span className="s"> · {it.key}</span>}
             </span>
+            {bpm && songBpm(it) != null && <span className="s font-mono" data-testid="item-bpm">{songBpm(it)} bpm</span>}
             <span className="font-mono text-sm" data-testid="item-len">{fmtLen(it.lengthSec ?? 0)}</span>
             {admin && (
               <span className="flex gap-1">

@@ -77,6 +77,7 @@ function Songs() {
                 <tr>
                   <th scope="col">Title</th>
                   <th scope="col" className="key">Key</th>
+                  <th scope="col" className="bpm">BPM</th>
                   <th scope="col" className="len">Time</th>
                   {cols.map((f) => <th key={f.id} scope="col" className="cf" data-testid={`songs-col-${f.id}`}>{f.label}</th>)}
                   <th scope="col" className="lyr">Lyrics</th>
@@ -90,6 +91,7 @@ function Songs() {
                       {playable.has(s.id) && <span className="chip m ml-2" title="Has a recording">♪</span>}
                     </td>
                     <td className="key">{s.key || <span className="dash">—</span>}</td>
+                    <td className="bpm">{s.bpm ?? <span className="dash">—</span>}</td>
                     <td className="len">{s.lengthSec ? fmtLen(s.lengthSec) : <span className="dash">—</span>}</td>
                     {cols.map((f) => <td key={f.id} className="cf">{s.fields?.find((v) => v.fieldId === f.id)?.value || <span className="dash">—</span>}</td>)}
                     <td className="lyr">
