@@ -9,6 +9,9 @@ import type { PrintOptions, PrintPaper } from "@/schema/print";
 import { PrintSheets } from "./PrintSheets";
 import { usePrintSheets } from "./usePrintSheets";
 
+/** The printer from the wireframe; sits before the label on every Print button. */
+export const PrintIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2" /><rect x="6" y="14" width="12" height="7" /></svg>;
+
 type Fit = { px: number; overflow: boolean; sheetCount: number };
 
 /** Same breakpoint the Roadie panel uses for "desktop". */
@@ -151,7 +154,7 @@ export function PrintDialog({ setlistId, onClose }: { setlistId: string; onClose
           </>
         )}
         {ready && !desktop && (
-          <button type="button" className="btn acc" data-testid="print-go" onClick={go}>Print or share PDF</button>
+          <button type="button" className="btn acc" data-testid="print-go" onClick={go}><PrintIcon />Print or share PDF</button>
         )}
       </div>
       {desktop && (
@@ -166,7 +169,7 @@ export function PrintDialog({ setlistId, onClose }: { setlistId: string; onClose
           </div>
           {ready && (
             <div className="flex justify-end">
-              <button type="button" className="btn acc" data-testid="print-go" onClick={go}>Print</button>
+              <button type="button" className="btn acc" data-testid="print-go" onClick={go}><PrintIcon />Print</button>
             </div>
           )}
         </div>

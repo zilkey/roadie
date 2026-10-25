@@ -9,7 +9,7 @@ import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import { Menu } from "@/components/Menu";
 import { Missing, useMusic } from "@/components/music/common";
-import { PrintDialog } from "@/components/print/PrintDialog";
+import { PrintDialog, PrintIcon } from "@/components/print/PrintDialog";
 import { SetlistItemsEditor, itemsPayload, type SetlistItemT } from "@/components/music/SetlistItemsEditor";
 
 export default function SetlistTemplatePage() {
@@ -40,7 +40,7 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
         back={<Link href="/setlists" className="back-link" data-testid="back">← All setlist templates</Link>}
         title={t.name}
         actions={<>
-          <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}>Print</button>
+          <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}><PrintIcon />Print</button>
           {admin && <Menu label="More actions" testid="setlist" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
             items={[{ key: "archive", label: "Archive template", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${t.name}?`) && (await call("setlistTemplates.remove", { id: t.id }))) router.push("/setlists"); } }]} />}
         </>} />
