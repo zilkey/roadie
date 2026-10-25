@@ -268,12 +268,42 @@ test("After the show: ratings, paid attendance, played; no money entered; future
   const show = (await db.get("shows", past.id))!;
   const deal = (await db.get("showDeals", past.id))!;
   assert.equal(show.status, "played");
-  assert.deepEqual(deal.rating, { show: 4, venue: 5, crowd: 60, notes: "Great room" });
+  assert.deepEqual(deal.rating, { show: 4, venue: 5, notes: "Great room" });
+  assert.equal(deal.crowd, 60);
   assert.equal(deal.paidAttendance, 58);
   assert.deepEqual(deal.income, []);
   const future = await create({ date: "2030-01-01" });
   await assert.rejects(cmd("shows.afterShow", { id: future.id, show: 3, venue: 3 }), /hasn't happened/);
   await assert.rejects(cmd("shows.afterShow", { id: past.id, show: 6, venue: 3 }));
+
+  // Scores left out keep the stored ones; notes and the crowd estimate land on their own.
+  await cmd("shows.afterShow", { id: past.id, crowd: 75, notes: "Ingie Award: Burrito Award" });
+  const after = (await db.get("showDeals", past.id))!;
+  assert.deepEqual(after.rating, { show: 4, venue: 5, notes: "Ingie Award: Burrito Award" });
+  assert.equal(after.crowd, 75);
+
+  // A rating with no stars at all is fine (that is what the Accounting Form import writes).
+  const bare = await create({ date: "2026-10-11" });
+  await cmd("shows.afterShow", { id: bare.id, crowd: 40, notes: "Packed" });
+  const bareDeal = (await db.get("showDeals", bare.id))!;
+  assert.deepEqual(bareDeal.rating, { notes: "Packed" });
+  assert.equal(bareDeal.crowd, 40);
+  assert.equal((await db.get("shows", bare.id))!.status, "played");
+
+  // Nothing filled in is refused: blank notes don't count.
+  const empty = await create({ date: "2026-10-12" });
+  await assert.rejects(cmd("shows.afterShow", { id: empty.id }), /Fill in something/);
+  await assert.rejects(cmd("shows.afterShow", { id: empty.id, notes: "   " }), /Fill in something/);
+  assert.equal((await db.get("shows", empty.id))!.status, "confirmed");
+  assert.equal((await db.get("showDeals", empty.id))!.rating, undefined);
+
+  // A show migrate:crowd hasn't reached: the next save lifts its nested crowd out instead of leaving the two to disagree.
+  const legacy = await create({ date: "2026-10-13" });
+  await db.update(ctx, "showDeals", legacy.id, { rating: { show: 2, crowd: 30 } });
+  await cmd("shows.afterShow", { id: legacy.id, venue: 4 });
+  const lifted = (await db.get("showDeals", legacy.id))!;
+  assert.deepEqual(lifted.rating, { show: 2, venue: 4 });
+  assert.equal(lifted.crowd, 30);
 });
 
 test("availability: ask emails a hashed per-musician link; sub answers by token, no login", async () => {

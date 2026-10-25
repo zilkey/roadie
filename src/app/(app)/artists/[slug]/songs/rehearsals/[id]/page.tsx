@@ -373,7 +373,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
             </div>
             {adding && (
               <div className="grid gap-2">
-                <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.map((f) => f.driveFileId)} defaultKind="rehearsal" onChange={setPicks} />
+                <DrivePicker syncWith={`Rehearsal ${existing.date}`} exclude={files.flatMap((f) => f.driveFileId ?? [])} defaultKind="rehearsal" onChange={setPicks} />
                 <button type="button" className="btn acc" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
               </div>
             )}

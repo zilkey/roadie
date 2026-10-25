@@ -16,6 +16,12 @@
     "import:booking": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/import-booking-kit.ts",
     "import:show-income": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/import-show-income.ts",
     "import:gas": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/import-gas.ts",
+    "import:song-list": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/import-song-list.ts",
+    "seed-real:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/seed-real.ts",
+    "import:booking:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-booking-kit.ts",
+    "import:show-income:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-show-income.ts",
+    "import:gas:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-gas.ts",
+    "import:song-list:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-song-list.ts",
     "stats:pull": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/stats-pull.ts",
     "genkit:ui": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-fake} genkit start -- tsx src/server/assistant/dev.ts",
     "typecheck": "tsc --noEmit",
@@ -33,7 +39,8 @@
     "migrate:mcp-per-band": "tsx scripts/migrate-mcp-per-band.ts",
     "migrate:show-page": "tsx scripts/migrate-show-page.ts",
     "migrate:checklists": "tsx scripts/migrate-checklists.ts",
-    "migrate:rehearsal-location": "tsx scripts/migrate-rehearsal-location.ts"
+    "migrate:rehearsal-location": "tsx scripts/migrate-rehearsal-location.ts",
+    "migrate:crowd": "tsx scripts/migrate-crowd.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

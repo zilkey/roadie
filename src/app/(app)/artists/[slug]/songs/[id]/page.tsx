@@ -1,7 +1,7 @@
 "use client";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { Menu } from "@/components/Menu";
 import { useState } from "react";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -9,7 +9,7 @@ import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor } from "@/lib/music";
+import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 
@@ -35,20 +35,28 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   const [open, setOpen] = useState(false);
   const pl = playerFor(file);
   const inline = pl.mode !== "link";
-  const missing = file.sharing === "ok" ? [] : file.sharing.missing;
+  // Sharing and band-folder checks are Drive facts: a Spotify/YouTube/web link has neither, so it never shows (or lies about) them.
+  const isDrive = !!file.driveFileId;
+  // A Drive file imported from the song-list sheet has never been looked up in Drive, so inBandFolder and sharing are
+  // unset. That is "not checked yet", not "outside the folder" -- reading undefined as false would claim a check that
+  // never ran, and offer to fix a problem nobody has found.
+  const checked = isDrive && file.inBandFolder !== undefined;
+  const provider = file.provider ?? providerFor(file.url);
+  const where = PROVIDER_LABEL[provider];
+  const missing = !file.sharing || file.sharing === "ok" ? [] : file.sharing.missing;
   const names = missing.map((id) => m.musicians.find((x) => x.id === id)?.name ?? "Someone").sort();
   const label = file.kind === "chart" && file.key ? `Chart in ${file.key}` : file.title;
   const fixIds = { ids: [file.id] };
   return (
     <div className="grid gap-1.5 rounded-lg border border-line p-2" data-testid={`file-${file.id}`}>
       <div className="flex items-center gap-2">
-        <FileIcon mime={file.mimeType} />
+        <FileIcon mime={file.mimeType} provider={isDrive ? undefined : provider} />
         <span className="grid min-w-0 flex-1"><b className="truncate text-sm" data-testid="file-label">{label}</b>{label !== file.title && <span className="s truncate">{file.title}</span>}</span>
         {inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
-        <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline ? "Drive" : "Open in Drive"}</a>
+        <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
       </div>
       {open && inline && <Player file={file} />}
-      {admin && (names.length > 0 || !file.inBandFolder) && (
+      {admin && checked && (names.length > 0 || !file.inBandFolder) && (
         <div className="grid gap-1.5" data-testid="file-gap">
           {names.length > 0 && <span className="s" data-testid="cant-open">Can&apos;t open: {names.join(", ")}</span>}
           {!file.inBandFolder && <span className="s">Outside the band folder ({file.ownerEmail}).</span>}
@@ -58,8 +66,9 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
           </div>
         </div>
       )}
-      {admin && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
-      {admin && <div><button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? The Drive file stays put.`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button></div>}
+      {admin && checked && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
+      {admin && isDrive && !checked && <span className="s" data-testid="file-unchecked">Not checked yet — run the sharing check.</span>}
+      {admin && <div><button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button></div>}
       <ErrorBox error={error} />
     </div>
   );
@@ -72,6 +81,18 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
   const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
   const [len, setLen] = useState<string | null>(null);
+  // The artist's custom fields, in the artist's order. Typed values live here until saved (the patch is the whole list).
+  const defs = useArtist().doc?.songFields ?? [];
+  const [vals, setVals] = useState<Record<string, string> | null>(null);
+  const saved = Object.fromEntries((song.fields ?? []).map((v) => [v.fieldId, v.value]));
+  const valueOf = (fid: string) => (vals ?? saved)[fid] ?? "";
+  const setField = (fid: string, v: string) => {
+    const next = { ...(vals ?? saved), [fid]: v };
+    setVals(next);
+    // A blank value is no value: no entry rather than an empty string.
+    as.patch({ fields: defs.filter((d) => next[d.id]?.trim()).map((d) => ({ fieldId: d.id, value: next[d.id]!.trim() })) });
+  };
+  const shown = defs.filter((d) => saved[d.id]?.trim());
   const [edit, setEdit] = useState(false);
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -100,7 +121,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
           {edit && <SaveStatus {...as.statusProps} />}
-          <button className="btn ghost" onClick={() => { void as.flush(); setLen(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>
+          <button className="btn ghost" onClick={() => { void as.flush(); setLen(null); setVals(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>
           <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
             items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
         </> : undefined} />
@@ -131,7 +152,17 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
             </select></label>
           <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
+          {defs.map((d) => (
+            <label key={d.id} className="grid gap-1"><span className="lbl">{d.label}</span>
+              <input className="input" data-testid={`edit-field-${d.id}`} value={valueOf(d.id)} onChange={(e) => setField(d.id, e.target.value)} onBlur={() => void as.flush()} /></label>
+          ))}
         </div>
+      )}
+
+      {!edit && shown.length > 0 && (
+        <dl className="card grid gap-2 m-0" data-testid="song-fields">
+          {shown.map((d) => <div key={d.id} className="grid gap-0.5"><dt className="lbl">{d.label}</dt><dd className="m-0 text-sm" data-testid={`field-${d.id}`}>{saved[d.id]}</dd></div>)}
+        </dl>
       )}
 
       {files.length === 0 && <div className="empty" data-testid="no-files"><span>No files yet.</span></div>}
@@ -162,7 +193,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
           {adding && (
             <div className="grid gap-2">
-              <DrivePicker syncWith={song.title} exclude={files.map((f) => f.driveFileId)} onChange={setPicks} />
+              <DrivePicker syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />
               <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
             </div>
           )}

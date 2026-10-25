@@ -149,6 +149,10 @@ async function main() {
   const fileId = await create("files", { kind: "demo", title: "Glass Coast demo v3.m4a", songId: songIds[0], driveFileId: "fake-drive-demo-1", url: "http://localhost:3202/files/fake-drive-demo-1", mimeType: "audio/mp4", ownerEmail: "jeff@example.com", inBandFolder: true, sharing: "ok", checkedAt: new Date() });
   void fileId;
   await create("files", { kind: "chart", title: "Glass Coast chart F#m.docx", songId: songIds[0], key: "F#m", driveFileId: "fake-drive-chart-1", url: "http://localhost:3202/files/fake-drive-chart-1", ownerEmail: "ingrid@example.com", inBandFolder: false, sharing: { missing: [mid.eric, mid.emma] }, checkedAt: new Date() });
+  // Non-Drive links (no driveFileId/owner/sharing): one Spotify link, and a two-link "Demo" cell (two file docs on one song).
+  await create("files", { kind: "recording", title: "Weathervane on Spotify", songId: songIds[1], provider: "spotify", url: "https://open.spotify.com/track/0000000000000000000000", checkedAt: new Date() });
+  await create("files", { kind: "demo", title: "Low Light demo (voice memo)", songId: songIds[2], provider: "web", url: "https://example.com/demos/low-light-memo", checkedAt: new Date() });
+  await create("files", { kind: "demo", title: "Low Light demo (YouTube)", songId: songIds[2], provider: "youtube", url: "https://www.youtube.com/watch?v=00000000000", checkedAt: new Date() });
   const setlist = await create("setlists", {
     name: "Hi-Dive 45 min",
     items: songIds.slice(0, 11).map((id, i) => ({ type: "song", songId: id, title: songSpecs[i][0], lengthSec: songSpecs[i][2], key: songSpecs[i][1] })),

@@ -8,7 +8,7 @@ import { useArtist, useHref } from "@/lib/artist";
 import { ARTISTS_PATH } from "@/lib/routes";
 import { Roadie } from "@/components/roadie/Roadie";
 import { setSectionHidden, setSectionOrder, useHiddenSections } from "@/lib/sections";
-import { isSectionId, type SectionId } from "@/schema/sections";
+import { isSectionId, SECTION_IDS, type SectionId } from "@/schema/sections";
 import { Dialog } from "@/components/ui";
 import { toast } from "@/components/Toasts";
 
@@ -98,10 +98,16 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo }: { name: 
     </>
   );
 }
+/**
+ * Is the browser on this link's page? A link covers its own path and everything under it, except what a more specific
+ * link already covers: /booking/templates is its own section, so /booking doesn't light up for it.
+ */
+const NAV_HREFS = [...navFor("admin", [...SECTION_IDS]).map((n) => n.href), ...ADMIN_LINKS.map((l) => l.href), "/me"];
 function useOn() {
   const path = usePathname();
   const full = useHref();
-  return (href: string) => path === full(href) || path.startsWith(full(href) + "/");
+  const under = (href: string) => path === full(href) || path.startsWith(full(href) + "/");
+  return (href: string) => under(href) && !NAV_HREFS.some((o) => o.length > href.length && under(o));
 }
 
 /** The trailing rows of More (desktop) and of the phone's More sheet. */

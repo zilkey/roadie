@@ -16,14 +16,29 @@ export function mimeGroup(mime?: string): MimeGroup {
 export const isAttachable = (mime?: string) => ["audio", "video", "doc"].includes(mimeGroup(mime));
 export const MIME_ICON: Record<MimeGroup, string> = { audio: "♪", video: "▶", doc: "▤", pdf: "▤", other: "▢" };
 
+
+export type Provider = "drive" | "spotify" | "youtube" | "web";
+export const PROVIDER_LABEL: Record<Provider, string> = { drive: "Drive", spotify: "Spotify", youtube: "YouTube", web: "Web" };
+export const PROVIDER_ICON: Record<Provider, string> = { drive: "▢", spotify: "♫", youtube: "▶", web: "↗" };
+/** Where a link goes, from its host. Anything unrecognised (or unparseable) is just "web". */
+export function providerFor(url: string): Provider {
+  let h = "";
+  try { h = new URL(url).hostname.toLowerCase(); } catch { return "web"; }
+  const is = (d: string) => h === d || h.endsWith("." + d);
+  if (is("open.spotify.com")) return "spotify";
+  if (is("youtube.com") || is("youtu.be")) return "youtube";
+  if (is("drive.google.com") || is("docs.google.com")) return "drive";
+  return "web";
+}
+
 export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other";
 export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
 export const KIND_LABEL: Record<FileKind, string> = {
   chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
 };
 
-/** Best guess at what a Drive file is from its name and type. */
-export function guessKind(name: string, mime?: string): FileKind {
+/** Best guess at what a file or link is from its name, type and (for links) provider. */
+export function guessKind(name: string, mime?: string, provider?: Provider): FileKind {
   const n = name.toLowerCase();
   if (/\bchart\b/.test(n)) return "chart";
   if (/lyric/.test(n)) return "lyrics";
@@ -34,6 +49,8 @@ export function guessKind(name: string, mime?: string): FileKind {
   if (g === "video") return "recording";
   if (/\blive\b/.test(n)) return "recording";
   if (g === "audio") return "demo";
+  // A streaming link is usually a released/recorded track, not a demo.
+  if (provider === "spotify" || provider === "youtube") return "recording";
   return "other";
 }
 

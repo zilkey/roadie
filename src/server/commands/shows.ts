@@ -536,13 +536,21 @@ export const showDealsSetIncome = defineCommand({
 export const showsAfter = defineCommand({
   name: "shows.afterShow", roles: ["admin", "mcp"],
   description:
-    "How'd it go? Rate the show and venue (1-5), optional crowd size and notes, and paid attendance. Marks the show played. " +
+    "How'd it go? Rate the show and venue (1-5, both optional), notes, the crowd estimate (how many were in the room) " +
+    "and paid attendance (the ticketed count). Something has to be filled in. A score left out keeps the one already " +
+    "stored. Marks the show played. " +
     "Does NOT enter money: income lines are showDeals.setIncome, expenses shows.setExpenses.",
   input: z.strictObject({
-    id: z.string().min(1), show: z.number().int().min(1).max(5), venue: z.number().int().min(1).max(5),
+    id: z.string().min(1), show: z.number().int().min(1).max(5).optional(), venue: z.number().int().min(1).max(5).optional(),
     crowd: z.number().int().min(0).optional(), notes: z.string().optional(), paidAttendance: z.number().int().min(0).optional(),
   }),
   async run(ctx, i) {
+    // Nothing to record is a mistake rather than a way to clear a rating (there is no "unrate"): the Accounting Form
+    // import means stars are optional, so an empty save would otherwise mark a show played and store nothing.
+    const notes = i.notes?.trim();
+    if (i.show === undefined && i.venue === undefined && i.crowd === undefined && !notes && i.paidAttendance === undefined) {
+      throw new AppError("invalid_input", "Fill in something first", 400);
+    }
     await run(ctx, async (w) => {
       const s = await requireShow(w, i.id);
       if (isOff(s)) throw new AppError("invalid_state", `This show was ${s.status}`, 409);
@@ -550,8 +558,16 @@ export const showsAfter = defineCommand({
       const deal = await w.get("showDeals", i.id);
       if (!deal) throw new AppError("not_found", "Show deal not found", 404);
       if (s.status !== "played") await w.update("shows", i.id, { status: "played" });
+      // Merged onto what is there, so leaving a field out keeps its stored value instead of clearing it.
+      // `crowd` sits beside paidAttendance now; a pre-migration rating.crowd is carried along so it isn't resurrected.
+      const { crowd: oldCrowd, ...cur } = (deal.rating ?? {}) as Record<string, unknown>;
       await w.update("showDeals", i.id, {
-        rating: { show: i.show, venue: i.venue, ...(i.crowd !== undefined ? { crowd: i.crowd } : {}), ...(i.notes?.trim() ? { notes: i.notes.trim() } : {}) },
+        rating: {
+          ...cur,
+          ...(i.show !== undefined ? { show: i.show } : {}), ...(i.venue !== undefined ? { venue: i.venue } : {}),
+          ...(notes ? { notes } : {}),
+        },
+        ...(i.crowd !== undefined ? { crowd: i.crowd } : oldCrowd !== undefined && deal.crowd === undefined ? { crowd: oldCrowd } : {}),
         ...(i.paidAttendance !== undefined ? { paidAttendance: i.paidAttendance } : {}),
       });
     });

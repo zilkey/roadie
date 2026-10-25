@@ -17,6 +17,8 @@ export const Configuration = z.strictObject({
   billingName: z.string().min(1),
   musicianIds: z.array(id),
 });
+/** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
+export const SongField = z.strictObject({ id, label: z.string().min(1) });
 /** The artist's public links, one per platform, in the order the Artist page lists them. */
 export const ARTIST_LINKS = [
   ["website", "Website"], ["spotify", "Spotify"], ["appleMusic", "Apple Music"], ["bandcamp", "Bandcamp"],
@@ -32,7 +34,10 @@ export const Artist = entity({
   configurations: z.array(Configuration),
   links: ArtistLinks,
   driveFolderId: z.string(),
+  /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
+  songFields: z.array(SongField).default([]),
 });
 export const ArtistInput = Artist.omit(serverMask);
 export type Artist = z.infer<typeof Artist>;
+export type SongField = z.infer<typeof SongField>;
 export type Configuration = z.infer<typeof Configuration>;

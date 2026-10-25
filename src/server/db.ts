@@ -181,13 +181,22 @@ function writable(doc: DocumentData): Record<string, unknown> {
 
 export class Writer {
   private pending: ((tx: Transaction) => void)[] = [];
-  private overlay = new Map<string, DocumentData | null>();
+  private overlay: Map<string, DocumentData | null>;
   readonly now: Timestamp;
   private seq = 0;
   /** Set when an autosave update folded into an earlier history entry: the rest of this unit uses that entry's runId. */
   coalescedRunId?: string;
-  constructor(private tx: Transaction, readonly ctx: Ctx) {
+  /** True when nothing will be flushed: reads that must see this run's own writes consult the overlay as well. */
+  private readonly dryRun: boolean;
+  /**
+   * A dry run's overlay is handed in and shared by every unit of the run (see `run`'s `overlay`), because a later unit
+   * legitimately reads what an earlier one wrote -- the support-slot promoters read the venues the rows before them
+   * created. Writes then never reach Firestore but are still visible to the rest of the walk.
+   */
+  constructor(private tx: Transaction, readonly ctx: Ctx, opts: { overlay?: Map<string, DocumentData | null>; dryRun?: boolean } = {}) {
     this.now = ctx.now ? Timestamp.fromDate(ctx.now) : Timestamp.now();
+    this.overlay = opts.overlay ?? new Map();
+    this.dryRun = !!opts.dryRun;
   }
   get runId() { return this.coalescedRunId ?? this.ctx.runId; }
 
@@ -205,14 +214,21 @@ export class Writer {
     return snap.exists ? ({ ...snap.data()!, id } as Doc) : null;
   }
 
-  /** Query a collection; soft-deleted docs are hidden unless includeDeleted. Overlay-updated docs are reconciled. */
-  async query(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean } = {}): Promise<Doc[]> {
+  /**
+   * Query a collection; soft-deleted docs are hidden unless includeDeleted. Overlay-updated docs are reconciled.
+   *
+   * `pending` (a dry run) also brings in documents the overlay holds that Firestore has never seen, so the walk sees
+   * its own earlier creates. They cannot be filtered by the query's own constraints -- that would mean
+   * reimplementing Firestore -- so they are returned to be narrowed by the caller, which is why this is off unless
+   * asked for.
+   */
+  async query(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean; pending?: boolean } = {}): Promise<Doc[]> {
     const q = build ? build(this.fs.collection(path)) : this.fs.collection(path);
     const snap = await this.tx.get(q);
     const out = new Map<string, Doc>();
     for (const d of snap.docs) out.set(d.id, { ...d.data(), id: d.id } as Doc);
     for (const [key, v] of this.overlay) {
-      if (key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes("/") && out.has(key.slice(path.length + 1))) {
+      if (key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes("/") && (opts.pending || out.has(key.slice(path.length + 1)))) {
         const id = key.slice(path.length + 1);
         if (v) out.set(id, { ...v, id } as Doc); else out.delete(id);
       }
@@ -346,7 +362,10 @@ export class Writer {
     const d = def(kind);
     const { data, computed } = prepare(kind, input);
     if (d.dedupe && computed.matchKey) {
-      const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
+      // On a dry run the records earlier rows "created" are only in the overlay, so the matchKey query would miss
+      // them and every near-duplicate would be reported as a clean create -- the one thing a survey must not hide.
+      const hits = (await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5), { pending: this.dryRun }))
+        .filter((h) => !this.dryRun || h.matchKey === computed.matchKey);
       if (hits[0]) return this.mergeInto(path, hits[0], data);
     }
     const id = opts.id ?? this.fs.collection(path).doc().id;
@@ -494,13 +513,27 @@ export class Writer {
   }
 }
 
-/** One transaction. Retries re-run fn, so keep it free of side effects other than writer calls. */
-export async function run<T>(ctx: Ctx, fn: (w: Writer) => Promise<T>): Promise<T> {
+/**
+ * One transaction. Retries re-run fn, so keep it free of side effects other than writer calls.
+ *
+ * `dryRun` skips the flush, which is the only thing that puts a write on the transaction: every `create`/`update`
+ * still records itself in the Writer's overlay, so reads later in the same unit see it and a walk over the data
+ * behaves exactly as the real run would (dedupe merges, cross-references, "already there" counts) while Firestore is
+ * only ever read. Used by the importers' surveys -- see scripts/survey.ts.
+ *
+ * Pass the same `overlay` map to every unit of one dry run so later units see what earlier ones wrote. Without it
+ * each transaction starts blank and an import that reads back its own earlier records sees nothing there.
+ */
+export async function run<T>(
+  ctx: Ctx,
+  fn: (w: Writer) => Promise<T>,
+  opts: { dryRun?: boolean; overlay?: Map<string, DocumentData | null> } = {},
+): Promise<T> {
   let last: Writer | undefined;
   const out = await firestore().runTransaction(async (tx) => {
-    const w = (last = new Writer(tx, ctx));
+    const w = (last = new Writer(tx, ctx, { overlay: opts.overlay, dryRun: opts.dryRun }));
     const out = await fn(w);
-    w.flush();
+    if (!opts.dryRun) w.flush();
     return out;
   });
   if (last?.coalescedRunId) ctx.runId = last.coalescedRunId; // the caller (and the response) now refer to the entry that was folded into

@@ -45,7 +45,9 @@ interface Rating { show: number; venue: number; crowd: string; paid: string; not
 function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<ShowDeal> | null }) {
   const { call, error, busy } = useCommand();
   const r = deal?.rating;
-  const blank: Rating = { show: r?.show ?? 0, venue: r?.venue ?? 0, crowd: r?.crowd != null ? String(r.crowd) : "", paid: deal?.paidAttendance != null ? String(deal.paidAttendance) : "", notes: r?.notes ?? "" };
+  // crowd is its own field now; r.crowd is only still read for shows migrate:crowd hasn't reached.
+  const crowd = deal?.crowd ?? r?.crowd;
+  const blank: Rating = { show: r?.show ?? 0, venue: r?.venue ?? 0, crowd: crowd != null ? String(crowd) : "", paid: deal?.paidAttendance != null ? String(deal.paidAttendance) : "", notes: r?.notes ?? "" };
   const draft = useDraft(draftPath.newUnder("shows", id, "after"), blank, { title: () => `How'd it go? · ${showName(show)}` });
   const mutationId = useRef(newMutationId());
   const [saved, setSaved] = useState(false);
@@ -53,12 +55,16 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   const set = (p: Partial<Rating>) => { setSaved(false); draft.setValue({ ...v, ...p }); };
   async function save() {
     await draft.settle();
+    // 0 means "no star picked": it is left out so the command keeps whatever score is stored.
     const ok = await call("shows.afterShow", {
-      id, show: v.show, venue: v.venue, ...(v.crowd ? { crowd: Number(v.crowd) } : {}), ...(v.paid ? { paidAttendance: Number(v.paid) } : {}), ...(v.notes.trim() ? { notes: v.notes.trim() } : {}),
+      id, ...(v.show ? { show: v.show } : {}), ...(v.venue ? { venue: v.venue } : {}),
+      ...(v.crowd ? { crowd: Number(v.crowd) } : {}), ...(v.paid ? { paidAttendance: Number(v.paid) } : {}), ...(v.notes.trim() ? { notes: v.notes.trim() } : {}),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
     if (ok) { setSaved(true); mutationId.current = newMutationId(); await draft.clear(); }
   }
   const rated = saved || !!r;
+  // Stars are optional (the Accounting Form import brings notes and crowds without them), so anything filled in can be saved.
+  const anything = !!v.show || !!v.venue || !!v.crowd || !!v.paid || !!v.notes.trim();
   return (
     <div className="grid gap-5" data-testid="after-page">
       <PageTitle back={<Link href={`/shows/${id}`} className="back-link" data-testid="back">← {showName(show)}</Link>} title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
@@ -73,7 +79,7 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
             <input className="input" type="number" min={0} value={v.paid} onChange={(e) => set({ paid: e.target.value })} data-testid="rate-paid" /></label>
           <textarea className="input" rows={3} placeholder="Notes for next time…" value={v.notes} onChange={(e) => set({ notes: e.target.value })} data-testid="rate-notes" />
           <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-          <button className="btn acc" disabled={busy || !v.show || !v.venue} onClick={save} data-testid="rate-save">Save</button>
+          <button className="btn acc" disabled={busy || !anything} onClick={save} data-testid="rate-save">Save</button>
           {saved && <span className="chip g self-start" data-testid="rate-saved">Saved</span>}
         </div>
       )}

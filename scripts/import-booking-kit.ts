@@ -6,12 +6,18 @@
  * Idempotent: records get fixed ids (vb-*, fr-*, ss-*) and venues/promoters/festivals/contacts dedupe on
  * matchKey, so a second run only adds what is new. Needs the artist (and musicians, for personnel) set up.
  *   npm run import:booking                 (emulators: FIRESTORE_EMULATOR_HOST etc. set by the npm script)
- *   npm run import:booking -- --dry-run    (validate and count, write nothing)
+ *   npm run import:booking -- --dry-run    (the survey: walks everything, writes nothing)
  *   npm run import:booking -- --artist=ingrid-avison-band   (which artist, when there is more than one)
+ *   npm run import:booking -- --report=survey.json          (the survey as JSON too)
+ *
+ * A --dry-run walks the whole import with the writes held in the Writer's overlay instead of flushed (see run()'s
+ * dryRun), so the survey it prints is what the real run would do -- not a row count. Real Firestore needs --yes.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { DocumentData } from "firebase-admin/firestore";
 import { db, run, type Doc, type Writer } from "../src/server/db";
+import { formatSurvey, note, tally, type Note, type Survey } from "./survey";
 import { importCtx } from "../src/server/ctx";
 import { isPrivateField } from "../src/lib/venues";
 import { hasPrivate, noteOf, writeNote } from "../src/server/venues";
@@ -22,14 +28,27 @@ import { joinNames } from "../src/lib/shows";
 import { dateInBandZone } from "../src/lib/timezone";
 
 const DIR = join(process.cwd(), ".booking-kit");
-const DRY = process.argv.includes("--dry-run");
 const load = <T>(f: string): T => JSON.parse(readFileSync(join(DIR, f), "utf8")) as T;
 const TODAY = dateInBandZone();
 
 type Region = "boulder" | "denver" | "north" | "south" | "mountains" | "southwest" | "out";
+
+/** Writes this run made (or would make), one row each: the survey's "what lands clean" and the count summary. */
+const written: { collection: string; action: string; id: string }[] = [];
 const counts: Record<string, number> = {};
 const bump = (k: string) => { counts[k] = (counts[k] ?? 0) + 1; };
+/** `bump`, plus the structured row the survey groups. */
+const record = (collection: string, action: string, id: string) => {
+  written.push({ collection, action, id });
+  bump(action === "created" ? collection : `${collection} (${action})`);
+};
+const notes: Note[] = [];
 const warnings: string[] = [];
+/** A warning is also a survey line: a guessed region is exactly "the importer had to guess at this". */
+const warn = (reason: string, where: string, detail?: string) => {
+  warnings.push(`${where}: ${reason}${detail ? ` ${detail}` : ""}`);
+  notes.push(note("decide", reason, where, detail));
+};
 /** Venue Book contacts left out on purpose (by name, lowercase). */
 const SKIP_CONTACTS = new Set(["angel"]);
 
@@ -73,9 +92,14 @@ const hasConfig = (cfg: string) => !!configMusicians(cfg);
 /** Create with a fixed id unless that id already exists. Dedupe collections may merge into another id. */
 async function ensure(w: Writer, path: string, id: string, doc: Record<string, unknown>): Promise<string> {
   const existing = await w.get(path, id);
-  if (existing) { bump(`${path} (already there)`); return id; }
+  if (existing) { record(path, "already there", id); return id; }
   const r = await w.create(path, doc, { id });
-  bump(r.merged ? `${path} (merged into existing)` : path);
+  record(path, r.merged ? "merged into existing" : "created", r.id);
+  // A dedupe merge means this name already existed under another id: the near-duplicate Jeff has to look at.
+  if (r.merged) {
+    notes.push(note("decide", `${path}: a record with this name already exists, so the two were merged`,
+      `${doc.name ?? id}`, `kept ${r.id}, wanted ${id}`));
+  }
   return r.id;
 }
 
@@ -103,6 +127,8 @@ async function contact(w: Writer, idHint: string, c: ContactIn): Promise<string>
   const emails = [...new Set(c.emails.map((e) => e.trim().toLowerCase()).filter(validEmail))];
   const phones = [...new Set(c.phones.map(e164).filter((p) => /^\+[1-9]\d{6,14}$/.test(p)))];
   const bad = [...c.emails.filter((e) => !validEmail(e)), ...c.phones.filter((p) => !validPhone(p))];
+  // Kept as text in the contact's notes rather than dropped, but it is not a reachable address: say so.
+  if (bad.length) notes.push(note("unclean", "email or phone could not be parsed, kept as a note instead", c.name, bad.join(", ")));
   return ensure(w, "contacts", idHint, {
     name: c.name, title: c.title, emails, phones, notes: lines(c.notes, bad.length > 0 && `Unparsed: ${bad.join(", ")}`),
   });
@@ -181,10 +207,10 @@ async function importVenueBook() {
   const { source, pulledAt, venues } = load<{ source: string; pulledAt: string; venues: VbVenue[] }>("venue-book.json");
   const sources = [{ url: source, checkedAt: pulledAt, note: "Venue Book (claude.ai tracker)" }];
   for (const v of venues) {
-    await run(ctx, async (w) => {
+    await unit(async (w) => {
       const { city, state } = v.city ? splitCity(v.city) : { city: "Unknown", state: "CO" };
       const region = regionForCity(city, state) ?? "boulder";
-      if (!v.city || !regionForCity(city, state)) warnings.push(`Venue Book "${v.name}": city "${v.city}" → region ${region} (check it)`);
+      if (!v.city || !regionForCity(city, state)) warn(`city does not match any region, so one was guessed`, `Venue Book "${v.name}"`, `city "${v.city}" → region ${region}`);
       const house = v.type === "House concert";
       const festivalEntry = v.type === "Festival" || !!VB_FESTIVALS[v.id];
       const placeNotes = lines(v.type && !VB_TYPES[v.type] && v.type !== "Other" && `Kind: ${v.type}`, v.lead && `Booking window: ${v.lead}`, v.link, v.notes);
@@ -192,7 +218,10 @@ async function importVenueBook() {
       const contactIds: string[] = [];
       for (const [i, c] of v.contacts.entries()) {
         if (!c.name && !c.email && !c.phone) continue;
-        if (!c.email && SKIP_CONTACTS.has((c.name ?? "").trim().toLowerCase())) continue;
+        if (!c.email && SKIP_CONTACTS.has((c.name ?? "").trim().toLowerCase())) {
+          notes.push(note("deferred", "contact left out on purpose (SKIP_CONTACTS)", `${v.name}`, `"${c.name}", no email`));
+          continue;
+        }
         contactIds.push(await contact(w, `vb-${v.id}-c${i + 1}`, {
           name: c.name?.trim() || c.email?.trim() || `${v.name} contact`, emails: c.email ? [c.email] : [], phones: c.phone ? [c.phone] : [],
           // A house has no record of its own: what the Venue Book knew about it goes on the (first) host.
@@ -258,7 +287,7 @@ async function importVenueBook() {
             s.who && `Who: ${s.who}`, s.time && !set && `Time: ${s.time}`, s.setLength && !setLength && `Set: ${s.setLength}`,
             s.pay && `Pay: ${s.pay}`, s.olive && `Olive: ${s.olive}`, s.where && s.where !== v.city && `Where: ${s.where}`, s.notes,
         );
-        if (notes && !(await w.query(`shows/${created}/comments`, (q) => q.limit(1))).length) {
+        if (notes && !(await w.query(`shows/${created}/comments`, (q) => q.limit(1), { pending: dryRun })).length) {
           await w.create(`shows/${created}/comments`, { authorId: w.ctx.uid, body: notes, audience: "band" });
         }
         if (status === "canceled") continue;
@@ -307,10 +336,10 @@ async function importFestivalRun() {
   const { source, pulledAt, events, state } = load<{ source: string; pulledAt: string; events: FrEvent[]; state: { t: Record<string, { st?: string; ap?: string; nt?: string }> } }>("festival-run.json");
   const sources = [{ url: source, checkedAt: pulledAt, note: "Festival Run 2027 (claude.ai tracker)" }];
   for (const ev of events) {
-    await run(ctx, async (w) => {
+    await unit(async (w) => {
       const city = (ev.c ?? "").split(/\s+[–-]\s+/)[0];
       const region = (ev.r && FEST_REGIONS[ev.r]) ?? regionForCity(city) ?? "boulder";
-      if (!(ev.r && FEST_REGIONS[ev.r]) && !regionForCity(city)) warnings.push(`Festival Run "${ev.n}": region "${ev.r ?? ""}" → ${region} (check it)`);
+      if (!(ev.r && FEST_REGIONS[ev.r]) && !regionForCity(city)) warn(`region does not match any known one, so one was guessed`, `Festival Run "${ev.n}"`, `region "${ev.r ?? ""}" → ${region}`);
       const contactIds: string[] = [];
       for (const [i, c] of contactsFromText(ev.ct, `${ev.n} booking`).entries()) contactIds.push(await contact(w, `fr-${ev.id}-c${i + 1}`, c));
       const notes = lines(ev.t && `Tier ${ev.t}`, ev.c && `Where: ${ev.c}`, ev.nt, ev.ct && `Contact: ${ev.ct}`, ev.sp && "Invite only: no open call.");
@@ -386,7 +415,7 @@ async function importSupportSlots() {
   const sources = [{ url: source, checkedAt: pulledAt, note: "Support Slot Targets (claude.ai tracker)" }];
   const venueIds: Record<string, string> = {};
   for (const v of venues) {
-    await run(ctx, async (w) => {
+    await unit(async (w) => {
       const { city, street } = ssAddress(v.c);
       const contactIds: string[] = [];
       for (const [i, e] of (v.ct.match(EMAIL_RE) ?? []).entries()) {
@@ -412,7 +441,7 @@ async function importSupportSlots() {
     });
   }
   for (const p of SS_PROMOTERS) {
-    await run(ctx, async (w) => {
+    await unit(async (w) => {
       const ids = p.venues.map((k) => venueIds[k]).filter(Boolean);
       const id = await ensure(w, "promoters", `ss-${p.id}`, { name: p.name, kind: p.kind, website: p.website, contactIds: [], venueIds: ids, howToPitch: p.howToPitch, notes: p.notes, sources });
       const prom = (await w.get("promoters", id))!;
@@ -431,9 +460,16 @@ async function importSupportSlots() {
 
 async function pitch(w: Writer, id: string, target: { kind: "venue" | "promoter" | "edition"; id: string; name: string }, status: string,
   o: { nextStep?: { text: string; due: string }; notes?: string; pitchedOn?: string }) {
-  if (await w.get("pitches", id)) { bump("pitches (already there)"); return; }
-  const open = (await w.query("pitches", (q) => q.where("target.id", "==", target.id))).find((p) => p.target.kind === target.kind);
-  if (open) { bump("pitches (target already on Pitch List)"); return; }
+  if (await w.get("pitches", id)) { record("pitches", "already there", id); return; }
+  // On a dry run the pitches this run would make are only in the overlay, so they have to be matched here by hand:
+  // without that, two trackers naming one venue would both report a pitch the real run would only create once.
+  const open = (await w.query("pitches", (q) => q.where("target.id", "==", target.id), { pending: dryRun }))
+    .find((p) => p.target?.id === target.id && p.target?.kind === target.kind);
+  if (open) {
+    record("pitches", "target already on Pitch List", open.id);
+    notes.push(note("unclean", "target is already on the Pitch List under another pitch, so no pitch was made", target.name, `kept ${open.id}`));
+    return;
+  }
   const cfg = hasConfig("full-band") ? "full-band" : undefined;
   await w.create("pitches", {
     target, status, artistId: artist.id, pitchedAs: cfg, personnel: cfg ? configMusicians(cfg)! : [], assigneeId,
@@ -441,16 +477,43 @@ async function pitch(w: Writer, id: string, target: { kind: "venue" | "promoter"
   }, { id });
   await w.create(`pitches/${id}/activity`, { type: "status", toStatus: status, text: "Imported from the claude.ai booking trackers" });
   if (o.pitchedOn && status !== "toPitch" && status !== "idea") await w.create(`pitches/${id}/activity`, { type: "note", text: `Pitched on ${o.pitchedOn}` });
-  bump("pitches");
+  record("pitches", "created", id);
 }
 
 // ---------- main ----------
 
 const ctx = importCtx("import-booking-kit");
 
+/**
+ * One write unit. On a dry run the Writer's overlay still answers reads, so the whole import is walked -- dedupe
+ * merges, cross-references, "already there" -- and nothing is flushed to Firestore. That is what makes the survey
+ * below a real account of what the run would do rather than a row count.
+ */
+let dryRun = false;
+/** Shared across the run's units so a dry run's later rows see the records its earlier rows made. */
+const overlay = new Map<string, DocumentData | null>();
+const unit = <T>(fn: (w: Writer) => Promise<T>) => run(ctx, fn, dryRun ? { dryRun, overlay } : {});
+
+/** What the three trackers hold, for the survey's "Read:" line. */
+function sourceLine() {
+  const vb = load<{ venues: VbVenue[] }>("venue-book.json").venues;
+  const fr = load<{ events: FrEvent[] }>("festival-run.json").events;
+  const ss = load<{ venues: SsVenue[] }>("support-slots.json").venues;
+  return `${vb.length} Venue Book venues (${vb.reduce((n, v) => n + v.shows.length, 0)} shows), ${fr.length} Festival Run events, ${ss.length} support-slot rooms`;
+}
+
 async function main() {
+  const flag = (n: string) => process.argv.includes(`--${n}`);
+  const arg = (n: string) => process.argv.find((x) => x.startsWith(`--${n}=`))?.split("=")[1];
+  dryRun = flag("dry-run");
+  // The same guard as import-show-income.ts and import-gas.ts: via npm the emulator host is always set, so only a
+  // bare `tsx` run (or an :prod script) can reach production, and then only on purpose.
+  if (!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes") && !dryRun) {
+    throw new Error("This would write to REAL Firestore. Re-run with --dry-run to look first, or --yes if that is what you want.");
+  }
+
   // Which artist the data is for: --artist=<slug>, or the only one there is.
-  const want = process.argv.find((x) => x.startsWith("--artist="))?.slice("--artist=".length);
+  const want = arg("artist");
   const all = await db.list("artists");
   if (!want && all.length > 1) throw new Error(`There are ${all.length} artists: say which with --artist=<slug> (${all.map((x) => x.slug).join(", ")})`);
   const a = want ? all.find((x) => x.slug === want) : all[0];
@@ -462,19 +525,36 @@ async function main() {
   const isAdmin = (u: Doc) => roleIn(u, artist.id) === "admin";
   assigneeId = users.find((u) => isAdmin(u) && /^jeff\b/i.test(String(u.name)))?.id ?? users.find(isAdmin)?.id;
 
-  if (DRY) {
-    const vb = load<{ venues: VbVenue[] }>("venue-book.json").venues;
-    const fr = load<{ events: FrEvent[] }>("festival-run.json").events;
-    const ss = load<{ venues: SsVenue[] }>("support-slots.json").venues;
-    console.log(`Dry run: ${vb.length} Venue Book venues (${vb.reduce((n, v) => n + v.shows.length, 0)} shows), ${fr.length} Festival Run events, ${ss.length} support-slot rooms. Nothing written.`);
-    return;
-  }
+  const source = sourceLine();
   await importFestivalRun();
   await importSupportSlots();
   await importVenueBook();
-  console.log(`Imported (runId ${ctx.runId}; undo it from Admin → History):`);
-  for (const [k, n] of Object.entries(counts).sort()) console.log(`  ${k}: ${n}`);
-  if (warnings.length) { console.log(`\nCheck these (${warnings.length}):`); for (const x of warnings) console.log(`  ${x}`); }
+
+  const survey = bookingSurvey(source);
+  console.log(formatSurvey(survey));
+  if (!dryRun) console.log(`\nRun ${ctx.runId} -- undo it from Admin → History.`);
+  const out = arg("report");
+  if (out) { writeFileSync(out, JSON.stringify(survey, null, 2) + "\n"); console.log(`Report: ${out}`); }
 }
 
-main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+/** The report, for --report and the survey tests. Collections are named as the app names them. */
+export function bookingSurvey(source?: string): Survey & { counts: Record<string, number>; warnings: string[] } {
+  return {
+    title: "Booking kit", project: process.env.GCLOUD_PROJECT ?? "", dryRun, runId: ctx.runId, source,
+    clean: tally(written), notes,
+    totals: {
+      "records written": written.filter((w) => w.action === "created").length,
+      "already there": written.filter((w) => w.action === "already there").length,
+      "merged into an existing record": written.filter((w) => w.action === "merged into existing").length,
+    },
+    counts, warnings,
+  };
+}
+
+// A guard refusal is a message to read; anything else is a bug, and then the stack is the useful part.
+if (process.argv[1]?.endsWith("import-booking-kit.ts")) {
+  main().then(() => process.exit(0), (e) => {
+    console.error(e instanceof Error && /REAL Firestore|No artist|artists:/.test(e.message) ? e.message : e);
+    process.exit(1);
+  });
+}

@@ -1,7 +1,7 @@
 "use client";
 import Link from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
-import { MIME_ICON, mimeGroup } from "@/lib/music";
+import { MIME_ICON, PROVIDER_ICON, mimeGroup, type Provider } from "@/lib/music";
 import type { FileDoc, Musician, Rehearsal, Setlist, Show, Song } from "@/schema";
 
 export type FileRow = Row<FileDoc>;
@@ -25,7 +25,9 @@ export function useMusic() {
 /** Active musicians with an email: the people who must be able to open every file. */
 export const bandMembers = (ms: Row<Musician>[]) => ms.filter((m) => m.active && m.email);
 
-export function FileIcon({ mime }: { mime?: string }) {
+/** Pass provider for a non-Drive link: it has no mimeType, so the icon says where it goes instead. */
+export function FileIcon({ mime, provider }: { mime?: string; provider?: Provider }) {
+  if (provider) return <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-soft font-bold" data-testid={`icon-${provider}`} aria-hidden>{PROVIDER_ICON[provider]}</span>;
   const g = mimeGroup(mime);
   return <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-soft font-bold" data-testid={`icon-${g}`} aria-hidden>{MIME_ICON[g]}</span>;
 }

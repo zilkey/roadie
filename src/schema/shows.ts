@@ -93,9 +93,18 @@ export const ShowDeal = entity({
   doorSplitPct: z.number().int().min(0).max(100).optional(),
   ticketPrice: cents.optional(),
   paidAttendance: z.number().int().optional(),
+  /** How many were in the room (an estimate, the Accounting Form's Audience Count). `paidAttendance` is the ticketed count. */
+  crowd: z.number().int().nonnegative().optional(),
+  /**
+   * How'd it go? Both stars are optional: the Accounting Form import brings notes with no stars at all, so a rating
+   * may hold any combination (shows.afterShow refuses only a save with nothing in it). Existing star ratings stay
+   * valid. `crowd` used to live here; `npm run migrate:crowd` lifts it out, and nothing writes it here any more.
+   */
   rating: z.strictObject({
-    show: z.number().int().min(1).max(5), venue: z.number().int().min(1).max(5),
-    crowd: z.number().int().optional(), notes: z.string().optional(),
+    show: z.number().int().min(1).max(5).optional(), venue: z.number().int().min(1).max(5).optional(),
+    /** LEGACY, until `npm run migrate:crowd` moves it to the top-level `crowd`. Never written. */
+    crowd: z.number().int().optional(),
+    notes: z.string().optional(),
   }).optional(),
   /** The show's income, line by line (Finances tab). Missing = none yet. */
   income: z.array(incomeLine).optional(),

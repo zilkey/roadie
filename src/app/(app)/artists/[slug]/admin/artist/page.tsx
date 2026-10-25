@@ -13,6 +13,7 @@ import { newMutationId } from "@/lib/commands";
 import { useRouter } from "next/navigation";
 import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
+import { SongFieldsEditor } from "@/components/music/SongFieldsEditor";
 import { ChecklistTemplatesEditor } from "@/components/shows/checklists/ChecklistTemplatesEditor";
 import { ARTIST_LINKS, artistSlug, type Artist, type ArtistLinkKey, type Musician } from "@/schema";
 
@@ -250,6 +251,7 @@ function ArtistEditor() {
         )}
       </section>
       <LinksCard links={links} onChange={editLinks} />
+      <SongFieldsEditor artist={artist} />
       <ChecklistTemplatesEditor artistId={artist.id} />
     </div>
   );

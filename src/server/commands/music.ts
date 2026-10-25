@@ -5,11 +5,14 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { bandFolderId, bandmates, inspect, sharingOf, type Bandmate } from "../music";
-import { guessKey, guessKind, isAttachable } from "@/lib/music";
+import { guessKey, guessKind, isAttachable, providerFor } from "@/lib/music";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 
 const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
-const AttachFile = z.strictObject({ driveFileId: z.string().min(1), kind: kindEnum.optional(), key: z.string().optional(), title: z.string().optional() });
+// Exactly one of driveFileId (looked up in Drive) or url (a Spotify/YouTube/web link, no lookup; provider is guessed from the url unless given).
+const AttachDrive = z.strictObject({ driveFileId: z.string().min(1), kind: kindEnum.optional(), key: z.string().optional(), title: z.string().optional() });
+const AttachLink = z.strictObject({ url: z.string().url(), provider: z.enum(["spotify", "youtube", "web"]).optional(), kind: kindEnum.optional(), title: z.string().optional() });
+const AttachFile = z.union([AttachDrive, AttachLink]);
 type Attach = z.infer<typeof AttachFile>;
 
 // ---------- files ----------
@@ -19,6 +22,14 @@ async function buildFileDocs(artistId: string | undefined, files: Attach[], pare
   const drive = driveClient();
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
+    if (!("driveFileId" in a)) {
+      // A link: built from what we were told, with NO network call and no Drive fields (see schema/files.ts).
+      const p = a.provider ?? providerFor(a.url);
+      if (p === "drive") throw new AppError("invalid_input", "Attach Drive files by driveFileId, not url", 400);
+      const title = a.title?.trim() || a.url;
+      out.push({ kind: a.kind ?? defaultKind ?? guessKind(title, undefined, p), title, ...parent, provider: p, url: a.url, checkedAt: new Date() });
+      continue;
+    }
     let f: DriveFile;
     try { f = await drive.get(a.driveFileId); } catch { throw new AppError("not_found", `Drive file ${a.driveFileId} not found`, 404); }
     const ins = await inspect(f, mates, folder);
@@ -26,7 +37,7 @@ async function buildFileDocs(artistId: string | undefined, files: Attach[], pare
     const key = a.key ?? (kind === "chart" ? guessKey(f.name) : undefined);
     out.push({
       kind, title: a.title?.trim() || f.name, ...parent, ...(key ? { key } : {}),
-      driveFileId: f.id, url: f.webViewLink, mimeType: f.mimeType, ownerEmail: f.ownerEmail,
+      driveFileId: f.id, provider: "drive", url: f.webViewLink, mimeType: f.mimeType, ownerEmail: f.ownerEmail,
       inBandFolder: ins.inBandFolder, sharing: sharingOf(ins.missing), checkedAt: new Date(),
     });
   }
@@ -38,7 +49,10 @@ async function writeFiles(w: Writer, docs: Record<string, unknown>[]) {
   const ids: string[] = [];
   let skipped = 0;
   for (const d of docs) {
-    const same = await w.query("files", (q) => q.where("driveFileId", "==", d.driveFileId));
+    // Links have no driveFileId (and where(..., undefined) is rejected), so they dedupe on url instead.
+    const same = d.driveFileId
+      ? await w.query("files", (q) => q.where("driveFileId", "==", d.driveFileId))
+      : await w.query("files", (q) => q.where("url", "==", d.url));
     if (same.some((s) => s.songId === d.songId && s.rehearsalId === d.rehearsalId)) { skipped++; continue; }
     ids.push((await w.create("files", d)).id);
   }
@@ -68,7 +82,7 @@ export const driveSearch = defineCommand({
 export const filesAttach = defineCommand({
   name: "files.attach",
   roles: ["admin", "mcp"],
-  description: "Attach Drive files to a song or a rehearsal as files docs (kind, key, owner, inBandFolder and sharing are filled in from Drive).",
+  description: "Attach Drive files (driveFileId) or links (url: Spotify, YouTube, any web page) to a song or a rehearsal as files docs. For Drive files kind, key, owner, inBandFolder and sharing are filled in from Drive; links get none of those.",
   input: z.strictObject({ songId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), files: z.array(AttachFile).min(1) })
     .refine((v) => !!v.songId !== !!v.rehearsalId, "Give exactly one of songId or rehearsalId"),
   async run(ctx, input) {
@@ -98,7 +112,8 @@ export const filesRemove = defineCommand({
 });
 
 async function liveFiles(ids?: string[]): Promise<Doc[]> {
-  const all = await db.list("files");
+  // Only Drive files have anything to check or repair; links have no driveFileId, sharing or inBandFolder.
+  const all = (await db.list("files")).filter((f) => f.driveFileId);
   return ids ? all.filter((f) => ids.includes(f.id)) : all;
 }
 
@@ -193,7 +208,7 @@ export const filesCopyToBand = defineCommand({
 export const songsCreate = defineCommand({
   name: "songs.create",
   roles: ["admin", "mcp"],
-  description: "Add a song, optionally attaching Drive files (see drive.search) in the same step.",
+  description: "Add a song, optionally attaching Drive files (see drive.search) or links (url) in the same step.",
   input: SongInput.extend({ files: z.array(AttachFile).default([]) }),
   async run(ctx, { files, ...song }) {
     const docs = await buildFileDocs(ctx.artistId, files, {});

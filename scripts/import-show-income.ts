@@ -10,8 +10,8 @@
  *     a not-received guarantee line from booking is replaced by the received one; any other income already on the deal is left
  *     alone and the row is reported instead
  *   - Gig Length fills times.setLengthSec when the show has none (a different booked length is reported, not overwritten)
- *   - Notes, Audience Count and the Ingie Award go to the deal's rating (notes / crowd) once the rating no longer requires the
- *     1-5 stars; until then they are reported as waiting
+ *   - Notes and the Ingie Award go to the deal's rating notes, Audience Count to the deal's `crowd`, once the rating no
+ *     longer requires the 1-5 stars; until then they are reported as waiting. Neither overwrites one the show already has
  * All writes go through db.ts with via "import" and one runId, so Admin → History can undo the whole import.
  * Against real Firestore (no emulator host) it needs --yes.
  */
@@ -24,6 +24,7 @@ import { slug } from "../src/schema/normalize";
 import { ShowDeal } from "../src/schema/shows";
 import { setLengthOf } from "../src/lib/duration";
 import { sumIncome, formatCents } from "../src/lib/money";
+import { formatSurvey, note, tally, type Note, type Survey } from "./survey";
 
 // ---------- sheet parsing (shared with import-gas.ts) ----------
 
@@ -163,13 +164,14 @@ export interface IncomeReport {
   showsWithoutRow: { id: string; date: string; label: string }[];
 }
 
-export async function importShowIncome(opts: { dryRun?: boolean; artist?: string } = {}): Promise<IncomeReport> {
-  const snap = loadSnapshot("accounting-shows.json");
+/** `snapshot` stands in for the gitignored .booking-kit file, so tests can run the import on rows of their own. */
+export async function importShowIncome(opts: { dryRun?: boolean; artist?: string; snapshot?: { source: string; values: string[][] } } = {}): Promise<IncomeReport> {
+  const snap = opts.snapshot ?? loadSnapshot("accounting-shows.json");
   const { rows, skipped } = parseShows(snap.values);
   const runId = newRunId();
   const report: IncomeReport = {
     project: process.env.GCLOUD_PROJECT ?? "", dryRun: !!opts.dryRun, runId, source: snap.source,
-    ratingsSupported: ShowDeal.shape.rating.safeParse({ crowd: 1, notes: "x" }).success, rows: [], skipped, showsWithoutRow: [],
+    ratingsSupported: ShowDeal.shape.rating.safeParse({ notes: "x" }).success, rows: [], skipped, showsWithoutRow: [],
   };
   const artists = await db.list("artists");
   const artist = opts.artist ? artists.find((a) => a.slug === opts.artist) : artists.length === 1 ? artists[0] : undefined;
@@ -229,10 +231,15 @@ export async function importShowIncome(opts: { dryRun?: boolean; artist?: string
       if (r.notes || r.audience || r.award) {
         if (!report.ratingsSupported) out.rating = "waiting";
         else {
+          // Notes go on the rating; the crowd estimate is its own field (a pre-migration rating.crowd still counts as "has one").
           const cur = (deal.rating ?? {}) as Record<string, unknown>;
           const notes = [r.notes, r.award && `Ingie Award: ${r.award}`].filter(Boolean).join("\n\n");
-          const next = { ...cur, ...(r.audience !== undefined && cur.crowd === undefined ? { crowd: r.audience } : {}), ...(notes && !cur.notes ? { notes } : {}) };
-          if (JSON.stringify(next) !== JSON.stringify(cur)) { patch.rating = next; out.rating = "written"; } else out.rating = "none";
+          const next = { ...cur, ...(notes && !cur.notes ? { notes } : {}) };
+          const haveCrowd = deal.crowd ?? cur.crowd;
+          const setCrowd = r.audience !== undefined && haveCrowd === undefined;
+          if (JSON.stringify(next) !== JSON.stringify(cur)) patch.rating = next;
+          if (setCrowd) patch.crowd = r.audience;
+          out.rating = patch.rating || setCrowd ? "written" : "none";
           if (cur.notes && notes && cur.notes !== notes) out.issues.push("the deal already has rating notes: sheet notes not written");
         }
       }
@@ -267,6 +274,56 @@ function rowBase(r: GigRow) {
   return { line: r.line, date: r.date, gig: r.gig, canceled: r.canceled, sheetTotal: r.sheetTotal, income: sumIncome(r.income), issues: [] as string[] };
 }
 
+/**
+ * The show-income survey. The two categories that actually need Jeff are rows matching no show at all (the money has
+ * nowhere to go until the show is added by hand) and rows matched by date alone (the importer guessed, because only
+ * one show existed that day).
+ */
+export function incomeSurvey(r: IncomeReport): Survey {
+  const notes: Note[] = [];
+  for (const x of r.rows) {
+    const where = `line ${x.line} ${x.date} ${x.gig}`;
+    if (x.match === "none") {
+      notes.push(note("unclean", "no show on that date, so the money has nowhere to go", where,
+        [x.nearby.length ? `nearby: ${x.nearby.join(", ")}` : "", x.venueHits.length ? `venue: ${x.venueHits.join(", ")}` : ""].filter(Boolean).join("; ") || undefined));
+    }
+    if (x.match === "ambiguous") notes.push(note("decide", "several shows that day fit the name equally well", where, x.candidates.join(", ")));
+    if (x.match === "date-only") notes.push(note("decide", "matched by date alone: the name did not match, but it was the only show that day", where, x.showLabel));
+    if (x.incomeAction === "conflict") notes.push(note("decide", "the deal already carries other income, so the sheet's money was left out", where, formatCents(x.existingIncome ?? 0)));
+    if (x.incomeAction === "no deal") notes.push(note("unclean", "the show has no deal to put income on", where));
+    if (x.incomeAction === "replaced") notes.push(note("overwrite", "income from an earlier run or from booking would be replaced", where, formatCents(x.existingIncome ?? 0)));
+    if (x.setLength === "differs") notes.push(note("decide", "the booked set length disagrees with the sheet's Gig Length, and is kept", where, `booked ${x.bookedMinutes} min, sheet ${x.minutes} min`));
+    if (x.rating === "waiting") notes.push(note("unclean", "Notes / Audience / Ingie columns are waiting on the ratings change (story 03)", where));
+    for (const issue of x.issues) {
+      // The conflict and set-length issues are already said above, in their own words: don't say them twice.
+      if (/other income line|booked guarantee was/.test(issue)) continue;
+      // Numbers and amounts are row-specific, so they go in the detail: the reason has to group.
+      const reason = issue.replace(/\s*\([^)]*\)/g, "").replace(/-?\$[\d,.]+/g, "an amount").replace(/\b\d+(\.\d+)?\b/g, "N").trim();
+      notes.push(note("decide", reason, where, issue));
+    }
+  }
+  for (const s of r.skipped) notes.push(note("deferred", `row skipped: ${s.why}`, `line ${s.line}`));
+  for (const s of r.showsWithoutRow) notes.push(note("deferred", "a played show in the sheet's date range has no row, so it gets no money", `${s.date} ${s.label}`));
+  return {
+    title: "Show income", project: r.project, dryRun: r.dryRun, runId: r.runId,
+    source: `${r.rows.length} gig rows from ${r.source}`,
+    clean: tally([
+      ...r.rows.filter((x) => x.incomeAction && x.incomeAction !== "conflict" && x.incomeAction !== "no deal")
+        .map((x) => ({ collection: "showDeals income", action: x.incomeAction! })),
+      ...r.rows.filter((x) => x.setLength === "filled").map(() => ({ collection: "shows set length", action: "filled" })),
+      ...r.rows.filter((x) => x.rating === "written").map(() => ({ collection: "showDeals rating", action: "written" })),
+    ]),
+    notes,
+    totals: {
+      "matched by name": r.rows.filter((x) => x.match === "name").length,
+      "matched by date only": r.rows.filter((x) => x.match === "date-only").length,
+      "no show": r.rows.filter((x) => x.match === "none").length,
+      ratings: r.ratingsSupported ? "written (story 03 landed)" : "WAITING: story 03 has not landed, so a second run is needed later",
+      "income in the sheet": formatCents(r.rows.reduce((t, x) => t + x.income, 0)),
+    },
+  };
+}
+
 async function main() {
   const flag = (n: string) => process.argv.includes(`--${n}`);
   const arg = (n: string) => process.argv.find((a) => a.startsWith(`--${n}=`))?.split("=")[1];
@@ -274,15 +331,9 @@ async function main() {
     throw new Error("This would write to REAL Firestore. Re-run with --dry-run to look first, or --yes if that is what you want.");
   }
   const r = await importShowIncome({ dryRun: flag("dry-run"), artist: arg("artist") });
-  const verb = r.dryRun ? "Would import" : "Imported";
-  const by = (k: string) => r.rows.filter((x) => x.incomeAction === k).length;
-  console.log(`${verb} ${r.rows.length} gig rows into ${r.project}${r.artist ? ` (${r.artist.name})` : ""}, run ${r.runId}`);
-  console.log(`  matched by name ${r.rows.filter((x) => x.match === "name").length}, by date only ${r.rows.filter((x) => x.match === "date-only").length}, ambiguous ${r.rows.filter((x) => x.match === "ambiguous").length}, no show ${r.rows.filter((x) => x.match === "none").length}`);
-  console.log(`  income: added ${by("added")}, replaced ${by("replaced")}, unchanged ${by("unchanged")}, conflict ${by("conflict")}, no deal ${by("no deal")}`);
-  console.log(`  set length filled ${r.rows.filter((x) => x.setLength === "filled").length}, differs ${r.rows.filter((x) => x.setLength === "differs").length}; ratings ${r.ratingsSupported ? "written" : "waiting (rating needs stars)"}`);
-  for (const x of r.rows.filter((x) => x.issues.length || x.match !== "name")) console.log(`  line ${x.line} ${x.date} ${x.gig} [${x.match}${x.showId ? ` -> ${x.showId}` : ""}]: ${x.issues.join("; ")}`);
+  console.log(formatSurvey(incomeSurvey(r)));
   const out = arg("report");
-  if (out) { writeFileSync(out, JSON.stringify(r, null, 2) + "\n"); console.log(`Report: ${out}`); }
+  if (out) { writeFileSync(out, JSON.stringify({ ...r, survey: incomeSurvey(r) }, null, 2) + "\n"); console.log(`Report: ${out}`); }
 }
 
 if (process.argv[1]?.endsWith("import-show-income.ts")) main().then(() => process.exit(0), (e) => { console.error(e instanceof Error ? e.message : e); process.exit(1); });

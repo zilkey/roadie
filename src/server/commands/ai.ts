@@ -161,9 +161,12 @@ export const songsMissingFiles = defineCommand({
       songsWithoutFiles: live.filter((s) => !files.some((f) => f.songId === s.id)).map((s) => ({ id: s.id, title: s.title, status: s.status, key: s.key ?? null })),
       songsWithoutChart: live.filter((s) => !kindsOf(s.id).includes("chart")).map((s) => ({ id: s.id, title: s.title })),
       songsWithoutDemo: live.filter((s) => !kindsOf(s.id).some((k) => k === "demo" || k === "recording")).map((s) => ({ id: s.id, title: s.title })),
-      sharingProblems: files.filter((f) => f.sharing !== "ok" || !f.inBandFolder).map((f) => ({
+      // Only files that have actually been looked up in Drive. An imported file has a driveFileId but no sharing or
+      // inBandFolder yet: that is "not checked", not a problem to report, and reading the unset sharing would throw.
+      sharingProblems: files.filter((f) => f.driveFileId && f.sharing !== undefined && f.inBandFolder !== undefined
+        && (f.sharing !== "ok" || !f.inBandFolder)).map((f) => ({
         fileId: f.id, title: f.title, kind: f.kind, song: f.songId ? byTitle.get(f.songId) ?? null : null, url: f.url,
-        cannotOpen: f.sharing === "ok" ? [] : (f.sharing.missing as string[]).map((m) => ({ musicianId: m, name: name.get(m) ?? m })),
+        cannotOpen: f.sharing === "ok" ? [] : ((f.sharing as { missing: string[] }).missing).map((m) => ({ musicianId: m, name: name.get(m) ?? m })),
         outsideBandFolder: !f.inBandFolder,
       })),
     };
