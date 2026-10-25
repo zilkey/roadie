@@ -1,71 +1,109 @@
 "use client";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo } from "react";
 import { AdminOnly } from "@/components/Guard";
-import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
-import { useDoc } from "@/lib/firestore-hooks";
-import { BackLink, EntityForm, Flagged, PitchLinks, editionForm, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
-import { fmtDate } from "@/lib/booking";
-import { ShowLinks } from "@/components/shows/common";
-import type { Edition } from "@/schema";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
+import { BackLink, EntityForm, Flagged, FlagIcon, PitchLinks, editionForm, hrefFor, useBooking, useNotFound, type Field } from "@/components/booking/common";
+import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
+import { fmtDate, isActive } from "@/lib/booking";
+import { fmtLong, showName } from "@/lib/shows";
+import type { Edition, Show } from "@/schema";
 
 export default function Page() { return <AdminOnly><EditionPage /></AdminOnly>; }
+
+const byKey = (k: string) => editionForm.fields.find((x) => x.key === k)!;
+const aboutFields: Field[] = editionForm.fields.filter((x) => x.key !== "payNotes" && x.key !== "notes");
+const notesFields: Field[] = [byKey("payNotes"), byKey("notes")];
+const SURE: Record<string, string> = { estimated: "estimated", target: "our target" };
 
 function EditionPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { artistId } = useArtist();
   const { doc: e, loading } = useDoc<Edition>("editions", id);
   const b = useBooking();
+  const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId], ["editionId", "==", id]] });
   const { call, error } = useCommand();
-  const [edit, setEdit] = useState(false);
+  const edit = useSingleEdit<"about" | "notes">();
+  const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && p.target.id === id), [b.pitches, artistId, id]);
   const nf = useNotFound(loading, e, "year");
   if (nf || !e) return nf;
-  const sure = (s: string) => (s === "confirmed" ? "" : ` (${s})`);
+
+  const name = `${e.festivalName} ${e.label}`;
   const archive = async () => { if (confirm("Archive this year?") && (await call("editions.remove", { id }))) router.replace(hrefFor("festival", e.festivalId)); };
+  const active = mine.find((p) => isActive(p.status));
+  const past = mine.filter((p) => !isActive(p.status));
+  const myShows = [...(showRows.rows ?? [])].sort((a, c) => c.date.localeCompare(a.date));
+  const dated = (d: { date: string; sure: string } | undefined) => d && <>{fmtDate(d.date)}{SURE[d.sure] && <span className="d-muted"> ({SURE[d.sure]})</span>}</>;
+  const autosave = { command: "editions.update", id, rev: e.rev, title: name };
+
   return (
-    <div className="grid gap-5" data-testid="edition-page">
-      <PageTitle back={<BackLink href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={`${e.festivalName} ${e.label}`}
-        sub={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
-        actions={<>
-          <button className="btn ghost" onClick={() => setEdit(!edit)} data-testid="edit-toggle">{edit ? "Done" : "Edit"}</button>
-          <Menu label="More actions" testid="edition" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />
-        </>} />
+    <DetailPage testid="edition-page" back={<BackLink href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={name}
+      pill={active ? <PitchedPill /> : undefined}
+      meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
+      more={<Menu label="More actions" testid="edition" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
-      <div className="cols">
-        <div className="col-main">
-          <Flagged kind="edition" id={id} pitches={b.pitches} big>{(flag, flagForm) => (<>
-            <div className="flex flex-wrap items-start gap-2">{flag}</div>
-            {flagForm}
-          </>)}</Flagged>
-          {edit ? (
-            <EntityForm testid="edition-edit" fields={editionForm.fields} initial={editionForm.initial(e)} build={editionForm.build}
-              autosave={{ command: "editions.update", id, rev: e.rev, title: `${e.festivalName} ${e.label}` }} />
+      <CardGroup kind="shared">
+        <DetailCard title="About this year" editKey="about" edit={edit} warn={SHARED_WARN} testid="edition-facts" editTestid="edit-toggle"
+          editChildren={<div><EntityForm testid="edition-edit" fields={aboutFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>
+          <KV rows={[
+            ["Dates", e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : ""],
+            ["Applications open", dated(e.appOpens)],
+            ["Deadline", dated(e.appDeadline)],
+            ["Decision by", e.notifyDate ? fmtDate(e.notifyDate) : ""],
+            ["Apply link", e.applyUrl ? <a className="underline" href={e.applyUrl} target="_blank" rel="noreferrer">{e.applyUrl}</a> : ""],
+          ]} />
+        </DetailCard>
+
+        <DetailCard title="Pay & notes" editKey="notes" edit={edit} warn={SHARED_WARN} testid="edition-notes-card" editTestid="notes-edit"
+          editChildren={<div><EntityForm testid="edition-notes" fields={notesFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>
+          <KV rows={[["Pay", e.payNotes ?? ""], ["Notes", e.notes ?? ""]]} />
+        </DetailCard>
+      </CardGroup>
+
+      <CardGroup kind="private">
+        <DetailCard private title="Pitch" testid="edition-pitch"
+          icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
+          <Flagged kind="edition" id={id} pitches={mine} label={active ? undefined : `Add ${e.label} to the Pitch List`}>{(flag, flagForm, strip) => active ? (
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>{e.label} is on the Pitch List</span>
+                <Link href={`/booking/pitches/${active.id}`} className="underline">Open pitch</Link>
+              </div>
+              {strip}
+            </div>
           ) : (
-            <div className="card" data-testid="edition-facts">
-              {e.appOpens && <span>Applications open <b>{fmtDate(e.appOpens.date)}</b>{sure(e.appOpens.sure)}</span>}
-              {e.appDeadline && <span>Deadline <b>{fmtDate(e.appDeadline.date)}</b>{sure(e.appDeadline.sure)}</span>}
-              {e.notifyDate && <span>Decision by <b>{fmtDate(e.notifyDate)}</b></span>}
-              {e.applyUrl && <a className="font-semibold underline" href={e.applyUrl} target="_blank" rel="noreferrer">Apply link</a>}
-              {e.payNotes && <span className="s">Pay: {e.payNotes}</span>}
-              {e.notes && <span className="s">{e.notes}</span>}
-              {!e.appOpens && !e.appDeadline && !e.applyUrl && <span className="s">No application dates yet.</span>}
+            <div className="grid gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="d-muted">Not on the Pitch List.{e.appOpens ? ` Applications open ${fmtDate(e.appOpens.date)}.` : ""}</span>
+                {flag}
+              </div>
+              {flagForm}
+            </div>
+          )}</Flagged>
+        </DetailCard>
+
+        <DetailCard private title={`Our history here (${past.length + myShows.length})`} testid="edition-history">
+          {past.length + myShows.length === 0 ? <div className="empty">No past pitches or shows yet.</div> : (
+            <div className="grid gap-3">
+              {past.length > 0 && <PitchLinks pitches={past} />}
+              {myShows.length > 0 && (
+                <div data-testid="edition-shows">
+                  {myShows.map((s) => (
+                    <div key={s.id} className="d-row" data-testid={`edition-show-${s.id}`}>
+                      <Link href={`/shows/${s.id}`} className="font-bold">{showName(s)}</Link>
+                      <span className="d-muted text-sm">{fmtLong(s.date)} {s.date.slice(0, 4)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          <div className="grid gap-3">
-            <span className="lbl">Our shows</span>
-            <ShowLinks where={["editionId", "==", id]} empty="None yet." testid="edition-shows" />
-          </div>
-        </div>
-        <div className="col-side">
-          <div className="grid gap-3">
-            <span className="lbl">Pitches</span>
-            <PitchLinks pitches={b.pitches.filter((p) => p.target.kind === "edition" && p.target.id === id)} />
-          </div>
-          <Link href={hrefFor("festival", e.festivalId)} className="btn ghost sm justify-self-start">All years of {e.festivalName}</Link>
-        </div>
-      </div>
-    </div>
+        </DetailCard>
+      </CardGroup>
+    </DetailPage>
   );
 }
