@@ -1,6 +1,7 @@
 /**
  * Roadie's tools. One definition, many uses: every eligible registry command becomes a tool (JSON Schema from its zod
- * input), plus a few Roadie-only ones (context.now, search, history.undoRun scoped to this thread, ui.navigate).
+ * input), plus a few Roadie-only ones (context.now, search, history.undoRun scoped to this thread, ui.navigate, and
+ * web.search / web.read, whose guards live in web.ts).
  * Execution is server-side, as the person typing, through `runAs` (same checks as dispatch) with the message's runId.
  */
 import { z } from "zod";
@@ -10,10 +11,11 @@ import { AppError } from "../errors";
 import { RECORD_ROUTES, resolveRoute, routeNames, ROUTES, type RouteName } from "@/lib/routes";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
 import { contextNow, searchAll, SEARCH_KINDS } from "./context";
-import { eligibleCommands, isEligible, needsConfirm, refusal, summarize } from "./policy";
+import { eligibleCommands, isEligible, isReadOnly, needsConfirm, refusal, summarize } from "./policy";
 import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
+import { allowUrls, isAllowedUrl, MAX_QUERY_CHARS, MAX_WEB_READS, MAX_WEB_SEARCHES, newWebTurn, web, WEB_NOTICE, type WebTurn } from "./web";
 
 export const MAX_RESULT_CHARS = 20_000;
 /** Tool results are wrapped so the model reads them as content, never as instructions. */
@@ -41,6 +43,17 @@ const SPECIAL: ToolDef[] = [
     name: "search",
     description: "Find a venue, show, band member, song, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate.",
     inputJsonSchema: obj({ q: { type: "string", minLength: 1 }, kinds: { type: "array", items: { enum: [...SEARCH_KINDS] } }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["q"]),
+  },
+  {
+    name: "web.search",
+    description: `Search the open web (Google), after the band's data. Returns {local: band records matching \`local\` (default: q), web: {answer, sources: [{title, url}]}}. ` +
+      `Use it to find venues or check a venue fact the band's data doesn't have. Public words only, at most ${MAX_QUERY_CHARS} characters: never put money, notes, emails or phone numbers from the band's data in a query. At most ${MAX_WEB_SEARCHES} per message.`,
+    inputJsonSchema: obj({ q: { type: "string", minLength: 1, maxLength: MAX_QUERY_CHARS }, local: { type: "string", minLength: 1, description: "The name to look up in the band's data, when it differs from q (\"Grey Eagle\" for \"Grey Eagle Asheville capacity\")." } }, ["q"]),
+  },
+  {
+    name: "web.read",
+    description: `Read one web page as text (title, text, mailto emails). Only https URLs from a web.search source, the person's message, or a band record a tool returned in this message: any other URL is refused, so copy it exactly. At most ${MAX_WEB_READS} per message.`,
+    inputJsonSchema: obj({ url: { type: "string", minLength: 1 } }, ["url"]),
   },
   {
     name: "history.undoRun",
@@ -82,6 +95,11 @@ export function dataResult(data: unknown): { untrustedContent: unknown; notice: 
   const safe = jsonSafe(data);
   const text = JSON.stringify(safe) ?? "null";
   return { untrustedContent: text.length > MAX_RESULT_CHARS ? { truncated: true, preview: text.slice(0, MAX_RESULT_CHARS) } : safe, notice: DATA_NOTICE };
+}
+/** Wrap web content for the model: marked as strangers' content. `local` (the band's own matches) keeps its own notice. */
+export function webResult(data: Record<string, unknown>): { untrustedContent: unknown; notice: string } {
+  const text = JSON.stringify(data);
+  return { untrustedContent: text.length > MAX_RESULT_CHARS ? { truncated: true, preview: text.slice(0, MAX_RESULT_CHARS) } : data, notice: `${WEB_NOTICE} \`local\`: ${DATA_NOTICE}` };
 }
 const fail = (e: unknown): { error: { code: string; message: string; issues?: unknown } } => {
   if (e instanceof AppError) return { error: { code: e.code, message: e.message, ...(e.issues ? { issues: e.issues } : {}) } };
@@ -271,14 +289,59 @@ export async function runCommandTool(s: Session, name: string, input: unknown, r
   return { ...r, label };
 }
 
+const quoteQ = (q: string) => `"${q.length > 60 ? `${q.slice(0, 60)}…` : q}"`;
+/** web.search: the band's data first, then the web. The query shows in the reply (and the saved message), so the person sees what went to Google. */
+async function webSearch(s: Session, input: unknown, w: WebTurn): Promise<ToolOut> {
+  const p = z.strictObject({ q: z.string().trim().min(1), local: z.string().trim().min(1).optional() }).safeParse(input ?? {});
+  if (!p.success) throw new AppError("invalid_input", "Give me something to search for", 400);
+  if (p.data.q.length > MAX_QUERY_CHARS) throw new AppError("invalid_input", `Keep a web search under ${MAX_QUERY_CHARS} characters`, 400);
+  if (w.searches >= MAX_WEB_SEARCHES) throw new AppError("too_many", `That's ${MAX_WEB_SEARCHES} web searches for one message`, 429);
+  w.searches++;
+  const local = (await searchAll(makeCtx(s), { q: p.data.local ?? p.data.q, limit: 10 })).results;
+  const found = await web.search(p.data.q);
+  w.tainted = true;
+  for (const src of found.sources) allowUrls(w, src.url);
+  console.info(JSON.stringify({ roadieWeb: "search", threadId: s.threadId, runId: s.runId, uid: s.uid, q: p.data.q }));
+  return { output: webResult({ local, web: found }), action: { kind: "action", label: `Searched the web for ${quoteQ(p.data.q)}` } };
+}
+/** web.read: one page, only from a URL Roadie didn't make up. */
+async function webRead(s: Session, input: unknown, w: WebTurn): Promise<ToolOut> {
+  const p = z.strictObject({ url: z.string().trim().min(1) }).safeParse(input ?? {});
+  if (!p.success) throw new AppError("invalid_input", "Which page?", 400);
+  if (!isAllowedUrl(w, p.data.url)) throw new AppError("not_allowed", "I can only open a link from a web search, your message or the band's records", 403);
+  if (w.reads >= MAX_WEB_READS) throw new AppError("too_many", `That's ${MAX_WEB_READS} pages for one message`, 429);
+  w.reads++;
+  const page = await web.read(p.data.url);
+  w.tainted = true;
+  console.info(JSON.stringify({ roadieWeb: "read", threadId: s.threadId, runId: s.runId, uid: s.uid, url: page.url }));
+  return { output: webResult({ page }), action: { kind: "action", label: `Read ${new URL(page.url).hostname}` } };
+}
+
+/** The confirm card for a write asked for after reading the web: what will be written, so a planted fact is easy to spot. */
+function taintedSummary(base: string, input: unknown) {
+  const shown = JSON.stringify(input);
+  return `${base}, from what I read on the web: ${shown.length > 300 ? `${shown.slice(0, 300)}…` : shown}`;
+}
+
 /**
  * Execute one tool request from the model. Never throws: failures come back as `{error}` for the model to read.
- * `recorded` is the set of run ids already saved on the thread in this message.
+ * `recorded` is the set of run ids already saved on the thread in this message; `w` is the message's web state
+ * (which links web.read may open, and whether web content has come back, after which every write asks first).
  */
-export async function execTool(s: Session, name: string, input: unknown, emit: Emit, recorded: Set<string> = new Set()): Promise<ToolOut> {
+export async function execTool(s: Session, name: string, input: unknown, emit: Emit, recorded: Set<string> = new Set(), w: WebTurn = newWebTurn()): Promise<ToolOut> {
+  const out = await execOne(s, name, input, emit, recorded, w);
+  // Links in the band's own records may be opened later in the message. Never links from web content.
+  if (!name.startsWith("web.") && !errorIn(out.output)) allowUrls(w, JSON.stringify(out.output) ?? "");
+  return out;
+}
+const errorIn = (o: unknown) => !!(o as { error?: unknown } | null)?.error;
+
+async function execOne(s: Session, name: string, input: unknown, emit: Emit, recorded: Set<string>, w: WebTurn): Promise<ToolOut> {
   try {
     if (s.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     if (name === "ui.navigate") return await navigate(s, input);
+    if (name === "web.search") return await webSearch(s, input, w);
+    if (name === "web.read") return await webRead(s, input, w);
     const ctx = makeCtx(s);
     if (name === "context.now") return { output: dataResult(await contextNow(ctx, s)) };
     if (name === "search") {
@@ -300,10 +363,13 @@ export async function execTool(s: Session, name: string, input: unknown, emit: E
     const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : await fillNested(s, name, input ?? {});
     const parsed = cmd.input.safeParse(filled.input);
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
-    if (needsConfirm(name, parsed.data)) {
+    const asks = needsConfirm(name, parsed.data);
+    const fromWeb = w.tainted && !isReadOnly(name);
+    if (asks || fromWeb) {
       // The server never runs this from the flow. It stores the input and asks the person; only /api/assistant/confirm runs it.
       const open = await findOpenPending(s.threadId, name, parsed.data, s.now);
-      const p = open ?? await createPending(s.threadId, { command: name, input: parsed.data, summary: summarize(name, parsed.data, await labelFor(s, name, parsed.data), filled.before), messageId: s.replyId }, s.now);
+      const base = summarize(name, parsed.data, await labelFor(s, name, parsed.data), filled.before);
+      const p = open ?? await createPending(s.threadId, { command: name, input: parsed.data, summary: asks ? (fromWeb ? `${base} (after reading the web)` : base) : taintedSummary(base, parsed.data), messageId: s.replyId }, s.now);
       const action: AssistantAction = { kind: "confirm", label: p.summary, pendingId: p.id, command: name, status: "pending" };
       if (!open) emit({ type: "confirm", pendingId: p.id, command: name, summary: p.summary });
       return { output: { needsConfirmation: true, pendingId: p.id, message: "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes." }, action: open ? undefined : action, stop: true };

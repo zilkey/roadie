@@ -60,6 +60,9 @@ const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "sho
 /** Reads never ask, whatever they are given. */
 const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain"]);
 
+/** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
+export const isReadOnly = (name: string) => READ_ONLY.has(name);
+
 /** True when `name` with this input must not run without the person's yes. TODO: count touched records after a dry run instead of guessing from the input. */
 export function needsConfirm(name: string, input: unknown): boolean {
   if (ALWAYS_CONFIRM.includes(name) || isRemove(name)) return true;

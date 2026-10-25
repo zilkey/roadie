@@ -35,6 +35,9 @@ const FORBIDDEN = new RegExp([
 // Questions about the app itself, not its data: "what's on the pitch list?" stays a data question.
 const EXPLAIN = /^(?:please |can you |could you )?(explain|help me understand|what am i looking at|tell me about|how do(?:es)? .*\bwork)\b|^what\b.*\b(mean|means|this page|this tab|a pitch|pitch statuses|statuses|shared|flag)\b/;
 const THIS_PAGE = /\b(this page|this tab|this screen|what am i looking at|here)\b|^explain this\b/;
+// "search the web for X", "google X", "look up X online" -> web.search. "read https://..." -> web.read.
+const WEB_SEARCH = /^(?:please |can you |could you )?(?:search the web for|google|look up online)\s+(.+?)[.!?]*$|^(?:please |can you |could you )?(?:look up|check|find)\s+(.+?)\s+(?:online|on the web)[.!?]*$/;
+const WEB_READ = /^(?:please |can you |could you )?read\s+(https:\/\/\S+?)[.!?]*$/i;
 const BAND_RENAME = /\b(rename|change|update)\b.*\b(band'?s? name|name of the band|(?:our |the |band )?(?:url|web ?address))\b|\brename (?:the|our) band\b/;
 
 export const unwrap = (o: unknown): any => (o as { untrustedContent?: unknown } | null)?.untrustedContent ?? o; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -83,13 +86,17 @@ export function script(input: { text: string; steps?: Step[]; page?: Page }): Sc
   const raw = input.text.trim();
   const t = raw.toLowerCase();
   const steps = input.steps ?? [];
-  return steps.length ? followUp(t, steps, input.page, raw) : first(t, input.page);
+  return steps.length ? followUp(t, steps, input.page, raw) : first(t, input.page, raw);
 }
 
-function first(t: string, page?: Page): Scripted {
+function first(t: string, page?: Page, raw = t): Scripted {
   if (/^(hi|hey|hello|yo|sup|howdy|good (morning|evening))\b/.test(t)) return { text: "Hey. Roadie here. Shows, tours, money: what do you need?" };
   if (BAND_RENAME.test(t)) return { text: BAND_SETTINGS }; // before CANT_DO: no tool call
   if (FORBIDDEN.test(t)) return { text: NO_PEOPLE }; // no tool call at all
+  const read = WEB_READ.exec(raw);
+  if (read) return { calls: [{ name: "web.read", input: { url: read[1] } }] };
+  const ws = WEB_SEARCH.exec(t);
+  if (ws) return { calls: [{ name: "web.search", input: { q: (ws[1] ?? ws[2]).trim() } }] };
   const listed = ASKS_LIST.test(t) && /\b(shows?|gigs?)\b/.test(t) ? FILTER_WORDS.find(([re]) => re.test(t)) : undefined;
   if (listed) return { calls: [{ name: "shows.list", input: { filter: listed[1] } }] };
   if (/\bundo\b/.test(t)) return { text: "On it.", calls: [{ name: "history.undoRun", input: /\b(everything|all|tonight|conversation)\b/.test(t) ? { all: true } : {} }] };
@@ -164,6 +171,15 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
     return { text: `I don't have a write-up for this page yet. I can explain: ${((out?.topics ?? []) as { title: string }[]).map((x) => x.title).join(", ")}.` };
   }
   if (last.name === "history.undoRun") return { text: err ? "Nothing of mine to undo here." : "Undone." };
+  // Web results are named by their links, never by their text (strangers wrote it).
+  if (last.name === "web.search") {
+    if (err) return { text: `Couldn't search: ${err}` };
+    const local = (out?.local ?? []) as Hit[];
+    const src = ((out?.web?.sources ?? []) as { url: string }[])[0];
+    const book = local.length ? `In the book: ${local.slice(0, 3).map((h) => h.name).join(", ")}.` : "Nothing in the book.";
+    return { text: `${book} ${src ? `The web has something: ${src.url}` : "Nothing on the web either."}` };
+  }
+  if (last.name === "web.read") return { text: err ? `Couldn't read it: ${err}` : `Read it: ${out?.page?.url ?? "the page"}` };
 
   if (last.name === "search") {
     const hits = (out?.results ?? []) as Hit[];

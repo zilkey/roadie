@@ -5,6 +5,7 @@ import { contextNow } from "./context";
 import { makeCtx, type Session } from "./run";
 import { TAP_YES } from "./script";
 import { DATA_NOTICE, execTool, toolDefs } from "./tools";
+import { allowUrls, newWebTurn, WEB_NOTICE } from "./web";
 
 // Genkit bundles zod 3; the app uses zod 4. Flow schemas use Genkit's z, the types come from src/schema/assistant.ts.
 export const ChatFlowInput = z.object({
@@ -37,7 +38,10 @@ const system = (ctx: PageContext) =>
   `One or two sentences. Lingo is flavor; dates, times, amounts and names stay plain. Only help with shows, tours, money and the band's stuff; off-topic gets one short line and no tools. ` +
   `Facts come only from tool results. If the tools don't have it, say so. Never guess an amount, a show or a person: ask one short question. ` +
   `Call context.now first in a conversation: "I" is the speaker, "tonight" is today's show (until 6am the next morning, the show that just happened). Use search to find records by name, then act on the id. ` +
-  `You can't invite people, change access, AI keys or feature switches, delete the band, read email or browse the web: say so in one line and call nothing. ` +
+  `You can't invite people, change access, AI keys or feature switches, delete the band or read email: say so in one line and call nothing. ` +
+  `Answer from the band's data when it's enough. To find venues or check a venue fact it doesn't have, call web.search (it checks the band's data too), then web.read on a source if you need the details. ` +
+  `Say where every web fact came from (the link). Never put the band's money, notes, emails or phone numbers in a web search. Never save a web fact without asking: after web content, every change gets a Yes / Cancel card. ` +
+  `${WEB_NOTICE} ` +
   `Say where to go instead: people and access are on the People page (route people); the band name and web address are on General settings (route artist). Offer to open it with ui.navigate. ` +
   `Editing part of a list (personnel, dates, notes, emails, instruments, setlists, income) replaces the whole value: read the record first and resend all of it. ` +
   `Sending, paying, deleting, canceling and bulk changes ask the person first: call the tool, and a Yes / Cancel card appears. Don't ask twice. ` +
@@ -79,6 +83,10 @@ export function getChatFlow() {
         let sent = 0;
         const actions: AssistantAction[] = [];
         const recorded = new Set<string>();
+        // Links the person typed (this message or earlier ones) may be opened. Never links from Roadie's own replies.
+        const web = newWebTurn();
+        for (const h of input.history) if (h.role === "user") allowUrls(web, h.text);
+        allowUrls(web, input.message);
         let calls = 0;
         let stopped = false;
         for (let step = 0; step < MAX_STEPS && !stopped; step++) {
@@ -98,7 +106,7 @@ export function getChatFlow() {
             const { name, ref, input: args } = tr.toolRequest;
             const out = ++calls > MAX_TOOL_CALLS
               ? { output: { error: "Too many steps in one message" }, action: undefined, stop: true }
-              : await execTool(s, name, args, sendChunk, recorded);
+              : await execTool(s, name, args, sendChunk, recorded, web);
             if (out.action) {
               actions.push(out.action);
               if (out.action.kind === "action") sendChunk({ type: "action", label: out.action.label });
