@@ -18,7 +18,12 @@ export const Configuration = z.strictObject({
   musicianIds: z.array(id),
 });
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
-export const SongField = z.strictObject({ id, label: z.string().min(1) });
+export const SongField = z.strictObject({
+  id,
+  label: z.string().min(1),
+  /** Also a column in the Songs (or Shows) list table. Missing = no. */
+  inTable: z.boolean().optional(),
+});
 /** A custom field definition for shows is the same shape as one for songs. */
 export const ShowField = SongField;
 /** The artist's public links, one per platform, in the order the Artist page lists them. */

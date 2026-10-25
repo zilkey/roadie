@@ -1,10 +1,17 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { A } from "./env";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
   await expect(page).toHaveURL(/\/calendar$/);
+}
+
+async function as(browser: Browser, key: string) {
+  const ctx = await browser.newContext();
+  const page = await ctx.newPage();
+  await signInAs(page, key);
+  return { page, close: () => ctx.close() };
 }
 
 test("Custom fields: define a show field in admin, fill it on a show, see it; deleting the field clears it", async ({ page }) => {
@@ -50,4 +57,79 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; de
   await expect(page.getByTestId("show-fields")).not.toContainText(label);
   await page.goto(showUrl);
   await expect(page.getByTestId("custom-fields")).not.toContainText("Lot B, behind the venue");
+});
+
+test("Custom fields: a field ticked In table is a column in the Shows and Songs lists", async ({ page, browser }) => {
+  const stamp = Date.now();
+  const showLabel = `Hotel ${stamp}`, songLabel = `Capo ${stamp}`, title = `Column Song ${stamp}`;
+  await signInAs(page, "jeff");
+  await page.goto(A("/admin/fields"));
+  for (const [kind, label] of [["show", showLabel], ["song", songLabel]] as const) {
+    await page.getByTestId(`add-${kind}-field`).click();
+    await page.getByTestId(`new-${kind}-field-label`).fill(label);
+    await page.getByTestId(`new-${kind}-field-add`).click();
+    await expect(page.getByTestId(`${kind}-fields`).getByRole("row", { name: new RegExp(label) })).toBeVisible();
+  }
+  const showBox = page.getByTestId("show-fields").getByLabel(`Show ${showLabel} in the Shows table`);
+  const songBox = page.getByTestId("song-fields").getByLabel(`Show ${songLabel} in the Songs table`);
+  await expect(showBox).not.toBeChecked();
+
+  // A show with a value: no column until the field is ticked.
+  await page.goto(A("/shows/new"));
+  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
+  await page.getByTestId("show-date").fill("2027-07-17");
+  await page.getByTestId("show-calendar").uncheck();
+  await page.getByTestId("deal-guarantee").fill("100");
+  await page.getByTestId("show-save").click();
+  const card = page.getByTestId("custom-fields");
+  await card.getByTestId("custom-fields-edit").click();
+  await card.getByLabel(showLabel).fill("Holiday Inn");
+  await card.getByTestId("custom-fields-save").click();
+  await expect(card.getByTestId("custom-fields-save")).toHaveCount(0);
+  await page.goto(A("/shows"));
+  await expect(page.getByTestId("shows-table-upcoming")).toBeVisible();
+  await expect(page.getByTestId("shows-table-upcoming")).not.toContainText(showLabel);
+
+  // A song with a value.
+  await page.goto(A("/songs/new"));
+  await page.getByTestId("song-title").fill(title);
+  await page.getByTestId("save-song").click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await page.getByTestId("song-edit").click();
+  await page.getByTestId("song-form").getByLabel(songLabel).fill("2");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+
+  // Tick both; each saves on its own.
+  await page.goto(A("/admin/fields"));
+  await showBox.check();
+  await expect(showBox).toBeChecked();
+  await songBox.check();
+  await expect(songBox).toBeChecked();
+  await page.reload();
+  await expect(showBox).toBeChecked();
+
+  await page.goto(A("/shows"));
+  const shows = page.getByTestId("shows-table-upcoming");
+  await expect(shows.getByRole("columnheader", { name: showLabel })).toBeVisible();
+  await expect(shows.getByRole("row", { name: /Holiday Inn/ })).toBeVisible();
+  await page.goto(A("/songs"));
+  const songs = page.getByTestId("songs-list");
+  await expect(songs.getByRole("columnheader", { name: songLabel })).toBeVisible();
+  await expect(songs.getByRole("row", { name: new RegExp(title) })).toContainText("2");
+
+  // Members see song columns, never show field values.
+  const david = await as(browser, "david");
+  await david.page.goto(A("/shows"));
+  await expect(david.page.getByTestId("shows-table-upcoming")).toBeVisible();
+  await expect(david.page.getByTestId("shows-table-upcoming")).not.toContainText(showLabel);
+  await david.page.goto(A("/songs"));
+  await expect(david.page.getByTestId("songs-list").getByRole("columnheader", { name: songLabel })).toBeVisible();
+  await david.close();
+
+  // Untick: the column goes.
+  await page.goto(A("/admin/fields"));
+  await showBox.uncheck();
+  await expect(showBox).not.toBeChecked();
+  await page.goto(A("/shows"));
+  await expect(page.getByTestId("shows-table-upcoming")).not.toContainText(showLabel);
 });

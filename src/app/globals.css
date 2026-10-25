@@ -270,6 +270,7 @@ fieldset.sec { margin: 0; }
 .song-table th.key, .song-table td.key { width: 90px; font-weight: 600; color: var(--ink); }
 .song-table th.len, .song-table td.len { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
 .song-table th.lyr, .song-table td.lyr { width: 140px; padding-left: 24px; }
+.song-table td.cf { white-space: nowrap; }
 .song-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
 .song-table .nm:hover { color: var(--accent-text); }
 .song-table .lyr a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-weight: 700; color: var(--accent-text); text-decoration: none; }
@@ -294,6 +295,7 @@ dialog.pitch-dlg::backdrop { background: var(--backdrop); }
 .show-table td.venue { font-weight: 600; }
 .show-table td.addr { white-space: normal; min-width: 180px; }
 .show-table td.reason { white-space: normal; min-width: 240px; }
+.show-table td.cf { white-space: normal; min-width: 140px; }
 .show-table a { color: var(--accent-text); }
 .show-table .dl { font-weight: 700; text-decoration: none; color: var(--ink); border-bottom: 1.5px solid var(--line); }
 .show-table .dl:hover { border-color: var(--accent); color: var(--accent-text); }

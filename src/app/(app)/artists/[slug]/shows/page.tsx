@@ -1,5 +1,5 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useArtist } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { PageTitle } from "@/components/ui";
@@ -18,6 +18,7 @@ const fromHash = (): ShowFilter => {
 export default function Shows() {
   const p = useProfile();
   const b = useBand();
+  const showFields = useArtist().doc?.showFields;
   // The tab lives in the URL hash (#played...) so it survives a reload; each tab keeps its own scroll position.
   const [filter, setFilter] = useState<ShowFilter>("upcoming");
   const scrolls = useRef<Partial<Record<ShowFilter, number>>>({});
@@ -54,7 +55,7 @@ export default function Shows() {
         actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">New show</Link> : undefined} />
       <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={pick}
         options={SHOW_FILTERS.map((f) => [f, b.loading ? SHOW_FILTER_LABEL[f] : `${SHOW_FILTER_LABEL[f]} · ${count(f)}`])} />
-      {!b.loading && <ShowTable tab={filter} shows={shown} setlists={b.setlists} admin={p.role === "admin"} />}
+      {!b.loading && <ShowTable tab={filter} shows={shown} setlists={b.setlists} admin={p.role === "admin"} fields={showFields ?? []} />}
     </div>
   );
 }

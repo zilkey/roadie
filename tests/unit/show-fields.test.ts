@@ -92,3 +92,22 @@ test("artists.removeShowField strips the field from every show, keeps the others
   await call(admin, "artists.removeSongField", { id: TEST_ARTIST, fieldId: capo });
   assert.deepEqual(await values(a), [{ fieldId: hotel, value: "Marriott" }]);
 });
+
+test("artists.setShowFieldInTable / setSongFieldInTable: admin-only, toggles the column flag and nothing else", async () => {
+  const { admin, member, call, field, artist } = await world();
+  const parking = await field("Show", "Parking"), capo = await field("Song", "Capo");
+  assert.equal((await call(member, "artists.setShowFieldInTable", { id: TEST_ARTIST, fieldId: parking, inTable: true })).status, 403);
+  assert.equal((await call(admin, "artists.setShowFieldInTable", { id: TEST_ARTIST, fieldId: parking, inTable: true })).status, 200);
+  assert.deepEqual((await artist()).showFields, [{ id: parking, label: "Parking", inTable: true }]);
+  assert.deepEqual((await artist()).songFields, [{ id: capo, label: "Capo" }], "song fields untouched");
+  // rename keeps it in the table; off removes the key
+  await call(admin, "artists.updateShowField", { id: TEST_ARTIST, fieldId: parking, label: "Lot" });
+  assert.deepEqual((await artist()).showFields, [{ id: parking, label: "Lot", inTable: true }]);
+  assert.equal((await call(admin, "artists.setShowFieldInTable", { id: TEST_ARTIST, fieldId: parking, inTable: false })).status, 200);
+  assert.deepEqual((await artist()).showFields, [{ id: parking, label: "Lot" }]);
+
+  assert.equal((await call(admin, "artists.setSongFieldInTable", { id: TEST_ARTIST, fieldId: capo, inTable: true })).status, 200);
+  assert.deepEqual((await artist()).songFields, [{ id: capo, label: "Capo", inTable: true }]);
+  // a show field's id is not a song field
+  assert.equal((await call(admin, "artists.setSongFieldInTable", { id: TEST_ARTIST, fieldId: parking, inTable: true })).status, 404);
+});

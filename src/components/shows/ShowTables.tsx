@@ -4,7 +4,7 @@ import Link from "@/lib/artist";
 import { useDocs } from "@/lib/firestore-hooks";
 import { fmtDur, fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
 import { fmtDuration, setLengthOf } from "@/lib/duration";
-import type { ShowDeal, Setlist } from "@/schema";
+import type { ShowDeal, ShowField, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ShowRow } from "./common";
 
@@ -20,13 +20,21 @@ const addressOf = (s: ShowRow) => (s.venue ? s.venue.address || s.venue.city : s
 
 const DateCell = ({ s }: { s: ShowRow }) => <td className="date"><Link href={`/shows/${s.id}`} className="dl">{fmtLong(s.date)}</Link></td>;
 const VenueCell = ({ s }: { s: ShowRow }) => <td className="venue">{showName(s)}</td>;
-const Head = ({ cols }: { cols: [string, string?][] }) => <thead><tr>{cols.map(([c, cls]) => <th key={c} className={cls}>{c}</th>)}</tr></thead>;
+/** `cf` is the custom field columns, after the tab's own. */
+function Head({ cols, cf }: { cols: [string, string?][]; cf: ShowField[] }) {
+  return <thead><tr>{cols.map(([c, cls]) => <th key={c} className={cls}>{c}</th>)}{cf.map((f) => <th key={f.id} className="cf" data-testid={`shows-col-${f.id}`}>{f.label}</th>)}</tr></thead>;
+}
+const FieldCells = ({ s, cf }: { s: ShowRow; cf: ShowField[] }) => <>{cf.map((f) => <td key={f.id} className="cf">{orDash(s.fields?.find((v) => v.fieldId === f.id)?.value)}</td>)}</>;
 
-/** One table per Shows tab. `shows` is that tab's rows, already sorted. */
-export function ShowTable({ tab, shows, setlists, admin }: { tab: ShowFilter; shows: ShowRow[]; setlists: Row<Setlist>[]; admin: boolean }) {
-  if (tab === "upcoming") return <Upcoming shows={shows} setlists={setlists} />;
-  if (tab === "played") return <Played shows={shows} admin={admin} />;
-  return <Off tab={tab} shows={shows} />;
+/**
+ * One table per Shows tab. `shows` is that tab's rows, already sorted. `fields` is the artist's show fields; those ticked "In table"
+ * are extra columns on every tab, for admins only (show field values are admin-only, like the show page's Custom fields card).
+ */
+export function ShowTable({ tab, shows, setlists, admin, fields }: { tab: ShowFilter; shows: ShowRow[]; setlists: Row<Setlist>[]; admin: boolean; fields: ShowField[] }) {
+  const cf = admin ? fields.filter((f) => f.inTable) : [];
+  if (tab === "upcoming") return <Upcoming shows={shows} setlists={setlists} cf={cf} />;
+  if (tab === "played") return <Played shows={shows} admin={admin} cf={cf} />;
+  return <Off tab={tab} shows={shows} cf={cf} />;
 }
 
 const Empty = ({ tab, children }: { tab: ShowFilter; children: React.ReactNode }) => <div className="empty" data-testid={`shows-${tab}`}><span>{children}</span></div>;
@@ -40,11 +48,11 @@ function Wrap({ tab, children, foot }: { tab: ShowFilter; children: React.ReactN
   );
 }
 
-function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist>[] }) {
+function Upcoming({ shows, setlists, cf }: { shows: ShowRow[]; setlists: Row<Setlist>[]; cf: ShowField[] }) {
   if (!shows.length) return <Empty tab="upcoming">No shows coming up.</Empty>;
   return (
     <Wrap tab="upcoming">
-      <Head cols={[["Date"], ["Venue"], ["Address"], ["Load in"], ["Sound check"], ["Doors"], ["Show starts"], ["Downbeat"], ["Sound"], ["Contact"], ["Setlist"]]} />
+      <Head cols={[["Date"], ["Venue"], ["Address"], ["Load in"], ["Sound check"], ["Doors"], ["Show starts"], ["Downbeat"], ["Sound"], ["Contact"], ["Setlist"]]} cf={cf} />
       <tbody>
         {shows.map((s) => {
           const addr = addressOf(s);
@@ -61,6 +69,7 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
               <td>{s.sound.provider === "bandProvided" ? <span className="chip a">We provide</span> : <span className="chip">They provide</span>}</td>
               <td className="contact" data-testid="shows-contact">{s.dayOfContact ? <>{s.dayOfContact.name}{s.dayOfContact.phone && <> · <a href={`tel:${s.dayOfContact.phone.replace(/[^\d+]/g, "")}`}>{s.dayOfContact.phone}</a></>}</> : <Dash />}</td>
               <td>{sl ? <Link href={`/shows/${s.id}?tab=setlist`}>{sl.items.filter((i) => i.type === "song").length} songs · {fmtDur(sl.totalSec)}</Link> : <Dash />}</td>
+              <FieldCells s={s} cf={cf} />
             </tr>
           );
         })}
@@ -69,7 +78,7 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
   );
 }
 
-function Played({ shows, admin }: { shows: ShowRow[]; admin: boolean }) {
+function Played({ shows, admin, cf }: { shows: ShowRow[]; admin: boolean; cf: ShowField[] }) {
   const [n, setN] = useState(PAGE);
   const rows = shows.slice(0, n);
   // Admins only (rules make showDeals admin-only): one read per row on screen.
@@ -86,7 +95,7 @@ function Played({ shows, admin }: { shows: ShowRow[]; admin: boolean }) {
   return (
     <>
       <Wrap tab="played" foot={foot}>
-        <Head cols={[["Date"], ["Venue"], ["Duration"], ...(admin ? [["Total income", "num"], ["Total expenses", "num"]] as [string, string][] : [])]} />
+        <Head cols={[["Date"], ["Venue"], ["Duration"], ...(admin ? [["Total income", "num"], ["Total expenses", "num"]] as [string, string][] : [])]} cf={cf} />
         <tbody>
           {rows.map((s) => (
             <tr key={s.id} data-testid="shows-row" data-id={s.id}>
@@ -94,6 +103,7 @@ function Played({ shows, admin }: { shows: ShowRow[]; admin: boolean }) {
               <td className="t">{orDash(fmtDuration(setLengthOf(s.times)))}</td>
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.income))}</td>}
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.expenses))}</td>}
+              <FieldCells s={s} cf={cf} />
             </tr>
           ))}
         </tbody>
@@ -103,16 +113,17 @@ function Played({ shows, admin }: { shows: ShowRow[]; admin: boolean }) {
   );
 }
 
-function Off({ tab, shows }: { tab: "canceled" | "dropped"; shows: ShowRow[] }) {
+function Off({ tab, shows, cf }: { tab: "canceled" | "dropped"; shows: ShowRow[]; cf: ShowField[] }) {
   if (!shows.length) return <Empty tab={tab}>No {tab} shows.</Empty>;
   return (
     <Wrap tab={tab}>
-      <Head cols={[["Date"], ["Venue"], ["Reason"]]} />
+      <Head cols={[["Date"], ["Venue"], ["Reason"]]} cf={cf} />
       <tbody>
         {shows.map((s) => (
           <tr key={s.id} data-testid="shows-row" data-id={s.id}>
             <DateCell s={s} /><VenueCell s={s} />
             <td className="reason">{orDash(s.reason)}</td>
+            <FieldCells s={s} cf={cf} />
           </tr>
         ))}
       </tbody>

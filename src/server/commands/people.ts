@@ -351,7 +351,7 @@ export const artistsUpdate = defineCommand({
 
 // ---------- custom fields (artist-defined label/value pairs on songs and on shows) ----------
 
-type FieldDef = { id: string; label: string };
+type FieldDef = { id: string; label: string; inTable?: boolean };
 type Kind = { noun: "song" | "show"; defs: "songFields" | "showFields"; coll: "songs" | "shows" };
 const SONG: Kind = { noun: "song", defs: "songFields", coll: "songs" };
 const SHOW: Kind = { noun: "show", defs: "showFields", coll: "shows" };
@@ -365,7 +365,7 @@ async function fieldsOf(w: Writer, k: Kind, artistId: string) {
 const labelIn = z.string().trim().min(1);
 const Noun = (k: Kind) => k.noun[0].toUpperCase() + k.noun.slice(1);
 
-/** The four commands for one kind of field. Songs and shows work the same; only the definitions' home and the records holding values differ. */
+/** The five commands for one kind of field. Songs and shows work the same; only the definitions' home and the records holding values differ. */
 function fieldCommands(k: Kind) {
   const n = k.noun, N = Noun(k);
   const add = defineCommand({
@@ -417,10 +417,22 @@ function fieldCommands(k: Kind) {
       return w.update("artists", i.id, { [k.defs]: i.fieldIds.map((fid) => fields.find((f) => f.id === fid)!) });
     }),
   });
-  return [add, update, remove, reorder] as const;
+  const column = defineCommand({
+    name: `artists.set${N}FieldInTable`, roles: ["admin"],
+    description: `Show (inTable true) or hide (false) a ${n} field as a column in the ${N}s list table. The field and its values stay either way.`,
+    input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), inTable: z.boolean() }),
+    run: (ctx, i) => run(ctx, async (w) => {
+      const fields = await fieldsOf(w, k, i.id);
+      if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", `No such ${n} field`, 404);
+      // Off is stored as no key, like a field that was never put in the table.
+      const set = (f: FieldDef) => { const { inTable: _, ...rest } = f; return i.inTable ? { ...rest, inTable: true } : rest; };
+      return w.update("artists", i.id, { [k.defs]: fields.map((f) => (f.id === i.fieldId ? set(f) : f)) });
+    }),
+  });
+  return [add, update, remove, reorder, column] as const;
 }
-const [artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields] = fieldCommands(SONG);
-const [artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields] = fieldCommands(SHOW);
+const [artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields, artistsSetSongFieldInTable] = fieldCommands(SONG);
+const [artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields, artistsSetShowFieldInTable] = fieldCommands(SHOW);
 
 /** Everyone for this artist, as the People page shows them: Team users (with their linked musician), then musicians with no Team access. Mirrors derivePeople in components/people/shared.tsx (a client module). */
 export const peopleList = defineCommand({
@@ -450,6 +462,6 @@ export const peopleList = defineCommand({
 
 export const peopleCommands = [
   peopleList, usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
-  artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields,
-  artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields,
+  artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields, artistsSetSongFieldInTable,
+  artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields, artistsSetShowFieldInTable,
 ];

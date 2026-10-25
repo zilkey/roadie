@@ -25,7 +25,8 @@ async function cancelShow(page: Page, id: string, reason?: string) {
   await expect(page.getByTestId("show-status")).toContainText("Canceled");
 }
 const row = (page: Page, id: string) => page.locator(`[data-testid="shows-row"][data-id="${id}"]`);
-const heads = (page: Page, tab: string) => page.getByTestId(`shows-table-${tab}`).locator("th");
+// The tab's own columns: custom field columns (.cf) come and go with Admin > Custom fields, which other specs change in parallel.
+const heads = (page: Page, tab: string) => page.getByTestId(`shows-table-${tab}`).locator("th:not(.cf)");
 
 test("Booked it turns a pitch into a show with a set length, show start, calendar event and a deal", async ({ page, request }) => {
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };

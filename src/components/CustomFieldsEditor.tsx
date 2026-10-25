@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { Icons } from "@/components/people/shared";
 import { useCollection } from "@/lib/firestore-hooks";
@@ -18,6 +18,10 @@ const COPY = {
   song: { title: "Song fields", blurb: "Extra facts to note on each song, like Capo or Tuning. Define them here, fill them in on the song.", eg: "Capo", plural: "songs", coll: "songs" },
   show: { title: "Show fields", blurb: "Extra facts to note on each show, like Parking or Hotel. Define them here, fill them in on the show (admins only).", eg: "Parking", plural: "shows", coll: "shows" },
 } as const;
+const TABLE_HINT = {
+  song: "A column in the Songs list",
+  show: "A column in the Shows list (admins only)",
+} as const;
 
 /**
  * The artist's custom fields for songs or shows ("Capo", "Parking"): labels defined here once, values filled in on each record. Every change is
@@ -33,6 +37,17 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
   const [label, setLabel] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // "In table" ticks show at once; each is dropped once the artist doc agrees, or if its save fails (the doc is the truth again).
+  const [ticked, setTicked] = useState<Record<string, boolean>>({});
+  useEffect(() => setTicked((t) => {
+    const left = Object.fromEntries(Object.entries(t).filter(([id, on]) => !!fields.find((f) => f.id === id)?.inTable !== on));
+    return Object.keys(left).length === Object.keys(t).length ? t : left;
+  }), [fields]);
+  const inTable = (f: SongField) => ticked[f.id] ?? !!f.inTable;
+  async function tick(f: SongField, on: boolean) {
+    setTicked((t) => ({ ...t, [f.id]: on }));
+    if (!(await call(`artists.set${Kind}FieldInTable`, { id: artist.id, fieldId: f.id, inTable: on }))) setTicked(({ [f.id]: _, ...t }) => t);
+  }
   const ids = fields.map((f) => f.id);
   const dr = useDragReorder((from, to) => void call(`artists.reorder${Kind}Fields`, { id: artist.id, fieldIds: moved(ids, from, to) }));
   const usedOn = (f: SongField) => rows.filter((s) => (s.fields ?? []).some((v) => v.fieldId === f.id)).length;
@@ -81,12 +96,16 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
       )}
       {fields.length === 0 ? <p className="s text-center" data-testid={`${kind}-fields-empty`}>No {kind} fields yet.</p> : (
         <div className="cfg-scroll"><table className="cfg-table">
-          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>{Kind}s with a value</th><th className="act"><span className="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>{Kind}s with a value</th><th title={TABLE_HINT[kind]}>In table</th><th className="act"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{fields.map((f, i) => (
             <tr key={f.id} data-testid={`${kind}-field-${f.id}`} data-editing={editId === f.id ? "1" : undefined} {...dr.row(i)}>
               <td className="act"><span className="flex w-6 cursor-grab select-none justify-center text-muted" {...dr.handle(i)} aria-hidden="true"><Grip /></span></td>
               <td className="nm">{f.label}</td>
               <td>{usedOn(f)}</td>
+              <td>
+                <input type="checkbox" className="h-4 w-4" aria-label={`Show ${f.label} in the ${Kind}s table`} title={TABLE_HINT[kind]} data-testid={`${kind}-field-in-table-${f.id}`}
+                  checked={inTable(f)} onChange={(e) => void tick(f, e.target.checked)} />
+              </td>
               <td className="act">
                 <button type="button" className="icon-btn" aria-label={`Rename ${f.label}`} data-testid={`${kind}-field-edit-${f.id}`} onClick={() => { setName(f.label); setEditId(f.id); }}>{Icons.edit}</button>
                 <button type="button" className="icon-btn danger" aria-label={`Delete ${f.label}`} data-testid={`${kind}-field-remove-${f.id}`} disabled={busy} onClick={() => void remove(f)}>{Icons.trash}</button>

@@ -194,6 +194,8 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "artists.removeShowField": (_i, r) => `Deleted a show field${r?.showsCleared ? ` (cleared it on ${plural(r.showsCleared, "show")})` : ""}`,
   "artists.reorderSongFields": () => "Reordered the song fields",
   "artists.reorderShowFields": () => "Reordered the show fields",
+  "artists.setSongFieldInTable": (i) => (i.inTable ? "Added a song field to the Songs table" : "Took a song field out of the Songs table"),
+  "artists.setShowFieldInTable": (i) => (i.inTable ? "Added a show field to the Shows table" : "Took a show field out of the Shows table"),
 };
 /** One short line saying what changed, in names the person knows. Falls back to the command name. */
 export async function readback(name: string, input: unknown, result: unknown, s: Session): Promise<string> {

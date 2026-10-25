@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -30,6 +30,8 @@ function Songs() {
   const p = useProfile();
   const admin = p.role === "admin";
   const m = useMusic();
+  // The artist's song fields ticked "In table" (Admin > Custom fields), in the artist's order, between Time and Lyrics.
+  const cols = (useArtist().doc?.songFields ?? []).filter((f) => f.inTable);
   const { call, error, busy } = useCommand();
   const segParam = params.get("seg");
   const [seg, setSeg] = useState<SegKey>(segParam === "learning" || segParam === "idea" || segParam === "retired" ? segParam : "active");
@@ -76,6 +78,7 @@ function Songs() {
                   <th scope="col">Title</th>
                   <th scope="col" className="key">Key</th>
                   <th scope="col" className="len">Time</th>
+                  {cols.map((f) => <th key={f.id} scope="col" className="cf" data-testid={`songs-col-${f.id}`}>{f.label}</th>)}
                   <th scope="col" className="lyr">Lyrics</th>
                 </tr>
               </thead>
@@ -88,6 +91,7 @@ function Songs() {
                     </td>
                     <td className="key">{s.key || <span className="dash">—</span>}</td>
                     <td className="len">{s.lengthSec ? fmtLen(s.lengthSec) : <span className="dash">—</span>}</td>
+                    {cols.map((f) => <td key={f.id} className="cf">{s.fields?.find((v) => v.fieldId === f.id)?.value || <span className="dash">—</span>}</td>)}
                     <td className="lyr">
                       {s.lyricsDoc
                         ? <a href={s.lyricsDoc.url} target="_blank" rel="noreferrer" aria-label={`Lyrics for ${s.title} (opens doc)`}><DocIcon />Lyrics</a>
