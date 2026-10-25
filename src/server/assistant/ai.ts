@@ -72,8 +72,9 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
     // Never exercised offline. Vertex uses GCLOUD_PROJECT + the service account; the Gemini API path needs GEMINI_API_KEY.
     const { googleAI, vertexAI } = await import("@genkit-ai/google-genai");
     if (modelMode() === "vertex") {
-      // Newer Gemini models are served only from the global endpoint, not us-central1.
-      const ai = genkit({ plugins: [vertexAI({ location: process.env.ROADIE_VERTEX_LOCATION ?? "global" })] });
+      // Newer Gemini models are served only from the global endpoint, not us-central1. ROADIE_VERTEX_PROJECT lets a local
+      // run bill to the real project while GCLOUD_PROJECT stays on the emulator's demo project.
+      const ai = genkit({ plugins: [vertexAI({ location: process.env.ROADIE_VERTEX_LOCATION ?? "global", projectId: process.env.ROADIE_VERTEX_PROJECT })] });
       return { ai, model: vertexAI.model(modelLabel()) };
     }
     const ai = genkit({ plugins: [googleAI()] });

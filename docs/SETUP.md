@@ -47,6 +47,15 @@ ROADIE_MODEL=gemini GEMINI_API_KEY=<your key> npm run genkit:ui
 
 `ROADIE_GEMINI_MODEL` picks the model (default `gemini-flash-latest`). Start the emulators first (`npm run emulators`).
 
+To run the whole app the way production does (Vertex AI in `roadie-prod-iab`, same default model `gemini-3.5-flash-lite`, same `global` location) against your local emulators and fakes:
+
+```sh
+gcloud auth application-default login   # once; your account needs the Vertex AI User role on roadie-prod-iab
+npm run dev:vertex
+```
+
+`ROADIE_VERTEX_PROJECT` sends only the model calls to the real project; `GCLOUD_PROJECT` stays `demo-band-tracker`, so all data stays in the emulators. Calls are billed to the production project.
+
 ---
 
 ## Part 2 · Create `roadie-prod-iab`
