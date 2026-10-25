@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useMaybeArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
@@ -21,7 +21,24 @@ import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
 import { roleIn, type Activity, type Artist, type Comment, type Contact, type EmailTemplate, type Musician, type Show, type StatSnapshot, type User } from "@/schema";
 
-export default function Page() { return <AdminOnly><PitchPage /></AdminOnly>; }
+/** Booking is admins' business. Members land here from a Who's free post in Signal: they get just the asks they're on, to answer. */
+export default function Page() {
+  const artist = useMaybeArtist();
+  if (!artist) return null;
+  return artist.role === "admin" ? <AdminOnly><PitchPage /></AdminOnly> : <MemberAsks />;
+}
+
+function MemberAsks() {
+  const { id } = useParams<{ id: string }>();
+  const musicians = useCollection<Musician>("musicians").rows ?? [];
+  return (
+    <div className="grid gap-5" data-testid="member-asks">
+      <PageTitle title="Can you play?" sub="Say if you're free. The band sees your answer." />
+      <WhosFree pitchId={id} musicians={musicians}
+        empty={<div className="card"><p className="s" data-testid="member-asks-none">Nothing to answer here. <Link href="/calendar">Back to the calendar</Link></p></div>} />
+    </div>
+  );
+}
 
 type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;

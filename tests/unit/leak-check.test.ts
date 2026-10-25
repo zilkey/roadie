@@ -23,6 +23,11 @@ test("band source yields emails and person names; booking kit yields contact fie
   assert.ok(fromKit.includes("ops@house.test"));
 });
 
+test("the band's Signal group link is a private term", () => {
+  const band = 'export const BAND_SIGNAL_GROUP_URL = "https://signal.group/#CjQKIabc_def-123";';
+  assert.deepEqual(finishTerms(termsFromBandSource(band)), ["https://signal.group/#CjQKIabc_def-123"]);
+});
+
 test("short terms and allow-listed emails are dropped", () => {
   const terms = finishTerms(["Al", "x@zilkey.io", "bot@example.com", "ops@host.example", "Longer Name"]);
   assert.deepEqual(terms, ["Longer Name"]);

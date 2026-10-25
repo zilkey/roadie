@@ -22,12 +22,14 @@ export function isAllowedEmail(email: string): boolean {
 }
 
 /**
- * Pull the names and emails out of band.ts source text: all emails, and the `name:` of each entry that has an `email:`.
+ * Pull the names, emails and Signal group link out of band.ts source text: all emails, any signal.group link, and the `name:` of each entry that has an `email:`.
  * A name is public, and left out, when its email is allowed (the repo owner, already public as the commit author) or
  * when the artist bills under it (`billingName: "<name> Duo"` makes the frontwoman's name the act's public name).
  */
 export function termsFromBandSource(src: string): string[] {
   const terms: string[] = [...src.matchAll(EMAIL_RE)].map((m) => m[0]);
+  // The band's Signal group link: anyone who has it can join the group.
+  terms.push(...[...src.matchAll(/https:\/\/signal\.group\/#[A-Za-z0-9_-]+/g)].map((m) => m[0]));
   const billed = [...src.matchAll(/\bbillingName:\s*"([^"]*)"/g)].map((m) => m[1].toLowerCase());
   for (const line of src.split("\n")) {
     const email = line.match(/\bemail:\s*"([^"]*)"/)?.[1];

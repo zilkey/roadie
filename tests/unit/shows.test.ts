@@ -10,6 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
 import { planHome, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
+import { firestore } from "@/server/admin";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -383,6 +384,47 @@ test("availability: admin marks answers, reminds only those waiting (fresh links
   await assert.rejects(cmd("availability.answer", { id: r.id, answer: "yes" }, mctx), /closed/);
   await assert.rejects(cmd("availability.remind", { id: r.id }), /closed/);
   assert.ok(registry["availability.answer"].roles.includes("member") && !registry["availability.ask"].roles.includes("member"));
+});
+
+test("availability: Signal asks send nothing, keep sign-in people's links on remind, and are app-only", async () => {
+  await makeUser("david@example.com", "member", { name: "David", musicianId: ids.david });
+  const actx = { ...ctx, artistId: TEST_ARTIST };
+  const r = await cmd("availability.ask", { pitchId, date: "2027-01-16", musicianIds: [ids.david, ids.sam], channel: "signal", message: "Can you play? Answer on the pitch page:" }, actx);
+  assert.deepEqual(r.viaSignal.sort(), ["David", "Sam"]);
+  assert.deepEqual(r.emailed, []);
+  assert.equal((await gmailClient().listMessages({ account: "jeff@example.com" })).length, 0, "Signal: no email");
+  // David signs in to answer; Sam has no login, so only Sam's link comes back.
+  assert.deepEqual(Object.keys(r.links), [ids.sam]);
+  assert.deepEqual(r.notEmailed.map((n: { name: string }) => n.name), ["Sam"]);
+  assert.equal(((await firestore().collection("userPrefs").doc(ctx.uid).get()).data()?.askChannel ?? {})[TEST_ARTIST], "signal");
+
+  const before = (await db.get("availability", r.id))!.linkTokens;
+  const rem = await cmd("availability.remind", { id: r.id, channel: "signal" }, actx);
+  assert.deepEqual(rem.viaSignal.sort(), ["David", "Sam"]);
+  assert.deepEqual(Object.keys(rem.links), [ids.sam]);
+  const afterTokens = (await db.get("availability", r.id))!.linkTokens;
+  assert.equal(afterTokens[ids.david], before[ids.david], "a sign-in person's link is not rotated");
+  assert.notEqual(afterTokens[ids.sam], before[ids.sam]);
+  assert.equal((await gmailClient().listMessages({ account: "jeff@example.com" })).length, 0);
+
+  await cmd("availability.answer", { id: r.id, answer: "yes" }, mctx);
+  const rem2 = await cmd("availability.remind", { id: r.id, channel: "signal" }, actx);
+  assert.deepEqual(rem2.viaSignal, ["Sam"]);
+
+  // Roadie can't press Send in Signal.
+  const ai = { ...ctx, role: "mcp" as const, via: "mcp" as const };
+  await assert.rejects(cmd("availability.ask", { pitchId, date: "2027-01-16", musicianIds: [ids.david], channel: "signal" }, ai), /Only a person can post to Signal/);
+  await assert.rejects(cmd("availability.remind", { id: r.id, channel: "signal" }, ai), /Only a person can post to Signal/);
+});
+
+test("artist: the Signal group link is its own setting and must be a signal.group link", async () => {
+  await assert.rejects(cmd("artists.update", { id: artistId, patch: { signalGroupUrl: "https://example.com/chat" } }), /Signal group link/);
+  await cmd("artists.update", { id: artistId, patch: { signalGroupUrl: "https://signal.group/#abc123" } });
+  const a = (await db.get("artists", artistId))!;
+  assert.equal(a.signalGroupUrl, "https://signal.group/#abc123");
+  assert.deepEqual(a.links, {}, "not one of the public links");
+  await cmd("artists.update", { id: artistId, patch: { signalGroupUrl: null } });
+  assert.equal((await db.get("artists", artistId))!.signalGroupUrl, undefined);
 });
 
 test("booking a pitch with an open ask links the ask to the show", async () => {

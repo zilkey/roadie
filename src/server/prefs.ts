@@ -27,3 +27,10 @@ export async function setSectionOrder(uid: string, order: SectionId[]): Promise<
   await ref(uid).set({ uid, order: next }, { merge: true });
   return next;
 }
+
+export type AskChannel = "email" | "signal";
+
+/** How the caller last asked who's free in this artist (Email or Signal); the Ask form starts there. */
+export async function setAskChannel(uid: string, artistId: string, channel: AskChannel): Promise<void> {
+  await ref(uid).set({ uid, askChannel: { [artistId]: channel } }, { merge: true });
+}

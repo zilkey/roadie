@@ -29,12 +29,20 @@ export const ARTIST_LINKS = [
 ] as const;
 export type ArtistLinkKey = (typeof ARTIST_LINKS)[number][0];
 const ArtistLinks = z.strictObject(Object.fromEntries(ARTIST_LINKS.map(([k]) => [k, z.string().optional()])) as Record<ArtistLinkKey, z.ZodOptional<z.ZodString>>);
+/** A Signal group invite link. Anyone who has it can join the group. */
+export const SIGNAL_GROUP_PREFIX = "https://signal.group/#";
+export const signalGroupUrl = z.string().url().refine((v) => v.startsWith(SIGNAL_GROUP_PREFIX) && v.length > SIGNAL_GROUP_PREFIX.length, `Use a Signal group link (${SIGNAL_GROUP_PREFIX}...)`);
 
 export const Artist = entity({
   name: z.string().min(1),
   slug: artistSlug,
   configurations: z.array(Configuration),
   links: ArtistLinks,
+  /**
+   * The band's Signal group (Who's free can post there). Private, unlike `links`: anyone with it can join the group, so it
+   * never goes into booking templates, emails, Bandsintown, calendar sync or the /ask pages.
+   */
+  signalGroupUrl: signalGroupUrl.optional(),
   driveFolderId: z.string(),
   /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
   songFields: z.array(SongField).default([]),

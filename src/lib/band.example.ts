@@ -62,3 +62,9 @@ export const BAND_LINKS: Partial<Record<ArtistLinkKey, string>> = {
   tiktok: "https://www.tiktok.com/@example.band",
   facebook: "https://www.facebook.com/profile.php?id=000000000000000",
 };
+
+/**
+ * The band's Signal group invite link (Artist.signalGroupUrl): Who's free can post asks there. Not one of BAND_LINKS: those
+ * are public, and anyone with this link can join the group. npm run leak-check treats it as private.
+ */
+export const BAND_SIGNAL_GROUP_URL: string | undefined = undefined; // "https://signal.group/#..."

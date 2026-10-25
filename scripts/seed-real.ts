@@ -68,11 +68,19 @@ const configurationsFor = (roster: BandRoster, musicianIds: Record<string, strin
 async function ensureArtist(ctx: Ctx, roster: BandRoster, dryRun: boolean) {
   const slug = bandSlug(roster);
   const [existing] = await db.list("artists", (q) => q.where("slug", "==", slug).limit(1));
-  if (existing) return { id: existing.id, slug: existing.slug as string, created: false };
+  if (existing) {
+    // An artist seeded before the Signal group setting existed picks it up; one set from the app is left alone.
+    if (roster.BAND_SIGNAL_GROUP_URL && !existing.signalGroupUrl && !dryRun) {
+      const update = registry["artists.update"];
+      await update.run(ctx, update.input.parse({ id: existing.id, patch: { signalGroupUrl: roster.BAND_SIGNAL_GROUP_URL } }));
+    }
+    return { id: existing.id, slug: existing.slug as string, created: false };
+  }
   if (dryRun) return { id: "(dry-run)", slug, created: true };
   const create = registry["artists.create"];
   const r = (await create.run(ctx, create.input.parse({
     name: roster.BAND_ARTIST_NAME, slug, configurations: [], links: roster.BAND_LINKS, driveFolderId: "",
+    ...(roster.BAND_SIGNAL_GROUP_URL ? { signalGroupUrl: roster.BAND_SIGNAL_GROUP_URL } : {}),
   }))) as { id: string; slug: string };
   return { id: r.id, slug: r.slug, created: true };
 }

@@ -122,12 +122,12 @@ export function WhosPlayingCard({ show, admin }: { show: ShowRow; admin: boolean
           </div>
         </>
       )}
-      {admin && (
+      {admin ? (
         <div ref={askRef} className={`grid gap-3${ed.editing || empty ? " hide-ask-toggle" : ""}`}>
           {!ed.editing && <WhosFree showId={show.id} musicians={b.musicians} extraIds={show.personnel} />}
           <AskWhoIsFree showId={show.id} date={show.date} defaultIds={show.personnel} place={showName(show)} musicians={b.musicians} />
         </div>
-      )}
+      ) : <WhosFree showId={show.id} musicians={b.musicians} extraIds={show.personnel} />}
     </EditableCard>
   );
 }

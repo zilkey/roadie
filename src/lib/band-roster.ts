@@ -10,6 +10,8 @@ export interface BandRoster {
   BAND_PEOPLE: DevPerson[];
   BAND_CONFIGURATIONS: { id: string; name: string; billingName: string; keys: string[] }[];
   BAND_LINKS: Partial<Record<ArtistLinkKey, string>>;
+  /** The band's Signal group invite link (Artist.signalGroupUrl). Private: kept out of BAND_LINKS, which are public. */
+  BAND_SIGNAL_GROUP_URL?: string;
 }
 
 export const MISSING_ROSTER =
