@@ -9,6 +9,7 @@ import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import { Menu } from "@/components/Menu";
 import { Missing, useMusic } from "@/components/music/common";
+import { PrintDialog } from "@/components/print/PrintDialog";
 import { SetlistItemsEditor, itemsPayload, type SetlistItemT } from "@/components/music/SetlistItemsEditor";
 
 export default function SetlistTemplatePage() {
@@ -24,6 +25,7 @@ export default function SetlistTemplatePage() {
 function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m: ReturnType<typeof useMusic> }) {
   const admin = useProfile().role === "admin";
   const router = useRouter();
+  const [printing, setPrinting] = useState(false);
   const { call, error, busy } = useCommand();
   // Existing record = autosave through setlistTemplates.update: the name saves as you type, list changes save at once (status + Undo toast).
   const as = useAutosave({ command: "setlistTemplates.update", id: t.id, rev: t.rev, title: t.name });
@@ -37,8 +39,11 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
       <PageTitle
         back={<Link href="/setlists" className="back-link" data-testid="back">← All setlist templates</Link>}
         title={t.name}
-        actions={admin ? <Menu label="More actions" testid="setlist" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
-          items={[{ key: "archive", label: "Archive template", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${t.name}?`) && (await call("setlistTemplates.remove", { id: t.id }))) router.push("/setlists"); } }]} /> : undefined} />
+        actions={<>
+          <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}>Print</button>
+          {admin && <Menu label="More actions" testid="setlist" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+            items={[{ key: "archive", label: "Archive template", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${t.name}?`) && (await call("setlistTemplates.remove", { id: t.id }))) router.push("/setlists"); } }]} />}
+        </>} />
       <div className="cols">
         <div className="col-main">
           <SetlistItemsEditor items={items} onChange={save} songs={m.songs} admin={admin} empty="Nothing in this template yet." />
@@ -59,6 +64,7 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
         </div>
       </div>
       <ErrorBox error={error} />
+      {printing && <PrintDialog setlistId={t.id} onClose={() => setPrinting(false)} />}
     </div>
   );
 }

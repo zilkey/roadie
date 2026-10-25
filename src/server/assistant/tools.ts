@@ -9,6 +9,8 @@ import { registry } from "../commands/registry";
 import type { Role } from "../ctx";
 import { AppError } from "../errors";
 import { RECORD_ROUTES, resolveRoute, routeNames, ROUTES, type RouteName } from "@/lib/routes";
+import { printQuery } from "@/lib/print";
+import type { PrintOptions } from "@/schema/print";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
 import { contextNow, searchAll, SEARCH_KINDS } from "./context";
 import { eligibleCommands, isEligible, isReadOnly, needsConfirm, refusal, summarize } from "./policy";
@@ -380,6 +382,11 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (r.wrote) {
       emit({ type: "readback", label: r.label!, runId: r.runId });
       return { output: dataResult({ result: r.result ?? null, readback: r.label }), action: { kind: "readback", label: r.label!, runId: r.runId } };
+    }
+    if (name === "setlists.printLink") { // the reply carries a Print button; nothing is printed from here
+      const id = ((parsed.data as Row).setlistId ?? (parsed.data as Row).showId) as string;
+      const query = printQuery((r.result as { options: PrintOptions }).options);
+      return { output: dataResult(r.result ?? null), action: { kind: "link", label: "Print", route: "setlistPrint", params: { id, query } } };
     }
     return { output: dataResult(r.result ?? null) };
   } catch (e) {

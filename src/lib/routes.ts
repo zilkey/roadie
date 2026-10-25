@@ -3,6 +3,8 @@
  * Every band page lives under its artist: `path` is relative to `/artists/{slug}` (see `artistPath`), so a route always
  * resolves inside the artist you're working in.
  */
+import { defaultPrintOptions, parsePrintQuery, printQuery } from "./print";
+
 export interface RouteDef { title: string; path: string; params?: readonly string[] }
 
 export const ROUTES = {
@@ -33,6 +35,7 @@ export const ROUTES = {
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
   setlists: { title: "Setlist Templates", path: "/setlists" },
   setlist: { title: "Setlist template", path: "/setlists/:id", params: ["id"] },
+  setlistPrint: { title: "Print setlist", path: "/setlists/:id/print", params: ["id"] },
   rehearsals: { title: "Rehearsals", path: "/rehearsals" },
   rehearsal: { title: "Rehearsal", path: "/rehearsals/:id", params: ["id"] },
   money: { title: "Money", path: "/money" },
@@ -105,6 +108,8 @@ export function resolveRoute(name: unknown, params: Record<string, string> = {},
     if (!v || !/^[\w-]+$/.test(v)) return null;
     href = href.replace(`:${p}`, encodeURIComponent(v));
   }
+  // The print page's options ride along as `query`, rebuilt from the parsed options so only the allowlisted keys and values get through.
+  if (name === "setlistPrint" && params.query) href += `?${printQuery(parsePrintQuery(new URLSearchParams(params.query), defaultPrintOptions(1)))}`;
   return { name, href: slug === undefined ? href : artistPath(slug, href), title: def.title };
 }
 

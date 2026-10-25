@@ -3,6 +3,8 @@ import { entity, serverMask, driveRef, id } from "./common";
 
 export const Song = entity({
   title: z.string().min(1),
+  /** What a printed setlist shows when "Short titles" is on (a long title that would wrap). */
+  shortTitle: z.string().optional(),
   writers: z.string().optional(),
   key: z.string().optional(),
   bpm: z.number().int().optional(),

@@ -131,6 +131,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       {edit && admin && (
         <div className="card" data-testid="song-form">
           <label className="grid gap-1"><span className="lbl">Title</span><input className="input" required data-testid="edit-title" {...as.bind("title", song.title, { toPatch: (t) => t.trim() })} /></label>
+          <label className="grid gap-1"><span className="lbl">Short title</span><input className="input" data-testid="edit-short-title" {...as.bind("shortTitle", song.shortTitle ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <div className="grid grid-cols-3 gap-2">
             <label className="grid gap-1"><span className="lbl">Key</span><input className="input" data-testid="edit-key" {...as.bind("key", song.key ?? "", { toPatch: (t) => t.trim() || null })} /></label>
             <label className="grid gap-1"><span className="lbl">BPM</span><input className="input" inputMode="numeric" data-testid="edit-bpm" {...as.bind("bpm", song.bpm != null ? String(song.bpm) : "", { toPatch: (t) => (t.trim() === "" ? null : Number.isFinite(Number(t)) ? Number(t) : t) })} /></label>

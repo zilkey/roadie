@@ -316,8 +316,10 @@ test("rehearsals: log with songs and notes, attach a recording, last rehearsed, 
 
 test("only admins (or mcp) may write Music; members have no write commands", () => {
   // rehearsals.setExpenses is Money, not Music: members enter their own expense lines, like shows.setExpenses
+  // printing is a read plus personal prefs: members print too
+  const memberOk = new Set(["rehearsals.setExpenses", "setlists.printLink", "setlists.printPrefs", "setlists.setPrintPrefs"]);
   for (const [name, c] of Object.entries(registry)) {
-    if (/^(songs|files|setlists|rehearsals|drive)\./.test(name) && name !== "rehearsals.setExpenses") assert.ok(!c.roles.includes("member"), name);
+    if (/^(songs|files|setlists|rehearsals|drive)\./.test(name) && !memberOk.has(name)) assert.ok(!c.roles.includes("member"), name);
   }
 });
 

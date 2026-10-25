@@ -21,7 +21,7 @@ export const ChatFlowInput = z.object({
 export const ChatFlowOutput = z.object({
   text: z.string(),
   actions: z.array(z.object({
-    kind: z.enum(["action", "navigate", "readback", "confirm"]), label: z.string(), route: z.string().optional(), params: z.record(z.string(), z.string()).optional(),
+    kind: z.enum(["action", "navigate", "link", "readback", "confirm"]), label: z.string(), route: z.string().optional(), params: z.record(z.string(), z.string()).optional(),
     runId: z.string().optional(), pendingId: z.string().optional(), command: z.string().optional(), status: z.enum(["pending", "done", "canceled", "expired", "failed"]).optional(),
   })),
 });
@@ -119,6 +119,7 @@ export function getChatFlow() {
             if (out.action) {
               actions.push(out.action);
               if (out.action.kind === "action") sendChunk({ type: "action", label: out.action.label });
+              else if (out.action.kind === "link") sendChunk({ type: "link", route: out.action.route!, params: out.action.params ?? {}, label: out.action.label });
               else if (out.action.kind === "navigate") sendChunk({ type: "navigate", route: out.action.route!, params: out.action.params ?? {}, label: out.action.label });
             }
             if (out.stop) stopped = true;

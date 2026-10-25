@@ -133,6 +133,12 @@ function EditMenuDialog({ open, onClose, role, hidden, order }: { open: boolean;
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
+  // The print route is just the sheets: no nav, no Roadie column.
+  if (usePathname().endsWith("/print")) return <>{children}</>;
+  return <ShellFrame>{children}</ShellFrame>;
+}
+
+function ShellFrame({ children }: { children: React.ReactNode }) {
   const profile = useProfile();
   const { signOut } = useAuth();
   const artist = useArtist();

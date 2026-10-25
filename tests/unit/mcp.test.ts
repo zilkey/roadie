@@ -92,7 +92,7 @@ const EXPECTED = [
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",
   // songs, setlists, rehearsals, files
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
-  "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.setItems", "setlists.seed",
+  "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.printLink", "setlists.setItems", "setlists.seed",
   "rehearsals.create", "rehearsals.update",
   "rehearsals.setLocation", "rehearsals.importSetlist",
   // money, stats

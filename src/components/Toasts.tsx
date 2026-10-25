@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { runCommand } from "@/lib/commands";
 
 /** Tiny toast store. `toast()` from anywhere; mount <ToastHost /> once in the app layout. */
@@ -51,6 +52,7 @@ function One({ t }: { t: ToastItem }) {
 
 export function ToastHost() {
   const list = useToasts();
+  if (usePathname().endsWith("/print")) return null; // the print route is just the sheets
   if (!list.length) return null;
   return <div className="toasts" data-testid="toasts" aria-live="polite">{list.map((t) => <One key={t.key + t.text} t={t} />)}</div>;
 }

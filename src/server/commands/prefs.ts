@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { SectionOrderInput, SectionSetInput } from "@/schema/sections";
-import { hiddenSections, sectionOrder, setSectionHidden, setSectionOrder } from "../prefs";
+import { PrintOptions } from "@/schema/print";
+import { AppError } from "../errors";
+import { hiddenSections, printPrefs, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
+import { callerArtistId } from "../venues";
 import { defineCommand } from "./types";
 
 export const sectionsSetHidden = defineCommand({
@@ -25,4 +28,20 @@ export const sectionsOrder = defineCommand({
   async run(ctx) { return { order: await sectionOrder(ctx.uid) }; },
 });
 
-export const prefsCommands = [sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder];
+const artistOf = async (ctx: Parameters<typeof callerArtistId>[0]) => {
+  const id = await callerArtistId(ctx);
+  if (!id) throw new AppError("invalid_input", "Which artist? Open one first", 400);
+  return id;
+};
+export const setlistsPrintPrefs = defineCommand({
+  name: "setlists.printPrefs", roles: ["admin", "member"], input: z.strictObject({}),
+  description: "How the caller last printed a setlist for this artist (copy, sheets, fields, titles, header, paper); options is null if they never did.",
+  async run(ctx) { return { options: await printPrefs(ctx.uid, await artistOf(ctx)) }; },
+});
+export const setlistsSetPrintPrefs = defineCommand({
+  name: "setlists.setPrintPrefs", roles: ["admin", "member"], input: z.strictObject({ options: PrintOptions }),
+  description: "Remember how the caller prints setlists for this artist; the Print dialog and setlists.printLink start from it. Personal: nobody else's prints change.",
+  async run(ctx, i) { await setPrintPrefs(ctx.uid, await artistOf(ctx), i.options); return { options: i.options }; },
+});
+
+export const prefsCommands = [sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];

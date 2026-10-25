@@ -13,7 +13,7 @@ const useDesktop = () =>
 
 const actionText = (a: AssistantAction) => (a.kind === "navigate" ? `→ Opened ${a.label}` : a.label);
 
-interface Handlers { answer(pendingId: string, d: "yes" | "cancel"): void; undo(runId: string): void }
+interface Handlers { answer(pendingId: string, d: "yes" | "cancel"): void; undo(runId: string): void; open(a: AssistantAction): void }
 
 const CONFIRM_DONE = { done: "Done", canceled: "Canceled", expired: "Expired. Ask me again.", failed: "Didn't work" } as const;
 
@@ -28,6 +28,9 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
               {a.undone ? <span data-testid="roadie-undone">Undone</span> : a.runId && <button className="btn ghost sm" data-testid="roadie-undo" onClick={() => on.undo(a.runId!)}>Undo</button>}
             </div>
           );
+        }
+        if (a.kind === "link") {
+          return <button key={i} className="btn acc sm justify-self-start" data-testid="roadie-print-link" onClick={() => on.open(a)}>{a.label}</button>;
         }
         if (a.kind === "confirm") {
           const open = (a.status ?? "pending") === "pending";
@@ -115,7 +118,7 @@ export function Roadie() {
   const desktop = useDesktop();
   const [open, setOpen] = useState(false);
   const r = useRoadie(() => setOpen(false)); // after Roadie navigates, the phone sheet drops back to the pill
-  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo }} notice={r.notice} />;
+  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo, open: r.open }} notice={r.notice} />;
 
   if (desktop) {
     if (r.width === "narrow") {

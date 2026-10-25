@@ -1,5 +1,6 @@
 /** Per-user prefs at userPrefs/{uid}. Written with firebase-admin directly (like drafts): personal, so no history entry and no undo. */
 import { DEFAULT_HIDDEN, isSectionId, normalizeOrder, type SectionId } from "@/schema/sections";
+import { PrintOptions } from "@/schema/print";
 import { firestore } from "./admin";
 
 const ref = (uid: string) => firestore().collection("userPrefs").doc(uid);
@@ -33,4 +34,14 @@ export type AskChannel = "email" | "signal";
 /** How the caller last asked who's free in this artist (Email or Signal); the Ask form starts there. */
 export async function setAskChannel(uid: string, artistId: string, channel: AskChannel): Promise<void> {
   await ref(uid).set({ uid, askChannel: { [artistId]: channel } }, { merge: true });
+}
+
+/** How the caller last printed a setlist in this artist; null when they never did (or the stored value no longer validates). */
+export async function printPrefs(uid: string, artistId: string): Promise<PrintOptions | null> {
+  const p = PrintOptions.safeParse((await ref(uid).get()).data()?.print?.[artistId]);
+  return p.success ? p.data : null;
+}
+
+export async function setPrintPrefs(uid: string, artistId: string, o: PrintOptions): Promise<void> {
+  await ref(uid).set({ uid, print: { [artistId]: o } }, { merge: true });
 }

@@ -13,7 +13,8 @@ export type PageContext = z.infer<typeof PageContext>;
 
 /** One tool step shown in the chat: a plain action line, or a page Roadie opened. */
 export const AssistantAction = z.strictObject({
-  kind: z.enum(["action", "navigate", "readback", "confirm"]),
+  /** link: a button the person taps to open a page (nothing opens by itself). */
+  kind: z.enum(["action", "navigate", "link", "readback", "confirm"]),
   label: z.string(),
   route: z.string().optional(),
   params: z.record(z.string(), z.string()).optional(),
@@ -59,6 +60,7 @@ export type AssistantEvent =
   | { type: "text"; delta: string }
   | { type: "action"; label: string }
   | { type: "navigate"; route: string; params: Record<string, string>; label: string }
+  | { type: "link"; route: string; params: Record<string, string>; label: string }
   | { type: "readback"; label: string; runId: string }
   | { type: "confirm"; pendingId: string; command: string; summary: string }
   | { type: "done"; threadId: string; messageId?: string }

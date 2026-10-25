@@ -465,3 +465,17 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .ans[aria-pressed="true"][data-a="yes"] { background: var(--success-bg); color: var(--success-text); border-color: var(--success-dot); }
 .ans[aria-pressed="true"][data-a="maybe"] { background: var(--divider); border-color: var(--muted); }
 .ans[aria-pressed="true"][data-a="no"] { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+
+/* Print dialog: options left, preview right; a bottom sheet on phones. */
+dialog.print-dlg { padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); color: var(--ink); width: min(1040px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; overflow: hidden; }
+dialog.print-dlg[open] { display: flex; }
+dialog.print-dlg::backdrop { background: var(--backdrop); }
+.print-opts { flex: 1 1 420px; min-width: 0; padding: 20px 24px; display: grid; align-content: start; gap: 16px; overflow-y: auto; }
+.print-preview-col { flex: 1 1 380px; min-width: 0; padding: 20px 24px; background: var(--soft); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.print-seg { min-height: 44px; }
+.print-seg[aria-pressed="true"] { background: var(--strong); color: var(--on-strong); border-color: var(--strong); }
+.select.print-paper { width: auto; }
+dialog.print-dlg.phone { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 16px 16px 0 0; border-bottom: 0; max-height: 92dvh; }
+
+/* Printing: toasts never print (the print route prints only its sheets). */
+@media print { .toasts { display: none; } }

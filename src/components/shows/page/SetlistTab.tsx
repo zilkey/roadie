@@ -6,6 +6,7 @@ import { Menu, type MenuItem } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import type { SaveState } from "@/lib/autosave";
 import { fmtDay, useMusic } from "@/components/music/common";
+import { PrintDialog } from "@/components/print/PrintDialog";
 import { SetlistItemsEditor, itemsPayload, type SetlistItemT } from "@/components/music/SetlistItemsEditor";
 import { runCommand } from "@/lib/commands";
 import { setLengthOf } from "@/lib/duration";
@@ -32,6 +33,7 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
   const [items, setItems] = useState<SetlistItemT[]>(serverItems ?? []);
   useEffect(() => { setItems(serverItems ?? []); }, [serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [printing, setPrinting] = useState(false);
   const [status, setStatus] = useState<SaveState>("idle");
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const next = useRef<SetlistItemT[] | null>(null);
@@ -82,13 +84,16 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
 
   return (
     <div className="grid gap-3" data-testid="setlist-tab">
-      {admin && (
+      {(admin || songCount(items) > 0) && (
         <div className="flex flex-wrap items-center gap-2">
+          {songCount(items) > 0 && <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}>Print</button>}
+          {admin && <>
           <Menu label="Seed from template" testid="seed-template" trigger={<span className="px-2 text-sm font-semibold">Seed from template ▾</span>}
             items={templateItems.length ? templateItems : none("No templates yet")} />
           <Menu label="Copy from another show" testid="seed-show" trigger={<span className="px-2 text-sm font-semibold">Copy from another show ▾</span>}
             items={showItems.length ? showItems : none("No other show has a setlist")} />
           <SaveStatus status={status} error={saveErr} />
+          </>}
         </div>
       )}
       {sl?.source && <span className="s" data-testid="setlist-source">Seeded from {sl.source.name ?? (sl.source.kind === "template" ? "a template" : "another show")}</span>}
@@ -105,6 +110,7 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
         empty={admin ? "No setlist yet. Seed one from a template or another show, or add songs below." : "No setlist yet."} />
 
       <ErrorBox error={error} />
+      {printing && <PrintDialog setlistId={show.id} onClose={() => setPrinting(false)} />}
       <Dialog open={!!pending} onClose={() => setPending(null)} title="Add to this setlist" testid="seed-dialog">
         {pending && <SeedForm label={pending.label} count={songCount(items)} busy={busy} close={() => setPending(null)} onConfirm={async (mode) => { if (await seed(pending.from, mode)) setPending(null); }} />}
       </Dialog>
