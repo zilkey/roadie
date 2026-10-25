@@ -31,3 +31,7 @@ TODO.md
 
 # Scratch output from one-off runs (junk.stories/, junk.e2e.txt): never committed
 junk*
+
+# Worktree test-port claims (shared by every worktree, lives in the main checkout) and each worktree's emulator config
+emulators
+firebase.worktree.json
