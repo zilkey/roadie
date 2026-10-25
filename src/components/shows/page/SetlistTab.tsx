@@ -68,10 +68,12 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
   const templateItems: MenuItem[] = [...m.templates].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
     key: t.id, label: `${t.name} · ${plural(songCount(t.items))}`, onSelect: () => pick({ kind: "template", id: t.id }, t.name),
   }));
+  // The 20 most recent shows with a setlist, newest first: the full history is too long to scroll in a menu.
   const showItems: MenuItem[] = m.setlists
     .filter((s) => s.id !== show.id && s.items.length > 0)
     .flatMap((s) => { const sh = m.shows.find((x) => x.id === s.id); return sh ? [{ s, sh }] : []; })
     .sort((a, b) => b.sh.date.localeCompare(a.sh.date))
+    .slice(0, 20)
     .map(({ s, sh }) => ({
       key: s.id, label: `${showName(sh)} · ${fmtDay(sh.date)} · ${plural(songCount(s.items))}`,
       onSelect: () => pick({ kind: "show", id: s.id }, `${showName(sh)} ${fmtDay(sh.date)}`),

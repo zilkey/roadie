@@ -1,7 +1,10 @@
 /**
  * Capture every tab of the band's Set Lists sheet into .booking-kit/setlists.json (gitignored, public repo: the tabs
  * carry stage banter and host names), so scripts/import-setlists.ts reads one file and a re-capture is reproducible.
- *   tsx scripts/snapshot-setlists.ts --values=<payload.json> [--out=<file.json>]
+ *   tsx scripts/snapshot-setlists.ts --values=<payload.json> [--out=<file.json>] [--sheet=<spreadsheet id>]
+ *
+ * `--sheet` records another spreadsheet as the source: the show-setlist tabs in the song-list sheet are captured the same
+ * way (scripts/import-show-setlists.ts).
  *
  * All 82 tabs go in, on purpose: `Checklist` (Jeff has a later plan for it), `Sheet57` (empty), the song lists, the
  * superseded twins, the unresolved `Mixtape 10.23`. Which tabs are setlists, which show each one belongs to, and which
@@ -101,7 +104,7 @@ async function main() {
   if (!ranges.length) throw new Error(`${values} holds no valueRanges.`);
 
   const snap = buildSnapshot(tabsFromValueRanges(ranges), {
-    source: SETLISTS_SOURCE,
+    source: arg("sheet") ? `https://docs.google.com/spreadsheets/d/${arg("sheet")}/edit` : SETLISTS_SOURCE,
     fetchedAt: new Date().toISOString().slice(0, 10),
   });
   const out = arg("out") ?? ".booking-kit/setlists.json";
