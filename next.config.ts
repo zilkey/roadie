@@ -9,7 +9,7 @@ const onCustomDomain = !!canonical && !new RegExp(`^${OLD_HOSTS}$`).test(canonic
 // NEXT_DIST_DIR: the e2e run builds into its own folder so it can run next to `npm run dev` (Next allows one dev server per folder).
 const config: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
-  serverExternalPackages: ["firebase-admin", "genkit", "@genkit-ai/google-genai"],
+  serverExternalPackages: ["firebase-admin", "genkit", "@genkit-ai/google-genai", "pdfkit"],
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // authDomain is our own domain, so Google sign-in's helper pages (/__/auth, /__/firebase) must be served from it.
   // App Hosting doesn't serve them like classic Hosting does: proxy them to the project's firebaseapp.com.

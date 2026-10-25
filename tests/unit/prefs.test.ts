@@ -36,12 +36,12 @@ test("sections.setOrder: per user, completed with the default order, duplicates 
   const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
   const jeff = await makeUser("jeff@example.com", "admin");
   const david = await makeUser("david@example.com", "member");
-  assert.deepEqual(await sectionOrder(jeff.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money", "fans"]);
+  assert.deepEqual(await sectionOrder(jeff.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "stagePlots", "money", "fans"]);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "songs"] })).status, 200);
-  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "fans"]);
-  assert.deepEqual(await sectionOrder(david.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money", "fans"], "someone else's menu is untouched");
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "stagePlots", "fans"]);
+  assert.deepEqual(await sectionOrder(david.uid), ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "stagePlots", "money", "fans"], "someone else's menu is untouched");
   await call(jeff.token, "sections.setHidden", { section: "booking", hidden: true });
-  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "fans"], "hiding keeps the order");
+  assert.deepEqual(await sectionOrder(jeff.uid), ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "stagePlots", "fans"], "hiding keeps the order");
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["money", "money"] })).status, 400);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["home"] })).status, 400);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["calendar"] })).status, 400);

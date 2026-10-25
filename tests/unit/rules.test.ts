@@ -15,7 +15,7 @@ before(async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
     const live = { deletedAt: null };
-    for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "venues", "contacts", "promoters",
+    for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", "venues", "contacts", "promoters",
       "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
       await setDoc(doc(d, c, "x"), { ...live, n: 1, ...(c === "checklistTemplates" ? { artistId: "x" } : {}) });
     }
@@ -52,6 +52,7 @@ before(async () => {
     await setDoc(doc(d, "users/david/private/driving"), { mpg: 34, fuelGrade: "regular" });
     await setDoc(doc(d, "fuelPrices/Y05DE_EPMR"), { area: "Denver", areaKind: "metro", grade: "regular", priceMilli: 3790, week: "2026-10-19" });
     await setDoc(doc(d, "routeCache/abc123"), { oneWayMiles: 18.4 });
+    await setDoc(doc(d, "stagePlotTokens/plot1"), { token: "secret-token" });
   });
 });
 after(async () => { await env.cleanup(); });
@@ -68,11 +69,11 @@ const legacyAdmin = () => env.authenticatedContext("old", { role: "admin" }).fir
 /** An admin of a different artist. */
 const otherAdmin = () => env.authenticatedContext("olga", { artists: { y: "admin" } }).firestore();
 
-const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", "contacts", "promoters",
+const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", "contacts", "promoters",
   "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"];
 /** Readable by any signed-in admin or member of any artist (the shared venue directory). */
 const SIGNED_IN_READS = ["venues"];
-const MEMBER_READS = ["musicians", "artists", "shows", "songs", "files", "setlists", "rehearsals", ...SIGNED_IN_READS];
+const MEMBER_READS = ["musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", ...SIGNED_IN_READS];
 
 test("admin reads everything, including sub-collections", async () => {
   for (const c of [...ALL, ...SIGNED_IN_READS]) await assertSucceeds(getDoc(doc(admin(), c, "x")));
@@ -197,6 +198,9 @@ test("fuelPrices: any signed-in user reads; routeCache nobody; no client writes"
   for (const who of [admin(), david(), noRole(), aiLogin()]) await assertSucceeds(getDoc(doc(who, "fuelPrices/Y05DE_EPMR")));
   await assertFails(getDoc(doc(anon(), "fuelPrices/Y05DE_EPMR")));
   for (const who of [admin(), david(), anon()]) await assertFails(getDoc(doc(who, "routeCache/abc123")));
+  // the engineer-link token is server-only: no signed-in role reads or writes it
+  for (const who of [admin(), david(), anon()]) await assertFails(getDoc(doc(who, "stagePlotTokens/plot1")));
+  await assertFails(setDoc(doc(admin(), "stagePlotTokens/plot1"), { token: "x" }));
   await assertFails(setDoc(doc(admin(), "fuelPrices/new"), { priceMilli: 1 }));
   await assertFails(deleteDoc(doc(admin(), "fuelPrices/Y05DE_EPMR")));
 });

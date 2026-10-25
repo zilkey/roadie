@@ -17,6 +17,7 @@ import { ChecklistTemplateInput } from "./checklistTemplates";
 import { SongInput } from "./songs";
 import { FileInput } from "./files";
 import { SetlistInput, SetlistTemplateInput } from "./setlists";
+import { StagePlotDocInput } from "./stagePlots";
 import { RehearsalInput } from "./rehearsals";
 import { ExpenseInput } from "./expenses";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -47,6 +48,7 @@ export * from "./songs";
 export * from "./files";
 export * from "./setlists";
 export * from "./rehearsals";
+export * from "./stagePlots";
 export * from "./expenses";
 export * from "./driving";
 export * from "./statSnapshots";
@@ -88,6 +90,7 @@ export const collections: Record<string, CollectionDef> = {
   files: { input: FileInput },
   setlistTemplates: { input: SetlistTemplateInput },
   setlists: { input: SetlistInput },
+  stagePlots: { input: StagePlotDocInput },
   rehearsals: { input: RehearsalInput },
   expenses: { input: ExpenseInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },

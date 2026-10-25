@@ -50,13 +50,14 @@ export const search = defineCommand({
 /** What an AI may read. Not users, AI keys or history. Musicians are whole for admins (contact details, userId); mcp gets names and ids only. */
 const READABLE = [
   "venues", "promoters", "festivals", "editions", "contacts", "pitches", "emailTemplates", "shows", "showDeals", "availability",
-  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "rehearsals", "expenses", "statSnapshots", "artists", "musicians",
+  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "stagePlots", "rehearsals", "expenses", "statSnapshots", "artists", "musicians",
 ] as const;
 const kindEnum = z.enum(READABLE);
 
 function present(ctx: { role: string }, kind: string, d: Record<string, unknown>) {
   const o = { ...d };
   if (kind === "availability") delete o.linkTokens;
+  if (kind === "stagePlots") o.share = { on: !!(o.share as { on?: boolean } | undefined)?.on };
   if (kind === "musicians" && ctx.role === "admin") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active, archivedAt: o.archivedAt, email: o.email, phone: o.phone, payHandle: o.payHandle, userId: o.userId };
   if (kind === "musicians") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active };
   return o;

@@ -6,17 +6,17 @@ import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, SECTION_IDS, normalizeOrder } fr
 const keys = (items: { key: string }[]) => items.map((n) => n.key);
 const label = (items: { key: string; label: string }[], key: string) => items.find((n) => n.key === key)?.label;
 
-test("admin gets Calendar then all eight sections in the default order, with Money (Fans when the artist has it on)", () => {
+test("admin gets Calendar then all nine sections in the default order, with Money (Fans when the artist has it on)", () => {
   const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true });
   assert.deepEqual(keys(nav), ["calendar", ...SECTION_IDS]);
-  assert.equal(SECTION_IDS.length, 8);
+  assert.equal(SECTION_IDS.length, 9);
   assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans")]);
   assert.equal(label(nav, "money"), "Money");
 });
 
 test("members don't get booking or email templates, and see My money", () => {
   const nav = navFor("member", [...DEFAULT_SECTION_ORDER]);
-  assert.deepEqual(keys(nav), ["calendar", "shows", "songs", "setlists", "rehearsals", "money"]);
+  assert.deepEqual(keys(nav), ["calendar", "shows", "songs", "setlists", "rehearsals", "stagePlots", "money"]);
   assert.ok(!keys(nav).includes("booking") && !keys(nav).includes("templates"));
   assert.equal(label(nav, "money"), "My money");
 });
@@ -28,11 +28,11 @@ test("members see Fans (counts only) when it is on", () => {
 
 test("a custom order is respected; sections it leaves out are appended", () => {
   const order = normalizeOrder(["money", "songs"]);
-  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "fans"]);
+  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "stagePlots", "fans"]);
   assert.deepEqual(keys(navFor("admin", order, { fans: true })), ["calendar", ...order]);
-  assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "setlists", "rehearsals"]);
+  assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "setlists", "rehearsals", "stagePlots"]);
 });
 
-test("templates, setlists and rehearsals start hidden", () => {
-  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "setlists", "rehearsals"]);
+test("templates, setlists, rehearsals and stage plots start hidden", () => {
+  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "setlists", "rehearsals", "stagePlots"]);
 });

@@ -13,6 +13,7 @@ import { StatusPill } from "@/components/shows/page/StatusPill";
 import { WhereWhenCard } from "@/components/shows/page/WhereWhenCard";
 import { WhosPlayingCard } from "@/components/shows/page/WhosPlayingCard";
 import { SoundCard } from "@/components/shows/page/SoundCard";
+import { StagePlotCard } from "@/components/shows/page/StagePlotCard";
 import { SetlistTab } from "@/components/shows/page/SetlistTab";
 import { CustomFieldsCard } from "@/components/shows/page/CustomFieldsCard";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
@@ -75,6 +76,7 @@ function ShowView({ show }: { show: ShowRow }) {
               <WhereWhenCard show={show} admin={admin} />
               <WhosPlayingCard show={show} admin={admin} />
               <SoundCard show={show} admin={admin} />
+              <StagePlotCard show={show} admin={admin} />
               <PromotionCard show={show} admin={admin} />
               {admin && <CustomFieldsCard show={show} />}
             </>}

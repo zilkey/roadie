@@ -45,6 +45,8 @@ export const Show = entity({
   /** Values for the artist's custom show fields (Artist.showFields), keyed by field id. No entry = no value, never an empty string. Set by shows.setFields. */
   fields: z.array(z.strictObject({ fieldId: id, value: z.string() })).default([]),
   billedAs: id.optional(),
+  /** The stage plot this show uses, picked by hand (shows.setStagePlot). No lineup default. */
+  stagePlotId: id.optional(),
   personnel: z.array(id),
   sound,
   needs: z.strictObject({ poster: z.boolean(), backline: z.boolean(), merch: z.boolean() }),

@@ -39,6 +39,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "expenses.setPaidBack", "showDeals.setIncome",                                          // money
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar",                          // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
+  "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
   "stats.pull",                                                                          // calls out
   "musicians.archive", "musicians.removeFromBand",                                      // someone leaves the band
   "artists.removeSongField", "artists.removeShowField",                                  // deletes every value
@@ -56,10 +57,10 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -121,6 +122,9 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "fans.markSynced": (i) => (i.group ? `Mark every fan in "${i.group}" as added to Bandzoogle: they won't be offered again` : `Mark ${Array.isArray(i.ids) ? i.ids.length : "these"} fans as added to Bandzoogle: they won't be offered again`),
   "fans.remove": () => "Delete this fan and their history for good (it can't be undone)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",
+  "stagePlots.shareLink": (i) => `${i.rotate ? "Make a new" : "Turn on the"} public engineer link${i.label ? ` for the stage plot ${i.label}` : ""}: anyone with it can see the plot, no login${i.rotate ? " (the old link stops working)" : ""}`,
+  "stagePlots.remove": (i) => `Archive the stage plot${i.label ? ` ${i.label}` : ""}: its engineer link stops working and shows that picked it are cleared`,
+  "stagePlots.shareOff": (i) => `Turn off the engineer link${i.label ? ` for the stage plot ${i.label}` : ""}: the link already sent stops working`,
   "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
   "venues.update": (i, before) => {
     const patch = (i.patch ?? {}) as Record<string, unknown>;

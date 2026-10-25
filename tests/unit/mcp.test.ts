@@ -97,6 +97,10 @@ const EXPECTED = [
   "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.printLink", "setlists.setItems", "setlists.seed",
   "rehearsals.create", "rehearsals.update",
   "rehearsals.setLocation", "rehearsals.importSetlist",
+  // stage plots
+  "stagePlots.create", "stagePlots.copy", "stagePlots.rename", "stagePlots.setInputCount", "stagePlots.setMixCount", "stagePlots.updateInputs", "stagePlots.reorderInputs",
+  "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",
+  "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.shareLink", "stagePlots.shareOff", "stagePlots.engineerLink",
   // money, stats
   "expenses.setPaidBack", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // geo (address typeahead, read-only)

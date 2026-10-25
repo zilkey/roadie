@@ -14,6 +14,8 @@ export const OFF_TOPIC = "I just haul the band's stuff. Ask me about shows, tour
 export const CANT_DO = "I can't do that. I don't know that tune.";
 export const NOT_YET = "Not in my road case yet. I wrote it down.";
 export const NO_PEOPLE = "I can't do that. I don't know that tune: invites and access stay with you, on the People page. Want me to take you there?";
+/** Sending a stage plot by email isn't built (V1: download the PDF and attach it yourself, or share the engineer link). No tool call. */
+export const PLOT_NOT_SENT = "I can't send a stage plot yet. Download the PDF from the plot (or the show's Stage plot card) and attach it to your email, or I can get you the engineer link.";
 export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
 
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
@@ -95,6 +97,9 @@ function first(t: string, page?: Page, raw = t): Scripted {
   if (FORBIDDEN.test(t)) return { text: NO_PEOPLE }; // no tool call at all
   const read = WEB_READ.exec(raw);
   if (read) return { calls: [{ name: "web.read", input: { url: read[1] } }] };
+  if (/\b(send|email|mail)\b.*\b(stage ?plot|plot)\b/.test(t)) return { text: PLOT_NOT_SENT };
+  if (/\bwho\b.*\b(still )?needs? the (new|latest|updated) (stage )?plot\b/.test(t)) return { calls: [{ name: "stagePlots.staleShows", input: {} }] };
+  if (/\bhow many inputs\b/.test(t)) return { calls: [{ name: "stagePlots.list", input: {} }] };
   const ws = WEB_SEARCH.exec(t);
   if (ws) return { calls: [{ name: "web.search", input: { q: (ws[1] ?? ws[2]).trim() } }] };
   const listed = ASKS_LIST.test(t) && /\b(shows?|gigs?)\b/.test(t) ? FILTER_WORDS.find(([re]) => re.test(t)) : undefined;
@@ -202,6 +207,20 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
     const route = routeForRecord(COLLECTION[h.kind] ?? "");
     if (!route) return { text: `Found ${h.name}, but there's no page for it.` };
     return { text: `Found ${h.name}.`, calls: [{ name: "ui.navigate", input: { route, params: { id: h.id } } }] };
+  }
+
+  if (last.name === "stagePlots.staleShows") {
+    if (err) return { text: `Couldn't do that: ${err}` };
+    const rows = (out?.shows ?? []) as { name: string; date: string }[];
+    if (!rows.length) return { text: "Every upcoming show has the right plot." };
+    return { text: `${rows.length} show${rows.length === 1 ? " needs" : "s need"} a plot: ${rows.slice(0, 5).map((r) => `${r.name} · ${r.date}`).join(", ")}${rows.length > 5 ? `, and ${rows.length - 5} more` : ""}.` };
+  }
+  if (last.name === "stagePlots.list") {
+    if (err) return { text: `Couldn't do that: ${err}` };
+    const plots = (out?.plots ?? []) as { name: string; configurationId: string | null; summary: { inputs: number } }[];
+    const word = /how many inputs (?:is|are|does|in)\s+(?:the |our )?(.+?)(?: have)?[?.!]*$/.exec(t)?.[1]?.trim();
+    const hit = word ? plots.find((p) => `${p.name} ${p.configurationId ?? ""}`.toLowerCase().includes(word)) : undefined;
+    return { text: hit ? `${hit.name} has ${hit.summary.inputs} inputs.` : "I don't have a stage plot by that name." };
   }
 
   if (last.name === "shows.list") {

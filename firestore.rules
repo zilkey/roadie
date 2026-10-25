@@ -51,6 +51,8 @@ service cloud.firestore {
     match /setlistTemplates/{id} { allow read: if band(); }
     match /setlists/{id}         { allow read: if band(); }
     match /rehearsals/{id}       { allow read: if band(); }
+    // Stage plots: the band reads; the server writes. The engineer link is a server route, not a rule.
+    match /stagePlots/{id}       { allow read: if band(); }
 
     match /availability/{id} {
       allow read: if isAdmin()

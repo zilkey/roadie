@@ -38,6 +38,8 @@ export const ROUTES = {
   setlistPrint: { title: "Print setlist", path: "/setlists/:id/print", params: ["id"] },
   rehearsals: { title: "Rehearsals", path: "/rehearsals" },
   rehearsal: { title: "Rehearsal", path: "/rehearsals/:id", params: ["id"] },
+  stagePlots: { title: "Stage plots", path: "/stage-plots" },
+  stagePlot: { title: "Stage plot", path: "/stage-plots/:id", params: ["id"] },
   money: { title: "Money", path: "/money" },
   fans: { title: "Fans", path: "/fans" },
   expense: { title: "New expense", path: "/money/expense" },
@@ -52,7 +54,7 @@ export const ROUTES = {
 /** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
-  pitch: "pitches", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", showAfter: "shows",
+  pitch: "pitches", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
   showSetlist: "shows", showFinances: "shows",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */
@@ -82,7 +84,7 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
  * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
  * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "setlists", "rehearsals", "money", "fans", "admin", "me"] as const;
+export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "setlists", "rehearsals", "stage-plots", "money", "fans", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**

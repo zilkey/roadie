@@ -6,9 +6,10 @@ import type { HelpTopic } from "./types";
 import { BOOKING_TOPICS } from "./booking";
 import { SHOW_TOPICS } from "./shows";
 import { FAN_TOPICS } from "./fans";
+import { STAGE_PLOT_TOPICS } from "./stagePlots";
 
 export type { HelpTopic } from "./types";
-export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS];
+export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS, ...STAGE_PLOT_TOPICS];
 export const HELP_TOPIC_IDS = HELP_TOPICS.map((t) => t.id) as [string, ...string[]];
 export const helpTopic = (id: string) => HELP_TOPICS.find((t) => t.id === id);
 
@@ -22,7 +23,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   promoter: "booking", festival: "booking", edition: "booking", contact: "booking",
   bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",
-  rehearsals: "rehearsals", rehearsal: "rehearsals", money: "money", fans: "fans", expense: "expenses", fields: "customFields",
+  rehearsals: "rehearsals", rehearsal: "rehearsals", stagePlots: "stagePlots", stagePlot: "stagePlots", money: "money", fans: "fans", expense: "expenses", fields: "customFields",
 };
 /** The topic that explains this page, if there is one. */
 export function topicForPage(route: string, tab?: string): HelpTopic | undefined {
@@ -41,6 +42,7 @@ const WORDS: [RegExp, string][] = [
   [/\bpitch(?:es| list)?\b/, "pitch"],
   [/\bflag\b|\bbooking\b/, "booking"],
   [/\bupcoming\b|\bholds?\b/, "upcomingShows"], [/\bplayed\b/, "playedShows"], [/\bcancel(?:l?ed)?\b/, "canceledShows"], [/\bdropped\b/, "droppedShows"],
+  [/\bstage ?plots?\b|\binput list\b/, "stagePlots"],
   [/\bsetlists?\b|\bset ?list\b/, "setlists"], [/\bsongs?\b/, "songs"], [/\brehearsals?\b/, "rehearsals"],
   [/\bincome\b|\bdeal\b|\bguarantee\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b/, "expenses"], [/\bmoney\b/, "money"],
 ];
