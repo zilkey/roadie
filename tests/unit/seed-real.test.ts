@@ -1,5 +1,6 @@
-import { test, before, beforeEach } from "node:test";
+import { test as nodeTest, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { db, type Doc } from "@/server/db";
 import { adminAuth } from "@/server/admin";
@@ -7,26 +8,33 @@ import { dumpAll } from "@/server/backup";
 import { firestore } from "@/server/admin";
 import { roleIn } from "@/schema";
 import { ARTIST_LINKS } from "@/schema/artists";
-import { requireRoster } from "@/lib/band-roster";
+import { requireRoster, MISSING_ROSTER } from "@/lib/band-roster";
 import { bandSlug, seedReal } from "../../scripts/seed-real";
 import { resetEmulators } from "./helpers";
 
 // The roster is src/lib/band.ts, which is gitignored (real names and addresses stay out of the repo), so the
 // assertions below are written against whatever it holds rather than against literal addresses. It is loaded in
 // before() rather than at module level: tsx compiles these tests as CJS, which has no top-level await.
+// Without it (a fresh checkout, CI) every test here is skipped rather than failed: there is no real band to seed. The
+// check is a plain file check because the skip has to be decided synchronously, before the tests are registered.
+const skip = fs.existsSync(path.join(process.cwd(), "src/lib/band.ts")) ? false : MISSING_ROSTER;
+const test = (name: string, fn: () => Promise<void>) => nodeTest(name, { skip }, fn);
 let roster: Awaited<ReturnType<typeof requireRoster>>;
 let BAND_ARTIST_NAME: string, BAND_CONFIGURATIONS: typeof roster.BAND_CONFIGURATIONS, BAND_LINKS: typeof roster.BAND_LINKS, BAND_PEOPLE: typeof roster.BAND_PEOPLE;
 let BAND_SLUG: string, adminEmails: string[];
 const emailOf = (key: string) => BAND_PEOPLE.find((p) => p.key === key)!.email;
 
 before(async () => {
+  if (skip) return;
   roster = await requireRoster();
   ({ BAND_ARTIST_NAME, BAND_CONFIGURATIONS, BAND_LINKS, BAND_PEOPLE } = roster);
   BAND_SLUG = bandSlug(roster);
   adminEmails = BAND_PEOPLE.filter((p) => p.role === "admin").map((p) => p.email).sort();
 });
 
-beforeEach(resetEmulators);
+beforeEach(async () => {
+  if (!skip) await resetEmulators();
+});
 
 const artist = async () => (await db.list("artists", (q) => q.where("slug", "==", BAND_SLUG).limit(1)))[0];
 const userByEmail = async (email: string) => (await db.list("users", (q) => q.where("email", "==", email).limit(1)))[0];
