@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: { default: "Roadie", template: "%s · Roadie" },
   description: "Your music backoffice suite: shows, booking, songs and money for your band.",
   openGraph: { title: "Roadie - Your Music Backoffice Suite", siteName: "Roadie", url: "/", type: "website" },
-  twitter: { card: "summary", title: "Roadie - Your Music Backoffice Suite" },
+  twitter: { card: "summary_large_image", title: "Roadie - Your Music Backoffice Suite" },
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#3a46c4" };
 

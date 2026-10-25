@@ -1,21 +1,24 @@
-# myroadie.online
+# app.myroadie.online
 
-The app answers at **https://myroadie.online**; `www` and the old `*.hosted.app` address redirect there. The code side
-is `APP_URL` and `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` in `apphosting.yaml` plus the rewrites/redirects in `next.config.ts`.
-The rest is console work, in this order. **Don't roll out the `apphosting.yaml` change until steps 1-3 are done**:
-with `authDomain` on a domain that isn't connected, nobody can sign in.
+The app answers at **https://app.myroadie.online**. `myroadie.online` and `www` forward there (GoDaddy), and the old
+`*.hosted.app` address redirects there (`next.config.ts`). The code side is `APP_URL` and
+`NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` in `apphosting.yaml` plus the rewrites/redirects in `next.config.ts`. The decisions
+behind this are in the "Branding the App as myroadie.online" doc (claude.ai/artifact/VFaPhZvjYtmLSoSBpMEAs7).
 
-1. Registrar: delete any parking A/AAAA/CNAME records on `@` and `www`.
-2. Firebase console → App Hosting → `roadie-web-prod` → Settings → Add custom domain → `myroadie.online`, Quick Setup.
-   Paste the TXT and A records at the registrar (host `@`; keep the TXT forever, it renews the certificate). Then add
-   `www.myroadie.online` with "Redirect to an existing website" → `myroadie.online`. Wait for **Connected** (up to 24h).
-   On Cloudflare, keep the records grey-cloud (DNS only) until then.
+**Don't roll out the `apphosting.yaml` change until steps 1-3 are done**: with `authDomain` on a host that isn't
+connected, nobody can sign in.
+
+1. Firebase console → App Hosting → `roadie-web-prod` → Settings → Add custom domain → `app.myroadie.online`, Quick
+   Setup. In GoDaddy DNS, add the records it shows on host `app` (keep the TXT forever, it renews the certificate) and
+   remove any existing `app` record. Wait for **Connected** (up to 24h).
+2. GoDaddy → Forwarding: `myroadie.online` (and `www`) → `https://app.myroadie.online`, permanent (301).
 3. Sign-in:
-   - Firebase → Authentication → Settings → Authorized domains: add `myroadie.online` and `www.myroadie.online`.
+   - Firebase → Authentication → Settings → Authorized domains: add `app.myroadie.online`.
    - Google Cloud → APIs & Services → Credentials → "Web client (auto created by Google Service)": add JS origin
-     `https://myroadie.online` and redirect URI `https://myroadie.online/__/auth/handler`. Keep the firebaseapp.com ones.
+     `https://app.myroadie.online` and redirect URI `https://app.myroadie.online/__/auth/handler`. Keep the
+     firebaseapp.com ones.
 4. Branding: Firebase → Project settings → Public-facing name `Roadie`. Google Cloud → Google Auth Platform → Branding:
-   name `Roadie`, home page `https://myroadie.online`, `myroadie.online` under authorized domains (a logo triggers brand
-   verification, which can take days).
-5. Push. Then reconnect the MCP connector in Claude at `https://myroadie.online/mcp`, update the GitHub repo homepage,
-   and sign in fresh on Chrome, Safari and a phone.
+   name `Roadie`, support email jeff@zilkey.com, home page `https://app.myroadie.online`, `myroadie.online` under
+   authorized domains. No logo for now (it triggers brand verification).
+5. Push. Then reconnect the MCP connector in Claude at `https://app.myroadie.online/mcp`, update the GitHub repo
+   homepage, and sign in fresh on Chrome, Safari and a phone.
