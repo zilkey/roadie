@@ -355,6 +355,34 @@ test("availability: ask emails a hashed per-musician link; sub answers by token,
   assert.equal(cur.responses[ids.sam].answer, "no");
 });
 
+test("availability: one ask about several dates is one doc per date, one email and one link per person", async () => {
+  const r = await cmd("availability.ask", { pitchId, dates: ["2027-01-17", "2027-01-16"], musicianIds: [ids.david, ids.sam] });
+  assert.equal(r.ids.length, 2);
+  const [a, b] = await Promise.all(r.ids.map((x: string) => db.get("availability", x)));
+  assert.deepEqual([a!.date, b!.date], ["2027-01-16", "2027-01-17"]);
+  assert.equal(a!.channel, "email");
+  assert.equal(a!.linkTokens[ids.david], b!.linkTokens[ids.david], "the same link answers both dates");
+  const mail = await gmailClient().listMessages({ account: "jeff@example.com" });
+  assert.equal(mail.length, 1, "David once; Sam has no email");
+  assert.match(mail[0].subject, /Hi-Dive · Sat, Jan 16 or Sun, Jan 17/);
+
+  const samToken = r.links[ids.sam].split("/").pop()!;
+  const view = await viewByToken(r.id, ids.sam, samToken);
+  assert.deepEqual(view.asks.map((x) => x.date), ["2027-01-16", "2027-01-17"]);
+  await answerByToken(r.ids[1], ids.sam, samToken, "no", "away");
+  assert.equal((await viewByToken(r.id, ids.sam, samToken)).asks[1].answer, "no");
+
+  // Asking again about an open date adds to that ask (fresh links) instead of starting another.
+  const again = await cmd("availability.ask", { pitchId, dates: ["2027-01-16"], musicianIds: [ids.ingrid, ids.sam] });
+  assert.equal(again.id, r.ids[0]);
+  const cur = (await db.get("availability", r.ids[0]))!;
+  assert.deepEqual(cur.askedMusicianIds, [ids.david, ids.sam, ids.ingrid]);
+  await assert.rejects(answerByToken(r.ids[0], ids.sam, samToken, "yes"), { code: "invalid_link" });
+  // The old link still answers the date it alone covers now.
+  assert.deepEqual((await viewByToken(r.ids[1], ids.sam, samToken)).asks.map((x) => x.date), ["2027-01-17"]);
+  await assert.rejects(cmd("availability.ask", { pitchId, musicianIds: [ids.david] }), /Pick a date/);
+});
+
 test("availability: admin marks answers, reminds only those waiting (fresh links), members answer in the app", async () => {
   const r = await cmd("availability.ask", { pitchId, date: "2027-01-16", musicianIds: [ids.ingrid, ids.jeff, ids.david], message: "Option at Hi-Dive. Can you?" });
   await cmd("availability.mark", { id: r.id, musicianId: ids.ingrid, answer: "yes", note: "told me at rehearsal" });
@@ -423,6 +451,10 @@ test("artist: the Signal group link is its own setting and must be a signal.grou
   const a = (await db.get("artists", artistId))!;
   assert.equal(a.signalGroupUrl, "https://signal.group/#abc123");
   assert.deepEqual(a.links, {}, "not one of the public links");
+  // however it's pasted, it's stored one way
+  await cmd("artists.update", { id: artistId, patch: { signalGroupUrl: " sgnl://signal.group/#abc123 " } });
+  assert.equal((await db.get("artists", artistId))!.signalGroupUrl, "https://signal.group/#abc123");
+  await assert.rejects(cmd("artists.update", { id: artistId, patch: { signalGroupUrl: "https://signal.group/#" } }), /nothing after the #/);
   await cmd("artists.update", { id: artistId, patch: { signalGroupUrl: null } });
   assert.equal((await db.get("artists", artistId))!.signalGroupUrl, undefined);
 });

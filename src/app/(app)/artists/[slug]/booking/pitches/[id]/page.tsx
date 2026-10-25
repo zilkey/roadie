@@ -14,9 +14,9 @@ import { Menu } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, ConfigurationPicker, PitchDatesField, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
-import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, fmtDate, sortedDates, todayStr, unfilledFields, type Status } from "@/lib/booking";
-import { AskWhoIsFree, WhosFree } from "@/components/shows/Availability";
+import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, sortedDates, unfilledFields, type Status } from "@/lib/booking";
+import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
 import { roleIn, type Activity, type Artist, type Comment, type Contact, type EmailTemplate, type Musician, type Show, type StatSnapshot, type User } from "@/schema";
@@ -30,11 +30,10 @@ export default function Page() {
 
 function MemberAsks() {
   const { id } = useParams<{ id: string }>();
-  const musicians = useCollection<Musician>("musicians").rows ?? [];
   return (
-    <div className="grid gap-5" data-testid="member-asks">
-      <PageTitle title="Can you play?" sub="Say if you're free. The band sees your answer." />
-      <WhosFree pitchId={id} musicians={musicians}
+    <div className="mx-auto grid w-full max-w-md gap-5" data-testid="member-asks">
+      <PageTitle title="Can you play?" />
+      <MemberDates pitchId={id}
         empty={<div className="card"><p className="s" data-testid="member-asks-none">Nothing to answer here. <Link href="/calendar">Back to the calendar</Link></p></div>} />
     </div>
   );
@@ -77,9 +76,6 @@ function PitchPage() {
   const callId = useRef(newMutationId());
   const [mode, setMode] = useState<"comment" | "call">("comment");
   const shows = useCollection<Show>("shows").rows ?? [];
-  const edition = p?.target.kind === "edition" ? b.editions.find((e) => e.id === p.target.id) : undefined;
-  // The ask needs a date: the festival start, else the next possible date still ahead.
-  const askDate = edition?.startDate ?? (dateRows ?? sortedDates(p?.dates)).find((x) => x >= todayStr()) ?? "";
   const activity = useCollection<Activity>(`pitches/${id}/activity`).rows ?? [];
   const comments = useCollection<Comment>(`pitches/${id}/comments`).rows ?? [];
   if (nf || !p) return nf;
@@ -181,18 +177,19 @@ function PitchPage() {
       </section>
 
       <section className="card" data-testid="pitch-dates-card">
-        <div className="card-head"><h2>Dates &amp; shows</h2></div>
-        <PitchDatesField dates={dateRows ?? sortedDates(p.dates)} onChange={editDates} onBlur={() => void as.flush()} testid="pitch-dates" />
-        <div className="grid gap-2" data-testid="pitch-shows">
-          {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
-            <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {showName(x)}</b><span className="s">{x.status}</span></Link>
-          ))}
-          <div className="flex flex-wrap items-center gap-2">
-            {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc" data-testid="booked-it">Booked it</Link>}
-          </div>
-          <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />
-          <AskWhoIsFree pitchId={id} date={askDate} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
+        <div className="card-head">
+          <h2>Dates &amp; shows</h2>
+          {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc" data-testid="booked-it">Booked it</Link>}
         </div>
+        {p.showIds.length > 0 && (
+          <div className="grid gap-2" data-testid="pitch-shows">
+            {p.showIds.map((sid) => shows.find((x) => x.id === sid)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => (
+              <Link key={x.id} href={`/shows/${x.id}`} className="card" data-testid={`pitch-show-${x.id}`}><b>{fmtLong(x.date)} · {showName(x)}</b><span className="s">{x.status}</span></Link>
+            ))}
+          </div>
+        )}
+        <PitchDates pitchId={id} dates={dateRows ?? sortedDates(p.dates)} onDatesChange={editDates} onBlur={() => void as.flush()}
+          personnel={people} place={p.target.name} musicians={musicians} />
       </section>
 
       <section className="card" data-testid="pitch-activity-card">

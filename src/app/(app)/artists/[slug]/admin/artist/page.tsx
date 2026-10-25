@@ -10,7 +10,7 @@ import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
 import { withScheme } from "@/lib/links";
 import { ChecklistTemplatesEditor } from "@/components/shows/checklists/ChecklistTemplatesEditor";
-import { ARTIST_LINKS, SIGNAL_GROUP_PREFIX, artistSlug, signalGroupUrl, type Artist, type ArtistLinkKey } from "@/schema";
+import { ARTIST_LINKS, SIGNAL_GROUP_PREFIX, artistSlug, normalizeSignalGroupUrl, type Artist, type ArtistLinkKey } from "@/schema";
 
 type Links = Artist["links"];
 
@@ -121,17 +121,18 @@ function LinksCard({ links, onChange }: { links: Links; onChange: (next: Links) 
 
 /** The band's Signal group (Who's free can post there). Not a link: it's private, so it has its own card. Autosaved; empty or Delete removes it. */
 function BandChatCard({ url, onChange }: { url: string; onChange: (next: string) => void }) {
-  const bad = !!url.trim() && !signalGroupUrl.safeParse(url.trim()).success;
+  const r = url.trim() ? normalizeSignalGroupUrl(url) : null;
+  const bad = !!r && "error" in r;
   return (
     <section className="card" data-testid="band-chat" aria-labelledby="band-chat-title">
       <div><h2 id="band-chat-title" className="text-lg font-bold">Band chat</h2><p className="s">Only band members can see this. Anyone with the link can join the group.</p></div>
       <ul className="link-list"><li>
         <label htmlFor="signal-group-url">Signal group</label>
-        <input id="signal-group-url" className="input" type="url" value={url} placeholder={`${SIGNAL_GROUP_PREFIX}…`} spellCheck={false} autoCapitalize="none"
+        <input id="signal-group-url" className="input" type="text" inputMode="url" value={url} placeholder={`${SIGNAL_GROUP_PREFIX}…`} spellCheck={false} autoCapitalize="none"
           aria-invalid={bad} data-testid="signal-group-url" onChange={(e) => onChange(e.target.value)} />
         {url && <button type="button" className="icon-btn danger" aria-label="Delete Signal group link" data-testid="signal-group-delete" onClick={() => onChange("")}>{Icons.trash}</button>}
       </li></ul>
-      {bad ? <span className="err" data-testid="signal-group-hint">Use the group&apos;s invite link: it starts with {SIGNAL_GROUP_PREFIX}</span>
+      {r && "error" in r ? <span className="err" data-testid="signal-group-hint">{r.error}</span>
         : <span className="s">In Signal: the group&apos;s settings, Group link, Share.</span>}
     </section>
   );
@@ -158,9 +159,10 @@ function ArtistEditor() {
   }
   function editSignal(next: string) {
     setSignal(next);
-    const v = next.trim();
-    if (v && !signalGroupUrl.safeParse(v).success) return as.hold("the Signal group needs its signal.group invite link (or delete it)");
-    as.patch({ signalGroupUrl: v || null });
+    // Stored in one form however it was pasted (sgnl://, no https, stray spaces); the field shows the stored form once saved.
+    const r = next.trim() ? normalizeSignalGroupUrl(next) : null;
+    if (r && "error" in r) return as.hold("the Signal group needs its signal.group invite link (or delete it)");
+    as.patch({ signalGroupUrl: r?.url ?? null });
   }
   return (
     <div className="grid gap-5" onBlur={() => void as.flush()}>

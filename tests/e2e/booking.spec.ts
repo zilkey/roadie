@@ -61,21 +61,21 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
   await expect(page.getByTestId("person-Ingrid")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("person-David")).toHaveAttribute("aria-pressed", "false");
-  // dates from the flag form: chips, sorted
-  const chips = page.getByTestId("pitch-dates").locator('[data-testid*="-chip-"]');
-  await expect(chips).toHaveCount(2);
-  await expect(chips.nth(1)).toHaveText("Fri, May 1");
+  // dates from the flag form: Who's free columns, sorted
+  const cols = page.getByTestId("pitch-dates").locator('[data-testid^="pitch-dates-col-"]');
+  await expect(cols).toHaveCount(2);
+  await expect(cols.nth(1)).toHaveText("Fri, May 1");
   // add and remove on the pitch page autosave
   await page.getByTestId("pitch-dates-date").fill("2099-04-01");
   await page.getByTestId("pitch-dates-add").click();
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await expect(chips).toHaveCount(3);
-  await expect(page.getByTestId("pitch-dates-chip-1")).toHaveText("Wed, Apr 1"); // sorted: past, April, May
+  await expect(cols).toHaveCount(3);
+  await expect(page.getByTestId("pitch-dates-col-1")).toHaveText("Wed, Apr 1"); // sorted: past, April, May
   await page.getByTestId("pitch-dates-remove-1").click();
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await expect(chips).toHaveCount(2);
+  await expect(cols).toHaveCount(2);
   await page.getByTestId("next-text").fill("Follow up");
   await page.getByTestId("next-due").fill("2026-11-09");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");

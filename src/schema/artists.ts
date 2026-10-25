@@ -31,7 +31,26 @@ export type ArtistLinkKey = (typeof ARTIST_LINKS)[number][0];
 const ArtistLinks = z.strictObject(Object.fromEntries(ARTIST_LINKS.map(([k]) => [k, z.string().optional()])) as Record<ArtistLinkKey, z.ZodOptional<z.ZodString>>);
 /** A Signal group invite link. Anyone who has it can join the group. */
 export const SIGNAL_GROUP_PREFIX = "https://signal.group/#";
-export const signalGroupUrl = z.string().url().refine((v) => v.startsWith(SIGNAL_GROUP_PREFIX) && v.length > SIGNAL_GROUP_PREFIX.length, `Use a Signal group link (${SIGNAL_GROUP_PREFIX}...)`);
+export const SIGNAL_NO_KEY = "That Signal group link has nothing after the #. Copy the whole link from Signal.";
+export const SIGNAL_NOT_GROUP = `Use a Signal group link (${SIGNAL_GROUP_PREFIX}...)`;
+/**
+ * However the group link was pasted (https, http, no scheme, sgnl://, stray spaces), the one stored form: https://signal.group/#<key>.
+ * An error message instead when it isn't a signal.group link or has no key after the #.
+ */
+export function normalizeSignalGroupUrl(input: string): { url: string } | { error: string } {
+  const v = input.replace(/\s+/g, "");
+  const m = /^(?:(?:https?|sgnl):\/\/)?signal\.group\/?#(.*)$/i.exec(v);
+  if (!m) return { error: SIGNAL_NOT_GROUP };
+  return m[1] ? { url: SIGNAL_GROUP_PREFIX + m[1] } : { error: SIGNAL_NO_KEY };
+}
+/** The link that opens the group in Signal Desktop, from the stored https one. */
+export const signalAppUrl = (groupUrl: string) => groupUrl.replace(/^https:\/\//, "sgnl://");
+export const signalGroupUrl = z.string().transform((v, ctx) => {
+  const r = normalizeSignalGroupUrl(v);
+  if ("url" in r) return r.url;
+  ctx.addIssue({ code: "custom", message: r.error });
+  return z.NEVER;
+});
 
 export const Artist = entity({
   name: z.string().min(1),

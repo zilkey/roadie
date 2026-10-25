@@ -21,7 +21,10 @@ async function requireAv(id: string): Promise<Doc> {
 }
 
 export interface AskResult {
+  /** The first date's ask: answer links point here, and the answer page finds the other dates from it. */
   id: string;
+  /** availability.ask: one ask per date, in date order. */
+  ids?: string[];
   /** Answer links by musician id. Shown once: only a hash is stored. Use these for people with no email. */
   links: Record<string, string>;
   emailed: string[];
@@ -93,33 +96,53 @@ async function sendLinks(ctx: { uid: string; via?: string }, av: { id: string; l
 export const availabilityAsk = defineCommand({
   name: "availability.ask", roles: [...ROLES],
   description:
-    "Ask musicians if they can play a date, from a pitch (pitchId) or show (showId). Each one gets a personal answer link (works without login): emailed when an admin asks in the app, left as a Gmail draft (not sent) when asked through MCP. " +
+    "Ask musicians if they can play one date (date) or several (dates), from a pitch (pitchId) or show (showId). Each one gets one personal answer link (works without login) covering every date: emailed when an admin asks in the app, left as a Gmail draft (not sent) when asked through MCP. " +
+    "A date that already has an open ask on this pitch or show adds the people to it, with fresh links. " +
     "Returns links for anyone without an email so you can text it. channel \"signal\" (app only) sends nothing: the admin posts the message to the band's Signal group and people answer signed in.",
   input: z.strictObject({
-    pitchId: z.string().min(1).optional(), showId: z.string().min(1).optional(), date: dateStr, label: z.string().min(1).optional(),
+    pitchId: z.string().min(1).optional(), showId: z.string().min(1).optional(), date: dateStr.optional(), dates: z.array(dateStr).min(1).optional(), label: z.string().min(1).optional(),
     musicianIds: z.array(z.string().min(1)).min(1), message: z.string().min(1).optional(), channel,
   }),
   async run(ctx, i) {
     signalFromApp(ctx, i.channel);
+    const days = [...new Set(i.dates ?? (i.date ? [i.date] : []))].sort();
+    if (!days.length) throw new AppError("invalid_input", "Pick a date to ask about", 400);
     const [pitch, show] = await Promise.all([i.pitchId ? db.get("pitches", i.pitchId) : null, i.showId ? db.get("shows", i.showId) : null]);
     if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
     if (i.showId && (!show || show.deletedAt)) throw new AppError("not_found", "Show not found", 404);
     const place = ((show ? showName(show as ShowPlaceLike) : undefined) ?? pitch?.target?.name) as string | undefined;
-    const label = i.label ?? `${place ? `${place} · ` : ""}${fmtLong(i.date)}`;
+    const labelFor = (when: string) => i.label ?? `${place ? `${place} · ` : ""}${when}`;
     const ids = [...new Set(i.musicianIds)];
     for (const m of ids) { const d = await db.get("musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); if (d.archivedAt) throw new AppError("invalid_input", `${d.name} is archived`, 400); }
-    const tokens = Object.fromEntries(ids.map((m) => [m, newToken()]));
-    const message = i.message ?? `We have an option for a show${place ? ` at ${place}` : ""} on ${fmtLong(i.date)}. Tap here to say if you're available.`;
-    const created = await db.create(ctx, "availability", {
-      date: i.date, label, pitchId: i.pitchId, showId: i.showId, askedMusicianIds: ids, responses: {},
-      linkTokens: Object.fromEntries(Object.entries(tokens).map(([m, t]) => [m, hashToken(t)])), sentAt: new Date(),
-    });
-    if (ctx.via !== "mcp" && ctx.artistId) await setAskChannel(ctx.uid, ctx.artistId, i.channel);
-    if (i.channel === "signal") {
-      const noLogin = new Set(await withoutLogin(ids));
-      return signalResult(created.id, ids, Object.fromEntries(Object.entries(tokens).filter(([m]) => noLogin.has(m))));
+    // One link per person for the whole ask: the same token's hash goes on every date's doc. Signal: only people with no login need one.
+    const noLogin = i.channel === "signal" ? new Set(await withoutLogin(ids)) : null;
+    const tokens = Object.fromEntries(ids.filter((m) => !noLogin || noLogin.has(m)).map((m) => [m, newToken()]));
+    const hashed = Object.fromEntries(Object.entries(tokens).map(([m, t]) => [m, hashToken(t)]));
+    const scope = i.pitchId ? (["pitchId", i.pitchId] as const) : i.showId ? (["showId", i.showId] as const) : null;
+    const avIds: string[] = [];
+    for (const date of days) {
+      const open = scope ? (await db.list("availability", (q) => q.where(scope[0], "==", scope[1]).where("date", "==", date))).find((a) => !a.closedAt) : undefined;
+      if (open) {
+        await run(ctx, async (w) => {
+          const cur = (await w.get("availability", open.id))!;
+          await w.update("availability", open.id, {
+            askedMusicianIds: [...new Set([...(cur.askedMusicianIds as string[]), ...ids])], linkTokens: { ...cur.linkTokens, ...hashed }, sentAt: w.now, channel: i.channel,
+          });
+        });
+        avIds.push(open.id);
+      } else {
+        const created = await db.create(ctx, "availability", {
+          date, label: labelFor(fmtLong(date)), pitchId: i.pitchId, showId: i.showId, askedMusicianIds: ids, responses: {}, linkTokens: hashed, sentAt: new Date(), channel: i.channel,
+        });
+        avIds.push(created.id);
+      }
     }
-    return sendLinks(ctx, { id: created.id, label }, tokens, message, false);
+    if (ctx.via !== "mcp" && ctx.artistId) await setAskChannel(ctx.uid, ctx.artistId, i.channel);
+    const when = days.map(fmtLong).join(" or ");
+    const out = i.channel === "signal"
+      ? await signalResult(avIds[0], ids, tokens)
+      : await sendLinks(ctx, { id: avIds[0], label: labelFor(when) }, tokens, i.message ?? `We have an option for a show${place ? ` at ${place}` : ""} on ${when}. Tap here to say if you're available.`, false);
+    return { ...out, ids: avIds };
   },
 });
 
@@ -143,6 +166,7 @@ export const availabilityRemind = defineCommand({
       await w.update("availability", i.id, {
         askedMusicianIds: [...new Set([...(cur.askedMusicianIds as string[]), ...targets])],
         linkTokens: { ...cur.linkTokens, ...Object.fromEntries(Object.entries(tokens).map(([m, t]) => [m, hashToken(t)])) },
+        channel: i.channel,
       });
     });
     if (ctx.via !== "mcp" && ctx.artistId) await setAskChannel(ctx.uid, ctx.artistId, i.channel);

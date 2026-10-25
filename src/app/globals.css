@@ -441,3 +441,24 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .d-kv dd { white-space: pre-wrap; }
 .d-pitched { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; background: color-mix(in srgb, var(--pitched) 12%, transparent); color: var(--pitched); font-size: 13px; font-weight: 700; white-space: nowrap; }
 .btn.plain { background: var(--surface); color: var(--ink); border-color: var(--input-border); }
+/* Who's free on a pitch: people down, dates across; the last column adds a date. Wide grids scroll in their box. */
+.free-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.free-grid { width: 100%; border-collapse: collapse; font-size: 14px; }
+.free-grid th, .free-grid td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.free-grid :is(th, td):not(:first-child) { border-left: 1px solid var(--line); }
+.free-grid thead th { padding: 6px 6px 6px 14px; vertical-align: middle; white-space: nowrap; min-width: 140px; }
+.free-grid thead th.add { min-width: 0; width: 1%; padding: 6px 10px; }
+.free-grid :is(thead, tfoot) tr { background: var(--soft); }
+.free-grid tbody th { font-weight: 600; white-space: nowrap; }
+.free-grid tfoot :is(th, td) { border-bottom: 0; font-weight: 700; }
+.free-grid .col-x { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; vertical-align: middle; }
+.free-grid .col-x:hover { background: var(--surface); color: var(--ink); }
+.free-cell { display: inline-flex; align-items: center; gap: 5px; }
+.free-cell.none { color: var(--muted); font-size: 13px; font-weight: 600; }
+/* Free / Maybe / Can't for one date, as the musician answers it */
+.ans { min-height: 48px; border-radius: 10px; border: 1px solid var(--input-border); background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+.ans:disabled { opacity: .5; cursor: default; }
+.ans:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ans[aria-pressed="true"][data-a="yes"] { background: var(--success-bg); color: var(--success-text); border-color: var(--success-dot); }
+.ans[aria-pressed="true"][data-a="maybe"] { background: var(--divider); border-color: var(--muted); }
+.ans[aria-pressed="true"][data-a="no"] { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }

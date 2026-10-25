@@ -12,22 +12,22 @@ import { clientDb } from "@/lib/firebase-client";
 import { useArtist, useHref } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { ASK_LABEL, askState, fmtLong, type Answer, type AskState } from "@/lib/shows";
-import type { Availability, Musician } from "@/schema";
+import { signalAppUrl, type Availability, type Musician } from "@/schema";
+import { shareSheetHere } from "@/lib/signal";
 
-interface AskResult { id: string; links: Record<string, string>; emailed: string[]; notEmailed: { musicianId: string; name: string; reason: string }[]; viaSignal?: string[] }
-type Channel = "email" | "signal";
+export interface AskResult { id: string; links: Record<string, string>; emailed: string[]; notEmailed: { musicianId: string; name: string; reason: string }[]; viaSignal?: string[] }
+export type Channel = "email" | "signal";
 /** What happened when the text was handed to Signal: the share sheet took it, it was copied (and the group opened), or neither. */
 type Handoff = "shared" | "copied" | "none";
 interface SignalPost { text: string; groupUrl: string; handoff: Handoff }
-type SentResult = AskResult & { signal?: SignalPost };
+export type SentResult = AskResult & { signal?: SignalPost };
 
-const PILL: Record<AskState, string> = { yes: "g", no: "a", maybe: "m", waiting: "", notAsked: "" };
+export const PILL: Record<AskState, string> = { yes: "g", no: "a", maybe: "m", waiting: "", notAsked: "" };
 const ms = (t?: unknown) => (t as { toMillis?(): number } | undefined)?.toMillis?.() ?? 0;
-const canShare = () => typeof navigator !== "undefined" && typeof navigator.share === "function";
 const names = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
 
 /** How the signed-in person last asked who's free in this artist (userPrefs/{uid}.askChannel, set by availability.ask). Null until they have. */
-function useLastChannel(): Channel | null {
+export function useLastChannel(): Channel | null {
   const { uid } = useProfile();
   const { artistId } = useArtist();
   const [ch, setCh] = useState<Channel | null>(null);
@@ -39,7 +39,7 @@ function useLastChannel(): Channel | null {
 }
 
 /** The full address of the pitch or show page an ask is about: where people answer when asked by Signal. */
-function useAnswerPage() {
+export function useAnswerPage() {
   const href = useHref();
   return (a: { pitchId?: string; showId?: string }) => {
     const path = href(a.showId ? `/shows/${a.showId}` : `/booking/pitches/${a.pitchId}`);
@@ -53,16 +53,20 @@ async function copy(text: string): Promise<boolean> {
 }
 /**
  * Get the text into Signal. No link can carry a message to Signal, and nothing but a person can post to a group, so: the share
- * sheet on phones (they pick Signal, then the group), else copy it and open the group (Signal Desktop, or signal.group's page).
- * Browsers may refuse either after the server round trip; the result card has buttons for a second try.
+ * sheet on touch screens (they pick Signal, then the group), else copy it and open the group in Signal Desktop (sgnl://).
+ * Call this first thing in the click, before any await: a window opened after the server round trip is blocked. On computers it
+ * copies and opens Signal right away; on touch screens it returns null and finishSignal shows the share sheet once the ask is saved.
+ * Browsers may still refuse; the result card has buttons for a second try.
  */
-async function handToSignal(text: string, groupUrl: string): Promise<Handoff> {
-  if (canShare()) {
-    try { await navigator.share({ text }); return "shared"; } catch { return "none"; }
-  }
-  const copied = await copy(text);
-  window.open(groupUrl, "_blank", "noopener");
-  return copied ? "copied" : "none";
+export function startSignal(text: string, groupUrl: string): Promise<Handoff> | null {
+  if (shareSheetHere()) return null;
+  const copied = copy(text);
+  window.open(signalAppUrl(groupUrl), "_blank", "noopener");
+  return copied.then((ok) => (ok ? "copied" : "none"));
+}
+export async function finishSignal(started: Promise<Handoff> | null, text: string): Promise<Handoff> {
+  if (started) return started;
+  try { await navigator.share({ text }); return "shared"; } catch { return "none"; }
 }
 
 const HANDOFF: Record<Handoff, string> = {
@@ -70,14 +74,14 @@ const HANDOFF: Record<Handoff, string> = {
   copied: "Copied. Paste it into the group.",
   none: "Not posted yet. Copy the message and paste it into the group.",
 };
-const handoffText = (h: Handoff) => (h === "none" && canShare() ? "Not posted yet. Tap Share… and pick the band's group." : HANDOFF[h]);
+const handoffText = (h: Handoff) => (h === "none" && shareSheetHere() ? "Not posted yet. Tap Share… and pick the band's group." : HANDOFF[h]);
 
 /** The Signal half of a result: what happened, and buttons to try again (the share sheet was cancelled, the browser blocked the copy). */
 function SignalButtons({ post }: { post: SignalPost }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex flex-wrap gap-2">
-      {canShare() && <button type="button" className="btn ghost sm" onClick={() => void navigator.share({ text: post.text }).catch(() => {})} data-testid="signal-share">Share…</button>}
+      {shareSheetHere() && <button type="button" className="btn ghost sm" onClick={() => void navigator.share({ text: post.text }).catch(() => {})} data-testid="signal-share">Share…</button>}
       <button type="button" className="btn ghost sm" data-testid="signal-copy"
         onClick={async () => { if (await copy(post.text)) { setCopied(true); setTimeout(() => setCopied(false), 1500); } }}>{copied ? "Copied" : "Copy message"}</button>
       <a className="btn ghost sm" href={post.groupUrl} target="_blank" rel="noopener noreferrer" data-testid="signal-open">Open Signal group</a>
@@ -86,7 +90,7 @@ function SignalButtons({ post }: { post: SignalPost }) {
 }
 
 /** After sending: who got email (or the Signal post), and links to text to anyone without one (links are shown once; only a hash is stored). */
-function Sent({ r }: { r: SentResult }) {
+export function Sent({ r }: { r: SentResult }) {
   return (
     <div className="card hi" data-testid="ask-result">
       {r.signal
@@ -130,15 +134,14 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
   const option = `We have an option for a show at ${place} on ${fmtLong(d) || "that date"}.`;
   const defaultMsg = channel === "signal" ? `${option} Can you play? Answer on the ${pageNoun({ showId })} page:` : `${option} Tap here to say if you're available.`;
   async function send() {
-    await draft.settle();
     const message = msg ?? defaultMsg;
+    const text = `${message}\n${answerPage({ pitchId, showId })}`;
+    const started = channel === "signal" && groupUrl ? startSignal(text, groupUrl) : null;
+    await draft.settle();
     const r = await call<AskResult>("availability.ask", { pitchId, showId, date: d, musicianIds: picked, message, channel }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
     if (!r) return;
     let out: SentResult = r;
-    if (channel === "signal" && groupUrl) {
-      const text = `${message}\n${answerPage({ pitchId, showId })}`;
-      out = { ...r, signal: { text, groupUrl, handoff: await handToSignal(text, groupUrl) } };
-    }
+    if (channel === "signal" && groupUrl) out = { ...r, signal: { text, groupUrl, handoff: await finishSignal(started, text) } };
     setResult(out); setOpen(false); mutationId.current = newMutationId(); await draft.clear({ reset: true });
   }
   return (
@@ -176,7 +179,7 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
 }
 
 /** Email or Signal: shown only when the artist has a Signal group. */
-function ChannelPicker({ value, onChange, name, testid }: { value: Channel; onChange: (v: Channel) => void; name: string; testid: string }) {
+export function ChannelPicker({ value, onChange, name, testid }: { value: Channel; onChange: (v: Channel) => void; name: string; testid: string }) {
   return (
     <div className="seg" role="radiogroup" aria-label="Notify band members by" data-testid={testid}>
       {(["email", "signal"] as const).map((c) => (
@@ -237,11 +240,14 @@ function AskCard({ av, musicians, extraIds, admin }: { av: Row<Availability>; mu
   const waiting = av.askedMusicianIds.filter((i) => !av.responses[i]);
   const closed = !!av.closedAt;
   const remind = async (musicianIds?: string[]) => {
+    // The post names who it's for (the server's viaSignal), worked out here so Signal can open inside the click.
+    const who = (musicianIds ?? waiting).map((id) => musicians.find((m) => m.id === id)?.name ?? "Someone");
+    const text = `Still waiting on ${names(who)} for ${av.label}. Answer on the ${pageNoun(av)} page:\n${answerPage(av)}`;
+    const started = channel === "signal" && groupUrl && who.length ? startSignal(text, groupUrl) : null;
     const r = await call<AskResult>("availability.remind", { id: av.id, musicianIds, channel });
     if (!r) return;
     if (channel !== "signal" || !groupUrl || !r.viaSignal?.length) return setResult(r);
-    const text = `Still waiting on ${names(r.viaSignal)} for ${av.label}. Answer on the ${pageNoun(av)} page:\n${answerPage(av)}`;
-    setResult({ ...r, signal: { text, groupUrl, handoff: await handToSignal(text, groupUrl) } });
+    setResult({ ...r, signal: { text, groupUrl, handoff: await finishSignal(started, text) } });
   };
   const mark = (musicianId: string, answer: Answer | null) => call("availability.mark", { id: av.id, musicianId, answer });
   return (

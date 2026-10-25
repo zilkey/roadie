@@ -24,20 +24,26 @@ async function verified(availabilityId: string, musicianId: string, token: strin
   return av;
 }
 
-export interface LinkView {
-  availabilityId: string; musicianId: string; musicianName: string; label: string; date: string; askedBy: string;
-  closed: boolean; answer?: "yes" | "no" | "maybe"; note?: string;
+export interface LinkAsk { availabilityId: string; date: string; label: string; closed: boolean; answer?: "yes" | "no" | "maybe"; note?: string }
+export interface LinkView extends LinkAsk {
+  musicianId: string; musicianName: string; askedBy: string;
+  /** Every date this link answers, in date order: one ask about several dates stores the same token on each date's doc. */
+  asks: LinkAsk[];
 }
+
+const linkAsk = (av: Doc, musicianId: string): LinkAsk => {
+  const r = av.responses?.[musicianId];
+  return { availabilityId: av.id, date: av.date, label: av.label, closed: !!av.closedAt, answer: r?.answer, note: r?.note };
+};
 
 /** What the public answer page shows. Reveals nothing about other people's answers. */
 export async function viewByToken(availabilityId: string, musicianId: string, token: string): Promise<LinkView> {
   const av = await verified(availabilityId, musicianId, token);
   const [m, u] = await Promise.all([db.get("musicians", musicianId), db.get("users", av.createdBy)]);
-  const r = av.responses?.[musicianId];
-  return {
-    availabilityId, musicianId, musicianName: m?.name ?? "", label: av.label, date: av.date, askedBy: u?.name ?? "the band",
-    closed: !!av.closedAt, answer: r?.answer, note: r?.note,
-  };
+  const scope = av.pitchId ? "pitchId" : av.showId ? "showId" : null;
+  const same = scope ? await db.list("availability", (q) => q.where(scope, "==", av[scope])) : [av];
+  const asks = same.filter((x) => matches(x, musicianId, token)).sort((a, b) => a.date.localeCompare(b.date)).map((x) => linkAsk(x, musicianId));
+  return { ...linkAsk(av, musicianId), musicianId, musicianName: m?.name ?? "", askedBy: u?.name ?? "the band", asks };
 }
 
 export async function answerByToken(availabilityId: string, musicianId: string, token: string, answer: "yes" | "no" | "maybe", note?: string) {

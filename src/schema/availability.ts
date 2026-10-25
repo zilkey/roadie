@@ -12,6 +12,8 @@ export const Availability = entity({
   })),
   linkTokens: z.record(id, z.string()),
   sentAt: ts.optional(),
+  /** How the last ask went out: everyone emailed their own link, or an admin's post to the band's Signal group. */
+  channel: z.enum(["email", "signal"]).optional(),
   closedAt: ts.optional(),
 });
 export const AvailabilityInput = Availability.omit(serverMask);

@@ -87,80 +87,103 @@ test("Booked it turns a pitch into a show with a set length, show start, calenda
   expect(after.some((e) => e.id === ev.id)).toBe(false);
 });
 
-test("Ask who's free: the date is prefilled from the pitch, and Send says why it's disabled", async ({ page }) => {
+test("Ask who's free: the pitch's dates ahead are picked, and Send says why it's off", async ({ page }) => {
   await signInAs(page, "jeff");
   const open = async (name: string) => {
     await page.goto(A("/booking"));
     await page.getByTestId("booking-seg-pitches").click();
     await page.getByTestId("pitch-list").locator("tr", { hasText: name }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-    await page.getByTestId("ask-toggle").click();
+    await expect(page.getByTestId("ask-form")).toBeVisible();
   };
-  // Dairy has possible dates: the first one seeds the ask.
+  // Dairy has possible dates: each one is a column in Who's free and starts picked in the ask.
   await open("Dairy Arts Center");
-  await expect(page.getByTestId("ask-date")).toHaveValue("2027-03-12");
-  // Cervantes has none: Send is off and says so until a date is picked.
+  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText("Fri, Mar 12");
+  await expect(page.getByTestId("ask-date-2027-03-12")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ask-date-2027-03-19")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("whos-free-status")).toHaveText("Not asked yet");
+  // Cervantes has none: Send is off and says so until a date is added in the grid.
   await open("Cervantes");
-  await expect(page.getByTestId("ask-date")).toHaveValue("");
+  await expect(page.getByTestId("ask-no-dates")).toBeVisible();
   await expect(page.getByTestId("ask-send")).toBeDisabled();
   await expect(page.getByTestId("ask-send-why")).toHaveText("Pick a date to send.");
-  await page.getByTestId("ask-date").fill("2027-03-06");
+  await page.getByTestId("pitch-dates-date").fill("2027-03-06");
+  await page.getByTestId("pitch-dates-add").click();
+  await expect(page.getByTestId("ask-date-2027-03-06")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ask-send")).toBeEnabled();
   await expect(page.getByTestId("ask-send-why")).toHaveCount(0);
+  // the column's × takes the date off the pitch again
+  await page.getByTestId("pitch-dates-remove-0").click();
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("ask-no-dates")).toBeVisible();
 });
 
-test("Ask who's free: emails go out, a sub answers by link without logging in", async ({ page, browser, request }) => {
+test("Ask who's free: one email per person for every date, a sub answers each date by link, a member signed in", async ({ page, browser, request }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Dairy Arts Center" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
-  await page.getByTestId("ask-toggle").click();
-  await page.getByTestId("ask-date").fill("2027-03-06");
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  const pitchUrl = page.url();
+  await page.getByTestId("pitch-dates-date").fill("2027-03-06");
+  await page.getByTestId("pitch-dates-add").click();
+  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText("Sat, Mar 6");
+  await page.getByTestId("ask-date-2027-03-19").click(); // not this one
   await expect(page.getByTestId("ask-person-David")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ask-person-Sam")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("ask-person-Sam").click();
-  await expect(page.getByTestId("ask-message")).toHaveValue(/show at Dairy Arts Center on Sat, Mar 6/);
+  await expect(page.getByTestId("ask-message")).toHaveValue(/show at Dairy Arts Center on Sat, Mar 6 or Fri, Mar 12\. Can you play\?/);
+  await expect(page.getByTestId("ask-send")).toHaveText(/^Send \d+ emails$/);
   await page.getByTestId("ask-send").click();
 
-  // Sam has no email: the link is shown to send by text. Others were emailed.
+  // Sam has no email: the link is shown to send by text. Others were emailed, once each for both dates.
   await expect(page.getByTestId("ask-result")).toContainText("Emailed");
   const link = (await page.getByTestId("ask-link-Sam").textContent())!.trim();
   expect(link).toMatch(/\/ask\/[^/]+\/[^/]+\/[\w-]{20,}$/);
   const mail = (await (await request.get(`${GMAIL}/messages?account=jeff@example.com`)).json()) as { to: string[]; subject: string; body: string }[];
-  const toDavid = mail.find((m) => m.to.includes("david@example.com") && m.subject.includes("Dairy Arts Center"));
-  expect(toDavid?.body).toMatch(/\/ask\//);
+  const toDavid = mail.filter((m) => m.to.includes("david@example.com") && m.subject.includes("Dairy Arts Center"));
+  expect(toDavid).toHaveLength(1);
+  expect(toDavid[0].subject).toContain("Sat, Mar 6 or Fri, Mar 12");
+  expect(toDavid[0].body).toMatch(/\/ask\//);
 
-  // Jeff's page: everyone is waiting
-  await expect(page.getByTestId("avail-state-Sam")).toHaveText("Waiting");
+  // Jeff's grid: everyone asked, no replies yet; Mar 19 wasn't asked about
+  await expect(page.getByTestId("free-Sam-2027-03-06")).toHaveText("No reply");
+  await expect(page.getByTestId("free-Sam-2027-03-19")).toHaveText("Not asked");
+  await expect(page.getByTestId("whos-free-status")).toContainText("via email");
 
-  // the sub opens the link in a fresh browser with no login
+  // the sub opens the link in a fresh browser with no login: one card per date
   const anon = await browser.newContext();
   const sub = await anon.newPage();
   await sub.goto(link.replace("http://127.0.0.1:3100", ""));
   await expect(sub.getByTestId("ask-label")).toContainText("Dairy Arts Center");
-  await sub.getByTestId("answer-note").fill("Can do after 6");
-  await sub.getByTestId("answer-yes").click();
-  await expect(sub.getByTestId("answer-saved")).toContainText("You said Yes");
-  await sub.getByTestId("answer-maybe").click();
-  await expect(sub.getByTestId("answer-saved")).toContainText("You said Maybe");
-  await sub.getByTestId("answer-yes").click();
-  await expect(sub.getByTestId("answer-saved")).toContainText("You said Yes");
+  await expect(sub.locator("[data-testid^='answer-2027-'][data-testid$='-yes']")).toHaveCount(2);
+  await sub.getByTestId("answer-2027-03-06-note").fill("Can do after 6");
+  await sub.getByTestId("answer-2027-03-06-yes").click();
+  await expect(sub.getByTestId("answer-2027-03-06-saved")).toBeVisible();
+  await expect(sub.getByTestId("answer-2027-03-06-yes")).toHaveAttribute("aria-pressed", "true");
+  await sub.getByTestId("answer-2027-03-12-maybe").click();
+  await expect(sub.getByTestId("answer-2027-03-12-maybe")).toHaveAttribute("aria-pressed", "true");
+  await sub.reload();
+  await expect(sub.getByTestId("answer-2027-03-06-yes")).toHaveAttribute("aria-pressed", "true");
+  await expect(sub.getByTestId("answer-2027-03-06-note")).toHaveValue("Can do after 6");
   // a tampered link is refused
   await sub.goto(link.slice(0, -3).replace("http://127.0.0.1:3100", "") + "xyz");
   await expect(sub.getByTestId("ask-problem")).toBeVisible();
   await anon.close();
 
-  // Jeff sees it live, marks David himself, reminds the rest, then closes
-  await expect(page.getByTestId("avail-state-Sam")).toHaveText("Yes");
-  await expect(page.getByTestId("avail-row-Sam")).toContainText("Can do after 6");
-  await page.getByTestId("avail-set-David").click();
-  await page.getByTestId("mark-David-maybe").click();
-  await expect(page.getByTestId("avail-state-David")).toHaveText("Maybe");
-  await expect(page.getByTestId("avail-row-David")).toContainText("set by admin");
-  await expect(page.getByTestId("remind-all")).toHaveText("Remind 2 waiting");
-  await page.getByTestId("remind-all").click();
-  await expect(page.getByTestId("ask-result").last()).toContainText("Emailed");
-  await page.getByTestId("ask-close").click();
-  await expect(page.getByTestId("ask-closed")).toBeVisible();
+  // a member opens the pitch signed in and answers there
+  const david = await as(browser, "david");
+  await david.page.goto(pitchUrl);
+  await expect(david.page.getByTestId("member-dates")).toBeVisible();
+  await david.page.getByTestId("answer-2027-03-12-no").click();
+  await expect(david.page.getByTestId("answer-2027-03-12-saved")).toBeVisible();
+  await david.close();
+
+  // Jeff sees it live
+  await expect(page.getByTestId("free-Sam-2027-03-06")).toContainText("Free");
+  await expect(page.getByTestId("free-Sam-2027-03-06")).toContainText("Can do after 6");
+  await expect(page.getByTestId("free-Sam-2027-03-12")).toHaveText("Maybe");
+  await expect(page.getByTestId("free-David-2027-03-12")).toHaveText("Can't");
+  await expect(page.getByTestId("free-total-2027-03-06")).toHaveText(/^1 of \d+$/);
 });
 
 test("Shows list: title row with New show and no subtitle; one table per tab; the tab survives a reload", async ({ page, browser }) => {
