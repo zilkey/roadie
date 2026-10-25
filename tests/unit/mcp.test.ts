@@ -301,7 +301,7 @@ test("read tools: search, follow-ups, availability, missing files, Bandsintown r
   const v = await call("venues.create", venue("Fox Theatre", "Boulder", { contactIds: [contact.id] })); // the contact link is this band's private note
   const p = await db.create(admin, "pitches", {
     target: { kind: "venue", id: v.id, name: "Fox Theatre" }, status: "pitched", artistId: "a", personnel: [], showIds: [],
-    lastContactAt: new Date(Date.now() - 20 * 86_400_000),
+    lastContactAt: new Date(Date.now() - 21 * 86_400_000), // clear of the 20-day threshold: exactly 20 floors to 19 once a few ms have passed
   });
   await db.create(admin, "pitches", { target: { kind: "venue", id: v.id, name: "Other" }, status: "pitched", artistId: "a", personnel: [], showIds: [], lastContactAt: new Date() });
 

@@ -25,6 +25,86 @@ npm run restore -- backups/2026-10-23 --overwrite   # over existing documents (o
 Every document is validated with the Zod schemas (common fields, strict collection shape, id equals path); if any fails nothing is written and the problems are listed. Restore refuses a non-empty database without `--overwrite`, and refuses real Firestore (no emulator host) without `--yes`. It writes documents exactly as they were (ids, timestamps, history), so it is the one writer that bypasses `db.ts` on purpose.
 To try it locally: `npm run emulators`, `npm run seed`, `npm run backup`, wipe the emulator, `npm run restore -- backups/<date>`.
 
+## Wipe
+```
+npm run wipe -- --dry-run                                   # emulator: what would go, deletes nothing
+npm run wipe -- --yes                                       # emulator: deletes
+GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=./key.json \
+  tsx scripts/wipe.ts --yes --project=roadie-prod-iab       # real Firestore
+```
+`scripts/wipe.ts` empties a project: every Firestore document (sub-collections included) and every Auth user.
+`reset()` in `scripts/seed.ts` only talks to the emulator's REST endpoint, which real Firestore does not have, so
+this is the only way to empty a real project without doing it by hand in the console.
+
+**It always backs up first**, and a backup error stops the run with nothing deleted. A dry run deletes nothing and
+so writes no backup. The guard rails:
+
+- **no flags at all behaves as `--dry-run`**, so a bare `tsx scripts/wipe.ts` can never delete;
+- real Firestore needs `--yes` **and** `--project=<id>` matching `GCLOUD_PROJECT` exactly — typing the project id is
+  the confirmation, and there is no interactive prompt (it would break non-interactive runs);
+- with neither `GCLOUD_PROJECT` nor an emulator host it refuses, rather than guess at a target;
+- the target is printed on the first line of every run, dry runs included.
+
+Every guard throws before the first Firestore call, so a refused run contacts nothing.
+
+The backup folder is `backups/2026-10-24T21-07-03/` — **local** date and time to the second, not `npm run backup`'s
+plain UTC date. Both halves matter here. A production wipe happens at night, when the UTC date is already tomorrow
+and a UTC-named folder would be filed under a day that has not started locally yet. And the time means two wipes in
+one sitting (wipe, seed, "wrong data", wipe again) get two folders, where a date alone would have the second backup
+overwrite the only copy of what the first one saved. Restore takes the folder either way:
+`npm run restore -- backups/2026-10-24T21-07-03`.
+
+It takes **everything**, `jeff@zilkey.com` included: a surviving `users/{uid}` doc would carry an `artists[]`
+membership pointing at an artist id that no longer exists — a broken sign-in that looks like an app bug rather than
+a leftover. The seed step puts back what should be there, with correct claims. `mutations` and `unsubmittedDrafts`
+are cleared too although backups leave them out (a draft surviving the wipe would reopen a stale create form); the
+report lists them separately so the two sets are not confused.
+
+A wiped project with no artist is not a state to leave things in: back up, wipe, then re-seed in the same sitting.
+
+## Running a script against real Firestore (the `--yes` guard)
+Every script that writes takes the same three flags, and the convention is worth stating once because tonight's
+imports rely on it:
+
+- `--dry-run` validates and counts, writes nothing. Always first.
+- **no flag at all** is the emulator: the npm scripts set `FIRESTORE_EMULATOR_HOST`, so a bare `npm run <script>`
+  can only ever touch `demo-band-tracker`.
+- `--yes` is required when there is **no** emulator host set, i.e. real Firestore. Without it the script throws
+  *"This would write to REAL Firestore. Re-run with --dry-run to look first, or --yes if that is what you want."*
+
+The guard is literally `!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes") && !flag("dry-run")`
+(`scripts/import-show-income.ts:273`, `scripts/import-gas.ts:112`). The consequence worth knowing: because the
+normal npm scripts hardcode the emulator host, **they can never hit production** — which is why production runs use
+the separate `:prod` scripts below rather than a flag.
+
+### The `:prod` scripts
+> **Not written yet.** None of the `:prod` scripts below are in `package.json`, and `seed-real` does not exist: they
+> arrive with the stories that need them. Until then use the plain `tsx scripts/<name>.ts` form with
+> `GCLOUD_PROJECT` and `GOOGLE_APPLICATION_CREDENTIALS` set, as the Wipe section above shows.
+
+```
+GOOGLE_APPLICATION_CREDENTIALS=./key.json npm run import:booking:prod -- --dry-run
+GOOGLE_APPLICATION_CREDENTIALS=./key.json npm run import:booking:prod -- --yes
+```
+Each `:prod` script is the plain `tsx` invocation with `GCLOUD_PROJECT=roadie-prod-iab` and **no** emulator hosts, so
+the guard above engages by itself. The credentials path stays in the environment, never in `package.json`. Flags
+pass through after `--`.
+
+### Order for the band's real data
+Backup first, always. Then, each step `--dry-run` → read the report → `--yes` → run it a **second** time and confirm
+it reports everything unchanged (every importer uses fixed ids and claims idempotency; a doubled income line is real
+money shown wrong).
+```
+npm run backup -- --out backups                  # before anything
+tsx scripts/wipe.ts --dry-run                    # see what would go (npm run wipe is emulator-only)
+tsx scripts/wipe.ts --yes --project=roadie-prod-iab   # empties Firestore and Auth
+npm run seed-real:prod -- --yes                  # the artist and the five people
+npm run import:booking:prod -- --yes             # venues, festivals, contacts, pitches, shows
+npm run import:show-income:prod -- --yes         # money and ratings onto those shows
+npm run import:gas:prod -- --yes                 # Eric Example's drives
+```
+The order is forced: income matches rows to shows that must already exist, and gas matches drives to show dates.
+
 ## Moving old history under its records (one time)
 History used to be one top-level `history` collection. It is now a `history` subcollection under each record (`venues/{id}/history/000002`), which backup and restore already carry because they walk sub-collections (the entries are in their parent collection's file, not in `history.json`). Backups made before the change still contain `history.json`; restoring one puts the old collection back, and the migration then moves it.
 ```
