@@ -25,6 +25,9 @@ before(async () => {
     await setDoc(doc(d, "venueNotes/x__x"), { ...live, artistId: "x", venueId: "x", loadInNotes: "x's" });
     await setDoc(doc(d, "venueNotes/y__x"), { ...live, artistId: "y", venueId: "x", loadInNotes: "y's" });
     await setDoc(doc(d, "venueNotes/x__gone"), { deletedAt: new Date(), artistId: "x", venueId: "x" });
+    await setDoc(doc(d, "fans/fx"), { ...live, artistId: "x", email: "fan@example.com" });
+    await setDoc(doc(d, "fans/fy"), { ...live, artistId: "y", email: "other@example.com" });
+    await setDoc(doc(d, "geocodes/g1"), { lat: 1, lng: 2 });
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
     await setDoc(doc(d, "shows/x/comments/c1"), { ...live });
@@ -207,6 +210,18 @@ test("checklist templates: only that artist's admins read them; lists filter by 
   await assertSucceeds(getDoc(doc(otherAdmin(), "checklistTemplates/y")));
   await assertSucceeds(getDocs(query(collection(admin(), "checklistTemplates"), where("artistId", "==", "x"))));
   await assertFails(getDocs(collection(admin(), "checklistTemplates")));
+});
+
+test("fans: only that artist's admins read them; a member, another artist's admin and the geocode cache are closed; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "fans/fx")));
+  await assertFails(getDoc(doc(admin(), "fans/fy")));
+  await assertFails(getDoc(doc(david(), "fans/fx")));
+  await assertFails(getDoc(doc(otherAdmin(), "fans/fx")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "fans/fy")));
+  await assertSucceeds(getDocs(query(collection(admin(), "fans"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(collection(admin(), "fans")));
+  for (const who of [admin(), david(), anon()]) await assertFails(getDoc(doc(who, "geocodes/g1")));
+  for (const who of [admin(), david(), anon()]) await assertFails(setDoc(doc(who, "fans/new"), { artistId: "x" }));
 });
 
 test("venues: a member and an admin of another artist read the shared record; venueNotes stay with that artist's admins", async () => {

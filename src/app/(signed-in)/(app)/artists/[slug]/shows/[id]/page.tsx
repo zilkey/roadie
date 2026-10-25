@@ -21,6 +21,7 @@ import { Comments } from "@/components/shows/page/Comments";
 import { IncomeCard } from "@/components/shows/page/IncomeCard";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
 import { NetCard } from "@/components/shows/page/NetCard";
+import { ShowFansBanner } from "@/components/fans/ShowFansBanner";
 import type { Show } from "@/schema";
 
 type Tab = "details" | "setlist" | "finances";
@@ -89,6 +90,7 @@ function ShowView({ show }: { show: ShowRow }) {
         <aside className="show-side" aria-label="Checklists"><ChecklistSidebar show={show} admin={admin} /></aside>
 
         <div className="show-main show-after">
+          <ShowFansBanner showId={show.id} />
           <div className="mt-3"><Comments show={show} admin={admin} /></div>
           {admin && (
             <div className="grid gap-2">

@@ -90,6 +90,8 @@ const EXPECTED = [
   "shows.afterShow", "checklistTemplates.list", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "checklistTemplates.remove",
   // availability: ask and read, not mark
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",
+  // fans: admins' list and Bandzoogle; counts for everyone
+  "fans.add", "fans.update", "fans.remove", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "fans.markSynced",
   // songs, setlists, rehearsals, files
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
   "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.printLink", "setlists.setItems", "setlists.seed",

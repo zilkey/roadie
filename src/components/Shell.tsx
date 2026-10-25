@@ -12,9 +12,15 @@ import { isSectionId, SECTION_IDS, type SectionId } from "@/schema/sections";
 import { I, navFor, type NavItem } from "@/lib/nav";
 import { Dialog } from "@/components/ui";
 import { toast } from "@/components/Toasts";
+import { useFansBadge, useFansOn } from "@/lib/fans-client";
 
 function Icon({ d, size = 22 }: { d: string; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>;
+}
+
+/** The Fans item's count of fans not yet in Bandzoogle; nothing at 0. */
+function Badge({ n, testid }: { n?: number; testid: string }) {
+  return n ? <span className="ml-1.5 inline-grid min-w-5 place-items-center rounded-full bg-[var(--accent)] px-1.5 text-xs font-bold leading-5 text-[var(--on-accent)]" data-testid={testid} aria-label={`${n} not in Bandzoogle yet`}>{n}</span> : null;
 }
 
 /** The artist-settings sections (artist-relative), named as in the settings sub-nav. the band setup card, the phone title and `useOn` read this. */
@@ -72,7 +78,7 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo, onEdit }: 
  * Is the browser on this link's page? A link covers its own path and everything under it, except what a more specific
  * link already covers: /booking/templates is its own section, so /booking doesn't light up for it.
  */
-const NAV_HREFS = [...navFor("admin", [...SECTION_IDS]).map((n) => n.href), ...ADMIN_LINKS.map((l) => l.href), "/me"];
+const NAV_HREFS = [...navFor("admin", [...SECTION_IDS], { fans: true }).map((n) => n.href), ...ADMIN_LINKS.map((l) => l.href), "/me"];
 function useOn() {
   const path = usePathname();
   const full = useHref();
@@ -86,15 +92,15 @@ function MoreItems({ items, testidPrefix = "more" }: { items: NavItem[]; testidP
   return (
     <>
       {items.map((n) => (
-        <Link key={n.key} href={n.href} role="menuitem" data-testid={`${testidPrefix}-${n.key}`} aria-current={on(n.href) ? "page" : undefined} className={`menu-item${on(n.href) ? " bg-accent-soft text-accent" : ""}`}><Icon d={n.icon} size={20} />{n.label}</Link>
+        <Link key={n.key} href={n.href} role="menuitem" data-testid={n.key === "fans" && testidPrefix === "more" ? "nav-fans" : `${testidPrefix}-${n.key}`} aria-current={on(n.href) ? "page" : undefined} className={`menu-item${on(n.href) ? " bg-accent-soft text-accent" : ""}`}><Icon d={n.icon} size={20} />{n.label}<Badge n={n.badge} testid={n.key === "fans" && testidPrefix === "more" ? "nav-fans-badge" : `${testidPrefix}-fans-badge`} /></Link>
       ))}
     </>
   );
 }
 
 /** "Customize menu": per section an on/off switch and up/down. Saved per user as it changes. */
-function EditMenuDialog({ open, onClose, role, hidden, order }: { open: boolean; onClose(): void; role: string; hidden: SectionId[]; order: SectionId[] }) {
-  const rows = navFor(role as "admin" | "member", order).filter((n) => n.key !== "calendar") as (NavItem & { key: SectionId })[];
+function EditMenuDialog({ open, onClose, role, hidden, order, fans }: { open: boolean; onClose(): void; role: string; hidden: SectionId[]; order: SectionId[]; fans: boolean }) {
+  const rows = navFor(role as "admin" | "member", order, { fans }).filter((n) => n.key !== "calendar") as (NavItem & { key: SectionId })[];
   const fail = (what: string, e: unknown) => toast({ key: "menu-edit", text: `Couldn't ${what}: ${e instanceof Error ? e.message : "error"}`, ms: 6000 });
   async function toggle(n: NavItem & { key: SectionId }) {
     try { await setSectionHidden(n.key, !hidden.includes(n.key)); } catch (e) { fail(`change ${n.label}`, e); }
@@ -147,7 +153,9 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const full = useHref();
   const { hidden, order } = useHiddenSections();
   const on = useOn();
-  const all = navFor(profile.role, order);
+  const fansOn = useFansOn();
+  const fansBadge = useFansBadge();
+  const all = navFor(profile.role, order, { fans: fansOn }).map((n) => (n.key === "fans" ? { ...n, badge: fansBadge } : n));
   const away = (n: NavItem) => isSectionId(n.key) && hidden.includes(n.key);
   const shown = all.filter((n) => !away(n));
   const switchedOff = all.filter(away);
@@ -194,7 +202,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
 
   const barLink = (n: NavItem, testid?: string) => (
     <Link key={n.key} href={n.href} data-testid={testid} aria-current={on(n.href) ? "page" : undefined}
-      className={`${NAV_LINK} ${on(n.href) ? "bg-accent-soft font-bold text-accent" : "font-semibold text-nav hover:bg-divider"}`}>{n.label}</Link>
+      className={`${NAV_LINK} ${on(n.href) ? "bg-accent-soft font-bold text-accent" : "font-semibold text-nav hover:bg-divider"}`}>{n.label}<Badge n={n.badge} testid="nav-fans-badge" /></Link>
   );
   const switcher = (
     <>
@@ -228,7 +236,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           </Dropdown>
           <nav ref={navBox} className="relative min-w-0 flex-1" aria-label="Main">
             <div className="flex items-center gap-1">
-              {inBar.map((n) => barLink(n, `tab-${n.key}`))}
+              {inBar.map((n) => barLink(n, n.key === "fans" ? "nav-fans" : `tab-${n.key}`))}
               <Dropdown label="More" testid="more-toggle" left className={`${NAV_LINK} gap-1 ${moreDesktop.some((n) => on(n.href)) ? "bg-accent-soft font-bold text-accent" : "font-semibold text-nav hover:bg-divider"}`}
                 trigger={<>More<Icon d={I.chevron} size={16} /></>} listTestid="more-menu">
                 <MoreItems items={moreDesktop} />
@@ -261,7 +269,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           {phoneTabs.map((n) => (
             <Link key={n.key} href={n.href} data-testid={`mtab-${n.key}`} aria-current={on(n.href) ? "page" : undefined}
               className={`flex flex-col items-center justify-center gap-0.5 text-xs font-semibold no-underline ${on(n.href) ? "text-accent" : "text-muted"}`}>
-              <Icon d={n.icon} />{n.label}
+              <span className="relative"><Icon d={n.icon} />{n.badge ? <span className="absolute -right-2 -top-1 grid min-w-4 place-items-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-bold leading-4 text-[var(--on-accent)]" data-testid="mtab-fans-badge">{n.badge}</span> : null}</span>{n.label}
             </Link>
           ))}
           <button type="button" data-testid="mtab-more" aria-expanded={sheet} onClick={() => setSheet(!sheet)}
@@ -278,7 +286,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           </>
         )}
       </div>
-      <EditMenuDialog open={editing} onClose={() => setEditing(false)} role={profile.role} hidden={hidden} order={order} />
+      <EditMenuDialog open={editing} onClose={() => setEditing(false)} role={profile.role} hidden={hidden} order={order} fans={fansOn} />
     </div>
   );
 }

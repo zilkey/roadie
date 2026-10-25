@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { entity, serverMask, id, region, sound, sourcesShape } from "./common";
 
+const isTimeZone = (tz: string) => { try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; } };
+
 /**
  * A venue is split in two documents (docs/venue-access-proposal.md). This one, `venues/{id}`, is the shared directory record:
  * facts about the room that every signed-in band user may read and fix. What one band knows privately (load-in notes, notes,
@@ -18,6 +20,8 @@ const sharedShape = {
   sound: sound.optional(),
   website: z.string().optional(),
   instagram: z.string().optional(),
+  /** IANA time zone of the room (America/Los_Angeles), picked by hand. Missing = the band's time zone. */
+  timeZone: z.string().refine(isTimeZone, "Not a time zone").optional(),
   matchKey: z.string().min(1),
   /** Set by venues.mergeInto: the room this duplicate was merged into (the doc is soft-deleted; its page redirects there). */
   mergedInto: id.optional(),

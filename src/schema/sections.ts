@@ -5,12 +5,12 @@ import { z } from "zod";
  * Per-user prefs, not business data: top-level `userPrefs/{uid}` = { hiddenSections: SectionId[], order: SectionId[] }, written with firebase-admin
  * directly (no history, not undoable), owner-only read by rules. A hidden section's routes still work when visited directly.
  */
-export const SECTION_IDS = ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money"] as const;
+export const SECTION_IDS = ["shows", "booking", "templates", "songs", "setlists", "rehearsals", "money", "fans"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 export const SectionIdSchema = z.enum(SECTION_IDS);
 export const isSectionId = (s: unknown): s is SectionId => (SECTION_IDS as readonly unknown[]).includes(s);
 
-export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", templates: "Email templates", shows: "Shows", songs: "Songs", setlists: "Setlist Templates", rehearsals: "Rehearsals", money: "Money" };
+export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", templates: "Email templates", shows: "Shows", songs: "Songs", setlists: "Setlist Templates", rehearsals: "Rehearsals", money: "Money", fans: "Fans" };
 export const SectionSetInput = z.strictObject({ section: SectionIdSchema, hidden: z.boolean() });
 
 /**

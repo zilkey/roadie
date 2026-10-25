@@ -6,10 +6,11 @@ import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, SECTION_IDS, normalizeOrder } fr
 const keys = (items: { key: string }[]) => items.map((n) => n.key);
 const label = (items: { key: string; label: string }[], key: string) => items.find((n) => n.key === key)?.label;
 
-test("admin gets Calendar then all seven sections in the default order, with Money", () => {
-  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER]);
+test("admin gets Calendar then all eight sections in the default order, with Money (Fans when the artist has it on)", () => {
+  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true });
   assert.deepEqual(keys(nav), ["calendar", ...SECTION_IDS]);
-  assert.equal(SECTION_IDS.length, 7);
+  assert.equal(SECTION_IDS.length, 8);
+  assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans")]);
   assert.equal(label(nav, "money"), "Money");
 });
 
@@ -20,10 +21,15 @@ test("members don't get booking or email templates, and see My money", () => {
   assert.equal(label(nav, "money"), "My money");
 });
 
+test("members see Fans (counts only) when it is on", () => {
+  assert.ok(keys(navFor("member", [...DEFAULT_SECTION_ORDER], { fans: true })).includes("fans"));
+  assert.ok(!keys(navFor("member", [...DEFAULT_SECTION_ORDER])).includes("fans"));
+});
+
 test("a custom order is respected; sections it leaves out are appended", () => {
   const order = normalizeOrder(["money", "songs"]);
-  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals"]);
-  assert.deepEqual(keys(navFor("admin", order)), ["calendar", ...order]);
+  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "setlists", "rehearsals", "fans"]);
+  assert.deepEqual(keys(navFor("admin", order, { fans: true })), ["calendar", ...order]);
   assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "setlists", "rehearsals"]);
 });
 

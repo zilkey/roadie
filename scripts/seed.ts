@@ -17,6 +17,7 @@ import { seedDefaultTemplates } from "../src/server/checklistTemplates";
 import { updateDriving } from "@/server/driving";
 import { areaFor, productFor } from "@/server/gas/price";
 import { firestore } from "@/server/admin";
+import { fanId } from "@/server/fans";
 import { Timestamp } from "firebase-admin/firestore";
 
 const project = "demo-band-tracker";
@@ -53,6 +54,7 @@ async function main() {
     ],
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/ingridavison", website: "https://ingridavison.example" },
     driveFolderId: "fake-band-folder",
+    features: { fans: true },
   });
 
   // Every seeded person belongs to the artist, with their role there.
@@ -218,6 +220,14 @@ async function main() {
     needs: { poster: false, backline: false, merch: true }, checklists: [], publishToBandsintown: true,
   });
   await create("showDeals", { contactIds: [dana], deal: "guarantee", paidAttendance: 112, income: [{ id: "i1", category: "guarantee", amount: 45000, method: "check", received: true }] }, playedShow);
+
+  // --- fans (the email list): one already in Bandzoogle, two not, one with no city ---
+  const fan = (email: string, extra: Record<string, unknown>) =>
+    create("fans", { artistId: artist, email, cities: [], showIds: [], source: "list", lastSeenAt: new Date(), ...extra }, fanId(artist, email));
+  await fan("ann@example.com", { firstName: "Ann", cities: [{ city: "Boulder", state: "CO" }], showIds: [playedShow], bandzoogle: { addedAt: new Date(), group: "Boulder, CO" } });
+  await fan("bo@example.com", { firstName: "Bo", cities: [{ city: "Boulder", state: "CO" }], showIds: [playedShow] });
+  await fan("cy@example.com", { firstName: "Cy", cities: [{ city: "Denver", state: "CO" }], showIds: [hiShow], source: "paper" });
+  await fan("dee@example.com", {});
 
   // --- money + reach (small) ---
   await create("expenses", { userId: uid.david, date: "2026-10-10", amount: 2850, category: "gear", what: "Bass strings and cables", showId: playedShow });

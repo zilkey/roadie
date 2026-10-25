@@ -5,9 +5,10 @@
 import type { HelpTopic } from "./types";
 import { BOOKING_TOPICS } from "./booking";
 import { SHOW_TOPICS } from "./shows";
+import { FAN_TOPICS } from "./fans";
 
 export type { HelpTopic } from "./types";
-export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS];
+export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS];
 export const HELP_TOPIC_IDS = HELP_TOPICS.map((t) => t.id) as [string, ...string[]];
 export const helpTopic = (id: string) => HELP_TOPICS.find((t) => t.id === id);
 
@@ -21,7 +22,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   promoter: "booking", festival: "booking", edition: "booking", contact: "booking",
   bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",
-  rehearsals: "rehearsals", rehearsal: "rehearsals", money: "money", expense: "expenses", fields: "customFields",
+  rehearsals: "rehearsals", rehearsal: "rehearsals", money: "money", fans: "fans", expense: "expenses", fields: "customFields",
 };
 /** The topic that explains this page, if there is one. */
 export function topicForPage(route: string, tab?: string): HelpTopic | undefined {
@@ -33,6 +34,7 @@ export function topicForPage(route: string, tab?: string): HelpTopic | undefined
 const WORDS: [RegExp, string][] = [
   [/\bpitch(?:es)? status(?:es)?\b|\bstatus(?:es)? (?:of|on) (?:a )?pitch|\b(?:pitched|declined)\b/, "pitchStatuses"],
   [/\bshared\b|\bevery band\b|\bother bands\b/, "venueSharing"],
+  [/\bfans?\b|\bmailing list\b|\bemail list\b|\bbandzoogle\b/, "fans"],
   [/\bsetlist templates?\b/, "setlistTemplates"],
   [/\bchecklists?\b|\bto-?dos?\b/, "checklists"],
   [/\bcustom fields?\b/, "customFields"],

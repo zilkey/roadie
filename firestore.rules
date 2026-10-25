@@ -70,6 +70,10 @@ service cloud.firestore {
     match /showDeals/{id}          { allow read: if isAdmin(); }
     match /statSnapshots/{id}      { allow read: if isAdmin(); }
     match /mcpTokens/{id}          { allow read: if isAdmin(); }
+    // The fan email list: only that artist's admins read it (members get counts through the fans.* commands, never rows); no client writes.
+    // The public signup writes through the server. Lists must filter where('artistId', '==', ...). The history of a fan carries the same artistId.
+    // geocodes/{key} (city -> coordinates cache, like routeCache) is server-only: no read rule on purpose.
+    match /fans/{id}               { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // Every record's change log lives at {docPath}/history/{rev}, at any depth; written by the server in the same transaction as the change.
     // An entry carries the artistId of the record it describes (null when the record belongs to no one artist): only that artist's admins
     // read it, and any admin reads the null ones. Collection-group queries must filter artistId == <artist> (or == null).

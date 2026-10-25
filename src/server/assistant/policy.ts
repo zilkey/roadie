@@ -42,6 +42,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "stats.pull",                                                                          // calls out
   "musicians.archive", "musicians.removeFromBand",                                      // someone leaves the band
   "artists.removeSongField", "artists.removeShowField",                                  // deletes every value
+  "fans.markSynced",                                                                     // marks addresses as done in Bandzoogle for good (fans.remove asks too: *.remove)
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
 ];
 /** venues.update fields that are the SHARED room (every band sees them); the rest (loadInNotes, notes, contactIds, promoterIds) are the band's own. */
@@ -58,7 +59,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -117,6 +118,8 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "showDeals.setIncome": (i) => `Set the show's income${Array.isArray(i.income) ? ` (${dollars((i.income as { amount: number }[]).reduce((n, l) => n + l.amount, 0))} in all)` : ""}`,
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
+  "fans.markSynced": (i) => (i.group ? `Mark every fan in "${i.group}" as added to Bandzoogle: they won't be offered again` : `Mark ${Array.isArray(i.ids) ? i.ids.length : "these"} fans as added to Bandzoogle: they won't be offered again`),
+  "fans.remove": () => "Delete this fan and their history for good (it can't be undone)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",
   "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
   "venues.update": (i, before) => {

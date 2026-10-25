@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/lib/auth";
 import { FontLoader } from "@/components/FontLoader";
 import { appUrl } from "@/lib/app-url";
 
@@ -14,12 +13,13 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#3a46c4" };
 
+// No AuthProvider here: it pulls in the Firebase SDK, and the public fan pages (/f, /ask) must not load it. Routes that sign in live under src/app/(signed-in), whose layout holds the single AuthProvider.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         <FontLoader />
-        <AuthProvider>{children}</AuthProvider>
+        {children}
       </body>
     </html>
   );

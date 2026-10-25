@@ -19,6 +19,8 @@ export interface OrsPlace {
 
 export interface OrsService {
   autocomplete(q: string): Promise<OrsPlace[]>;
+  /** The best match for a place name ("Boise, ID"), or null when ORS knows none. Used for fans' cities and venue towns. */
+  geocode(text: string): Promise<{ lat: number; lng: number } | null>;
   reverse(lat: number, lng: number): Promise<{ county?: string; state?: string } | null>;
   /** One-way driving distance in miles (driving-car). */
   directions(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<{ oneWayMiles: number }>;
@@ -45,6 +47,11 @@ export function orsClient(baseUrl = process.env.ORS_BASE_URL ?? "http://127.0.0.
     async autocomplete(q) {
       const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/autocomplete", { query: { text: q, api_key: key, "boundary.country": "US" } });
       return r.features.map(place);
+    },
+    async geocode(text) {
+      const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/search", { query: { text, api_key: key, size: "1", "boundary.country": "US" } });
+      const f = r.features[0];
+      return f ? { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] } : null;
     },
     async reverse(lat, lng) {
       const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/reverse", { query: { "point.lat": String(lat), "point.lon": String(lng), api_key: key } });

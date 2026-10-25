@@ -12,7 +12,7 @@ Pieces (all client code is `"use client"`):
 | `draftPath.newIn / newUnder / edit` | `src/schema/drafts.ts` | build the path (below) |
 | `<DraftNote .../>`, `<UnfinishedCard/>` | `src/components/drafts/UnfinishedCard.tsx` | draft status line / Home card (`draft-status`, `draft-restored`, `draft-start-over`, `unfinished`, `draft-<id>`) |
 | `EntityForm autosave={...}` / `draft={...}` | `src/components/booking/common.tsx` | field-list forms (`Field[]` + `build`) with no custom layout |
-| `<ToastHost/>`, `toast()` | `src/components/Toasts.tsx` | already mounted in `src/app/(app)/layout.tsx`; the "Saved … Undo" toast (`toast`, `undo-button`) is shown by `useAutosave` for 10 s |
+| `<ToastHost/>`, `toast()` | `src/components/Toasts.tsx` | already mounted in `src/app/(signed-in)/(app)/layout.tsx`; the "Saved … Undo" toast (`toast`, `undo-button`) is shown by `useAutosave` for 10 s |
 | `useCommand().call(name, input, meta?)` | `src/components/ui.tsx` | `meta` = `{clientMutationId, baseRev, autosave, clearDraft: <path>}` (sent as `_meta`, stripped by dispatch) |
 
 What the server does for you: `rev` +1 per write; `baseRev` conflict check (field changed by someone else since -> 409 `conflict` "<name> changed X to <value>"); `clientMutationId` dedupe (7 days); autosave patches by the same person within 2 min fold into one history entry; `Undo` = `history.undoRun` with the runId from the response and skips fields edited again since.
@@ -46,7 +46,7 @@ Before (Save button, whole-form diff):
   onSubmit={async (d) => { const r = await call("venues.update", { id, patch: toPatch(d) }); if (r) setEdit(false); }} />
 ```
 
-After (`src/app/(app)/booking/venues/[id]/page.tsx`):
+After (`src/app/(signed-in)/(app)/booking/venues/[id]/page.tsx`):
 
 ```tsx
 <EntityForm testid="venue-edit" fields={venueForm.fields} initial={venueForm.initial(v)} build={venueForm.build}
@@ -55,7 +55,7 @@ After (`src/app/(app)/booking/venues/[id]/page.tsx`):
 
 Also rename the page's toggle from "Close" to "Done" if it has one. The form shows its own `<SaveStatus>`. Required fields that are empty are not sent ("Not saved: City is required").
 
-Custom layout (`src/app/(app)/shows/[id]/page.tsx` + `ShowForm`): call the hook once on the page, turn each edit into a **patch between the previous and next form state** (never "form vs. the live doc": that breaks A -> B -> A while the snapshot lags), and flush on blur:
+Custom layout (`src/app/(signed-in)/(app)/shows/[id]/page.tsx` + `ShowForm`): call the hook once on the page, turn each edit into a **patch between the previous and next form state** (never "form vs. the live doc": that breaks A -> B -> A while the snapshot lags), and flush on blur:
 
 ```tsx
 const as = useAutosave({ command: "shows.update", id: show.id, rev: show.rev, onUseTheirs: () => setForm(formOf(show)) });
@@ -75,7 +75,7 @@ Rules: patch values are what the `<kind>.update` command accepts (`null` clears)
 ## 2. Create form (new record)
 
 Before: `useState(blank)` + `[Save]` -> `call("shows.create", ...)`.
-After (`src/app/(app)/shows/new/page.tsx`): the state comes from `useDraft`, the button stays and says "Add ..." (side effects such as calendar invites must not fire on their own):
+After (`src/app/(signed-in)/(app)/shows/new/page.tsx`): the state comes from `useDraft`, the button stays and says "Add ..." (side effects such as calendar invites must not fire on their own):
 
 ```tsx
 const draft = useDraft(pitchId ? draftPath.newUnder("pitches", pitchId, "shows") : draftPath.newIn("shows"), blank, { title: (v) => `New show · ${venueName(v)} · ${v.date}` });

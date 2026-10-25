@@ -413,6 +413,7 @@ const opt = (s: string) => (s.trim() ? s.trim() : undefined);
 const num = (s: string) => (s.trim() ? Number(s) : undefined);
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 const o = (...pairs: [string, string][]) => pairs;
+const US_ZONES = o(["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona (no DST)"], ["America/Los_Angeles", "Pacific"], ["America/Anchorage", "Alaska"], ["Pacific/Honolulu", "Hawaii"]);
 const REGIONS = o(["boulder", "Boulder"], ["denver", "Denver"], ["north", "North"], ["south", "South"], ["mountains", "Mountains"], ["southwest", "Southwest"], ["out", "Out of state"]);
 
 /** The shared room: name, address and facts every band sees. Edited with an explicit Save (and a confirmation), because it changes the room for every band. */
@@ -428,16 +429,17 @@ export const roomForm = {
     { key: "soundProvider", label: "Sound", type: "select", half: true, options: o(["", "Not sure"], ["venueProvided", "Venue provides"], ["bandProvided", "Band brings"]) },
     { key: "soundNotes", label: "Sound notes", half: true },
     { key: "website", label: "Website", half: true }, { key: "instagram", label: "Instagram", half: true },
+    { key: "timeZone", label: "Time zone", type: "select", half: true, options: o(["", "Band time zone"], ...US_ZONES) },
   ] as Field[],
-  initial: (d: Pick<Venue, "name" | "type" | "region" | "address" | "capacity" | "ages" | "sound" | "website" | "instagram">): Values => ({
+  initial: (d: Pick<Venue, "name" | "type" | "region" | "address" | "capacity" | "ages" | "sound" | "website" | "instagram" | "timeZone">): Values => ({
     name: d.name, type: d.type, region: d.region, city: d.address.city, state: d.address.state, street: d.address.street ?? "", zip: d.address.zip ?? "",
     capacity: d.capacity?.toString() ?? "", ages: d.ages ?? "", soundProvider: d.sound?.provider ?? "", soundNotes: d.sound?.notes ?? "",
-    website: d.website ?? "", instagram: d.instagram ?? "",
+    website: d.website ?? "", instagram: d.instagram ?? "", timeZone: d.timeZone ?? "",
   }),
   build: (v: Values) => ({
     name: v.name, type: v.type, region: v.region, address: { city: v.city, state: v.state, street: opt(v.street ?? ""), zip: opt(v.zip ?? "") },
     capacity: num(v.capacity ?? ""), ages: opt(v.ages ?? ""), sound: v.soundProvider ? { provider: v.soundProvider, notes: opt(v.soundNotes ?? "") } : undefined,
-    website: opt(v.website ?? ""), instagram: opt(v.instagram ?? ""),
+    website: opt(v.website ?? ""), instagram: opt(v.instagram ?? ""), timeZone: opt(v.timeZone ?? ""),
   }),
 };
 /** This band's private notes on a venue (admins only). They autosave. */

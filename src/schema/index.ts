@@ -12,6 +12,7 @@ import { PitchInput, CommentInput, ActivityInput } from "./pitches";
 import { EmailTemplateInput } from "./emailTemplates";
 import { ShowInput, ShowDealInput } from "./shows";
 import { AvailabilityInput } from "./availability";
+import { FanInput } from "./fans";
 import { ChecklistTemplateInput } from "./checklistTemplates";
 import { SongInput } from "./songs";
 import { FileInput } from "./files";
@@ -40,6 +41,7 @@ export * from "./pitches";
 export * from "./emailTemplates";
 export * from "./shows";
 export * from "./availability";
+export * from "./fans";
 export * from "./checklistTemplates";
 export * from "./songs";
 export * from "./files";
@@ -80,6 +82,7 @@ export const collections: Record<string, CollectionDef> = {
   shows: { input: ShowInput },
   showDeals: { input: ShowDealInput },
   availability: { input: AvailabilityInput },
+  fans: { input: FanInput },
   checklistTemplates: { input: ChecklistTemplateInput },
   songs: { input: SongInput },
   files: { input: FileInput },

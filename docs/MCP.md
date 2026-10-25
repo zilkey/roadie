@@ -63,7 +63,7 @@ Use one of the two, not both. Run `/mcp` in Claude Code to check it is connected
 
 ## What it can do
 
-Every command in the registry whose roles include `mcp` is a tool, named like the command (`venues.create`, `shows.update`, ...), with the description and a JSON schema generated from the command's Zod input. Plus read tools: `search`, `records.get`, `records.list`, `pitches.needingFollowUp`, `songs.missingFiles` (with sharing problems), `availability.check` (list of dates), `bandsintown.reconcile`, `stats.current`, `stats.movement`, `history.myRuns`, `history.undoRun`.
+Every command in the registry whose roles include `mcp` is a tool, named like the command (`venues.create`, `shows.update`, ...), with the description and a JSON schema generated from the command's Zod input. Plus read tools: `search`, `records.get`, `records.list`, `pitches.needingFollowUp`, `songs.missingFiles` (with sharing problems), `availability.check` (list of dates), `bandsintown.reconcile`, `stats.current`, `stats.movement`, `fans.counts`, `fans.near`, `fans.newSince` (counts only; `fans.list`, `fans.forBandzoogle` and the fan write commands are for artist admins), `history.myRuns`, `history.undoRun`.
 
 What it cannot do (not tools at all): users, musicians admin, AI keys, `pitches.sendEmail`, `availability.mark`, archiving venues/promoters/festivals/contacts/songs/shows.
 - Email: `pitches.draftEmail` creates a Gmail draft and a note on the pitch timeline; you review and send it from the app. `availability.ask` and `availability.remind` leave drafts when called through MCP; their `channel: "signal"` is app-only (only a person can post to the Signal group), so Roadie gives the admin the text and the group link instead.
