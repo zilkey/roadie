@@ -5,7 +5,7 @@ import { useProfile } from "@/lib/auth";
 import { useCommand } from "@/components/ui";
 import { formatCents, owesBack, parseDollars, sumExpenses } from "@/lib/money";
 import { roleIn, type Expense, type User } from "@/schema";
-import { useArtist } from "@/lib/artist";
+import Link, { useArtist } from "@/lib/artist";
 import { EditableCard, UnfinishedPlaceholder, useCardEdit } from "@/components/shows/page/kit";
 
 const fileIdOf = (url: string) => /\/d\/([\w-]+)/.exec(url)?.[1] ?? /[?&]id=([\w-]+)/.exec(url)?.[1] ?? url.replace(/\W+/g, "").slice(-24);
@@ -83,6 +83,8 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
   }
 
   const nobody = rows.length === 0;
+  // The full form (category, gas estimate, logging for a bandmate), filed under this show or rehearsal.
+  const fullForm = <Link href={`/money/expense?${target.kind === "show" ? "show" : "rehearsalId"}=${encodeURIComponent(target.id)}`} className="btn ghost" data-testid="expenses-full-form">+ Gas or full expense</Link>;
   return (
     <EditableCard title="Expenses" testid="expenses" ed={ed} onSave={save} busy={busy} error={error}>
       {ed.editing ? (
@@ -127,7 +129,7 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
           <span className="s">Band members can add their own expenses; only admins see income and net.</span>
         </div>
       ) : nobody ? (
-        <UnfinishedPlaceholder row lead="Nothing spent yet." testid="expenses-empty" actions={<button type="button" className="btn ghost" onClick={ed.start} data-testid="expenses-add">Add expense</button>}>
+        <UnfinishedPlaceholder row lead="Nothing spent yet." testid="expenses-empty" actions={<><button type="button" className="btn ghost" onClick={ed.start} data-testid="expenses-add">Add expense</button>{fullForm}</>}>
           Gas, strings, food — anyone in the band can add what they paid for and get paid back.
         </UnfinishedPlaceholder>
       ) : (
@@ -139,6 +141,7 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
             </div>
           ))}
           <div className="money-row" style={{ fontWeight: 700 }}><span>Total</span><span data-testid="expenses-total">{formatCents(sumExpenses(sorted))}</span></div>
+          <div className="pt-2">{fullForm}</div>
         </div>
       )}
     </EditableCard>

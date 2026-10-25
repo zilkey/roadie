@@ -43,6 +43,18 @@ test("admin logs gas from the rehearsal: round trip estimate, toggle one way, sa
   await close();
 });
 
+/** The expenses card links to the full form too, with the rehearsal preselected and gas the default. */
+test("the rehearsal expenses card opens the full expense form for that rehearsal", async ({ browser }) => {
+  const { page, close } = await as(browser, "david");
+  await openRehearsal(page, "Oct 29");
+  await page.getByTestId("expenses").getByTestId("expenses-full-form").click();
+  await expect(page).toHaveURL(/\/money\/expense\?rehearsalId=/);
+  await expect(page.getByText(/^Rehearsal · /)).toContainText("Oct 29");
+  await page.getByTestId("back").click();
+  await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/);
+  await close();
+});
+
 /** Members add their own expense on a rehearsal through the shared card; an admin sees it with who paid. */
 test("a member adds an expense on a rehearsal and an admin sees it", async ({ browser }) => {
   const david = await as(browser, "david");

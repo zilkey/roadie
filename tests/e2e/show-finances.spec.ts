@@ -49,3 +49,24 @@ test("Finances tab: income from a starter and an expense with a receipt; the tot
   await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
   await expect(page.getByTestId("net")).toBeVisible();
 });
+
+test("Finances tab: the full expense form opens for the show and returns to it on Save", async ({ page }) => {
+  await page.goto("/signin");
+  await page.getByTestId("dev-jeff").click();
+  await expect(page).toHaveURL(/\/calendar$/);
+
+  await page.goto(A("/shows#played"));
+  await page.getByTestId("shows-table-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).first().locator("td.date a").click();
+  await expect(page).toHaveURL(/\/shows\/[^/?]+/);
+  await page.getByTestId("show-tab-finances").click();
+
+  await page.getByTestId("expenses").getByTestId("expenses-full-form").click();
+  await expect(page).toHaveURL(/\/money\/expense\?show=/);
+  await expect(page.getByTestId("exp-cat-gas")).toBeVisible(); // gas is one of the choices
+  await page.getByTestId("exp-amount").fill("18");
+  await page.getByTestId("expense-what").fill("Parking garage");
+  await page.getByTestId("exp-save").click();
+
+  await expect(page).toHaveURL(/\/shows\/[^/?]+\?tab=finances$/);
+  await expect(page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "Parking garage" })).toBeVisible();
+});

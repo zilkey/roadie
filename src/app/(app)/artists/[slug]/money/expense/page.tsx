@@ -57,6 +57,8 @@ function AddExpense() {
   const rehearsal = rehearsalId ? reh.doc : null;
   const rehLoc = rehearsal?.location;
   const rehHasLoc = !!(rehLoc && (rehLoc.address || rehLoc.lat !== undefined));
+  // Opened from a rehearsal or show page: Save, Cancel and Back go back there.
+  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}` : fromShow ? `/shows/${fromShow}?tab=finances` : "/money";
   const draft = useDraft(
     fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
     {
@@ -149,19 +151,20 @@ function AddExpense() {
       ...(gas && own && showHomeBox && fromPick && draft.value.saveHome ? { saveAsHome: { ...(fromPick.name ? { name: fromPick.name } : {}), address: fromPick.address, lat: fromPick.lat, lng: fromPick.lng } } : {}),
       ...(gas && isAdmin && rehearsalId && !rehHasLoc && toPick && draft.value.setRehearsal ? { setAsRehearsalLocation: { ...(toPick.name ? { name: toPick.name } : {}), address: toPick.address, lat: toPick.lat, lng: toPick.lng } } : {}),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r) { await draft.clear(); router.push(rehearsalId ? `/rehearsals/${rehearsalId}` : "/money"); }
+    if (r) { await draft.clear(); router.push(returnTo); }
   }
   async function cancel() {
     await draft.clear({ reset: true });
-    router.push(rehearsalId ? `/rehearsals/${rehearsalId}` : "/money");
+    router.push(returnTo);
   }
 
   const miles = good?.miles ?? cur?.miles;
   const oneWay = cur?.oneWayMiles;
+  const fromShowDoc = fromShow ? shows.rows?.find((s) => s.id === fromShow) : undefined;
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<Link href="/money" className="back-link" data-testid="back">← My money</Link>} title="Add an expense"
-        sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : undefined} />
+      <PageTitle back={<Link href={returnTo} className="back-link" data-testid="back">{rehearsalId ? "← Rehearsal" : fromShow ? "← Show" : "← My money"}</Link>} title="Add an expense"
+        sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : fromShowDoc ? showName(fromShowDoc) : undefined} />
       {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
         <div className="grid gap-2">
           <span className="lbl">Category</span>
@@ -198,15 +201,15 @@ function AddExpense() {
 
           {showToBox ? (
             <div className={warnBox} style={warnStyle}>
-              <span className="lbl" style={{ color: "inherit" }}>To — where was rehearsal?</span>
+              <span className="lbl" style={{ color: "inherit" }}>{rehearsalId ? "To — where was rehearsal?" : "To — where did you drive?"}</span>
               <AddressAutocomplete value={toPick ? placeLabel(toPick) : ""} placeholder="Start typing an address or place…" testId="exp-to"
                 onPick={(p) => patch({ toPick: p })} onChange={() => toPick && patch({ toPick: null })} />
-              {!rehHasLoc && <span className="s" style={{ color: "inherit" }}>This rehearsal doesn't have an address yet.</span>}
+              {rehearsalId && !rehHasLoc && <span className="s" style={{ color: "inherit" }}>This rehearsal doesn't have an address yet.</span>}
               {isAdmin && rehearsalId && !rehHasLoc && <label className="flex items-center gap-2"><input type="checkbox" checked={draft.value.setRehearsal} onChange={(e) => patch({ setRehearsal: e.target.checked })} data-testid="exp-set-rehearsal-location" /><span>Also set this as the rehearsal location <span className="s">(admins only)</span></span></label>}
             </div>
           ) : (
             <label className="grid gap-1">
-              <span className="flex items-baseline justify-between gap-2"><span className="lbl">To</span><span className="s">Rehearsal location</span></span>
+              <span className="flex items-baseline justify-between gap-2"><span className="lbl">To</span>{rehearsalId && <span className="s">Rehearsal location</span>}</span>
               <AddressAutocomplete value={toPick ? placeLabel(toPick) : ""} placeholder={toLabel || "Where to?"} testId="exp-to"
                 onPick={(p) => patch({ toPick: p })} onChange={() => toPick && patch({ toPick: null })} />
             </label>
