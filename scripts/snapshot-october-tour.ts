@@ -1,7 +1,7 @@
 /**
  * Merge the October CO tour (the "October Tour - Scenarios" sheet, FINAL tab) into .booking-kit/venue-book.json
  * (gitignored: real venues, contacts and addresses) so scripts/import-booking-kit.ts creates those shows.
- *   tsx scripts/snapshot-october-tour.ts --values=<payload.json> [--book=.booking-kit/venue-book.json] [--year=2025] [--dry-run]
+ *   tsx scripts/snapshot-october-tour.ts --values=<payload.json> [--book=.booking-kit/venue-book.json] [--aliases=.booking-kit/october-tour-aliases.json] [--year=2025] [--dry-run]
  *
  * Like snapshot-setlists.ts this script owns the transform, never the fetch: `--values` is a saved Sheets values payload
  * ({ values: string[][] }, header row first). Re-running is a no-op: a venue that already has a show on a date is left
@@ -10,7 +10,7 @@
  * A row is a show when it has a real Venue (not blank, `pending`, `Travel/Rest/Work Day`, `CO TOUR`) AND an Estimate.
  * A named venue without an Estimate (the 10/11 IAmMusic row) is skipped but REPORTED: it may be a show nobody priced yet.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 export interface BookContact { name: string; email: string; phone: string; note: string }
 export interface BookShow {
@@ -32,14 +32,11 @@ export interface TourReport {
   notShows: number;
 }
 
-/** The sheet's venue text -> the Venue Book id it already has. */
-export const ALIASES: Record<string, string> = {
-  "Motel SoCo": "motel-soco",
-  "Trade and Post": "trade-post",
-  "Wild Edge Brewing Collective": "wild-edge",
-  "Casa Testhost": "casa-testhost",
-  "House Concert - 1 County Rd, Buena Vista": "bv-andrews",
-};
+/**
+ * The sheet's venue text -> the Venue Book id it already has. Private (house-concert hosts and addresses), so it lives
+ * in gitignored .booking-kit/october-tour-aliases.json; a missing file just means every row falls back to a name match.
+ */
+export type Aliases = Record<string, string>;
 const RENAMED: Record<string, string> = { Alibi: "The Alibi" };
 const NOT_VENUES = /^(pending|travel\/rest\/work day|co tour)$/i;
 const TYPES: Record<string, string> = { brewery: "Brewery / taproom", "music venue": "Bar / club", "listening room": "Listening room" };
@@ -57,7 +54,7 @@ function contactFrom(name: string, info: string): BookContact[] {
   return [{ name, email, phone, note: "" }];
 }
 
-export function mergeOctoberTour(book: Book, values: unknown[][], year = "2025"): TourReport {
+export function mergeOctoberTour(book: Book, values: unknown[][], year = "2025", aliases: Aliases = {}): TourReport {
   const report: TourReport = { venuesCreated: [], showsAdded: [], alreadyThere: [], skipped: [], notShows: 0 };
   const cell = (r: unknown[], i: number) => String(r[i] ?? "").trim();
   for (const [i, r] of values.entries()) {
@@ -69,7 +66,10 @@ export function mergeOctoberTour(book: Book, values: unknown[][], year = "2025")
     if (!cell(r, C.estimate)) { report.skipped.push({ row: i + 1, venue: venueText, date, reason: "blank Estimate" }); continue; }
 
     const location = cell(r, C.location), note = cell(r, C.note), eventText = cell(r, C.event);
-    let venue = book.venues.find((v) => v.id === ALIASES[venueText]) ?? book.venues.find((v) => v.name.toLowerCase() === venueText.toLowerCase());
+    // Alias, then name, then the id this script would have given it (the Alibi row: "Alibi" was created as id alibi, named "The Alibi").
+    let venue = book.venues.find((v) => v.id === aliases[venueText])
+      ?? book.venues.find((v) => v.name.toLowerCase() === venueText.toLowerCase())
+      ?? book.venues.find((v) => v.id === slug(venueText));
     if (!venue) {
       const type = TYPES[eventText.toLowerCase()] ?? (/house/i.test(eventText) || /house/i.test(venueText) ? "House concert" : "Other");
       venue = {
@@ -115,7 +115,9 @@ function main() {
   const payload = JSON.parse(readFileSync(valuesPath, "utf8")) as { values?: unknown[][] };
   if (!Array.isArray(payload.values)) throw new Error(`${valuesPath} has no "values" array`);
   const book = JSON.parse(readFileSync(bookPath, "utf8")) as Book;
-  const report = mergeOctoberTour(book, payload.values, arg("year") ?? "2025");
+  const aliasPath = arg("aliases") ?? ".booking-kit/october-tour-aliases.json";
+  const aliases = existsSync(aliasPath) ? (JSON.parse(readFileSync(aliasPath, "utf8")) as Aliases) : {};
+  const report = mergeOctoberTour(book, payload.values, arg("year") ?? "2025", aliases);
   if (!dryRun && (report.venuesCreated.length || report.showsAdded.length)) writeFileSync(bookPath, JSON.stringify(book, null, 1) + "\n");
   console.log(formatReport(report, dryRun));
 }
