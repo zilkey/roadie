@@ -4,6 +4,7 @@ import type { SectionId } from "@/schema/sections";
 export const I = {
   home: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
   shows: "M4 7h16v13H4zM4 11h16M8 3v4M16 3v4",
+  calendar: "M3 5h18v16H3zM3 9h18M8 2v4M16 2v4M3 13h18M3 17h18M9 9v12M15 9v12",
   booking: "M6 3v18M6 4h12l-3 4 3 4H6",
   templates: "M4 5h16v14H4zM4 9h16M8 13h8M8 16h5",
   songs: "M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zm10-2a3 3 0 11-3-3 3 3 0 013 3z",
@@ -22,6 +23,7 @@ export type NavItem = { key: "home" | SectionId; href: string; label: string; ic
 export function navFor(role: "admin" | "member", order: SectionId[]): NavItem[] {
   const all: Record<SectionId, NavItem> = {
     shows: { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
+    calendar: { key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar },
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
     templates: { key: "templates", href: "/booking/templates", label: "Email templates", icon: I.templates },
     songs: { key: "songs", href: "/songs", label: "Songs", icon: I.songs },

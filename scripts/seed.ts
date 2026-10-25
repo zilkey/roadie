@@ -101,6 +101,8 @@ async function main() {
   const cervantes = await v("Cervantes' Other Side", "club", "Denver", "denver", { capacity: 400, ages: "21" });
   const washingtons = await v("Washington's", "club", "Fort Collins", "north", { capacity: 450, ages: "21" });
   await v("Swallow Hill Music", "listening", "Denver", "denver", { capacity: 250, ages: "all" });
+  // Calendar e2e: the room for the 2026-12-12 pitch date. No other seeded pitch targets it, and no e2e spec names it.
+  const bluebird = await v("Bluebird Room", "club", "Denver", "denver", { capacity: 180, ages: "21" });
   await db.update(ctx, "promoters", promo1, { venueIds: [fox] });
   await db.update(ctx, "promoters", promo2, { venueIds: [dairy] });
 
@@ -131,6 +133,8 @@ async function main() {
   await pitch({ kind: "venue", id: washingtons, name: "Washington's" }, "declined", { notes: "Booked through spring." });
   await pitch({ kind: "edition", id: umsEd, name: "Underground Music Showcase 2027" }, "dropped", { notes: "Too much travel for the fee." });
   await pitch({ kind: "edition", id: levittEd, name: "Levitt Pavilion Summer Series Summer 2027" }, "idea");
+  // Calendar e2e: a live pitch date on 2026-12-12, the same day as the confirmed show below (a show + pitch date conflict).
+  await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: ["2026-12-12"] });
   await create(`pitches/${pLost}/comments`, { authorId: uid.ingrid, body: "Mention the Roots show that drew 95." });
   await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
   await create(`pitches/${pLost}/activity`, { type: "note", text: "Haylee said to check back mid-November." });
@@ -201,6 +205,13 @@ async function main() {
     linkTokens: {}, sentAt: new Date(),
   });
 
+  // Calendar e2e: a confirmed show on 2026-12-12 at Cervantes' Other Side (the same day as the Bluebird Room pitch date above).
+  await create("shows", {
+    ...showBase, date: "2026-12-12", status: "confirmed", venue: { id: cervantes, name: "Cervantes' Other Side", address: "Denver", city: "Denver" },
+    times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "trio", personnel: cfg("trio"),
+    sound: { provider: "venueProvided", notes: "House engineer" }, dayOfContact: { name: "Cervantes' door manager", phone: "(303) 555-0188" },
+  });
+
   const playedShow = await create("shows", {
     ...showBase, date: "2026-10-10", status: "played", venue: { id: dairy, name: "Dairy Arts Center", address: "Boulder", city: "Boulder" },
     times: { loadIn: "17:00", set: "20:00", setLengthSec: 3000 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
@@ -213,7 +224,7 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 8 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 show setlist.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist.");
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */

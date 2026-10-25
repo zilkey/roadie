@@ -6,11 +6,11 @@ async function signInAs(page: Page, key: string) {
   await page.getByTestId(`dev-${key}`).click();
 }
 
-test("admin signs in and sees 5 tabs", async ({ page }) => {
+test("admin signs in and sees 6 tabs", async ({ page }) => {
   await signInAs(page, "jeff");
   await expect(page).toHaveURL(new RegExp(`/artists/${ARTIST_SLUG}/home$`)); // sign-in lands in your artist
   await expect(page.getByTestId("current-artist")).toHaveText("Ingrid Avison Band");
-  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(6);
   await expect(page.getByTestId("tab-booking")).toBeVisible();
   await expect(page.getByTestId("tab-money")).toHaveText("Money");
   // Email templates starts hidden, so it is tucked into More
@@ -71,10 +71,10 @@ test("settings: General edits the artist name", async ({ page }) => {
   await expect(page.locator('input[value="E2E Soundcheck"]')).toHaveCount(0);
 });
 
-test("member sees 4 tabs, 'My money', and cannot open /booking or admin pages", async ({ page }) => {
+test("member sees 5 tabs, 'My money', and cannot open /booking or admin pages", async ({ page }) => {
   await signInAs(page, "david");
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(4);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5);
   await expect(page.getByTestId("tab-booking")).toHaveCount(0);
   // the bar may overflow: My money is either its tab or its row in More
   if (await page.getByTestId("tab-money").isVisible()) await expect(page.getByTestId("tab-money")).toHaveText("My money");

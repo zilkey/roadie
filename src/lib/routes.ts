@@ -8,6 +8,7 @@ export interface RouteDef { title: string; path: string; params?: readonly strin
 export const ROUTES = {
   home: { title: "Home", path: "/home" },
   shows: { title: "Shows", path: "/shows" },
+  calendar: { title: "Calendar", path: "/calendar" },
   show: { title: "Show", path: "/shows/:id", params: ["id"] },
   showAfter: { title: "After the show", path: "/shows/:id/after", params: ["id"] },
   newShow: { title: "New show", path: "/shows/new" },
@@ -67,7 +68,7 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
  * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
  * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["home", "shows", "booking", "songs", "setlists", "rehearsals", "money", "stats", "admin", "me"] as const;
+export const LEGACY_SECTIONS = ["home", "shows", "calendar", "booking", "songs", "setlists", "rehearsals", "money", "stats", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**
