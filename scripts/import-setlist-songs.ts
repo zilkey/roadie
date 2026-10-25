@@ -85,8 +85,8 @@ export const SONGS: SongSpec[] = [
   { title: "Witch", setlists: 1 },
   { title: "Why Do I Stay", setlists: 1 },
   { title: "For Crying Out Loud", setlists: 1 },
-  // Jeff, 2026-10-25: a real song, despite reading like a note to self. Stone Cottage 7.11.26 and Testhost House
-  // Concert 9.19.25 both play it, and before this it was reported as a stray title on an otherwise clean setlist.
+  // Jeff, 2026-10-25: a real song, despite reading like a note to self. Two setlists (7.11.26 and
+  // 9.19.25) both play it, and before this it was reported as a stray title on an otherwise clean setlist.
   { title: "The Fart Song", setlists: 2 },
 ];
 

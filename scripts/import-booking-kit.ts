@@ -13,7 +13,7 @@
  * A --dry-run walks the whole import with the writes held in the Writer's overlay instead of flushed (see run()'s
  * dryRun), so the survey it prints is what the real run would do -- not a row count. Real Firestore needs --yes.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DocumentData } from "firebase-admin/firestore";
 import { db, run, type Doc, type Writer } from "../src/server/db";
@@ -189,8 +189,11 @@ const VB_FESTIVALS: Record<string, string> = {
 };
 /** Shows at a real venue that were part of a festival (`venueBookId:date` -> Festival Run id). */
 const VB_SHOW_FESTIVALS: Record<string, string> = { "wolverine:2026-04-24": "focomx" };
-/** House concerts with no host contact in the Venue Book: the host, from the entry's name. */
-const VB_HOSTS: Record<string, string> = { "amy-hc": "Amy", testhost: "Testhost", "lee-hc": "Lee", poppe: "Kristen Poppe", "shelleys-place": "Shelley" };
+/**
+ * House concerts with no host contact in the Venue Book: the host, from the entry's name (Venue Book id -> host).
+ * Private people, so the table lives in .booking-kit/venue-book-hosts.json; without it those shows just get no host.
+ */
+const VB_HOSTS: Record<string, string> = existsSync(join(DIR, "venue-book-hosts.json")) ? load("venue-book-hosts.json") : {};
 
 /** One edition per festival per year we played it (Festival Run already has 2027). */
 async function editionFor(w: Writer, festivalId: string, year: string, dates: string[], sources: unknown[]) {
