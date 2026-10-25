@@ -246,7 +246,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </Dropdown>
         </header>
 
-        <main className={`w-full ${wide ? "" : "max-w-[1240px] "}flex-1 px-4 pb-[calc(var(--tabbar-h)+76px)] pt-5 min-[900px]:px-8 min-[900px]:pb-14 min-[900px]:pt-6`}>{children}</main>
+        <main className={`w-full ${wide ? "" : "max-w-[1240px] "}flex-1 px-4 pb-[calc(var(--tabbar-h)+200px)] pt-5 min-[900px]:px-8 min-[900px]:pb-[200px] min-[900px]:pt-6`}>{children}</main>
 
         <nav className="fixed inset-x-0 bottom-0 z-10 grid h-[var(--tabbar-h)] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] min-[900px]:hidden"
           style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, 1fr)` }} data-testid="bottom-tabs">
