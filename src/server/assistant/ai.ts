@@ -1,4 +1,7 @@
 import { genkit, type Genkit, type GenerateRequest, type GenerateResponseData, type Part } from "genkit";
+// Imported statically, like genkit: a dynamic import() loads the plugin's ESM build next to genkit's CJS one under tsx,
+// and genkit then rejects the plugin's actions (instanceof across two copies). The plugins only need credentials when called.
+import { googleAI, vertexAI } from "@genkit-ai/google-genai";
 import { script, type Step } from "./script";
 
 export const FAKE_MODEL = "roadie/fake";
@@ -62,7 +65,7 @@ function defineFake(ai: Genkit) {
 
 let cached: Promise<{ ai: Genkit; model: unknown }> | undefined;
 
-/** One Genkit instance per process. The Google plugin is only imported (and needs a key) when ROADIE_MODEL is not fake. */
+/** One Genkit instance per process. The Google plugin is only set up (and needs credentials) when ROADIE_MODEL is not fake. */
 export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
   cached ??= (async () => {
     if (modelMode() === "fake") {
@@ -70,7 +73,6 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
       return { ai, model: defineFake(ai) };
     }
     // Never exercised offline. Vertex uses GCLOUD_PROJECT + the service account; the Gemini API path needs GEMINI_API_KEY.
-    const { googleAI, vertexAI } = await import("@genkit-ai/google-genai");
     if (modelMode() === "vertex") {
       // Newer Gemini models are served only from the global endpoint, not us-central1. ROADIE_VERTEX_PROJECT lets a local
       // run bill to the real project while GCLOUD_PROJECT stays on the emulator's demo project.
