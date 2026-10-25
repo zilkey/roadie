@@ -194,5 +194,5 @@ const CSS = `
 .ps-trow .ps-tf{font-size:.83em;font-weight:600;white-space:nowrap}
 .ps-tbreak{grid-column:1 / -1;font-size:calc(var(--u) * .75);font-weight:600;font-style:italic;padding:calc(var(--u) * .17) 0 calc(var(--u) * .17) calc(var(--u) * 1.7);border-bottom:1px solid #ddd}
 .ps-foot{display:flex;justify-content:space-between;gap:16px;font-size:min(calc(var(--u) * .47),16px);font-weight:600;color:#555;border-top:1px solid #bbb;padding-top:6px}
-@media print{.ps-root{width:auto !important;height:auto !important}.ps-inner{transform:none !important;width:auto !important;gap:0}.ps-page{width:auto;padding:0;box-shadow:none}.ps-page:not(:last-child){break-after:page}}
+@media print{.ps-root{width:auto !important;height:auto !important}.ps-inner{transform:none !important;width:auto !important;gap:0}.ps-page{box-shadow:none}.ps-page:not(:last-child){break-after:page}}
 `;
