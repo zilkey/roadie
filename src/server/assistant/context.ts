@@ -2,6 +2,8 @@
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { addDays, isOff, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
 import { owesBack } from "@/lib/money";
+import { RECORD_ROUTES } from "@/lib/routes";
+import type { PageContext } from "@/schema/assistant";
 import type { Ctx } from "../ctx";
 import { runAs, type Session } from "./run";
 
@@ -37,6 +39,34 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
     openExpenses: expenses.filter((e) => !e.deletedAt && owesBack(e as never))
       .map((e) => ({ id: e.id, what: e.what, amountCents: e.amount, userId: e.userId, date: e.date, showId: e.showId ?? null })),
   };
+}
+
+/** Records on a page with custom fields: the collection, and where on the artist its field definitions live. */
+const FIELD_DEFS: Record<string, "showFields" | "songFields"> = { shows: "showFields", songs: "songFields" };
+/** The page's record is cut off past this many characters of JSON (a pitch's timeline can run long). */
+export const PAGE_RECORD_CHARS = 8000;
+
+/**
+ * The record on the page the person is looking at ("this one", "here"), read as them: its collection (what records.get
+ * takes), the record, and for shows and songs the band's custom fields with their labels. Null off a record page or when
+ * the record can't be read.
+ */
+export async function pageRecord(ctx: Ctx, page: PageContext) {
+  const kind = page.recordKind && page.recordId ? (RECORD_ROUTES as Record<string, string>)[page.recordKind] : undefined;
+  if (!kind) return null;
+  let record: Row;
+  try { record = (await runAs(ctx, "records.get", { kind, id: page.recordId })).result as Row; } catch { return null; }
+  const defs = FIELD_DEFS[kind];
+  let customFields: { fieldId: string; label: string; value: string | null }[] | undefined;
+  if (defs) {
+    const artists = await list(ctx, "artists");
+    const a = artists.find((x) => x.id === ctx.artistId) ?? artists[0]; // records.list is already limited to the current artist
+    const values = new Map(((record.fields ?? []) as { fieldId: string; value: string }[]).map((f) => [f.fieldId, f.value]));
+    customFields = ((a?.[defs] ?? []) as { id: string; label: string }[]).map((f) => ({ fieldId: f.id, label: f.label, value: values.get(f.id) ?? null }));
+  }
+  const json = JSON.stringify(record);
+  const shown = json.length > PAGE_RECORD_CHARS ? `${json.slice(0, PAGE_RECORD_CHARS)}…(cut off: records.get for the rest)` : record;
+  return { kind, id: page.recordId!, record: shown, ...(customFields ? { customFields } : {}) };
 }
 
 export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician", "setlistTemplate"] as const;

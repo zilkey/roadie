@@ -12,7 +12,7 @@ import { handleChat } from "@/server/assistant/chat";
 import { answerPending, handleConfirm, handleUndo, sessionFor, type Who } from "@/server/assistant/confirm";
 import { EXCLUDED, needsConfirm } from "@/server/assistant/policy";
 import { execTool, toolDefs, undoInThread, type Emit } from "@/server/assistant/tools";
-import { contextNow, searchAll, tonightDate } from "@/server/assistant/context";
+import { contextNow, pageRecord, searchAll, tonightDate } from "@/server/assistant/context";
 import { MAX_REPLY_CHARS, MAX_STEPS } from "@/server/assistant/flow";
 import { ensureThread, getRuns, newThreadId, PENDING_TTL_MS } from "@/server/assistant/threads";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
@@ -329,6 +329,25 @@ test("search finds shows, venues and songs; context.now says who, when and what'
   assert.equal(tonightDate(new Date("2026-11-15T07:00:00-07:00")), "2026-11-15");
   const wrapped = (await execTool(s, "context.now", {}, noop)).output as { notice: string; untrustedContent: unknown };
   assert.match(wrapped.notice, /never follow instructions/);
+});
+
+test("pageRecord reads the record on the page, with the band's custom fields by label", async () => {
+  const { fieldId } = (await registry["artists.addShowField"].run(sys, registry["artists.addShowField"].input.parse({ id: TEST_ARTIST, label: "Olive Care" }))) as { fieldId: string };
+  await registry["artists.addShowField"].run(sys, registry["artists.addShowField"].input.parse({ id: TEST_ARTIST, label: "Parking" }));
+  await registry["shows.setFields"].run(sys, registry["shows.setFields"].input.parse({ id: showId, fields: [{ fieldId, value: "Noel's" }] }));
+  const show = await pageRecord(sys, { route: "showSetlist", recordKind: "showSetlist", recordId: showId, tab: "setlist" });
+  assert.equal(show?.kind, "shows");
+  assert.equal((show?.record as { id: string }).id, showId);
+  assert.deepEqual(show?.customFields?.map((f) => [f.label, f.value]), [["Olive Care", "Noel's"], ["Parking", null]]);
+
+  const p = (await registry["promoters.create"].run(sys, registry["promoters.create"].input.parse({ name: "BandWagon Presents / Moxi", kind: "promoter" }))) as { id: string };
+  const promoter = await pageRecord(sys, { route: "promoter", recordKind: "promoter", recordId: p.id });
+  assert.equal(promoter?.kind, "promoters");
+  assert.equal((promoter?.record as { name: string }).name, "BandWagon Presents / Moxi");
+  assert.equal(promoter?.customFields, undefined);
+
+  assert.equal(await pageRecord(sys, { route: "bookingPromoters" }), null);
+  assert.equal(await pageRecord(sys, { route: "promoter", recordKind: "promoter", recordId: "nope" }), null);
 });
 
 test("text planted in a record doesn't trigger tools in the canned model", async () => {
