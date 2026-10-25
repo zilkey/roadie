@@ -122,6 +122,7 @@ function TemplateCard({ t, onRemove, row, handle: grip }: {
         <span className="w-6 shrink-0" />
         <input ref={addRef} className="input min-w-0 flex-1" placeholder="Add an item… (Enter to add another)" aria-label="New item" value={fresh}
           onChange={(e) => setFresh(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }} data-testid={`template-add-item-${t.id}`} />
+        <span className="w-11 shrink-0" aria-hidden="true" />
       </div>
     </div>
   );
