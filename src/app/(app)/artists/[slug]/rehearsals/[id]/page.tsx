@@ -19,7 +19,7 @@ import { newMutationId } from "@/lib/commands";
 import { useDoc } from "@/lib/firestore-hooks";
 import type { Rehearsal, RehearsalLocation, SetlistTemplate } from "@/schema";
 import ImportSetlistDialog from "./ImportSetlistDialog";
-import RehearsalExpenses from "./RehearsalExpenses";
+import { ExpensesCardFor } from "@/components/money/ExpensesCard";
 
 export default function RehearsalPage() {
   const { id } = useParams<{ slug: string; id: string }>();
@@ -394,7 +394,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
         </div>
       </div>
 
-      <RehearsalExpenses rehearsalId={existing.id} />
+      <ExpensesCardFor target={{ kind: "rehearsal", id: existing.id }} admin={admin} />
       <ErrorBox error={error} />
     </div>
   );

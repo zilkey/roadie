@@ -131,6 +131,9 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(page.getByTestId("setlists-list")).toBeVisible();
   await page.goto(A("/rehearsals"));
   await expect(page.getByTestId("log-rehearsal")).toHaveCount(0);
+  // the table shows who was there as initials (seeded Oct 18: Ingrid, Jeff, David, Eric; title = full name)
+  const who = page.getByTestId("rehearsals-list").locator("tr", { hasText: "Jeff's basement" }).getByTestId("rehearsal-who");
+  for (const [initial, name] of [["I", "Ingrid"], ["J", "Jeff"], ["D", "David"], ["E", "Eric"]]) await expect(who.locator(`[title="${name}"]`)).toHaveText(initial);
   await page.getByTestId("rehearsals-list").getByText("Jeff's basement").click();
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Glass Coast");
   // add-a-song is admin only

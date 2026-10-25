@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation";
 import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
 import { withScheme } from "@/lib/links";
-import { SongFieldsEditor } from "@/components/music/SongFieldsEditor";
 import { ChecklistTemplatesEditor } from "@/components/shows/checklists/ChecklistTemplatesEditor";
 import { ARTIST_LINKS, artistSlug, type Artist, type ArtistLinkKey } from "@/schema";
 
@@ -144,7 +143,6 @@ function ArtistEditor() {
       <ErrorBox error={error} />
       <ArtistCard artist={artist} />
       <LinksCard links={links} onChange={editLinks} />
-      <SongFieldsEditor artist={artist} />
       <ChecklistTemplatesEditor artistId={artist.id} />
     </div>
   );

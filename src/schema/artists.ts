@@ -19,6 +19,8 @@ export const Configuration = z.strictObject({
 });
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({ id, label: z.string().min(1) });
+/** A custom field definition for shows is the same shape as one for songs. */
+export const ShowField = SongField;
 /** The artist's public links, one per platform, in the order the Artist page lists them. */
 export const ARTIST_LINKS = [
   ["website", "Website"], ["spotify", "Spotify"], ["appleMusic", "Apple Music"], ["bandcamp", "Bandcamp"],
@@ -36,8 +38,11 @@ export const Artist = entity({
   driveFolderId: z.string(),
   /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
   songFields: z.array(SongField).default([]),
+  /** Same, for shows: filled in on the show page's Custom fields card (Show.fields). Changed only by artists.addShowField & co. */
+  showFields: z.array(SongField).default([]),
 });
 export const ArtistInput = Artist.omit(serverMask);
 export type Artist = z.infer<typeof Artist>;
 export type SongField = z.infer<typeof SongField>;
+export type ShowField = SongField;
 export type Configuration = z.infer<typeof Configuration>;

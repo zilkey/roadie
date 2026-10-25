@@ -20,7 +20,7 @@ async function openRehearsal(page: Page, label: string) {
 
 
 /** The seeded Oct 29 rehearsal at The Loft. The seeded admin has home, 28 MPG and regular gas. */
-test("admin logs gas from the rehearsal: round trip estimate, toggle one way, save shows in the table", async ({ browser }) => {
+test("admin logs gas from the rehearsal: round trip estimate, toggle one way, save shows in the expenses card", async ({ browser }) => {
   const { page, close } = await as(browser, "jeff");
   await openRehearsal(page, "Oct 29");
 
@@ -39,8 +39,27 @@ test("admin logs gas from the rehearsal: round trip estimate, toggle one way, sa
   await page.getByTestId("exp-save").click();
 
   await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/);
-  await expect(page.getByTestId("reh-expenses-card").getByTestId("reh-expense-row").filter({ hasText: "36.8 mi round trip" }).first()).toBeVisible();
+  await expect(page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "36.8 mi round trip" }).first()).toBeVisible();
   await close();
+});
+
+/** Members add their own expense on a rehearsal through the shared card; an admin sees it with who paid. */
+test("a member adds an expense on a rehearsal and an admin sees it", async ({ browser }) => {
+  const david = await as(browser, "david");
+  await openRehearsal(david.page, "Oct 29");
+  const card = david.page.getByTestId("expenses");
+  await card.getByTestId("expenses-add").or(card.getByTestId("expenses-edit")).first().click();
+  const line = david.page.getByTestId("expense-line-0");
+  await line.getByTestId("expense-what").fill("Room rental split");
+  await line.getByTestId("expense-amount").fill("25");
+  await david.page.getByTestId("expenses-save").click();
+  await expect(card.getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
+  await david.close();
+
+  const jeff = await as(browser, "jeff");
+  await openRehearsal(jeff.page, "Oct 29");
+  await expect(jeff.page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
+  await jeff.close();
 });
 
 /** Your profile: the admin's driving values are shown, and a changed MPG survives a reload. */

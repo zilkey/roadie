@@ -297,8 +297,8 @@ const withConfigIds = <T extends { configurations?: z.infer<typeof ConfigIn>[] |
   });
   return { ...x, configurations };
 };
-// songFields has its own commands: a plain patch could drop a field and leave its values behind on songs.
-const ArtistIn = ArtistInput.omit({ songFields: true }).extend({ configurations: z.array(ConfigIn) });
+// songFields and showFields have their own commands: a plain patch could drop a field and leave its values behind on songs.
+const ArtistIn = ArtistInput.omit({ songFields: true, showFields: true }).extend({ configurations: z.array(ConfigIn) });
 
 /** Slugs are unique across artists (they are the URL: /artists/{slug}). Checked inside the write. */
 async function requireFreeSlug(w: Writer, value: string, self?: string) {
@@ -349,67 +349,81 @@ export const artistsUpdate = defineCommand({
   }),
 });
 
-// ---------- song fields (artist-defined label/value pairs on songs) ----------
+// ---------- custom fields (artist-defined label/value pairs on songs and on shows) ----------
 
-type SongFieldDef = { id: string; label: string };
-/** The artist this call is for, with its song fields. */
-async function songFieldsOf(w: Writer, artistId: string) {
+type FieldDef = { id: string; label: string };
+type Kind = { noun: "song" | "show"; defs: "songFields" | "showFields"; coll: "songs" | "shows" };
+const SONG: Kind = { noun: "song", defs: "songFields", coll: "songs" };
+const SHOW: Kind = { noun: "show", defs: "showFields", coll: "shows" };
+/** The artist this call is for, with its field definitions of this kind. */
+async function fieldsOf(w: Writer, k: Kind, artistId: string) {
   if (w.ctx.artistId && artistId !== w.ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);
   const a = await w.get("artists", artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Artist not found", 404);
-  return (a.songFields ?? []) as SongFieldDef[];
+  return (a[k.defs] ?? []) as FieldDef[];
 }
 const labelIn = z.string().trim().min(1);
+const Noun = (k: Kind) => k.noun[0].toUpperCase() + k.noun.slice(1);
 
-export const artistsAddSongField = defineCommand({
-  name: "artists.addSongField", roles: ["admin"],
-  description: "Add a custom field every song of this artist can have a value for (e.g. \"Capo\", \"Tuning\"). Goes at the end. Returns the new field's id.",
-  input: z.strictObject({ id: z.string().min(1), label: labelIn }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const fields = await songFieldsOf(w, i.id);
-    const fieldId = randomUUID().slice(0, 8);
-    await w.update("artists", i.id, { songFields: [...fields, { id: fieldId, label: i.label }] });
-    return { id: i.id, fieldId };
-  }),
-});
-export const artistsUpdateSongField = defineCommand({
-  name: "artists.updateSongField", roles: ["admin"],
-  description: "Rename a song field. Songs keep their values.",
-  input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), label: labelIn }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const fields = await songFieldsOf(w, i.id);
-    if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", "No such song field", 404);
-    return w.update("artists", i.id, { songFields: fields.map((f) => (f.id === i.fieldId ? { ...f, label: i.label } : f)) });
-  }),
-});
-export const artistsRemoveSongField = defineCommand({
-  name: "artists.removeSongField", roles: ["admin"],
-  description: "Delete a song field and every song's value for it (not undoable by re-adding the field).",
-  input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const fields = await songFieldsOf(w, i.id);
-    if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", "No such song field", 404);
-    // Same transaction as the definition going away, so no song keeps a value for a field that no longer exists.
-    // Songs aren't per-artist (no artistId): this project's songs are this artist's.
-    const holders = (await w.query("songs")).filter((s) => ((s.fields ?? []) as { fieldId: string }[]).some((v) => v.fieldId === i.fieldId));
-    for (const s of holders) await w.update("songs", s.id, { fields: (s.fields as { fieldId: string }[]).filter((v) => v.fieldId !== i.fieldId) });
-    await w.update("artists", i.id, { songFields: fields.filter((f) => f.id !== i.fieldId) });
-    return { id: i.id, songsCleared: holders.length };
-  }),
-});
-export const artistsReorderSongFields = defineCommand({
-  name: "artists.reorderSongFields", roles: ["admin"],
-  description: "Put the artist's song fields in this order: fieldIds is every field's id, once.",
-  input: z.strictObject({ id: z.string().min(1), fieldIds: z.array(z.string().min(1)) }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const fields = await songFieldsOf(w, i.id);
-    const same = i.fieldIds.length === fields.length && new Set(i.fieldIds).size === fields.length && fields.every((f) => i.fieldIds.includes(f.id));
-    if (!same) throw new AppError("invalid_input", "Give every song field once (someone may have just added or deleted one)", 409);
-    return w.update("artists", i.id, { songFields: i.fieldIds.map((fid) => fields.find((f) => f.id === fid)!) });
-  }),
-});
+/** The four commands for one kind of field. Songs and shows work the same; only the definitions' home and the records holding values differ. */
+function fieldCommands(k: Kind) {
+  const n = k.noun, N = Noun(k);
+  const add = defineCommand({
+    name: `artists.add${N}Field`, roles: ["admin"],
+    description: `Add a custom field every ${n} of this artist can have a value for (e.g. ${n === "song" ? "\"Capo\", \"Tuning\"" : "\"Parking\", \"Hotel\""}). Goes at the end. Returns the new field's id.`,
+    input: z.strictObject({ id: z.string().min(1), label: labelIn }),
+    run: (ctx, i) => run(ctx, async (w) => {
+      const fields = await fieldsOf(w, k, i.id);
+      const fieldId = randomUUID().slice(0, 8);
+      await w.update("artists", i.id, { [k.defs]: [...fields, { id: fieldId, label: i.label }] });
+      return { id: i.id, fieldId };
+    }),
+  });
+  const update = defineCommand({
+    name: `artists.update${N}Field`, roles: ["admin"],
+    description: `Rename a ${n} field. ${N}s keep their values.`,
+    input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), label: labelIn }),
+    run: (ctx, i) => run(ctx, async (w) => {
+      const fields = await fieldsOf(w, k, i.id);
+      if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", `No such ${n} field`, 404);
+      return w.update("artists", i.id, { [k.defs]: fields.map((f) => (f.id === i.fieldId ? { ...f, label: i.label } : f)) });
+    }),
+  });
+  const remove = defineCommand({
+    name: `artists.remove${N}Field`, roles: ["admin"],
+    description: `Delete a ${n} field and every ${n}'s value for it (not undoable by re-adding the field).`,
+    input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1) }),
+    run: (ctx, i) => run(ctx, async (w) => {
+      const fields = await fieldsOf(w, k, i.id);
+      if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", `No such ${n} field`, 404);
+      // Same transaction as the definition going away, so no record keeps a value for a field that no longer exists.
+      // Songs aren't per-artist (no artistId): this project's songs are this artist's. Shows are, so only this artist's are touched.
+      const all = await w.query(k.coll);
+      const mine = k.coll === "shows" ? all.filter((s) => !s.artistId || s.artistId === i.id) : all;
+      const holders = mine.filter((s) => ((s.fields ?? []) as { fieldId: string }[]).some((v) => v.fieldId === i.fieldId));
+      for (const s of holders) await w.update(k.coll, s.id, { fields: (s.fields as { fieldId: string }[]).filter((v) => v.fieldId !== i.fieldId) });
+      await w.update("artists", i.id, { [k.defs]: fields.filter((f) => f.id !== i.fieldId) });
+      return { id: i.id, [`${n}sCleared`]: holders.length } as { id: string } & Record<string, number | string>;
+    }),
+  });
+  const reorder = defineCommand({
+    name: `artists.reorder${N}Fields`, roles: ["admin"],
+    description: `Put the artist's ${n} fields in this order: fieldIds is every field's id, once.`,
+    input: z.strictObject({ id: z.string().min(1), fieldIds: z.array(z.string().min(1)) }),
+    run: (ctx, i) => run(ctx, async (w) => {
+      const fields = await fieldsOf(w, k, i.id);
+      const same = i.fieldIds.length === fields.length && new Set(i.fieldIds).size === fields.length && fields.every((f) => i.fieldIds.includes(f.id));
+      if (!same) throw new AppError("invalid_input", `Give every ${n} field once (someone may have just added or deleted one)`, 409);
+      return w.update("artists", i.id, { [k.defs]: i.fieldIds.map((fid) => fields.find((f) => f.id === fid)!) });
+    }),
+  });
+  return [add, update, remove, reorder] as const;
+}
+const [artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields] = fieldCommands(SONG);
+const [artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields] = fieldCommands(SHOW);
 
 export const peopleCommands = [
   usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
   artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields,
+  artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields,
 ];

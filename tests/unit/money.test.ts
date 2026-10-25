@@ -127,6 +127,27 @@ test("shows.setExpenses: adds, updates and removes the caller's lines; leaves ot
   await assert.rejects(cmd("shows.setExpenses", { id: showId, lines: [] }, mctx), (e: AppError) => e.code === "paid_back");
 });
 
+test("rehearsals.setExpenses: same member/admin split as shows, lines land on the rehearsal and don't touch show totals", async () => {
+  const rehearsalId = (await db.create(ctx, "rehearsals", { date: "2026-10-29", personnel: [], songs: [] })).id;
+  const mine = await cmd("expenses.add", { amount: 1000, what: "Gas", category: "travel", rehearsalId }, mctx);
+  const admins = await cmd("expenses.add", { amount: 2000, what: "Food", category: "other", rehearsalId });
+  const r = await cmd("rehearsals.setExpenses", { id: rehearsalId, lines: [{ id: mine.id, what: "Gas (both ways)", amount: 1500, payBack: true }, { what: "Strings", amount: 1499, payBack: true }] }, mctx);
+  assert.deepEqual(r.updated, [mine.id]); assert.equal(r.added.length, 1); assert.deepEqual(r.removed, []);
+  const added = (await db.get("expenses", r.added[0])) as any;
+  assert.equal(added.userId, memberUid); assert.equal(added.rehearsalId, rehearsalId); assert.equal(added.showId, undefined);
+  assert.equal(((await db.get("expenses", admins.id)) as any).deletedAt, null);
+  await assert.rejects(cmd("rehearsals.setExpenses", { id: rehearsalId, lines: [{ what: "x", amount: 1, payBack: true, userId: ctx.uid }] }, mctx), (e: AppError) => e.code === "forbidden");
+  await assert.rejects(cmd("rehearsals.setExpenses", { id: "nope", lines: [] }, mctx), (e: AppError) => e.code === "not_found");
+  // an admin sees and can add for anyone; dropping a line removes it
+  const ar = await cmd("rehearsals.setExpenses", { id: rehearsalId, lines: [{ id: admins.id, what: "Food", amount: 2000, payBack: true }, { id: mine.id, what: "Gas (both ways)", amount: 1500, payBack: true }, { what: "Pizza", amount: 500, payBack: true, userId: memberUid }] });
+  assert.deepEqual(ar.removed, [r.added[0]]); assert.equal(((await db.get("expenses", ar.added[0])) as any).userId, memberUid);
+  // a paid-back line can be sent as it is, but not dropped
+  await cmd("expenses.setPaidBack", { id: mine.id, paid: true });
+  await cmd("rehearsals.setExpenses", { id: rehearsalId, lines: [{ id: mine.id, what: "Gas (both ways)", amount: 1500, payBack: true }] }, mctx);
+  await assert.rejects(cmd("rehearsals.setExpenses", { id: rehearsalId, lines: [] }, mctx), (e: AppError) => e.code === "paid_back");
+  assert.equal(((await db.get("showDeals", showId)) as any)?.totals?.expenses ?? 0, 0); // rehearsal lines never reach a show's totals
+});
+
 test("gas expenses: members can't set the rehearsal location; fixing the amount marks the estimate overridden and keeps it", async () => {
   const rehearsalId = (await db.create(ctx, "rehearsals", { date: "2026-10-29", personnel: [], songs: [] })).id;
   const gas = {

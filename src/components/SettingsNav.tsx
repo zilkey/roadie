@@ -6,11 +6,11 @@ import type { Musician } from "@/schema";
 
 const HEAD = "px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-muted";
 const GROUPS = [
-  { head: "Artist settings", items: [{ key: "general", href: "/admin/artist", label: "General" }, { key: "lineups", href: "/admin/lineups", label: "Lineups" }, { key: "people", href: "/admin/people", label: "People" }] },
+  { head: "Artist settings", items: [{ key: "general", href: "/admin/artist", label: "General" }, { key: "lineups", href: "/admin/lineups", label: "Lineups" }, { key: "people", href: "/admin/people", label: "People" }, { key: "fields", href: "/admin/fields", label: "Custom fields" }] },
   { head: "Admin", items: [{ key: "integrations", href: "/admin/mcp", label: "Integrations" }, { key: "activity", href: "/admin/history", label: "Activity" }] },
 ] as const;
 
-/** The artist-settings sub-nav: General, Lineups, People under ARTIST SETTINGS; Integrations, Activity under ADMIN. Counts show once loaded. */
+/** The artist-settings sub-nav: General, Lineups, People, Custom fields under ARTIST SETTINGS; Integrations, Activity under ADMIN. Counts show once loaded. */
 export function SettingsNav() {
   const path = usePathname();
   const full = useHref();
@@ -19,6 +19,7 @@ export function SettingsNav() {
   const counts: Record<string, number | undefined> = {
     lineups: doc?.configurations.length,
     people: musicians.rows?.filter((m) => m.active).length,
+    fields: doc ? (doc.showFields?.length ?? 0) + (doc.songFields?.length ?? 0) : undefined,
   };
   const on = (href: string) => path === full(href) || path.startsWith(full(href) + "/");
   return (

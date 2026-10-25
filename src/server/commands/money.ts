@@ -10,6 +10,7 @@ import { routeMiles } from "../gas/route";
 import { areaFor, priceFor } from "../gas/price";
 import { ledgerCategory, driveRef, expenseGasBase, geoPoint, fuelGrade, type FuelAreaKind } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
+import type { Ctx } from "../ctx";
 
 const todayServer = () => dateInBandZone();
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -188,30 +189,32 @@ const ExpenseLine = z.strictObject({
   id: z.string().min(1).optional(), what: z.string().trim().min(1), amount: z.number().int().positive(), userId: z.string().min(1).optional(),
   payBack: z.boolean().default(true), receipt: driveRef.nullable().optional(),
 });
-export const showsSetExpenses = defineCommand({
-  name: "shows.setExpenses", roles: ["admin", "member"],
-  description: "Save a show's expense lines as the caller sees them (members: their own; admins: all): lines without an id are added, changed ones updated, " +
-    "and the caller's expenses on the show that are missing are removed. Paid-back expenses can't change (send them as they are). userId is for admins only.",
-  input: z.strictObject({ id: z.string().min(1), lines: z.array(ExpenseLine) }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const show = await w.get("shows", i.id);
-    if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
-    const mine = (await w.query("expenses", (q) => q.where("showId", "==", i.id)))
+type ExpenseTarget = { kind: "shows" | "rehearsals"; id: string };
+const targetKey = (t: ExpenseTarget) => (t.kind === "shows" ? "showId" : "rehearsalId");
+
+/** Shared by shows.setExpenses and rehearsals.setExpenses: same roles, same member-vs-admin split, same validation. */
+function setExpensesFor(ctx: Ctx, target: ExpenseTarget, lines: z.infer<typeof ExpenseLine>[]) {
+  const label = target.kind === "shows" ? "show" : "rehearsal";
+  const key = targetKey(target);
+  return run(ctx, async (w) => {
+    const rec = await w.get(target.kind, target.id);
+    if (!rec || rec.deletedAt) throw new AppError("not_found", `${label[0].toUpperCase()}${label.slice(1)} not found`, 404);
+    const mine = (await w.query("expenses", (q) => q.where(key, "==", target.id)))
       .filter((x) => !x.deletedAt && (ctx.role !== "member" || x.userId === ctx.uid));
     const byId = new Map(mine.map((x) => [x.id, x]));
     const out = { added: [] as string[], updated: [] as string[], removed: [] as string[] };
-    for (const l of i.lines) {
+    for (const l of lines) {
       if (l.userId && l.userId !== ctx.uid && ctx.role === "member") throw new AppError("forbidden", "You can only add your own expenses", 403);
       if (!l.id) {
         const userId = l.userId ?? ctx.uid;
         const u = await w.get("users", userId);
         if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
         const { id: _i, receipt, ...rest } = l;
-        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: todayServer(), showId: i.id })).id);
+        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: todayServer(), [key]: target.id })).id);
         continue;
       }
       const x = byId.get(l.id);
-      if (!x) throw new AppError("not_found", "Expense not found on this show", 404);
+      if (!x) throw new AppError("not_found", `Expense not found on this ${label}`, 404);
       const patch: Record<string, unknown> = {};
       for (const k of ["what", "amount", "payBack", "userId"] as const) if (l[k] !== undefined && l[k] !== (k === "payBack" ? x.payBack ?? true : x[k])) patch[k] = l[k];
       if (l.receipt !== undefined && JSON.stringify(l.receipt) !== JSON.stringify(x.receipt ?? null)) patch.receipt = l.receipt;
@@ -220,16 +223,32 @@ export const showsSetExpenses = defineCommand({
       await w.update("expenses", x.id, patch);
       out.updated.push(x.id);
     }
-    const kept = new Set(i.lines.map((l) => l.id).filter(Boolean));
+    const kept = new Set(lines.map((l) => l.id).filter(Boolean));
     for (const x of mine) {
       if (kept.has(x.id)) continue;
       assertCanChange(w, x);
       await w.softDelete("expenses", x.id);
       out.removed.push(x.id);
     }
-    await refreshDealTotals(w, i.id);
-    return { id: i.id, ...out };
-  }),
+    if (target.kind === "shows") await refreshDealTotals(w, target.id);
+    return { id: target.id, ...out };
+  });
+}
+
+export const showsSetExpenses = defineCommand({
+  name: "shows.setExpenses", roles: ["admin", "member"],
+  description: "Save a show's expense lines as the caller sees them (members: their own; admins: all): lines without an id are added, changed ones updated, " +
+    "and the caller's expenses on the show that are missing are removed. Paid-back expenses can't change (send them as they are). userId is for admins only.",
+  input: z.strictObject({ id: z.string().min(1), lines: z.array(ExpenseLine) }),
+  run: (ctx, i) => setExpensesFor(ctx, { kind: "shows", id: i.id }, i.lines),
+});
+
+export const rehearsalsSetExpenses = defineCommand({
+  name: "rehearsals.setExpenses", roles: ["admin", "member"],
+  description: "Save a rehearsal's expense lines as the caller sees them (members: their own; admins: all): lines without an id are added, changed ones updated, " +
+    "and the caller's expenses on the rehearsal that are missing are removed. Paid-back expenses can't change (send them as they are). userId is for admins only.",
+  input: z.strictObject({ id: z.string().min(1), lines: z.array(ExpenseLine) }),
+  run: (ctx, i) => setExpensesFor(ctx, { kind: "rehearsals", id: i.id }, i.lines),
 });
 
 export const receiptsSearch = defineCommand({
@@ -242,4 +261,4 @@ export const receiptsSearch = defineCommand({
   },
 });
 
-export const moneyCommands = [expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesEstimateGas, showsSetExpenses, receiptsSearch];
+export const moneyCommands = [expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];

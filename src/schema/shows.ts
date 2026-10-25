@@ -42,6 +42,8 @@ export const Show = entity({
   /** Who to call on the day: a copy the whole band can read (contacts are admin-only); contactId when picked from a contact. */
   dayOfContact: z.strictObject({ name: z.string().min(1), phone: z.string().optional(), contactId: id.optional() }).optional(),
   artistId: id,
+  /** Values for the artist's custom show fields (Artist.showFields), keyed by field id. No entry = no value, never an empty string. Set by shows.setFields. */
+  fields: z.array(z.strictObject({ fieldId: id, value: z.string() })).default([]),
   billedAs: id.optional(),
   personnel: z.array(id),
   sound,

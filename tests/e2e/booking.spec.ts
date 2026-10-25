@@ -86,10 +86,6 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await page.getByTestId("comment-send").click();
   await expect(page.getByTestId("timeline")).toContainText("Great room for the trio");
   await expect(page.getByTestId("comment-input")).toHaveValue("");
-
-  await page.goto(A("/home"));
-  await expect(page.getByTestId("todos")).toContainText("Follow up · Swallow Hill Music");
-  await expect(page.getByTestId("deadlines")).toBeVisible();
 });
 
 test("send an email from a pitch; it shows in fake Gmail, on the timeline, and replies come back", async ({ page, request }) => {

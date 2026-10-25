@@ -42,6 +42,18 @@ export function MonthBars({ data, testid }: { data: { key: string; in: number; o
   const bw = Math.min(26, (W - 16) / data.length - 6);
   const slot = (W - 16) / data.length;
   const h = (v: number) => (v * (H - PT - PB)) / max;
+  // Thin the month labels so they never overlap: label every k-th calendar month (k = smallest of 1,2,3,6,12 that fits).
+  const GAP = 4, MONTH_W = 20, YEAR_W = 22;
+  const multiYear = new Set(data.map((d) => d.key.slice(0, 4))).size > 1;
+  const need = (multiYear ? YEAR_W : MONTH_W) + GAP;
+  const k = [1, 2, 3, 6, 12].find((n) => n * slot >= need) ?? 12;
+  const yearFits = k * slot >= YEAR_W + GAP;
+  const labelFor = (key: string): string | null => {
+    const mo = Number(key.slice(5, 7)) - 1;
+    if (mo % k !== 0) return null;
+    if (multiYear && mo === 0) return yearFits ? key.slice(0, 4) : `'${key.slice(2, 4)}`;
+    return monthLabel(key);
+  };
   return (
     <div className="card" data-testid={testid}>
       <div className="flex items-center justify-between"><span className="lbl">By month</span>
@@ -50,11 +62,15 @@ export function MonthBars({ data, testid }: { data: { key: string; in: number; o
         <line x1={8} x2={W - 8} y1={H - PB} y2={H - PB} stroke="var(--line)" />
         {data.map((d, i) => {
           const cx = 8 + slot * i + slot / 2;
+          const label = labelFor(d.key);
+          const anchor = cx - MONTH_W / 2 < 0 ? "start" : cx + MONTH_W / 2 > W ? "end" : "middle";
+          const lx = anchor === "start" ? 2 : anchor === "end" ? W - 2 : cx;
           return (
             <g key={d.key} data-testid={`${testid}-${d.key}`}>
+              <title>{new Date(d.key + "-01T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</title>
               <rect x={cx - bw / 2 - 1} width={bw / 2} y={H - PB - h(d.in)} height={h(d.in)} fill="var(--ok)" rx="2"><title>{`${d.key} in ${formatCents(d.in)}`}</title></rect>
               <rect x={cx + 1} width={bw / 2} y={H - PB - h(d.out)} height={h(d.out)} fill="var(--accent)" rx="2"><title>{`${d.key} out ${formatCents(d.out)}`}</title></rect>
-              <text x={cx} y={H - 6} fontSize="9" textAnchor="middle" fill="var(--muted)">{monthLabel(d.key)}</text>
+              {label && <text x={lx} y={H - 6} fontSize="9" textAnchor={anchor} fill="var(--muted)">{label}</text>}
             </g>
           );
         })}

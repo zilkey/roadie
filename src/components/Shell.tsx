@@ -22,6 +22,7 @@ export const ADMIN_LINKS = [
   { href: "/admin/artist", label: "General", testid: "admin-artist" },
   { href: "/admin/lineups", label: "Lineups", testid: "admin-lineups" },
   { href: "/admin/people", label: "People", testid: "admin-people" },
+  { href: "/admin/fields", label: "Custom fields", testid: "admin-fields" },
   { href: "/admin/mcp", label: "Integrations", testid: "admin-mcp" },
   { href: "/admin/history", label: "Activity", testid: "admin-history" },
 ];
