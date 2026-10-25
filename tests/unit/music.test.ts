@@ -315,8 +315,9 @@ test("rehearsals: log with songs and notes, attach a recording, last rehearsed, 
 });
 
 test("only admins (or mcp) may write Music; members have no write commands", () => {
+  // rehearsals.setExpenses is Money, not Music: members enter their own expense lines, like shows.setExpenses
   for (const [name, c] of Object.entries(registry)) {
-    if (/^(songs|files|setlists|rehearsals|drive)\./.test(name)) assert.ok(!c.roles.includes("member"), name);
+    if (/^(songs|files|setlists|rehearsals|drive)\./.test(name) && name !== "rehearsals.setExpenses") assert.ok(!c.roles.includes("member"), name);
   }
 });
 

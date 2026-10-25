@@ -21,7 +21,7 @@ const row = (n: number, name: string, extra: Partial<VenueBookRow> = {}): VenueB
 });
 
 const fixture = (): VenueBookSnapshot => ({
-  source: "test", fetchedAt: "2026-10-25",
+  source: "https://docs.google.com/spreadsheets/d/test/edit#gid=9101", fetchedAt: "2026-10-25",
   rows: [
     row(2, "Honnibrook", { pitchLog: "10/23", city: "Castle Rock, CO", miles: "58" }),
     row(3, "Wibby Brewing", { pitchLog: "sent 10/23", miles: "14.7", contactEmail: "booking@brewery.example" }),

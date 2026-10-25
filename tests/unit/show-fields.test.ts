@@ -74,7 +74,7 @@ test("artists.removeShowField strips the field from every show, keeps the others
   await call(admin, "shows.setFields", { id: a, fields: [{ fieldId: parking, value: "Lot B" }, { fieldId: hotel, value: "Marriott" }] });
   await call(admin, "shows.setFields", { id: b, fields: [{ fieldId: parking, value: "Street" }] });
   await call(admin, "shows.setFields", { id: c, fields: [{ fieldId: hotel, value: "Motel 6" }] });
-  const song = await db.create(importCtx(), "songs", { title: "Angel", fields: [{ fieldId: capo, value: "3" }] });
+  const song = await db.create(importCtx(), "songs", { title: "Angel", status: "active", fields: [{ fieldId: capo, value: "3" }] });
 
   const r = await call(admin, "artists.removeShowField", { id: TEST_ARTIST, fieldId: parking });
   assert.equal(r.status, 200);

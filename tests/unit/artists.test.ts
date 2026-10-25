@@ -197,7 +197,7 @@ test("routes resolve inside the artist; paths map back to named routes", () => {
   assert.equal(artistPath("ingrid-avison"), "/artists/ingrid-avison/calendar");
   assert.equal(artistPath("ingrid-avison", "/shows/1"), "/artists/ingrid-avison/shows/1");
   assert.equal(resolveRoute("show", { id: "abc" }, "ingrid-avison")?.href, "/artists/ingrid-avison/shows/abc");
-  assert.equal(resolveRoute("mcp", {}, "ingrid-avison")?.title, "Connect Roadie to Claude");
+  assert.equal(resolveRoute("mcp", {}, "ingrid-avison")?.title, "Integrations");
   assert.equal(resolveRoute("calendar", {}, "../evil"), null);
   assert.deepEqual(routeForPath("/artists/ingrid-avison/shows/abc"), { route: "show", params: { id: "abc" }, artist: "ingrid-avison" });
   assert.deepEqual(routeForPath("/artists/ingrid-avison/admin/people"), { route: "people", params: {}, artist: "ingrid-avison" });
