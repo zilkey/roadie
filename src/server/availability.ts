@@ -3,10 +3,11 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { run, db, type Doc } from "./db";
 import { AppError } from "./errors";
 import { newRunId, type Ctx } from "./ctx";
+import { appUrl } from "@/lib/app-url";
+export { appUrl };
 
 export const newToken = () => randomBytes(24).toString("base64url");
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
-export const appUrl = () => (process.env.APP_URL ?? "http://127.0.0.1:3100").replace(/\/$/, "");
 export const answerLink = (availabilityId: string, musicianId: string, token: string) =>
   `${appUrl()}/ask/${encodeURIComponent(availabilityId)}/${encodeURIComponent(musicianId)}/${token}`;
 

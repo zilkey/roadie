@@ -205,7 +205,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Desktop top bar */}
-        <header className="hidden h-[68px] shrink-0 items-center gap-4 border-b border-border bg-surface px-5 min-[900px]:flex" data-testid="topbar">
+        <header className="@container hidden h-[68px] shrink-0 items-center gap-4 border-b border-border bg-surface px-5 min-[900px]:flex" data-testid="topbar">
+          {/* Only when the bar has room to spare: the nav tabs come first (with Roadie's panel open there often isn't) */}
+          <NextLink href={ARTISTS_PATH} className="hidden shrink-0 @min-[1000px]:block" data-testid="topbar-logo"><img src="/logo-header.svg" alt="Roadie" width={109} height={36} /></NextLink>
           <Dropdown label="Band menu" testid="band-menu" left className={switcherClass} trigger={switcher} listTestid="band-menu-list">
             <div className="px-3 py-2"><div className="text-sm font-bold">{artist.name}</div><div className="s">{profile.role === "admin" ? "You're an admin" : "You're a member"}</div></div>
             {profile.role === "admin" && <Link href="/admin/artist" role="menuitem" data-testid="band-menu-settings" className="menu-item">Artist settings</Link>}

@@ -2,9 +2,17 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { FontLoader } from "@/components/FontLoader";
+import { appUrl } from "@/lib/app-url";
 
-export const metadata: Metadata = { title: "Roadie", openGraph: { title: "Roadie - Your Music Backoffice Suite" } };
-export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover" };
+// Icons come from the file conventions next to this file (favicon.ico, icon.svg, apple-icon.png) and manifest.ts.
+export const metadata: Metadata = {
+  metadataBase: new URL(appUrl()),
+  title: { default: "Roadie", template: "%s · Roadie" },
+  description: "Your music backoffice suite: shows, booking, songs and money for your band.",
+  openGraph: { title: "Roadie - Your Music Backoffice Suite", siteName: "Roadie", url: "/", type: "website" },
+  twitter: { card: "summary", title: "Roadie - Your Music Backoffice Suite" },
+};
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#3a46c4" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

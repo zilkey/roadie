@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { isLocalRequest } from "@/lib/localhost";
+import { appUrl } from "@/lib/app-url";
 import { DevelopersGuide, UsersGuide } from "./guides";
 import { McpTabs } from "./tabs";
 
@@ -15,5 +16,5 @@ export default async function McpPage() {
 /** Public MCP address for users: MCP_URL if set, otherwise APP_URL + /mcp. */
 function connectorUrl() {
   if (process.env.MCP_URL) return process.env.MCP_URL;
-  return `${(process.env.APP_URL ?? "http://127.0.0.1:3100").replace(/\/$/, "")}/mcp`;
+  return `${appUrl()}/mcp`;
 }

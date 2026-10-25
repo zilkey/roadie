@@ -9,8 +9,10 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: AIzaSyDKVRxdLhEnr4re3BvKYmOt5jR8mCVHb4Y
     availability: [ BUILD, RUNTIME ]
+  # Our own domain, so Google sign-in says "continue to myroadie.online". next.config.ts proxies /__/auth and /__/firebase
+  # to roadie-prod-iab.firebaseapp.com; the OAuth web client lists https://myroadie.online/__/auth/handler.
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-    value: roadie-prod-iab.firebaseapp.com
+    value: myroadie.online
     availability: [ BUILD, RUNTIME ]
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: roadie-prod-iab
@@ -38,6 +40,7 @@ env:
   #   secret: ORS_API_KEY
   - variable: EIA_API_KEY
     secret: EIA_API_KEY
-  # Base of the "can you play?" links in emails.
+  # The canonical address: base of every generated link ("can you play?" emails, MCP URL, share tags). Visits to the
+  # old *.hosted.app address redirect here (next.config.ts).
   - variable: APP_URL
-    value: https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app
+    value: https://myroadie.online

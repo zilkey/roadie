@@ -28,7 +28,7 @@ There is also a stdio entry for Claude Code on your own machine (`npm run mcp:st
 HTTP (one shared server, many clients):
 
 ```
-claude mcp add --transport http band-tracker https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app/mcp \
+claude mcp add --transport http band-tracker https://myroadie.online/mcp \
   --header "Authorization: Bearer btk_YOUR_KEY"
 ```
 
@@ -47,7 +47,7 @@ Equivalent `.mcp.json`:
   "mcpServers": {
     "band-tracker": {
       "type": "http",
-      "url": "https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app/mcp",
+      "url": "https://myroadie.online/mcp",
       "headers": { "Authorization": "Bearer btk_YOUR_KEY" }
     },
     "band-tracker-stdio": {
