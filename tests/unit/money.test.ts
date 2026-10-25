@@ -127,6 +127,27 @@ test("shows.setExpenses: adds, updates and removes the caller's lines; leaves ot
   await assert.rejects(cmd("shows.setExpenses", { id: showId, lines: [] }, mctx), (e: AppError) => e.code === "paid_back");
 });
 
+test("gas expenses: members can't set the rehearsal location; fixing the amount marks the estimate overridden and keeps it", async () => {
+  const rehearsalId = (await db.create(ctx, "rehearsals", { date: "2026-10-29", personnel: [], songs: [] })).id;
+  const gas = {
+    fromKind: "home", to: { name: "The Loft" }, oneWayMiles: 18.4, roundTrip: true, miles: 36.8, mpg: 28,
+    grade: "regular", priceMilli: 3790, priceArea: "Denver", priceWeek: "2026-10-19", seriesId: "Y05DE_EPMR", estimateCents: 498,
+  };
+  await assert.rejects(
+    cmd("expenses.add", { amount: 498, what: "Gas", category: "travel", rehearsalId, gas, setAsRehearsalLocation: { address: "2363 Champa St, Denver, CO", lat: 39.75, lng: -104.99 } }, mctx),
+    (e: AppError) => e.code === "forbidden",
+  );
+  const { id } = await cmd("expenses.add", { amount: 498, what: "Gas", category: "travel", rehearsalId, gas }, mctx);
+  let x = (await db.get("expenses", id)) as any;
+  assert.equal(x.rehearsalId, rehearsalId);
+  assert.equal(x.gas.overridden, false);
+  await cmd("expenses.update", { id, patch: { amount: 600 } }, mctx);
+  x = (await db.get("expenses", id)) as any;
+  assert.equal(x.amount, 600);
+  assert.equal(x.gas.overridden, true);
+  assert.equal(x.gas.estimateCents, 498);
+});
+
 test("receipts.search finds files in the fake Drive; members may call it", async () => {
   assert.ok(registry["receipts.search"].roles.includes("member"));
   const r = await cmd("receipts.search", { q: "Glass" }, mctx);

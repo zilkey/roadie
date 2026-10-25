@@ -6,7 +6,7 @@ import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { bandFolderId, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable } from "@/lib/music";
-import { SongInput, dateStr } from "@/schema";
+import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 
 const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
 const AttachFile = z.strictObject({ driveFileId: z.string().min(1), kind: kindEnum.optional(), key: z.string().optional(), title: z.string().optional() });
@@ -311,9 +311,12 @@ async function resolveSongs(w: Writer, songs: z.infer<typeof RehSong>[]) {
   return out;
 }
 const RehFields = {
-  date: dateStr, place: z.string().optional(), personnel: z.array(z.string().min(1)).default([]),
+  date: dateStr, location: rehearsalLocation.optional(), venueId: z.string().min(1).optional(),
+  startTime: timeStr.optional(), endTime: timeStr.optional(), personnel: z.array(z.string().min(1)).default([]),
   songs: z.array(RehSong).default([]), notes: z.string().optional(),
 };
+/** A location saved from the address autocomplete: always has coordinates (unlike a migrated name-only one). */
+const LocationIn = z.strictObject({ name: z.string().optional(), address: z.string().min(1), lat: z.number(), lng: z.number() });
 
 export const rehearsalsCreate = defineCommand({
   name: "rehearsals.create",
@@ -332,9 +335,10 @@ export const rehearsalsCreate = defineCommand({
 export const rehearsalsUpdate = defineCommand({
   name: "rehearsals.update",
   roles: ["admin", "mcp"],
-  description: "Edit a rehearsal (date, place, personnel, songs run, notes).",
+  description: "Edit a rehearsal (date, start/end time, location, personnel, songs run, notes).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
-    date: dateStr.optional(), place: z.string().nullable().optional(), personnel: z.array(z.string().min(1)).optional(),
+    date: dateStr.optional(), location: rehearsalLocation.nullable().optional(), venueId: z.string().min(1).nullable().optional(),
+    startTime: timeStr.nullable().optional(), endTime: timeStr.nullable().optional(), personnel: z.array(z.string().min(1)).optional(),
     songs: z.array(RehSong).optional(), notes: z.string().nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
@@ -342,6 +346,39 @@ export const rehearsalsUpdate = defineCommand({
     return w.update("rehearsals", id, { ...rest, ...(songs ? { songs: await resolveSongs(w, songs) } : {}) });
   }),
 });
+export const rehearsalsSetLocation = defineCommand({
+  name: "rehearsals.setLocation",
+  roles: ["admin", "mcp"],
+  description: "Set where a rehearsal is (name, address and coordinates from the address autocomplete, see geo.autocomplete), so members get directions and one-tap gas. Pass location null to clear it.",
+  input: z.strictObject({ id: z.string().min(1), location: LocationIn.nullable() }),
+  run: (ctx, { id, location }) => db.update(ctx, "rehearsals", id, { location }),
+});
+
+export const rehearsalsImportSetlist = defineCommand({
+  name: "rehearsals.importSetlist",
+  roles: ["admin", "mcp"],
+  description: "Copy songs from a setlist into a rehearsal (titles and song ids; breaks are skipped). songIds picks which; " +
+    'mode "append" adds them to the end (default), "replace" swaps the whole list. Sets fromSetlistId; later edits to either side don\'t touch the other.',
+  input: z.strictObject({
+    id: z.string().min(1), setlistId: z.string().min(1),
+    songIds: z.array(z.string().min(1)).min(1), mode: z.enum(["append", "replace"]).default("append"),
+  }),
+  // Returns { id, added, total }: how many songs came in and how long the rehearsal's list is now.
+  run: (ctx, { id, setlistId, songIds, mode }): Promise<{ id: string; added: number; total: number }> => run(ctx, async (w) => {
+    const reh = await w.get("rehearsals", id);
+    if (!reh || reh.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404);
+    const sl = await w.get("setlists", setlistId);
+    if (!sl || sl.deletedAt) throw new AppError("not_found", "Setlist not found", 404);
+    const pick = new Set(songIds);
+    const added = ((sl.items ?? []) as { type: string; songId?: string; title: string }[])
+      .filter((x) => x.type === "song" && x.songId && pick.has(x.songId))
+      .map((x) => ({ songId: x.songId as string, title: x.title }));
+    const songs = mode === "replace" ? added : [...((reh.songs ?? []) as typeof added), ...added];
+    await w.update("rehearsals", id, { songs, fromSetlistId: setlistId });
+    return { id, added: added.length, total: songs.length };
+  }),
+});
+
 export const rehearsalsRemove = defineCommand({
   name: "rehearsals.remove",
   roles: ["admin"],
@@ -356,6 +393,6 @@ export const rehearsalsRemove = defineCommand({
 export const musicCommands = [
   driveSearch, driveFix, filesAttach, filesUpdate, filesRemove, filesCheck, filesShareWithBand, filesCopyToBand,
   songsCreate, songsUpdate, songsRemove, setlistsCreate, setlistsUpdate, setlistsAttach, setlistsRemove,
-  rehearsalsCreate, rehearsalsUpdate, rehearsalsRemove,
+  rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove,
 ];
 export type { Bandmate };

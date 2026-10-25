@@ -110,7 +110,7 @@ function Songs() {
           {!m.loading && m.rehearsals.length === 0 && <div className="empty"><span>No rehearsals logged yet.</span></div>}
           {[...m.rehearsals].sort((a, b) => b.date.localeCompare(a.date)).map((r) => (
             <Link key={r.id} href={`/songs/rehearsals/${r.id}`} className="card" data-testid={`rehearsal-${r.id}`}>
-              <div className="flex items-center justify-between"><b>{fmtDay(r.date)}{r.place ? ` · ${r.place}` : ""}</b><span className="s font-semibold">Open ›</span></div>
+              <div className="flex items-center justify-between"><b>{fmtDay(r.date)}{r.location?.name ?? r.location?.address ? ` · ${r.location?.name ?? r.location?.address}` : ""}</b><span className="s font-semibold">Open ›</span></div>
               <span className="s">{r.songs.length} songs run</span>
             </Link>
           ))}

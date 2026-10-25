@@ -214,7 +214,8 @@ test("log a rehearsal, tick the songs run, attach the recording from Drive", asy
   await signInAs(page, "jeff");
   await page.goto(A("/songs/rehearsals/new"));
   await page.getByTestId("reh-date").fill("2026-10-20");
-  await page.getByTestId("reh-place").fill("Studio B");
+  await page.getByTestId("reh-location-input").fill("2363 Champa");
+  await page.getByTestId("reh-location-suggestion").first().click();
   for (const n of ["Jeff", "David"]) await page.getByTestId(`reh-who-${n}`).click();
   await page.getByTestId("reh-song-Low Light").check();
   await page.getByTestId("reh-note-Low Light").fill("Ending is loose");
@@ -226,8 +227,8 @@ test("log a rehearsal, tick the songs run, attach the recording from Drive", asy
   await page.getByTestId("reh-save").click();
 
   await expect(page).toHaveURL(/\/songs\/rehearsals\/[^/]+$/);
-  await expect(page.getByTestId("reh-song-Low Light")).toBeChecked();
-  await expect(page.getByTestId("reh-note-Low Light")).toHaveValue("Ending is loose");
+  await expect(page.getByTestId("rehearsal-songs")).toContainText("Low Light");
+  await expect(page.getByTestId("rehearsal-songs")).toContainText("Ending is loose");
   await expect(page.getByTestId("rehearsal-files")).toContainText("Rehearsal video Ruby Hill ending.mp4");
 
   // "last rehearsed" now reflects it
@@ -281,11 +282,11 @@ test("a new rehearsal is a draft; an existing one autosaves", async ({ page }) =
   await signInAs(page, "jeff");
   await page.goto(A("/songs/rehearsals/new"));
   await page.getByTestId("reh-date").fill("2027-01-05");
-  await page.getByTestId("reh-place").fill("Draft room");
+  await page.getByTestId("reh-location-input").fill("Draft room"); // a typed name saves as location.name
   await page.getByTestId("reh-who-Jeff").click();
   await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
   await page.reload();
-  await expect(page.getByTestId("reh-place")).toHaveValue("Draft room");
+  await expect(page.getByTestId("reh-location-input")).toHaveValue("Draft room");
   await expect(page.getByTestId("reh-who-Jeff")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("draft-restored")).toBeVisible();
   await page.getByTestId("reh-save").click();
@@ -293,16 +294,17 @@ test("a new rehearsal is a draft; an existing one autosaves", async ({ page }) =
 
   // existing: no Save button, fields save on their own
   await expect(page.getByTestId("reh-save")).toHaveCount(0);
-  await page.getByTestId("reh-place").fill("Real room");
+  await page.getByTestId("reh-start").fill("19:15");
+  await page.getByTestId("reh-add-song").click(); // songs are added through the picker now
   await page.getByTestId("reh-song-Low Light").check();
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
-  await expect(page.getByTestId("reh-place")).toHaveValue("Real room");
-  await expect(page.getByTestId("reh-song-Low Light")).toBeChecked();
-  await page.getByTestId("reh-place").fill("Other room");
+  await expect(page.getByTestId("reh-start")).toHaveValue("19:15");
+  await expect(page.getByTestId("rehearsal-songs")).toContainText("Low Light");
+  await page.getByTestId("reh-start").fill("20:15");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.getByTestId("undo-button").last().click(); // the form follows the record after an Undo
-  await expect(page.getByTestId("reh-place")).not.toHaveValue("Other room");
+  await expect(page.getByTestId("reh-start")).not.toHaveValue("20:15");
   page.once("dialog", (d) => d.accept());
   await page.getByTestId("reh-actions").click();
   await page.getByTestId("reh-menu-archive").click();

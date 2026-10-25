@@ -19,6 +19,12 @@ service cloud.firestore {
     function band() { return isAdmin() || (isMember() && live()); }
 
     match /users/{id}            { allow read: if isAdmin(); }
+    // Per-user private settings (users/{uid}/private/driving: home address, car, MPG). Only the owner reads them,
+    // admins included; the server writes them with the admin SDK (src/server/driving.ts) and never returns the address to others.
+    match /users/{uid}/private/{doc} { allow read: if signedIn() && request.auth.uid == uid; }
+    // Weekly EIA fuel prices, one doc per series, shared by every band: any signed-in user reads; server writes.
+    match /fuelPrices/{id}       { allow read: if signedIn(); }
+    // routeCache/{key} is server-only: no read rule on purpose.
     // Unsubmitted forms and unsaved edits (id = uid__path): only their owner reads, never written from the client (server writes with firebase-admin).
     match /unsubmittedDrafts/{id} { allow read: if signedIn() && resource.data.uid == request.auth.uid; }
     // Per-user prefs (hidden nav sections and their order), id = uid: only their owner reads, server writes.

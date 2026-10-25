@@ -7,6 +7,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
+import { Menu } from "@/components/Menu";
 import {
   EntityForm, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
 } from "@/components/booking/common";
@@ -62,6 +63,13 @@ function Booking({ seg }: { seg: Seg }) {
   }
   const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, contact: contactForm };
 
+  const addActions = (
+    <Menu label="Add to booking" testid="booking-add" triggerClass="btn acc" trigger={<span className="px-1 font-semibold">+ Add ▾</span>}
+      items={(["venue", "promoter", "festival", "contact"] as const).map((k) => ({
+        key: k, testid: `add-${k}`, label: `+ Add ${k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}`,
+        onSelect: () => setAdd(add === k ? "none" : k),
+      }))} />
+  );
   const form = add && (
     <>
     <EntityForm key={add} testid={`new-${add}`} fields={forms[add].fields} initial={forms[add].blank} build={forms[add].build}
@@ -85,7 +93,7 @@ function Booking({ seg }: { seg: Seg }) {
 
   return (
     <div className="grid gap-5">
-      <PageTitle title="Booking" />
+      <PageTitle title="Booking" actions={addActions} />
       <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
         options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
@@ -113,13 +121,6 @@ function Booking({ seg }: { seg: Seg }) {
         )}
       </div>
       <PitchModal target={target} onClose={() => setTarget(null)} />
-
-      <div className="flex flex-wrap gap-2">
-        {(["venue", "promoter", "festival", "contact"] as const).map((k) => (
-          <button key={k} className="btn ghost sm" data-testid={`add-${k}`} onClick={() => setAdd(add === k ? "none" : k)}>+ Add {k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}</button>
-        ))}
-        <Link href="/booking/templates" className="btn ghost sm" data-testid="templates-link">Email templates</Link>
-      </div>
       {form}
     </div>
   );

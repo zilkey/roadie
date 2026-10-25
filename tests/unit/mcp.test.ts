@@ -93,8 +93,11 @@ const EXPECTED = [
   // songs, setlists, rehearsals, files
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
   "songs.create", "songs.update", "setlists.create", "setlists.update", "setlists.attach", "rehearsals.create", "rehearsals.update",
+  "rehearsals.setLocation", "rehearsals.importSetlist",
   // money, stats
-  "expenses.setPaidBack", "stats.pull", "stats.importCsv", "stats.current",
+  "expenses.setPaidBack", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
+  // geo (address typeahead, read-only)
+  "geo.autocomplete",
   // read tools and undo
   "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
   "history.undoRun", "history.myRuns",

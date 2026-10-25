@@ -1,8 +1,8 @@
 // End-to-end tests. `npm run e2e` starts the test emulators (firebase.test.json), seeds them, then runs this.
-// Everything here is the test run's own: Next on 3110 building into .next-test, fakes on 3211-3215 with state in
+// Everything here is the test run's own: Next on 3110 building into .next-test, fakes on 3211-3217 with state in
 // .fake-data-test, emulators on 8290 and 9329. A running `npm run dev:all` is never reused or touched.
 import { defineConfig, devices } from "@playwright/test";
-import { APP, AUTH, BIT, CAL, DRIVE, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, SPOTIFY } from "./tests/e2e/env";
+import { APP, AUTH, BIT, CAL, DRIVE, EIA, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, ORS, SPOTIFY } from "./tests/e2e/env";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -44,6 +44,7 @@ export default defineConfig({
         FIRESTORE_EMULATOR_HOST: FIRESTORE,
         FIREBASE_AUTH_EMULATOR_HOST: AUTH,
         GMAIL_BASE_URL: GMAIL, DRIVE_BASE_URL: DRIVE, CALENDAR_BASE_URL: CAL, BANDSINTOWN_BASE_URL: BIT, SPOTIFY_BASE_URL: SPOTIFY,
+        ORS_BASE_URL: ORS, EIA_BASE_URL: EIA,
         APP_URL: APP,
       },
     },

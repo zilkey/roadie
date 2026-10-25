@@ -1,0 +1,24 @@
+import { defineFake, runIfMain, type Route } from "../lib";
+
+/** Fixed answers for any query so e2e is deterministic. Speaks the Pelias/ORS routes src/server/integrations/ors.ts calls. */
+type State = Record<string, never>;
+
+const feature = (label: string, coordinates: [number, number], extra: Record<string, string> = {}) => ({
+  geometry: { coordinates },
+  properties: { label, county: "Denver County", region_a: "CO", ...extra },
+});
+const CHAMPA = feature("2363 Champa St, Denver, CO, USA", [-104.9868, 39.7526]);
+const LOFT = feature("2363 Champa St, Denver, CO, USA", [-104.9868, 39.7526], { name: "The Loft", layer: "venue" });
+const HOME = feature("742 Evergreen Terrace, Denver, CO, USA", [-104.9503, 39.7005]);
+
+const routes: Route<State>[] = [
+  ["GET", "/geocode/autocomplete", () => ({ features: [CHAMPA, LOFT, HOME] })],
+  ["GET", "/geocode/reverse", () => ({ features: [CHAMPA] })],
+  ["POST", "/v2/directions/driving-car", () => ({ routes: [{ summary: { distance: 29611.93 } }] })],
+];
+
+export const fakeOrs = defineFake<State>({
+  name: "fake-ors", defaultPort: 3206, initial: () => ({}), routes,
+  page: () => `<p>Fixed OpenRouteService answers: autocomplete returns 3 Denver places, reverse returns Denver County, CO, directions is always 18.4 mi (29611.93 m).</p>`,
+});
+runIfMain(import.meta, fakeOrs);

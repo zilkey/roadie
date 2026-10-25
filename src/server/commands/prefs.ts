@@ -5,7 +5,7 @@ import { defineCommand } from "./types";
 
 export const sectionsSetHidden = defineCommand({
   name: "sections.setHidden", roles: ["admin", "member"], input: SectionSetInput,
-  description: "Hide a main section (booking, shows, songs, money) from the caller's main nav into the More menu, or bring it back (hidden:false). Nothing is deleted and the pages still work.",
+  description: "Hide a main section (booking, templates, shows, songs, money) from the caller's main nav into the More menu, or bring it back (hidden:false). Nothing is deleted and the pages still work.",
   async run(ctx, i) { return { section: i.section, hidden: i.hidden, hiddenSections: await setSectionHidden(ctx.uid, i.section, i.hidden) }; },
 });
 export const sectionsHidden = defineCommand({
@@ -16,7 +16,7 @@ export const sectionsHidden = defineCommand({
 
 export const sectionsSetOrder = defineCommand({
   name: "sections.setOrder", roles: ["admin", "member"], input: SectionOrderInput,
-  description: "Set the order of the caller's main sections after Home (shows, booking, songs, money). Sections left out go to the end in their default order.",
+  description: "Set the order of the caller's main sections after Home (shows, booking, templates, songs, money). Sections left out go to the end in their default order.",
   async run(ctx, i) { return { order: await setSectionOrder(ctx.uid, i.order) }; },
 });
 export const sectionsOrder = defineCommand({

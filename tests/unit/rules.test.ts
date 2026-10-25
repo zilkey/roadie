@@ -44,6 +44,11 @@ before(async () => {
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
     await setDoc(doc(d, "unsubmittedDrafts/jeff__expenses"), { uid: "jeff", path: "expenses", values: { a: 1 } });
     await setDoc(doc(d, "unsubmittedDrafts/david__shows~x"), { uid: "david", path: "shows/x", values: { a: 2 } });
+    // Driving & gas: private per-user settings, the shared weekly price cache, and the server-only route cache.
+    await setDoc(doc(d, "users/jeff/private/driving"), { home: { address: "1 Secret Way" }, mpg: 28, fuelGrade: "regular" });
+    await setDoc(doc(d, "users/david/private/driving"), { mpg: 34, fuelGrade: "regular" });
+    await setDoc(doc(d, "fuelPrices/Y05DE_EPMR"), { area: "Denver", areaKind: "metro", grade: "regular", priceMilli: 3790, week: "2026-10-19" });
+    await setDoc(doc(d, "routeCache/abc123"), { oneWayMiles: 18.4 });
   });
 });
 after(async () => { await env.cleanup(); });
@@ -172,6 +177,25 @@ test("unsubmittedDrafts: only the owner reads their own; admins, members and ano
     await assertFails(deleteDoc(doc(who, uid === "jeff" ? "unsubmittedDrafts/jeff__expenses" : "unsubmittedDrafts/david__shows~x")));
   }
   await assertFails(getDoc(doc(admin(), "users/jeff/drafts/show__new"))); // the old location is gone
+});
+
+test("driving settings: nobody but the owner reads users/{uid}/private/driving, admins included; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "users/jeff/private/driving")));
+  await assertSucceeds(getDoc(doc(david(), "users/david/private/driving")));
+  await assertFails(getDoc(doc(admin(), "users/david/private/driving"))); // not even an admin
+  await assertFails(getDoc(doc(david(), "users/jeff/private/driving")));
+  await assertFails(getDoc(doc(anon(), "users/jeff/private/driving")));
+  await assertFails(getDoc(doc(noRole(), "users/jeff/private/driving")));
+  await assertFails(setDoc(doc(admin(), "users/jeff/private/driving"), { mpg: 1 }));
+  await assertFails(updateDoc(doc(david(), "users/david/private/driving"), { mpg: 1 }));
+});
+
+test("fuelPrices: any signed-in user reads; routeCache nobody; no client writes", async () => {
+  for (const who of [admin(), david(), noRole(), aiLogin()]) await assertSucceeds(getDoc(doc(who, "fuelPrices/Y05DE_EPMR")));
+  await assertFails(getDoc(doc(anon(), "fuelPrices/Y05DE_EPMR")));
+  for (const who of [admin(), david(), anon()]) await assertFails(getDoc(doc(who, "routeCache/abc123")));
+  await assertFails(setDoc(doc(admin(), "fuelPrices/new"), { priceMilli: 1 }));
+  await assertFails(deleteDoc(doc(admin(), "fuelPrices/Y05DE_EPMR")));
 });
 
 // ---------- venues: a shared directory plus private per-band notes ----------

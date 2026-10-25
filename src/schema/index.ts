@@ -46,6 +46,7 @@ export * from "./files";
 export * from "./setlists";
 export * from "./rehearsals";
 export * from "./expenses";
+export * from "./driving";
 export * from "./statSnapshots";
 export * from "./history";
 export * from "./mcpTokens";

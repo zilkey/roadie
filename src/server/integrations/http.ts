@@ -3,12 +3,12 @@ export class IntegrationError extends Error {
   constructor(public service: string, public status: number, message: string) { super(`${service}: ${message} (HTTP ${status})`); }
 }
 
-export function jsonClient(service: string, baseUrl: string) {
+export function jsonClient(service: string, baseUrl: string, headers?: Record<string, string>) {
   const base = baseUrl.replace(/\/$/, "");
   return async function call<T>(method: string, path: string, opts: { query?: Record<string, string | undefined>; body?: unknown } = {}): Promise<T> {
     const qs = new URLSearchParams(Object.entries(opts.query ?? {}).filter(([, v]) => v !== undefined) as [string, string][]).toString();
     const res = await fetch(`${base}${path}${qs ? `?${qs}` : ""}`, {
-      method, headers: opts.body ? { "content-type": "application/json" } : undefined, body: opts.body ? JSON.stringify(opts.body) : undefined,
+      method, headers: { ...headers, ...(opts.body ? { "content-type": "application/json" } : {}) }, body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     const text = await res.text();
     const data = text ? JSON.parse(text) : undefined;

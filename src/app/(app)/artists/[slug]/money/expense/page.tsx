@@ -1,77 +1,268 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import { Suspense, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
-import { ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import { useProfile } from "@/lib/auth";
+import { ErrorBox, PageTitle, PickChip, Select, useCommand } from "@/components/ui";
+import { AddressAutocomplete, type Place } from "@/components/AddressAutocomplete";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
-import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, dollarsToCents } from "@/lib/money";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
+import { dollarsToCents, formatCents, parseDollars } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
-import type { Show } from "@/schema";
+import { roleIn, type Rehearsal, type Show, type User } from "@/schema";
 
-const CATS = ["gear", "travel", "space", "marketing", "fees", "other"] as const;
+/** The chips on the form and the ledger category each one files under (no new ledger category). */
+const CHIPS = [
+  ["gas", "Gas", "travel", "Gas"],
+  ["space", "Room rental", "space", "Room rental"],
+  ["gear", "Gear", "gear", ""],
+  ["food", "Food", "other", "Food"],
+  ["other", "Other", "other", ""],
+] as const;
+type Chip = (typeof CHIPS)[number][0];
+
 interface Hit { driveFileId: string; name: string; url: string }
+/** What expenses.estimateGas replies with (numbers, or `missing`). */
+interface Estimate {
+  missing: ("mpg" | "home" | "destination" | "price")[];
+  fromKind: "home" | "typed"; roundTrip: boolean;
+  oneWayMiles?: number; miles?: number; mpg?: number; grade?: "regular" | "midgrade" | "premium" | "diesel";
+  priceMilli?: number; priceArea?: string; priceWeek?: string; seriesId?: string; source?: string; estimateCents?: number;
+}
 const fileIdOf = (url: string) => /\/d\/([\w-]+)/.exec(url)?.[1] ?? /[?&]id=([\w-]+)/.exec(url)?.[1] ?? url.replace(/\W+/g, "").slice(-24);
+const placeLabel = (p?: { name?: string; address?: string }) => [p?.name, p?.address].filter(Boolean).join(", ");
+const warnBox = "grid gap-2 rounded-xl p-4";
+const warnStyle = { background: "var(--unfinished)", color: "var(--unfinished-text)" } as const;
 
 export default function Page() { return <Suspense><AddExpense /></Suspense>; }
 
 function AddExpense() {
   const router = useRouter();
   const sp = useSearchParams();
+  const me = useProfile();
+  const { artistId } = useArtist();
+  const isAdmin = me.role === "admin";
   const shows = useCollection<Show>("shows");
+  const users = useCollection<User>("users", { skip: !isAdmin });
   const { call, error, busy } = useCommand();
-  // A new expense is a draft with an explicit Send button (you can still fix it until it's paid back).
+  const est = useCommand();
+  const estCall = useRef(est.call); estCall.current = est.call;
+  // A new expense is a draft with an explicit Save button (you can still fix it until it's paid back).
   const fromShow = sp.get("show") ?? "";
-  const draft = useDraft(fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : draftPath.newIn("expenses"), { amount: "", what: "", cat: "gear" as (typeof CATS)[number], showId: fromShow, link: "", payBack: true },
+  const rehearsalId = sp.get("rehearsalId") ?? "";
+  const reh = useDoc<Rehearsal>("rehearsals", rehearsalId || "none");
+  const rehearsal = rehearsalId ? reh.doc : null;
+  const rehLoc = rehearsal?.location;
+  const rehHasLoc = !!(rehLoc && (rehLoc.address || rehLoc.lat !== undefined));
+  const draft = useDraft(
+    fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
+    {
+      amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "gas" : "gear") as Chip, showId: fromShow, link: "", payBack: true,
+      forId: "", fromPick: null as Place | null, toPick: null as Place | null, roundTrip: true, mpgText: "",
+      saveMpg: true, saveHome: true, setRehearsal: true,
+    },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
-  const { amount, what, cat, showId, link } = draft.value;
+  const { amount, what, cat, showId, link, forId, fromPick, toPick, roundTrip, mpgText } = draft.value;
   const payBack = draft.value.payBack !== false;
-  const setAmount = (v: string) => draft.setValue({ ...draft.value, amount: v });
-  const setWhat = (v: string) => draft.setValue({ ...draft.value, what: v });
-  const setCat = (v: (typeof CATS)[number]) => draft.setValue({ ...draft.value, cat: v });
-  const setShowId = (v: string) => draft.setValue({ ...draft.value, showId: v });
-  const setPayBack = (v: boolean) => draft.setValue((d) => ({ ...d, payBack: v }));
-  const setLink = (v: string) => draft.setValue((d) => ({ ...d, link: v }));
+  const patch = (p: Partial<typeof draft.value>) => draft.setValue((d) => ({ ...d, ...p }));
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const search = useCommand();
-  const cents = amount.trim() && !isNaN(Number(amount)) ? dollarsToCents(amount) : 0;
+  const [need, setNeed] = useState({ mpg: false, home: false, dest: false });
+  const [last, setLast] = useState<{ key: string; r: Estimate } | null>(null);
+
+  const chip = CHIPS.find((c) => c[0] === cat) ?? CHIPS[2];
+  const forOther = isAdmin && !!forId && forId !== me.uid;
+  const mpgNum = Number(mpgText);
+  const mpgTyped = mpgText.trim() !== "" && mpgNum > 0;
+  const bandmates = (users.rows ?? []).filter((u) => ["admin", "member"].includes(roleIn(u, artistId)) && u.id !== me.uid).sort((a, b) => a.name.localeCompare(b.name));
+
+  // ---- the estimate: runs whenever the inputs settle (300 ms) ----
+  const estInput = {
+    ...(forOther ? { forId } : {}),
+    ...(fromPick ? { from: { address: fromPick.address, lat: fromPick.lat, lng: fromPick.lng } } : {}),
+    ...(toPick ? { to: toPick } : {}),
+    ...(rehearsalId ? { rehearsalId } : {}),
+    ...(mpgTyped ? { mpg: mpgNum } : {}),
+    roundTrip,
+  };
+  const key = JSON.stringify(estInput);
+  useEffect(() => {
+    if (cat !== "gas" || !draft.ready) return;
+    let live = true;
+    const t = setTimeout(async () => {
+      const r = await estCall.current<Estimate>("expenses.estimateGas", JSON.parse(key));
+      if (!live || !r) return;
+      setLast({ key, r });
+      setNeed((n) => ({ mpg: n.mpg || r.missing.includes("mpg"), home: n.home || r.missing.includes("home"), dest: n.dest || r.missing.includes("destination") }));
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [key, cat, draft.ready]);
+  const cur = cat === "gas" && last?.key === key ? last.r : null;
+  const good = cur && cur.missing.length === 0 && cur.estimateCents && cur.miles && cur.oneWayMiles && cur.mpg && cur.priceMilli && cur.priceArea && cur.priceWeek && cur.seriesId && cur.grade ? cur : null;
+  const missing = cur?.missing ?? [];
+
+  // Pre-fill the amount from the estimate until the person types their own.
+  const goodCents = good?.estimateCents;
+  useEffect(() => {
+    if (goodCents) draft.setValue((d) => (d.amountEdited ? d : { ...d, amount: (goodCents / 100).toFixed(2) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goodCents]);
+
+  const typedAmount = amount.trim() ? parseDollars(amount) : null;
+  const cents = typedAmount ?? (amount.trim() && !isNaN(Number(amount)) ? dollarsToCents(amount) : 0);
+  const base = chip[3];
+  const note = what.trim();
+  const whatOut = base ? (note ? `${base} · ${note}` : base) : note;
   const sorted = [...(shows.rows ?? [])].filter((s) => !isOff(s)).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
+
+  const showMpgBox = cat === "gas" && (need.mpg || missing.includes("mpg") || mpgTyped);
+  const showHomeBox = cat === "gas" && (need.home || missing.includes("home"));
+  const showToBox = cat === "gas" && (need.dest || missing.includes("destination") || (!rehHasLoc && !!toPick));
+  const toLabel = placeLabel(rehLoc);
 
   async function find() {
     const r = await search.call<{ files: Hit[] }>("receipts.search", { q: q.trim() });
     if (r) setHits(r.files);
   }
-  async function send() {
+  async function save() {
     const url = link.trim();
     await draft.settle();
+    const toOut = toPick ?? (rehLoc ? { name: rehLoc.name, address: rehLoc.address, lat: rehLoc.lat, lng: rehLoc.lng } : {});
+    const gas = good && cents > 0 ? {
+      fromKind: good.fromKind, ...(good.fromKind === "typed" && fromPick ? { fromText: fromPick.address } : {}),
+      to: toOut, oneWayMiles: good.oneWayMiles!, roundTrip: good.roundTrip, miles: good.miles!, mpg: good.mpg!, grade: good.grade!,
+      priceMilli: good.priceMilli!, priceArea: good.priceArea!, priceWeek: good.priceWeek!, seriesId: good.seriesId!, estimateCents: good.estimateCents!,
+    } : undefined;
+    const own = !forOther;
     const r = await call("expenses.add", {
-      amount: cents, what: what.trim(), category: cat, payBack, ...(showId ? { showId } : {}),
+      amount: cents, what: whatOut, category: chip[2], payBack,
+      ...(showId && !rehearsalId ? { showId } : {}), ...(rehearsalId ? { rehearsalId } : {}),
+      ...(forOther ? { userId: forId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
+      ...(gas ? { gas } : {}),
+      ...(gas && own && showMpgBox && mpgTyped && draft.value.saveMpg ? { saveMpg: true } : {}),
+      ...(gas && own && showHomeBox && fromPick && draft.value.saveHome ? { saveAsHome: { ...(fromPick.name ? { name: fromPick.name } : {}), address: fromPick.address, lat: fromPick.lat, lng: fromPick.lng } } : {}),
+      ...(gas && isAdmin && rehearsalId && !rehHasLoc && toPick && draft.value.setRehearsal ? { setAsRehearsalLocation: { ...(toPick.name ? { name: toPick.name } : {}), address: toPick.address, lat: toPick.lat, lng: toPick.lng } } : {}),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r) { await draft.clear(); router.push("/money"); }
+    if (r) { await draft.clear(); router.push(rehearsalId ? `/songs/rehearsals/${rehearsalId}` : "/money"); }
   }
+  async function cancel() {
+    await draft.clear({ reset: true });
+    router.push(rehearsalId ? `/songs/rehearsals/${rehearsalId}` : "/money");
+  }
+
+  const miles = good?.miles ?? cur?.miles;
+  const oneWay = cur?.oneWayMiles;
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<Link href="/money" className="back-link" data-testid="back">← My money</Link>} title="Add an expense" />
+      <PageTitle back={<Link href="/money" className="back-link" data-testid="back">← My money</Link>} title="Add an expense"
+        sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : undefined} />
       {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
-        <label className="grid gap-1"><span className="lbl">How much</span>
-          <input className="input font-mono" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="expense-amount" /></label>
-        <label className="grid gap-1"><span className="lbl">What for</span>
-          <Select testid="expense-cat" value={cat} onChange={setCat} options={CATS.map((c) => [c, CATEGORY_LABEL[c]] as [typeof c, string])} />
+        <div className="grid gap-2">
+          <span className="lbl">Category</span>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Category">
+            {CHIPS.map(([k, label]) => (
+              <PickChip key={k} on={cat === k} onToggle={() => patch({ cat: k })} testid={`exp-cat-${k}`}>{label}</PickChip>
+            ))}
+          </div>
+        </div>
+
+        {isAdmin && <label className="grid gap-1">
+          <span className="lbl">For (optional) · Admins only</span>
+          <Select testid="exp-for" value={forId} onChange={(v) => { setNeed({ mpg: false, home: false, dest: false }); setLast(null); patch({ forId: v, mpgText: "" }); }}
+            options={[["", `Me (${me.name ?? "you"})`] as [string, string], ...bandmates.map((u) => [u.id, u.name] as [string, string])]} />
+          <span className="s">Pick a bandmate to log it for them. It shows in their expenses and they get paid back. Gas uses their home address and MPG.</span>
+        </label>}
+
+        {cat === "gas" && <>
+          {showHomeBox ? (
+            <div className={warnBox} style={warnStyle}>
+              <span className="lbl" style={{ color: "inherit" }}>From — where did you start?</span>
+              <AddressAutocomplete value={fromPick ? placeLabel(fromPick) : ""} placeholder="Start typing an address…" testId="exp-from"
+                onPick={(p) => patch({ fromPick: p })} onChange={() => fromPick && patch({ fromPick: null })} />
+              <span className="s" style={{ color: "inherit" }}>{forOther ? "They haven't saved a home address, so this can't be filled in for them." : "You haven't saved a home address, so this can't be filled in for you."}</span>
+              {!forOther && <label className="flex items-center gap-2"><input type="checkbox" checked={draft.value.saveHome} onChange={(e) => patch({ saveHome: e.target.checked })} data-testid="exp-save-home" /><span>Save as my home address</span></label>}
+            </div>
+          ) : (
+            <label className="grid gap-1">
+              <span className="flex items-baseline justify-between gap-2"><span className="lbl">From</span><span className="s">{forOther ? "Their home address" : "Your home address"}</span></span>
+              <AddressAutocomplete value={fromPick ? placeLabel(fromPick) : ""} placeholder={forOther ? "Their home address" : "Your home address"} testId="exp-from"
+                onPick={(p) => patch({ fromPick: p })} onChange={() => fromPick && patch({ fromPick: null })} />
+            </label>
+          )}
+
+          {showToBox ? (
+            <div className={warnBox} style={warnStyle}>
+              <span className="lbl" style={{ color: "inherit" }}>To — where was rehearsal?</span>
+              <AddressAutocomplete value={toPick ? placeLabel(toPick) : ""} placeholder="Start typing an address or place…" testId="exp-to"
+                onPick={(p) => patch({ toPick: p })} onChange={() => toPick && patch({ toPick: null })} />
+              {!rehHasLoc && <span className="s" style={{ color: "inherit" }}>This rehearsal doesn't have an address yet.</span>}
+              {isAdmin && rehearsalId && !rehHasLoc && <label className="flex items-center gap-2"><input type="checkbox" checked={draft.value.setRehearsal} onChange={(e) => patch({ setRehearsal: e.target.checked })} data-testid="exp-set-rehearsal-location" /><span>Also set this as the rehearsal location <span className="s">(admins only)</span></span></label>}
+            </div>
+          ) : (
+            <label className="grid gap-1">
+              <span className="flex items-baseline justify-between gap-2"><span className="lbl">To</span><span className="s">Rehearsal location</span></span>
+              <AddressAutocomplete value={toPick ? placeLabel(toPick) : ""} placeholder={toLabel || "Where to?"} testId="exp-to"
+                onPick={(p) => patch({ toPick: p })} onChange={() => toPick && patch({ toPick: null })} />
+            </label>
+          )}
+
+          <button type="button" role="switch" aria-checked={roundTrip} onClick={() => patch({ roundTrip: !roundTrip })} data-testid="exp-roundtrip"
+            className="flex min-h-11 cursor-pointer items-center justify-between gap-3 border-0 bg-transparent p-0 text-left" style={{ font: "inherit", color: "var(--ink)" }}>
+            <span>Round trip <span className="s">— doubles the distance</span></span>
+            <span aria-hidden className="inline-flex items-center rounded-full p-[3px]" style={{ width: 44, height: 26, background: roundTrip ? "var(--accent)" : "var(--input-border)", justifyContent: roundTrip ? "flex-end" : "flex-start" }}>
+              <span className="block rounded-full" style={{ width: 20, height: 20, background: "#fff" }} />
+            </span>
+          </button>
+
+          {showMpgBox && (
+            <div className={warnBox} style={warnStyle}>
+              {missing.includes("mpg") && <b>We need {forOther ? "their" : "your"} car's MPG to estimate this</b>}
+              <label className="grid gap-1"><span className="lbl" style={{ color: "inherit" }}>Miles per gallon</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input className="input" style={{ width: 120 }} inputMode="decimal" placeholder="e.g. 28" value={mpgText} onChange={(e) => patch({ mpgText: e.target.value })} data-testid="exp-mpg-inline" />
+                  <a href="https://www.fueleconomy.gov/feg/findacar.shtml" target="_blank" rel="noreferrer">Look up my car's MPG</a>
+                </div></label>
+              {!forOther && <label className="flex items-center gap-2"><input type="checkbox" checked={draft.value.saveMpg} onChange={(e) => patch({ saveMpg: e.target.checked })} data-testid="exp-save-mpg" /><span>Save to my settings so I don't have to enter it again</span></label>}
+            </div>
+          )}
+
+          <div className="grid gap-2 rounded-xl p-4" style={{ background: "var(--soft)" }} data-testid="exp-estimate" aria-live="polite">
+            <div className="flex justify-between gap-3"><span className="s">Distance</span>
+              <span className="font-mono">{oneWay === undefined ? (missing.includes("home") ? "— needs a start address" : missing.includes("destination") ? "— needs a destination" : "—") : roundTrip ? `${oneWay} mi × 2 = ${miles} mi` : `${oneWay} mi one way`}</span></div>
+            <div className="flex justify-between gap-3"><span className="s">{forOther ? "Their car" : "Your car"}</span>
+              <span>{cur?.mpg ? `${cur.mpg} MPG` : <span className="s">— MPG needed</span>}</span></div>
+            <div className="flex justify-between gap-3"><span className="s">Gas price</span>
+              {cur?.priceMilli ? <span className="text-right">${(cur.priceMilli / 1000).toFixed(2)} / gal {cur.grade}{cur.source && <><br /><span className="s">{cur.source}</span></>}</span>
+                : <span className="s">{missing.includes("price") ? "— no price available" : "—"}</span>}</div>
+            <div className="flex justify-between gap-3 pt-2" style={{ borderTop: "1px solid var(--line)" }}>
+              <span className="s">{good ? `${good.miles!.toFixed(1)} mi ÷ ${good.mpg} MPG × $${(good.priceMilli! / 1000).toFixed(2)}` : est.busy ? "Working it out…" : missing.includes("mpg") ? "Estimate appears once MPG is in" : missing.includes("home") ? "Estimate appears once From is set" : missing.includes("destination") ? "Estimate appears once To is set" : "Estimate appears here"}</span>
+              <b className="font-mono" data-testid="exp-estimate-cost">{good ? formatCents(good.estimateCents!) : "—"}</b>
+            </div>
+          </div>
+          <ErrorBox error={est.error} />
+        </>}
+
+        <label className="grid gap-1"><span className="lbl">{cat === "gas" ? "Amount" : "How much"}</span>
+          <input className="input font-mono" inputMode="decimal" placeholder={cat === "gas" ? "Or type the amount yourself" : "$0.00"} value={amount}
+            onChange={(e) => patch({ amount: e.target.value, amountEdited: e.target.value.trim() !== "" })} data-testid="exp-amount" />
+          {good && <span className="s">Pre-filled from the estimate. Change it if you paid something different.</span>}
         </label>
-        <input className="input" placeholder="Drum heads" value={what} onChange={(e) => setWhat(e.target.value)} data-testid="expense-what" />
-        <label className="grid gap-1"><span className="lbl">For a show?</span>
-          <select className="select" value={showId} onChange={(e) => setShowId(e.target.value)} data-testid="expense-show">
+        <label className="grid gap-1"><span className="lbl">{base ? "Note (optional)" : "What for"}</span>
+          <input className="input" placeholder={base ? "e.g. picked up Eric on the way" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
+
+        {!rehearsalId && <label className="grid gap-1"><span className="lbl">For a show?</span>
+          <select className="select" value={showId} onChange={(e) => patch({ showId: e.target.value })} data-testid="expense-show">
             <option value="">Pick a show (optional)</option>
             {sorted.map((s) => <option key={s.id} value={s.id}>{fmtLong(s.date)} · {showName(s)}</option>)}
-          </select></label>
+          </select></label>}
         <span className="lbl">Receipt</span>
-        <input className="input" placeholder="Paste a Drive link" value={link} onChange={(e) => setLink(e.target.value)} data-testid="expense-receipt" />
+        <input className="input" placeholder="Paste a Drive link" value={link} onChange={(e) => patch({ link: e.target.value })} data-testid="expense-receipt" />
         <div className="flex gap-2">
           <input className="input" placeholder="…or search Drive" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && q.trim() && find()} data-testid="receipt-search" />
           <button type="button" className="btn ghost" disabled={!q.trim() || search.busy} onClick={find} data-testid="receipt-search-go">Search</button>
@@ -79,13 +270,16 @@ function AddExpense() {
         <ErrorBox error={search.error} />
         {hits && hits.length === 0 && <span className="s">No files found.</span>}
         {hits?.map((h) => (
-          <button key={h.driveFileId} type="button" className="btn ghost sm justify-start" onClick={() => { setLink(h.url); setHits(null); }} data-testid={`receipt-hit-${h.driveFileId}`}>{h.name}</button>
+          <button key={h.driveFileId} type="button" className="btn ghost sm justify-start" onClick={() => { patch({ link: h.url }); setHits(null); }} data-testid={`receipt-hit-${h.driveFileId}`}>{h.name}</button>
         ))}
-        <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => setPayBack(e.target.checked)} data-testid="expense-payback" /><span>Pay me back</span></label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => patch({ payBack: e.target.checked })} data-testid="expense-payback" /><span>Pay me back</span></label>
         <span className="s">You can edit or remove it on My money until it's been paid back.</span>
         <ErrorBox error={error} />
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-        <button className="btn acc" disabled={busy || cents <= 0 || !what.trim()} onClick={send} data-testid="expense-send">Send</button>
+        <div className="flex justify-end gap-2">
+          <button type="button" className="btn ghost" onClick={cancel} data-testid="exp-cancel">Cancel</button>
+          <button className="btn acc" disabled={busy || cents <= 0 || !whatOut} onClick={save} data-testid="exp-save">{cents > 0 ? `Save ${formatCents(cents)}` : "Save"}</button>
+        </div>
       </div>}
     </div>
   );

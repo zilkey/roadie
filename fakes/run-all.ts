@@ -1,12 +1,14 @@
-/** Starts all five fakes in one process. `tsx fakes/run-all.ts` */
+/** Starts all the fakes in one process. `tsx fakes/run-all.ts` */
 import { fakeGmail } from "./fake-gmail/server";
 import { fakeDrive } from "./fake-drive/server";
 import { fakeCalendar } from "./fake-calendar/server";
 import { fakeBandsintown } from "./fake-bandsintown/server";
 import { fakeSpotify } from "./fake-spotify/server";
+import { fakeOrs } from "./fake-ors/server";
+import { fakeEia } from "./fake-eia/server";
 import type { RunningFake } from "./lib";
 
-export const allFakes = [fakeGmail, fakeDrive, fakeCalendar, fakeBandsintown, fakeSpotify];
+export const allFakes = [fakeGmail, fakeDrive, fakeCalendar, fakeBandsintown, fakeSpotify, fakeOrs, fakeEia];
 
 export async function startAll(opts: { dataDir?: string; ephemeral?: boolean } = {}): Promise<{ running: Record<string, RunningFake>; close: () => Promise<void> }> {
   const running: Record<string, RunningFake> = {};

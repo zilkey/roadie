@@ -26,6 +26,13 @@ env:
   # Signs MCP session ids (mcp/web.ts) so every instance agrees (created per docs/MCP.md).
   - variable: MCP_SESSION_SECRET
     secret: MCP_SESSION_SECRET
+  # Gas estimates: OpenRouteService (addresses, driving distance) and EIA (weekly pump prices). Free keys; set each with
+  # `npx firebase apphosting:secrets:set ORS_API_KEY --project roadie-prod-iab` (and EIA_API_KEY), then uncomment.
+  # Also set ORS_BASE_URL=https://api.openrouteservice.org and EIA_BASE_URL=https://api.eia.gov (plain values).
+  # - variable: ORS_API_KEY
+  #   secret: ORS_API_KEY
+  # - variable: EIA_API_KEY
+  #   secret: EIA_API_KEY
   # Base of the "can you play?" links in emails.
   - variable: APP_URL
     value: https://roadie-web-prod--roadie-prod-iab.us-central1.hosted.app

@@ -14,6 +14,10 @@ import { slugForArtist } from "../src/schema/artists";
 import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
 import { execute } from "../src/server/commands/dispatch";
 import { seedDefaultTemplates } from "../src/server/checklistTemplates";
+import { updateDriving } from "@/server/driving";
+import { areaFor, productFor } from "@/server/gas/price";
+import { firestore } from "@/server/admin";
+import { Timestamp } from "firebase-admin/firestore";
 
 const project = "demo-band-tracker";
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
@@ -60,6 +64,17 @@ async function main() {
     await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
     await syncClaims(u.uid);
   }
+
+  // Driving settings for the admin (Jeff), so gas estimates work out of the box. The member gets none (no home, no car).
+  await updateDriving(uid.jeff, {
+    home: { address: "742 Evergreen Terrace, Denver, CO, USA", lat: 39.7005, lng: -104.9503 },
+    carName: "Subaru Outback", mpg: 28, fuelGrade: "regular",
+  });
+  // The stored EIA price for Denver metro, regular: fresh enough that the gas estimate never calls EIA.
+  const denver = areaFor("Denver County", "CO");
+  await firestore().doc(`fuelPrices/${denver.duoarea}_${productFor("regular")}`).set({
+    area: "Denver", areaKind: "metro", grade: "regular", priceMilli: 3790, week: "2026-10-19", fetchedAt: Timestamp.now(),
+  });
 
   if (process.argv.includes("--people")) {
     await seedTemplates(create, ctx, artist);
@@ -138,7 +153,10 @@ async function main() {
     name: "Hi-Dive 45 min",
     items: songIds.slice(0, 11).map((id, i) => ({ type: "song", songId: id, title: songSpecs[i][0], lengthSec: songSpecs[i][2], key: songSpecs[i][1] })),
   });
-  await create("rehearsals", { date: "2026-10-18", place: "Jeff's basement", personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[0], title: "Glass Coast", note: "Tighten the bridge" }, { songId: songIds[3], title: "Ruby Hill" }], notes: "Good energy. Eric to bring the click." });
+  await create("rehearsals", { date: "2026-10-18", location: { name: "Jeff's basement" }, personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[0], title: "Glass Coast", note: "Tighten the bridge" }, { songId: songIds[3], title: "Ruby Hill" }], notes: "Good energy. Eric to bring the click." });
+  // A rehearsal with a full location (the autocomplete's shape) and times: the gas estimate's "To" and the drive both come from it.
+  await create("rehearsals", { date: "2026-10-29", startTime: "19:00", endTime: "22:00", location: { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 },
+    personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[8], title: "Kerosene" }, { songId: songIds[9], title: "Gold Hour", note: "Check the key change" }] });
 
   // --- shows ---
   const cfg = (artistCfg: string) => ({

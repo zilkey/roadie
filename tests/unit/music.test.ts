@@ -211,11 +211,44 @@ test("setlists: totalSec computed, song data copied, rename keeps titles in sync
   assert.equal((await db.get("shows", s1))!.setlistId ?? null, null);
 });
 
+test("rehearsals: import songs from a setlist (append and replace, breaks skipped); set and clear the location", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
+  const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
+  const c = (await cmd("songs.create", { title: "Weathervane", status: "active" })).id;
+  const sl = (await cmd("setlists.create", { name: "Hi-Dive", items: [
+    { type: "song", songId: a, note: "capo 2" }, { type: "break" }, { type: "song", songId: b }, { type: "song", songId: c },
+  ] })).id;
+  const { id } = await cmd("rehearsals.create", { date: "2026-10-29", songs: [{ songId: c, note: "run twice" }] });
+
+  const imp = await cmd("rehearsals.importSetlist", { id, setlistId: sl, songIds: [a, b] });
+  assert.equal(imp.added, 2);
+  assert.equal(imp.total, 3);
+  let r = (await db.get("rehearsals", id)) as any;
+  assert.deepEqual(r.songs.map((s: any) => s.title), ["Weathervane", "Glass Coast", "Ruby Hill"]); // append keeps what was there
+  assert.equal(r.fromSetlistId, sl);
+  assert.equal(r.songs[0].note, "run twice");
+
+  await cmd("rehearsals.importSetlist", { id, setlistId: sl, songIds: [a, c], mode: "replace" });
+  r = (await db.get("rehearsals", id)) as any;
+  assert.deepEqual(r.songs.map((s: any) => s.title), ["Glass Coast", "Weathervane"]);
+
+  // later edits to the setlist don't touch the rehearsal
+  await cmd("setlists.update", { id: sl, patch: { items: [{ type: "song", songId: b }] } });
+  r = (await db.get("rehearsals", id)) as any;
+  assert.deepEqual(r.songs.map((s: any) => s.title), ["Glass Coast", "Weathervane"]);
+
+  const loc = { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 };
+  await cmd("rehearsals.setLocation", { id, location: loc });
+  assert.deepEqual(((await db.get("rehearsals", id)) as any).location, loc);
+  await cmd("rehearsals.setLocation", { id, location: null });
+  assert.equal(((await db.get("rehearsals", id)) as any).location, undefined);
+});
+
 test("rehearsals: log with songs and notes, attach a recording, last rehearsed, rename sync", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
   const { id, fileIds } = await cmd("rehearsals.create", {
-    date: "2026-10-18", place: "Jeff's basement", personnel: [ids.ingrid, ids.jeff], songs: [{ songId: a, note: "Tighten the bridge" }, { songId: b }],
+    date: "2026-10-18", location: { name: "Jeff's basement" }, personnel: [ids.ingrid, ids.jeff], songs: [{ songId: a, note: "Tighten the bridge" }, { songId: b }],
     files: [{ driveFileId: "fake-reh-1" }],
   });
   assert.equal(fileIds.length, 1);

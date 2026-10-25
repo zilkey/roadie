@@ -75,7 +75,7 @@ test("a new expense typed and abandoned comes back in a new browser; Add clears 
   const a = await as(browser, "david");
   await a.page.goto(A("/money/expense"));
   await a.page.getByTestId("expense-what").fill("Spare snare stand");
-  await a.page.getByTestId("expense-amount").fill("34.50");
+  await a.page.getByTestId("exp-amount").fill("34.50");
   await expect(a.page.getByTestId("draft-status")).toHaveText("Draft saved");
   await a.close();
 
@@ -83,9 +83,9 @@ test("a new expense typed and abandoned comes back in a new browser; Add clears 
   await expect(b.page.getByTestId("unfinished")).toContainText("New expense · Spare snare stand");
   await b.page.getByTestId("unfinished").getByRole("link").first().click();
   await expect(b.page.getByTestId("expense-what")).toHaveValue("Spare snare stand");
-  await expect(b.page.getByTestId("expense-amount")).toHaveValue("34.50");
+  await expect(b.page.getByTestId("exp-amount")).toHaveValue("34.50");
   await expect(b.page.getByTestId("draft-restored")).toBeVisible();
-  await b.page.getByTestId("expense-send").click();
+  await b.page.getByTestId("exp-save").click();
   await expect(b.page).toHaveURL(/\/money$/);
   await b.page.goto(A("/home"));
   await expect(b.page.getByTestId("unfinished")).toHaveCount(0);
@@ -105,7 +105,7 @@ test("last write wins: two machines typing into the same new form, a third sees 
   await expect(one.page.getByTestId("expense-what")).toBeVisible();
   await expect(two.page.getByTestId("expense-what")).toBeVisible();
   await one.page.getByTestId("expense-what").fill("From the first machine");
-  await one.page.getByTestId("expense-amount").fill("11");
+  await one.page.getByTestId("exp-amount").fill("11");
   await expect(one.page.getByTestId("draft-status")).toHaveText("Draft saved");
   await two.page.getByTestId("expense-what").fill("From the second machine");
   await expect(two.page.getByTestId("draft-status")).toHaveText("Draft saved");
@@ -113,7 +113,7 @@ test("last write wins: two machines typing into the same new form, a third sees 
   const three = await as(browser, "david");
   await three.page.goto(A("/money/expense"));
   await expect(three.page.getByTestId("expense-what")).toHaveValue("From the second machine");
-  await expect(three.page.getByTestId("expense-amount")).toHaveValue(""); // the first machine's amount was overwritten, not merged
+  await expect(three.page.getByTestId("exp-amount")).toHaveValue(""); // the first machine's amount was overwritten, not merged
   await three.page.getByTestId("draft-start-over").click();
   await expect(three.page.getByTestId("expense-what")).toHaveValue("");
   await one.close(); await two.close(); await three.close();

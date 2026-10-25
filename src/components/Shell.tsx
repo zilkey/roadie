@@ -16,6 +16,7 @@ const I = {
   home: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
   shows: "M4 7h16v13H4zM4 11h16M8 3v4M16 3v4",
   booking: "M6 3v18M6 4h12l-3 4 3 4H6",
+  templates: "M4 5h16v14H4zM4 9h16M8 13h8M8 16h5",
   songs: "M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zm10-2a3 3 0 11-3-3 3 3 0 013 3z",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   money: "M12 3v18M16 7.5c0-1.7-1.8-3-4-3s-4 1.1-4 3 1.8 2.6 4 3 4 1.3 4 3.2-1.8 3.3-4 3.3-4-1.3-4-3",
@@ -34,10 +35,13 @@ export function navFor(role: "admin" | "member", order: SectionId[]): NavItem[] 
   const all: Record<SectionId, NavItem> = {
     shows: { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
+    templates: { key: "templates", href: "/booking/templates", label: "Email templates", icon: I.templates },
     songs: { key: "songs", href: "/songs", label: "Songs", icon: I.songs },
     money: { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
   };
-  return [{ key: "home", href: "/home", label: "Home", icon: I.home }, ...order.filter((k) => k !== "booking" || role === "admin").map((k) => all[k])];
+  // Booking and its email templates are admin-only.
+  const adminOnly = new Set<SectionId>(["booking", "templates"]);
+  return [{ key: "home", href: "/home", label: "Home", icon: I.home }, ...order.filter((k) => !adminOnly.has(k) || role === "admin").map((k) => all[k])];
 }
 
 /** Settings links (artist-relative). Artist comes first: it is what the rest hang off. */
@@ -80,6 +84,8 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo }: { name: 
     <>
       <div className="px-3 py-2" data-testid="whoami"><div className="text-sm font-bold">{name}</div><div className="s">{role}</div></div>
       {switchTo && <NextLink href={switchTo} role="menuitem" className="menu-item" data-testid="switch-artist-mobile">Switch band</NextLink>}
+      <div className="menu-sep" role="separator" />
+      <Link href="/me" role="menuitem" data-testid="side-me" aria-current={on("/me") ? "page" : undefined} className={`menu-item${on("/me") ? " text-accent" : ""}`}>My settings</Link>
       {role === "admin" && (
         <>
           <div className="menu-sep" role="separator" />
@@ -200,7 +206,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const current = all.find((n) => on(n.href));
   const atRoot = all.some((n) => path === full(n.href));
-  const title = current?.label ?? ADMIN_LINKS.find((l) => on(l.href))?.label ?? artist.name;
+  const title = current?.label ?? ADMIN_LINKS.find((l) => on(l.href))?.label ?? (on("/me") ? "My settings" : artist.name);
   const edit = () => { setSheet(false); setEditing(true); };
   const switchTo = several ? ARTISTS_PATH : undefined;
   // The shows list and the booking tabs' tables use the full width, and so does a show's page (its checklists are a column on the right edge);

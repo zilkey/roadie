@@ -1,0 +1,15 @@
+{
+  "CO": { "Adams": "Denver", "Arapahoe": "Denver", "Broomfield": "Denver", "Clear Creek": "Denver", "Denver": "Denver", "Douglas": "Denver", "Elbert": "Denver", "Gilpin": "Denver", "Jefferson": "Denver", "Park": "Denver" },
+  "MA": { "Essex": "Boston", "Middlesex": "Boston", "Norfolk": "Boston", "Plymouth": "Boston", "Suffolk": "Boston" },
+  "NH": { "Rockingham": "Boston", "Strafford": "Boston" },
+  "IL": { "Cook": "Chicago", "Du Page": "Chicago", "Kane": "Chicago", "Lake": "Chicago", "McHenry": "Chicago", "Will": "Chicago" },
+  "IN": { "Lake": "Chicago", "Porter": "Chicago" },
+  "OH": { "Cuyahoga": "Cleveland", "Geauga": "Cleveland", "Lake": "Cleveland", "Lorain": "Cleveland", "Medina": "Cleveland" },
+  "TX": { "Brazoria": "Houston", "Chambers": "Houston", "Fort Bend": "Houston", "Galveston": "Houston", "Harris": "Houston", "Liberty": "Houston", "Montgomery": "Houston", "Waller": "Houston" },
+  "CA": { "Los Angeles": "Los Angeles", "Orange": "Los Angeles", "Ventura": "Los Angeles", "Alameda": "San Francisco", "Contra Costa": "San Francisco", "Marin": "San Francisco", "San Francisco": "San Francisco", "San Mateo": "San Francisco" },
+  "FL": { "Broward": "Miami", "Miami-Dade": "Miami", "Palm Beach": "Miami" },
+  "NY": { "Bronx": "New York City", "Kings": "New York City", "Nassau": "New York City", "New York": "New York City", "Orange": "New York City", "Putnam": "New York City", "Queens": "New York City", "Richmond": "New York City", "Rockland": "New York City", "Suffolk": "New York City", "Westchester": "New York City" },
+  "NJ": { "Bergen": "New York City", "Essex": "New York City", "Hudson": "New York City", "Hunterdon": "New York City", "Middlesex": "New York City", "Monmouth": "New York City", "Morris": "New York City", "Ocean": "New York City", "Passaic": "New York City", "Somerset": "New York City", "Sussex": "New York City", "Union": "New York City" },
+  "CT": { "Fairfield": "New York City" },
+  "WA": { "King": "Seattle", "Pierce": "Seattle", "Snohomish": "Seattle" }
+}
