@@ -54,7 +54,7 @@ function Admin() {
 
   return (
     <div className="grid gap-5" data-testid="admin-money">
-      <PageTitle title="Money" />
+      <PageTitle title="Money" actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>} />
       <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["shows", "By show"], ["categories", "By category"]]} />
       <ErrorBox error={error} />
 
@@ -82,10 +82,6 @@ function Admin() {
                 ))}
               </div>
             ))}
-            <div className="flex flex-wrap gap-2">
-              <Link href="/stats" className="btn ghost sm" data-testid="stats-link">Spotify stats</Link>
-              <Link href="/money/expense" className="btn ghost sm">Add an expense</Link>
-            </div>
           </div>
         </div>
       )}

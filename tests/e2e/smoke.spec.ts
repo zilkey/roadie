@@ -83,8 +83,6 @@ test("member sees 4 tabs, 'My money', and cannot open /booking or admin pages", 
   await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/booking/templates"));
   await expect(page).toHaveURL(/\/calendar$/);
-  await page.goto(A("/stats"));
-  await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/admin/people"));
   await expect(page).toHaveURL(/\/calendar$/);
   await expect(page.getByTestId("band-setup")).toHaveCount(0);

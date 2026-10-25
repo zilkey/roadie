@@ -19,7 +19,7 @@ export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
 const PAGES: [RegExp, RouteName][] = [
   [/\bpitch(?:es| list)\b/, "bookingPitches"], [/\bmoney\b|\bexpenses?\b/, "money"], [/\bshows\b/, "shows"], [/\bbooking\b/, "booking"], [/\bsongs\b/, "songs"],
-  [/\bhistory\b/, "history"], [/\bstats\b/, "stats"], [/\bhome\b/, "calendar"], [/\bmusicians\b|\busers\b|\bpeople\b/, "people"],
+  [/\bhistory\b/, "history"], [/\bhome\b/, "calendar"], [/\bmusicians\b|\busers\b|\bpeople\b/, "people"],
   [/\bartist\b/, "artist"],
 ];
 const GO = /^(?:please |can you |could you )?(show me|take me to|take me|go to|open|pull up|navigate to)\s+(?:the |my |a )?(.+?)(?: page| tab)?[.!?]*$/;

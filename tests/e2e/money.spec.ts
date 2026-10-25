@@ -34,6 +34,7 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
 
   await signInAs(page, "jeff");
   await openTab(page, "money");
+  await expect(page.locator(".page-actions").getByTestId("add-expense-link")).toBeVisible();
   const owed = page.getByTestId("owed");
   await expect(owed).toContainText(WHAT);
   await owed.locator("div.items-center", { hasText: WHAT }).getByRole("button", { name: "Mark paid back" }).click();
@@ -47,16 +48,3 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await david.close();
 });
 
-test("stats: pull from Spotify, charts render", async ({ page }) => {
-  await signInAs(page, "jeff");
-  await openTab(page, "money");
-  await page.getByTestId("stats-link").click();
-  await expect(page.getByTestId("stats-page")).toBeVisible();
-  await page.getByTestId("stats-pull").click();
-  await expect(page.getByTestId("stats-msg")).toContainText(/Saved|Already have/);
-  const chart = page.getByTestId("chart-followers");
-  await expect(chart).toBeVisible();
-  await expect(chart.getByTestId("chart-followers-line")).toHaveAttribute("d", /^M[\d.]+,[\d.]+ L/);
-  expect(Number(await chart.getAttribute("data-points"))).toBeGreaterThanOrEqual(3);
-  await expect(page.getByTestId("current-followers")).not.toHaveText("—");
-});

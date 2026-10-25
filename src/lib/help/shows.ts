@@ -113,7 +113,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     title: "Money",
     text: [
       "For admins, the Money page has three tabs. Overview shows In (all show income), Out (all expenses) and Left, with a month chart. \"Owed to people\" lists unpaid pay-back expenses per person, each with \"Mark paid back\". \"By show\" charts each show's take, and \"By category\" breaks it down by Guarantee, Door split, Gear and so on.",
-      "There are also buttons for \"Spotify stats\" and \"Add an expense\".",
+      "\"Add an expense\" is at the top right.",
       "For members, the page is \"My money\": their own expenses with a status (Owed, Paid back on a date, or Not paid back), and \"Add an expense\". They can edit or remove an expense until it's been paid back.",
       "Income comes from each show's Finances tab.",
     ].join("\n\n"),

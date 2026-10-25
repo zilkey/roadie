@@ -206,7 +206,7 @@ test("routes resolve inside the artist; paths map back to named routes", () => {
   assert.deepEqual(splitArtistPath("/artists/ingrid-avison/setlists?q=hi"), { slug: "ingrid-avison", rest: "/setlists?q=hi" });
   assert.equal(splitArtistPath("/shows/1"), null);
   // every section root: a section missing here renders its links unscoped (toArtistHref), and they 404
-  for (const p of ["/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
+  for (const p of ["/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense"]) assert.ok(isLegacyPath(p), p);
   for (const p of ["/", "/artists", "/home", "/artists/x/home", "/signin", "/api/session", "/ask/1/2/3", "//evil.example", "/homes"]) assert.equal(isLegacyPath(p), false, p);
 });
 

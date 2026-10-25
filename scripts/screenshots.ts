@@ -57,7 +57,6 @@ async function main() {
       { name: "songs", who: "jeff", path: "/songs" },
       { name: "setlist", who: "jeff", path: setlist },
       { name: "money", who: "jeff", path: "/money" },
-      { name: "stats", who: "jeff", path: "/stats" },
       { name: "history", who: "jeff", path: "/admin/history" },
     ];
     for (const s of shots) {

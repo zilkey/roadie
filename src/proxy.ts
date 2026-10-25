@@ -15,5 +15,5 @@ export function proxy(request: NextRequest) {
 
 // Keep in sync with LEGACY_SECTIONS in src/lib/routes.ts (matchers must be literal).
 export const config = {
-  matcher: ["/shows/:path*", "/booking/:path*", "/songs/:path*", "/money/:path*", "/stats/:path*", "/admin/:path*"],
+  matcher: ["/shows/:path*", "/booking/:path*", "/songs/:path*", "/money/:path*", "/admin/:path*"],
 };

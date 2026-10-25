@@ -3,35 +3,7 @@ import { formatCents } from "@/lib/money";
 
 /** Small hand-drawn SVG charts; no chart library. Colors come from the theme tokens. */
 
-export interface Point { x: string; y: number }
-
-const W = 320, H = 120, PL = 8, PR = 8, PT = 10, PB = 20;
-
-export function LineChart({ title, points, testid, fmt = (n: number) => n.toLocaleString("en-US") }: { title: string; points: Point[]; testid: string; fmt?(n: number): string }) {
-  const pts = [...points].sort((a, b) => (a.x < b.x ? -1 : 1));
-  if (!pts.length) return <div className="card" data-testid={testid}><span className="lbl">{title}</span><span className="s">No numbers yet.</span></div>;
-  const ys = pts.map((p) => p.y);
-  let lo = Math.min(...ys), hi = Math.max(...ys);
-  if (lo === hi) { lo -= 1; hi += 1; }
-  const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
-  const sx = (i: number) => (pts.length === 1 ? W / 2 : PL + (i * (W - PL - PR)) / (pts.length - 1));
-  const sy = (v: number) => PT + ((hi - v) * (H - PT - PB)) / (hi - lo);
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${sx(i).toFixed(1)},${sy(p.y).toFixed(1)}`).join(" ");
-  const last = pts[pts.length - 1], first = pts[0];
-  return (
-    <div className="card" data-testid={testid} data-points={pts.length}>
-      <div className="flex items-baseline justify-between gap-2"><span className="lbl">{title}</span><b className="font-mono" data-testid={`${testid}-latest`}>{fmt(last.y)}</b></div>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}: ${fmt(first.y)} on ${first.x} to ${fmt(last.y)} on ${last.x}`} className="w-full" style={{ height: "auto" }}>
-        {[0, 0.5, 1].map((t) => <line key={t} x1={PL} x2={W - PR} y1={PT + t * (H - PT - PB)} y2={PT + t * (H - PT - PB)} stroke="var(--line)" strokeWidth="1" />)}
-        <path d={d} fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" data-testid={`${testid}-line`} />
-        {pts.map((p, i) => (pts.length <= 40 || i === pts.length - 1) && <circle key={p.x} cx={sx(i)} cy={sy(p.y)} r={i === pts.length - 1 ? 3.5 : 2} fill="var(--accent)"><title>{`${p.x}: ${fmt(p.y)}`}</title></circle>)}
-        <text x={PL} y={H - 5} fontSize="9" fill="var(--muted)">{first.x}</text>
-        <text x={W - PR} y={H - 5} fontSize="9" fill="var(--muted)" textAnchor="end">{last.x}</text>
-        <text x={W - PR} y={PT - 1} fontSize="9" fill="var(--muted)" textAnchor="end">{fmt(Math.round(hi - pad))}</text>
-      </svg>
-    </div>
-  );
-}
+const W = 320, H = 120, PT = 10, PB = 20;
 
 const monthLabel = (m: string) => new Date(m + "-01T00:00:00").toLocaleDateString("en-US", { month: "short" });
 
