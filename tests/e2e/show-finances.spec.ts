@@ -30,22 +30,20 @@ test("Finances tab: income from a starter and an expense with a receipt; the tot
   await expect(income.getByTestId("income-total")).toContainText("$534.00");
   await expect(income.getByTestId("income-notes-view")).toHaveText("Check made out to the LLC");
 
-  // Expenses: the seeded one, then a new line with a receipt link
+  // Expenses: the seeded one, edited in place to fix its amount; adding goes to the full form (no inline add)
   const card = page.getByTestId("expenses");
   await expect(card.getByText("Bass strings and cables")).toBeVisible();
   await expect(card.getByText("Owed").first()).toBeVisible();
   await expect(page.getByTestId("net")).toBeVisible();
 
   await page.getByTestId("expenses-edit").click();
-  await page.getByTestId("expenses-add-line").click();
-  const line = page.getByTestId("expense-line-1");
-  await line.getByTestId("expense-what").fill("Gas to Boulder");
-  await line.getByTestId("expense-amount").fill("32.40");
-  await line.getByTestId("expense-attach").click();
-  await line.getByTestId("expense-link").fill("https://drive.google.com/file/d/abc123/view");
+  await expect(card.getByTestId("expenses-add-line")).toHaveCount(0);
+  const line = page.getByTestId("expense-line-0");
+  await line.getByTestId("expense-what").fill("Bass strings, cables and gas");
+  await line.getByTestId("expense-amount").fill("60.90");
   await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
   await page.getByTestId("expenses-save").click();
-  await expect(card.getByText("Gas to Boulder")).toBeVisible();
+  await expect(card.getByText("Bass strings, cables and gas")).toBeVisible();
   await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
   await expect(page.getByTestId("net")).toBeVisible();
 });

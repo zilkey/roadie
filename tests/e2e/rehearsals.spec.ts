@@ -55,16 +55,17 @@ test("the rehearsal expenses card opens the full expense form for that rehearsal
   await close();
 });
 
-/** Members add their own expense on a rehearsal through the shared card; an admin sees it with who paid. */
+/** Members add their own expense on a rehearsal through the shared card's full form; an admin sees it with who paid. */
 test("a member adds an expense on a rehearsal and an admin sees it", async ({ browser }) => {
   const david = await as(browser, "david");
   await openRehearsal(david.page, "Oct 29");
   const card = david.page.getByTestId("expenses");
-  await card.getByTestId("expenses-add").or(card.getByTestId("expenses-edit")).first().click();
-  const line = david.page.getByTestId("expense-line-0");
-  await line.getByTestId("expense-what").fill("Room rental split");
-  await line.getByTestId("expense-amount").fill("25");
-  await david.page.getByTestId("expenses-save").click();
+  await card.getByTestId("expenses-full-form").click();
+  await david.page.getByTestId("exp-cat-space").click();
+  await david.page.getByTestId("exp-amount").fill("25");
+  await david.page.getByTestId("expense-what").fill("Room rental split");
+  await david.page.getByTestId("exp-save").click();
+  await expect(david.page).toHaveURL(/\/rehearsals\/[^/]+$/);
   await expect(card.getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
   await david.close();
 

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { useCommand } from "@/components/ui";
@@ -24,7 +24,8 @@ export type ExpenseTarget = { kind: "show" | "rehearsal"; id: string };
 
 /**
  * Expenses on a show or a rehearsal, one component for both: members see and add their own, admins see all.
- * Edit = every line the caller can see; Save sends them all through `shows.setExpenses` / `rehearsals.setExpenses`.
+ * Adding always goes through the full form at /money/expense; Edit fixes the lines the caller can see and
+ * Save sends them all through `shows.setExpenses` / `rehearsals.setExpenses`.
  */
 export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admin: boolean }) {
   const me = useProfile();
@@ -38,16 +39,14 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
   const nameOfUser = (uid: string) => (!admin ? "You" : users.find((u) => u.id === uid)?.name ?? (uid === me.uid ? "You" : "Someone"));
   const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  const seq = useRef(0);
-  const blank = (): Line => ({ key: `n${++seq.current}`, what: "", amount: "", userId: me.uid, payBack: true, link: "", showLink: false });
   const [lines, setLines] = useState<Line[]>([]);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const ed = useCardEdit({
-    canEdit: true,
+    canEdit: rows.length > 0,
     onStart: () => {
       setError(null); setErrs({});
       const ls = sorted.map((x): Line => ({ key: x.id, id: x.id, what: x.what, amount: formatCents(x.amount).replace("$", "").replace(/,/g, ""), userId: x.userId, payBack: x.payBack !== false, link: "", showLink: false, receipt: x.receipt }));
-      setLines(ls.length ? ls : [blank()]);
+      setLines(ls);
     },
   });
   const set = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -60,8 +59,6 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
     const out: unknown[] = [];
     for (const l of lines) {
       const locked = !!paidAt(l);
-      const empty = !l.id && !l.what.trim() && !l.amount.trim();
-      if (empty) continue;
       const cents = parseDollars(l.amount);
       if (!locked && (!cents || cents <= 0)) e[l.key] = "Enter an amount like 12.50";
       else if (!locked && !l.what.trim()) e[l.key] = "Say what it was for";
@@ -84,7 +81,7 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
 
   const nobody = rows.length === 0;
   // The full form (category, gas estimate, logging for a bandmate), filed under this show or rehearsal.
-  const fullForm = <Link href={`/money/expense?${target.kind === "show" ? "show" : "rehearsalId"}=${encodeURIComponent(target.id)}`} className="btn ghost" data-testid="expenses-full-form">+ Gas or full expense</Link>;
+  const fullForm = <Link href={`/money/expense?${target.kind === "show" ? "show" : "rehearsalId"}=${encodeURIComponent(target.id)}`} className="btn ghost" data-testid="expenses-full-form">+ Add expense</Link>;
   return (
     <EditableCard title="Expenses" testid="expenses" ed={ed} onSave={save} busy={busy} error={error}>
       {ed.editing ? (
@@ -124,12 +121,11 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
               </div>
             );
           })}
-          <div><button type="button" className="btn ghost" onClick={() => setLines((ls) => [...ls, blank()])} data-testid="expenses-add-line">+ Add expense</button></div>
           <div className="money-row" style={{ fontWeight: 700 }}><span>Total</span><span data-testid="expenses-total">{formatCents(total)}</span></div>
           <span className="s">Band members can add their own expenses; only admins see income and net.</span>
         </div>
       ) : nobody ? (
-        <UnfinishedPlaceholder row lead="Nothing spent yet." testid="expenses-empty" actions={<><button type="button" className="btn ghost" onClick={ed.start} data-testid="expenses-add">Add expense</button>{fullForm}</>}>
+        <UnfinishedPlaceholder row lead="Nothing spent yet." testid="expenses-empty" actions={fullForm}>
           Gas, strings, food — anyone in the band can add what they paid for and get paid back.
         </UnfinishedPlaceholder>
       ) : (
