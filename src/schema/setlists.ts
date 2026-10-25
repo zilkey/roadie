@@ -9,12 +9,26 @@ export const SetlistItem = z.strictObject({
   key: z.string().optional(),
   note: z.string().optional(),
 });
-export const Setlist = entity({
+/** Reusable list: setlistTemplates/{autoId}. Song items are references; no show link. */
+export const SetlistTemplate = entity({
   name: z.string().min(1),
-  showId: id.optional(),
   items: z.array(SetlistItem),
   totalSec: z.number().int(),
 });
+/** Where a show's setlist was seeded from; name is a display copy at seed time. Later edits to either side never touch the other. */
+export const SetlistSource = z.strictObject({
+  kind: z.enum(["template", "show"]),
+  id,
+  name: z.string().optional(),
+});
+/** A show's actual setlist: setlists/{showId}, the document id IS the show id. Items carry copies. */
+export const Setlist = entity({
+  items: z.array(SetlistItem),
+  totalSec: z.number().int(),
+  source: SetlistSource.optional(),
+});
 /** totalSec is computed by db.ts */
+export const SetlistTemplateInput = SetlistTemplate.omit({ ...serverMask, totalSec: true });
 export const SetlistInput = Setlist.omit({ ...serverMask, totalSec: true });
+export type SetlistTemplate = z.infer<typeof SetlistTemplate>;
 export type Setlist = z.infer<typeof Setlist>;

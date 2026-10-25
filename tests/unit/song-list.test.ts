@@ -337,6 +337,6 @@ test("the song-list survey names the seven fields and each deferred column with 
   assert.ok(deferred.some((n) => /column N 7\/26\/26/.test(n.where ?? "") && n.detail === "1 song(s) marked"));
   assert.ok(deferred.some((n) => /column W 10\/16\/26 Show/.test(n.where ?? "") && n.detail === "1 song(s) marked"));
   assert.ok(s.notes.some((n) => /read but deliberately not imported/.test(n.reason) && /Rehearsed/.test(n.where ?? "")));
-  assert.equal(s.totals!.ideas, 4);
+  assert.equal(s.totals!.ideas, 3); // the three title-only rows: Feb 17, Plain Idea, Mar 3
   assert.equal(s.totals!.covers, 1);
 });

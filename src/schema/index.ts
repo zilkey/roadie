@@ -15,7 +15,7 @@ import { AvailabilityInput } from "./availability";
 import { ChecklistTemplateInput } from "./checklistTemplates";
 import { SongInput } from "./songs";
 import { FileInput } from "./files";
-import { SetlistInput } from "./setlists";
+import { SetlistInput, SetlistTemplateInput } from "./setlists";
 import { RehearsalInput } from "./rehearsals";
 import { ExpenseInput } from "./expenses";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -83,6 +83,7 @@ export const collections: Record<string, CollectionDef> = {
   checklistTemplates: { input: ChecklistTemplateInput },
   songs: { input: SongInput },
   files: { input: FileInput },
+  setlistTemplates: { input: SetlistTemplateInput },
   setlists: { input: SetlistInput },
   rehearsals: { input: RehearsalInput },
   expenses: { input: ExpenseInput },
@@ -114,7 +115,7 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
       items: Array.isArray(l.items) ? (l.items as Doc[]).map(({ due: _due, ...i }) => i) : l.items,
     }));
   }
-  if (kind === "setlists" && Array.isArray(out.items)) {
+  if ((kind === "setlists" || kind === "setlistTemplates") && Array.isArray(out.items)) {
     out.totalSec = (out.items as { lengthSec?: number }[]).reduce((n, i) => n + (i.lengthSec ?? 0), 0);
   }
   const mk = matchKeyFor(kind, out);
@@ -124,5 +125,5 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
 
 /** Fields the server computes in normalizeDoc; stripped from validation and re-added. */
 export const computedFields: Record<string, string[]> = {
-  contacts: ["matchKey"], venues: ["matchKey"], promoters: ["matchKey"], festivals: ["matchKey"], setlists: ["totalSec"],
+  contacts: ["matchKey"], venues: ["matchKey"], promoters: ["matchKey"], festivals: ["matchKey"], setlists: ["totalSec"], setlistTemplates: ["totalSec"],
 };

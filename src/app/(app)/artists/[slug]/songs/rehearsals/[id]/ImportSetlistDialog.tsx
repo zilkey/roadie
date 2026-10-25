@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CloseIcon } from "@/components/Sheet";
 import { useCollection } from "@/lib/firestore-hooks";
-import type { Setlist } from "@/schema";
+import type { SetlistTemplate } from "@/schema";
 
 /** "Import from setlist" on a rehearsal: copies a setlist's songs (breaks skipped) into the rehearsal's list, appended or replacing it. */
 export default function ImportSetlistDialog({ rehearsalId, songCount }: { rehearsalId: string; songCount: number }) {
@@ -23,7 +23,7 @@ const plural = (n: number) => `${n} ${n === 1 ? "song" : "songs"}`;
 
 /** Mounts each time the dialog opens (Dialog renders its children only while open), so the picks start fresh every time. */
 function ImportForm({ rehearsalId, songCount, close }: { rehearsalId: string; songCount: number; close(): void }) {
-  const setlists = useCollection<Setlist>("setlists");
+  const setlists = useCollection<SetlistTemplate>("setlistTemplates");
   const { call, error, busy } = useCommand();
   const radioName = useId();
   const [pick, setPick] = useState<string | null>(null);
@@ -59,7 +59,7 @@ function ImportForm({ rehearsalId, songCount, close }: { rehearsalId: string; so
       {setlists.rows === null ? (
         <span className="s">Loading…</span>
       ) : all.length === 0 ? (
-        <span className="s">No setlists yet.</span>
+        <span className="s">No setlist templates yet.</span>
       ) : (
         <label className="grid gap-1">
           <span className="lbl">Setlist</span>

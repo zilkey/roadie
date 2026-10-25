@@ -68,11 +68,12 @@ export const denormalizers: Denormalizer[] = [
   {
     source: "songs", watch: ["title", "lengthSec", "key"],
     async refresh(w, id, after) {
-      const lists = await w.query("setlists");
-      for (const l of lists) {
-        const items = (l.items as Doc[]).map((i) =>
-          i.songId === id ? { ...i, title: after.title, lengthSec: after.lengthSec, key: after.key } : i);
-        await w.update("setlists", l.id, { items });
+      for (const kind of ["setlists", "setlistTemplates"]) {
+        for (const l of await w.query(kind)) {
+          const items = (l.items as Doc[]).map((i) =>
+            i.songId === id ? { ...i, title: after.title, lengthSec: after.lengthSec, key: after.key } : i);
+          await w.update(kind, l.id, { items });
+        }
       }
       const rehs = await w.query("rehearsals");
       for (const r of rehs) {

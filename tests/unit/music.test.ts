@@ -160,32 +160,60 @@ test("sharing check, share with band, copy to band folder (against fake-drive)",
   assert.equal(r2.checked, 1);
 });
 
-test("setlists: totalSec computed, song data copied, rename keeps titles in sync, attach to a show", async () => {
+test("setlist templates and show setlists: totalSec computed, song data copied, rename keeps titles in sync in both", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", key: "F#m", lengthSec: 232, status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Weathervane", key: "D", lengthSec: 250, status: "active" })).id;
   const noLen = (await cmd("songs.create", { title: "Idea", status: "idea" })).id;
-  const { id } = await cmd("setlists.create", { name: "Hi-Dive 45", items: [{ type: "song", songId: a, title: "ignored" }, { type: "break", title: "Talk / tune" }, { type: "song", songId: b }, { type: "song", songId: noLen }] });
-  let sl = (await db.get("setlists", id))!;
+  const { id } = await cmd("setlistTemplates.create", { name: "Hi-Dive 45", items: [{ type: "song", songId: a, title: "ignored" }, { type: "break", title: "Talk / tune" }, { type: "song", songId: b }, { type: "song", songId: noLen }] });
+  let sl = (await db.get("setlistTemplates", id))!;
+  assert.equal(sl.name, "Hi-Dive 45");
   assert.equal(sl.totalSec, 232 + 60 + 250);
   assert.equal(sl.items[0].title, "Glass Coast");
   assert.equal(sl.items[1].lengthSec, 60);
 
   // reorder + remove: total follows
-  await cmd("setlists.update", { id, patch: { items: [{ type: "song", songId: b }, { type: "song", songId: a }] } });
-  sl = (await db.get("setlists", id))!;
+  await cmd("setlistTemplates.update", { id, patch: { items: [{ type: "song", songId: b }, { type: "song", songId: a }] } });
+  sl = (await db.get("setlistTemplates", id))!;
   assert.deepEqual(sl.items.map((i: any) => i.title), ["Weathervane", "Glass Coast"]);
   assert.equal(sl.totalSec, 482);
 
-  // renaming a song and changing its length flows into the setlist
+  // a show's setlist lives at setlists/{showId}: no name, no showId field, no pointer on the show
+  const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
+  const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
+  const showId = (await cmd("shows.create", { pitchId: p, date: "2027-01-16", venueId: v, addToCalendar: false, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
+  await cmd("setlists.setItems", { showId, items: [{ type: "song", songId: b }, { type: "song", songId: a }] });
+  let ss = (await db.get("setlists", showId))!;
+  assert.equal(ss.totalSec, 482);
+  assert.equal(ss.name, undefined);
+  assert.equal(ss.showId, undefined);
+  assert.equal((await db.get("shows", showId))!.setlistId, undefined);
+
+  // renaming a song and changing its length flows into both the template and the show's setlist
   await cmd("songs.update", { id: a, patch: { title: "Glass Coast (radio)", lengthSec: 200 } });
-  sl = (await db.get("setlists", id))!;
+  sl = (await db.get("setlistTemplates", id))!;
   assert.equal(sl.items[1].title, "Glass Coast (radio)");
   assert.equal(sl.totalSec, 450);
+  ss = (await db.get("setlists", showId))!;
+  assert.equal(ss.items[1].title, "Glass Coast (radio)");
+  assert.equal(ss.totalSec, 450);
 
-  await assert.rejects(cmd("setlists.update", { id, patch: { items: [{ type: "song", songId: "nope" }] } }), /not found/i);
-  await assert.rejects(cmd("setlists.create", { name: "x", items: [{ type: "song" }] }));
+  await assert.rejects(cmd("setlistTemplates.update", { id, patch: { items: [{ type: "song", songId: "nope" }] } }), /not found/i);
+  await assert.rejects(cmd("setlistTemplates.create", { name: "x", items: [{ type: "song" }] }));
+  await assert.rejects(cmd("setlists.setItems", { showId: "nope", items: [] }), /not found/i);
 
-  // attach to shows: both sides set, and moving it clears the old show
+  // clearing archives it; setting items again brings the same doc back
+  await cmd("setlists.remove", { showId });
+  assert.ok((await db.get("setlists", showId))!.deletedAt);
+  await cmd("setlists.setItems", { showId, items: [{ type: "song", songId: b }] });
+  ss = (await db.get("setlists", showId))!;
+  assert.ok(!ss.deletedAt);
+  assert.equal(ss.totalSec, 250);
+});
+
+test("setlists.seed: from a template or another show, replace or append, records the source", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", lengthSec: 200, status: "active" })).id;
+  const b = (await cmd("songs.create", { title: "Weathervane", lengthSec: 250, status: "active" })).id;
+  const t = (await cmd("setlistTemplates.create", { name: "Hi-Dive 45", items: [{ type: "song", songId: a }, { type: "break" }, { type: "song", songId: b }] })).id;
   const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
   const mk = async (date: string) => {
     const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
@@ -193,34 +221,47 @@ test("setlists: totalSec computed, song data copied, rename keeps titles in sync
   };
   const s1 = await mk("2027-01-16");
   const s2 = await mk("2027-02-20");
-  await cmd("setlists.attach", { showId: s1, setlistId: id });
-  assert.equal((await db.get("shows", s1))!.setlistId, id);
-  assert.equal((await db.get("setlists", id))!.showId, s1);
-  await cmd("setlists.attach", { showId: s2, setlistId: id });
-  assert.equal((await db.get("shows", s1))!.setlistId ?? null, null);
-  assert.equal((await db.get("shows", s2))!.setlistId, id);
-  assert.equal((await db.get("setlists", id))!.showId, s2);
-  await cmd("setlists.attach", { showId: s2, setlistId: null });
-  assert.equal((await db.get("shows", s2))!.setlistId ?? null, null);
-  assert.equal((await db.get("setlists", id))!.showId ?? null, null);
-  await assert.rejects(cmd("setlists.attach", { showId: "nope", setlistId: id }), /not found/i);
 
-  // archiving detaches
-  await cmd("setlists.attach", { showId: s1, setlistId: id });
-  await cmd("setlists.remove", { id });
-  assert.equal((await db.get("shows", s1))!.setlistId ?? null, null);
+  // from a template (replace is the default)
+  const out = await cmd("setlists.seed", { showId: s1, from: { kind: "template", id: t } });
+  assert.deepEqual(out, { showId: s1, added: 3, total: 3 });
+  let sl = (await db.get("setlists", s1))!;
+  assert.deepEqual(sl.items.map((i: any) => i.type), ["song", "break", "song"]);
+  assert.equal(sl.items[0].title, "Glass Coast");
+  assert.equal(sl.totalSec, 200 + 60 + 250);
+  assert.deepEqual(sl.source, { kind: "template", id: t, name: "Hi-Dive 45" });
+
+  // later edits to the template don't touch the copy
+  await cmd("setlistTemplates.update", { id: t, patch: { items: [{ type: "song", songId: b }] } });
+  assert.equal(((await db.get("setlists", s1))!.items as unknown[]).length, 3);
+
+  // from another show; append keeps what was there, replace swaps it
+  await cmd("setlists.setItems", { showId: s2, items: [{ type: "song", songId: b }] });
+  const app = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "append" });
+  assert.deepEqual(app, { showId: s2, added: 3, total: 4 });
+  sl = (await db.get("setlists", s2))!;
+  assert.equal(sl.items[0].songId, b);
+  assert.equal(sl.items.length, 4);
+  assert.equal(sl.source.kind, "show");
+  assert.equal(sl.source.id, s1);
+  const rep = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "replace" });
+  assert.deepEqual(rep, { showId: s2, added: 3, total: 3 });
+
+  await assert.rejects(cmd("setlists.seed", { showId: s1, from: { kind: "template", id: "nope" } }), /not found/i);
+  await assert.rejects(cmd("setlists.seed", { showId: s1, from: { kind: "show", id: "nope" } }), /no setlist/i);
+  await assert.rejects(cmd("setlists.seed", { showId: "nope", from: { kind: "template", id: t } }), /not found/i);
 });
 
-test("rehearsals: import songs from a setlist (append and replace, breaks skipped); set and clear the location", async () => {
+test("rehearsals: import songs from a setlist template (append and replace, breaks skipped); set and clear the location", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
   const c = (await cmd("songs.create", { title: "Weathervane", status: "active" })).id;
-  const sl = (await cmd("setlists.create", { name: "Hi-Dive", items: [
+  const sl = (await cmd("setlistTemplates.create", { name: "Hi-Dive", items: [
     { type: "song", songId: a, note: "capo 2" }, { type: "break" }, { type: "song", songId: b }, { type: "song", songId: c },
   ] })).id;
   const { id } = await cmd("rehearsals.create", { date: "2026-10-29", songs: [{ songId: c, note: "run twice" }] });
 
-  const imp = await cmd("rehearsals.importSetlist", { id, setlistId: sl, songIds: [a, b] });
+  const imp = await cmd("rehearsals.importSetlist", { id, templateId: sl, songIds: [a, b] });
   assert.equal(imp.added, 2);
   assert.equal(imp.total, 3);
   let r = (await db.get("rehearsals", id)) as any;
@@ -228,12 +269,12 @@ test("rehearsals: import songs from a setlist (append and replace, breaks skippe
   assert.equal(r.fromSetlistId, sl);
   assert.equal(r.songs[0].note, "run twice");
 
-  await cmd("rehearsals.importSetlist", { id, setlistId: sl, songIds: [a, c], mode: "replace" });
+  await cmd("rehearsals.importSetlist", { id, templateId: sl, songIds: [a, c], mode: "replace" });
   r = (await db.get("rehearsals", id)) as any;
   assert.deepEqual(r.songs.map((s: any) => s.title), ["Glass Coast", "Weathervane"]);
 
   // later edits to the setlist don't touch the rehearsal
-  await cmd("setlists.update", { id: sl, patch: { items: [{ type: "song", songId: b }] } });
+  await cmd("setlistTemplates.update", { id: sl, patch: { items: [{ type: "song", songId: b }] } });
   r = (await db.get("rehearsals", id)) as any;
   assert.deepEqual(r.songs.map((s: any) => s.title), ["Glass Coast", "Weathervane"]);
 

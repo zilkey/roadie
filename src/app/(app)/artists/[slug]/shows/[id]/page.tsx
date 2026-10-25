@@ -13,7 +13,7 @@ import { StatusPill } from "@/components/shows/page/StatusPill";
 import { WhereWhenCard } from "@/components/shows/page/WhereWhenCard";
 import { WhosPlayingCard } from "@/components/shows/page/WhosPlayingCard";
 import { SoundCard } from "@/components/shows/page/SoundCard";
-import { SetlistCard } from "@/components/shows/page/SetlistCard";
+import { SetlistTab } from "@/components/shows/page/SetlistTab";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import { Comments } from "@/components/shows/page/Comments";
@@ -22,8 +22,8 @@ import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
 import { NetCard } from "@/components/shows/page/NetCard";
 import type { Show } from "@/schema";
 
-type Tab = "details" | "finances";
-const TABS: Tab[] = ["details", "finances"];
+type Tab = "details" | "setlist" | "finances";
+const TABS: Tab[] = ["details", "setlist", "finances"];
 
 export default function ShowPage() { return <Suspense><Page /></Suspense>; }
 
@@ -36,8 +36,9 @@ function Page() {
 }
 
 /**
- * "[venue] · [date]" with the status pill; tabs Show Details / Finances. The checklists are a 360px column on the right from lg up
- * (on both tabs), and stack under the tab's cards, above Comments, below that. Comments and Archive stay in the main column.
+ * "[venue] · [date]" with the status pill; tabs Show Details / Setlist / Finances. The checklists are a 360px column on the right from lg up
+ * (on all three tabs, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
+ * Comments and Archive stay in the main column. The Setlist tab autosaves on its own (no Edit / Save).
  */
 function ShowView({ show }: { show: ShowRow }) {
   const p = useProfile();
@@ -63,7 +64,7 @@ function ShowView({ show }: { show: ShowRow }) {
         </div>
       </header>
 
-      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["finances", "Finances"]]} />
+      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["finances", "Finances"]]} />
 
       <div className="show-cols">
         <div className="show-main">
@@ -72,9 +73,9 @@ function ShowView({ show }: { show: ShowRow }) {
               <WhereWhenCard show={show} admin={admin} />
               <WhosPlayingCard show={show} admin={admin} />
               <SoundCard show={show} admin={admin} />
-              <SetlistCard show={show} admin={admin} />
               <PromotionCard show={show} admin={admin} />
             </>}
+            {tab === "setlist" && <SetlistTab show={show} admin={admin} />}
             {tab === "finances" && <>
               {admin && <IncomeCard show={show} />}
               <ExpensesCard show={show} admin={admin} />

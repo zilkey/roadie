@@ -17,7 +17,7 @@ import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useDoc } from "@/lib/firestore-hooks";
-import type { Rehearsal, RehearsalLocation, Setlist } from "@/schema";
+import type { Rehearsal, RehearsalLocation, SetlistTemplate } from "@/schema";
 import ImportSetlistDialog from "./ImportSetlistDialog";
 import RehearsalExpenses from "./RehearsalExpenses";
 
@@ -258,7 +258,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const [adding, setAdding] = useState(false); // Drive picker for recordings
   const [picking, setPicking] = useState(false); // song picker
   const [editing, setEditing] = useState(false); // song notes and the notes field
-  const setlist = useDoc<Setlist>("setlists", existing.fromSetlistId ?? "none");
+  const setlist = useDoc<SetlistTemplate>("setlistTemplates", existing.fromSetlistId ?? "none");
   // Existing record = autosave through rehearsals.update; no Save button.
   const as = useAutosave({ command: "rehearsals.update", id, rev: existing.rev, onUseTheirs: () => setForm(formOf(existing)) });
   // Keep the form in step with the record when it changes under us (Undo, someone else), unless we have unsaved edits.
@@ -342,7 +342,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
               </label>
             ) : form.notes ? <p className="text-sm">{form.notes}</p> : null}
             {existing.fromSetlistId && (
-              <div className="text-xs s">Imported from setlist &quot;{setlist.doc?.name ?? "Setlist"}&quot; · edits here don&apos;t change the setlist</div>
+              <div className="text-xs s">Imported from template &quot;{setlist.doc?.name ?? "Setlist"}&quot; · edits here don&apos;t change the setlist</div>
             )}
           </section>
         </div>

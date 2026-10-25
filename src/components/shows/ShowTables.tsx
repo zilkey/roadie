@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "@/lib/artist";
 import { useDocs } from "@/lib/firestore-hooks";
-import { fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
+import { fmtDur, fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
 import { fmtDuration, setLengthOf } from "@/lib/duration";
 import type { ShowDeal, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
@@ -48,7 +48,7 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
       <tbody>
         {shows.map((s) => {
           const addr = addressOf(s);
-          const sl = s.setlistId ? setlists.find((x) => x.id === s.setlistId) : undefined;
+          const sl = setlists.find((x) => x.id === s.id);
           return (
             <tr key={s.id} data-testid="shows-row" data-id={s.id}>
               <DateCell s={s} /><VenueCell s={s} />
@@ -60,7 +60,7 @@ function Upcoming({ shows, setlists }: { shows: ShowRow[]; setlists: Row<Setlist
               <td className="t">{orDash(fmtTime(s.times.set))}</td>
               <td>{s.sound.provider === "bandProvided" ? <span className="chip a">We provide</span> : <span className="chip">They provide</span>}</td>
               <td className="contact" data-testid="shows-contact">{s.dayOfContact ? <>{s.dayOfContact.name}{s.dayOfContact.phone && <> · <a href={`tel:${s.dayOfContact.phone.replace(/[^\d+]/g, "")}`}>{s.dayOfContact.phone}</a></>}</> : <Dash />}</td>
-              <td>{sl ? <Link href={`/songs/setlists/${sl.id}`}>{sl.name}</Link> : <Dash />}</td>
+              <td>{sl ? <Link href={`/shows/${s.id}?tab=setlist`}>{sl.items.filter((i) => i.type === "song").length} songs · {fmtDur(sl.totalSec)}</Link> : <Dash />}</td>
             </tr>
           );
         })}

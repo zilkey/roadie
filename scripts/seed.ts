@@ -153,10 +153,6 @@ async function main() {
   await create("files", { kind: "recording", title: "Weathervane on Spotify", songId: songIds[1], provider: "spotify", url: "https://open.spotify.com/track/0000000000000000000000", checkedAt: new Date() });
   await create("files", { kind: "demo", title: "Low Light demo (voice memo)", songId: songIds[2], provider: "web", url: "https://example.com/demos/low-light-memo", checkedAt: new Date() });
   await create("files", { kind: "demo", title: "Low Light demo (YouTube)", songId: songIds[2], provider: "youtube", url: "https://www.youtube.com/watch?v=00000000000", checkedAt: new Date() });
-  const setlist = await create("setlists", {
-    name: "Hi-Dive 45 min",
-    items: songIds.slice(0, 11).map((id, i) => ({ type: "song", songId: id, title: songSpecs[i][0], lengthSec: songSpecs[i][2], key: songSpecs[i][1] })),
-  });
   await create("rehearsals", { date: "2026-10-18", location: { name: "Jeff's basement" }, personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[0], title: "Glass Coast", note: "Tighten the bridge" }, { songId: songIds[3], title: "Ruby Hill" }], notes: "Good energy. Eric to bring the click." });
   // A rehearsal with a full location (the autocomplete's shape) and times: the gas estimate's "To" and the drive both come from it.
   await create("rehearsals", { date: "2026-10-29", startTime: "19:00", endTime: "22:00", location: { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 },
@@ -181,11 +177,14 @@ async function main() {
   const hiShow = await create("shows", {
     ...showBase, date: "2026-11-14", status: "confirmed", venue: { id: hidive, name: "Hi-Dive", address: "7 S Broadway, Denver", city: "Denver" },
     times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "full-band", personnel: cfg("full"),
-    sound: { provider: "venueProvided", notes: "House engineer" }, setlistId: setlist, dayOfContact: { name: "Hi-Dive door manager", phone: "(303) 555-0142" },
+    sound: { provider: "venueProvided", notes: "House engineer" }, dayOfContact: { name: "Hi-Dive door manager", phone: "(303) 555-0142" },
     checklists: [...showBase.checklists, list("loadout", "Load-out", [["g1", "Get paid before leaving", "jeff", false], ["g2", "Sweep stage for cables", "eric", false], ["g3", "Bass rig", "david", false]])],
   });
   await create(`shows/${hiShow}/comments`, { authorId: uid.ingrid, body: "Street parking on Broadway; dinner provided.", audience: "band" });
-  await db.update(ctx, "setlists", setlist, { showId: hiShow });
+  // The show's setlist lives at setlists/{showId}: the document id is the show id, so it is written after the show.
+  await create("setlists", {
+    items: songIds.slice(0, 11).map((id, i) => ({ type: "song", songId: id, title: songSpecs[i][0], lengthSec: songSpecs[i][2], key: songSpecs[i][1] })),
+  }, hiShow);
   await create("showDeals", { pitchId: pHidive, contactIds: [], deal: "guarantee" }, hiShow);
   await db.update(ctx, "pitches", pHidive, { showIds: [hiShow] });
 
@@ -214,7 +213,7 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 8 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 setlist.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 8 venues, 3 festivals, 9 pitches, 3 shows, 12 songs, 1 show setlist.");
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */

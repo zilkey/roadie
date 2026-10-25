@@ -2,7 +2,7 @@
 import Link from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { MIME_ICON, PROVIDER_ICON, mimeGroup, type Provider } from "@/lib/music";
-import type { FileDoc, Musician, Rehearsal, Setlist, Show, Song } from "@/schema";
+import type { FileDoc, Musician, Rehearsal, Setlist, SetlistTemplate, Show, Song } from "@/schema";
 
 export type FileRow = Row<FileDoc>;
 export type SongRow = Row<Song>;
@@ -12,13 +12,14 @@ export function useMusic() {
   const songs = useCollection<Song>("songs");
   const files = useCollection<FileDoc>("files");
   const setlists = useCollection<Setlist>("setlists");
+  const templates = useCollection<SetlistTemplate>("setlistTemplates");
   const rehearsals = useCollection<Rehearsal>("rehearsals");
   const musicians = useCollection<Musician>("musicians");
   const shows = useCollection<Show>("shows");
   return {
-    songs: songs.rows ?? [], files: files.rows ?? [], setlists: setlists.rows ?? [], rehearsals: rehearsals.rows ?? [],
+    songs: songs.rows ?? [], files: files.rows ?? [], setlists: setlists.rows ?? [], templates: templates.rows ?? [], rehearsals: rehearsals.rows ?? [],
     musicians: musicians.rows ?? [], shows: shows.rows ?? [],
-    loading: [songs, files, setlists, rehearsals, musicians, shows].some((c) => c.loading),
+    loading: [songs, files, setlists, templates, rehearsals, musicians, shows].some((c) => c.loading),
   };
 }
 

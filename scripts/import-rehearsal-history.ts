@@ -14,7 +14,7 @@
  * They are data, not logic, so they live in one table at the top of this file where they can be checked against the
  * sheet by eye.
  *
- * Fixed ids (rehearsal-<date>, setlist-<showId>), so a re-run updates instead of duplicating. All writes go through
+ * Fixed ids (rehearsal-<date>, and a show setlist at the show's own id), so a re-run updates instead of duplicating. All writes go through
  * db.ts with via "import" and one runId (Admin → History can undo it). Real Firestore needs --yes.
  */
 import { writeFileSync, readFileSync } from "node:fs";
@@ -299,7 +299,7 @@ async function writeRehearsal(
 }
 
 /**
- * A setlist on the show that happened that day, at the fixed id `setlist-<showId>`.
+ * A setlist on the show that happened that day, at setlists/{showId} (the document id IS the show id).
  *
  * The songs are in sheet order, which is alphabetical by title -- it is NOT the order they were played. The report
  * says so, because a setlist's whole shape invites being read as a running order.
@@ -324,18 +324,15 @@ async function writeSetlist(
       return;
     }
     const show = shows[0];
-    const id = `setlist-${show.id}`;
+    // A show's setlist lives at setlists/{showId}: the document id is the show id, so the show names it and there is
+    // no name or showId of its own to write.
+    const id = show.id;
     out.id = id;
     issues.push(`songs are in sheet order (alphabetical), which is not the order they were played`);
     const items = out.songs.map((s) => ({ type: "song" as const, songId: s.songId, title: s.title }));
-    // A show has no title field: it is named by its venue, or by the place a venue-less show happens at.
-    const venue = (show.venue as { name?: string } | undefined)?.name
-      ?? (show.place as { city?: string } | undefined)?.city;
-    const input = { name: [spec.date, venue].filter(Boolean).join(" "), showId: show.id, items };
+    const input = { items };
     const have = await w.get("setlists", id);
-    const same = have && !have.deletedAt
-      && have.name === input.name && have.showId === input.showId
-      && JSON.stringify(have.items ?? []) === JSON.stringify(items);
+    const same = have && !have.deletedAt && JSON.stringify(have.items ?? []) === JSON.stringify(items);
     out.action = !have ? "created" : same ? "unchanged" : "updated";
     if (!have) await w.create("setlists", input, { id });
     else if (!same) {

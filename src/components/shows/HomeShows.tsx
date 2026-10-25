@@ -64,7 +64,7 @@ export function HomeShows({ regular }: { regular?: React.ReactNode }) {
 
 function TodayCard({ show: s, b, onTick, deal, contacts }: { show: ShowRow; b: ReturnType<typeof useBand>; onTick: Tick; deal?: Row<ShowDeal>; contacts: Row<Contact>[] }) {
   const p = useProfile();
-  const sl = b.setlists.find((x) => x.id === s.setlistId);
+  const sl = b.setlists.find((x) => x.id === s.id);
   const people = contacts.filter((c) => deal?.contactIds.includes(c.id));
   const todo = openItemsFor(checklistsOf(s), p.musicianId);
   return (
@@ -85,7 +85,7 @@ function TodayCard({ show: s, b, onTick, deal, contacts }: { show: ShowRow; b: R
       {sl && (
         <div className="grid gap-1.5">
           <span className="lbl">Setlist · {fmtDur(sl.totalSec)}</span>
-          <Link href={`/songs?setlist=${sl.id}`} className="card" data-testid={`today-setlist-${s.id}`}><div className="flex items-center justify-between"><b>{sl.name}</b><span className="s font-semibold">Open ›</span></div></Link>
+          <Link href={`/shows/${s.id}?tab=setlist`} className="card" data-testid={`today-setlist-${s.id}`}><div className="flex items-center justify-between"><b>{sl.items.filter((i) => i.type === "song").length} songs · {fmtDur(sl.totalSec)}</b><span className="s font-semibold">Open ›</span></div></Link>
         </div>
       )}
       {p.role === "admin" && people.length > 0 && (

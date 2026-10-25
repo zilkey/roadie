@@ -118,7 +118,7 @@ export const showsCreate = defineCommand({
     editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
     billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
-    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), setlistId: z.string().min(1).optional(), dayOfContact: dayOfContact.optional(),
+    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
     addToCalendar: z.boolean().default(true), copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
   }),
   async run(ctx, i) {
@@ -146,7 +146,7 @@ export const showsCreate = defineCommand({
         editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
         billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
         checklists: [],
-        setlistId: i.setlistId, docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: i.dayOfContact,
+        docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: i.dayOfContact,
         statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
       });
       const d = i.deal;
@@ -173,7 +173,6 @@ export const showsCreate = defineCommand({
           if (!av.showId && av.date === i.date) await w.update("availability", av.id, { showId: r.id });
         }
       }
-      if (i.setlistId) await w.update("setlists", i.setlistId, { showId: r.id });
       return r.id;
     });
     return done(id, await syncShow(ctx, id, { createCalendar: i.addToCalendar }));
@@ -188,7 +187,7 @@ const showPatch = z.strictObject({
   venueId: z.string().min(1).nullable().optional(), place: place.nullable().optional(), hostContactIds: z.array(z.string().min(1)).optional(),
   editionId: z.string().min(1).nullable().optional(), editionName: z.string().nullable().optional(), times: times.optional(), billedAs: z.string().min(1).nullable().optional(),
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
-  setlistId: z.string().min(1).nullable().optional(), docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
+  docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
   publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
 });
 
@@ -196,7 +195,7 @@ export const showsUpdate = defineCommand({
   name: "shows.update", roles: ["admin", "mcp"],
   description:
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; prefer shows.cancel / shows.drop), reason (why it was canceled or dropped; null clears), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
-    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times {loadIn, soundcheck, doors, showStart, set, setLengthSec}, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, setlistId, docs, publishToBandsintown (listed once confirmed), ticketUrl, " +
+    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times {loadIn, soundcheck, doors, showStart, set, setLengthSec}, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, docs, publishToBandsintown (listed once confirmed), ticketUrl, " +
     "dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
     "Checklists are not touched (shows.setChecklists). " +
     "Changing date, time, venue, people, status or publishToBandsintown re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
@@ -229,9 +228,6 @@ export const showsUpdate = defineCommand({
       const r = await w.update("shows", id, p);
       const after = (await w.get("shows", id))!;
       touchesSync = SHOW_SYNC_FIELDS.some((f) => JSON.stringify(before[f]) !== JSON.stringify(after[f]));
-      if ("setlistId" in patch && patch.setlistId !== before.setlistId) {
-        if (patch.setlistId) await w.update("setlists", patch.setlistId, { showId: id });
-      }
       return r;
     });
     return done(id, touchesSync ? await syncShow(ctx, id) : { warnings: [] });

@@ -6,6 +6,7 @@ import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { bandFolderId, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor } from "@/lib/music";
+import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 
 const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
@@ -236,10 +237,15 @@ export const songsRemove = defineCommand({
 
 // ---------- setlists ----------
 
+/**
+ * A song item is either a reference to a song in the library (songId, which fills title/length/key) or an off-library
+ * one-off that carries its own title -- a cover nobody catalogued. A break needs neither. Without the title arm, a
+ * setlist seeded from a template holding an off-library song could not be saved again from the show page.
+ */
 const ItemIn = z.strictObject({
   type: z.enum(["song", "break"]), songId: z.string().min(1).optional(), title: z.string().optional(),
   lengthSec: z.number().int().min(0).optional(), key: z.string().optional(), note: z.string().optional(),
-}).refine((i) => i.type === "break" || !!i.songId, "A song item needs songId");
+}).refine((i) => i.type === "break" || !!i.songId || !!i.title?.trim(), "A song item needs a songId or a title");
 
 /** Song items take title, length and key from the song; breaks default to 1:00 "Break". */
 async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[]) {
@@ -249,7 +255,15 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[]) {
       out.push({ type: "break" as const, title: i.title?.trim() || "Break", lengthSec: i.lengthSec ?? 60, ...(i.note ? { note: i.note } : {}) });
       continue;
     }
-    const s = await w.get("songs", i.songId!);
+    if (!i.songId) {
+      // An off-library one-off: it has no song behind it, so its own title, length and key are all there is.
+      out.push({
+        type: "song" as const, title: i.title!.trim(),
+        ...(i.lengthSec != null ? { lengthSec: i.lengthSec } : {}), ...(i.key ? { key: i.key } : {}), ...(i.note ? { note: i.note } : {}),
+      });
+      continue;
+    }
+    const s = await w.get("songs", i.songId);
     if (!s || s.deletedAt) throw new AppError("not_found", `Song ${i.songId} not found`, 404);
     out.push({
       type: "song" as const, songId: s.id, title: s.title as string,
@@ -259,58 +273,101 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[]) {
   return out;
 }
 
-export const setlistsCreate = defineCommand({
-  name: "setlists.create",
+export const setlistTemplatesCreate = defineCommand({
+  name: "setlistTemplates.create",
   roles: ["admin", "mcp"],
-  description: "Create a setlist from songs and breaks, in order. totalSec is computed.",
+  description: "Create a reusable setlist template from songs and breaks, in order. totalSec is computed. Seed a show's setlist from it with setlists.seed.",
   input: z.strictObject({ name: z.string().min(1), items: z.array(ItemIn).default([]) }),
-  run: (ctx, { name, items }) => run(ctx, async (w) => w.create("setlists", { name, items: await resolveItems(w, items) })),
+  run: (ctx, { name, items }) => run(ctx, async (w) => w.create("setlistTemplates", { name, items: await resolveItems(w, items) })),
 });
-export const setlistsUpdate = defineCommand({
-  name: "setlists.update",
+export const setlistTemplatesUpdate = defineCommand({
+  name: "setlistTemplates.update",
   roles: ["admin", "mcp"],
-  description: "Rename a setlist or replace its items (the full ordered list).",
+  description: "Rename a setlist template or replace its items (the full ordered list).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().min(1).optional(), items: z.array(ItemIn).optional() }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const p: Record<string, unknown> = {};
     if (patch.name) p.name = patch.name;
     if (patch.items) p.items = await resolveItems(w, patch.items);
-    return w.update("setlists", id, p);
+    return w.update("setlistTemplates", id, p);
   }),
 });
-export const setlistsAttach = defineCommand({
-  name: "setlists.attach",
+export const setlistTemplatesRemove = defineCommand({
+  name: "setlistTemplates.remove",
+  roles: ["admin"],
+  description: "Archive a setlist template. Shows seeded from it keep their own copy.",
+  input: idInput,
+  run: (ctx, { id }) => run(ctx, async (w) => w.softDelete("setlistTemplates", id)),
+});
+
+type SetlistSource = { kind: "template" | "show"; id: string; name?: string };
+
+/** A show's setlist lives at setlists/{showId}: create it, or update it (restoring first if it was archived). */
+async function upsertShowSetlist(w: Writer, showId: string, items: Record<string, unknown>[], source?: SetlistSource) {
+  const show = await w.get("shows", showId);
+  if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
+  const existing = await w.get("setlists", showId);
+  if (!existing) {
+    await w.create("setlists", { items, ...(source ? { source } : {}) }, { id: showId });
+    return;
+  }
+  if (existing.deletedAt) await w.restore("setlists", showId);
+  await w.update("setlists", showId, { items, ...(source ? { source } : {}) });
+}
+
+export const setlistsSetItems = defineCommand({
+  name: "setlists.setItems",
   roles: ["admin", "mcp"],
-  description: "Use a setlist for a show (sets show.setlistId and setlist.showId), or pass setlistId null to clear the show's setlist.",
-  input: z.strictObject({ showId: z.string().min(1), setlistId: z.string().min(1).nullable() }),
-  run: (ctx, { showId, setlistId }) => run(ctx, async (w) => {
-    const show = await w.get("shows", showId);
-    if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
-    const sl = setlistId ? await w.get("setlists", setlistId) : null;
-    if (setlistId && (!sl || sl.deletedAt)) throw new AppError("not_found", "Setlist not found", 404);
-    if (show.setlistId && show.setlistId !== setlistId) {
-      const old = await w.get("setlists", show.setlistId);
-      if (old && !old.deletedAt && old.showId === showId) await w.update("setlists", old.id, { showId: null });
+  description: "Set a show's setlist to this full ordered list of songs and breaks (creates it if the show has none). Song items take title, length and key from the song. totalSec is computed.",
+  input: z.strictObject({ showId: z.string().min(1), items: z.array(ItemIn) }),
+  run: (ctx, { showId, items }) => run(ctx, async (w) => {
+    await upsertShowSetlist(w, showId, await resolveItems(w, items));
+    return { showId };
+  }),
+});
+export const setlistsSeed = defineCommand({
+  name: "setlists.seed",
+  roles: ["admin", "mcp"],
+  description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, with song titles, lengths and keys refreshed from the songs). " +
+    'mode "replace" swaps the whole list (default), "append" adds to the end. Records where it came from; later edits to either side don\'t touch the other. Returns { showId, added, total }.',
+  input: z.strictObject({
+    showId: z.string().min(1),
+    from: z.discriminatedUnion("kind", [
+      z.strictObject({ kind: z.literal("template"), id: z.string().min(1) }),
+      z.strictObject({ kind: z.literal("show"), id: z.string().min(1) }),
+    ]),
+    mode: z.enum(["append", "replace"]).default("replace"),
+  }),
+  run: (ctx, { showId, from, mode }): Promise<{ showId: string; added: number; total: number }> => run(ctx, async (w) => {
+    let srcItems: z.infer<typeof ItemIn>[];
+    let name: string | undefined;
+    if (from.kind === "template") {
+      const t = await w.get("setlistTemplates", from.id);
+      if (!t || t.deletedAt) throw new AppError("not_found", "Setlist template not found", 404);
+      srcItems = (t.items ?? []) as typeof srcItems;
+      name = t.name as string;
+    } else {
+      const sl = await w.get("setlists", from.id);
+      const src = await w.get("shows", from.id);
+      if (!sl || sl.deletedAt) throw new AppError("not_found", "That show has no setlist", 404);
+      srcItems = (sl.items ?? []) as typeof srcItems;
+      name = src ? showName(src as ShowPlaceLike) : undefined;
     }
-    if (sl?.showId && sl.showId !== showId) {
-      const other = await w.get("shows", sl.showId);
-      if (other && !other.deletedAt && other.setlistId === sl.id) await w.update("shows", other.id, { setlistId: null });
-    }
-    await w.update("shows", showId, { setlistId });
-    if (sl) await w.update("setlists", sl.id, { showId });
-    return { showId, setlistId };
+    // Re-resolve through the songs so the copies are fresh at seed time (an off-library item keeps its own title).
+    const added: Record<string, unknown>[] = await resolveItems(w, srcItems);
+    const prior = mode === "append" ? await w.get("setlists", showId) : null;
+    const current = (prior && !prior.deletedAt ? prior.items ?? [] : []) as Record<string, unknown>[];
+    const items = [...current, ...added];
+    await upsertShowSetlist(w, showId, items, { kind: from.kind, id: from.id, ...(name ? { name } : {}) });
+    return { showId, added: added.length, total: items.length };
   }),
 });
 export const setlistsRemove = defineCommand({
   name: "setlists.remove",
   roles: ["admin"],
-  description: "Archive a setlist and detach it from its show.",
-  input: idInput,
-  run: (ctx, { id }) => run(ctx, async (w) => {
-    const shows = await w.query("shows", (q) => q.where("setlistId", "==", id));
-    for (const s of shows) await w.update("shows", s.id, { setlistId: null });
-    return w.softDelete("setlists", id);
-  }),
+  description: "Clear a show's setlist (archives it; setlists.setItems or setlists.seed brings it back).",
+  input: z.strictObject({ showId: z.string().min(1) }),
+  run: (ctx, { showId }) => run(ctx, async (w) => w.softDelete("setlists", showId)),
 });
 
 // ---------- rehearsals ----------
@@ -372,24 +429,24 @@ export const rehearsalsSetLocation = defineCommand({
 export const rehearsalsImportSetlist = defineCommand({
   name: "rehearsals.importSetlist",
   roles: ["admin", "mcp"],
-  description: "Copy songs from a setlist into a rehearsal (titles and song ids; breaks are skipped). songIds picks which; " +
+  description: "Copy songs from a setlist template into a rehearsal (titles and song ids; breaks are skipped). songIds picks which; " +
     'mode "append" adds them to the end (default), "replace" swaps the whole list. Sets fromSetlistId; later edits to either side don\'t touch the other.',
   input: z.strictObject({
-    id: z.string().min(1), setlistId: z.string().min(1),
+    id: z.string().min(1), templateId: z.string().min(1),
     songIds: z.array(z.string().min(1)).min(1), mode: z.enum(["append", "replace"]).default("append"),
   }),
   // Returns { id, added, total }: how many songs came in and how long the rehearsal's list is now.
-  run: (ctx, { id, setlistId, songIds, mode }): Promise<{ id: string; added: number; total: number }> => run(ctx, async (w) => {
+  run: (ctx, { id, templateId, songIds, mode }): Promise<{ id: string; added: number; total: number }> => run(ctx, async (w) => {
     const reh = await w.get("rehearsals", id);
     if (!reh || reh.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404);
-    const sl = await w.get("setlists", setlistId);
-    if (!sl || sl.deletedAt) throw new AppError("not_found", "Setlist not found", 404);
+    const sl = await w.get("setlistTemplates", templateId);
+    if (!sl || sl.deletedAt) throw new AppError("not_found", "Setlist template not found", 404);
     const pick = new Set(songIds);
     const added = ((sl.items ?? []) as { type: string; songId?: string; title: string }[])
       .filter((x) => x.type === "song" && x.songId && pick.has(x.songId))
       .map((x) => ({ songId: x.songId as string, title: x.title }));
     const songs = mode === "replace" ? added : [...((reh.songs ?? []) as typeof added), ...added];
-    await w.update("rehearsals", id, { songs, fromSetlistId: setlistId });
+    await w.update("rehearsals", id, { songs, fromSetlistId: templateId });
     return { id, added: added.length, total: songs.length };
   }),
 });
@@ -407,7 +464,7 @@ export const rehearsalsRemove = defineCommand({
 
 export const musicCommands = [
   driveSearch, driveFix, filesAttach, filesUpdate, filesRemove, filesCheck, filesShareWithBand, filesCopyToBand,
-  songsCreate, songsUpdate, songsRemove, setlistsCreate, setlistsUpdate, setlistsAttach, setlistsRemove,
+  songsCreate, songsUpdate, songsRemove, setlistTemplatesCreate, setlistTemplatesUpdate, setlistTemplatesRemove, setlistsSetItems, setlistsSeed, setlistsRemove,
   rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove,
 ];
 export type { Bandmate };

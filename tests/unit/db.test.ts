@@ -91,8 +91,8 @@ test("immutable collections are never edited or deleted; the ledger is gone", as
 
 test("setlist totalSec is computed", async () => {
   const { id } = await db.create(ctx(), "setlists", {
-    name: "Hi-Dive 45", items: [{ type: "song", title: "A", lengthSec: 200 }, { type: "break", title: "Break" }, { type: "song", title: "B", lengthSec: 100 }],
-  });
+    items: [{ type: "song", title: "A", lengthSec: 200 }, { type: "break", title: "Break" }, { type: "song", title: "B", lengthSec: 100 }],
+  }, { id: "show-totalsec" });
   assert.equal((await db.get("setlists", id))!.totalSec, 300);
 });
 
@@ -139,7 +139,7 @@ test("denormalization: renaming a venue/song/festival refreshes copies", async (
   assert.equal((await db.get("pitches", ep.id))!.target.name, "Underground Music Showcase 2027");
 
   const s = await db.create(ctx(), "songs", { title: "Glass Coast", status: "active", lengthSec: 200 });
-  const sl = await db.create(ctx(), "setlists", { name: "S", items: [{ type: "song", songId: s.id, title: "Glass Coast", lengthSec: 200 }] });
+  const sl = await db.create(ctx(), "setlists", { items: [{ type: "song", songId: s.id, title: "Glass Coast", lengthSec: 200 }] }, { id: show.id });
   await db.update(ctx(), "songs", s.id, { title: "Glass Coast (Live)", lengthSec: 250 });
   const list = (await db.get("setlists", sl.id))!;
   assert.equal(list.items[0].title, "Glass Coast (Live)");

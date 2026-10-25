@@ -53,7 +53,6 @@ export const Show = entity({
     id, label: z.string(), done: z.boolean(), ownerId: id.optional(), due: dateStr.optional(),
   })).optional(),
   gear: z.array(z.strictObject({ id, label: z.string(), musicianId: id.optional(), packed: z.boolean() })).optional(),
-  setlistId: id.optional(),
   docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })),
   calendarEventId: z.string().optional(),
   /** Musicians the calendar event invites, when shows.create was told (sendInvites). Unset: everyone in personnel who has an email. */

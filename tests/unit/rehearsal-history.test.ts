@@ -161,11 +161,12 @@ test("10/3 becomes a setlist on the Porchfest show, not a rehearsal", async () =
   assert.equal(c.kind, "show");
   assert.equal(c.songs.length, 14);
   assert.equal(c.action, "created");
-  assert.equal(c.id, "setlist-vb-porchfest-denver-2026-10-03");
+  assert.equal(c.id, "vb-porchfest-denver-2026-10-03"); // a show's setlist lives at its show id
   // The rehearsal collection must not have picked it up.
   assert.equal(await db.get("rehearsals", "rehearsal-2026-10-03"), null);
-  const sl = (await db.get("setlists", "setlist-vb-porchfest-denver-2026-10-03"))!;
-  assert.equal(sl.showId, "vb-porchfest-denver-2026-10-03");
+  const sl = (await db.get("setlists", "vb-porchfest-denver-2026-10-03"))!;
+  assert.equal(sl.name, undefined);
+  assert.equal(sl.showId, undefined);
   assert.equal((sl.items as unknown[]).length, 14);
   assert.deepEqual((sl.items as { type: string }[]).map((i) => i.type), Array(14).fill("song"));
   // Sheet order is alphabetical, not a running order, and the report has to say so.
