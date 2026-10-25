@@ -253,15 +253,15 @@ export async function importSongList(opts: { dryRun?: boolean; artist?: string; 
       // link is said out loud rather than passed over.
       issues.push(`the Demo cell says "${cell(r, COL.demo)}" but carries no link`);
     }
-    // The title cell normally holds one link, the chart Doc. "Ruined (chart)" holds two: the chart on "Ruined" and a
-    // Drive audio file under part of the "(chart)" marker. Keep both -- the extra is a real recording, and dropping a
-    // link the band put there is the one thing this import must not do -- and flag it, since only the first is a chart.
+    // The title cell holds the chart Doc. "Ruined (chart)" is the one cell that holds a second link -- a Drive file
+    // under part of the "(chart)" marker -- and Jeff's call is to leave it: the title cell means "the chart", so a
+    // second link there is a stray, not a recording the band put on the song. Only the first link is taken.
+    // Still reported, so a second link appearing on a different row in a later capture isn't lost in silence.
     const extraTitleLinks = titleLinks.slice(1);
-    for (const l of extraTitleLinks) issues.push(`the title cell carries a second link ("${l.text}" -> ${l.url}); imported as a file, confirm its kind`);
+    for (const l of extraTitleLinks) issues.push(`the title cell carries a second link ("${l.text}" -> ${l.url}); not imported`);
 
     const want = [
       ...titleLinks.slice(0, 1).map((l) => linkFile(l, title, true)),
-      ...extraTitleLinks.map((l) => linkFile(l, title, false)),
       ...demoLinks.map((l) => linkFile(l, title, false)),
     ];
 
@@ -344,10 +344,12 @@ export function songListSurvey(r: SongListReport): Survey {
     const where = `row ${x.row} ${x.title}`;
     for (const issue of x.issues) {
       // Anything that loses or guesses at data is Jeff's to decide; a value the sheet got wrong is unclean. The
-      // date-serial override for row 2 is the one known, intended outcome, so it is the only thing left deferred.
+      // date-serial override for row 2 and the skipped second title-cell link are known, intended outcomes, so they
+      // are deferred: said out loud every run, but not a question.
       const bucket: Bucket = /is already at|carries no link|is a number|confirm/.test(issue) ? "decide"
         : /not a number|slug to/.test(issue) ? "unclean"
-        : "deferred";
+        : /second link|date serial/.test(issue) ? "deferred"
+        : "decide";
       // The row-specific parts (the title, the urls, the numbers) would otherwise split one problem into one group
       // per row, so they live in the detail and the reason stays general.
       const reason = issue
