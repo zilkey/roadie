@@ -318,7 +318,7 @@ async function upsertShowSetlist(w: Writer, showId: string, items: Record<string
 export const setlistsSetItems = defineCommand({
   name: "setlists.setItems",
   roles: ["admin", "mcp"],
-  description: "Set a show's setlist to this full ordered list of songs and breaks (creates it if the show has none). Song items take title, length and key from the song. totalSec is computed.",
+  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song. totalSec is computed.",
   input: z.strictObject({ showId: z.string().min(1), items: z.array(ItemIn) }),
   run: (ctx, { showId, items }) => run(ctx, async (w) => {
     await upsertShowSetlist(w, showId, await resolveItems(w, items));

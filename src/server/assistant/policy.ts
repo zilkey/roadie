@@ -9,14 +9,29 @@ import type { Role } from "../ctx";
 export const EXCLUDED: readonly string[] = [
   "users.",           // invites, access, roles
   "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
-  "artists.",         // settings, feature switches, creating or changing the band
+  "artists.create",   // making a band; the rest of band settings (links, lineups, custom fields) is open, but see refusal()
   "assistant.",       // Roadie's own prefs
   "drafts.",          // personal scratch, nothing to hand an assistant
   "history.myRuns",   // Roadie sees only its own thread's runs, through history.undoRun
   "pitches.checkReplies", // reads the band's mail: Roadie never reads email
   "stats.importCsv",  // bulk import of someone's file
+  "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
 ];
-export const isExcluded = (name: string) => EXCLUDED.some((e) => (e.endsWith(".") ? name.startsWith(e) : name === e));
+/** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */
+const ALLOWED_DESPITE_PREFIX: readonly string[] = ["users.addToBand"];
+export const isExcluded = (name: string) => !ALLOWED_DESPITE_PREFIX.includes(name) && EXCLUDED.some((e) => (e.endsWith(".") ? name.startsWith(e) : name === e));
+
+/** Said when Roadie is asked to rename the band or change its URL. Also what the canned script answers. */
+export const BAND_SETTINGS = "Sorry, you have to change the band name and URL yourself, on the General settings page. Want me to take you there?";
+const DRIVE_SETTINGS = "Sorry, the Drive folder is an integration setting you have to change yourself, on the General settings page. Want me to take you there?";
+/** Refused in code, whole call, even mixed with allowed fields: artists.update that touches the name, URL or Drive folder. */
+export function refusal(name: string, input: unknown): string | undefined {
+  if (name !== "artists.update") return undefined;
+  const patch = ((input as { patch?: Record<string, unknown> } | null)?.patch ?? {}) as Record<string, unknown>;
+  if ("name" in patch || "slug" in patch) return BAND_SETTINGS;
+  if ("driveFolderId" in patch) return DRIVE_SETTINGS;
+  return undefined;
+}
 
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
@@ -25,6 +40,8 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar",                          // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stats.pull",                                                                          // calls out
+  "musicians.archive", "musicians.removeFromBand",                                      // someone leaves the band
+  "artists.removeSongField", "artists.removeShowField",                                  // deletes every value
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
 ];
 /** venues.update fields that are the SHARED room (every band sees them); the rest (loadInNotes, notes, contactIds, promoterIds) are the band's own. */
@@ -41,12 +58,15 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list"]);
 
 /** True when `name` with this input must not run without the person's yes. TODO: count touched records after a dry run instead of guessing from the input. */
 export function needsConfirm(name: string, input: unknown): boolean {
   if (ALWAYS_CONFIRM.includes(name) || isRemove(name)) return true;
   if (name === "venues.update" && sharedVenueFields(input).length) return true;
+  const o = (input ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (name === "shows.update" && (o.patch?.status !== undefined || o.patch?.publishToBandsintown !== undefined)) return true; // cancels, or lists on / takes off Bandsintown
+  if (name === "shows.create" && o.addToCalendar !== false && o.sendInvites !== false) return true; // puts an invite in people's calendars
   if (READ_ONLY.has(name) || ONE_RECORD_LISTS.has(name)) return false;
   const walk = (v: unknown, depth: number): boolean => {
     if (Array.isArray(v)) return v.length > BULK_LIMIT || (depth < 2 && v.some((x) => walk(x, depth + 1)));
@@ -65,7 +85,28 @@ export const isEligible = (name: string, role: Role) => !!registry[name] && !isE
 // ---------- one-line summaries ----------
 
 const dollars = (cents: unknown) => (typeof cents === "number" ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "");
-const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
+type Before = Record<string, any> | undefined; // eslint-disable-line @typescript-eslint/no-explicit-any
+/** A venue field as readable text for old → new. */
+function fmtField(k: string, v: unknown): string {
+  if (v === null || v === undefined || v === "") return "none";
+  const o = v as Record<string, unknown>;
+  if (k === "address" && typeof v === "object") return [o.street, o.city, o.state, o.zip].filter(Boolean).join(", ");
+  if (k === "sound" && typeof v === "object") return `${o.provider === "venueProvided" ? "venue provides sound" : o.provider === "bandProvided" ? "band brings sound" : o.provider}${o.notes ? ` (${o.notes})` : ""}`;
+  return typeof v === "object" ? JSON.stringify(v) : String(v);
+}
+const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => string> = { // eslint-disable-line @typescript-eslint/no-explicit-any
+  "shows.update": (i) => {
+    const p = (i.patch ?? {}) as Record<string, unknown>, l = i.label ? ` ${i.label}` : " the show";
+    const out: string[] = [];
+    if (p.status !== undefined) out.push(`Change the show${i.label ? ` ${i.label}` : ""} to ${p.status}${p.reason ? ` (${p.reason})` : ""}`);
+    if (p.publishToBandsintown !== undefined) out.push(p.publishToBandsintown ? `List${l} on Bandsintown` : `Take${l} off Bandsintown`);
+    return out.join("; ");
+  },
+  "shows.create": (i) => `Book ${i.label ?? "a show"}${i.date ? ` on ${i.date}` : ""}: add it to Google Calendar and invite the band`,
+  "musicians.archive": (i) => `Archive ${i.label ?? "this person"}: they leave the band and lose their sign-in for this band`,
+  "musicians.removeFromBand": (i) => `Take ${i.label ?? "this person"} out of the band (they keep their sign-in)`,
+  "artists.removeSongField": () => "Delete the song field: every song loses its value",
+  "artists.removeShowField": () => "Delete the show field: every show loses its value",
   "shows.cancel": (i) => `Cancel the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,
@@ -75,12 +116,16 @@ const SUMMARY: Record<string, (i: Record<string, unknown>) => string> = {
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
   "availability.remind": () => "Email a reminder to musicians who haven't answered",
   "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
-  "venues.update": (i) => `Change the shared room${i.label ? ` ${i.label}` : ""} (${sharedVenueFields(i).join(", ")}) for every band that uses Roadie`,
+  "venues.update": (i, before) => {
+    const patch = (i.patch ?? {}) as Record<string, unknown>;
+    const diffs = sharedVenueFields(i).map((k) => `${k}: ${fmtField(k, before?.[k])} → ${fmtField(k, patch[k])}`);
+    return `Change the shared room${i.label ? ` ${i.label}` : ""} for every band that uses Roadie (${diffs.join("; ")})`;
+  },
 };
 /** What the confirm card says. `label` is a human name for the record (Roadie adds it from what it looked up). */
-export function summarize(name: string, input: unknown, label?: string): string {
+export function summarize(name: string, input: unknown, label?: string, before?: Before): string {
   const i = (input ?? {}) as Record<string, unknown>;
-  const base = SUMMARY[name]?.({ ...i, ...(label ? { label } : {}) });
+  const base = SUMMARY[name]?.({ ...i, ...(label ? { label } : {}) }, before);
   if (base) return base;
   const [kind, verb] = name.split(".");
   const what = label ? `${kind} ${label}` : kind;

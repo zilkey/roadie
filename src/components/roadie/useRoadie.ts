@@ -83,7 +83,10 @@ export function useRoadie(onNavigated?: () => void) {
       const r = resolveRoute(e.route, e.params, slug); // always inside the artist you are in
       if (!r) return;
       setPending((p) => p && { ...p, actions: [...p.actions, { kind: "navigate", label: e.label, route: e.route, params: e.params }] });
-      router.push(r.href);
+      // A hash on the page you are already on (/shows#played) fires no router transition: set it so the page's hashchange listener runs.
+      const [target, hash] = r.href.split("#");
+      if (hash && target === window.location.pathname) window.location.hash = hash;
+      else router.push(r.href);
       onNavigated?.();
     } else if (e.type === "done") {
       setThreadId(e.threadId);

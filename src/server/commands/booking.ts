@@ -47,7 +47,7 @@ async function requireVenue(w: Writer, id: string) {
 export const venuesCreate = defineCommand({
   name: "venues.create", roles: [...VENUE_ROLES], input: VenueIn,
   description:
-    "Add a venue. A venue with the same name and city merges into the existing one ({id, merged}). Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
+    "Add a venue. A venue with the same name and city merges into the existing one ({id, merged: true}); adding a room this band archived brings it back. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
     "every band that uses Roadie sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
   run: (ctx, input) => run(ctx, async (w) => {
     const priv = Object.fromEntries(Object.entries(input).filter(([k, v]) => isPrivateField(k) && v !== undefined));
@@ -77,7 +77,7 @@ export const venuesCreate = defineCommand({
 export const venuesUpdate = defineCommand({
   name: "venues.update", roles: [...VENUE_ROLES], input: patchInput(VenueIn),
   description:
-    "Edit a venue. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
+    "Edit a venue. address and sound are whole objects (city and state required; sound needs provider): Roadie fills missing keys from the record, other callers send the whole object. notes and loadInNotes replace the text (to add, read first and resend). contactIds/promoterIds replace the list (prefer contacts.attach/detach for contacts). ages is all|18|21. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
     "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const sharedPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => !isPrivateField(k) && v !== undefined));
@@ -163,11 +163,12 @@ export const venuesMergeInto = defineCommand({
 
 export const promotersCreate = defineCommand({
   name: "promoters.create", roles: [...ROLES], input: PromoterIn,
-  description: "Add a promoter or booking group. Same name merges into the existing one.",
+  description: "Add a promoter or booking group. Same name merges into the existing one. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds are the whole lists; link contacts with contacts.attach.",
   run: (ctx, input) => db.create(ctx, "promoters", input),
 });
 export const promotersUpdate = defineCommand({
-  name: "promoters.update", roles: [...ROLES], input: patchInput(PromoterIn), description: "Edit a promoter.",
+  name: "promoters.update", roles: [...ROLES], input: patchInput(PromoterIn),
+  description: "Edit a promoter. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds replace the lists; link contacts with contacts.attach.",
   run: (ctx, { id, patch }) => db.update(ctx, "promoters", id, patch as Record<string, unknown>),
 });
 export const promotersRemove = defineCommand({
@@ -182,7 +183,7 @@ export const festivalsCreate = defineCommand({
 });
 export const festivalsUpdate = defineCommand({
   name: "festivals.update", roles: [...ROLES], input: patchInput(FestivalIn),
-  description: "Edit a festival. Renaming updates its editions and their pitches.",
+  description: "Edit a festival. type: festival|series. contactIds replaces the list; link contacts with contacts.attach. Renaming updates its editions and their pitches.",
   run: (ctx, { id, patch }) => db.update(ctx, "festivals", id, patch as Record<string, unknown>),
 });
 export const festivalsRemove = defineCommand({
@@ -222,7 +223,8 @@ export const contactsCreate = defineCommand({
   }),
 });
 export const contactsUpdate = defineCommand({
-  name: "contacts.update", roles: [...ROLES], input: patchInput(ContactIn), description: "Edit a contact.",
+  name: "contacts.update", roles: [...ROLES], input: patchInput(ContactIn),
+  description: "Edit a contact. emails/phones replace the lists (first email is primary; emails lowercased, phones stored E.164): read first. Use contacts.attach/detach for links.",
   run: (ctx, { id, patch }) => db.update(ctx, "contacts", id, patch as Record<string, unknown>),
 });
 export const contactsRemove = defineCommand({
@@ -315,7 +317,7 @@ async function requireUser(w: Writer, uid: string) {
 
 export const pitchesFlag = defineCommand({
   name: "pitches.flag", roles: [...ROLES], description: "Add a venue, promoter or edition to the Pitch List. If it is already there, returns that pitch ({existing: true}). " +
-    "dates: possible dates for the gig [YYYY-MM-DD, ...], any number; they are stored sorted and unique.",
+    "dates: possible dates for the gig [YYYY-MM-DD, ...], any number; they are stored sorted and unique. pitchedAs is a configuration id (context.now artist.configurations or records.get artists); assigneeId a user id (context.now band[].userId).",
   input: target.extend({
     pitchedAs: z.string().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().optional(),
     nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
@@ -343,7 +345,7 @@ const pitchPatch = z.strictObject({
   nextStep: nextStep.nullable().optional(), notes: z.string().nullable().optional(), dates: pitchDates.optional(),
 });
 export const pitchesUpdate = defineCommand({
-  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id or null for not sure; fills personnel unless given), personnel, assigneeId, nextStep {text, due}, notes, dates (the whole list of possible dates [YYYY-MM-DD, ...]; replaces the old list, stored sorted; [] clears).",
+  name: "pitches.update", roles: [...ROLES], description: "Edit a pitch: pitchedAs (configuration id from context.now artist.configurations or records.get artists; null for not sure; fills personnel unless given), personnel, assigneeId (user id, context.now band[].userId), nextStep {text, due} (the follow-up date), notes, dates (the whole list of possible dates [YYYY-MM-DD, ...]; replaces the old list, stored sorted; [] clears).",
   input: z.strictObject({ id: z.string().min(1), patch: pitchPatch }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requirePitch(w, id);
@@ -356,29 +358,30 @@ export const pitchesUpdate = defineCommand({
 });
 
 export const pitchesMove = defineCommand({
-  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline.",
+  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline. Statuses: idea; toPitch = on the list, not sent; pitched = we sent it; waiting; talking; booked; declined = they said no; dropped = we stopped. " +
+    "Moving to pitched/waiting/talking records contact now (how \"I pitched X today\" is logged). booked alone creates no show: use shows.create with pitchId (\"Booked it\").",
   input: z.strictObject({ id: z.string().min(1), status: pitchStatus, text: z.string().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const p = await requirePitch(w, i.id);
     if (p.status === i.status) return { id: i.id, changed: false };
-    await w.update("pitches", i.id, { status: i.status });
+    await w.update("pitches", i.id, { status: i.status, ...(["pitched", "waiting", "talking"].includes(i.status) ? { lastContactAt: w.now } : {}) });
     await w.create(`pitches/${i.id}/activity`, { type: "status", fromStatus: p.status, toStatus: i.status, text: i.text });
     return { id: i.id, changed: true };
   }),
 });
 
 export const pitchesComment = defineCommand({
-  name: "pitches.comment", roles: ["admin", "mcp"], description: "Comment on a pitch.",
+  name: "pitches.comment", roles: ["admin", "mcp"], description: "Post to the discussion thread on a pitch (the team talking). For a call, email, visit or note on the timeline use pitches.log.",
   input: z.strictObject({ id: z.string().min(1), body: z.string().min(1) }),
   run: (ctx, i) => run(ctx, async (w) => { await requirePitch(w, i.id); return w.create(`pitches/${i.id}/comments`, { authorId: ctx.uid, body: i.body }); }),
 });
 export const pitchesLog = defineCommand({
-  name: "pitches.log", roles: [...ROLES], description: "Add a call or note to a pitch's timeline.",
-  input: z.strictObject({ id: z.string().min(1), type: z.enum(["call", "note"]), text: z.string().min(1) }),
+  name: "pitches.log", roles: [...ROLES], description: "Timeline entry on a pitch: a call, email or visit (sets last contact) or a note. The discussion thread is pitches.comment.",
+  input: z.strictObject({ id: z.string().min(1), type: z.enum(["call", "email", "visit", "note"]), text: z.string().min(1) }),
   run: (ctx, i) => run(ctx, async (w) => {
     await requirePitch(w, i.id);
     const r = await w.create(`pitches/${i.id}/activity`, { type: i.type, text: i.text });
-    if (i.type === "call") await w.update("pitches", i.id, { lastContactAt: w.now });
+    if (i.type !== "note") await w.update("pitches", i.id, { lastContactAt: w.now });
     return r;
   }),
 });

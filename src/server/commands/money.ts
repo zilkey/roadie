@@ -38,7 +38,7 @@ const GasIn = expenseGasBase.omit({ overridden: true });
 export const expensesAdd = defineCommand({
   name: "expenses.add", roles: ["admin", "member"],
   description: "Add an expense: amount in cents, what it was for, category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
-    "Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
+    "userId is who paid (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "A gas expense (category travel) carries the frozen estimate in `gas`. saveMpg / saveAsHome write the CALLER's own settings only; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To.",
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), category: ledgerCategory, date: dateStr.optional(),

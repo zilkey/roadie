@@ -1,4 +1,5 @@
 import { routeNames, routeForRecord, type RouteName } from "@/lib/routes";
+import { BAND_SETTINGS } from "./policy";
 
 /**
  * The canned model's brain: what it decides for one turn, from the user's words and the tool results so far. Pure and
@@ -11,18 +12,26 @@ export type Scripted = { text?: string; calls?: Call[] };
 export const OFF_TOPIC = "I just haul the band's stuff. Ask me about shows, tours or money.";
 export const CANT_DO = "I can't do that. I don't know that tune.";
 export const NOT_YET = "Not in my road case yet. I wrote it down.";
-export const NO_PEOPLE = "I can't do that. I don't know that tune: invites and access stay with you, on the Users page.";
+export const NO_PEOPLE = "I can't do that. I don't know that tune: invites and access stay with you, on the People page. Want me to take you there?";
 export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
 
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
 const PAGES: [RegExp, RouteName][] = [
-  [/\bmoney\b|\bexpenses?\b/, "money"], [/\bshows\b/, "shows"], [/\bbooking\b/, "booking"], [/\bsongs\b/, "songs"],
+  [/\bpitch(?:es| list)\b/, "bookingPitches"], [/\bmoney\b|\bexpenses?\b/, "money"], [/\bshows\b/, "shows"], [/\bbooking\b/, "booking"], [/\bsongs\b/, "songs"],
   [/\bhistory\b/, "history"], [/\bstats\b/, "stats"], [/\bhome\b/, "calendar"], [/\bmusicians\b|\busers\b|\bpeople\b/, "people"],
   [/\bartist\b/, "artist"],
 ];
 const GO = /^(?:please |can you |could you )?(show me|take me to|take me|go to|open|pull up|navigate to)\s+(?:the |my |a )?(.+?)(?: page| tab)?[.!?]*$/;
 const KIND_WORDS: Record<string, string> = { venue: "venue", pitch: "pitch", song: "song", promoter: "promoter", festival: "festival", contact: "contact" };
-const FORBIDDEN = /\binvit\w*|\b(ai|api) keys?\b|\bgive\b.*\b(access|admin)\b|\bchange\b.*\brole\b|\bdelete the band\b|\bturn (on|off)\b.*\bfeatures?\b|\bremove\b.*\buser\b/;
+// Invites, access and feature switches belong to the person. "turn off the calendar for Saturday" (shows.calendar), "take X off the calendar" and "make a checklist" must not match.
+const FORBIDDEN = new RegExp([
+  String.raw`\binvit\w*`, String.raw`\b(ai|api) keys?\b`, String.raw`\bgive\b.*\b(access|admin)\b`, String.raw`\bchange\b.*\brole\b`,
+  String.raw`\bdelete the band\b`, String.raw`\bturn (on|off)\b.*\bfeatures?\b`, String.raw`\bturn (on|off) (?:the )?(setlists|rehearsals|stats|booking|songs|money|sections?)\b(?! for\b)`, String.raw`\bremove\b.*\b(user|log ?in|access)\b`,
+  String.raw`\bmake\b.*\badmin\b`, String.raw`\bmake\s+(?!a\b|an\b|the\b)\w+\s+(?:an? )?standard\b`,
+  String.raw`\blet\b.*\b(log|sign) ?in\b`, String.raw`\bdemote\b`, String.raw`\bpromote\b.*\badmin\b`,
+].join("|"));
+// "rename the band", "change our URL": the person does these on General settings.
+const BAND_RENAME = /\b(rename|change|update)\b.*\b(band'?s? name|name of the band|(?:our |the |band )?(?:url|web ?address))\b|\brename (?:the|our) band\b/;
 
 export const unwrap = (o: unknown): any => (o as { untrustedContent?: unknown } | null)?.untrustedContent ?? o; // eslint-disable-line @typescript-eslint/no-explicit-any
 const errorOf = (o: unknown): string | undefined => {
@@ -75,6 +84,7 @@ export function script(input: { text: string; steps?: Step[]; page?: Page }): Sc
 
 function first(t: string, page?: Page): Scripted {
   if (/^(hi|hey|hello|yo|sup|howdy|good (morning|evening))\b/.test(t)) return { text: "Hey. Roadie here. Shows, tours, money: what do you need?" };
+  if (BAND_RENAME.test(t)) return { text: BAND_SETTINGS }; // before CANT_DO: no tool call
   if (FORBIDDEN.test(t)) return { text: NO_PEOPLE }; // no tool call at all
   const listed = ASKS_LIST.test(t) && /\b(shows?|gigs?)\b/.test(t) ? FILTER_WORDS.find(([re]) => re.test(t)) : undefined;
   if (listed) return { calls: [{ name: "shows.list", input: { filter: listed[1] } }] };

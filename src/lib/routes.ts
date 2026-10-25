@@ -8,10 +8,20 @@ export interface RouteDef { title: string; path: string; params?: readonly strin
 export const ROUTES = {
   shows: { title: "Shows", path: "/shows" },
   calendar: { title: "Calendar", path: "/calendar" },
+  showsPlayed: { title: "Played shows", path: "/shows#played" },
+  showsCanceled: { title: "Canceled shows", path: "/shows#canceled" },
+  showsDropped: { title: "Dropped shows", path: "/shows#dropped" },
   show: { title: "Show", path: "/shows/:id", params: ["id"] },
+  showSetlist: { title: "Show setlist", path: "/shows/:id?tab=setlist", params: ["id"] },
+  showFinances: { title: "Show finances", path: "/shows/:id?tab=finances", params: ["id"] },
   showAfter: { title: "After the show", path: "/shows/:id/after", params: ["id"] },
   newShow: { title: "New show", path: "/shows/new" },
   booking: { title: "Booking", path: "/booking" },
+  bookingPitches: { title: "Pitch List", path: "/booking/pitches" },
+  bookingVenues: { title: "Venues", path: "/booking/venues" },
+  bookingFestivals: { title: "Festivals", path: "/booking/festivals" },
+  bookingPromoters: { title: "Promoters", path: "/booking/promoters" },
+  bookingContacts: { title: "Contacts", path: "/booking/contacts" },
   venue: { title: "Venue", path: "/booking/venues/:id", params: ["id"] },
   promoter: { title: "Promoter", path: "/booking/promoters/:id", params: ["id"] },
   festival: { title: "Festival", path: "/booking/festivals/:id", params: ["id"] },
@@ -39,10 +49,11 @@ export const ROUTES = {
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
   pitch: "pitches", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", showAfter: "shows",
+  showSetlist: "shows", showFinances: "shows",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */
 export const routeForRecord = (kind: string): keyof typeof RECORD_ROUTES | null =>
-  (Object.entries(RECORD_ROUTES).find(([n, k]) => k === kind && n !== "showAfter")?.[0] as keyof typeof RECORD_ROUTES | undefined) ?? null;
+  (Object.entries(RECORD_ROUTES).find(([n, k]) => k === kind && !["showAfter", "showSetlist", "showFinances"].includes(n))?.[0] as keyof typeof RECORD_ROUTES | undefined) ?? null;
 
 export type RouteName = keyof typeof ROUTES;
 export const routeNames = Object.keys(ROUTES) as RouteName[];
@@ -93,10 +104,10 @@ export function resolveRoute(name: unknown, params: Record<string, string> = {},
  */
 export function routeForPath(path: string): { route: RouteName; params: Record<string, string>; artist?: string } | null {
   const inArtist = splitArtistPath(path);
-  const rel = inArtist ? inArtist.rest.replace(/[?#].*$/, "") : path;
-  for (const name of routeNames) {
+  const rel = (inArtist ? inArtist.rest : path).replace(/[?#].*$/, "");
+  for (const name of routeNames) { // first match wins, so a page's plain route comes before its ?tab= / #hash variants
     const def: RouteDef = ROUTES[name];
-    const re = new RegExp("^" + def.path.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "/?$");
+    const re = new RegExp("^" + def.path.replace(/[?#].*$/, "").replace(/:(\w+)/g, "(?<$1>[^/]+)") + "/?$");
     const m = re.exec(rel);
     if (m) return { route: name, params: { ...m.groups }, ...(inArtist ? { artist: inArtist.slug } : {}) };
   }

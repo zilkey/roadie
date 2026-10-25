@@ -77,18 +77,36 @@ export const showsList = defineCommand({
   name: "shows.list", roles: ["admin", "mcp"],
   description:
     "List shows by filter: upcoming, played (or confirmed with the date passed), canceled (they called it off), or dropped (we pulled out, or a hold whose date passed unconfirmed). " +
-    "Rows carry reason (why it was canceled or dropped) when one was given. " +
-    "Always returns counts for every filter, so 'how many shows were canceled?' is one call. Without a filter, rows are every show. Upcoming soonest first, the rest newest first.",
-  input: z.strictObject({ filter: z.enum(SHOW_FILTERS).optional(), limit: z.number().int().min(1).max(200).default(50) }),
+    "Optional narrowing: venueId, from / to (YYYY-MM-DD, inclusive, on the show date), city (case-insensitive exact match). " +
+    "Rows carry reason (why it was canceled or dropped) when one was given, and totals {income, expenses, net} in cents when the show has a deal with money entered. " +
+    "'What did we make this year?' = filter played + from/to, then sum totals.net. " +
+    "counts has every filter's number under the venueId/from/to/city narrowing but ignores filter, so 'how many shows were canceled?' is one call. Without a filter, rows are every show. Upcoming soonest first, the rest newest first.",
+  input: z.strictObject({
+    filter: z.enum(SHOW_FILTERS).optional(), venueId: z.string().min(1).optional(), from: dateStr.optional(), to: dateStr.optional(), city: z.string().trim().min(1).optional(),
+    limit: z.number().int().min(1).max(200).default(50),
+  }),
   async run(_ctx, i) {
     const today = todayServer();
-    const shows = (await db.list("shows")).map((s) => ({ s, f: showFilter(s as never, today) }));
+    const city = i.city?.toLowerCase();
+    const shows = (await db.list("shows"))
+      .filter((s) => (!i.venueId || s.venue?.id === i.venueId) && (!i.from || s.date >= i.from) && (!i.to || s.date <= i.to)
+        && (!city || showCity(s as never)?.toLowerCase() === city))
+      .map((s) => ({ s, f: showFilter(s as never, today) }));
     const counts = Object.fromEntries(SHOW_FILTERS.map((f) => [f, shows.filter((x) => x.f === f).length]));
     const rows = shows.filter((x) => !i.filter || x.f === i.filter)
       .sort((a, b) => (i.filter === "upcoming" ? a.s.date.localeCompare(b.s.date) : b.s.date.localeCompare(a.s.date)));
+    const page = rows.slice(0, i.limit);
+    // One list for every deal; a show's deal shares its id. Only the money totals leave here.
+    const totalsOf = new Map((page.length ? await db.list("showDeals") : []).flatMap((d) => {
+      const t = d.totals as { income: number; expenses: number } | undefined;
+      return t ? [[d.id, { income: t.income, expenses: t.expenses, net: t.income - t.expenses }] as const] : [];
+    }));
     return {
       today, filter: i.filter ?? null, counts, count: rows.length,
-      shows: rows.slice(0, i.limit).map(({ s, f }) => ({ id: s.id, name: showName(s as never), date: s.date, status: s.status, filter: f, city: showCity(s as never), ...(s.reason ? { reason: s.reason } : {}) })),
+      shows: page.map(({ s, f }) => ({
+        id: s.id, name: showName(s as never), date: s.date, status: s.status, filter: f, city: showCity(s as never),
+        ...(s.reason ? { reason: s.reason } : {}), ...(totalsOf.has(s.id) ? { totals: totalsOf.get(s.id) } : {}),
+      })),
     };
   },
 });
@@ -104,14 +122,13 @@ const DealIn = z.strictObject({
 export const showsCreate = defineCommand({
   name: "shows.create", roles: ["admin", "mcp"],
   description:
-    "Create a show (and its admin-only showDeal) in one step. With pitchId it is the pitch's 'Booked it': links pitch.showIds and sets the pitch to booked. " +
-    "Where: venueId, or for a house concert hostContactIds (contacts) + place {city, address?} (no venue). kind: venue|house|festival|radio|other (default from the rest). " +
-    "editionId links a festival year (sets editionName). " +
-    "billedAs (configuration id) fills personnel; sound defaults from the venue; needs (poster/backline/merch). The show starts with no checklists (add them with shows.setChecklists). " +
-    "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee (cents) becomes the deal's first income line (not received). " +
-    "copyPitchComments (needs pitchId) copies the pitch's comments onto the show (shows/{id}/comments), keeping each one's author and time. " +
-    "billedAs null means explicitly no configuration (no fallback to the pitch's, no personnel); omitted falls back to the pitch's. " +
-    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members who are on the team and have an email, false invites nobody (the choice sticks on later syncs); omitted invites everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once it is confirmed.",
+    "Create a show (and its admin-only showDeal) in one step. 'We booked X on DATE' = shows.create with pitchId + date; it is the pitch's 'Booked it' (links pitch.showIds, sets the pitch to booked). " +
+    "The pitch does not supply the place: still give venueId, or for a house concert hostContactIds (contacts) + place {city, address?}. billedAs and personnel fall back to the pitch's. " +
+    "status hold|confirmed (default confirmed); kind: venue|house|festival|radio|other (default from the rest). editionId links a festival year (sets editionName). " +
+    "billedAs is a configuration id (context.now artist.configurations; null = none, no personnel) and fills personnel; sound defaults from the venue; needs (poster/backline/merch). " +
+    "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes the deal's first income line (not received). " +
+    "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
+    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members on the team with an email, false invites nobody (sticks on later syncs); omitted invites everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
     kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
@@ -194,10 +211,11 @@ const showPatch = z.strictObject({
 export const showsUpdate = defineCommand({
   name: "shows.update", roles: ["admin", "mcp"],
   description:
-    "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; prefer shows.cancel / shows.drop), reason (why it was canceled or dropped; null clears), kind, venueId (null = no venue: needs place), place {city, address?} (null clears), " +
-    "hostContactIds ([] clears), editionId (null unlinks; sets editionName), times {loadIn, soundcheck, doors, showStart, set, setLengthSec}, billedAs (also refills personnel unless personnel is given), personnel, sound, needs, docs, publishToBandsintown (listed once confirmed), ticketUrl, " +
-    "dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
-    "Checklists are not touched (shows.setChecklists). " +
+    "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; to cancel or drop use shows.setStatus / shows.cancel / shows.drop, which ask first; 'played' is set here or by shows.afterShow), reason (why it was canceled or dropped; null clears), kind, " +
+    "venueId (from a venue search; null = no venue: needs place), place {city, address?} (null clears), hostContactIds ([] clears), editionId (null unlinks; sets editionName), " +
+    "times {loadIn, soundcheck, doors, showStart, set, setLengthSec (seconds)} and sound REPLACE the whole object: send every key you want to keep. personnel and docs REPLACE the lists: read the show first and resend them all. " +
+    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
+    "Checklists are not touched (use the shows.*Checklist* commands). " +
     "Changing date, time, venue, people, status or publishToBandsintown re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
@@ -277,7 +295,7 @@ export const showsDrop = defineCommand({
 
 export const showsRemove = defineCommand({
   name: "shows.remove", roles: ["admin"], input: idInput,
-  description: "Archive a show (and its deal). Removes its Calendar event and Bandsintown listing.",
+  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Removes its Calendar event and Bandsintown listing.",
   async run(ctx, { id }) {
     await run(ctx, async (w) => {
       await requireShow(w, id);
@@ -291,7 +309,7 @@ export const showsRemove = defineCommand({
 export const showsSync = defineCommand({
   name: "shows.sync", roles: ["admin", "mcp"],
   input: z.strictObject({ id: z.string().min(1), calendar: z.boolean().optional() }),
-  description: "Re-sync a show with Bandsintown (and its Calendar event). calendar:true also creates the event if it has none. Use after an error.",
+  description: "Retry the sync after an error or warning: pushes the show to Bandsintown (if publishToBandsintown) and updates its existing Calendar event; calendar:true also creates the event if it has none. To add or remove the Calendar event on purpose use shows.calendar; to list or unlist on Bandsintown set publishToBandsintown with shows.update.",
   async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id, { createCalendar: i.calendar })); },
 });
 
@@ -342,7 +360,7 @@ const ownerIn = z.string().min(1).nullable().optional();
 
 export const showsSetChecklists = defineCommand({
   name: "shows.setChecklists", roles: ["admin", "mcp"],
-  description: "Replace all of a show's checklists, in order: [{id?, name, templateId? (the checklist template it came from; null = none), items: [{id?, label, done, ownerId? (musician; none = unassigned)}]}]. Lists and items without an id get one.",
+  description: "Replaces every list on the show: prefer the per-list and per-item commands (shows.addChecklist, addChecklistItem, editChecklistItem, checkItem...). In order: [{id?, name, templateId? (the checklist template it came from; null = none), items: [{id?, label, done, ownerId? (musician; none = unassigned)}]}]. Lists and items without an id get one.",
   input: z.strictObject({ id: z.string().min(1), checklists: z.array(checklistIn) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const before = await bandShow(w, i.id);
@@ -414,7 +432,7 @@ export const showsAddChecklistItem = defineCommand({
 });
 
 export const showsEditChecklistItem = defineCommand({
-  name: "shows.editChecklistItem", roles: ["admin", "member"], description: "Change a to-do's text and who it's assigned to (ownerId null = unassigned).",
+  name: "shows.editChecklistItem", roles: ["admin", "member"], description: "Change a to-do's text and who it's assigned to. Always send both label and ownerId: ownerId is required, a musician id assigns and null unassigns (omitting it is refused, so resend the current owner to keep it).",
   input: z.strictObject({ ...itemInput, label: z.string().trim().min(1), ownerId: z.string().min(1).nullable() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = await bandShow(w, i.id);
@@ -492,7 +510,7 @@ export const showsRemoveComment = defineCommand({
 
 export const showsCalendar = defineCommand({
   name: "shows.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
-  description: "Add the show to Google Calendar for everyone playing (on:true) or take it off (on:false).",
+  description: "Add the show's Google Calendar event for everyone playing (on:true) or take it off (on:false). Only touches Calendar; Bandsintown is shows.update publishToBandsintown, and a retry after an error is shows.sync.",
   async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id, i.on ? { createCalendar: true } : { removeCalendar: true })); },
 });
 
@@ -511,7 +529,7 @@ export const showDealsUpdate = defineCommand({
 
 export const showDealsSetIncome = defineCommand({
   name: "showDeals.setIncome", roles: ["admin", "mcp"],
-  description: "Replace a show's income lines (admin-only; id is the show id): [{id?, category: guarantee|door|tips|merch|other, amount (cents), method?: cash|venmo|check|square|card|bank|other, received}], and incomeNotes (null clears). Lines without an id get one.",
+  description: "Replaces the whole list of a show's income lines (admin-only; id is the show id): read records.get showDeals first and resend every line you keep (with its id), or they are lost. Lines: [{id?, category: guarantee|door|tips|merch|other, amount (cents), method?: cash|venmo|check|square|card|bank|other, received}], and incomeNotes (null clears). Lines without an id get one.",
   input: z.strictObject({
     id: z.string().min(1),
     income: z.array(z.strictObject({ id: z.string().min(1).optional(), category: incomeCategory, amount: cents.nonnegative(), method: payMethod.optional(), received: z.boolean() })),
@@ -535,7 +553,7 @@ export const showsAfter = defineCommand({
     "How'd it go? Rate the show and venue (1-5, both optional), notes, the crowd estimate (how many were in the room) " +
     "and paid attendance (the ticketed count). Something has to be filled in. A score left out keeps the one already " +
     "stored. Marks the show played. " +
-    "Does NOT enter money: income lines are showDeals.setIncome, expenses shows.setExpenses.",
+    "A bare 'mark it played' with no rating or notes is shows.update {status:\"played\"} instead. Does NOT enter money: income lines are showDeals.setIncome, expenses shows.setExpenses.",
   input: z.strictObject({
     id: z.string().min(1), show: z.number().int().min(1).max(5).optional(), venue: z.number().int().min(1).max(5).optional(),
     crowd: z.number().int().min(0).optional(), notes: z.string().optional(), paidAttendance: z.number().int().min(0).optional(),
@@ -595,7 +613,7 @@ export const checklistTemplatesCreate = defineCommand({
 });
 export const checklistTemplatesUpdate = defineCommand({
   name: "checklistTemplates.update", roles: ["admin", "mcp"],
-  description: "Edit a checklist template: name, items (the whole list, in order: [{id?, label}]). Lists already on shows are not touched.",
+  description: "Edit a checklist template: name, items (the whole list, in order: [{id?, label}]). Call checklistTemplates.list first and keep each existing item's id, or the item is recreated with a new one. Lists already on shows are not touched.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), items: templateItems.optional() }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requireTemplate(w, id);
@@ -622,7 +640,7 @@ export const checklistTemplatesRemove = defineCommand({
 
 export const showsSetFields = defineCommand({
   name: "shows.setFields", roles: ["admin"],
-  description: "Set a show's custom field values (the artist's showFields, defined with artists.addShowField): fields is the whole list of [{fieldId, value}]. A blank value, or a field left out, means no value. Unknown field ids are refused.",
+  description: "Set a show's custom field values (the artist's showFields, defined with artists.addShowField): fields is the whole list of [{fieldId, value}], so read the show's fields and the artist's showFields (records.get artists) first and resend the values you keep. A field the artist lacks is added with artists.addShowField first. A blank value, or a field left out, means no value. Unknown field ids are refused.",
   input: z.strictObject({ id: z.string().min(1), fields: z.array(z.strictObject({ fieldId: z.string().min(1), value: z.string() })) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = await bandShow(w, i.id);

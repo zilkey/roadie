@@ -212,6 +212,8 @@ function TimelineRow({ t }: { t: { at: number; who: string; kind: string; a: Row
     case "emailSent": body = <><b>{t.who} sent</b> {a.gmail?.subject} <span className="s">to {a.gmail?.to}</span></>; break;
     case "emailReply": body = <><b>Reply</b> <span className="s">on {a.gmail?.subject}</span><span className="block whitespace-pre-wrap text-sm">{a.text}</span></>; break;
     case "call": body = <><b>{t.who}</b> logged a call: {a.text}</>; break;
+    case "email": body = <><b>{t.who}</b> logged an email: {a.text}</>; break;
+    case "visit": body = <><b>{t.who}</b> logged a visit: {a.text}</>; break;
     case "comment": body = <><b>{t.who}:</b> {a.body}</>; break;
     default: body = <><b>{t.who}:</b> {a.text}</>;
   }

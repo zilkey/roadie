@@ -32,7 +32,7 @@ export type Comment = z.infer<typeof Comment>;
 
 /** pitches/{id}/activity/{id}. Append only. */
 export const Activity = entity({
-  type: z.enum(["status", "emailSent", "emailReply", "call", "note"]),
+  type: z.enum(["status", "emailSent", "emailReply", "call", "email", "visit", "note"]),
   fromStatus: pitchStatus.optional(),
   toStatus: pitchStatus.optional(),
   gmail: z.strictObject({ messageId: z.string(), threadId: z.string(), to: z.string(), subject: z.string() }).optional(),

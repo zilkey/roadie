@@ -26,7 +26,7 @@ const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pi
 export const search = defineCommand({
   name: "search", roles: [...READ],
   description:
-    "Search booking records by name, city or person (every word must match): venues, promoters, festivals, festival editions (years), contacts and pitches. " +
+    "Search booking records by name, city or person, including a contact's email (every word must match): venues, promoters, festivals, festival editions (years), contacts and pitches. " +
     "Returns {kind, id, name, sub} rows; use records.get with the id for the whole record. Search before creating anything so you do not make duplicates.",
   input: strict({ q: z.string().min(1), kinds: z.array(z.enum(SEARCH_KINDS)).optional(), limit: z.number().int().min(1).max(100).default(25) }),
   async run(ctx, i) {
@@ -38,7 +38,7 @@ export const search = defineCommand({
     const venues = allVenues.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
     const items = buildSearchItems({ venues, promoters, festivals, contacts } as never) as { kind: string; id: string; name: string; sub: string; haystack: string }[];
     for (const e of editions) items.push({ kind: "edition", id: e.id, name: `${e.festivalName} ${e.label}`, sub: ["Festival year", e.appDeadline?.date && `deadline ${e.appDeadline.date}`].filter(Boolean).join(" · "), haystack: `${e.festivalName} ${e.label} ${e.year}` });
-    for (const p of pitches) items.push({ kind: "pitch", id: p.id, name: p.target.name, sub: `Pitch · ${p.status}`, haystack: `${p.target.name} ${p.status} ${p.notes ?? ""}` });
+    for (const p of pitches.filter((p) => inArtist(ctx, "pitches", p))) items.push({ kind: "pitch", id: p.id, name: p.target.name, sub: `Pitch · ${p.status}`, haystack: `${p.target.name} ${p.status} ${p.notes ?? ""}` });
     const want = new Set<string>(i.kinds ?? SEARCH_KINDS);
     const hits = searchItems(items as never, i.q).filter((x) => want.has(x.kind)).slice(0, i.limit);
     return { count: hits.length, results: hits.map(({ kind, id, name, sub }) => ({ kind, id, name, sub })) };
@@ -47,16 +47,17 @@ export const search = defineCommand({
 
 // ---------- records.get / records.list ----------
 
-/** What an AI may read. Not users, AI keys or history; musicians are trimmed to names and ids. */
+/** What an AI may read. Not users, AI keys or history. Musicians are whole for admins (contact details, userId); mcp gets names and ids only. */
 const READABLE = [
   "venues", "promoters", "festivals", "editions", "contacts", "pitches", "emailTemplates", "shows", "showDeals", "availability",
-  "checklistTemplates", "songs", "files", "setlists", "rehearsals", "expenses", "statSnapshots", "artists", "musicians",
+  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "rehearsals", "expenses", "statSnapshots", "artists", "musicians",
 ] as const;
 const kindEnum = z.enum(READABLE);
 
-function present(kind: string, d: Record<string, unknown>) {
+function present(ctx: { role: string }, kind: string, d: Record<string, unknown>) {
   const o = { ...d };
   if (kind === "availability") delete o.linkTokens;
+  if (kind === "musicians" && ctx.role === "admin") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active, archivedAt: o.archivedAt, email: o.email, phone: o.phone, payHandle: o.payHandle, userId: o.userId };
   if (kind === "musicians") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active };
   return o;
 }
@@ -74,15 +75,19 @@ function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, un
 
 export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
-  description: "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch.",
+  description:
+    "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch. " +
+    "A venue includes this band's notes (and archived: true if the band hid it). Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {
     const d = await db.get(i.kind, i.id);
     if (!d || d.deletedAt || !inArtist(ctx, i.kind, d)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
-    const out: Record<string, unknown> = present(i.kind, d);
+    const out: Record<string, unknown> = present(ctx, i.kind, d);
     if (i.kind === "venues") {
       // The shared room plus this band's private notes (loadInNotes, notes, contactIds, promoterIds). Never another band's.
-      Object.assign(out, withNotes(d, (await notesByVenue(await callerArtistId(ctx))).get(d.id) ?? null));
+      const note = (await notesByVenue(await callerArtistId(ctx))).get(d.id) ?? null;
+      Object.assign(out, withNotes(d, note));
+      if (note?.deletedAt) out.archived = true;
     }
     if (i.kind === "pitches") {
       out.activity = (await db.list(`pitches/${i.id}/activity`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
@@ -95,16 +100,29 @@ export const recordsGet = defineCommand({
 
 export const recordsList = defineCommand({
   name: "records.list", roles: [...READ],
-  description: "List records of one kind (newest changes first), live ones only. Use search to find specific ones.",
-  input: strict({ kind: kindEnum, limit: z.number().int().min(1).max(200).default(50) }),
+  description:
+    "List records of one kind (newest changes first), live ones only. Use search to find specific ones. Optional filters, combined with AND: " +
+    "showId (expenses of a show; availability asks for a show), pitchId (availability asks for a pitch), rehearsalId, " +
+    "status (e.g. the Pitch List by status; pitch rows include every status, not just active ones), venueId (pitches or shows at a venue).",
+  input: strict({
+    kind: kindEnum, limit: z.number().int().min(1).max(200).default(50),
+    showId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), pitchId: z.string().min(1).optional(),
+    status: z.string().min(1).optional(), venueId: z.string().min(1).optional(),
+  }),
   async run(ctx, i) {
     let rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d));
     if (i.kind === "venues") {
       const notes = await notesByVenue(await callerArtistId(ctx));
       rows = rows.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
     }
+    const venueOf = (d: Record<string, any>) => (i.kind === "shows" ? d.venue?.id : i.kind === "pitches" ? (d.target?.kind === "venue" ? d.target.id : undefined) : d.venueId);
+    if (i.showId) rows = rows.filter((d) => d.showId === i.showId);
+    if (i.rehearsalId) rows = rows.filter((d) => d.rehearsalId === i.rehearsalId);
+    if (i.pitchId) rows = rows.filter((d) => d.pitchId === i.pitchId);
+    if (i.status) rows = rows.filter((d) => d.status === i.status);
+    if (i.venueId) rows = rows.filter((d) => venueOf(d) === i.venueId);
     rows = rows.sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
-    return { count: rows.length, rows: rows.slice(0, i.limit).map((r) => present(i.kind, r)) };
+    return { count: rows.length, rows: rows.slice(0, i.limit).map((r) => present(ctx, i.kind, r)) };
   },
 });
 
@@ -119,7 +137,7 @@ export const pitchesNeedingFollowUp = defineCommand({
   async run(ctx, i) {
     const today = i.today ?? todayStr();
     const day = (ms: number) => Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(new Date(ms).toISOString().slice(0, 10) + "T00:00:00Z")) / 86_400_000);
-    const pitches = (await db.list("pitches")).filter((p) => isActive(p.status));
+    const pitches = (await db.list("pitches")).filter((p) => isActive(p.status) && inArtist(ctx, "pitches", p));
     const contacts = new Map((await db.list("contacts")).map((c) => [c.id, c]));
     const out = [];
     for (const p of pitches) {

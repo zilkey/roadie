@@ -73,7 +73,7 @@ const expenses = async () => (await db.list("expenses")).filter((e) => !e.delete
 test("tool list comes from the registry and leaves out what Roadie must not do", () => {
   const names = toolDefs("admin").map((t) => t.name);
   for (const must of ["expenses.add", "expenses.estimateGas", "geo.autocomplete", "me.updateDriving", "rehearsals.setLocation", "rehearsals.importSetlist", "shows.update", "shows.cancel", "shows.setStatus", "records.get", "context.now", "search", "history.undoRun", "ui.navigate"]) assert.ok(names.includes(must), must);
-  for (const bad of ["users.add", "users.update", "users.remove", "mcpTokens.create", "mcpTokens.revoke", "artists.update", "artists.create", "artists.addSongField", "artists.updateSongField", "artists.removeSongField", "artists.reorderSongFields", "assistant.setPrefs", "drafts.save", "drafts.list", "history.myRuns", "pitches.checkReplies"]) {
+  for (const bad of ["users.add", "users.update", "users.remove", "mcpTokens.create", "mcpTokens.revoke", "artists.create", "assistant.setPrefs", "drafts.save", "drafts.list", "history.myRuns", "pitches.checkReplies"]) {
     assert.equal(names.includes(bad), false, bad);
     assert.ok(EXCLUDED.some((e) => bad === e || (e.endsWith(".") && bad.startsWith(e))), `${bad} is in the explicit list`);
   }

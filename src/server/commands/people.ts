@@ -193,7 +193,7 @@ export const usersRemove = defineCommand({
 export const usersAddToBand = defineCommand({
   name: "users.addToBand",
   roles: ["admin"],
-  description: "Make a Team-only person a Band Member. Un-archives their linked musician record (with these instruments) if they have one, otherwise creates and links one.",
+  description: "Add a person who already has a sign-in (Team) to the band: id is their userId from people.list (shown with a userId but not inBand). Un-archives their linked musician record (with these instruments) if they have one, otherwise creates and links one. Changes no access.",
   input: z.strictObject({ id: z.string().min(1), instruments: InstrumentList }),
   async run(ctx, { id, instruments }) {
     const artistId = artistOfCtx(ctx);
@@ -222,14 +222,14 @@ const musicianFields = MusicianInput.omit({ userId: true, archivedAt: true }).ex
 export const musiciansCreate = defineCommand({
   name: "musicians.create",
   roles: ["admin"],
-  description: "Add a Band Member (member or sub) with at least one instrument. No login needed; use users.add with musician to also give Team access.",
+  description: "Add a Band Member (member or sub) with at least one instrument. Search first (search, kind musician) so you don't duplicate someone. If the person already has a sign-in (people.list shows them with a userId but not inBand), use users.addToBand instead. Invites and sign-in access are done on the People page.",
   input: musicianFields.extend({ active: z.boolean().default(true) }),
   run: (ctx, input) => db.create(ctx, "musicians", input),
 });
 export const musiciansUpdate = defineCommand({
   name: "musicians.update",
   roles: ["admin"],
-  description: "Edit a Band Member (name, instruments, email, phone, pay handle). Archive and restore have their own commands.",
+  description: "Edit a Band Member (name, instruments, email, phone, pay handle). instruments replaces the whole list, so read the person first to add one. For someone with a sign-in, their sign-in name and email are managed on the People page. Suggest a readable phone format, e.g. 555-123-4567. Archive and restore have their own commands.",
   input: patchInput(musicianFields),
   run: (ctx, { id, patch }) => db.update(ctx, "musicians", id, patch as Record<string, unknown>),
 });
@@ -422,8 +422,34 @@ function fieldCommands(k: Kind) {
 const [artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields] = fieldCommands(SONG);
 const [artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields] = fieldCommands(SHOW);
 
+/** Everyone for this artist, as the People page shows them: Team users (with their linked musician), then musicians with no Team access. Mirrors derivePeople in components/people/shared.tsx (a client module). */
+export const peopleList = defineCommand({
+  name: "people.list", roles: ["admin"], input: z.strictObject({}),
+  description: "Read-only: everyone for this artist, as [{userId, musicianId, name, email, role (admin, member or null), mcpAccess, inBand, archived}]. Shows who has a sign-in (Team: userId set), who's an admin, who has AI access, and who's in the band. Changing access is done by the person on the People page.",
+  async run(ctx) {
+    const artistId = artistOfCtx(ctx);
+    const [users, musicians] = (await Promise.all([db.list("users"), db.list("musicians")])).map((rows) => rows.filter((d) => !d.deletedAt));
+    const team = users.filter((u) => { const r = roleIn(u, artistId); return r === "admin" || r === "member"; });
+    const teamIds = new Set(team.map((u) => u.id));
+    const used = new Set<string>();
+    const people: { userId: string | null; musicianId: string | null; name: string; email: string; role: "admin" | "member" | null; mcpAccess: boolean; inBand: boolean; archived: boolean }[] = [];
+    for (const u of team) {
+      const m = musicians.find((x) => x.id === u.musicianId) ?? musicians.find((x) => x.userId === u.id);
+      if (m) used.add(m.id);
+      const role = roleIn(u, artistId) as "admin" | "member";
+      people.push({ userId: u.id, musicianId: m?.id ?? null, name: (u.name as string) || (m?.name as string) || (u.email as string) || "", email: (u.email as string) ?? "", role, mcpAccess: role === "admin" && mcpIn(u, artistId), inBand: !!m && !m.archivedAt, archived: false });
+    }
+    for (const m of musicians) {
+      if (used.has(m.id) || (m.userId && teamIds.has(m.userId as string))) continue;
+      people.push({ userId: null, musicianId: m.id, name: m.name as string, email: (m.email as string) ?? "", role: null, mcpAccess: false, inBand: !m.archivedAt, archived: !!m.archivedAt });
+    }
+    people.sort((a, b) => a.name.localeCompare(b.name));
+    return { people };
+  },
+});
+
 export const peopleCommands = [
-  usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
+  peopleList, usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
   artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields,
   artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields,
 ];

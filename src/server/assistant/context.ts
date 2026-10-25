@@ -20,7 +20,8 @@ export function tonightDate(now: Date): string {
 export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "role" | "musicianId">) {
   const now = ctx.now ?? new Date();
   const today = dateInBandZone(now);
-  const [shows, deals, expenses] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses")]);
+  const [shows, deals, expenses, artists, musicians] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses"), list(ctx, "artists"), list(ctx, "musicians")]);
+  const a = artists.find((x) => x.id === ctx.artistId) ?? artists[0]; // records.list is already limited to the current artist
   const live = shows.filter((x) => !isOff(x));
   // Money is entered once the deal has income lines.
   const settled = new Set(deals.filter((d) => ((d.income as unknown[] | undefined) ?? []).length > 0).map((d) => d.id));
@@ -29,6 +30,8 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
     now: now.toISOString(), localTime: fmtInstant(now, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: BAND_TIME_ZONE,
     today, tonight,
+    artist: a ? { id: a.id, name: a.name, slug: a.slug, configurations: ((a.configurations ?? []) as Row[]).map((c) => ({ id: c.id, name: c.name })) } : null,
+    band: musicians.filter((m) => !m.archivedAt).map((m) => ({ musicianId: m.id, name: m.name, userId: m.userId ?? null, instruments: m.instruments ?? [] })),
     todaysShows: live.filter((x) => x.date === today || x.date === tonight).map(showLine),
     unsettledShows: live.filter((x) => isPlayed(x as never, today) && !settled.has(x.id)).map(showLine),
     openExpenses: expenses.filter((e) => !e.deletedAt && owesBack(e as never))
@@ -36,7 +39,7 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   };
 }
 
-export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician"] as const;
+export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician", "setlistTemplate"] as const;
 const BOOKING = new Set(["venue", "promoter", "festival", "edition", "contact", "pitch"]);
 
 /** Venues, promoters, festivals, years, contacts and pitches (the `search` command) plus shows, songs and musicians, by name. */
@@ -44,7 +47,7 @@ export async function searchAll(ctx: Ctx, i: { q: string; kinds?: string[]; limi
   const want = new Set<string>(i.kinds?.length ? i.kinds : SEARCH_KINDS);
   const words = i.q.toLowerCase().split(/\s+/).filter(Boolean);
   const hit = (text: string) => words.every((w) => text.toLowerCase().includes(w));
-  const out: { kind: string; id: string; name: string; sub?: string }[] = [];
+  const out: { kind: string; id: string; name: string; sub?: string; userId?: string }[] = [];
   if (want.has("show")) {
     for (const s of await list(ctx, "shows")) {
       if (hit(`${showName(s as ShowPlaceLike)} ${showCity(s as ShowPlaceLike) ?? ""} ${s.date} ${s.status} ${s.editionName ?? ""} show`)) out.push({ kind: "show", id: s.id, name: `${showName(s as ShowPlaceLike)} · ${s.date}`, sub: `Show · ${s.status}` });
@@ -56,7 +59,8 @@ export async function searchAll(ctx: Ctx, i: { q: string; kinds?: string[]; limi
     out.push(...r.results);
   }
   if (want.has("song")) for (const s of await list(ctx, "songs")) if (hit(`${s.title}`)) out.push({ kind: "song", id: s.id, name: s.title, sub: `Song · ${s.status}` });
-  if (want.has("musician")) for (const m of await list(ctx, "musicians")) if (hit(`${m.name}`)) out.push({ kind: "musician", id: m.id, name: m.name, sub: "Musician" });
+  if (want.has("musician")) for (const m of await list(ctx, "musicians")) if (hit(`${m.name}`)) out.push({ kind: "musician", id: m.id, name: m.name, sub: "Musician", ...(m.userId ? { userId: m.userId } : {}) });
+  if (want.has("setlistTemplate")) for (const t of await list(ctx, "setlistTemplates")) if (hit(`${t.name}`)) out.push({ kind: "setlistTemplate", id: t.id, name: t.name, sub: "Setlist template" });
   const rows = out.slice(0, i.limit ?? 25);
   return { count: rows.length, results: rows };
 }
