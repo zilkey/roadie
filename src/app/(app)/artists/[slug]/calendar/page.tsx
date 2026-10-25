@@ -45,13 +45,12 @@ function Calendar() {
 
   return (
     <div className="grid gap-5" data-testid="calendar-page">
-      <PageTitle title="Calendar" />
-      <div className={s.bar}>
+      <PageTitle title="Calendar" actions={<>
         <button type="button" className={`btn ghost ${s.nav}`} aria-label="Previous month" onClick={() => go(shiftMonth(ym, -1))}>‹</button>
         <span className={s.month} data-testid="calendar-month" aria-live="polite">{monthTitle(ym)}</span>
         <button type="button" className={`btn ghost ${s.nav}`} aria-label="Next month" onClick={() => go(shiftMonth(ym, 1))}>›</button>
         <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => go(today.slice(0, 7))}>Today</button>
-      </div>
+      </>} />
       <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
       <div className={s.layout}>
         <div className={s.main}>

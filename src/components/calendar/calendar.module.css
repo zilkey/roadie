@@ -1,7 +1,6 @@
 .layout { display: grid; gap: 20px; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 @media (min-width: 1024px) { .layout { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
 .main, .side { display: grid; gap: 14px; min-width: 0; }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .month { font-weight: 800; font-size: 18px; min-width: 9ch; text-align: center; }
 .nav { min-width: 44px; min-height: 44px; padding: 0; font-size: 20px; }
 .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--border); gap: 1px; min-width: 0; }
@@ -55,3 +54,5 @@
 .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 13px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 14px; height: 14px; border-radius: 4px; border: 2px solid transparent; flex: none; }
+/* .sw's border shorthand comes later than .k-rehearsal and would blank its ring; restate it, as a ring like the grid dot. */
+.sw.k-rehearsal { border-color: var(--accent); border-radius: 50%; }
