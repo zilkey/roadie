@@ -195,12 +195,12 @@ function NewRehearsal({ m }: { m: Music }) {
       date: v.date, ...(v.location ? { location: v.location } : {}), ...(v.notes.trim() ? { notes: v.notes.trim() } : {}),
       personnel: v.personnel, songs: songList(v.ran), files: picks,
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/songs/rehearsals/${r.id}`); }
+    if (r?.id) { await draft.clear(); router.push(`/rehearsals/${r.id}`); }
   }
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="rehearsal-page">
-      <PageTitle back={<Link href="/songs?seg=rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Log a rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
+      <PageTitle back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Log a rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
       {!draft.ready ? <span className="s">Loading…</span> : <div className="cols">
         <div className="col-main">
           <div className="card">
@@ -280,7 +280,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   return (
     <div className="grid gap-5" data-testid="rehearsal-page">
       <PageTitle
-        back={<Link href="/songs?seg=rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
+        back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
         title={`Rehearsal · ${fmtLong(form.date)}`}
         sub={admin ? (
           <span className="flex flex-wrap items-center gap-2">
@@ -297,7 +297,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
           <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>
           {admin && (
             <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
-              items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/songs"); } }]} />
+              items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); } }]} />
           )}
         </>} />
 

@@ -48,27 +48,31 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   const label = file.kind === "chart" && file.key ? `Chart in ${file.key}` : file.title;
   const fixIds = { ids: [file.id] };
   return (
-    <div className="grid gap-1.5 rounded-lg border border-line p-2" data-testid={`file-${file.id}`}>
-      <div className="flex items-center gap-2">
+    <div className="sg-row" data-testid={`file-${file.id}`}>
+      <div className="sg-rowh">
         <FileIcon mime={file.mimeType} provider={isDrive ? undefined : provider} />
-        <span className="grid min-w-0 flex-1"><b className="truncate text-sm" data-testid="file-label">{label}</b>{label !== file.title && <span className="s truncate">{file.title}</span>}</span>
-        {inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
-        <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
+        <span className="sg-rowt">
+          <b className="truncate" data-testid="file-label">{label}</b>
+          {label !== file.title && <span className="s truncate">{file.title}</span>}
+          {/* The sharing state reads under the name: unchecked is a warning, a real gap lists who is locked out. */}
+          {admin && isDrive && !checked && <span className="sg-warn" data-testid="file-unchecked">Not checked yet — run the sharing check.</span>}
+          {admin && checked && names.length > 0 && <span className="sg-warn" data-testid="cant-open">Can&apos;t open: {names.join(", ")}</span>}
+          {admin && checked && !file.inBandFolder && <span className="sg-warn">Outside the band folder ({file.ownerEmail}).</span>}
+          {admin && checked && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
+        </span>
+        <span className="sg-rowa">
+          {inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
+          <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
+          {admin && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button>}
+        </span>
       </div>
       {open && inline && <Player file={file} />}
       {admin && checked && (names.length > 0 || !file.inBandFolder) && (
-        <div className="grid gap-1.5" data-testid="file-gap">
-          {names.length > 0 && <span className="s" data-testid="cant-open">Can&apos;t open: {names.join(", ")}</span>}
-          {!file.inBandFolder && <span className="s">Outside the band folder ({file.ownerEmail}).</span>}
-          <div className="flex flex-wrap gap-2">
-            {!file.inBandFolder && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>}
-            {names.length > 0 && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.shareWithBand", fixIds)} data-testid="fix-share">Share with band</button>}
-          </div>
+        <div className="flex flex-wrap gap-2" data-testid="file-gap">
+          {!file.inBandFolder && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>}
+          {names.length > 0 && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.shareWithBand", fixIds)} data-testid="fix-share">Share with band</button>}
         </div>
       )}
-      {admin && checked && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
-      {admin && isDrive && !checked && <span className="s" data-testid="file-unchecked">Not checked yet — run the sharing check.</span>}
-      {admin && <div><button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button></div>}
       <ErrorBox error={error} />
     </div>
   );
@@ -92,7 +96,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
     // A blank value is no value: no entry rather than an empty string.
     as.patch({ fields: defs.filter((d) => next[d.id]?.trim()).map((d) => ({ fieldId: d.id, value: next[d.id]!.trim() })) });
   };
-  const shown = defs.filter((d) => saved[d.id]?.trim());
   const [edit, setEdit] = useState(false);
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -113,7 +116,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   }
 
   return (
-    <div className="grid gap-5" data-testid="song-page">
+    <div className="sg-page" data-testid="song-page">
       <PageTitle
         back={<Link href="/songs" className="back-link" data-testid="back">← All songs</Link>}
         title={song.title}
@@ -125,10 +128,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
             items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
         </> : undefined} />
-      {song.writers && <span className="s">Written by {song.writers}</span>}
-      {song.notes && <p className="text-sm">{song.notes}</p>}
-      <div className="cols">
-      <div className="col-main">
       {edit && admin && (
         <div className="card" data-testid="song-form">
           <label className="grid gap-1"><span className="lbl">Title</span><input className="input" required data-testid="edit-title" {...as.bind("title", song.title, { toPatch: (t) => t.trim() })} /></label>
@@ -159,48 +158,64 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </div>
       )}
 
-      {!edit && shown.length > 0 && (
-        <dl className="card grid gap-2 m-0" data-testid="song-fields">
-          {shown.map((d) => <div key={d.id} className="grid gap-0.5"><dt className="lbl">{d.label}</dt><dd className="m-0 text-sm" data-testid={`field-${d.id}`}>{saved[d.id]}</dd></div>)}
-        </dl>
-      )}
-
-      {files.length === 0 && <div className="empty" data-testid="no-files"><span>No files yet.</span></div>}
-      {KIND_ORDER.map((k) => {
-        const list = files.filter((f) => f.kind === k).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
-        if (!list.length) return null;
-        return (
-          <div key={k} className="card" data-testid={`files-${k}`}>
-            <span className="card-h">{KIND_LABEL[k]}</span>
-            {list.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}
-          </div>
-        );
-      })}
-      </div>
-      <div className="col-side">
-      <div className="card" data-testid="last-rehearsed">
-        <span className="lbl">Last rehearsed</span>
-        <b>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</b>
-      </div>
-
-      {admin && (
-        <div className="card">
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
-            <button className="btn ghost" disabled={busy} onClick={check} data-testid="run-sharing-check">Run sharing check</button>
-            {lastCheck && <span className="s" data-testid="checked-at">Last checked {lastCheck}</span>}
-          </div>
-          {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
-          {adding && (
-            <div className="grid gap-2">
-              <DrivePicker syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />
-              <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
+      {!edit && (
+        <section className="sg-sec" aria-labelledby="song-details-h">
+          <h2 id="song-details-h" className="sg-lbl">Details</h2>
+          <dl className="card sg-dl" data-testid="song-fields">
+            <div><dt className="lbl">Written by</dt><dd data-testid="field-writers">{song.writers || <span className="d-muted">—</span>}</dd></div>
+            <div data-testid="last-rehearsed">
+              <dt className="lbl">Last rehearsed</dt>
+              <dd>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</dd>
             </div>
-          )}
-        </div>
+            {/* The artist's own per-song facts ("Ingrid plays", "Capo"), in the artist's order; an unfilled one still holds its place. */}
+            {defs.map((d) => (
+              <div key={d.id}>
+                <dt className="lbl">{d.label}</dt>
+                <dd data-testid={`field-${d.id}`}>{saved[d.id]?.trim() || <span className="d-muted">—</span>}</dd>
+              </div>
+            ))}
+            {song.notes && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><p className="sg-note">{song.notes}</p></dd></div>}
+          </dl>
+        </section>
       )}
-      </div>
-      </div>
+
+      <section className="sg-sec" aria-labelledby="song-files-h">
+        <div className="sg-sech">
+          <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
+          {admin && <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>}
+        </div>
+
+        {admin && (
+          <>
+            <div className="sg-strip">
+              <span className="sg-strip-t">
+                <b>Sharing check</b>
+                <span className="s" data-testid="checked-at">{lastCheck ? `Last checked ${lastCheck}` : "Never checked"}</span>
+              </span>
+              <button className="btn outline" disabled={busy} onClick={check} data-testid="run-sharing-check">Run sharing check</button>
+            </div>
+            {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
+            {adding && (
+              <div className="card">
+                <DrivePicker syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />
+                <button className="btn acc" disabled={busy || picks.length === 0} onClick={attach} data-testid="attach-files">Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}</button>
+              </div>
+            )}
+          </>
+        )}
+
+        {files.length === 0 && <div className="empty" data-testid="no-files"><span>No files yet.</span></div>}
+        {KIND_ORDER.map((k) => {
+          const list = files.filter((f) => f.kind === k).sort((a, b) => (a.key ?? "").localeCompare(b.key ?? "") || a.title.localeCompare(b.title));
+          if (!list.length) return null;
+          return (
+            <div key={k} className="sg-files" data-testid={`files-${k}`}>
+              <h3>{KIND_LABEL[k]}</h3>
+              {list.map((f) => <FileLine key={f.id} file={f} m={m} admin={admin} />)}
+            </div>
+          );
+        })}
+      </section>
       <ErrorBox error={error} />
     </div>
   );

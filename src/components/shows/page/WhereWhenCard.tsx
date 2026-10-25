@@ -135,7 +135,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
         if (form.saveToVenue && form.venueId && form.where !== "house") {
           const e164 = phone ? toE164(phone) : null;
           if (phone && !e164) { setLocalError("That phone number doesn't look right. Use 10 digits, like (303) 555-0142."); return false; }
-          const r = await call<{ id: string }>("contacts.create", { name, phones: e164 ? [e164] : [], emails: [], attachTo: { kind: "venue", id: form.venueId } });
+          const r = await call<{ id: string }>("contacts.create", { name, phones: e164 ? [e164] : [], emails: [], attachTo: { kind: "venues", id: form.venueId } });
           if (!r?.id) return false;
           contactId = r.id;
         }
@@ -161,7 +161,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
     <div className="grid gap-0.5"><span className="lbl">{label}</span>{v ? <b>{fmtTime(v)}</b> : dash}</div>
   );
   const dc = show.dayOfContact;
-  const nameEl = show.venue && admin
+  const nameEl = show.venue
     ? <Link href={`/booking/venues/${show.venue.id}`} className="text-[17px] font-bold" style={{ color: "var(--ink)" }} data-testid="where-venue">{show.venue.name}</Link>
     : <span className="text-[17px] font-bold" data-testid="where-venue">{showName(show)}</span>;
 

@@ -21,15 +21,18 @@ export const ROUTES = {
   bookingTemplates: { title: "Email templates", path: "/booking/templates" },
   songs: { title: "Songs", path: "/songs" },
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
-  setlist: { title: "Setlist template", path: "/songs/setlists/:id", params: ["id"] },
-  rehearsal: { title: "Rehearsal", path: "/songs/rehearsals/:id", params: ["id"] },
+  setlists: { title: "Setlist Templates", path: "/setlists" },
+  setlist: { title: "Setlist template", path: "/setlists/:id", params: ["id"] },
+  rehearsals: { title: "Rehearsals", path: "/rehearsals" },
+  rehearsal: { title: "Rehearsal", path: "/rehearsals/:id", params: ["id"] },
   money: { title: "Money", path: "/money" },
   expense: { title: "New expense", path: "/money/expense" },
   stats: { title: "Stats", path: "/stats" },
-  artist: { title: "Artist", path: "/admin/artist" },
+  artist: { title: "General", path: "/admin/artist" },
+  lineups: { title: "Lineups", path: "/admin/lineups" },
   people: { title: "People", path: "/admin/people" },
-  mcp: { title: "Connect Roadie to Claude", path: "/admin/mcp" },
-  history: { title: "History", path: "/admin/history" },
+  mcp: { title: "Integrations", path: "/admin/mcp" },
+  history: { title: "Activity", path: "/admin/history" },
 } as const satisfies Record<string, RouteDef>;
 
 /** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
@@ -60,10 +63,11 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
   return { slug: m[1], rest: rest + (m[3] ?? "") };
 }
 /**
- * The first path segments of band pages from before artists had URLs (/shows/1, /booking, /admin/people...). Old links
- * and bookmarks to these redirect to the same page in the signed-in person's artist.
+ * The first path segments of every band page (/shows/1, /booking, /admin/people...). Two jobs: `toArtistHref` scopes an
+ * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
+ * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["home", "shows", "booking", "songs", "money", "stats", "admin"] as const;
+export const LEGACY_SECTIONS = ["home", "shows", "booking", "songs", "setlists", "rehearsals", "money", "stats", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**

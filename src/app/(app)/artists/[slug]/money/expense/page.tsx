@@ -149,11 +149,11 @@ function AddExpense() {
       ...(gas && own && showHomeBox && fromPick && draft.value.saveHome ? { saveAsHome: { ...(fromPick.name ? { name: fromPick.name } : {}), address: fromPick.address, lat: fromPick.lat, lng: fromPick.lng } } : {}),
       ...(gas && isAdmin && rehearsalId && !rehHasLoc && toPick && draft.value.setRehearsal ? { setAsRehearsalLocation: { ...(toPick.name ? { name: toPick.name } : {}), address: toPick.address, lat: toPick.lat, lng: toPick.lng } } : {}),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r) { await draft.clear(); router.push(rehearsalId ? `/songs/rehearsals/${rehearsalId}` : "/money"); }
+    if (r) { await draft.clear(); router.push(rehearsalId ? `/rehearsals/${rehearsalId}` : "/money"); }
   }
   async function cancel() {
     await draft.clear({ reset: true });
-    router.push(rehearsalId ? `/songs/rehearsals/${rehearsalId}` : "/money");
+    router.push(rehearsalId ? `/rehearsals/${rehearsalId}` : "/money");
   }
 
   const miles = good?.miles ?? cur?.miles;

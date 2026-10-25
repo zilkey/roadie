@@ -126,3 +126,11 @@ export const datePast = (d: string, today: string) => d < today;
 export function fmtPitchDate(d: string): string {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
+
+/** What a pitch row's Pitch cell says: the configuration it was pitched as, and its dates in order. */
+export function pitchCellText(p: { pitchedAs?: string | null; dates?: readonly PitchDateIn[] }, configs: { id: string; name: string }[]): { config: string; dates: string } {
+  return {
+    config: configs.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet",
+    dates: sortedDates(p.dates).map(fmtPitchDate).join(", ") || "No dates yet",
+  };
+}

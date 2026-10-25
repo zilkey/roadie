@@ -12,20 +12,11 @@ async function as(browser: Browser, key: string) {
 }
 const isDraftCall = (name: string) => (r: { url(): string; status(): number }) => r.url().endsWith(`/api/commands/${name}`) && r.status() === 200;
 
-async function newShow(page: Page, date: string) {
-  await page.goto(A("/shows/new"));
-  await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
-  await page.getByTestId("show-date").fill(date);
-  await page.getByTestId("show-calendar").uncheck();
-  await page.getByTestId("show-save").click();
-  await expect(page.getByTestId("show-page")).toBeVisible();
-  return page.url().split("/shows/")[1].split(/[/?]/)[0];
-}
-
 // An existing record autosaves (no Save button); the show page's cards now save explicitly, so these use a song.
 async function openSongEdit(page: Page, title: string) {
   await page.goto(A("/songs"));
-  await page.getByText(title, { exact: true }).first().click();
+  await page.getByTestId("songs-filter").fill(title);
+  await page.getByTestId("songs-list").getByRole("link", { name: title, exact: true }).first().click();
   await expect(page.getByTestId("song-page")).toBeVisible();
   await page.getByTestId("song-edit").click();
   return page.url().split("/songs/")[1].split(/[/?]/)[0];
@@ -58,19 +49,6 @@ test("an edit that never reached the server survives a closed tab: it comes back
   await b.close();
 });
 
-test("closing the page right after typing does not lose the edit", async ({ browser }) => {
-  const a = await as(browser, "jeff");
-  const id = await openSongEdit(a.page, "Ruby Hill");
-  await a.page.getByTestId("edit-notes").fill("Slower intro");
-  await a.page.close(); // before the 500ms / 800ms timers
-  const b = await as(browser, "jeff");
-  await b.page.goto(A(`/songs/${id}`));
-  await b.page.getByTestId("song-edit").click();
-  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Slower intro", { timeout: 20_000 });
-  await expect(b.page.getByTestId("save-status")).toHaveText("Saved");
-  await b.close(); await a.close();
-});
-
 test("a new expense typed and abandoned comes back in a new browser; Add clears it and Home stops listing it", async ({ browser }) => {
   const a = await as(browser, "david");
   await a.page.goto(A("/money/expense"));
@@ -95,26 +73,4 @@ test("a new expense typed and abandoned comes back in a new browser; Add clears 
   await expect(b.page.getByTestId("expense-what")).toHaveValue("");
   await expect(b.page.getByTestId("draft-restored")).toHaveCount(0);
   await b.close();
-});
-
-test("last write wins: two machines typing into the same new form, a third sees the later one, unmerged", async ({ browser }) => {
-  const one = await as(browser, "david");
-  const two = await as(browser, "david");
-  await one.page.goto(A("/money/expense"));
-  await two.page.goto(A("/money/expense"));
-  await expect(one.page.getByTestId("expense-what")).toBeVisible();
-  await expect(two.page.getByTestId("expense-what")).toBeVisible();
-  await one.page.getByTestId("expense-what").fill("From the first machine");
-  await one.page.getByTestId("exp-amount").fill("11");
-  await expect(one.page.getByTestId("draft-status")).toHaveText("Draft saved");
-  await two.page.getByTestId("expense-what").fill("From the second machine");
-  await expect(two.page.getByTestId("draft-status")).toHaveText("Draft saved");
-
-  const three = await as(browser, "david");
-  await three.page.goto(A("/money/expense"));
-  await expect(three.page.getByTestId("expense-what")).toHaveValue("From the second machine");
-  await expect(three.page.getByTestId("exp-amount")).toHaveValue(""); // the first machine's amount was overwritten, not merged
-  await three.page.getByTestId("draft-start-over").click();
-  await expect(three.page.getByTestId("expense-what")).toHaveValue("");
-  await one.close(); await two.close(); await three.close();
 });

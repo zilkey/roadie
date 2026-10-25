@@ -1,12 +1,13 @@
 /** Per-user prefs at userPrefs/{uid}. Written with firebase-admin directly (like drafts): personal, so no history entry and no undo. */
-import { isSectionId, normalizeOrder, type SectionId } from "@/schema/sections";
+import { DEFAULT_HIDDEN, isSectionId, normalizeOrder, type SectionId } from "@/schema/sections";
 import { firestore } from "./admin";
 
 const ref = (uid: string) => firestore().collection("userPrefs").doc(uid);
 
+/** The caller's hidden sections; DEFAULT_HIDDEN until they have stored a list of their own (an empty list is their own). */
 export async function hiddenSections(uid: string): Promise<SectionId[]> {
   const v = (await ref(uid).get()).data()?.hiddenSections;
-  return Array.isArray(v) ? v.filter(isSectionId) : [];
+  return Array.isArray(v) ? v.filter(isSectionId) : [...DEFAULT_HIDDEN];
 }
 
 export async function setSectionHidden(uid: string, section: SectionId, hidden: boolean): Promise<SectionId[]> {

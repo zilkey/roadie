@@ -209,8 +209,8 @@ test("drafts: keyed by uid + path, last write wins, list newest first and own on
 test("drafts: path shape and size are validated", async () => {
   const jeff = await makeUser("jeff@example.com", "admin");
   const save = (b: object) => dispatch("drafts.save", bearer(jeff.token), { values: {}, route: "/x", ...b });
-  for (const ok of ["expenses", "shows/abc-1_2", "venues/v1/contacts", "pitches/p1/comments"]) assert.ok(DRAFT_PATH.test(ok), ok);
-  for (const bad of ["", "/expenses", "expenses/", "a/b/c/d", "shows/a b", "shows/a~b", "shows//x", "../x", "shows/x/1bad", "1shows"]) {
+  for (const ok of ["expenses", "shows/abc-1_2", "venues/v1/contacts", "pitches/p1/comments", "artists/a1#lineups"]) assert.ok(DRAFT_PATH.test(ok), ok);
+  for (const bad of ["", "/expenses", "expenses/", "a/b/c/d", "shows/a b", "shows/a~b", "shows//x", "../x", "shows/x/1bad", "1shows", "shows/x#", "shows/x#Bad", "shows#s"]) {
     assert.equal(DRAFT_PATH.test(bad), false, bad);
     assert.equal((await save({ path: bad })).status, 400, bad);
   }
@@ -220,6 +220,8 @@ test("drafts: path shape and size are validated", async () => {
   assert.equal((await save({ path: "songs", values: { x: "y".repeat(100_001) } })).status, 400, "over ~100KB");
   assert.equal((await save({ path: "songs", values: { x: "y".repeat(90_000) } })).status, 200);
   assert.ok(isEditPath("shows/x") && !isEditPath("shows") && !isEditPath("shows/x/gear"));
+  assert.ok(isEditPath("artists/a1#lineups"), "a scoped edit path is still an edit path");
+  assert.equal(draftPath.edit("artists", "a1", "lineups"), "artists/a1#lineups");
   assert.equal((await dispatch("drafts.save", "Bearer nope", { path: "songs", values: {}, route: "/x" })).status, 401);
 });
 

@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 /**
  * Where the e2e run's own servers live. Tests never share ports, data or a Next build with `npm run dev:all`
  * (emulators 8280/9319, Next 3100, fakes 3201-3207), so a test run can't touch dev data. Keep in sync with
@@ -19,3 +20,14 @@ export const EIA = "http://127.0.0.1:3217";
 export const ARTIST_SLUG = "ingrid-avison-band";
 /** A band page of the seeded artist: A("/shows/1") -> "/artists/ingrid-avison-band/shows/1". */
 export const A = (path: string) => `/artists/${ARTIST_SLUG}${path}`;
+
+/**
+ * Opens a main section by its nav key ("shows", "money", ...): the top-bar tab when it fits, else its row in More.
+ * At the 1280px test viewport the admin bar fits Home, Shows, Booking, Songs and Money. The helper falls back to More for sections that are hidden or overflow.
+ */
+export async function openTab(page: Page, key: string) {
+  const tab = page.getByTestId(`tab-${key}`);
+  if (await tab.isVisible()) { await tab.click(); return; }
+  await page.getByTestId("more-toggle").click();
+  await page.getByTestId(`more-${key}`).click();
+}

@@ -14,6 +14,7 @@ test("undo from the History page for an app change restores the earlier value", 
   await page.getByTestId("tab-booking").click();
   // add a venue through the app so the run is a plain app run
   const name = `Undo Me ${STAMP}`;
+  await page.getByTestId("booking-add-actions").click();
   await page.getByTestId("add-venue").click();
   await page.getByTestId("new-venue-name").fill(name);
   await page.getByTestId("new-venue-city").fill("Boulder");
@@ -22,8 +23,9 @@ test("undo from the History page for an app change restores the earlier value", 
   await expect(page).toHaveURL(/\/booking\/venues\/[^/]+$/);
   await expect(page.getByTestId("page-title")).toHaveText(name);
 
-  await page.getByTestId("account-menu").click(); // Settings lives in the avatar menu
-  await page.getByTestId("side-admin-history").click();
+  await page.getByTestId("band-menu").click(); // Artist settings lives in the band menu; Activity is in its sub-nav
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-activity").click();
   await page.getByTestId("filter-via").selectOption("app");
   await page.getByTestId("filter-entity").fill("venues");
   const row = page.locator('[data-testid="history-row"]', { hasText: "create" }).first();

@@ -202,9 +202,10 @@ test("routes resolve inside the artist; paths map back to named routes", () => {
   assert.deepEqual(routeForPath("/artists/ingrid-avison/admin/people"), { route: "people", params: {}, artist: "ingrid-avison" });
   assert.equal(routeForPath("/artists/ingrid-avison/nope"), null);
   assert.deepEqual(splitArtistPath("/artists/ingrid-avison"), { slug: "ingrid-avison", rest: "/home" });
-  assert.deepEqual(splitArtistPath("/artists/ingrid-avison/songs?seg=setlists"), { slug: "ingrid-avison", rest: "/songs?seg=setlists" });
+  assert.deepEqual(splitArtistPath("/artists/ingrid-avison/setlists?q=hi"), { slug: "ingrid-avison", rest: "/setlists?q=hi" });
   assert.equal(splitArtistPath("/shows/1"), null);
-  for (const p of ["/home", "/shows/1", "/booking", "/songs?setlist=x", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
+  // every section root: a section missing here renders its links unscoped (toArtistHref), and they 404
+  for (const p of ["/home", "/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
   for (const p of ["/", "/artists", "/artists/x/home", "/signin", "/api/session", "/ask/1/2/3", "//evil.example", "/homes"]) assert.equal(isLegacyPath(p), false, p);
 });
 

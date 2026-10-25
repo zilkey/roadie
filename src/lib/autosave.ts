@@ -24,12 +24,19 @@ const emptyToNull = (s: string) => (s.trim() === "" ? null : s);
  * retry after a lost response is applied once), baseRev (a field someone else changed meanwhile comes back as a
  * conflict instead of being overwritten) and autosave:true (the server folds bursts into one history entry).
  * After each save a toast with Undo (10s) is shown. Offline: the patch is kept and retried.
- * Unsent patches are also kept as an unsubmitted draft at unsubmittedDrafts/{uid}__{collection}~{id} (last write wins, see
+ * Unsent patches are also kept as an unsubmitted draft at unsubmittedDrafts/{uid}__{collection}~{id} (plus `#{scope}` when
+ * two pages split one record's fields between them; last write wins, see
  * src/lib/draftSync.ts), so a closed tab doesn't lose them. When the record is opened again they are restored (`onRestore`,
  * `bind` fields) and sent through this same autosave at once; once every patch is saved the draft is cleared.
  */
-export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs, title, onRestore }: {
+export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUseTheirs, title, onRestore }: {
   command: string; id: string; rev?: number; delay?: number;
+  /**
+   * Set this when two pages autosave the same record through the same command, each owning different fields (General's
+   * links and Lineups' configurations both patch `artists.update`). It keeps their unsaved-edit drafts apart, so neither
+   * clears the other's pending patch nor restores fields it doesn't know how to show.
+   */
+  scope?: string;
   /** Name of the record, for Home's "Unsaved changes to <title>". */
   title?: string;
   /** Called with the unsaved patch found when the record opens (already on its way to the server): show it in your form state. */
@@ -52,7 +59,7 @@ export function useAutosave({ command, id, rev, delay = AUTOSAVE_MS, onUseTheirs
   const cfg = useRef({ command, id, onUseTheirs, onRestore, title });
   cfg.current = { command, id, onUseTheirs, onRestore, title };
   const { uid } = useProfile();
-  const path = id ? draftPath.edit(command.split(".")[0], id) : "";
+  const path = id ? draftPath.edit(command.split(".")[0], id, scope) : "";
   const ch = useMemo(() => (path ? new DraftChannel(uid, path) : null), [uid, path]);
   const chRef = useRef(ch); chRef.current = ch;
   useChannelLifecycle(ch);

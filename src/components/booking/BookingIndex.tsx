@@ -13,7 +13,7 @@ import {
 } from "@/components/booking/common";
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
 import { fmtPhone, listRows, type ListRow, type Ref } from "@/components/booking/listRows";
-import { appsOpenThisMonth, buildSearchItems, fmtDate, fmtPitchDate, isActive, searchItems, sortedDates } from "@/lib/booking";
+import { STATUSES, STATUS_LABEL, buildSearchItems, isActive, pitchCellText, searchItems, type Status } from "@/lib/booking";
 import type { Show } from "@/schema";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
@@ -44,16 +44,18 @@ function Booking({ seg }: { seg: Seg }) {
     return ids;
   }, [b.venueNotes, b.pitches, shows.rows]);
 
+  // Pitch List only: narrow to one status ("" = every active pitch).
+  const [status, setStatus] = useState<Status | "">("");
+  const statusFilter = seg === "pitches" ? status : "";
   const rows = useMemo(() => {
     const searching = q.trim().length > 0;
     const hit = searching ? new Set(searchItems(buildSearchItems(b), q).map((i) => `${i.kind}:${i.id}`)) : null;
-    return listRows(b, seg, ours, hit);
+    return listRows(b, seg, ours, hit, statusFilter || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches, ours, q, seg]);
+  }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches, ours, q, seg, statusFilter]);
   const [target, setTarget] = useState<PitchTarget | null>(null);
   const activeCount = b.pitches.filter((p) => isActive(p.status)).length;
 
-  const open = appsOpenThisMonth(b.editions);
 
   async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
     const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", contact: "contacts.create" }[kind];
@@ -93,32 +95,32 @@ function Booking({ seg }: { seg: Seg }) {
 
   return (
     <div className="grid gap-5">
-      <PageTitle title="Booking" actions={addActions} />
-      <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" />
+      <PageTitle title="Booking" center actions={<>
+        <label className="search-field">
+          <SearchIcon />
+          <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
+        </label>
+        {addActions}
+      </>} />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
         options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 
-      {/* The table takes the width; "Applications open this month" is a fixed-width column on its right (on top on phones). */}
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <div className="grid min-w-0 flex-1 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
-          {b.loading && <span className="s">Loading…</span>}
-          {!b.loading && rows.length === 0 && (seg === "pitches" && !q.trim()
-            ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
-            : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
-          {rows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={rows} onFlag={setTarget} /></div>}
-        </div>
-        {open.length > 0 && (
-          <aside className="card hi order-first lg:order-none lg:w-[300px] lg:flex-none" data-testid="apps-open">
-            <span className="text-xs font-bold uppercase tracking-wider text-[color:var(--acc-btn)]">Applications open this month</span>
-            {open.map((e) => (
-              <Link key={e.id} href={hrefFor("edition", e.id)} className="grid gap-0.5" data-testid={`apps-open-${e.id}`}>
-                <b className="text-lg leading-snug">{e.festivalName} {e.label}</b>
-                <span className="s">{[e.appOpens && `Opens ${fmtDate(e.appOpens.date)}`, e.appDeadline && `closes ${fmtDate(e.appDeadline.date)}`].filter(Boolean).join(" · ")}</span>
-              </Link>
-            ))}
-          </aside>
-        )}
+      {seg === "pitches" && (
+        <label className="flex items-center gap-2 justify-self-start" data-testid="pitch-filter">
+          <span className="s font-semibold whitespace-nowrap">Filter by</span>
+          <select className="select w-auto" value={status} onChange={(e) => setStatus(e.target.value as Status | "")} aria-label="Filter pitches by status" data-testid="pitch-status-filter">
+            <option value="">All active</option>
+            {STATUSES.map((st) => <option key={st} value={st}>{STATUS_LABEL[st]}</option>)}
+          </select>
+        </label>
+      )}
+      <div className="grid min-w-0 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
+        {b.loading && <span className="s">Loading…</span>}
+        {!b.loading && rows.length === 0 && (seg === "pitches" && !q.trim() && !status
+          ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
+          : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
+        {rows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={rows} onFlag={setTarget} /></div>}
       </div>
       <PitchModal target={target} onClose={() => setTarget(null)} />
       {form}
@@ -127,6 +129,11 @@ function Booking({ seg }: { seg: Seg }) {
 }
 
 const Dash = () => <span className="dash">—</span>;
+const SearchIcon = () => (
+  <svg className="search-ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+  </svg>
+);
 
 const FlagIcon = ({ filled }: { filled: boolean }) => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -139,6 +146,7 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
   const flagged = seg !== "contacts";
+  const wideName = seg !== "promoters" && seg !== "contacts";
   const heads: string[] = seg === "venues" ? ["Name", "City", "Email", "Phone", "Pitch"]
     : seg === "festivals" ? ["Festival", "Edition", "City", "Email", "Phone", "Pitch"]
     : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
@@ -163,8 +171,7 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
     const p = r.pitch;
     return (
       <td className="pitch" data-testid={`pitch-cell-${r.id}`}>
-        {p && <><span className="pc">{configs.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet"}</span>{" "}
-          <span className="pd">{sortedDates(p.dates).map(fmtPitchDate).join(", ") || "No dates yet"}</span></>}
+        <div className="pw">{p && (() => { const t = pitchCellText(p, configs); return <><span className="pc">{t.config}</span>{" "}<span className="pd">{t.dates}</span></>; })()}</div>
       </td>
     );
   };
@@ -175,25 +182,25 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
   </>);
   const city = (r: ListRow) => <td className="nw">{r.city || <Dash />}</td>;
   const nameCell = (r: ListRow) => (
-    <td>
+    <td className="name">
       {link(r.to, `${r.kind}-full-${r.id}`)}{status(r)}
       {r.promoters.length > 0 && <span className="sub">promoted by {r.promoters.map((p, i) => <span key={p.id}>{i > 0 && ", "}<Link href={hrefFor("promoter", p.id)}>{p.name}</Link></span>)}</span>}
     </td>
   );
 
   return (
-    <table className="book-table">
+    <table className={wideName ? "book-table wn" : "book-table"}>
       <thead><tr>
         {flagged && <th className="flag" aria-label="Pitch List flag" />}
-        {heads.map((h) => <th key={h} className={h === "Pitch" ? "pitch" : undefined}>{h}</th>)}
+        {heads.map((h, i) => <th key={h} className={h === "Pitch" ? "pitch" : wideName && i === 0 ? "name" : undefined}>{h}</th>)}
       </tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={`${r.kind}:${r.id}`} data-testid={`row-${r.kind}-${r.id}`}>
             {flagged && flag(r)}
             {seg === "festivals" ? (<>
-              <td>{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
-              <td>{r.edition ? <>{link(r.edition, `edition-full-${r.id}`)}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
+              <td className="name">{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
+              <td className="nw">{r.edition ? <>{link(r.edition, `edition-full-${r.id}`)}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
             </>) : seg === "promoters" ? (<>
               <td>{link(r.to, `promoter-full-${r.id}`)}{status(r)}</td>
               <td>{r.person ?? <Dash />}</td>

@@ -225,6 +225,13 @@ fieldset.sec { margin: 0; }
 
 /* Shows list: one table per tab. Scrolls sideways inside its box with the date pinned; the page never does. */
 .page-head.center { align-items: center; }
+/* A search box in the page actions, left of the primary button. Fixed width on purpose: Chrome sizes a wrapping flex row
+   by its widest item, so a flexible box here pushes the button onto its own line. Full width on phones. */
+.search-field { position: relative; display: block; flex: none; width: 320px; }
+.search-field .search-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.search-field .input { padding-left: 38px; }
+.search-field .input::-webkit-search-cancel-button { cursor: pointer; }
+@media (max-width: 719px) { .search-field { width: 100%; } .page-actions:has(.search-field) { flex: 1 1 100%; } }
 .show-tw { min-width: 0; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .show-scroll { overflow-x: auto; }
 /* Booking lists: one table per tab, 100% wide with a min width; the card scrolls sideways on phones. */
@@ -237,6 +244,11 @@ fieldset.sec { margin: 0; }
 .book-table td.flag + td, .book-table th.flag + th { padding-left: 8px; }
 .book-table th:first-child:not(.flag), .book-table td:first-child:not(.flag) { padding-left: 22px; }
 .book-table th.pitch, .book-table td.pitch { width: 30%; padding-right: 22px; }
+/* Wide-name tabs (All, Pitch List, Venues, Festivals): the name column takes the slack and never wraps; the others sit at their content width. */
+.book-table.wn th.pitch, .book-table.wn td.pitch { width: auto; }
+/* A block floor keeps Pitch from collapsing to one word per line when Name takes the slack; long date lists wrap inside it. */
+.book-table.wn td.pitch > .pw { min-width: 220px; }
+.book-table.wn th.name, .book-table.wn td.name { width: 100%; white-space: nowrap; }
 .book-table td.nw { white-space: nowrap; }
 .book-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
 .book-table .nm:hover { color: var(--accent-text); }
@@ -247,6 +259,20 @@ fieldset.sec { margin: 0; }
 .book-table .dash { color: var(--muted); opacity: .7; }
 .book-table .pc { font-size: 14px; font-weight: 700; color: var(--ink); }
 .book-table .pd { font-size: 14px; color: var(--nav-text); margin-left: 8px; }
+/* Songs list: one table, like the booking lists. The lyrics link and the title are the only targets. */
+.song-tw { min-width: 0; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow-x: auto; }
+.song-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 15px; }
+.song-table th { text-align: left; padding: 12px 14px; font-size: 13px; font-weight: 600; color: var(--muted); background: var(--empty); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.song-table td { padding: 0 14px; height: 52px; border-bottom: 1px solid var(--divider); vertical-align: middle; color: var(--nav-text); }
+.song-table tbody tr:last-child td { border-bottom: 0; }
+.song-table th:first-child, .song-table td:first-child { padding-left: 20px; }
+.song-table th:last-child, .song-table td:last-child { padding-right: 20px; }
+.song-table th.key, .song-table td.key { width: 90px; font-weight: 600; color: var(--ink); }
+.song-table th.len, .song-table td.len { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+.song-table th.lyr, .song-table td.lyr { width: 140px; padding-left: 24px; }
+.song-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
+.song-table .nm:hover { color: var(--accent-text); }
+.song-table .lyr a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-weight: 700; color: var(--accent-text); text-decoration: none; }
 /* The list flag: a bare icon button (no box), 44x44. Hollow accent = not pitched; filled pink = on the Pitch List. */
 .flag-ic { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; padding: 0; background: transparent; color: var(--accent-text); cursor: pointer; border-radius: 10px; }
 .flag-ic[data-flagged="1"] { color: var(--pitched); }
@@ -353,6 +379,32 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 [data-drag="above"]::before, [data-drag="below"]::after { content: ""; position: absolute; left: 0; right: 0; height: 3px; border-radius: 2px; background: var(--accent); pointer-events: none; }
 [data-drag="above"]::before { top: -5px; }
 [data-drag="below"]::after { bottom: -5px; }
+
+/* Song detail: one centered column of cards, an uppercase label above each section, no sidebar. */
+.sg-page { display: grid; gap: 24px; max-width: 960px; margin: 0 auto; overflow-wrap: anywhere; }
+.sg-sec { display: grid; gap: 10px; min-width: 0; }
+/* The section label, and the row holding it plus a section-level action ("+ Add from Drive"). */
+.sg-lbl { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.sg-sech { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+/* Details: a definition list that reflows from one column on a phone to as many as fit. */
+.sg-dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px 24px; }
+.sg-dl > div { display: grid; gap: 4px; min-width: 0; }
+.sg-dl dd { margin: 0; font-size: 16px; font-weight: 700; }
+/* A full-width row (Notes) inside the details grid. */
+.sg-dl > .sg-wide { grid-column: 1 / -1; }
+.sg-dl .sg-note { margin: 0; font-size: 15px; font-weight: 400; white-space: pre-wrap; }
+/* The sharing-check strip: tinted with the accent so it reads as a tool, not a file. */
+.sg-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 20px; border-radius: 16px; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.sg-strip-t { display: grid; gap: 2px; min-width: 0; }
+/* One file-kind card: a heading, then a hairline-separated row per file. */
+.sg-files { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: grid; }
+.sg-files > h3 { padding: 14px 20px 10px; font-size: 16px; font-weight: 800; }
+.sg-row { display: grid; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--divider); min-width: 0; }
+.sg-rowh { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+/* The name and its status line take the slack; the actions keep their width and wrap below on a phone. */
+.sg-rowt { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
+.sg-rowa { flex: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 13px; }
 
 /* Booking detail pages (venue, festival, promoter, contact): one column of cards, shared ones carry a yellow top bar (everyone sees them), the band's private ones plain. */
 .d-page { display: grid; gap: 20px; max-width: 860px; margin: 0 auto; overflow-wrap: anywhere; }

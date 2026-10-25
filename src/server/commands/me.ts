@@ -30,8 +30,14 @@ export const geoAutocomplete = defineCommand({
     "Returns suggestions with name, address, lat and lng — what rehearsal locations, home addresses and typed gas trips are saved as. The UI debounces calls at 300 ms.",
   input: z.strictObject({ q: z.string().trim().min(3) }),
   async run(_ctx, i): Promise<{ suggestions: OrsPlace[] }> {
-    const suggestions = await orsClient().autocomplete(i.q);
-    return { suggestions: suggestions.slice(0, 8) };
+    // No ORS key (or ORS down): no suggestions rather than an error, so the fields still take typed text and the
+    // gas form falls back to a typed amount.
+    try {
+      const suggestions = await orsClient().autocomplete(i.q);
+      return { suggestions: suggestions.slice(0, 8) };
+    } catch {
+      return { suggestions: [] };
+    }
   },
 });
 

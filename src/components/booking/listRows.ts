@@ -30,12 +30,14 @@ export function fmtPhone(p: string) {
 /**
  * The rows for one tab. `hit` is the set of `kind:id` the search matched (null = no search); editions follow their festival.
  * `ours` = venue ids this band has something on; they come first.
+ * `status` (Pitch List filter): rows carry the pitch in that status instead of the active one, so closed pitches can be listed too.
  */
-export function listRows(b: Booking, seg: ListSeg, ours: Set<string>, hit: Set<string> | null): ListRow[] {
+export function listRows(b: Booking, seg: ListSeg, ours: Set<string>, hit: Set<string> | null, status?: string): ListRow[] {
   const byName = <T extends { name: string }>(x: T[]) => [...x].sort((a, c) => a.name.localeCompare(c.name));
   const contact = (id?: string) => b.contacts.find((c) => c.id === id);
   const reach = (id?: string) => { const c = contact(id); return { email: c?.emails[0], phone: c?.phones[0] }; };
-  const active = (kind: string, id: string) => b.pitches.find((p) => p.target.kind === kind && p.target.id === id && isActive(p.status));
+  const active = (kind: string, id: string) =>
+    b.pitches.find((p) => p.target.kind === kind && p.target.id === id && (status ? p.status === status : isActive(p.status)));
   const cityOfVenue = (venueIds: string[]) =>
     [...new Set(venueIds.map((id) => b.venues.find((v) => v.id === id)?.address.city).filter((c): c is string => !!c))].join(", ");
   const base = { promoters: [] as Ref[], flag: false };
