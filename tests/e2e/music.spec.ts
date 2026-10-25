@@ -66,11 +66,12 @@ test("build a setlist template, then seed a show's setlist from it against the s
   const templateId = idFromUrl(page, "setlists");
 
   const titles = page.getByTestId("setlist-items").getByTestId("item-title");
-  const add = async (title: string) => { await page.getByTestId("add-song-select").selectOption({ label: title }); await page.getByTestId("add-song-item").click(); };
+  const add = async (title: string) => { await page.getByTestId("add-song-select").selectOption({ label: title }); await page.getByTestId("add-song-item").click(); await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved"); }; // let each add's save echo back before the next, or the echo resets the list and drops it
   await add("Glass Coast · F#m");
   await add("Weathervane · D");
   await page.getByTestId("break-title").fill("Talk / tune");
   await page.getByTestId("add-break").click();
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await expect(titles).toHaveText(["Glass Coast", "Weathervane", "Talk / tune"]);
   await expect(page.getByTestId("total-time")).toHaveText("9:02"); // 3:52 + 4:10 + 1:00
   await expect(page.getByTestId("fit")).toHaveCount(0); // a template has no show
