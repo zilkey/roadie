@@ -3,13 +3,17 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useArtistRouter, useMaybeArtist } from "@/lib/artist";
+import { ARTISTS_PATH } from "@/lib/routes";
 
-/** Signed-in gate for the app shell: sends everyone else to sign-in / not-invited. */
+/** Signed-in gate for the app shell: sends everyone else to sign-in (which comes back here after) / not-invited. */
 export function SignedIn({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (state.status === "signedOut") router.replace("/signin");
+    if (state.status === "signedOut") {
+      const here = location.pathname + location.search + location.hash;
+      router.replace(location.pathname === ARTISTS_PATH ? "/signin" : `/signin?next=${encodeURIComponent(here)}`);
+    }
     if (state.status === "notInvited") router.replace("/not-invited");
   }, [state.status, router]);
   if (state.status !== "ready") return <div className="grid min-h-dvh place-items-center s" data-testid="auth-loading">Loading…</div>;

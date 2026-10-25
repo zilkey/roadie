@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { usingEmulators } from "@/lib/firebase-client";
 import { DEV_STRANGER } from "@/lib/dev-people";
 import type { DevSignInPerson } from "@/app/api/dev-people/route";
+import { afterSignIn } from "@/lib/routes";
 
 export default function SignIn() {
   const { state, signInWithGoogle, devSignIn } = useAuth();
@@ -23,7 +24,8 @@ export default function SignIn() {
   }, []);
 
   useEffect(() => {
-    if (state.status === "ready") router.replace("/artists");
+    // back to the page that sent you here (a shared link, a bookmark), else your artists
+    if (state.status === "ready") router.replace(afterSignIn(new URLSearchParams(location.search).get("next")));
     if (state.status === "notInvited") router.replace("/not-invited");
   }, [state.status, router]);
 

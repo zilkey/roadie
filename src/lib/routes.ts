@@ -83,6 +83,16 @@ export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "setlis
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**
+ * Where sign-in lands for `?next=` (the page that sent a signed-out visitor to /signin): an artist page as is, an old
+ * band path through the picker, anything else (another site, /api, nothing) the picker.
+ */
+export function afterSignIn(next: string | null | undefined): string {
+  if (next && splitArtistPath(next)) return next;
+  if (next && isLegacyPath(next)) return `${ARTISTS_PATH}?next=${encodeURIComponent(next)}`;
+  return ARTISTS_PATH;
+}
+
+/**
  * Resolve a route name + params to a path. With `slug`, the href is inside that artist (what the browser navigates to);
  * without, it is the artist-relative path. Null when the name is unknown or a param is missing/unsafe.
  */

@@ -102,5 +102,5 @@ test("uninvited email is turned away", async ({ page }) => {
   await expect(page).toHaveURL(/\/not-invited$/);
   await expect(page.getByTestId("not-invited")).toContainText("stranger@example.com");
   await page.goto(A("/calendar"));
-  await expect(page).toHaveURL(/\/signin$/);
+  await expect(page).toHaveURL(/\/signin\?next=/);
 });

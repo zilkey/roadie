@@ -12,7 +12,7 @@ import { hashToken } from "@/server/availability";
 import { registry } from "@/server/commands/registry";
 import { authenticateToken, mcpCtx } from "../../mcp/auth";
 import { artistSlug, slugForArtist } from "@/schema";
-import { artistPath, isLegacyPath, resolveRoute, routeForPath, splitArtistPath } from "@/lib/routes";
+import { afterSignIn, artistPath, isLegacyPath, resolveRoute, routeForPath, splitArtistPath } from "@/lib/routes";
 import { proxy } from "@/proxy";
 import { migrateArtists } from "../../scripts/migrate-artists";
 import { stripGear } from "../../scripts/migrate-strip-gear";
@@ -208,6 +208,13 @@ test("routes resolve inside the artist; paths map back to named routes", () => {
   // every section root: a section missing here renders its links unscoped (toArtistHref), and they 404
   for (const p of ["/shows/1", "/booking", "/songs?setlist=x", "/setlists", "/setlists/t1", "/rehearsals", "/rehearsals/new", "/admin/people", "/money/expense", "/stats"]) assert.ok(isLegacyPath(p), p);
   for (const p of ["/", "/artists", "/home", "/artists/x/home", "/signin", "/api/session", "/ask/1/2/3", "//evil.example", "/homes"]) assert.equal(isLegacyPath(p), false, p);
+});
+
+test("sign-in goes back to the page you came from, never off the app", () => {
+  assert.equal(afterSignIn("/artists/ingrid-avison-band/booking/pitches/ss-bluebird"), "/artists/ingrid-avison-band/booking/pitches/ss-bluebird");
+  assert.equal(afterSignIn("/artists/ingrid-avison-band/shows/1?tab=setlist"), "/artists/ingrid-avison-band/shows/1?tab=setlist");
+  assert.equal(afterSignIn("/shows/1"), "/artists?next=%2Fshows%2F1");
+  for (const p of [null, "", "/artists", "//evil.example/artists/x", "https://evil.example", "/api/session", "/signin"]) assert.equal(afterSignIn(p), "/artists", String(p));
 });
 
 test("old URLs redirect to /artists with the page as `next` (the picker opens it in your artist)", () => {
