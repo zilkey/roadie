@@ -16,7 +16,7 @@ test("people.list: team users, linked musician, musician-only sub, archived musi
   const member = await makeUser("m@example.com", "member", { name: "Mo" });
   await dispatch("musicians.create", bearer(admin.token), { name: "Sub Sam", instruments: ["drums"] });
   const arch = await db.create(importCtx(), "musicians", { name: "Old Ollie", instruments: ["keys"], active: true });
-  await db.update(importCtx(), "musicians", arch.id, { archivedAt: new Date().toISOString(), active: false });
+  await db.update(importCtx(), "musicians", arch.id, { archivedAt: new Date(), active: false });
 
   const r = await dispatch("people.list", bearer(admin.token), {});
   assert.equal(r.status, 200, JSON.stringify(r.json));

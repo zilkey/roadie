@@ -29,7 +29,7 @@ let showB: string;
 const list = (ctx: Ctx, input: Record<string, unknown>) => registry["records.list"].run(ctx, registry["records.list"].input.parse(input)) as Promise<{ count: number; rows: Record<string, any>[] }>;
 const get = (ctx: Ctx, kind: string, id: string) => registry["records.get"].run(ctx, registry["records.get"].input.parse({ kind, id })) as Promise<Record<string, any>>;
 const pitch = (target: Record<string, unknown>, status: string, extra: Record<string, unknown> = {}) =>
-  db.create(sys, "pitches", { target, status, showIds: [], ...extra }).then((r) => r.id);
+  db.create(sys, "pitches", { target, status, showIds: [], personnel: [], artistId: TEST_ARTIST, ...extra }).then((r) => r.id);
 
 beforeEach(async () => {
   await resetEmulators();
@@ -65,9 +65,9 @@ test("setlistTemplates are readable", async () => {
 });
 
 test("records.list filters: expenses by showId, pitches by status and venueId, shows by venueId", async () => {
-  await db.create(sys, "expenses", { showId: showA, category: "gas", amountCents: 1000 });
-  await db.create(sys, "expenses", { showId: showA, category: "food", amountCents: 500 });
-  await db.create(sys, "expenses", { showId: showB, category: "gas", amountCents: 700 });
+  await db.create(sys, "expenses", { showId: showA, userId: "u1", date: "2026-11-14", what: "Gas", category: "travel", amount: 1000 });
+  await db.create(sys, "expenses", { showId: showA, userId: "u1", date: "2026-11-14", what: "Snacks", category: "other", amount: 500 });
+  await db.create(sys, "expenses", { showId: showB, userId: "u1", date: "2026-11-21", what: "Gas", category: "travel", amount: 700 });
   assert.equal((await list(sys, { kind: "expenses", showId: showA })).count, 2);
   assert.equal((await list(sys, { kind: "expenses", showId: showB })).count, 1);
 
@@ -85,23 +85,22 @@ test("records.list filters: expenses by showId, pitches by status and venueId, s
 });
 
 test("availability asks filter by showId and pitchId", async () => {
-  await db.create(sys, "availability", { showId: showA, date: "2026-11-14", label: "A", askedMusicianIds: [], responses: {} });
-  await db.create(sys, "availability", { pitchId: "p1", date: "2026-12-01", label: "B", askedMusicianIds: [], responses: {} });
+  await db.create(sys, "availability", { showId: showA, date: "2026-11-14", label: "A", askedMusicianIds: [], responses: {}, linkTokens: {} });
+  await db.create(sys, "availability", { pitchId: "p1", date: "2026-12-01", label: "B", askedMusicianIds: [], responses: {}, linkTokens: {} });
   assert.equal((await list(sys, { kind: "availability", showId: showA })).rows[0].label, "A");
   assert.equal((await list(sys, { kind: "availability", pitchId: "p1" })).rows[0].label, "B");
 });
 
 test("search and needingFollowUp skip another artist's pitches", async () => {
   const mine = await pitch({ kind: "venue", id: venueA, name: "Hi-Dive" }, "pitched", { artistId: TEST_ARTIST, nextStep: { text: "Email", due: "2020-01-01" } });
-  const legacy = await pitch({ kind: "venue", id: venueA, name: "Hi-Dive" }, "pitched", { nextStep: { text: "Email", due: "2020-01-01" } });
   const theirs = await pitch({ kind: "venue", id: venueA, name: "Hi-Dive" }, "pitched", { artistId: "other-artist", nextStep: { text: "Email", due: "2020-01-01" } });
 
   const found = (await registry.search.run(sys, registry.search.input.parse({ q: "Hi-Dive", kinds: ["pitch"] }))) as { results: { id: string }[] };
-  assert.deepEqual(found.results.map((r) => r.id).sort(), [mine, legacy].sort());
+  assert.deepEqual(found.results.map((r) => r.id).sort(), [mine]);
 
   const due = (await registry["pitches.needingFollowUp"].run(sys, registry["pitches.needingFollowUp"].input.parse({ today: "2026-10-25" }))) as { pitches: { id: string }[] };
   const ids = due.pitches.map((p) => p.id);
-  assert.ok(ids.includes(mine) && ids.includes(legacy));
+  assert.ok(ids.includes(mine));
   assert.ok(!ids.includes(theirs));
 });
 

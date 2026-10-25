@@ -53,7 +53,7 @@ beforeEach(async () => {
 
 async function sess() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "home" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return { ...sessionFor(who, threadId), artistId: TEST_ARTIST };
 }
 const show = async () => (await db.get("shows", showId))!;
@@ -174,4 +174,12 @@ test("context.now names the artist and the band; search finds setlist templates 
   await db.create(sys, "setlistTemplates", { name: "Club 60", items: [] });
   const r = await searchAll({ ...sys, artistId: TEST_ARTIST }, { q: "club", kinds: ["setlistTemplate"] });
   assert.deepEqual(r.results.map((x) => [x.kind, x.name]), [["setlistTemplate", "Club 60"]]);
+});
+
+test("help.explain with no arguments explains the page the person is on, tab included", async () => {
+  const s = { ...(await sess()), pageContext: { route: "shows", tab: "canceled" } };
+  const out = await execTool(s, "help.explain", {}, noop);
+  assert.equal((out.output as { untrustedContent: { topic: { id: string } } }).untrustedContent.topic.id, "canceledShows");
+  const named = await execTool(s, "help.explain", { topic: "pitch" }, noop);
+  assert.equal((named.output as { untrustedContent: { topic: { id: string } } }).untrustedContent.topic.id, "pitch");
 });

@@ -20,7 +20,7 @@ export interface Session {
   model: string;
   /** Injectable clock (tests). */
   now?: Date;
-  pageContext?: { route: string; recordKind?: string; recordId?: string };
+  pageContext?: { route: string; recordKind?: string; recordId?: string; tab?: string };
 }
 
 export const ROADIE = "Roadie";

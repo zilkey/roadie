@@ -38,7 +38,8 @@ function lastTurn(req: GenerateRequest) {
   const steps: Step[] = requests.map((r) => ({ name: r.name, input: r.input, output: responses.find((x) => x.ref === r.ref)?.output }));
   const sys = msgs.find((m) => m.role === "system")?.content.map((p) => p.text ?? "").join("") ?? "";
   const pg = /looking at (\w+) ([\w-]+)/.exec(sys);
-  return { text, steps, page: pg ? { kind: pg[1], id: pg[2] } : undefined };
+  const on = /The user is on ([\w/-]+)(?: \(([\w-]+) tab\))?/.exec(sys);
+  return { text, steps, page: pg || on ? { ...(pg ? { kind: pg[1], id: pg[2] } : {}), ...(on ? { route: on[1], ...(on[2] ? { tab: on[2] } : {}) } : {}) } : undefined };
 }
 
 function defineFake(ai: Genkit) {

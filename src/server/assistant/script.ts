@@ -1,5 +1,6 @@
 import { routeNames, routeForRecord, type RouteName } from "@/lib/routes";
 import { BAND_SETTINGS } from "./policy";
+import { topicInWords } from "@/lib/help";
 
 /**
  * The canned model's brain: what it decides for one turn, from the user's words and the tool results so far. Pure and
@@ -31,6 +32,9 @@ const FORBIDDEN = new RegExp([
   String.raw`\blet\b.*\b(log|sign) ?in\b`, String.raw`\bdemote\b`, String.raw`\bpromote\b.*\badmin\b`,
 ].join("|"));
 // "rename the band", "change our URL": the person does these on General settings.
+// Questions about the app itself, not its data: "what's on the pitch list?" stays a data question.
+const EXPLAIN = /^(?:please |can you |could you )?(explain|help me understand|what am i looking at|tell me about|how do(?:es)? .*\bwork)\b|^what\b.*\b(mean|means|this page|this tab|a pitch|pitch statuses|statuses|shared|flag)\b/;
+const THIS_PAGE = /\b(this page|this tab|this screen|what am i looking at|here)\b|^explain this\b/;
 const BAND_RENAME = /\b(rename|change|update)\b.*\b(band'?s? name|name of the band|(?:our |the |band )?(?:url|web ?address))\b|\brename (?:the|our) band\b/;
 
 export const unwrap = (o: unknown): any => (o as { untrustedContent?: unknown } | null)?.untrustedContent ?? o; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -46,7 +50,7 @@ const hhmm = (h: number, m: number, ap?: string) => {
 const category = (what: string) =>
   /\b(gas|fuel|parking|van|hotel|motel|toll|tolls|flight|uber)\b/.test(what) ? "travel" : /\b(strings?|cables?|gear|pedal|drum ?heads?|amp)\b/.test(what) ? "gear" : "other";
 
-type Page = { kind?: string; id?: string };
+type Page = { kind?: string; id?: string; route?: string; tab?: string };
 
 // "How many shows were canceled?" -> shows.list with that filter. Checked before the cancel command.
 const FILTER_WORDS: [RegExp, string][] = [[/\bcancel(?:l?ed)?\b/, "canceled"], [/\bplayed\b/, "played"], [/\bdropped\b/, "dropped"], [/\b(upcoming|coming up)\b/, "upcoming"]];
@@ -89,6 +93,12 @@ function first(t: string, page?: Page): Scripted {
   const listed = ASKS_LIST.test(t) && /\b(shows?|gigs?)\b/.test(t) ? FILTER_WORDS.find(([re]) => re.test(t)) : undefined;
   if (listed) return { calls: [{ name: "shows.list", input: { filter: listed[1] } }] };
   if (/\bundo\b/.test(t)) return { text: "On it.", calls: [{ name: "history.undoRun", input: /\b(everything|all|tonight|conversation)\b/.test(t) ? { all: true } : {} }] };
+
+  // "Explain this page" / "what's a pitch?" -> help.explain: this page, or the topic they named.
+  if (EXPLAIN.test(t)) {
+    const named = THIS_PAGE.test(t) ? undefined : topicInWords(t);
+    if (named || THIS_PAGE.test(t)) return { calls: [{ name: "help.explain", input: named ? { topic: named.id } : {} }] };
+  }
 
   const exp = /\badd\s+(?:\$\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:dollars?|bucks))\s*(?:for |of |in |on )?(.*)$/.exec(t);
   if (exp) {
@@ -148,6 +158,11 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
   if ((last.output as { needsConfirmation?: boolean } | null)?.needsConfirmation) return { text: TAP_YES };
 
   if (last.name === "ui.navigate") return { text: err ? "I can't do that. I don't know that page." : "There you go." };
+  if (last.name === "help.explain") {
+    if (err) return { text: `Couldn't do that: ${err}` };
+    if (out?.topic) return { text: out.topic.text };
+    return { text: `I don't have a write-up for this page yet. I can explain: ${((out?.topics ?? []) as { title: string }[]).map((x) => x.title).join(", ")}.` };
+  }
   if (last.name === "history.undoRun") return { text: err ? "Nothing of mine to undo here." : "Undone." };
 
   if (last.name === "search") {

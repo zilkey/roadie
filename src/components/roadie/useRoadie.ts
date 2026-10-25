@@ -17,11 +17,12 @@ export interface Pending { text: string; reply: string; actions: AssistantAction
 const WIDTH_KEY = "roadie.width";
 const readWidth = (): Width => { try { return localStorage.getItem(WIDTH_KEY) === "narrow" ? "narrow" : "full"; } catch { return "full"; } };
 
-/** Where the admin is, as a named route plus the record in view. */
-export function pageContextFor(path: string): PageContext {
+/** Where the admin is, as a named route plus the record in view and the tab (`?tab=` or `#tab`, from the browser's address). */
+export function pageContextFor(path: string, search = "", hash = ""): PageContext {
   const r = routeForPath(path);
   if (!r) return { route: path };
-  return { route: r.route, ...(r.params.id ? { recordKind: r.route, recordId: r.params.id } : {}) };
+  const tab = (new URLSearchParams(search).get("tab") ?? hash.replace(/^#/, "")).slice(0, 40);
+  return { route: r.route, ...(r.params.id ? { recordKind: r.route, recordId: r.params.id } : {}), ...(/^[\w-]+$/.test(tab) ? { tab } : {}) };
 }
 
 /** All of Roadie's client state. Lives in Shell, so it survives navigation. */
@@ -105,7 +106,7 @@ export function useRoadie(onNavigated?: () => void) {
       const res = await fetch("/api/assistant/chat", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() },
-        body: JSON.stringify({ threadId, message, pageContext: pageContextFor(path) }),
+        body: JSON.stringify({ threadId, message, pageContext: pageContextFor(path, window.location.search, window.location.hash) }),
       });
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error?.message ?? "Roadie is unavailable");
       const reader = res.body.getReader();

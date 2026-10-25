@@ -218,6 +218,13 @@ async function fillNested(s: Session, name: string, input: unknown): Promise<{ i
   return { input: { ...i, patch }, before };
 }
 
+/** "Explain this page": help.explain with no topic or page explains the one the person is on. */
+function hereIfNone(s: Session, input: unknown) {
+  const i = (input ?? {}) as Row;
+  if (i.topic || i.route || !s.pageContext) return i;
+  return { ...i, route: s.pageContext.route, ...(s.pageContext.tab ? { tab: s.pageContext.tab } : {}) };
+}
+
 // ---------- executing a tool request ----------
 
 async function navigate(s: Session, input: unknown): Promise<ToolOut> {
@@ -290,7 +297,7 @@ export async function execTool(s: Session, name: string, input: unknown, emit: E
     const no = refusal(name, input);
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
-    const filled = await fillNested(s, name, input ?? {});
+    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : await fillNested(s, name, input ?? {});
     const parsed = cmd.input.safeParse(filled.input);
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
     if (needsConfirm(name, parsed.data)) {

@@ -6,6 +6,8 @@ export const PageContext = z.strictObject({
   route: z.string().min(1).max(200),
   recordKind: z.string().max(60).optional(),
   recordId: z.string().max(200).optional(),
+  /** The tab in view when the page has tabs in its URL: the Shows page's #played, a show's ?tab=setlist. */
+  tab: z.string().max(40).optional(),
 });
 export type PageContext = z.infer<typeof PageContext>;
 

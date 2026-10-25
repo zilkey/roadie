@@ -40,6 +40,7 @@ export const ROUTES = {
   stats: { title: "Stats", path: "/stats" },
   artist: { title: "General", path: "/admin/artist" },
   lineups: { title: "Lineups", path: "/admin/lineups" },
+  fields: { title: "Custom fields", path: "/admin/fields" },
   people: { title: "People", path: "/admin/people" },
   mcp: { title: "Integrations", path: "/admin/mcp" },
   history: { title: "Activity", path: "/admin/history" },
