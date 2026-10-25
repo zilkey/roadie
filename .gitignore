@@ -18,6 +18,9 @@ backup-repo
 
 # Real booking data pulled from the claude.ai trackers (contacts: never committed, public repo)
 .booking-kit/
+# The real band: names and Google addresses (never committed, public repo).
+# Copy src/lib/band.example.ts to src/lib/band.ts and fill it in; scripts/seed-real.ts reads it.
+src/lib/band.ts
 firebase-export-*
 # Test runs keep their own Next build and fake-service state (never dev's)
 .next-test

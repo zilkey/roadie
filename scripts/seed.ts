@@ -228,11 +228,22 @@ async function seedOtherBand(create: (path: string, doc: Record<string, unknown>
   return { artist, ctx: importCtx("seed", undefined, artist) };
 }
 
-async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>, artist: string) {
+/**
+ * The starting email templates. Exported for scripts/seed-real.ts, which wants these but no demo data -- and wants
+ * them WITHOUT the checklist templates, because artists.create has already seeded those for a new artist.
+ */
+export async function seedEmailTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>) {
   await create("emailTemplates", { name: "First pitch", subject: "{{venue.name}} · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nWe're a Denver band... Live video: {{artist.video}}\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter"] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · {{artist.name}}", body: "Hi {{contact.firstName}},\n\nChecking back on {{target.name}}. Live video: {{artist.video}}\n\nThanks,\n{{user.firstName}}", targetKinds: [] });
   await create("emailTemplates", { name: "Follow up", subject: "Following up · Ingrid Avison Band", body: "Hi {{contact.firstName}},\n\nChecking back on {{venue.name}}.\n\nThanks,\n{{user.name}}", targetKinds: ["venue", "promoter", "edition"] });
+}
+
+/** This seed's artist is written with db.create rather than artists.create, so it needs the checklist templates too. */
+async function seedTemplates(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>, artist: string) {
+  await seedEmailTemplates(create);
   return run(ctx, (w) => seedDefaultTemplates(w, artist));
 }
 
-main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
+// Guarded like the other scripts here: scripts/seed-real.ts imports seedEmailTemplates from this file, and an
+// unguarded call would run the whole demo seed on import.
+if (process.argv[1]?.endsWith("seed.ts")) main().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
