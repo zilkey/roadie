@@ -39,7 +39,7 @@ export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
 export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
 /** Published to Bandsintown (or, on a show not yet migrated, the old "public show" flag). */
 export const isPublished = (s: object) => { const x = s as { publishToBandsintown?: boolean; public?: boolean }; return x.publishToBandsintown ?? x.public ?? false; };
-/** "Jerry Champlin & Tania McEvoy" */
+/** "Robin Castellano & Priya Nair" */
 export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
 
 /**
