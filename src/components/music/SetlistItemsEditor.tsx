@@ -76,6 +76,9 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
               onChange([...items, { type: "song", songId: s.id, title: s.title, lengthSec: s.lengthSec, key: s.key }]);
             }}>+ Song</button>
           </div>
+          <div className="flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+            <span className="h-px flex-1 bg-divider" />OR…<span className="h-px flex-1 bg-divider" />
+          </div>
           <div className="flex gap-2">
             <input className="input" value={breakTitle} onChange={(e) => setBreakTitle(e.target.value)} aria-label="Break name" data-testid="break-title" />
             <input className="input !w-24" value={breakLen} onChange={(e) => setBreakLen(e.target.value)} aria-label="Break length" data-testid="break-len" />
