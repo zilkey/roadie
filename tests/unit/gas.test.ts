@@ -203,6 +203,21 @@ test("setAsRehearsalLocation (admins): the typed To becomes the rehearsal's loca
   }, ctx);
   const r = (await db.get("rehearsals", bare)) as any;
   assert.equal(r.location?.address, LOFT.address);
+  assert.equal(r.location?.name, LOFT.name);
+  assert.equal(r.location?.lat, LOFT.lat);
+  assert.equal(r.location?.lng, LOFT.lng);
+});
+
+test("setAsRehearsalLocation: a member is refused and the rehearsal's location is untouched", async () => {
+  await assert.rejects(
+    cmd("expenses.add", {
+      amount: 500, what: "Gas", category: "travel", rehearsalId,
+      setAsRehearsalLocation: { name: "Elsewhere", address: "1 Other St, Denver, CO, USA", lat: 39.7, lng: -105 },
+    }, mctx),
+    (e: any) => e instanceof AppError && e.status === 403,
+  );
+  const r = (await db.get("rehearsals", rehearsalId)) as any;
+  assert.equal(r.location?.address, LOFT.address);
 });
 
 // ---------- the price cache ----------

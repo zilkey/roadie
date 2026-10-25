@@ -53,14 +53,15 @@ const fixture = (): SongListSnapshot => ({
 
 const slugOf = (t: string) => `song-${t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 
+/** A made-up band, shaped like the roster (src/lib/band.ts, which this test never reads): one person per role. */
 const BAND = [
-  { email: "ingrid@band.example", name: "Ingrid Avison" },
-  { email: "jeff@zilkey.com", name: "Jeff Dean" },
-  { email: "bass@band.example", name: "David Example" },
-  { email: "drums@band.example", name: "Eric Example" },
-  { email: "guitar@band.example", name: "Emma Example" },
+  { email: "vera@example.com", name: "Vera Lindqvist", instruments: ["vocals", "guitar"] },
+  { email: "kai@example.com", name: "Kai Moreno", instruments: ["keys"] },
+  { email: "sam@example.com", name: "Sam Okafor", instruments: ["bass"] },
+  { email: "nico@example.com", name: "Nico Alvarez", instruments: ["drums"] },
+  { email: "rae@example.com", name: "Rae Whitfield", instruments: ["lead guitar"] },
 ];
-
+const PLACES = { "Dog House": { name: "Dog House", address: "1 Example Way, Testville, CO" } };
 const showBase = {
   status: "confirmed", personnel: [], sound: { provider: "venueProvided" },
   needs: { poster: false, backline: false, merch: false }, docs: [], listings: {}, times: {}, checklists: [],
@@ -69,10 +70,10 @@ const showBase = {
 /** The world the import reads: the artist, the five musicians, the songs the sheet names, and the Porchfest show. */
 async function world(opts: { songs?: boolean; people?: boolean; porchfest?: boolean } = {}) {
   const { songs = true, people = true, porchfest = true } = opts;
-  await makeArtist("Ingrid Avison Band", "ingrid-avison-band");
+  await makeArtist("Test Band", "test-band");
   if (people) {
     for (const p of BAND) {
-      await db.create(importCtx(), "musicians", { name: p.name, email: p.email, instruments: ["guitar"], active: true });
+      await db.create(importCtx(), "musicians", { name: p.name, email: p.email, instruments: p.instruments, active: true });
     }
   }
   if (songs) {
@@ -89,7 +90,7 @@ async function world(opts: { songs?: boolean; people?: boolean; porchfest?: bool
 }
 
 const runImport = (snapshot = fixture(), extra: { dryRun?: boolean } = {}) =>
-  importRehearsalHistory({ artist: "ingrid-avison-band", snapshot, ...extra });
+  importRehearsalHistory({ artist: "test-band", snapshot, roster: BAND, places: PLACES, ...extra });
 const colOf = (r: Awaited<ReturnType<typeof runImport>>, col: string) => r.columns.find((c) => c.col === col)!;
 
 beforeEach(resetEmulators);
@@ -119,7 +120,7 @@ test("Doghouse imports under 2026-06-28 with its location, since the header is a
   assert.equal(c.date, "2026-06-28");
   assert.equal(c.action, "created");
   const doc = (await db.get("rehearsals", "rehearsal-2026-06-28"))!;
-  assert.deepEqual(doc.location, { name: "Dog House", address: "1 Example Way, Lafayette, CO" });
+  assert.deepEqual(doc.location, PLACES["Dog House"]);
   assert.deepEqual((doc.songs as { title: string }[]).map((s) => s.title).sort(), [...SONG_TITLES].sort());
   // No other rehearsal gets a location: the sheet never says where the dated ones happened.
   assert.equal((await db.get("rehearsals", "rehearsal-2026-07-26"))!.location, undefined);
@@ -129,7 +130,7 @@ test("every rehearsal gets its personnel, and 10/20 is the only one with Emma", 
   await world();
   const r = await runImport();
   assert.deepEqual(r.unknownPeople, []);
-  const quartet = ["David Example", "Eric Example", "Ingrid Avison", "Jeff Dean"];
+  const quartet = ["Kai Moreno", "Nico Alvarez", "Sam Okafor", "Vera Lindqvist"];
   for (const date of ["2026-06-28", "2026-07-26", "2026-10-13"]) {
     const doc = (await db.get("rehearsals", `rehearsal-${date}`))!;
     const names = await Promise.all((doc.personnel as string[]).map(async (id) => (await db.get("musicians", id))!.name));
@@ -137,7 +138,7 @@ test("every rehearsal gets its personnel, and 10/20 is the only one with Emma", 
   }
   const extra = (await db.get("rehearsals", "rehearsal-2026-10-20"))!;
   const names = await Promise.all((extra.personnel as string[]).map(async (id) => (await db.get("musicians", id))!.name));
-  assert.deepEqual(names.sort(), [...quartet, "Emma Example"].sort());
+  assert.deepEqual(names.sort(), [...quartet, "Rae Whitfield"].sort());
 });
 
 test("10/20 is created from Jeff's list even though the sheet has no such column", async () => {
@@ -234,10 +235,10 @@ test("a '(cover)' title cell still finds the song, which the song list stored wi
 
 test("a person with no musician record is reported and left out of the personnel", async () => {
   await world({ people: false });
-  await db.create(importCtx(), "musicians", { name: "Jeff Dean", email: "jeff@zilkey.com", instruments: ["keys"], active: true });
+  await db.create(importCtx(), "musicians", { name: "Kai Moreno", email: "kai@example.com", instruments: ["keys"], active: true });
   const r = await runImport();
   assert.deepEqual(r.unknownPeople, [
-    "bass@band.example", "guitar@band.example", "drums@band.example", "ingrid@band.example",
+    "nico@example.com", "rae@example.com", "sam@example.com", "vera@example.com",
   ]);
   const doc = (await db.get("rehearsals", "rehearsal-2026-07-26"))!;
   assert.equal((doc.personnel as string[]).length, 1);
@@ -292,8 +293,15 @@ test("a dry run writes nothing", async () => {
   assert.equal(rehearsalHistorySurvey(r).dryRun, true);
 });
 
+test("a roster with nobody on an instrument, or two people on it, fails loudly", async () => {
+  const noBass = BAND.filter((p) => !p.instruments.includes("bass"));
+  await assert.rejects(importRehearsalHistory({ artist: "test-band", snapshot: fixture(), roster: noBass, places: PLACES }), /"bass"/);
+  const twoDrummers = [...BAND, { email: "x@example.com", name: "X", instruments: ["drums"] }];
+  await assert.rejects(importRehearsalHistory({ artist: "test-band", snapshot: fixture(), roster: twoDrummers, places: PLACES }), /"drums"/);
+});
+
 test("no artist means nothing is imported", async () => {
-  const r = await importRehearsalHistory({ artist: "nope", snapshot: fixture() });
+  const r = await importRehearsalHistory({ artist: "nope", snapshot: fixture(), roster: BAND, places: PLACES });
   assert.equal(r.artist, undefined);
   assert.deepEqual(r.columns, []);
   assert.ok(group(rehearsalHistorySurvey(r).notes, "unclean").some((n) => /NO ARTIST/.test(n.reason)));

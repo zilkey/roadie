@@ -2,8 +2,8 @@
  * One-time import of a musician's gas-reimbursement sheet (Fuel Cost tab: one row per drive, round-trip miles x $/gal / mpg)
  * as their expenses, from the snapshot in .booking-kit/gas-eric.json (gitignored, public repo).
  *   tsx scripts/import-gas.ts [--dry-run] [--yes] [--artist=<slug>] [--report=<file.json>]
- * The musician is resolved by `musicianEmail` first and the full name as a fallback: the sheet says "Eric" and the roster
- * says "Eric Example", so a name-only match found nobody and skipped every row quietly. No match now fails the run.
+ * The musician is resolved by `musicianEmail` first and the full name as a fallback: the sheet says a first name and the roster
+ * says the full name, so a name-only match found nobody and skipped every row quietly. No match now fails the run.
  * Each row becomes one travel expense for the musician named in the snapshot, to be paid back (Paid TRUE rows are reported,
  * not imported: the sheet has no paid-back date). A "Show" row is put on the show that day (matched as in
  * import-show-income.ts); rehearsals and other drives go on no show, since an expense can only point at a show.
@@ -37,8 +37,8 @@ export type GasSnapshot = { source: string; values: string[][]; musician: string
 /**
  * Who the snapshot's musician is, by email first and the full name as a fallback.
  *
- * Email because it survives a rename and tells two Erics apart; the sheet's "Eric" is a first name, while the roster
- * carries "Eric Example", so the name match this used to rely on alone matched nothing and every row was skipped
+ * Email because it survives a rename and tells two people with one first name apart; the sheet has only a first name, while the roster
+ * carries the full name, so the name match this used to rely on alone matched nothing and every row was skipped
  * quietly. A snapshot with no `musicianEmail` keeps the old behaviour.
  */
 export function resolveMusician(

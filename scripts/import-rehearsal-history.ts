@@ -25,6 +25,8 @@ import { importCtx, newRunId } from "../src/server/ctx";
 import { formatSurvey, note, tally, type Bucket, type Note, type Survey } from "./survey";
 import { cleanTitle } from "./import-song-list";
 import type { SongListSnapshot } from "./snapshot-song-list";
+import { requireRoster } from "../src/lib/band-roster";
+import type { DevPerson } from "../src/lib/dev-people";
 
 /** Column A: the song title, the only column outside the M..X block this import reads. */
 const COL_TITLE = 0;
@@ -76,20 +78,24 @@ const EXTRA_REHEARSALS: { date: string; why: string }[] = [
 ];
 
 /**
- * Who was at each rehearsal, by email (musicians are matched by email, as scripts/seed-real.ts does -- a name is
- * not an id and two people can share one). From Jeff, 2026-10-24; the sheet does not record attendance.
+ * Who was at each rehearsal, by role. The roster (src/lib/band.ts, gitignored: real names and addresses stay out of
+ * this public repo) is searched for the person who plays each role, and their email is what musicians are matched
+ * on, as scripts/seed-real.ts does -- a name is not an id and two people can share one. From Jeff, 2026-10-24; the
+ * sheet does not record attendance.
  *
  * Only rehearsals appear here. A setlist has no personnel field, so the 10/3 line Jeff gave with the others has
  * nowhere to land: who played the Porchfest show is the show's own business, not the setlist's.
  */
-const INGRID = "ingrid@band.example";
-const JEFF = "jeff@zilkey.com";
-const DAVID = "bass@band.example";
-const ERIC = "drums@band.example";
-const EMMA = "guitar@band.example";
-const QUARTET = [INGRID, JEFF, DAVID, ERIC];
+type Role = "vocals" | "keys" | "bass" | "drums" | "leadGuitar";
 
-const PERSONNEL: Record<string, string[]> = {
+/** The instrument string the roster records for each role. Each must match exactly one person. */
+const ROLE_INSTRUMENT: Record<Role, string> = {
+  vocals: "vocals", keys: "keys", bass: "bass", drums: "drums", leadGuitar: "lead guitar",
+};
+
+const QUARTET: Role[] = ["vocals", "keys", "bass", "drums"];
+
+const PERSONNEL: Record<string, Role[]> = {
   "2026-06-28": QUARTET,
   "2026-07-26": QUARTET,
   "2026-08-11": QUARTET,
@@ -99,8 +105,22 @@ const PERSONNEL: Record<string, string[]> = {
   "2026-09-29": QUARTET,
   "2026-10-04": QUARTET,
   "2026-10-13": QUARTET,
-  "2026-10-20": [...QUARTET, EMMA],
+  "2026-10-20": [...QUARTET, "leadGuitar"],
 };
+
+/** Each role's email, from the roster. Throws, naming the role, if nobody or more than one person plays it. */
+export function rolesToEmails(people: Pick<DevPerson, "email" | "instruments">[]): Record<Role, string> {
+  const out = {} as Record<Role, string>;
+  for (const role of Object.keys(ROLE_INSTRUMENT) as Role[]) {
+    const want = ROLE_INSTRUMENT[role];
+    const hits = people.filter((p) => p.instruments.some((i) => i.trim().toLowerCase() === want));
+    if (hits.length !== 1) {
+      throw new Error(`The roster has ${hits.length} people with the instrument "${want}" (role ${role}); exactly one is needed to know who was at each rehearsal.`);
+    }
+    out[role] = hits[0].email;
+  }
+  return out;
+}
 
 /**
  * The two show columns with no ✅ at all. Both shows are real, already in the app, and both dates are past, so an
@@ -114,8 +134,21 @@ const EMPTY_SHOWS = new Set(["2026-10-16", "2026-10-17"]);
 /** The mark that means "we played this". Anything non-empty counts; the sheet uses ✅ throughout. */
 const isTick = (s: string) => !!s.trim();
 
-/** "Doghouse" -> the rehearsal location the band means by it (Eric's gas sheet has the address). */
-const DOGHOUSE = { name: "Dog House", address: "1 Example Way, Lafayette, CO" };
+/**
+ * "Doghouse" -> the rehearsal location the band means by it. The name is here; the street address is not (public
+ * repo), it comes from .booking-kit/rehearsal-places.json, keyed by that name.
+ */
+const DOGHOUSE_NAME = "Dog House";
+export type Place = { name: string; address?: string };
+
+function loadPlaces(): Record<string, Place> {
+  const file = join(process.cwd(), ".booking-kit", "rehearsal-places.json");
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, Place>;
+  } catch (e) {
+    throw new Error(`Could not read ${file} (gitignored; shape: { "Dog House": { "name": "Dog House", "address": "..." } }): ${e instanceof Error ? e.message : e}`);
+  }
+}
 
 export interface RehearsalHistoryReport {
   project: string; dryRun: boolean; runId: string; source: string; sheet: string; fetchedAt: string;
@@ -132,7 +165,7 @@ export interface RehearsalHistoryReport {
     songs: { songId: string; title: string }[];
     issues: string[];
   }[];
-  /** People named in PERSONNEL that no musician record matches: the import can't invent them. */
+  /** Roster emails for PERSONNEL roles that no musician record matches: the import can't invent them. */
   unknownPeople: string[];
 }
 
@@ -141,10 +174,19 @@ type ColumnReport = RehearsalHistoryReport["columns"][number];
 const colLetter = (c: number) => (c < 26 ? String.fromCharCode(65 + c) : `A${String.fromCharCode(65 + c - 26)}`);
 
 export async function importRehearsalHistory(
-  opts: { dryRun?: boolean; artist?: string; snapshot?: SongListSnapshot } = {},
+  opts: {
+    dryRun?: boolean; artist?: string; snapshot?: SongListSnapshot;
+    /** The band, for tests; default is the real roster (src/lib/band.ts). */
+    roster?: Pick<DevPerson, "email" | "instruments">[];
+    /** Rehearsal places by name, for tests; default is .booking-kit/rehearsal-places.json. */
+    places?: Record<string, Place>;
+  } = {},
 ): Promise<RehearsalHistoryReport> {
   const snap = opts.snapshot
     ?? (JSON.parse(readFileSync(join(process.cwd(), ".booking-kit", "song-list.json"), "utf8")) as SongListSnapshot);
+  const people = opts.roster ?? (await requireRoster()).BAND_PEOPLE;
+  const emailOfRole = rolesToEmails(people);
+  const doghouse: Place = opts.places?.[DOGHOUSE_NAME] ?? (opts.places ? { name: DOGHOUSE_NAME } : loadPlaces()[DOGHOUSE_NAME] ?? { name: DOGHOUSE_NAME });
   const runId = newRunId();
   const report: RehearsalHistoryReport = {
     project: process.env.GCLOUD_PROJECT ?? "", dryRun: !!opts.dryRun, runId,
@@ -174,9 +216,9 @@ export async function importRehearsalHistory(
     if (e) byEmail.set(e, m);
   }
   const missingPeople = new Set<string>();
-  const resolve = (emails: string[]) => {
+  const resolve = (roles: Role[]) => {
     const ids: string[] = [], names: string[] = [];
-    for (const e of emails) {
+    for (const e of roles.map((r) => emailOfRole[r])) {
       const m = byEmail.get(e.toLowerCase());
       if (m) { ids.push(m.id); names.push(m.name as string); }
       else missingPeople.add(e);
@@ -251,7 +293,7 @@ export async function importRehearsalHistory(
     const { ids, names } = resolve(PERSONNEL[spec.date] ?? []);
     out.personnel = names;
     if (!PERSONNEL[spec.date]) issues.push(`nobody is listed for ${spec.date}; imported with an empty personnel list`);
-    await writeRehearsal(unit, spec.date, out, ids, found, spec.col === 12 ? DOGHOUSE : undefined);
+    await writeRehearsal(unit, spec.date, out, ids, found, spec.col === 12 ? doghouse : undefined);
   }
 
   // ---------- rehearsals with no column ----------
@@ -277,7 +319,7 @@ async function writeRehearsal(
   out: ColumnReport,
   personnel: string[],
   songs: { songId: string; title: string }[],
-  location: { name: string; address: string } | undefined,
+  location: Place | undefined,
 ) {
   const id = `rehearsal-${date}`;
   out.id = id;
@@ -354,7 +396,7 @@ export function rehearsalHistorySurvey(r: RehearsalHistoryReport): Survey {
   }
   for (const e of r.unknownPeople) {
     notes.push(note("unclean", "a person listed for a rehearsal has no musician record, so they are missing from its personnel",
-      e, "add them in People, or fix the email in PERSONNEL"));
+      e, "add them in People, or fix the email in the roster"));
   }
   for (const c of r.columns) {
     const where = `column ${c.col} ${c.header}`;

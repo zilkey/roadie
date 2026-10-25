@@ -43,10 +43,9 @@ async function main() {
     await resolve.getByTestId("shows-upcoming").locator("a").first().click();
     await resolve.waitForURL(/\/shows\/[^/]+$/);
     const show = new URL(resolve.url()).pathname;
-    await resolve.goto(`${BASE}/songs`);
-    await resolve.getByTestId("songs-seg-setlists").click();
+    await resolve.goto(`${BASE}/setlists`);
     await resolve.getByTestId("setlists-list").getByText("Hi-Dive 45 min").click();
-    await resolve.waitForURL(/\/songs\/setlists\//);
+    await resolve.waitForURL(/\/setlists\//);
     const setlist = new URL(resolve.url()).pathname;
     await admin.ctx.close();
 

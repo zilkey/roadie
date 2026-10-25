@@ -72,68 +72,49 @@ imports rely on it:
 - `--yes` is required when there is **no** emulator host set, i.e. real Firestore. Without it the script throws
   *"This would write to REAL Firestore. Re-run with --dry-run to look first, or --yes if that is what you want."*
 
-The guard is literally `!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes") && !flag("dry-run")`, and all three
-importers now have it (`scripts/import-booking-kit.ts`, `scripts/import-show-income.ts`, `scripts/import-gas.ts`);
+The guard is literally `!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes") && !flag("dry-run")`, and all seven
+importers have it (booking, show-income, song-list, setlist-songs, rehearsal-history, setlists and gas, each `scripts/import-*.ts`);
 `scripts/seed-real.ts` words its own version slightly differently because it also refuses without `GCLOUD_PROJECT`.
 The consequence worth knowing: because the normal npm scripts hardcode the emulator host, **they can never hit
 production** — which is why production runs use the separate `:prod` scripts below rather than a flag.
 
 ### The `:prod` scripts
 ```
-GOOGLE_APPLICATION_CREDENTIALS=./key.json npm run import:booking:prod -- --dry-run
-GOOGLE_APPLICATION_CREDENTIALS=./key.json npm run import:booking:prod -- --yes
-```
-Each `:prod` script is the plain `tsx` invocation with `GCLOUD_PROJECT=roadie-prod-iab` and **no** emulator hosts, so
-the guard above engages by itself. The credentials path stays in the environment, never in `package.json`. Flags
-pass through after `--`.
-
-### The survey (read this before every real run)
-A `--dry-run` prints a **survey**: what the import would do, as a list to read and sign off on *before* it runs for
-real, not as a post-mortem after. Every importer prints the same five sections, decisions first:
-
-- **What lands clean** — counts by collection and action (created / already there / merged / unchanged).
-- **Needs a decision** — ambiguous matches, near-duplicate names that deduped into each other, guessed regions,
-  anything the importer had to guess at. This is the list to actually read.
-- **Won't land cleanly** — rows skipped, unmatched or reported instead of written, with line numbers, grouped by
-  reason so a hundred rows of one problem read as one line with a count.
-- **Would overwrite** — existing values the run would replace (on a re-run, or after a hand edit).
-- **Deferred on purpose** — what this import knowingly doesn't carry, so nothing looks lost later.
-
-The last line says either `N thing(s) to read before the real run.` or `Nothing unclean and nothing to decide: safe
-to run.` — the second is the signal the production run is safe. `--report=<file.json>` writes the same thing as JSON.
-
-The dry run is a real walk, not a row count: writes are held in the Writer's overlay instead of being flushed (see
-`run`'s `dryRun` in `src/server/db.ts`), so dedupe merges, cross-references and "already there" counts come out the
-same as the real run while Firestore is only ever read. Run the surveys on the **emulator against the real
-snapshots** first: same data, same reports, zero risk.
-
-```
-npm run import:booking -- --dry-run --report=/tmp/survey-booking.json      # emulator, real snapshots
-npm run import:show-income -- --dry-run --report=/tmp/survey-income.json
-npm run import:gas -- --dry-run --report=/tmp/survey-gas.json
-```
-
-### Order for the band's real data
-Backup first, always. Then, per import: **survey → read it → fix or accept each issue → `--yes` → run it a second
-time and confirm it reports everything unchanged** (every importer uses fixed ids and claims idempotency; a doubled
-income line is real money shown wrong).
-```
-npm run backup -- --out backups                  # before anything
-tsx scripts/wipe.ts --dry-run                    # see what would go (npm run wipe is emulator-only)
-tsx scripts/wipe.ts --yes --project=roadie-prod-iab   # empties Firestore and Auth
-npm run seed-real:prod -- --yes                  # the artist and the five people
-npm run import:booking:prod -- --dry-run         # the survey; then --yes, then --dry-run again
-npm run import:booking:prod -- --yes             # venues, festivals, contacts, pitches, shows
-npm run import:show-income:prod -- --dry-run     # survey, then --yes
+GOOGLE_APPLICATION_CREDENTIALS=./key.json npm run import:booking:prod -- --dry-run     # survey: first: everything else hangs off its shows
+npm run import:booking:prod -- --yes         # venues, festivals, contacts, pitches, shows
+npm run import:booking:prod -- --dry-run     # again: everything should read unchanged
+npm run import:show-income:prod -- --dry-run     # survey: needs the shows to exist
 npm run import:show-income:prod -- --yes         # money and ratings onto those shows
-npm run import:gas:prod -- --dry-run             # survey: check it names Eric Example, by email
-npm run import:gas:prod -- --yes                 # Eric Example's drives
+npm run import:show-income:prod -- --dry-run     # again: everything should read unchanged
+npm run import:song-list:prod -- --dry-run     # survey: the songs every later import links to
+npm run import:song-list:prod -- --yes         # songs, with their custom-field definitions
+npm run import:song-list:prod -- --dry-run     # again: everything should read unchanged
+npm run import:setlist-songs:prod -- --dry-run     # survey: needs song-list's field definitions
+npm run import:setlist-songs:prod -- --yes         # per-song setlist facts
+npm run import:setlist-songs:prod -- --dry-run     # again: everything should read unchanged
+npm run import:rehearsal-history:prod -- --dry-run     # survey: needs the songs and the 10/3 show
+npm run import:rehearsal-history:prod -- --yes         # rehearsals, and 10/3's setlist
+npm run import:rehearsal-history:prod -- --dry-run     # again: everything should read unchanged
+npm run import:setlists:prod -- --dry-run     # survey: needs the shows (including the tour shows) and all the songs, so items link
+npm run import:setlists:prod -- --yes         # setlists on shows
+npm run import:setlists:prod -- --dry-run     # again: everything should read unchanged
+npm run import:gas:prod -- --dry-run     # survey: needs the shows and the musician, resolved by email
+npm run import:gas:prod -- --yes         # the gas sheet's musician's drives
+npm run import:gas:prod -- --dry-run     # again: everything should read unchanged
 ```
 Every `:prod` line takes `GOOGLE_APPLICATION_CREDENTIALS=./key.json` in front of it, as above.
-The order is forced: income matches rows to shows that must already exist, and gas matches drives to show dates.
+The order is forced, one reason per importer:
+- `booking` — First: everything else hangs off its shows.
+- `show-income` — needs the shows to exist.
+- `song-list` — the songs every later import links to.
+- `setlist-songs` — needs song-list's field definitions.
+- `rehearsal-history` — needs the songs and the 10/3 show.
+- `setlists` — needs the shows (including the tour shows) and all the songs, so items link.
+- `gas` — needs the shows and the musician, resolved by email.
+
 
 The gas import resolves its musician by **email** (`musicianEmail` in the snapshot), with the full name as a
-fallback. The sheet says "Eric" and the roster says "Eric Example", so a name-only match found nobody and skipped
+fallback. The sheet carries a first name and the roster the full name, so a name-only match found nobody and skipped
 every row while still reporting success; it now fails the run instead. The gas survey prints which musician and
 login every row resolved to, by name and email — check that line before the real run.
 

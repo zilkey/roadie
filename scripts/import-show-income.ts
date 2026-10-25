@@ -7,7 +7,8 @@
  * matches, so the show can be added by hand and the import run again.
  * For a matched show:
  *   - the money columns become income lines on its deal, all received (ids acct-*, so a re-run replaces them, never doubles them);
- *     a not-received guarantee line from booking is replaced by the received one; any other income already on the deal is left
+ *     the guarantee line booking wrote (id "g", received or not, as booking marks every past show's pay received) or any other
+ *     not-received guarantee line is replaced by the sheet's, and the amounts are compared; any other income already on the deal is left
  *     alone and the row is reported instead
  *   - Gig Length fills times.setLengthSec when the show has none (a different booked length is reported, not overwritten)
  *   - Notes and the Ingie Award go to the deal's rating notes, Audience Count to the deal's `crowd`, once the rating no
@@ -106,6 +107,9 @@ export function nearby(gig: string, date: string, shows: Doc[], days = 400): Doc
 }
 
 // ---------- the Shows tab ----------
+
+/** The fixed id import-booking-kit.ts gives the venue book's pay line. */
+const BOOKED_ID = "g";
 
 /** Money columns -> income line (id, category, method). Blank or $0 cells add nothing. */
 const MONEY: { col: string; id: string; category: "guarantee" | "door" | "tips" | "merch"; method?: "cash" | "venmo" }[] = [
@@ -211,7 +215,7 @@ export async function importShowIncome(opts: { dryRun?: boolean; artist?: string
     else {
       const have = (deal.income ?? []) as { id: string; category: string; amount: number; method?: string; received: boolean }[];
       const ours = have.filter((l) => l.id.startsWith("acct-"));
-      const booked = have.filter((l) => !l.id.startsWith("acct-") && l.category === "guarantee" && !l.received && r.income.some((x) => x.category === "guarantee"));
+      const booked = have.filter((l) => (l.id === BOOKED_ID || (!l.id.startsWith("acct-") && l.category === "guarantee" && !l.received)) && r.income.some((x) => x.category === "guarantee"));
       const other = have.filter((l) => !ours.includes(l) && !booked.includes(l));
       out.existingIncome = sumIncome(have);
       if (!r.income.length) out.incomeAction = "none";

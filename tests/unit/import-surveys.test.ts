@@ -135,28 +135,28 @@ const gasSnapshot = (
     ...rows.map((r) => {
       const rt = r.miles ?? "54.0";
       // 54 mi / 27 mpg x $4.00 = $8.00, so the row's own arithmetic check passes.
-      return [r.date, r.type, r.place, "2 Example St, Longmont, CO 80503", String(+rt / 2), rt, "$4.00", "2.00", `$${((+rt / 27) * 4).toFixed(2)}`, r.paid ?? "FALSE"];
+      return [r.date, r.type, r.place, "2 Example Ave, Testville, CO 80000", String(+rt / 2), rt, "$4.00", "2.00", `$${((+rt / 27) * 4).toFixed(2)}`, r.paid ?? "FALSE"];
     }),
   ],
 });
 
-/** Eric as the real roster has him: a full name, and the email the snapshot now carries. */
-const makeEric = async (name = "Eric Example", email = "drums@band.example") => {
+/** Nico as the real roster has him: a full name, and the email the snapshot now carries. */
+const makeNico = async (name = "Nico Alvarez", email = "nico@example.com") => {
   const m = await cmd("musicians.create", { name, email, instruments: ["drums"] });
   await makeUser(email, "member", { name, musicianId: m.id });
   return m.id;
 };
 
-test("gas rows resolve to Eric Example by email when the snapshot carries musicianEmail", async () => {
-  const musicianId = await makeEric();
-  // The snapshot says "Eric"; the roster says "Eric Example". Only the email can bridge that.
+test("gas rows resolve to Nico Alvarez by email when the snapshot carries musicianEmail", async () => {
+  const musicianId = await makeNico();
+  // The snapshot says "Nico"; the roster says "Nico Alvarez". Only the email can bridge that.
   const r = await importGas({
     artist: "ingrid-avison-band",
-    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Eric", musicianEmail: "drums@band.example" }),
+    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Nico", musicianEmail: "nico@example.com" }),
   });
   assert.equal(r.resolved?.how, "email");
-  assert.equal(r.resolved?.musicianName, "Eric Example");
-  assert.equal(r.resolved?.musicianEmail, "drums@band.example");
+  assert.equal(r.resolved?.musicianName, "Nico Alvarez");
+  assert.equal(r.resolved?.musicianEmail, "nico@example.com");
   assert.equal(r.rows[0].action, "created");
   // The expense is his, and its id carries his musician record.
   assert.equal(r.rows[0].expenseId, `gas-${musicianId}-2026-06-28`);
@@ -166,18 +166,18 @@ test("gas rows resolve to Eric Example by email when the snapshot carries musici
 });
 
 test("gas falls back to the full-name match for a snapshot with no email", async () => {
-  await makeEric();
+  await makeNico();
   const r = await importGas({
     artist: "ingrid-avison-band",
-    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Eric Example" }),
+    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Nico Alvarez" }),
   });
   assert.equal(r.resolved?.how, "name");
-  assert.equal(r.resolved?.musicianName, "Eric Example");
+  assert.equal(r.resolved?.musicianName, "Nico Alvarez");
   assert.equal(r.rows[0].action, "created");
 });
 
 test("an unresolvable musician is reported loudly, not skipped quietly", async () => {
-  await makeEric();
+  await makeNico();
   const snapshot = gasSnapshot(
     [{ date: "6/28/2026", type: "Rehearsal", place: "David's" }, { date: "7/26/2026", type: "Rehearsal", place: "David's" }],
     { musician: "Nobody", musicianEmail: "nobody@example.com" },
@@ -196,25 +196,25 @@ test("an unresolvable musician is reported loudly, not skipped quietly", async (
 
 test("resolveMusician prefers the email even when another musician's name matches", () => {
   const musicians = [
-    { id: "m1", name: "Eric", email: "eric.the.other@example.com" },
-    { id: "m2", name: "Eric Example", email: "drums@band.example" },
+    { id: "m1", name: "Nico", email: "nico.the.other@example.com" },
+    { id: "m2", name: "Nico Alvarez", email: "nico@example.com" },
   ] as any;
-  // A first-name match would take the wrong Eric; the email takes the right one.
-  assert.equal(resolveMusician({ musician: "Eric", musicianEmail: "drums@band.example" }, musicians).musician?.id, "m2");
-  assert.equal(resolveMusician({ musician: "Eric" }, musicians).musician?.id, "m1");
+  // A first-name match would take the wrong Nico; the email takes the right one.
+  assert.equal(resolveMusician({ musician: "Nico", musicianEmail: "nico@example.com" }, musicians).musician?.id, "m2");
+  assert.equal(resolveMusician({ musician: "Nico" }, musicians).musician?.id, "m1");
 });
 
 // ---------- gas: the survey ----------
 
 test("the gas survey puts a Paid row and a show-less drive in the right lists, and names who each row is for", async () => {
-  await makeEric();
+  await makeNico();
   const r = await importGas({
     artist: "ingrid-avison-band",
     snapshot: gasSnapshot([
       { date: "6/28/2026", type: "Rehearsal", place: "David's" },
       { date: "7/26/2026", type: "Rehearsal", place: "David's", paid: "TRUE" },
       { date: "10/3/2026", type: "Show", place: "Denver Porchfest" },
-    ], { musician: "Eric", musicianEmail: "drums@band.example" }),
+    ], { musician: "Nico", musicianEmail: "nico@example.com" }),
   });
   const s = gasSurvey(r);
   const reasons = (b: "unclean" | "decide" | "deferred" | "overwrite") => group(s.notes, b).map((g) => g.reason);
@@ -226,13 +226,13 @@ test("the gas survey puts a Paid row and a show-less drive in the right lists, a
 
   // Who it is all for, by name and email, so a whole-file skip is impossible to miss.
   const out = formatSurvey(s);
-  assert.match(out, /musician: Eric Example <eric@drums-band\.com> \(by email\)/, out);
+  assert.match(out, /musician: Nico Alvarez <nico@example\.com> \(by email\)/, out);
   assert.match(out, /expenses: 3 \(created 2, skipped 1\)/, out);
 });
 
 test("a second gas run reports every row unchanged and writes nothing new", async () => {
-  await makeEric();
-  const snapshot = gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Eric", musicianEmail: "drums@band.example" });
+  await makeNico();
+  const snapshot = gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Nico", musicianEmail: "nico@example.com" });
   await importGas({ artist: "ingrid-avison-band", snapshot });
   const before = await db.list("expenses");
   const again = await importGas({ artist: "ingrid-avison-band", snapshot });
@@ -243,13 +243,13 @@ test("a second gas run reports every row unchanged and writes nothing new", asyn
 });
 
 test("a gas dry run reports what it would create and writes nothing", async () => {
-  await makeEric();
+  await makeNico();
   const r = await importGas({
     artist: "ingrid-avison-band", dryRun: true,
-    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Eric", musicianEmail: "drums@band.example" }),
+    snapshot: gasSnapshot([{ date: "6/28/2026", type: "Rehearsal", place: "David's" }], { musician: "Nico", musicianEmail: "nico@example.com" }),
   });
   assert.equal(r.rows[0].action, "created");
-  assert.equal(r.resolved?.musicianName, "Eric Example", "a dry run still resolves the musician");
+  assert.equal(r.resolved?.musicianName, "Nico Alvarez", "a dry run still resolves the musician");
   assert.deepEqual(await db.list("expenses"), []);
   assert.match(formatSurvey(gasSurvey(r)), /dry run, nothing written/);
 });

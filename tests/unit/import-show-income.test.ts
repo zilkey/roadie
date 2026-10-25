@@ -49,11 +49,11 @@ beforeEach(async () => {
 });
 
 /** One Shows-tab row per show: only the columns the rating step reads, plus the money the import needs to see. */
-const snapshot = (rows: { date: string; gig: string; notes?: string; audience?: string; award?: string }[]) => ({
+const snapshot = (rows: { date: string; gig: string; notes?: string; audience?: string; award?: string; guarantee?: string }[]) => ({
   source: "test",
   values: [
     ["Date", "Gig", "Guarantee (Check / Venmo)", "Total Income", "Gig Length (minutes)", "Notes", "Audience Count", "Ingie Award Nomination"],
-    ...rows.map((r) => [r.date, r.gig, "$100.00", "$100.00", "", r.notes ?? "", r.audience ?? "", r.award ?? ""]),
+    ...rows.map((r) => [r.date, r.gig, r.guarantee ?? "$100.00", r.guarantee ?? "$100.00", "", r.notes ?? "", r.audience ?? "", r.award ?? ""]),
   ],
 });
 
@@ -125,4 +125,34 @@ test("import: a dry run reports the rating as written but writes nothing", async
   assert.equal(r.rows[0].rating, "written");
   assert.equal(await ratingOf(show.id), undefined);
   assert.equal(await crowdOf(show.id), undefined);
+});
+
+const setIncome = (id: string, income: unknown[]) => db.update(importCtx(), "showDeals", id, { income });
+
+test("import: a booked guarantee marked received (booking does that for past shows) is replaced, and the difference reported", async () => {
+  const show = await makeShow("2026-06-28");
+  await setIncome(show.id, [{ id: "g", category: "guarantee", amount: 30000, received: true }]);
+  const r = await importShowIncome({
+    artist: "ingrid-avison-band",
+    snapshot: snapshot([{ date: "6/28/2026", gig: "Hi-Dive", guarantee: "$355.00" }]),
+  });
+  assert.equal(r.rows[0].incomeAction, "replaced");
+  const income = (await db.get("showDeals", show.id))!.income as { id: string; category: string; amount: number; received: boolean }[];
+  assert.equal(income.length, 1);
+  assert.equal(income[0].id.startsWith("acct-"), true);
+  assert.equal(income[0].amount, 35500);
+  assert.equal(income[0].received, true);
+  assert.match(r.rows[0].issues.join("; "), /booked guarantee was \$300\.00, the sheet says \$355\.00 came in/);
+});
+
+test("import: a hand-entered income line is still a conflict and the deal's income is untouched", async () => {
+  const show = await makeShow("2026-06-28");
+  const mine = [{ id: "hand1", category: "guarantee", amount: 30000, received: true }];
+  await setIncome(show.id, mine);
+  const r = await importShowIncome({
+    artist: "ingrid-avison-band",
+    snapshot: snapshot([{ date: "6/28/2026", gig: "Hi-Dive", guarantee: "$355.00" }]),
+  });
+  assert.equal(r.rows[0].incomeAction, "conflict");
+  assert.deepEqual((await db.get("showDeals", show.id))!.income, mine);
 });

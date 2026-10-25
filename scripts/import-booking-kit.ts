@@ -60,9 +60,9 @@ const REGION_CITIES: [Region, RegExp][] = [
   ["north", /fort collins|loveland|greeley|milliken|berthoud|windsor|northern co/i],
   ["south", /colorado springs|manitou|divide|pueblo|ca[nñ]on city/i],
   ["mountains", /idaho springs|silver plume|buena vista|salida|carbondale|nederland|conifer|dillon|frisco|breckenridge|steamboat|vail|ridgway|palisade/i],
-  ["southwest", /durango|cortez|dolores|pagosa|del norte|alamosa|montrose/i],
+  ["southwest", /durango|cortez|dolores|pagosa|del norte|alamosa|montrose|telluride/i],
 ];
-function regionForCity(city: string, state = "CO"): Region | undefined {
+export function regionForCity(city: string, state = "CO"): Region | undefined {
   if (state && state !== "CO") return "out";
   return REGION_CITIES.find(([, re]) => re.test(city))?.[0];
 }
@@ -73,7 +73,7 @@ const FEST_REGIONS: Record<string, Region> = {
 };
 
 /** "Boulder, CO" -> {city, state}. No comma: the whole string is the city, in CO. */
-function splitCity(s: string): { city: string; state: string } {
+export function splitCity(s: string): { city: string; state: string } {
   const m = s.trim().match(/^(.*),\s*([A-Z]{2})$/);
   if (m) return { city: m[1].trim(), state: m[2] };
   return { city: s.trim(), state: /\bTX\b/.test(s) ? "TX" : "CO" };
@@ -383,24 +383,8 @@ const SS_TYPES: Record<string, string> = {
   louisville: "bar", fox: "theater", bouldertheater: "theater", aggie: "theater", washingtons: "club", oriental: "theater", ophelias: "club",
   marquis: "club", bluebird: "theater", gothic: "theater", summit: "club",
 };
-/** Buyers named in the support doc: who books which room. */
-const SS_PROMOTERS: { id: string; name: string; kind: "promoter" | "venueGroup" | "nonprofit" | "buyer"; venues: string[]; website?: string; howToPitch?: string; notes?: string }[] = [
-  { id: "z2", name: "Z2 Entertainment", kind: "promoter", venues: ["fox", "bouldertheater", "aggie", "velvet"], website: "https://z2ent.com",
-    howToPitch: "Email bookingasst@z2ent.com with social and web links, contact info, and a brief history of shows played in the area. Ask for local support on indie touring dates.",
-    notes: "Buyers: joe@z2ent.com (Fox, booking across rooms), david@z2ent.com (Boulder Theater). Keeps a public door open to local bands." },
-  { id: "larimer-group", name: "Larimer Lounge group", kind: "venueGroup", venues: ["lostlake", "larimer", "globe"],
-    howToPitch: "Booking form on any of the three sites (asks your Denver draw: answer with a number), or one email to haylee@ and jackson@larimerlounge.com naming all three rooms.",
-    notes: "Owner Scott Campbell is also an AEG talent buyer: the on-ramp to the Bluebird and Gothic." },
-  { id: "live-nation-co", name: "Live Nation Colorado", kind: "promoter", venues: ["marquis", "summit"],
-    howToPitch: "No public submission. Support comes from their buyers or the touring act's agent: open for touring bands at Larimer / Hi-Dive, then ask their agent for the date next time through." },
-  { id: "aeg-rm", name: "AEG Presents Rocky Mountains", kind: "promoter", venues: ["bluebird", "gothic"],
-    howToPitch: "Support placed by AEG buyers and the headliner's agent. Build the Larimer group relationship first." },
-  { id: "roots-music-project", name: "Roots Music Project", kind: "nonprofit", venues: ["roots"], website: "https://rootsmusicproject.org",
-    howToPitch: "Ask Ian Steele directly (warm relationship). Also runs the BIFF showcase at Velvet Elk and the Tulagi festival.",
-    notes: "Dave Kennedy and Ian Steele teach the venue-booking workshop; a referral from them carries weight at the Fox, Velvet Elk and the Larimer rooms." },
-  { id: "bohemian", name: "Bohemian Foundation", kind: "nonprofit", venues: ["washingtons"], website: "https://bohemianfoundation.org",
-    notes: "Music District is the local-artist side door; also runs Thursday Night Live." },
-];
+export interface SsPromoter { id: string; name: string; kind: "promoter" | "venueGroup" | "nonprofit" | "buyer"; venues: string[]; website?: string; howToPitch?: string; notes?: string }
+/** Buyers named in the support doc live in the gitignored snapshot (they carry real contact data). */
 const TIER_LABEL = { 1: "Tier 1 · pitch now", 2: "Tier 2 · after two or three Tier 1 shows", 3: "Tier 3 · later" } as const;
 
 function ssAddress(c: string): { city: string; street?: string } {
@@ -411,7 +395,8 @@ function ssAddress(c: string): { city: string; street?: string } {
 }
 
 async function importSupportSlots() {
-  const { source, pulledAt, venues, tracking } = load<{ source: string; pulledAt: string; venues: SsVenue[]; tracking: Record<string, { status?: string; date?: string; notes?: string }> }>("support-slots.json");
+  const { source, pulledAt, venues, tracking, promoters } = load<{ source: string; pulledAt: string; venues: SsVenue[]; tracking: Record<string, { status?: string; date?: string; notes?: string }>; promoters?: SsPromoter[] }>("support-slots.json");
+  if (!promoters) throw new Error(`${join(DIR, "support-slots.json")} has no "promoters" key: add the buyers array (SsPromoter[]) to the snapshot`);
   const sources = [{ url: source, checkedAt: pulledAt, note: "Support Slot Targets (claude.ai tracker)" }];
   const venueIds: Record<string, string> = {};
   for (const v of venues) {
@@ -440,7 +425,7 @@ async function importSupportSlots() {
         { notes: lines("Local support slot on a touring indie bill.", t.notes), pitchedOn: t.date });
     });
   }
-  for (const p of SS_PROMOTERS) {
+  for (const p of promoters) {
     await unit(async (w) => {
       const ids = p.venues.map((k) => venueIds[k]).filter(Boolean);
       const id = await ensure(w, "promoters", `ss-${p.id}`, { name: p.name, kind: p.kind, website: p.website, contactIds: [], venueIds: ids, howToPitch: p.howToPitch, notes: p.notes, sources });
