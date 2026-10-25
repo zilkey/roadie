@@ -167,6 +167,7 @@ export function AskWhoIsFree({ pitchId, showId, date, defaultIds, place, musicia
           <div className="flex flex-wrap items-center gap-2">
             {groupUrl && <ChannelPicker value={channel} onChange={setChannel} name={`ask-channel-${askPath}`} testid="ask-channel" />}
             <button className="btn acc" disabled={busy || !picked.length || !d} onClick={send} data-testid="ask-send">Send</button>
+            {(!d || !picked.length) && <span className="s" data-testid="ask-send-why">{!d ? "Pick a date to send." : "Pick at least one person."}</span>}
           </div>
         </div>
       )}

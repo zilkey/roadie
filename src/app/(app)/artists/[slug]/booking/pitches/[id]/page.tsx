@@ -78,6 +78,8 @@ function PitchPage() {
   const [mode, setMode] = useState<"comment" | "call">("comment");
   const shows = useCollection<Show>("shows").rows ?? [];
   const edition = p?.target.kind === "edition" ? b.editions.find((e) => e.id === p.target.id) : undefined;
+  // The ask needs a date: the festival start, else the next possible date still ahead.
+  const askDate = edition?.startDate ?? (dateRows ?? sortedDates(p?.dates)).find((x) => x >= todayStr()) ?? "";
   const activity = useCollection<Activity>(`pitches/${id}/activity`).rows ?? [];
   const comments = useCollection<Comment>(`pitches/${id}/comments`).rows ?? [];
   if (nf || !p) return nf;
@@ -189,7 +191,7 @@ function PitchPage() {
             {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc" data-testid="booked-it">Booked it</Link>}
           </div>
           <WhosFree pitchId={id} musicians={musicians} extraIds={p.personnel} />
-          <AskWhoIsFree pitchId={id} date={edition?.startDate ?? ""} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
+          <AskWhoIsFree pitchId={id} date={askDate} defaultIds={p.personnel} place={p.target.name} musicians={musicians} />
         </div>
       </section>
 

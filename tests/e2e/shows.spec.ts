@@ -87,6 +87,27 @@ test("Booked it turns a pitch into a show with a set length, show start, calenda
   expect(after.some((e) => e.id === ev.id)).toBe(false);
 });
 
+test("Ask who's free: the date is prefilled from the pitch, and Send says why it's disabled", async ({ page }) => {
+  await signInAs(page, "jeff");
+  const open = async (name: string) => {
+    await page.goto(A("/booking"));
+    await page.getByTestId("booking-seg-pitches").click();
+    await page.getByTestId("pitch-list").locator("tr", { hasText: name }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+    await page.getByTestId("ask-toggle").click();
+  };
+  // Dairy has possible dates: the first one seeds the ask.
+  await open("Dairy Arts Center");
+  await expect(page.getByTestId("ask-date")).toHaveValue("2027-03-12");
+  // Cervantes has none: Send is off and says so until a date is picked.
+  await open("Cervantes");
+  await expect(page.getByTestId("ask-date")).toHaveValue("");
+  await expect(page.getByTestId("ask-send")).toBeDisabled();
+  await expect(page.getByTestId("ask-send-why")).toHaveText("Pick a date to send.");
+  await page.getByTestId("ask-date").fill("2027-03-06");
+  await expect(page.getByTestId("ask-send")).toBeEnabled();
+  await expect(page.getByTestId("ask-send-why")).toHaveCount(0);
+});
+
 test("Ask who's free: emails go out, a sub answers by link without logging in", async ({ page, browser, request }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));
