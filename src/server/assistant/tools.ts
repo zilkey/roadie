@@ -41,7 +41,7 @@ const SPECIAL: ToolDef[] = [
   },
   {
     name: "search",
-    description: "Find a venue, show, band member, song, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate.",
+    description: "Find a venue, show, band member, song, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate. Needs a name to look for: to count or list records by what they have or lack, use records.list.",
     inputJsonSchema: obj({ q: { type: "string", minLength: 1 }, kinds: { type: "array", items: { enum: [...SEARCH_KINDS] } }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["q"]),
   },
   {
@@ -346,7 +346,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (name === "context.now") return { output: dataResult(await contextNow(ctx, s)) };
     if (name === "search") {
       const p = z.strictObject({ q: z.string().min(1), kinds: z.array(z.enum(SEARCH_KINDS)).optional(), limit: z.number().int().min(1).max(50).optional() }).safeParse(input ?? {});
-      if (!p.success) throw new AppError("invalid_input", "Give me something to search for", 400);
+      if (!p.success) throw new AppError("invalid_input", "Give me a name to search for (to count or filter records, use records.list)", 400);
       return { output: dataResult(await searchAll(ctx, p.data)) };
     }
     if (name === "history.undoRun") {

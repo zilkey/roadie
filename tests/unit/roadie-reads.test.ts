@@ -8,6 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { venueNoteId } from "@/schema";
+import { firestore } from "@/server/admin";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -82,6 +83,16 @@ test("records.list filters: expenses by showId, pitches by status and venueId, s
 
   const shows = await list(sys, { kind: "shows", venueId: venueA });
   assert.deepEqual(shows.rows.map((r) => r.id), [showA]);
+});
+
+test("records.list missing: counts venues with no city, and fields trims the rows", async () => {
+  // The schema requires a city now; older imported rooms can still lack one.
+  await firestore().collection("venues").doc("legacy").set({ name: "Old Barn", type: "bar", address: { state: "CO" }, region: "denver", matchKey: "old-barn" });
+  const none = await list(sys, { kind: "venues", missing: ["address.city"], limit: 1, fields: ["name"] });
+  assert.equal(none.count, 1);
+  assert.deepEqual(none.rows, [{ id: "legacy", name: "Old Barn" }]);
+  assert.equal((await list(sys, { kind: "venues", missing: ["address.zip"] })).count, 3);
+  assert.equal((await list(sys, { kind: "venues", limit: 1 })).count, 3, "count is every match, not the page");
 });
 
 test("availability asks filter by showId and pitchId", async () => {

@@ -98,16 +98,23 @@ export const recordsGet = defineCommand({
   },
 });
 
+/** A dotted path into a record ("address.city"). */
+const at = (d: Record<string, any>, path: string): unknown => path.split(".").reduce<any>((o, k) => (o == null ? undefined : o[k]), d); // eslint-disable-line @typescript-eslint/no-explicit-any
+const isEmpty = (v: unknown) => v == null || (typeof v === "string" && !v.trim()) || (Array.isArray(v) && !v.length);
+
 export const recordsList = defineCommand({
   name: "records.list", roles: [...READ],
   description:
     "List records of one kind (newest changes first), live ones only. Use search to find specific ones. Optional filters, combined with AND: " +
     "showId (expenses of a show; availability asks for a show), pitchId (availability asks for a pitch), rehearsalId, " +
-    "status (e.g. the Pitch List by status; pitch rows include every status, not just active ones), venueId (pitches or shows at a venue).",
+    "status (e.g. the Pitch List by status; pitch rows include every status, not just active ones), venueId (pitches or shows at a venue), " +
+    "missing (dotted field paths that are empty, e.g. [\"address.city\"] for venues with no city). count is every match, however small limit is: " +
+    "for \"how many\" questions pass limit 1, and fields (e.g. [\"name\"]) to keep long lists short.",
   input: strict({
     kind: kindEnum, limit: z.number().int().min(1).max(200).default(50),
     showId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), pitchId: z.string().min(1).optional(),
     status: z.string().min(1).optional(), venueId: z.string().min(1).optional(),
+    missing: z.array(z.string().min(1)).optional(), fields: z.array(z.string().min(1)).optional(),
   }),
   async run(ctx, i) {
     let rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d));
@@ -121,8 +128,10 @@ export const recordsList = defineCommand({
     if (i.pitchId) rows = rows.filter((d) => d.pitchId === i.pitchId);
     if (i.status) rows = rows.filter((d) => d.status === i.status);
     if (i.venueId) rows = rows.filter((d) => venueOf(d) === i.venueId);
+    if (i.missing?.length) rows = rows.filter((d) => i.missing!.every((f) => isEmpty(at(d, f))));
     rows = rows.sort((a, b) => (b.updatedAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? 0));
-    return { count: rows.length, rows: rows.slice(0, i.limit).map((r) => present(ctx, i.kind, r)) };
+    const shown = rows.slice(0, i.limit).map((r) => present(ctx, i.kind, r));
+    return { count: rows.length, rows: i.fields?.length ? shown.map((r) => Object.fromEntries(["id", ...i.fields!].map((f) => [f, at(r, f) ?? null]))) : shown };
   },
 });
 
