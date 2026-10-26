@@ -273,7 +273,7 @@ test("shows.create seeds the deal's contacts from the band's venue notes, not an
   const o = await cmd("contacts.create", { name: "Other", emails: ["o@x.com"] });
   const v = await cmd("venues.create", venue("Fox", "Boulder", { contactIds: [c.id] }));
   await run_("venues.update", { id: v.id, patch: { contactIds: [o.id] } }, asOther());
-  const s = await cmd("shows.create", { venueId: v.id, date: "2027-02-02", addToCalendar: false });
+  const s = await cmd("shows.create", { venueId: v.id, date: "2027-02-02" });
   assert.deepEqual((await db.get("showDeals", s.id))!.contactIds, [c.id]);
 });
 
@@ -298,7 +298,7 @@ test("a venue not yet migrated (private fields still on the doc) reads, updates 
   assert.deepEqual([n.notes, n.loadInNotes, n.contactIds], ["new notes", "old dock", ["c-old"]]);
   // a show booked here takes its contacts from the legacy link too
   const v2 = await db.create(ctx, "venues", venue("Old Room 2", "Denver", { contactIds: ["c-old2"], promoterIds: [] }));
-  const s = await cmd("shows.create", { venueId: v2.id, date: "2027-03-03", addToCalendar: false });
+  const s = await cmd("shows.create", { venueId: v2.id, date: "2027-03-03" });
   assert.deepEqual((await db.get("showDeals", s.id))!.contactIds, ["c-old2"]);
 });
 

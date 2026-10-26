@@ -17,7 +17,7 @@ async function world() {
   const member = await makeUser("m@example.com", "member");
   const v = await db.create(importCtx(), "venues", venue("The Bluebird"));
   const call = (who: { token: string }, name: string, input: unknown) => dispatch(name, bearer(who.token), input, TEST_ARTIST);
-  const show = async (date: string) => result(await call(admin, "shows.create", { venueId: v.id, date, addToCalendar: false })).id;
+  const show = async (date: string) => result(await call(admin, "shows.create", { venueId: v.id, date })).id;
   const field = async (kind: "Show" | "Song", label: string) => result<{ fieldId: string }>(await call(admin, `artists.add${kind}Field`, { id: TEST_ARTIST, label })).fieldId;
   const artist = async () => (await db.get("artists", TEST_ARTIST))!;
   return { admin, member, call, show, field, artist };

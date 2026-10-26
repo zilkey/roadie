@@ -12,7 +12,6 @@ async function newShow(page: Page, date: string) {
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill(date);
-  await page.getByTestId("show-calendar").uncheck();
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
@@ -29,7 +28,7 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await expect(card.getByTestId("where-maps")).toContainText("Open in Google Maps");
   await expect(card.getByTestId("where-no-times")).toContainText("No times yet.");
   await expect(card.getByTestId("where-no-contact")).toContainText("No day-of contact.");
-  await expect(card.getByTestId("where-foot")).toContainText("Not on anyone's calendar");
+  await expect(card.getByTestId("where-foot")).toContainText("Not on the band calendar");
 
   // Add times opens the edit form
   await card.getByTestId("where-add-times").click();
@@ -79,7 +78,24 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await card.getByTestId("where-when-cancel").click();
   await expect(card.getByTestId("where-dayof")).toContainText("Taproom Tom"); // Cancel changed nothing
 
-  // Add for everyone puts it on the calendar
-  await card.getByTestId("where-calendar-add").click();
-  await expect(card.getByTestId("where-calendar")).toContainText("On everyone's calendar");
+  // Add to calendar shows exactly what goes out before anything is sent
+  await card.getByTestId("where-calendar-open").click();
+  const dlg = page.getByTestId("where-calendar-dialog");
+  await expect(dlg.getByTestId("cal-preview-calendar")).toHaveText("Ingrid Avison Band");
+  await expect(dlg.getByTestId("cal-preview-title")).toContainText("at Hi-Dive");
+  await expect(dlg.getByTestId("cal-preview-when")).toHaveText(/May 7, 2027 · 5:00 pm – /);
+  await expect(dlg.getByTestId("cal-preview-where")).toContainText("Hi-Dive");
+  await expect(dlg.getByTestId("cal-preview-invitees")).toHaveText("Nobody"); // no one is playing yet
+  await expect(dlg.getByTestId("cal-preview-notes")).toContainText("Load in 5:00 pm");
+  await expect(dlg.getByTestId("cal-preview-notes")).toContainText("Day-of contact: Taproom Tom");
+  await dlg.getByTestId("cal-send").click();
+  await expect(card.getByTestId("where-calendar")).toContainText("On the band calendar");
+  await expect(card.getByTestId("where-calendar-note")).toContainText("Sent to the band calendar");
+
+  // Opening it again says nothing changed; Update is there, and so is Remove
+  await card.getByTestId("where-calendar-open").click();
+  await expect(dlg.getByTestId("cal-preview-unchanged")).toBeVisible();
+  await expect(dlg.getByTestId("cal-send")).toHaveText("Update event");
+  await dlg.getByTestId("cal-remove").click();
+  await expect(card.getByTestId("where-calendar")).toContainText("Not on the band calendar");
 });

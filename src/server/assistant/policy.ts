@@ -38,7 +38,7 @@ export function refusal(name: string, input: unknown): string | undefined {
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "availability.ask", "availability.remind",                      // sends
   "expenses.setPaidBack", "showDeals.setIncome",                                          // money
-  "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar",                          // cancels, leaves the app
+  "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
   "stats.pull",                                                                          // calls out
@@ -61,7 +61,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -72,7 +72,6 @@ export function needsConfirm(name: string, input: unknown): boolean {
   if (name === "venues.update" && sharedVenueFields(input).length) return true;
   const o = (input ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   if (name === "shows.update" && (o.patch?.status !== undefined || o.patch?.publishToBandsintown !== undefined)) return true; // cancels, or lists on / takes off Bandsintown
-  if (name === "shows.create" && o.addToCalendar !== false && o.sendInvites !== false) return true; // puts an invite in people's calendars
   if (READ_ONLY.has(name) || ONE_RECORD_LISTS.has(name)) return false;
   const walk = (v: unknown, depth: number): boolean => {
     if (Array.isArray(v)) return v.length > BULK_LIMIT || (depth < 2 && v.some((x) => walk(x, depth + 1)));
@@ -108,7 +107,8 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     if (p.publishToBandsintown !== undefined) out.push(p.publishToBandsintown ? `List${l} on Bandsintown` : `Take${l} off Bandsintown`);
     return out.join("; ");
   },
-  "shows.create": (i) => `Book ${i.label ?? "a show"}${i.date ? ` on ${i.date}` : ""}: add it to Google Calendar and invite the band`,
+  "shows.calendar": (i) => (i.on ? `Put the show${i.label ? ` ${i.label}` : ""} on the band calendar and invite the band` : `Take the show${i.label ? ` ${i.label}` : ""} off the band calendar`),
+  "rehearsals.calendar": (i) => (i.on ? "Put the rehearsal on the band calendar and invite everyone coming" : "Take the rehearsal off the band calendar"),
   "musicians.archive": (i) => `Archive ${i.label ?? "this person"}: they leave the band and lose their sign-in for this band`,
   "musicians.removeFromBand": (i) => `Take ${i.label ?? "this person"} out of the band (they keep their sign-in)`,
   "artists.removeSongField": () => "Delete the song field: every song loses its value",

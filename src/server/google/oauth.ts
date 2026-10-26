@@ -17,7 +17,8 @@ export type GoogleFeature = (typeof GOOGLE_FEATURES)[number];
 /** What each feature asks for. Gmail: compose covers sending and drafts; readonly is for reading replies in threads Roadie started. */
 export const FEATURE_SCOPES: Record<GoogleFeature, string[]> = {
   gmail: ["https://www.googleapis.com/auth/gmail.compose", "https://www.googleapis.com/auth/gmail.readonly"],
-  calendar: ["https://www.googleapis.com/auth/calendar.events"],
+  // Events on the band calendar, and the account's calendar list: choosing the band calendar and checking access to it.
+  calendar: ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.calendarlist.readonly"],
   // Full Drive: search files the band doesn't own, read who they're shared with, copy into the band folder, share. drive.file can't.
   drive: ["https://www.googleapis.com/auth/drive"],
 };

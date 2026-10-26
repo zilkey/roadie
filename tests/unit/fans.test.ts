@@ -55,7 +55,7 @@ beforeEach(async () => {
   venueId = (await cmd("venues.create", venue("Hi-Dive", "Denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" } }))).id;
   showId = (await cmd("shows.create", {
     date: "2026-11-14", venueId, status: "confirmed", times: { doors: "20:00", set: "21:00", setLengthSec: 3600 },
-    addToCalendar: false, sendInvites: false, deal: { deal: "guarantee", guarantee: 40000 },
+    sendInvites: false, deal: { deal: "guarantee", guarantee: 40000 },
   })).id;
 });
 
@@ -102,7 +102,7 @@ test("list: the venue's time zone moves the window", async () => {
   // Set 21:00 for an hour: the window runs 18:00 to 01:00 (the next night) in the venue's own zone.
   const pacific = (await cmd("venues.create", venue("Crocodile", "Seattle", { address: { city: "Seattle", state: "WA" } }))).id;
   await db.update(ctx, "venues", pacific, { timeZone: "America/Los_Angeles" });
-  const s2 = (await cmd("shows.create", { date: "2026-12-05", venueId: pacific, status: "confirmed", times: { set: "21:00", setLengthSec: 3600 }, addToCalendar: false, sendInvites: false })).id;
+  const s2 = (await cmd("shows.create", { date: "2026-12-05", venueId: pacific, status: "confirmed", times: { set: "21:00", setLengthSec: 3600 }, sendInvites: false })).id;
   // 08:30Z on the 6th is 00:30 PST (still inside) but 01:30 MST (half an hour past the Denver-zone window).
   const at = new Date("2026-12-06T08:30:00Z");
   assert.deepEqual((await listView("ingrid-avison-band", at)).current, { showId: s2, label: "Crocodile · Seattle", date: "2026-12-05", mode: "during" });
@@ -148,7 +148,7 @@ test("signup at a show: city from the venue doc, geocoded, consent set once, mer
 });
 
 test("signup: refuses a show that isn't countable or isn't this band's; a geocode outage doesn't fail it", async () => {
-  const hold = (await cmd("shows.create", { date: "2026-12-01", venueId, status: "hold", times: {}, addToCalendar: false, sendInvites: false })).id;
+  const hold = (await cmd("shows.create", { date: "2026-12-01", venueId, status: "hold", times: {}, sendInvites: false })).id;
   await refused(signup("ingrid-avison-band", SignupBody.parse({ email: "a@b.co", showId: hold, page: "/f/x" })), "invalid_input");
   await refused(signup("ingrid-avison-band", SignupBody.parse({ email: "a@b.co", showId: "nope", page: "/f/x" })), "invalid_input");
   await refused(signup("not-a-band", SignupBody.parse({ email: "a@b.co", page: "/f/x" })), "not_found");
@@ -162,7 +162,7 @@ test("signup: refuses a show that isn't countable or isn't this band's; a geocod
 });
 
 test("signup at a house show: city only, no state", async () => {
-  const house = (await cmd("shows.create", { date: "2026-12-12", kind: "house", place: { city: "Nederland", address: "1 Secret Ln" }, status: "confirmed", times: {}, addToCalendar: false, sendInvites: false })).id;
+  const house = (await cmd("shows.create", { date: "2026-12-12", kind: "house", place: { city: "Nederland", address: "1 Secret Ln" }, status: "confirmed", times: {}, sendInvites: false })).id;
   const v = await listView("ingrid-avison-band", new Date("2026-12-12T20:00:00Z"));
   assert.equal(v.current?.label, "House concert · Nederland");
   assert.ok(!JSON.stringify(v).includes("Secret"));

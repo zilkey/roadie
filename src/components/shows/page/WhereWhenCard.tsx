@@ -4,7 +4,8 @@ import Link, { useArtist } from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { describeDuration, endsAt, fmtDuration, parseDuration, setLengthOf } from "@/lib/duration";
-import { fmtTime, kindOf, showAddress, showCity, showName } from "@/lib/shows";
+import { fmtTime, isOff, kindOf, showAddress, showCity, showName } from "@/lib/shows";
+import { CalendarSend } from "@/components/CalendarSend";
 import type { Contact, Edition, Venue, VenueNote } from "@/schema";
 import type { ShowRow } from "../common";
 import { EditableCard, UnfinishedPlaceholder, useCardEdit } from "./kit";
@@ -63,7 +64,6 @@ function timesOf(f: Form, sec: number | null) {
 export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }) {
   const { artistId } = useArtist();
   const { call, error: cmdError, busy, setError } = useCommand();
-  const act = useCommand();
   const [form, setForm] = useState<Form>(() => formOf(show));
   const [localError, setLocalError] = useState<string | null>(null);
   const wantContact = useRef(false);
@@ -195,11 +195,8 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
             </UnfinishedPlaceholder>
           )}
           <div className="s flex flex-wrap items-center gap-x-5 gap-y-1" data-testid="where-foot">
-                        {show.calendarEventId ? <span data-testid="where-calendar">✓ On everyone&apos;s calendar</span> : (
-              <span data-testid="where-calendar">Not on anyone&apos;s calendar{admin && <> · <button type="button" className="font-semibold underline" style={{ color: "var(--accent)" }} disabled={act.busy} onClick={() => void act.call("shows.calendar", { id: show.id, on: true })} data-testid="where-calendar-add">Add for everyone</button></>}</span>
-            )}
+            <CalendarSend kind="shows" id={show.id} eventId={show.calendarEventId} admin={admin} off={isOff(show)} testid="where-calendar" />
           </div>
-          <ErrorBox error={act.error} />
         </div>
       ) : (
         <div className="grid gap-4">

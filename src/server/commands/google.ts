@@ -12,7 +12,7 @@ import type { Ctx } from "../ctx";
 import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, signState, verifyState } from "../google/oauth";
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
 import { bandGoogle } from "../google/band";
-import { driveClient, IntegrationError, useRealGoogle } from "../integrations";
+import { calendarClient, canWrite, driveClient, IntegrationError, useRealGoogle, type CalInfo } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
 
 const artistOf = (ctx: Ctx) => {
@@ -49,16 +49,35 @@ async function folderStatus(artistId: string, field: "driveFolderId" | "rehearsa
   }
 }
 
+/** The caller can use Calendar: the local fake (CALENDAR_BASE_URL set), or the real API with their own grant for Calendar. */
+async function calendarReady(uid: string): Promise<boolean> {
+  if (!useRealGoogle(process.env.CALENDAR_BASE_URL)) return !!process.env.CALENDAR_BASE_URL;
+  return !!(await getGrant(uid))?.features.includes("calendar");
+}
+const bandCalendarOf = async (artistId: string) => ((await db.get("artists", artistId))?.calendar as { id: string; name: string } | null | undefined) ?? null;
+
+/** The caller's own access to a calendar, as their Google account sees it. */
+async function accessTo(uid: string, calendarId: string): Promise<CalInfo | null> {
+  try { return await calendarClient({ uid }).calendar(calendarId); } catch (e) {
+    if (e instanceof IntegrationError && e.status === 404) return null;
+    if (e instanceof IntegrationError) throw new AppError("calendar_error", `Google Calendar: ${e.message}`, 502);
+    throw e;
+  }
+}
+
 async function status(ctx: Ctx) {
   const artistId = artistOf(ctx);
-  const [ready, folder, rehearsalFolder] = await Promise.all([driveReady(artistId), folderStatus(artistId, "driveFolderId"), folderStatus(artistId, "rehearsalFolderId")]);
-  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder };
+  const [ready, folder, rehearsalFolder, calReady, calendar] = await Promise.all([
+    driveReady(artistId), folderStatus(artistId, "driveFolderId"), folderStatus(artistId, "rehearsalFolderId"), calendarReady(ctx.uid), bandCalendarOf(artistId),
+  ]);
+  const cal = { calendarReady: calReady, calendar };
+  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder, ...cal };
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
   const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
   const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
   return {
-    configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder,
+    configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder, ...cal,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
     band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
   };
@@ -66,7 +85,7 @@ async function status(ctx: Ctx) {
 
 export const googleStatus = defineCommand({
   name: "google.status", roles: ["admin"], input: z.strictObject({}),
-  description: "Read-only: whether Google is set up on this server, which features the caller's own Google account is connected for, and which admin's account the band's Calendar and Drive use.",
+  description: "Read-only: whether Google is set up on this server, which features the caller's own Google account is connected for, which admin's account the band's Drive uses, and the band calendar.",
   run: (ctx) => status(ctx),
 });
 
@@ -87,7 +106,7 @@ export const googleConnectUrl = defineCommand({
 export const googleFinishConnect = defineCommand({
   name: "google.finishConnect", roles: ["admin"],
   description: "Finish connecting Google: exchange the code Google returned and store the caller's grant. The state must be one this admin started. " +
-    "The first account connected for Calendar or Drive becomes the band's.",
+    "The first account connected for Calendar or Drive becomes the band's Drive account.",
   input: z.strictObject({ code: z.string().min(1), state: z.string().min(1) }),
   async run(ctx, { code, state }) {
     const artistId = artistOf(ctx);
@@ -110,7 +129,7 @@ export const googleFinishConnect = defineCommand({
 
 export const googleUseForBand = defineCommand({
   name: "google.useForBand", roles: ["admin"], input: z.strictObject({}),
-  description: "Make the caller's connected Google account the band's: new show events go on their Google Calendar and Drive lookups use their Drive. Events already on the old account's calendar stay there.",
+  description: "Make the caller's connected Google account the band's for Drive: Drive lookups, sharing checks and copies use their Drive. (Calendar events go on the band calendar, google.setCalendar.)",
   async run(ctx) {
     const artistId = artistOf(ctx);
     const g = await getGrant(ctx.uid);
@@ -185,4 +204,46 @@ export const googleSetRehearsalFolder = defineCommand({
   },
 });
 
-export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetRehearsalFolder];
+export const googleCalendars = defineCommand({
+  name: "google.calendars", roles: ["admin"], input: z.strictObject({}),
+  description: "Read-only: the calendars in the caller's own Google Calendar list and their access to each (owner and writer can add events), for choosing the band calendar.",
+  async run(ctx) {
+    artistOf(ctx);
+    if (!(await calendarReady(ctx.uid))) throw new AppError("calendar_not_connected", "Connect your Google Calendar first", 400);
+    const all = await calendarClient({ uid: ctx.uid }).calendars().catch((e) => {
+      if (e instanceof IntegrationError) throw new AppError("calendar_error", `Google Calendar: ${e.message}`, 502);
+      throw e;
+    });
+    return { calendars: all.map((c) => ({ ...c, canWrite: canWrite(c) })).sort((a, b) => Number(b.canWrite) - Number(a.canWrite) || Number(!!b.primary) - Number(!!a.primary) || a.name.localeCompare(b.name)) };
+  },
+});
+
+export const googleSetCalendar = defineCommand({
+  name: "google.setCalendar", roles: ["admin"],
+  description: "Choose the band calendar: the shared Google Calendar show and rehearsal events go on when an admin sends them. The caller's own Google account must be able to add events to it.",
+  input: z.strictObject({ calendarId: z.string().trim().min(1) }),
+  async run(ctx, { calendarId }) {
+    const artistId = artistOf(ctx);
+    if (!(await calendarReady(ctx.uid))) throw new AppError("calendar_not_connected", "Connect your Google Calendar first", 400);
+    const c = await accessTo(ctx.uid, calendarId);
+    if (!c) throw new AppError("not_found", "Your Google account doesn't have that calendar", 404);
+    if (!canWrite(c)) throw new AppError("forbidden", `You can only see ${c.name}, not add events to it. Ask its owner to let you make changes to events.`, 403);
+    await db.update(ctx, "artists", artistId, { calendar: { id: c.id, name: c.name } });
+    return status(ctx);
+  },
+});
+
+export const googleCheckCalendar = defineCommand({
+  name: "google.checkCalendar", roles: ["admin"], input: z.strictObject({}),
+  description: "Read-only: whether the caller's own Google account can add events to the band calendar (their access role on it), so they know their show and rehearsal sends will work.",
+  async run(ctx) {
+    const artistId = artistOf(ctx);
+    const calendar = await bandCalendarOf(artistId);
+    if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. Choose it first.", 400);
+    if (!(await calendarReady(ctx.uid))) return { calendar, canWrite: false, accessRole: null, reason: "not_connected" as const };
+    const c = await accessTo(ctx.uid, calendar.id);
+    return { calendar, canWrite: !!c && canWrite(c), accessRole: c?.accessRole ?? null, reason: !c ? "no_access" as const : canWrite(c) ? null : "read_only" as const };
+  },
+});
+
+export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetRehearsalFolder];

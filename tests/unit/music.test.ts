@@ -209,7 +209,7 @@ test("setlist templates and show setlists: totalSec computed, song data copied, 
   // a show's setlist lives at setlists/{showId}: no name, no showId field, no pointer on the show
   const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
   const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
-  const showId = (await cmd("shows.create", { pitchId: p, date: "2027-01-16", venueId: v, addToCalendar: false, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
+  const showId = (await cmd("shows.create", { pitchId: p, date: "2027-01-16", venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
   await cmd("setlists.setItems", { showId, items: [{ type: "song", songId: b }, { type: "song", songId: a }] });
   let ss = (await db.get("setlists", showId))!;
   assert.equal(ss.totalSec, 482);
@@ -246,7 +246,7 @@ test("setlists.seed: from a template or another show, replace or append, records
   const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
   const mk = async (date: string) => {
     const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
-    return (await cmd("shows.create", { pitchId: p, date, venueId: v, addToCalendar: false, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
+    return (await cmd("shows.create", { pitchId: p, date, venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id as string;
   };
   const s1 = await mk("2027-01-16");
   const s2 = await mk("2027-02-20");

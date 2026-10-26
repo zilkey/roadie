@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { A } from "./env";
+import { A, CAL } from "./env";
 
 async function as(browser: Browser, key: string) {
   const ctx = await browser.newContext();
@@ -105,4 +105,27 @@ test("your profile: the driving and gas card shows the seeded values and an MPG 
     // put the seeded value back, so the rehearsal expense checks above see 28 MPG
     await setMpg("28");
   }
+});
+
+/** The seeded Oct 29 rehearsal at The Loft. Saving never sends; the calendar button previews, then sends; Remove takes it off again. */
+test("a rehearsal goes on the band calendar only from its button, after a preview", async ({ browser, request }) => {
+  const { page, close } = await as(browser, "jeff");
+  await openRehearsal(page, "Oct 29");
+  const line = page.getByTestId("reh-calendar");
+  await expect(line).toContainText("Not on the band calendar");
+  await page.getByTestId("reh-calendar-open").click();
+  const dlg = page.getByTestId("reh-calendar-dialog");
+  await expect(dlg.getByTestId("cal-preview-calendar")).toHaveText("Ingrid Avison Band");
+  await expect(dlg.getByTestId("cal-preview-title")).toHaveText(/rehearsal at The Loft$/);
+  await expect(dlg.getByTestId("cal-preview-when")).toContainText("Oct 29");
+  await expect(dlg.getByTestId("cal-preview-where")).toContainText("The Loft");
+  await dlg.getByTestId("cal-send").click();
+  await expect(line).toContainText("On the band calendar");
+  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { title: string }[];
+  expect(events.some((e) => /rehearsal at The Loft$/.test(e.title))).toBe(true);
+
+  await page.getByTestId("reh-calendar-open").click();
+  await dlg.getByTestId("cal-remove").click();
+  await expect(line).toContainText("Not on the band calendar");
+  await close();
 });

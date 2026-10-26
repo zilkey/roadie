@@ -23,6 +23,7 @@ import { ExpensesCardFor } from "@/components/money/ExpensesCard";
 import { Tabs } from "@/components/booking/common";
 import { DetailCard, DetailPage, KV, useSingleEdit } from "@/components/booking/DetailCards";
 import { SongSearch } from "@/components/music/SongSearch";
+import { CalendarSend } from "@/components/CalendarSend";
 
 export default function RehearsalPage() { return <Suspense><Page /></Suspense>; }
 
@@ -288,7 +289,8 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
               </div>
             </div>
           }>
-          <KV rows={[["Date", fmtLong(form.date)], ["Time", timeLine, "reh-time"], ["Location", where]]} />
+          <KV rows={[["Date", fmtLong(form.date)], ["Time", timeLine, "reh-time"], ["Location", where],
+            ["Calendar", <CalendarSend key="cal" kind="rehearsals" id={existing.id} eventId={existing.calendarEventId} admin={admin} beforeOpen={() => as.flush()} testid="reh-calendar" />]]} />
         </DetailCard>
 
         <DetailCard private title="Band members" testid="reh-members-card" headerExtra={fullBand ? <span className="d-muted text-sm">Full band</span> : undefined}>

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startAll } from "../../fakes/run-all";
+import { BAND_CALENDAR_ID, READONLY_CALENDAR_ID } from "../../fakes/fake-calendar/server";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
@@ -107,12 +108,9 @@ test("Booked it: show + showDeal in one go, pitch linked and booked, no checklis
   const act = await db.list(`pitches/${pitchId}/activity`);
   assert.ok(act.some((a) => a.toStatus === "booked"));
 
-  // calendar event for everyone playing (Ingrid, Jeff, David have emails)
-  const ev = await calendarClient().get(show.calendarEventId);
-  assert.deepEqual(ev.attendees.map((a) => a.email).sort(), ["david@example.com", "ingrid@example.com", "jeff@example.com"]);
-  assert.equal(ev.start, "2027-01-16T18:00:00");
-  assert.equal(ev.end, "2027-01-16T20:40:00");
-  assert.match(ev.title, /Ingrid Avison Trio at Hi-Dive/);
+  // Calendar is never touched by saving a show
+  assert.equal(show.calendarEventId, undefined);
+  assert.equal((await calendarClient().list()).length, 0);
 });
 
 test("Booked it validates and rolls back whole when the venue is missing", async () => {
@@ -152,7 +150,7 @@ test("a show not yet migrated: its old checklist and gear read as lists, and the
 });
 
 test("status changes: setStatus keeps who, when and why; a blank reason clears it", async () => {
-  const r = await create({ status: "hold", addToCalendar: false });
+  const r = await create({ status: "hold" });
   await cmd("shows.setStatus", { id: r.id, status: "canceled", reason: "  Venue double-booked  " });
   let show = (await db.get("shows", r.id))!;
   assert.equal(show.status, "canceled"); assert.equal(show.reason, "Venue double-booked");
@@ -182,7 +180,7 @@ test("comments: the whole band posts; only the author edits or deletes", async (
 });
 
 test("Bandsintown: public + confirmed lists it; holds and private stay off; changes update; cancel removes", async () => {
-  const hold = await create({ status: "hold", publishToBandsintown: true, addToCalendar: false });
+  const hold = await create({ status: "hold", publishToBandsintown: true });
   assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
   const priv = await create({ date: "2027-02-06", publishToBandsintown: false });
   assert.equal((await db.get("shows", priv.id))!.listings.bandsintown, undefined);
@@ -218,17 +216,12 @@ test("Bandsintown: public + confirmed lists it; holds and private stay off; chan
   assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
   assert.equal((await bandsintownClient().list()).length, 1);
 
-  // cancel removes it and the calendar event
-  show = (await db.get("shows", r.id))!;
-  const calId = show.calendarEventId;
-  assert.ok(calId);
+  // cancel removes it
   await cmd("shows.cancel", { id: r.id });
   show = (await db.get("shows", r.id))!;
   assert.equal(show.status, "canceled");
   assert.equal(show.listings.bandsintown, undefined);
-  assert.equal(show.calendarEventId, undefined);
   assert.equal((await bandsintownClient().list()).length, 0);
-  assert.equal((await calendarClient().list()).find((e) => e.id === calId), undefined);
 });
 
 test("Bandsintown failure is recorded on the show, not thrown; retry works", async () => {
@@ -244,23 +237,104 @@ test("Bandsintown failure is recorded on the show, not thrown; retry works", asy
   assert.equal((await db.get("shows", r.id))!.listings.bandsintown.state, "listed");
 });
 
-test("Calendar: update on change, delete on cancel, optional on create, toggle from the show", async () => {
-  const none = await create({ addToCalendar: false });
-  assert.equal((await db.get("shows", none.id))!.calendarEventId, undefined);
-  await cmd("shows.update", { id: none.id, patch: { date: "2027-03-01" } });
-  assert.equal((await db.get("shows", none.id))!.calendarEventId, undefined, "no event is created behind your back");
-  await cmd("shows.calendar", { id: none.id, on: true });
-  const evId = (await db.get("shows", none.id))!.calendarEventId;
-  assert.ok(evId);
-  await cmd("shows.update", { id: none.id, patch: { times: { loadIn: "17:00", set: "19:30", setLengthSec: 3600 }, personnel: [ids.ingrid] } });
-  const ev = await calendarClient().get(evId);
-  assert.equal(ev.start, "2027-03-01T17:00:00");
-  assert.equal(ev.end, "2027-03-01T20:30:00");
-  assert.equal(ev.timeZone, "America/Denver");
+const useBandCalendar = (id = BAND_CALENDAR_ID) => db.update(ctx, "artists", artistId, { calendar: { id, name: "Ingrid Avison Band" } });
+
+test("Calendar: only the button sends; preview shows what goes out; update and remove on the band calendar", async () => {
+  const r = await create({});
+  await assert.rejects(cmd("shows.calendarPreview", { id: r.id }), /No band calendar yet/);
+  await assert.rejects(cmd("shows.calendar", { id: r.id, on: true }), /No band calendar yet/);
+  await useBandCalendar();
+
+  const p = await cmd("shows.calendarPreview", { id: r.id });
+  assert.deepEqual([p.calendar.name, p.action, p.unchanged], ["Ingrid Avison Band", "create", false]);
+  assert.match(p.event.title, /Ingrid Avison Trio at Hi-Dive/);
+  assert.deepEqual([p.event.start, p.event.end, p.event.allDay, p.event.timeZone], ["2027-01-16T18:00:00", "2027-01-16T20:40:00", false, "America/Denver"]);
+  assert.equal(p.event.location, "Hi-Dive, 7 S Broadway, Denver");
+  assert.match(p.event.description, /Load in 6:00 pm\nSet 8:00 pm \(40m\)/);
+  assert.deepEqual(p.invitees.map((x: any) => x.name), ["Ingrid", "Jeff", "David"]);
+  assert.deepEqual(p.noEmail, []);
+  assert.equal((await calendarClient().list()).length, 0, "a preview sends nothing");
+
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: true })).calendar, "created");
+  const evId = (await db.get("shows", r.id))!.calendarEventId;
+  let ev = await calendarClient().get(evId);
+  assert.equal(ev.calendarId, BAND_CALENDAR_ID);
+  assert.deepEqual(ev.attendees.map((a) => a.email).sort(), ["david@example.com", "ingrid@example.com", "jeff@example.com"]);
+  assert.equal((await cmd("shows.calendarPreview", { id: r.id })).unchanged, true);
+
+  // Saving the show leaves the event alone until the button is pressed again
+  await cmd("shows.update", { id: r.id, patch: { times: { loadIn: "17:00", set: "19:30", setLengthSec: 3600 }, personnel: [ids.ingrid, ids.sam] } });
+  assert.equal((await calendarClient().get(evId)).start, "2027-01-16T18:00:00");
+  const p2 = await cmd("shows.calendarPreview", { id: r.id });
+  assert.deepEqual([p2.action, p2.unchanged, p2.noEmail], ["update", false, ["Sam"]]);
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: true })).calendar, "updated");
+  ev = await calendarClient().get(evId);
+  assert.deepEqual([ev.start, ev.end], ["2027-01-16T17:00:00", "2027-01-16T20:30:00"]);
   assert.deepEqual(ev.attendees.map((a) => a.email), ["ingrid@example.com"]);
-  await cmd("shows.calendar", { id: none.id, on: false });
+
+  // Canceling leaves the event; only Remove takes it off. A canceled show can't be sent.
+  await cmd("shows.cancel", { id: r.id });
+  assert.ok(await calendarClient().get(evId));
+  await assert.rejects(cmd("shows.calendar", { id: r.id, on: true }), /canceled show/);
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: false })).calendar, "removed");
   assert.equal((await calendarClient().list()).length, 0);
-  assert.equal((await db.get("shows", none.id))!.calendarEventId, undefined);
+  assert.equal((await db.get("shows", r.id))!.calendarEventId, undefined);
+});
+
+test("Calendar: an event deleted in Google comes back on the next send; no write access fails with Google's reason", async () => {
+  await useBandCalendar();
+  const r = await create({});
+  await cmd("shows.calendar", { id: r.id, on: true });
+  await calendarClient().delete((await db.get("shows", r.id))!.calendarEventId);
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: true })).calendar, "created");
+
+  await useBandCalendar(READONLY_CALENDAR_ID);
+  const other = await create({ date: "2027-02-01" });
+  await assert.rejects(cmd("shows.calendar", { id: other.id, on: true }), /Google Calendar: .*writer access/);
+  assert.equal((await db.get("shows", other.id))!.calendarEventId, undefined);
+});
+
+test("Rehearsals: preview and send to the band calendar; all day without a start time; saving never sends", async () => {
+  await useBandCalendar();
+  const r = await cmd("rehearsals.create", {
+    date: "2027-01-10", location: { name: "Doghouse", address: "12 Main St, Boulder" }, personnel: [ids.ingrid, ids.sam], notes: "Bring the new charts", songs: [],
+  });
+  assert.equal((await calendarClient().list()).length, 0);
+  let p = await cmd("rehearsals.calendarPreview", { id: r.id });
+  assert.deepEqual([p.event.title, p.event.start, p.event.end, p.event.allDay], ["Ingrid Avison Band rehearsal at Doghouse", "2027-01-10", "2027-01-11", true]);
+  assert.equal(p.event.location, "Doghouse, 12 Main St, Boulder");
+  assert.equal(p.event.description, "Bring the new charts");
+  assert.deepEqual([p.invitees.map((x: any) => x.email), p.noEmail], [["ingrid@example.com"], ["Sam"]]);
+
+  await cmd("rehearsals.calendar", { id: r.id, on: true });
+  const evId = (await db.get("rehearsals", r.id))!.calendarEventId;
+  assert.equal((await calendarClient().get(evId)).calendarId, BAND_CALENDAR_ID);
+  await cmd("rehearsals.update", { id: r.id, patch: { startTime: "19:00", endTime: "21:30" } });
+  assert.equal((await calendarClient().get(evId)).start, "2027-01-10", "saving leaves the event alone");
+  p = await cmd("rehearsals.calendarPreview", { id: r.id });
+  assert.deepEqual([p.action, p.event.start, p.event.end, p.event.allDay], ["update", "2027-01-10T19:00:00", "2027-01-10T21:30:00", false]);
+  await cmd("rehearsals.calendar", { id: r.id, on: true });
+  assert.equal((await calendarClient().get(evId)).end, "2027-01-10T21:30:00");
+  await cmd("rehearsals.calendar", { id: r.id, on: false });
+  assert.equal((await calendarClient().list()).length, 0);
+});
+
+test("Settings > Google: choose the band calendar from your own list; check your access", async () => {
+  const actx = { ...ctx, artistId };
+  const { calendars } = await cmd("google.calendars", {}, actx);
+  assert.deepEqual(calendars.map((c: any) => [c.id, c.canWrite]), [["primary", true], [BAND_CALENDAR_ID, true], [READONLY_CALENDAR_ID, false]]);
+  await assert.rejects(cmd("google.checkCalendar", {}, actx), /No band calendar yet/);
+  await assert.rejects(cmd("google.setCalendar", { calendarId: READONLY_CALENDAR_ID }, actx), /only see/);
+  await assert.rejects(cmd("google.setCalendar", { calendarId: "nope" }, actx), /doesn't have that calendar/);
+  const st = await cmd("google.setCalendar", { calendarId: BAND_CALENDAR_ID }, actx);
+  assert.deepEqual(st.calendar, { id: BAND_CALENDAR_ID, name: "Ingrid Avison Band" });
+  assert.equal(st.calendarReady, true);
+  assert.deepEqual(await cmd("google.checkCalendar", {}, actx), { calendar: { id: BAND_CALENDAR_ID, name: "Ingrid Avison Band" }, canWrite: true, accessRole: "writer", reason: null });
+  await useBandCalendar(READONLY_CALENDAR_ID);
+  assert.deepEqual((await cmd("google.checkCalendar", {}, actx)).reason, "read_only");
+  await useBandCalendar("gone");
+  assert.deepEqual((await cmd("google.checkCalendar", {}, actx)).reason, "no_access");
+  assert.ok(!registry["google.setCalendar"].roles.includes("member"));
 });
 
 test("After the show: ratings, paid attendance, played; no money entered; future shows refused", async () => {
@@ -520,7 +594,7 @@ test("shows.list rows carry the reason; afterShow refuses a dropped show", async
 test("house concert: no venue, hosts + place; name, kind and band-PA default; validation", async () => {
   const host = (await cmd("contacts.create", { name: "Jennifer Okafor", emails: ["jen@example.com"], phones: [] })).id;
   const co = (await cmd("contacts.create", { name: "Tom Okafor", emails: [], phones: [] })).id;
-  const r = await cmd("shows.create", { date: "2027-03-06", hostContactIds: [host, co], place: { city: "Longmont", address: "12 Pine St" }, addToCalendar: true, billedAs: "duo" });
+  const r = await cmd("shows.create", { date: "2027-03-06", hostContactIds: [host, co], place: { city: "Longmont", address: "12 Pine St" }, billedAs: "duo" });
   const s = (await db.get("shows", r.id))!;
   assert.equal(s.kind, "house");
   assert.equal(s.venue, undefined);
@@ -529,7 +603,8 @@ test("house concert: no venue, hosts + place; name, kind and band-PA default; va
   assert.equal(s.hostName, "Jennifer Okafor & Tom Okafor");
   assert.equal(s.sound.provider, "bandProvided", "house concerts default to our PA");
   assert.deepEqual((await db.get("showDeals", r.id))!.contactIds, [host, co], "the deal's contacts are the hosts");
-  const ev = (await calendarClient().list())[0];
+  await useBandCalendar();
+  const ev = (await cmd("shows.calendarPreview", { id: r.id })).event;
   assert.match(ev.title, /at House concert · Jennifer Okafor & Tom Okafor$/);
   assert.equal(ev.location, "12 Pine St");
 
@@ -539,7 +614,7 @@ test("house concert: no venue, hosts + place; name, kind and band-PA default; va
 
 test("house concert: renaming a host updates the show; Bandsintown never sees the host or address", async () => {
   const host = (await cmd("contacts.create", { name: "Pat", emails: [], phones: [] })).id;
-  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, publishToBandsintown: true, addToCalendar: false });
+  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, publishToBandsintown: true });
   await cmd("contacts.update", { id: host, patch: { name: "Pat Example" } });
   assert.equal((await db.get("shows", r.id))!.hostName, "Pat Example");
   const [ev] = await bandsintownClient().list();
@@ -550,7 +625,7 @@ test("house concert: renaming a host updates the show; Bandsintown never sees th
 
 test("switching a show between a venue and a house; it always keeps a place", async () => {
   const host = (await cmd("contacts.create", { name: "Polly", emails: [], phones: [] })).id;
-  const r = await create({ addToCalendar: false });
+  const r = await create({});
   await assert.rejects(cmd("shows.update", { id: r.id, patch: { venueId: null } }), /venue TBD\), or give the city/);
   await cmd("shows.update", { id: r.id, patch: { venueId: null, kind: "house", place: { city: "Gunbarrel" }, hostContactIds: [host] } });
   let s = (await db.get("shows", r.id))!;
@@ -567,7 +642,7 @@ test("switching a show between a venue and a house; it always keeps a place", as
 test("festival link: editionId sets editionName and kind, follows a rename, and can be unlinked", async () => {
   const f = (await db.create(ctx, "festivals", { name: "FoCoMX", type: "festival", region: "north", contactIds: [] })).id;
   const e = (await db.create(ctx, "editions", { festivalId: f, festivalName: "FoCoMX", year: 2027, label: "2027", venueIds: [] })).id;
-  const r = await create({ editionId: e, addToCalendar: false });
+  const r = await create({ editionId: e });
   let s = (await db.get("shows", r.id))!;
   assert.equal(s.kind, "festival");
   assert.equal(s.editionId, e);
@@ -628,11 +703,11 @@ test("copyPitchComments needs a pitch", async () => {
 });
 
 test("billedAs null is an explicit 'not sure': no configuration, no personnel; omitted still falls back to the pitch's", async () => {
-  const none = await create({ billedAs: null, addToCalendar: false });
+  const none = await create({ billedAs: null });
   const a = (await db.get("shows", none.id))!;
   assert.equal(a.billedAs, undefined);
   assert.deepEqual(a.personnel, []);
-  const fallback = await create({ date: "2027-02-20", addToCalendar: false });
+  const fallback = await create({ date: "2027-02-20" });
   assert.equal((await db.get("shows", fallback.id))!.billedAs, "trio");
 });
 
@@ -640,7 +715,9 @@ test("sendInvites: only configuration members who are on the team; unticked invi
   // Ingrid and Jeff are on the team (linked by user.musicianId); David has an email but no login; Sam has neither
   await makeUser("ingrid@example.com", "member", { musicianId: ids.ingrid, name: "Ingrid" });
   await db.update(ctx, "musicians", ids.jeff, { userId: ctx.uid });
+  await useBandCalendar();
   const emails = async (showId: string) => {
+    await cmd("shows.calendar", { id: showId, on: true });
     const ev = await calendarClient().get((await db.get("shows", showId))!.calendarEventId);
     return ev.attendees.map((x) => x.email).sort();
   };

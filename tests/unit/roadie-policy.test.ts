@@ -46,7 +46,7 @@ beforeEach(async () => {
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Hi-Dive", "Denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" } })))) as { id: string };
   venueId = v.id;
   const r = (await registry["shows.create"].run(sys, registry["shows.create"].input.parse({
-    date: "2026-11-14", venueId, status: "hold", times: { loadIn: "19:00", set: "21:15" }, sound: { provider: "venueProvided", notes: "in-house engineer" }, addToCalendar: false,
+    date: "2026-11-14", venueId, status: "hold", times: { loadIn: "19:00", set: "21:15" }, sound: { provider: "venueProvided", notes: "in-house engineer" },
   }))) as { id: string };
   showId = r.id;
 });
@@ -58,15 +58,16 @@ async function sess() {
 }
 const show = async () => (await db.get("shows", showId))!;
 
-test("confirm: status changes and Bandsintown listing on shows.update, invites on shows.create", () => {
+test("confirm: status changes and Bandsintown listing on shows.update; calendar sends; shows.create never touches Calendar", () => {
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { status: "canceled" } }), true);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { publishToBandsintown: true } }), true);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { publishToBandsintown: false } }), true);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { times: { loadIn: "18:00" } } }), false);
-  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v" }), true);
-  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v", addToCalendar: true, sendInvites: true }), true);
-  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v", addToCalendar: false }), false);
-  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v", sendInvites: false }), false);
+  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v" }), false);
+  assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v", sendInvites: true }), false);
+  assert.equal(needsConfirm("shows.calendar", { id: "x", on: true }), true);
+  assert.equal(needsConfirm("rehearsals.calendar", { id: "x", on: true }), true);
+  assert.equal(needsConfirm("shows.calendarPreview", { id: "x" }), false);
   assert.equal(needsConfirm("musicians.archive", { id: "m" }), true);
   assert.equal(needsConfirm("musicians.removeFromBand", { id: "m" }), true);
   assert.equal(needsConfirm("artists.removeSongField", { id: "a", fieldId: "f" }), true);
@@ -127,21 +128,23 @@ test("a partial venue address asks first and shows old -> new; nothing changes u
   assert.equal(((await db.get("venues", venueId))!.address as { street: string }).street, "7 S Broadway");
 });
 
-test("summaries: cancel, Bandsintown, book and invite, archive, remove field", () => {
+test("summaries: cancel, Bandsintown, calendar send, archive, remove field", () => {
   assert.equal(summarize("shows.update", { id: "x", patch: { status: "canceled", reason: "rain" } }, "Hi-Dive · 2026-11-14"), "Change the show Hi-Dive · 2026-11-14 to canceled (rain)");
   assert.equal(summarize("shows.update", { id: "x", patch: { publishToBandsintown: true } }, "Hi-Dive"), "List Hi-Dive on Bandsintown");
   assert.equal(summarize("shows.update", { id: "x", patch: { publishToBandsintown: false } }, "Hi-Dive"), "Take Hi-Dive off Bandsintown");
-  assert.equal(summarize("shows.create", { date: "2026-11-14", venueId: "v" }, "Hi-Dive"), "Book Hi-Dive on 2026-11-14: add it to Google Calendar and invite the band");
+  assert.equal(summarize("shows.calendar", { id: "x", on: true }, "Hi-Dive"), "Put the show Hi-Dive on the band calendar and invite the band");
+  assert.equal(summarize("shows.calendar", { id: "x", on: false }, "Hi-Dive"), "Take the show Hi-Dive off the band calendar");
   assert.equal(summarize("musicians.archive", { id: "m" }, "Mae"), "Archive Mae: they leave the band and lose their sign-in for this band");
   assert.equal(summarize("musicians.removeFromBand", { id: "m" }, "Mae"), "Take Mae out of the band (they keep their sign-in)");
   assert.equal(summarize("artists.removeSongField", { id: "a", fieldId: "f" }), "Delete the song field: every song loses its value");
 });
 
-test("shows.create with invites asks, and names the venue on the card", async () => {
+test("shows.calendar asks, and names the show on the card; shows.create never sends invites", async () => {
   const s = await sess();
-  const out = await execTool(s, "shows.create", { date: "2026-12-01", venueId }, noop);
+  const out = await execTool(s, "shows.calendar", { id: showId, on: true }, noop);
   assert.equal((out.output as { needsConfirmation?: boolean }).needsConfirmation, true);
-  assert.equal(out.action?.label, "Book Hi-Dive on 2026-12-01: add it to Google Calendar and invite the band");
+  assert.match(out.action?.label ?? "", /^Put the show .*Hi-Dive.* on the band calendar and invite the band$/);
+  assert.equal(needsConfirm("shows.create", { date: "2026-12-01", venueId }), false);
 });
 
 test("read-backs use names, not ids", async () => {

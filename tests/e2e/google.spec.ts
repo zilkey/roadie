@@ -42,3 +42,21 @@ test("Settings > Google shows the band folder; search finds folders, and a paste
   await expect(card.getByTestId("band-folder-note")).toContainText("Band folder saved");
   await expect(card.getByTestId("band-folder-link")).toContainText("Ingrid Avison Band");
 });
+
+// The seed's band calendar is the fake Calendar's "Ingrid Avison Band". Other specs send events to it, so this doesn't change it.
+test("Settings > Google shows the band calendar; Change lists your calendars (view-only ones can't be chosen); Check my access", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("band-menu").click();
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-google").click();
+  const card = page.getByTestId("google-calendar");
+  await expect(card.getByTestId("calendar-name")).toHaveText("Ingrid Avison Band");
+  await card.getByTestId("calendar-change").click();
+  await expect(card.getByTestId("calendar-hit-Ingrid Avison Band").getByTestId("calendar-choose")).toHaveText("Current");
+  await expect(card.getByTestId("calendar-hit-Boulder Venues (view only)")).toContainText("View only");
+  await expect(card.getByTestId("calendar-hit-Boulder Venues (view only)").getByTestId("calendar-choose")).toBeDisabled();
+  await expect(card.getByTestId("calendar-hit-Jeff Dean").getByTestId("calendar-choose")).toBeEnabled();
+  await card.getByTestId("calendar-cancel").click();
+  await card.getByTestId("calendar-check-access").click();
+  await expect(card.getByTestId("calendar-check")).toContainText("can add events to Ingrid Avison Band");
+});

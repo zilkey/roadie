@@ -33,7 +33,6 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; de
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill("2027-06-12");
-  await page.getByTestId("show-calendar").uncheck();
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
@@ -78,7 +77,6 @@ test("Custom fields: a field ticked In table is a column in the Shows and Songs 
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Hi-Dive · Denver" });
   await page.getByTestId("show-date").fill("2027-07-17");
-  await page.getByTestId("show-calendar").uncheck();
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   const card = page.getByTestId("custom-fields");

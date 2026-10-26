@@ -25,6 +25,10 @@ export const Rehearsal = entity({
   personnel: z.array(id),
   songs: z.array(z.strictObject({ songId: id, title: z.string(), note: z.string().optional() })),
   notes: z.string().optional(),
+  /** The event on the band calendar, set only when an admin sends it (rehearsals.calendar). */
+  calendarEventId: z.string().optional(),
+  /** A hash of the event as last sent, so the preview can say whether anything changed since. */
+  calendarHash: z.string().optional(),
 });
 export const RehearsalInput = Rehearsal.omit(serverMask);
 export type Rehearsal = z.infer<typeof Rehearsal>;

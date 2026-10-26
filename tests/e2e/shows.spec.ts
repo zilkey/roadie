@@ -28,7 +28,7 @@ const row = (page: Page, id: string) => page.locator(`[data-testid="shows-row"][
 // The tab's own columns: custom field columns (.cf) come and go with Admin > Custom fields, which other specs change in parallel.
 const heads = (page: Page, tab: string) => page.getByTestId(`shows-table-${tab}`).locator("th:not(.cf)");
 
-test("Booked it turns a pitch into a show with a set length, show start, calendar event and a deal", async ({ page, request }) => {
+test("Booked it turns a pitch into a show with a set length, show start and a deal; the calendar event goes out only from its button", async ({ page, request }) => {
   type CalEv = { id: string; title: string; attendees: { email: string }[]; start: string };
   const calIds = new Set(((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).map((e) => e.id)); // fake state outlives runs
   await signInAs(page, "jeff");
@@ -71,21 +71,31 @@ test("Booked it turns a pitch into a show with a set length, show start, calenda
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);
 
-  // calendar
+  // Saving the show sends nothing to Calendar
   const findEv = async () => ((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).find((e) => !calIds.has(e.id) && e.title.includes("Fox Theatre") && e.start.startsWith("2027-02-20"));
-  await expect.poll(async () => !!(await findEv())).toBe(true);
-  const ev = (await findEv())!;
-  expect(ev.attendees.map((a) => a.email)).toEqual(expect.arrayContaining(["jeff@example.com", "emma@example.com"]));
+  expect(await findEv()).toBeUndefined();
 
   // the pitch is booked and links to the show
   await page.goto(pitchUrl);
   await expect(page.getByTestId("status-chip")).toHaveText("Booked");
   await expect(page.getByTestId(`pitch-show-${id}`)).toBeVisible();
 
-  // cancel takes it off the calendar
+  // Add to calendar from the show, after the preview
+  await page.goto(A(`/shows/${id}`));
+  await page.getByTestId("where-calendar-open").click();
+  await expect(page.getByTestId("cal-preview-invitees")).toContainText("emma@example.com");
+  await page.getByTestId("cal-send").click();
+  await expect(page.getByTestId("where-calendar")).toContainText("On the band calendar");
+  const ev = (await findEv())!;
+  expect(ev.attendees.map((a) => a.email)).toEqual(expect.arrayContaining(["jeff@example.com", "emma@example.com"]));
+
+  // Canceling leaves the event until someone removes it
   await cancelShow(page, id);
-  const after = (await (await request.get(`${CAL}/events`)).json()) as CalEv[];
-  expect(after.some((e) => e.id === ev.id)).toBe(false);
+  expect((await findEv())?.id).toBe(ev.id);
+  await page.getByTestId("where-calendar-open").click();
+  await page.getByTestId("where-calendar-dialog").getByTestId("cal-remove").click();
+  await expect(page.getByTestId("where-calendar")).toContainText("Not on the band calendar");
+  expect(await findEv()).toBeUndefined();
 });
 
 test("Ask who's free: the pitch's dates ahead are picked, and Send says why it's off", async ({ page }) => {

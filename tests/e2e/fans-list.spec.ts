@@ -49,7 +49,7 @@ test.beforeAll(async ({ playwright }) => {
   artistId = await artistIdOf(ARTIST_SLUG);
   // Today's show has no times, so its window is the whole day; the other one is a few days out for the Change picker.
   for (const [plus, city] of [[0, "Fanville"], [3, "Pickton"]] as const) {
-    const { id } = await cmd<{ id: string }>("shows.create", { date: bandDay(plus), status: "confirmed", place: { city }, addToCalendar: false });
+    const { id } = await cmd<{ id: string }>("shows.create", { date: bandDay(plus), status: "confirmed", place: { city } });
     madeShows.push(id);
   }
 });

@@ -247,7 +247,7 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
         </label>
         <p className="s m-0" data-testid="book-invite-list">
           {recipients.length
-            ? <>Invites go to: {recipients.map((id) => musicians.find((m) => m.id === id)?.name ?? "Someone").join(", ")}</>
+            ? <>Invites go to: {recipients.map((id) => musicians.find((m) => m.id === id)?.name ?? "Someone").join(", ")}, when you add the show to the band calendar</>
             : "Nobody would be invited: pick a configuration with band members who are on the team and have an email."}
         </p>
       </div>

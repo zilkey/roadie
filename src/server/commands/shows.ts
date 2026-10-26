@@ -7,6 +7,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
+import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { noteOf } from "../venues";
 import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, showKind, incomeCategory, payMethod } from "@/schema";
@@ -69,7 +70,7 @@ function configOf(artist: Doc, billedAs?: string | null) {
   if (!c) throw new AppError("invalid_input", `No configuration "${billedAs}"`, 400);
   return c;
 }
-const done = (id: string, sync: SyncResult) => ({ id, warnings: sync.warnings, calendar: sync.calendar, bandsintown: sync.bandsintown });
+const done = (id: string, sync: SyncResult) => ({ id, warnings: sync.warnings, bandsintown: sync.bandsintown });
 
 // ---------- list ----------
 
@@ -128,7 +129,7 @@ export const showsCreate = defineCommand({
     "billedAs is a configuration id (context.now artist.configurations; null = none, no personnel) and fills personnel; sound defaults from the venue; needs (poster/backline/merch). " +
     "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes the deal's first income line (not received). " +
     "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
-    "addToCalendar (default true) adds a Google Calendar event. sendInvites true invites only the configuration's members on the team with an email, false invites nobody (sticks on later syncs); omitted invites everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed.",
+    "It never touches Google Calendar (that is shows.calendar, on purpose). sendInvites decides who the calendar event will invite when it is sent: true only the configuration's members on the team with an email, false nobody; omitted everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed.",
   input: z.strictObject({
     pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
     kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
@@ -136,7 +137,7 @@ export const showsCreate = defineCommand({
     billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
     publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
-    addToCalendar: z.boolean().default(true), copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
+    copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
   }),
   async run(ctx, i) {
     const id = await run(ctx, async (w) => {
@@ -193,7 +194,7 @@ export const showsCreate = defineCommand({
       }
       return r.id;
     });
-    return done(id, await syncShow(ctx, id, { createCalendar: i.addToCalendar }));
+    return done(id, await syncShow(ctx, id));
   },
 });
 
@@ -217,7 +218,7 @@ export const showsUpdate = defineCommand({
     "times {loadIn, soundcheck, doors, showStart, set, setLengthSec (seconds)} and sound REPLACE the whole object: send every key you want to keep. personnel and docs REPLACE the lists: read the show first and resend them all. " +
     "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, dayOfContact {name, phone?, contactId?} (null clears). A status change is added to statusHistory. " +
     "Checklists are not touched (use the shows.*Checklist* commands). " +
-    "Changing date, time, venue, people, status or publishToBandsintown re-syncs Google Calendar and Bandsintown (canceled or dropped removes both).",
+    "Changing date, time, venue, people, status or publishToBandsintown re-syncs Bandsintown (canceled or dropped takes it off). Google Calendar is never touched: resend the event with shows.calendar.",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
     let touchesSync = false;
@@ -278,26 +279,26 @@ const setOff = (ctx: Ctx, i: z.infer<typeof offInput>, status: "canceled" | "dro
 export const showsSetStatus = defineCommand({
   name: "shows.setStatus", roles: ["admin", "mcp"],
   description: "Change a show's status: hold (penciled in), confirmed, canceled (the venue called it off) or dropped (we called it off), with an optional reason. " +
-    "Each change is kept in statusHistory with who and when. Canceled or dropped removes its Calendar event and Bandsintown listing.",
+    "Each change is kept in statusHistory with who and when. Canceled or dropped takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
   input: z.strictObject({ id: z.string().min(1), status: z.enum(["hold", "confirmed", "canceled", "dropped"]), reason: z.string().optional() }),
   run: (ctx, i) => setStatus(ctx, i, i.status),
 });
 
 export const showsCancel = defineCommand({
   name: "shows.cancel", roles: ["admin", "mcp"], input: offInput,
-  description: "Cancel a show: they called it off (dropped means we pulled out). Optional reason. Removes its Google Calendar event and Bandsintown listing.",
+  description: "Cancel a show: they called it off (dropped means we pulled out). Optional reason. Takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
   run: (ctx, i) => setOff(ctx, i, "canceled"),
 });
 
 export const showsDrop = defineCommand({
   name: "shows.drop", roles: ["admin", "mcp"], input: offInput,
-  description: "Drop a show: we pulled out (canceled means they called it off). Optional reason. Removes its Calendar event and Bandsintown listing.",
+  description: "Drop a show: we pulled out (canceled means they called it off). Optional reason. Takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
   run: (ctx, i) => setOff(ctx, i, "dropped"),
 });
 
 export const showsRemove = defineCommand({
   name: "shows.remove", roles: ["admin"], input: idInput,
-  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Removes its Calendar event and Bandsintown listing.",
+  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Takes it off Bandsintown; remove its Calendar event first (shows.calendar on:false).",
   async run(ctx, { id }) {
     await run(ctx, async (w) => {
       await requireShow(w, id);
@@ -310,9 +311,9 @@ export const showsRemove = defineCommand({
 
 export const showsSync = defineCommand({
   name: "shows.sync", roles: ["admin", "mcp"],
-  input: z.strictObject({ id: z.string().min(1), calendar: z.boolean().optional() }),
-  description: "Retry the sync after an error or warning: pushes the show to Bandsintown (if publishToBandsintown) and updates its existing Calendar event; calendar:true also creates the event if it has none. To add or remove the Calendar event on purpose use shows.calendar; to list or unlist on Bandsintown set publishToBandsintown with shows.update.",
-  async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id, { createCalendar: i.calendar })); },
+  input: z.strictObject({ id: z.string().min(1) }),
+  description: "Retry the Bandsintown sync after an error or warning (if publishToBandsintown). To list or unlist on Bandsintown set publishToBandsintown with shows.update. Google Calendar is shows.calendar.",
+  async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id)); },
 });
 
 // ---------- checklists ----------
@@ -510,10 +511,17 @@ export const showsRemoveComment = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => { await ownComment(w, i.id, i.commentId); return w.softDelete(`shows/${i.id}/comments`, i.commentId); }),
 });
 
+export const showsCalendarPreview = defineCommand({
+  name: "shows.calendarPreview", roles: ["admin", "mcp"], input: idInput,
+  description: "Read-only: the show's event as shows.calendar would send it to the band calendar: title, start and end, location, notes, who is invited (and who has no email), and whether it creates the event or updates the one there (unchanged: nothing changed since it was sent).",
+  run: (ctx, { id }) => calendarPreview(ctx, "shows", id),
+});
+
 export const showsCalendar = defineCommand({
   name: "shows.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
-  description: "Add the show's Google Calendar event for everyone playing (on:true) or take it off (on:false). Only touches Calendar; Bandsintown is shows.update publishToBandsintown, and a retry after an error is shows.sync.",
-  async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id, i.on ? { createCalendar: true } : { removeCalendar: true })); },
+  description: "Send the show's event to the band's Google Calendar with invites (on:true: creates it, or updates the one there to match the show), or take it off (on:false). " +
+    "Saving a show never does this: show the person shows.calendarPreview first. Written with the caller's own Google account, so it fails if they can't write to the band calendar.",
+  run: (ctx, i) => (i.on ? calendarSend(ctx, "shows", i.id) : calendarRemove(ctx, "shows", i.id)),
 });
 
 // ---------- deal (admin only) ----------
@@ -663,6 +671,6 @@ export const showCommands = [
   showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync,
   showsSetChecklists, showsAddChecklist, showsRenameChecklist, showsRemoveChecklist, showsReorderChecklists,
   showsAddChecklistItem, showsEditChecklistItem, showsRemoveChecklistItem, showsCheckItem, showsSaveChecklistAsTemplate, showsUpdateTemplateFromChecklist,
-  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter,
+  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter,
   checklistTemplatesList, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesReorder, checklistTemplatesRemove,
 ];

@@ -178,13 +178,33 @@ test("calendar: create sends invites with local times and a time zone; update ke
   const ins = seen[0];
   assert.equal(ins.url.pathname, "/calendar/v3/calendars/primary/events");
   assert.equal(ins.url.searchParams.get("sendUpdates"), "all");
-  assert.deepEqual((ins.body as { start: unknown }).start, { dateTime: "2026-11-07T18:00:00", timeZone: "America/Denver" });
+  assert.deepEqual((ins.body as { start: unknown }).start, { dateTime: "2026-11-07T18:00:00", date: null, timeZone: "America/Denver" });
   await cal.update("e1", { start: "2026-11-07T19:00:00", attendees: ["A@x.com", "b@x.com"] });
   const patch = seen.find((s) => s.method === "PATCH")!.body as { status: string; start: unknown; attendees: unknown };
   assert.equal(patch.status, "confirmed");
-  assert.deepEqual(patch.start, { dateTime: "2026-11-07T19:00:00", timeZone: "America/Denver" });
+  assert.deepEqual(patch.start, { dateTime: "2026-11-07T19:00:00", date: null, timeZone: "America/Denver" });
   assert.deepEqual(patch.attendees, [{ email: "A@x.com", responseStatus: "accepted" }, { email: "b@x.com", responseStatus: "needsAction" }]);
   await assert.rejects(cal.delete("e1"), (e: unknown) => e instanceof IntegrationError && e.status === 404);
+});
+
+test("calendar: the band calendar gets events; all-day events use dates; the calendar list pages and reads access", async () => {
+  stubGoogle((s) => {
+    if (s.method === "POST") return { json: { id: "e2", summary: "Rehearsal", start: { date: "2026-11-08" }, end: { date: "2026-11-09" } } };
+    if (s.url.pathname.endsWith("/calendarList") && !s.url.searchParams.get("pageToken")) return { json: { items: [{ id: "me@x.com", summary: "Me", accessRole: "owner", primary: true }], nextPageToken: "p2" } };
+    if (s.url.pathname.endsWith("/calendarList")) return { json: { items: [{ id: "band@group.calendar.google.com", summary: "Band", summaryOverride: "The Band", accessRole: "writer" }] } };
+    if (s.url.pathname.endsWith("/calendarList/view%40group.calendar.google.com") || s.url.pathname.endsWith("/calendarList/view@group.calendar.google.com")) return { json: { id: "view@group.calendar.google.com", summary: "Venues", accessRole: "reader" } };
+  });
+  const cal = googleCalendar(token, "band@group.calendar.google.com");
+  const ev = await cal.create({ title: "Rehearsal", start: "2026-11-08", end: "2026-11-09" });
+  assert.equal(seen[0].url.pathname, "/calendar/v3/calendars/band%40group.calendar.google.com/events");
+  assert.deepEqual((seen[0].body as { start: unknown }).start, { date: "2026-11-08", dateTime: null });
+  assert.equal(ev.start, "2026-11-08");
+  assert.deepEqual(await cal.calendars(), [
+    { id: "me@x.com", name: "Me", accessRole: "owner", primary: true },
+    { id: "band@group.calendar.google.com", name: "The Band", accessRole: "writer" },
+  ]);
+  assert.equal((await cal.calendar("view@group.calendar.google.com")).accessRole, "reader");
+  await assert.rejects(cal.calendar("nope"), (e: unknown) => e instanceof IntegrationError && e.status === 404);
 });
 
 // ---------- connecting (commands, against the emulators) ----------

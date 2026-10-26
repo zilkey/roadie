@@ -1,16 +1,21 @@
 /**
  * Google Calendar. Two implementations of CalendarService: the fake's HTTP client (fakes/fake-calendar; dev and tests) and
  * the Calendar API v3 (events.insert/patch/delete/get/list, sendUpdates=all so attendees get invites and changes), chosen
- * by calendarClient(). The real one writes to the band account's primary calendar (src/server/google/band.ts).
- * Start and end are local times ("2026-11-07T18:00:00") with a timeZone, as src/server/showSync.ts builds them.
+ * by calendarClient(). The real one acts as one admin (their own Google grant) on one calendar: the band calendar chosen on
+ * Settings > Google (src/server/calendarSync.ts). Start and end are local times ("2026-11-07T18:00:00") with a timeZone;
+ * a bare date ("2026-11-07", end the day after) is an all-day event.
  */
 import { IntegrationError, jsonClient } from "./http";
 import { googleJson, useRealGoogle, type TokenSource } from "./google";
-import { bandToken } from "../google/band";
+import { accessTokenFor } from "../google/grants";
 
 export interface CalAttendee { email: string; responseStatus: "needsAction" | "accepted" | "declined" | "tentative" }
 export interface CalEvent { id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees: CalAttendee[]; createdAt: string; updatedAt: string }
 export interface CalEventInput { title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees?: string[]; calendarId?: string }
+
+/** A calendar in the account's list and what that account may do on it. owner and writer can add events. */
+export interface CalInfo { id: string; name: string; accessRole: "owner" | "writer" | "reader" | "freeBusyReader"; primary?: boolean }
+export const canWrite = (c: Pick<CalInfo, "accessRole">) => c.accessRole === "owner" || c.accessRole === "writer";
 
 export interface CalendarService {
   create(input: CalEventInput): Promise<CalEvent>;
@@ -18,13 +23,27 @@ export interface CalendarService {
   delete(id: string): Promise<void>;
   get(id: string): Promise<CalEvent>;
   list(opts?: { from?: string; to?: string; calendarId?: string }): Promise<CalEvent[]>;
+  /** The calendars in the account's list. */
+  calendars(): Promise<CalInfo[]>;
+  /** One calendar from the account's list; not found (404) when the account doesn't have it. */
+  calendar(id: string): Promise<CalInfo>;
 }
 
-/** The real Calendar API when Google is configured and CALENDAR_BASE_URL isn't set (as the band account); otherwise the fake. A string is the fake's base URL (tests). */
-export function calendarClient(opts: string | { artistId?: string } = {}): CalendarService {
+/**
+ * The real Calendar API when Google is configured and CALENDAR_BASE_URL isn't set, as `uid` (their own grant) with
+ * `calendarId` for events; otherwise the fake. A string is the fake's base URL (tests).
+ */
+export function calendarClient(opts: string | { uid?: string; calendarId?: string } = {}): CalendarService {
   const baseUrl = typeof opts === "string" ? opts : undefined;
-  if (useRealGoogle(process.env.CALENDAR_BASE_URL, baseUrl)) return googleCalendar((force) => bandToken((opts as { artistId?: string }).artistId, "calendar", force));
-  return fakeCalendarClient(baseUrl ?? process.env.CALENDAR_BASE_URL ?? "http://127.0.0.1:3203");
+  const o = typeof opts === "string" ? {} : opts;
+  if (useRealGoogle(process.env.CALENDAR_BASE_URL, baseUrl)) {
+    return googleCalendar((force) => {
+      if (!o.uid) throw new IntegrationError("calendar", 401, "Google Calendar needs a signed-in admin's own Google account.");
+      return accessTokenFor(o.uid, "calendar", force);
+    }, o.calendarId);
+  }
+  const fake = fakeCalendarClient(baseUrl ?? process.env.CALENDAR_BASE_URL ?? "http://127.0.0.1:3203");
+  return o.calendarId ? { ...fake, create: (i) => fake.create({ calendarId: o.calendarId, ...i }) } : fake;
 }
 
 export function fakeCalendarClient(baseUrl: string): CalendarService {
@@ -36,16 +55,21 @@ export function fakeCalendarClient(baseUrl: string): CalendarService {
     delete: async (id) => { await call("DELETE", e(id)); },
     get: (id) => call("GET", e(id)),
     list: (o = {}) => call("GET", "/events", { query: o }),
+    calendars: () => call("GET", "/calendars"),
+    calendar: (id) => call("GET", `/calendars/${encodeURIComponent(id)}`),
   };
 }
 
 // ---------- the Calendar API ----------
 
-interface GTime { dateTime?: string; date?: string; timeZone?: string }
+interface GTime { dateTime?: string | null; date?: string | null; timeZone?: string }
 interface GEvent {
   id: string; status?: string; summary?: string; location?: string; description?: string; start?: GTime; end?: GTime;
   attendees?: { email: string; responseStatus?: CalAttendee["responseStatus"] }[]; created?: string; updated?: string;
 }
+
+interface GCalendar { id: string; summary?: string; summaryOverride?: string; accessRole: CalInfo["accessRole"]; primary?: boolean }
+const toCalendar = (c: GCalendar): CalInfo => ({ id: c.id, name: c.summaryOverride ?? c.summary ?? c.id, accessRole: c.accessRole, ...(c.primary ? { primary: true } : {}) });
 
 const toEvent = (e: GEvent, calendarId: string): CalEvent => ({
   id: e.id, calendarId, title: e.summary ?? "", start: e.start?.dateTime ?? e.start?.date ?? "", end: e.end?.dateTime ?? e.end?.date ?? "",
@@ -62,7 +86,8 @@ export function googleCalendar(token: TokenSource, defaultCalendarId = "primary"
   const e = (id: string, cal = defaultCalendarId) => `${events(cal)}/${encodeURIComponent(id)}`;
   // A deleted event answers 410 Gone; callers treat that as not found.
   const gone = (err: unknown): never => { throw err instanceof IntegrationError && err.status === 410 ? new IntegrationError("calendar", 404, err.message) : err; };
-  const time = (dateTime: string, timeZone?: string): GTime => ({ dateTime, ...(timeZone ? { timeZone } : {}) });
+  // A patch merges into start/end, so switching between timed and all-day clears the other field.
+  const time = (v: string, timeZone?: string): GTime => (v.includes("T") ? { dateTime: v, date: null, ...(timeZone ? { timeZone } : {}) } : { date: v, dateTime: null });
   const get = async (id: string) => toEvent(await call<GEvent>("GET", e(id)).catch(gone), defaultCalendarId);
 
   return {
@@ -102,5 +127,16 @@ export function googleCalendar(token: TokenSource, defaultCalendarId = "primary"
       });
       return (r.items ?? []).filter((x) => x.status !== "cancelled").map((x) => toEvent(x, cal));
     },
+    async calendars() {
+      const out: CalInfo[] = [];
+      let pageToken: string | undefined;
+      do {
+        const r = await call<{ items?: GCalendar[]; nextPageToken?: string }>("GET", "/users/me/calendarList", { query: { maxResults: "250", pageToken } });
+        out.push(...(r.items ?? []).map(toCalendar));
+        pageToken = r.nextPageToken;
+      } while (pageToken);
+      return out;
+    },
+    calendar: async (id) => toCalendar(await call<GCalendar>("GET", `/users/me/calendarList/${encodeURIComponent(id)}`)),
   };
 }

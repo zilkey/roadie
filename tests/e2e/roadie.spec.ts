@@ -64,7 +64,6 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
   await page.getByTestId("show-loadIn").fill("17:00");
   await page.getByTestId("show-set").fill("20:00");
   await page.getByTestId("billed-as").selectOption("full-band");
-  await page.getByTestId("show-calendar").uncheck();
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   const status = page.getByTestId("show-status");

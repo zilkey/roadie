@@ -4,6 +4,7 @@ import { idInput, patchInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
+import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { bandFolderId, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -469,9 +470,22 @@ export const rehearsalsRemove = defineCommand({
   }),
 });
 
+export const rehearsalsCalendarPreview = defineCommand({
+  name: "rehearsals.calendarPreview", roles: ["admin", "mcp"], input: idInput,
+  description: "Read-only: the rehearsal's event as rehearsals.calendar would send it to the band calendar: title, start and end (all day without a start time), location, notes and songs, who is invited (and who has no email), and whether it creates or updates.",
+  run: (ctx, { id }) => calendarPreview(ctx, "rehearsals", id),
+});
+
+export const rehearsalsCalendar = defineCommand({
+  name: "rehearsals.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
+  description: "Send the rehearsal's event to the band's Google Calendar with invites to everyone coming (on:true: creates it, or updates the one there), or take it off (on:false). " +
+    "Saving a rehearsal never does this: show the person rehearsals.calendarPreview first. Written with the caller's own Google account.",
+  run: (ctx, i) => (i.on ? calendarSend(ctx, "rehearsals", i.id) : calendarRemove(ctx, "rehearsals", i.id)),
+});
+
 export const musicCommands = [
   driveSearch, driveFix, filesAttach, filesUpdate, filesRemove, filesCheck, filesShareWithBand, filesCopyToBand,
   songsCreate, songsUpdate, songsRemove, setlistTemplatesCreate, setlistTemplatesUpdate, setlistTemplatesRemove, setlistsSetItems, setlistsSeed, setlistsRemove,
-  rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove,
+  rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove, rehearsalsCalendarPreview, rehearsalsCalendar,
 ];
 export type { Bandmate };

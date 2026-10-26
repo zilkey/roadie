@@ -16,7 +16,7 @@ export interface ShowFormState {
   /** Typed as text ("2h", "2:30", "90m"); read with parseDuration. */
   setLength: string;
   billedAs: string; personnel: string[]; soundProvider: "venueProvided" | "bandProvided"; soundNotes: string;
-  poster: boolean; backline: boolean; merch: boolean; calendar: boolean;
+  poster: boolean; backline: boolean; merch: boolean;
   dealType: "guarantee" | "doorSplit" | "flat" | "tips" | "free"; guarantee: string; doorSplitPct: string; ticketPrice: string;
 }
 
@@ -150,7 +150,6 @@ export function ShowForm({ value, onChange, venues, contacts, editions, artist, 
           <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value[k]} data-testid={`need-${k}`} onChange={(e) => set({ [k]: e.target.checked })} />
             {k === "poster" ? "Posters" : k === "backline" ? "Backline" : "Merch table"}</label>
         ))}
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={value.calendar} data-testid="show-calendar" onChange={(e) => set({ calendar: e.target.checked })} />Add to everyone&apos;s calendar</label>
       </div>
 
       <div className="card" data-testid="deal-fields">

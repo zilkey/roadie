@@ -51,7 +51,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
     where: "venue", venueId, hostContactIds: [], city: "", address: "", editionId: edition?.id ?? "", date: ask?.date ?? edition?.startDate ?? "", status: "confirmed", loadIn: "", soundcheck: "", doors: "", showStart: "", set: "", setLength: "",
     billedAs: pitch?.pitchedAs ?? "", personnel: pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds ?? [],
     soundProvider: v0?.sound?.provider ?? "venueProvided", soundNotes: v0?.sound?.notes ?? "",
-    poster: false, backline: false, merch: false, calendar: true,
+    poster: false, backline: false, merch: false,
     dealType: "guarantee", guarantee: "", doorSplitPct: "", ticketPrice: "",
   };
   // New record = draft: saved as you type (device, then server), restored on any machine, deleted when the show is created.
@@ -80,7 +80,6 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       billedAs: s.billedAs || undefined, personnel: s.personnel,
       sound: { provider: s.soundProvider, ...(s.soundNotes.trim() ? { notes: s.soundNotes.trim() } : {}) },
       needs: { poster: s.poster, backline: s.backline, merch: s.merch },
-      addToCalendar: s.calendar,
       deal: dealOf(s),
     }, { clientMutationId: extraIds.current[date], ...(last ? { clearDraft: draft.draftId } : {}) });
       if (!made) return;

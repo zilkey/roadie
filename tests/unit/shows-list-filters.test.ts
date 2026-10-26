@@ -31,7 +31,7 @@ const cmd = async (name: string, input: unknown) => {
   return (await x.run(ctx, x.input.parse(input))) as Record<string, any>;
 };
 const show = (venueId: string, date: string, extra: Record<string, unknown> = {}) =>
-  cmd("shows.create", { date, venueId, addToCalendar: false, deal: { deal: "guarantee" }, ...extra });
+  cmd("shows.create", { date, venueId, deal: { deal: "guarantee" }, ...extra });
 
 beforeEach(async () => {
   await resetEmulators();

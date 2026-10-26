@@ -30,7 +30,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "The Canceled tab lists shows the venue (or the other side) called off, newest first. Columns: Date, Venue and Reason.",
       "The reason is whatever an admin typed (optional) when changing the show's status, so it's often blank (a dash).",
-      "A canceled show comes off the Google Calendar and Bandsintown. To cancel one, an admin opens the show and presses the status pill beside the title, which opens \"Change status\". Pick Canceled and press \"Change to Canceled\". Dropped is the other way round: we pulled out.",
+      "A canceled show comes off Bandsintown. Its event stays on the band calendar until an admin presses \"Remove from calendar…\" under Where & when. To cancel one, an admin opens the show and presses the status pill beside the title, which opens \"Change status\". Pick Canceled and press \"Change to Canceled\". Dropped is the other way round: we pulled out.",
     ].join("\n\n"),
     related: ["droppedShows", "upcomingShows", "showPage"],
   },
@@ -40,7 +40,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "The Dropped tab lists shows we pulled out of, newest first. Columns: Date, Venue and Reason. Canceled is the opposite: the venue called it off.",
       "A hold whose date passed without ever being confirmed also lands here, with no reason (a dash).",
-      "To drop a show, an admin opens it, presses the status pill beside the title, picks Dropped and presses \"Change to Dropped\", with an optional reason. A dropped show comes off the Google Calendar and Bandsintown.",
+      "To drop a show, an admin opens it, presses the status pill beside the title, picks Dropped and presses \"Change to Dropped\", with an optional reason. A dropped show comes off Bandsintown; take its event off the band calendar with \"Remove from calendar…\" under Where & when.",
     ].join("\n\n"),
     related: ["canceledShows", "upcomingShows", "showPage"],
   },
@@ -49,7 +49,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     title: "A show's page",
     text: [
       "A show's page has three tabs: \"Show Details\", \"Setlist\" and \"Finances\". The title shows the venue and date, with a status pill (Hold, Confirmed, Played, Canceled or Dropped). Admins can press the pill to change status, and use \"Edit\" to open every card on the tab.",
-      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add for everyone\" for the calendar), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
+      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add to calendar…\", which previews the event and its invites before sending it to the band calendar; saving a show never changes the calendar), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
       "In Promotion, admins can \"Publish to Bandsintown\", \"Take off Bandsintown\" or \"Sync Bandsintown now\". Only Confirmed shows get listed.",
       "Checklists sit beside every tab, and Comments are at the bottom.",
       "\"How'd it go?\" is a separate admin page for a show that's happened: star ratings for the show and venue, crowd, paid attendance and notes. Saving it marks the show played.",

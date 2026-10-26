@@ -1,69 +1,19 @@
 /**
- * Keeps Google Calendar and Bandsintown in step with a show. Called by show commands AFTER their Firestore
- * transaction commits. Integration failures never fail the command: Calendar problems come back as warnings,
- * Bandsintown problems are recorded on the show as listings.bandsintown.state = "error".
+ * Keeps Bandsintown in step with a show. Called by show commands AFTER their Firestore transaction commits. Failures never
+ * fail the command: they are recorded on the show as listings.bandsintown.state = "error". Google Calendar is not synced
+ * here: an admin sends a show's event on purpose (src/server/calendarSync.ts).
  */
 import { db, type Doc } from "./db";
-import { fmtDuration, setLengthOf } from "@/lib/duration";
 import type { Ctx } from "./ctx";
-import { IntegrationError, bandsintownClient, calendarClient } from "./integrations";
-import { addDays, fmtTime, isOff, publicShowName, showAddress, showCity, showName, type ShowPlaceLike, isPublished } from "@/lib/shows";
+import { IntegrationError, bandsintownClient } from "./integrations";
+import { publicShowName, showCity, type ShowPlaceLike, isPublished } from "@/lib/shows";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 
-export interface SyncResult { warnings: string[]; calendar?: "created" | "updated" | "removed"; bandsintown?: "listed" | "updated" | "removed" | "error" }
+export interface SyncResult { warnings: string[]; bandsintown?: "listed" | "updated" | "removed" | "error" }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const notFound = (e: unknown) => e instanceof IntegrationError && e.status === 404;
-const hhmm = (mins: number) => `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
-const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-
-/** Local (venue time) start and end as YYYY-MM-DDTHH:MM:00. Starts at load-in, ends after the set. */
-export function eventTimes(show: { date: string; times: { loadIn?: string; set?: string; setLengthSec?: number; setLength?: number } }) {
-  const t = show.times;
-  const startMin = toMin(t.loadIn ?? t.set ?? "18:00");
-  const endMin = t.set ? toMin(t.set) + Math.round((setLengthOf(t) ?? 3600) / 60) : startMin + 180;
-  const at = (min: number) => `${addDays(show.date, Math.floor(min / 1440))}T${hhmm(((min % 1440) + 1440) % 1440)}:00`;
-  return { start: at(startMin), end: at(Math.max(endMin, startMin + 30)) };
-}
-
 export const bandsintownEligible = (s: Doc) => isPublished(s) && s.status === "confirmed";
-
-async function syncCalendar(ctx: Ctx, show: Doc, create: boolean, remove: boolean, out: SyncResult) {
-  const cal = calendarClient({ artistId: (show.artistId as string | undefined) ?? ctx.artistId });
-  const gone = !!show.deletedAt || isOff(show) || remove;
-  if (gone) {
-    if (!show.calendarEventId) return;
-    try { await cal.delete(show.calendarEventId); } catch (e) { if (!notFound(e)) throw e; }
-    if (!show.deletedAt) await db.update(ctx, "shows", show.id, { calendarEventId: null });
-    out.calendar = "removed";
-    return;
-  }
-  if (!show.calendarEventId && !create) return;
-  const [artist, musicians] = await Promise.all([db.get("artists", show.artistId), db.list("musicians")]);
-  const cfg = (artist?.configurations as { id: string; billingName: string }[] | undefined)?.find((c) => c.id === show.billedAs);
-  const who = cfg?.billingName ?? artist?.name ?? "Show";
-  const invitees = (show.calendarInviteeIds as string[] | undefined) ?? (show.personnel as string[]);
-  const attendees = musicians.filter((m) => invitees.includes(m.id) && m.email).map((m) => m.email as string);
-  const t = show.times as { loadIn?: string; soundcheck?: string; doors?: string; showStart?: string; set?: string; setLengthSec?: number; setLength?: number };
-  const len = setLengthOf(t);
-  const dayOf = show.dayOfContact as { name: string; phone?: string } | undefined;
-  const lines = [
-    t.loadIn && `Load in ${fmtTime(t.loadIn)}`, t.soundcheck && `Soundcheck ${fmtTime(t.soundcheck)}`, t.doors && `Doors ${fmtTime(t.doors)}`,
-    t.showStart && `Show starts ${fmtTime(t.showStart)}`, t.set && `Set ${fmtTime(t.set)}${len ? ` (${fmtDuration(len)})` : ""}`,
-    `Sound: ${show.sound.provider === "bandProvided" ? "we bring it" : "venue provides"}`,
-    dayOf && `Day-of contact: ${dayOf.name}${dayOf.phone ? ` ${dayOf.phone}` : ""}`,
-  ].filter(Boolean).join("\n");
-  const body = {
-    title: `${show.status === "hold" ? "HOLD: " : ""}${who} at ${showName(show as ShowPlaceLike)}`, ...eventTimes(show as unknown as Parameters<typeof eventTimes>[0]), timeZone: BAND_TIME_ZONE,
-    location: [show.venue?.name, showAddress(show as ShowPlaceLike) ?? showCity(show as ShowPlaceLike)].filter(Boolean).join(", "), description: lines, attendees,
-  };
-  if (show.calendarEventId) {
-    try { await cal.update(show.calendarEventId, body); out.calendar = "updated"; return; } catch (e) { if (!notFound(e)) throw e; }
-  }
-  const ev = await cal.create(body);
-  await db.update(ctx, "shows", show.id, { calendarEventId: ev.id });
-  out.calendar = "created";
-}
 
 async function syncBandsintown(ctx: Ctx, show: Doc, out: SyncResult) {
   const bit = bandsintownClient();
@@ -104,12 +54,10 @@ async function syncBandsintown(ctx: Ctx, show: Doc, out: SyncResult) {
   }
 }
 
-export async function syncShow(ctx: Ctx, showId: string, opts: { createCalendar?: boolean; removeCalendar?: boolean } = {}): Promise<SyncResult> {
+export async function syncShow(ctx: Ctx, showId: string): Promise<SyncResult> {
   const out: SyncResult = { warnings: [] };
   const show = await db.get("shows", showId);
   if (!show) return out;
-  try { await syncCalendar(ctx, show, !!opts.createCalendar, !!opts.removeCalendar, out); } catch (e) { out.warnings.push(`Google Calendar: ${msg(e)}`); }
-  const fresh = (await db.get("shows", showId)) ?? show;
-  try { await syncBandsintown(ctx, fresh, out); } catch (e) { out.warnings.push(`Bandsintown: ${msg(e)}`); }
+  try { await syncBandsintown(ctx, show, out); } catch (e) { out.warnings.push(`Bandsintown: ${msg(e)}`); }
   return out;
 }

@@ -58,7 +58,10 @@ export const Show = entity({
   })).optional(),
   gear: z.array(z.strictObject({ id, label: z.string(), musicianId: id.optional(), packed: z.boolean() })).optional(),
   docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })),
+  /** The event on the band calendar, set only when an admin sends it (shows.calendar). */
   calendarEventId: z.string().optional(),
+  /** A hash of the event as last sent, so the preview can say whether anything changed since. */
+  calendarHash: z.string().optional(),
   /** Musicians the calendar event invites, when shows.create was told (sendInvites). Unset: everyone in personnel who has an email. */
   calendarInviteeIds: z.array(id).optional(),
   /** Publish to Bandsintown: listed there once the show is confirmed (src/server/showSync.ts). Missing = not published. */
