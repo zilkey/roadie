@@ -1,6 +1,6 @@
 "use client";
 import { useLayoutEffect, useRef, useState } from "react";
-import type { BuildResult, PrintSet, PrintSheet, SheetRow } from "@/lib/printSheets";
+import type { BuildResult, PrintSet, PrintSheet, RowField, SheetRow } from "@/lib/printSheets";
 import type { PrintPaper } from "@/schema/print";
 import { fitTextSize, PAGE_MARGIN_IN, PAPER, sheetBox } from "@/lib/print";
 
@@ -131,10 +131,17 @@ function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) 
   return (
     <div className="ps-row" data-testid="print-row">
       <span className="ps-n">{row.n}</span>
-      <span className="ps-t">{row.title}{row.key && <span className="ps-key" data-testid="print-key">{row.key}</span>}</span>
+      <span className="ps-t">
+        {row.title}
+        {row.key && <span className="ps-key" data-testid="print-key">{row.key}</span>}
+        {row.fields.length > 0 && <span className="ps-key" data-testid="print-fields">{row.fields.map(listField).join(" · ")}</span>}
+      </span>
     </div>
   );
 }
+
+/** A band-copy field after the title: Length is plain ("4:05"); a song field names itself ("Capo 2"). */
+const listField = (f: RowField) => (f.id.startsWith("field:") ? `${f.label} ${f.value}` : f.value);
 
 /** My copy, 3+ fields: one grid for the whole sheet so the field columns line up across sets. */
 function Table({ sheet }: { sheet: PrintSheet }) {

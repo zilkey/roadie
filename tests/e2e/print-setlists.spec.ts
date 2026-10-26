@@ -159,6 +159,12 @@ test("the dialog's options each change the preview, and each toggle flips", asyn
   await expect(rows.nth(0).getByTestId("print-key")).toHaveText("G");
   await field(page, "key").uncheck();
   await expect(rows.nth(0).getByTestId("print-key")).toHaveCount(0);
+  // A song field prints after the title on the band copy too, named.
+  await expect(rows.nth(0).getByTestId("print-fields")).toHaveCount(0);
+  await field(page, `field:${capoId}`).check();
+  await expect(rows.nth(0).getByTestId("print-fields")).toHaveText("Capo 1");
+  await field(page, `field:${capoId}`).uncheck();
+  await expect(rows.nth(0).getByTestId("print-fields")).toHaveCount(0);
   for (const id of ["key", "length", `field:${capoId}`, `field:${midiId}`, "breaks"]) {
     const box = field(page, id);
     const was = await box.isChecked();

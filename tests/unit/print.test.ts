@@ -76,6 +76,16 @@ test("buildSheets: the item's key wins over the song's; the key prints on the ba
   assert.equal(songRows(rowsOf(buildSheets(base({ items: noItemKey, options: opts({ fields: ["key"] }) }))))[0].key, "G");
 });
 
+test("buildSheets: the band copy carries the other picked fields that have a value, in order, after the key", () => {
+  const songs = songs25().map((s, i) => (i === 0 ? { ...s, fields: [{ fieldId: "capo", value: "2" }] } : s));
+  const rows = songRows(rowsOf(buildSheets(base({ songs, options: opts({ fields: ["field:capo", "key", "length"] }) }))));
+  assert.deepEqual(rows[0].fields.map((f) => f.label), ["Length", "Capo"]);
+  assert.equal(rows[0].fields[1].value, "2");
+  assert.equal(rows[0].key, "G");
+  assert.deepEqual(rows[1].fields.map((f) => f.label), ["Length"], "an empty field is left out");
+  assert.deepEqual(songRows(rowsOf(buildSheets(base({ songs }))))[0].fields, [], "nothing picked, nothing printed");
+});
+
 test("buildSheets: a break splits the sets, numbers run on, and the break prints its note and minutes", () => {
   const r = buildSheets(base());
   assert.equal(r.setCount, 2);

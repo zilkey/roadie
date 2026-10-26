@@ -17,11 +17,11 @@ export interface PrintItem { type: "song" | "break"; songId?: string; title: str
 /** One extra-field value printed on a song row. */
 export interface RowField { id: string; label: string; value: string }
 export type SheetRow =
-  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; fields: RowField[] }
+  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; /** band copy: after the key; otherwise under the title or in columns */ fields: RowField[] }
   | { kind: "break"; /** e.g. "Merch + tip jar · BREAK 15" */ text: string };
 export interface PrintSet { name: string; lengthSec: number; rows: SheetRow[] }
 /**
- * How song rows print. "list": number + title (+ key). "table": song then one column per field (my copy, 3+ fields,
+ * How song rows print. "list": number + title (+ key and other fields after it). "table": song then one column per field (my copy, 3+ fields,
  * more than 8 songs). "underTitle": fields on a line under the title (my copy otherwise).
  */
 export type RowLayout = "list" | "table" | "underTitle";
@@ -117,7 +117,9 @@ export function buildSheets(input: BuildInput): BuildResult {
       return song?.fields?.find((f) => songFieldId(f.fieldId) === id)?.value ?? "";
     };
     if (layout === "list") {
-      cur.rows.push({ kind: "song", n, title, key: picked.has(FIELD_KEY) && key ? key : undefined, fields: [] });
+      // The key right after the title, then the other picked fields that have a value.
+      const fields = selected.filter((f) => f.id !== FIELD_KEY).flatMap((f) => { const v = value(f.id); return v ? [{ id: f.id, label: f.label, value: v }] : []; });
+      cur.rows.push({ kind: "song", n, title, key: picked.has(FIELD_KEY) && key ? key : undefined, fields });
     } else {
       const fields = selected.flatMap((f) => {
         const v = value(f.id);
