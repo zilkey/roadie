@@ -9,6 +9,7 @@ export const VAMP_LINES = [
   "Warming up the tubes…", "Line checking…", "Plugging in…", "Untangling cables…", "Swapping a 9-volt…", "Tightening the snare…",
   "Taping down the cables…", "Asking for more vocals in the monitor…", "Retuning between songs…", "Finding the setlist…", "Setting up merch…",
   "Finding parking…", "Getting wristbands…", "Grabbing a drink ticket…", "Waiting on the opener…", "Counting the door…", "Running back to the van…",
+  "This is fun… I'm having fun…",
 ];
 
 export const VAMP_EVERY_MS = 3500;
