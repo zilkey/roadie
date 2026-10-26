@@ -33,6 +33,7 @@
  */
 import { type Firestore } from "firebase-admin/firestore";
 import { adminAuth, firestore } from "@/server/admin";
+import { NOT_BACKED_UP, walkDocs } from "@/server/backup";
 import { backup } from "./backup";
 
 export interface WipeResult {
@@ -48,23 +49,12 @@ export interface WipeResult {
 }
 
 /** Collections the backup leaves out (src/server/backup.ts) but the wipe still clears. */
-export const NOT_BACKED_UP = new Set(["mutations", "unsubmittedDrafts"]);
+export { NOT_BACKED_UP };
 
 /** Every document path in the project, sub-collections included: dumpAll's walk, so what is deleted is what was backed up. */
 async function allPaths(fs: Firestore): Promise<Record<string, string[]>> {
-  const out: Record<string, string[]> = {};
-  async function walk(col: FirebaseFirestore.CollectionReference, top: string) {
-    for (const ref of await col.listDocuments()) {
-      const snap = await ref.get();
-      if (snap.exists) (out[top] ??= []).push(ref.path);
-      for (const sub of await ref.listCollections()) await walk(sub, top);
-    }
-  }
-  for (const col of await fs.listCollections()) {
-    out[col.id] ??= [];
-    await walk(col, col.id);
-  }
-  return out;
+  const docs = await walkDocs(fs);
+  return Object.fromEntries(Object.entries(docs).map(([top, ds]) => [top, ds.map((d) => d.ref.path)]));
 }
 
 /** List every Auth user, paged. */

@@ -57,6 +57,25 @@ test("backup then restore round-trips every collection, subcollections, history 
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 });
 
+test("the walk reads the same documents at any concurrency: nested sub-collections, parents that exist only as paths, skipped collections", async () => {
+  const fs_ = firestore();
+  const ctx = importCtx("tester", "seed-run");
+  for (let i = 0; i < 12; i++) await db.create(ctx, "venues", venue(`Room ${i}`, "Denver", { capacity: 100 + i }));
+  // a sub-collection under a parent document that was never written: walked into, the parent itself not returned
+  await fs_.doc("pitches/ghost/comments/c1").set({ body: "orphan" });
+  await fs_.doc("pitches/ghost/comments/c1/history/000001").set({ deep: true });
+  await fs_.doc("mutations/m1").set({ at: 1 });
+
+  const serial = await dumpAll(fs_, { concurrency: 1 });
+  let last = 0;
+  const parallel = await dumpAll(fs_, { concurrency: 32, onProgress: (n) => { last = n; } });
+  assert.deepEqual(parallel, serial);
+  assert.equal(last, Object.values(parallel).flat().length, "progress ends at the number of documents read");
+  assert.deepEqual(parallel.pitches.map((r) => r.path), ["pitches/ghost/comments/c1", "pitches/ghost/comments/c1/history/000001"]);
+  assert.equal(parallel.venues.filter((r) => !r.path.includes("/history/")).length, 12);
+  assert.equal("mutations" in parallel, false, "left out of backups");
+});
+
 test("restore validates every document with the Zod schemas", async () => {
   const ctx = importCtx("tester", "r");
   await db.create(ctx, "venues", venue("Okay"));

@@ -11,8 +11,8 @@ import { dumpAll } from "@/server/backup";
 
 const arg = (name: string, d: string) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : d; };
 
-export async function backup(outRoot: string, date: string) {
-  const dump = await dumpAll(firestore());
+export async function backup(outRoot: string, date: string, onProgress?: (docs: number) => void) {
+  const dump = await dumpAll(firestore(), { onProgress });
   const dir = path.join(outRoot, date);
   fs.mkdirSync(dir, { recursive: true });
   const counts: Record<string, number> = {};
@@ -24,8 +24,18 @@ export async function backup(outRoot: string, date: string) {
   return { dir, counts };
 }
 
+/** "Read 1,234 documents…" on stderr, at most once a second, so a long run against real Firestore shows it is moving. */
+function progress() {
+  let last = 0;
+  return (docs: number) => {
+    if (Date.now() - last < 1000) return;
+    last = Date.now();
+    process.stderr.write(`Read ${docs.toLocaleString("en-US")} documents…\n`);
+  };
+}
+
 if (process.argv[1]?.endsWith("backup.ts")) {
-  backup(arg("out", "backups"), arg("date", new Date().toISOString().slice(0, 10))).then(
+  backup(arg("out", "backups"), arg("date", new Date().toISOString().slice(0, 10)), progress()).then(
     ({ dir, counts }) => { console.log(`Backed up to ${dir}`, counts); },
     (e) => { console.error(e); process.exit(1); },
   );
