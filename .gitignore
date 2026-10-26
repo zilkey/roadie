@@ -35,3 +35,6 @@ junk*
 # Worktree test-port claims (shared by every worktree, lives in the main checkout) and each worktree's emulator config
 emulators
 firebase.worktree.json
+
+# npm run test:all keeps each suite's errors here
+test-output

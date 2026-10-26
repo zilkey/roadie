@@ -60,7 +60,8 @@
     "migrate:checklists": "tsx scripts/migrate-checklists.ts",
     "migrate:rehearsal-location": "tsx scripts/migrate-rehearsal-location.ts",
     "migrate:crowd": "tsx scripts/migrate-crowd.ts",
-    "migrate:pitch-waiting": "tsx scripts/migrate-pitch-waiting.ts"
+    "migrate:pitch-waiting": "tsx scripts/migrate-pitch-waiting.ts",
+    "test:all": "tsx scripts/test-all.ts"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.43.0",

@@ -533,7 +533,7 @@ test("house concert: no venue, hosts + place; name, kind and band-PA default; va
   assert.match(ev.title, /at House concert · Jennifer Okafor & Tom Okafor$/);
   assert.equal(ev.location, "12 Pine St");
 
-  await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: [host] }), /venue, or give the city/);
+  await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: [host] }), /venue TBD\), or give the city/);
   await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: ["nope"], place: { city: "Lyons" } }), /Host contact not found/);
 });
 
@@ -551,7 +551,7 @@ test("house concert: renaming a host updates the show; Bandsintown never sees th
 test("switching a show between a venue and a house; it always keeps a place", async () => {
   const host = (await cmd("contacts.create", { name: "Polly", emails: [], phones: [] })).id;
   const r = await create({ addToCalendar: false });
-  await assert.rejects(cmd("shows.update", { id: r.id, patch: { venueId: null } }), /venue, or give the city/);
+  await assert.rejects(cmd("shows.update", { id: r.id, patch: { venueId: null } }), /venue TBD\), or give the city/);
   await cmd("shows.update", { id: r.id, patch: { venueId: null, kind: "house", place: { city: "Gunbarrel" }, hostContactIds: [host] } });
   let s = (await db.get("shows", r.id))!;
   assert.equal(s.venue, undefined);
