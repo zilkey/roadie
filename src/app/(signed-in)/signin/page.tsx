@@ -57,6 +57,7 @@ export default function SignIn() {
         </div>
       )}
       {state.status === "loading" && <p className="s">Signing in…</p>}
+      <p className="s"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
     </main>
   );
 }

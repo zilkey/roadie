@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Roadie",
     short_name: "Roadie",
     description: "Your music backoffice suite",
-    start_url: "/",
+    start_url: "/artists",
     display: "standalone",
     background_color: "#3a46c4",
     theme_color: "#3a46c4",

@@ -44,3 +44,6 @@ env:
   # old *.hosted.app address redirect here (next.config.ts).
   - variable: APP_URL
     value: https://app.myroadie.online
+  # The public site (landing, /privacy, /terms). Its other paths redirect to APP_URL (next.config.ts).
+  - variable: SITE_URL
+    value: https://myroadie.online
