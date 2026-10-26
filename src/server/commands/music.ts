@@ -258,8 +258,15 @@ const ItemIn = z.strictObject({
   lengthSec: z.number().int().min(0).optional(), key: z.string().optional(), note: z.string().optional(),
 }).refine((i) => i.type === "break" || !!i.songId || !!i.title?.trim(), "A song item needs a songId or a title");
 
-/** Song items take title, length and key from the song; breaks default to 1:00 "Break". */
-async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[]) {
+/** Ids of the library songs already on a stored list of items. */
+const songIdsOf = (items: unknown) => new Set(((items ?? []) as { songId?: string }[]).flatMap((i) => i.songId ?? []));
+
+/**
+ * Song items take title, length and key from the song; breaks default to 1:00 "Break". A song still in the Writing
+ * phase can't go on a setlist: adding one is refused, except a song already on the list (`keep`), so a list holding a
+ * song that moved back to Writing can still be saved. `skipWriting` drops them instead (seeding copies another list).
+ */
+async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { keep?: Set<string>; skipWriting?: boolean } = {}) {
   const out = [];
   for (const i of items) {
     if (i.type === "break") {
@@ -276,6 +283,10 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[]) {
     }
     const s = await w.get("songs", i.songId);
     if (!s || s.deletedAt) throw new AppError("not_found", `Song ${i.songId} not found`, 404);
+    if (s.status === "writing" && !opts.keep?.has(s.id)) {
+      if (opts.skipWriting) continue;
+      throw new AppError("invalid_input", `${s.title} is still being written. Move it to Learning or Playing to put it on a setlist.`, 400);
+    }
     out.push({
       type: "song" as const, songId: s.id, title: s.title as string,
       ...(s.lengthSec != null ? { lengthSec: s.lengthSec as number } : {}), ...(s.key ? { key: s.key as string } : {}), ...(i.note ? { note: i.note } : {}),
@@ -299,7 +310,7 @@ export const setlistTemplatesUpdate = defineCommand({
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const p: Record<string, unknown> = {};
     if (patch.name) p.name = patch.name;
-    if (patch.items) p.items = await resolveItems(w, patch.items);
+    if (patch.items) p.items = await resolveItems(w, patch.items, { keep: songIdsOf((await w.get("setlistTemplates", id))?.items) });
     return w.update("setlistTemplates", id, p);
   }),
 });
@@ -329,10 +340,10 @@ async function upsertShowSetlist(w: Writer, showId: string, items: Record<string
 export const setlistsSetItems = defineCommand({
   name: "setlists.setItems",
   roles: ["admin", "mcp"],
-  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song. totalSec is computed.",
+  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song; songs still in the Writing phase can't be added. totalSec is computed.",
   input: z.strictObject({ showId: z.string().min(1), items: z.array(ItemIn) }),
   run: (ctx, { showId, items }) => run(ctx, async (w) => {
-    await upsertShowSetlist(w, showId, await resolveItems(w, items));
+    await upsertShowSetlist(w, showId, await resolveItems(w, items, { keep: songIdsOf((await w.get("setlists", showId))?.items) }));
     return { showId };
   }),
 });
@@ -364,8 +375,9 @@ export const setlistsSeed = defineCommand({
       srcItems = (sl.items ?? []) as typeof srcItems;
       name = src ? showName(src as ShowPlaceLike) : undefined;
     }
-    // Re-resolve through the songs so the copies are fresh at seed time (an off-library item keeps its own title).
-    const added: Record<string, unknown>[] = await resolveItems(w, srcItems);
+    // Re-resolve through the songs so the copies are fresh at seed time (an off-library item keeps its own title). Songs
+    // that have gone back to the Writing phase since are left out.
+    const added: Record<string, unknown>[] = await resolveItems(w, srcItems, { skipWriting: true });
     const prior = mode === "append" ? await w.get("setlists", showId) : null;
     const current = (prior && !prior.deletedAt ? prior.items ?? [] : []) as Record<string, unknown>[];
     const items = [...current, ...added];

@@ -286,6 +286,31 @@ test("setlists.seed: from a template or another show, replace or append, records
   await assert.rejects(cmd("setlists.seed", { showId: "nope", from: { kind: "template", id: t } }), /not found/i);
 });
 
+test("setlists: a song still in the Writing phase can't be added; one already on the list stays; seeding skips it", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
+  const w = (await cmd("songs.create", { title: "Halfway Home", status: "writing" })).id;
+  const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
+  const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
+  const show = (await cmd("shows.create", { pitchId: p, date: "2027-01-16", venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
+
+  await assert.rejects(cmd("setlists.setItems", { showId: show, items: [{ type: "song", songId: w }] }), /still being written/);
+  await assert.rejects(cmd("setlistTemplates.create", { name: "T", items: [{ type: "song", songId: w }] }), /still being written/);
+
+  // on the list while Playing, then moved back to Writing: the list can still be saved with it
+  await cmd("songs.update", { id: w, patch: { status: "active" } });
+  const t = (await cmd("setlistTemplates.create", { name: "T", items: [{ type: "song", songId: a }, { type: "song", songId: w }] })).id;
+  await cmd("setlists.setItems", { showId: show, items: [{ type: "song", songId: w }] });
+  await cmd("songs.update", { id: w, patch: { status: "writing" } });
+  await cmd("setlists.setItems", { showId: show, items: [{ type: "song", songId: a }, { type: "song", songId: w }] });
+  await cmd("setlistTemplates.update", { id: t, patch: { items: [{ type: "song", songId: w }, { type: "song", songId: a }] } });
+
+  // seeding a show from that template leaves the Writing song out
+  const p2 = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
+  const show2 = (await cmd("shows.create", { pitchId: p2, date: "2027-02-20", venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
+  assert.deepEqual(await cmd("setlists.seed", { showId: show2, from: { kind: "template", id: t } }), { showId: show2, added: 1, total: 1 });
+  assert.equal((await db.get("setlists", show2))!.items[0].songId, a);
+});
+
 test("rehearsals: import songs from a setlist template (append and replace, breaks skipped); set and clear the location", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
