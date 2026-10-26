@@ -174,4 +174,4 @@ env -u FIRESTORE_EMULATOR_HOST -u FIREBASE_AUTH_EMULATOR_HOST \
 
 ## Part 5 · Later (the app runs without these)
 
-Gmail, Drive, Calendar, Bandsintown and Spotify are still faked, so those features will error in production until their real clients are written. The steps, the code each one needs, MCP hosting and the nightly backup are all in `docs/FIREBASE-SETUP.md` sections 5–7 and 10–11. Do them when you want each feature live.
+Gmail, Drive and Calendar have real clients: they turn on once the Google OAuth client and its secrets are set (`docs/FIREBASE-SETUP.md` section 5) and each admin connects on Settings > Google. Bandsintown and Spotify are still faked, so those features error in production until their real clients are written (sections 6–7). MCP hosting and the nightly backup are in sections 10–11. Do them when you want each feature live.

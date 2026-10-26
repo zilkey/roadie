@@ -9,6 +9,7 @@ import type { Role } from "../ctx";
 export const EXCLUDED: readonly string[] = [
   "users.",           // invites, access, roles
   "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
+  "google.",          // connecting someone's own Google account is an access change only they make
   "artists.create",   // making a band; the rest of band settings (links, lineups, custom fields) is open, but see refusal()
   "assistant.",       // Roadie's own prefs
   "drafts.",          // personal scratch, nothing to hand an assistant

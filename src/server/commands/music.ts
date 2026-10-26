@@ -20,7 +20,7 @@ type Attach = z.infer<typeof AttachFile>;
 
 async function buildFileDocs(artistId: string | undefined, files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
   const [mates, folder] = await Promise.all([bandmates(), bandFolderId(artistId)]);
-  const drive = driveClient();
+  const drive = driveClient({ artistId });
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
     if (!("driveFileId" in a)) {
@@ -33,7 +33,7 @@ async function buildFileDocs(artistId: string | undefined, files: Attach[], pare
     }
     let f: DriveFile;
     try { f = await drive.get(a.driveFileId); } catch { throw new AppError("not_found", `Drive file ${a.driveFileId} not found`, 404); }
-    const ins = await inspect(f, mates, folder);
+    const ins = await inspect(f, mates, folder, drive);
     const kind = a.kind ?? defaultKind ?? guessKind(f.name, f.mimeType);
     const key = a.key ?? (kind === "chart" ? guessKey(f.name) : undefined);
     out.push({
@@ -66,10 +66,11 @@ export const driveSearch = defineCommand({
   description: "Search Drive for audio, video, Docs and Word files matching a song title. Each hit says which band members can't open it and whether it is in the band folder.",
   input: z.strictObject({ q: z.string().min(1) }),
   async run(ctx, { q }) {
-    const [hits, mates, folder] = await Promise.all([driveClient().search({ q }), bandmates(), bandFolderId(ctx.artistId)]);
+    const drive = driveClient({ artistId: ctx.artistId });
+    const [hits, mates, folder] = await Promise.all([drive.search({ q }), bandmates(), bandFolderId(ctx.artistId)]);
     const out = [];
     for (const f of hits.filter((h) => isAttachable(h.mimeType))) {
-      const ins = await inspect(f, mates, folder);
+      const ins = await inspect(f, mates, folder, drive);
       const kind = guessKind(f.name, f.mimeType);
       out.push({
         driveFileId: f.id, name: f.name, mimeType: f.mimeType, url: f.webViewLink, ownerEmail: f.ownerEmail,
@@ -121,20 +122,20 @@ async function liveFiles(ids?: string[]): Promise<Doc[]> {
 type Fix = "check" | "share" | "copy";
 
 /** Apply a Drive-level fix to one file. "copy" moves it into the band folder (as a shared copy), "share" adds the people who can't open it. */
-async function fixInDrive(id: string, fix: Fix, mates: Bandmate[], folder: string) {
-  const drive = driveClient();
+async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, mates: Bandmate[], folder: string) {
+  const drive = driveClient({ artistId });
   let file = await drive.get(id);
-  let ins = await inspect(file, mates, folder);
+  let ins = await inspect(file, mates, folder, drive);
   let fixed = false;
   if (fix === "copy" && !ins.inBandFolder) {
     const copy = await drive.copy(file.id, { parentId: folder, name: file.name });
     // The band folder is shared with the band; share the copy too so it holds without relying on inheritance.
     file = await drive.share(copy.id, mates.map((m) => m.email));
-    ins = await inspect(file, mates, folder);
+    ins = await inspect(file, mates, folder, drive);
     fixed = true;
   } else if (fix === "share" && ins.missing.length) {
     file = await drive.share(file.id, mates.filter((m) => ins.missing.includes(m.id)).map((m) => m.email));
-    ins = await inspect(file, mates, folder);
+    ins = await inspect(file, mates, folder, drive);
     fixed = true;
   }
   return { file, ins, fixed, moved: file.id !== id };
@@ -148,7 +149,7 @@ async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
   let fixed = 0;
   for (const f of files) {
     try {
-      const r = await fixInDrive(f.driveFileId, fix, mates, folder);
+      const r = await fixInDrive(ctx.artistId, f.driveFileId, fix, mates, folder);
       if (r.fixed) fixed++;
       updates.push({ id: f.id, patch: {
         ...(r.moved ? { driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail } : {}),
@@ -173,7 +174,7 @@ export const driveFix = defineCommand({
     const [mates, folder] = await Promise.all([bandmates(), bandFolderId(ctx.artistId)]);
     const out = [];
     for (const id of driveFileIds) {
-      const r = await fixInDrive(id, fix, mates, folder).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
+      const r = await fixInDrive(ctx.artistId, id, fix, mates, folder).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
       out.push({ oldId: id, driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail, inBandFolder: r.ins.inBandFolder, missing: r.ins.missing });
     }
     return { files: out };

@@ -11,7 +11,7 @@ A small web app (phone and desktop) for one working band, the Ingrid Avison Band
 
 All times and "today" are America/Denver (`src/lib/timezone.ts`).
 
-Everything external (Gmail, Drive, Calendar, Bandsintown, Spotify) is **faked locally** for now. See `docs/STATUS.md` for what is real and what is not, and `docs/FIREBASE-SETUP.md` to take it to a real Firebase project.
+Everything external (Gmail, Drive, Calendar, Bandsintown, Spotify) is **faked locally**. Gmail, Drive and Calendar have real clients too, used in production once Google OAuth is set up and an admin connects on Settings > Google. See `docs/STATUS.md` for what is real and what is not, and `docs/FIREBASE-SETUP.md` to take it to a real Firebase project.
 
 ## Stack
 
@@ -66,7 +66,7 @@ src/lib/                 pure helpers shared by browser and server (money, booki
 src/schema/              Zod schema per collection; index.ts has the collection registry
 src/server/db.ts         the only write path: stamps common fields, writes history, dedupes, atomic runs
 src/server/commands/     command definitions by area; registry.ts lists them all (roles: admin, member, mcp)
-src/server/integrations/ Gmail, Drive, Calendar, Bandsintown, Spotify client interfaces (HTTP, pointed at the fakes)
+src/server/integrations/ Gmail, Drive, Calendar, Bandsintown, Spotify client interfaces (fakes; real Google APIs when configured)
 src/server/undo.ts       undo a run from history
 fakes/                   the five fake services, state in .fake-data/
 mcp/                     MCP server reusing the command registry

@@ -30,19 +30,20 @@ Consolidated after the final pass. Spec: `docs/blueprint.html`; conventions: `PL
 
 | Service | Fake | Interface (swap point) |
 | --- | --- | --- |
-| Gmail | `fakes/fake-gmail` :3201 | `src/server/integrations/gmail.ts` |
-| Drive | `fakes/fake-drive` :3202 | `.../drive.ts` |
-| Calendar | `fakes/fake-calendar` :3203 | `.../calendar.ts` |
+| Gmail | `fakes/fake-gmail` :3201 | `src/server/integrations/gmail.ts` (real: Gmail API) |
+| Drive | `fakes/fake-drive` :3202 | `.../drive.ts` (real: Drive API v3) |
+| Calendar | `fakes/fake-calendar` :3203 | `.../calendar.ts` (real: Calendar API v3) |
 | Bandsintown | `fakes/fake-bandsintown` :3204 | `.../bandsintown.ts` |
 | Spotify | `fakes/fake-spotify` :3205 | `.../spotify.ts` |
 
-Each client is plain HTTP aimed at `<SVC>_BASE_URL` (defaults to the fake). **No real implementation exists for any of them.** The sending account for Gmail is just the admin's login email; Drive has no per-user view in the fake. Firebase itself is the emulator (`demo-band-tracker`). Spotify charts start empty on a real account because the real API has no history. The seed data (`scripts/seed.ts`) is demo content.
+Gmail, Drive and Calendar each have a real implementation next to the fake one; `gmailClient()` / `driveClient()` / `calendarClient()` pick the real API when `GOOGLE_OAUTH_CLIENT_ID` is set and the service's `<SVC>_BASE_URL` isn't (dev and tests set the base URLs, so they always get the fakes). Admins connect Google on **Settings > Google** (`/admin/google`, `src/server/commands/google.ts`): they tick Calendar, Gmail and/or Drive, Google's consent page returns through `/api/google/callback` to that page, and `google.finishConnect` stores the grant for the signed-in admin only if the signed state is theirs. Refresh tokens live AES-GCM encrypted (`GOOGLE_TOKEN_KEY`) in `googleGrants/{uid}`, which has no Firestore rule (server-only); access tokens only in memory (`src/server/google/`). Gmail sends from each admin's own grant (looked up by their sign-in or Google address); Calendar and Drive use the band's account, `artist.google = {uid, email}`, which is the first admin to connect Calendar or Drive (another can take over with "Use my account"). Bandsintown and Spotify are still fake-only: plain HTTP aimed at `<SVC>_BASE_URL`. Firebase itself is the emulator (`demo-band-tracker`). Spotify charts start empty on a real account because the real API has no history. The seed data (`scripts/seed.ts`) is demo content.
 
 ## Known gaps
 
-- No real Google/Bandsintown/Spotify clients, no OAuth connect flow, no stored refresh tokens (see FIREBASE-SETUP step 5 and 6).
+- No real Bandsintown/Spotify clients (see FIREBASE-SETUP step 6 and 7). The real Google clients are covered by unit tests against a stubbed `fetch` (`tests/unit/google.test.ts`), not against Google itself: the first real send, event and Drive search are the smoke test (FIREBASE-SETUP step 12).
+- Google: changing the band account leaves events already made on the old account's calendar there (the next sync of a show makes a new one). Drive search covers My Drive and files shared with the band account, not shared drives it hasn't added. Gmail reply checking reads each thread from the mailbox it was sent from; pitch emails logged before that was recorded are read from the caller's mailbox.
 - No scheduled job exists for the daily Spotify pull (script only) and none was ever run for backup.
-- Real Drive: group, domain or "anyone with the link" sharing is not modelled in the sharing check. PDFs are skipped in Drive search on purpose.
+- Real Drive: "anyone with the link" and domain sharing count in the sharing check; Google Groups can't be expanded, so their members still show as missing. A file the band account can only read comes back without its sharing list, so only its owner counts. PDFs are skipped in Drive search on purpose.
 - Calendar: attendee responses can't be simulated; sub-musicians without email are not invited.
 - Sent email is logged after sending in a separate step, so a log failure after a successful send is not recorded. Integration side effects of `users.add` (Auth user, claims) are outside the Firestore transaction.
 - Role changes take effect when the person's token refreshes (refresh tokens are revoked on change).

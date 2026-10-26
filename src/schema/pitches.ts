@@ -35,7 +35,8 @@ export const Activity = entity({
   type: z.enum(["status", "emailSent", "emailReply", "call", "email", "visit", "note"]),
   fromStatus: pitchStatus.optional(),
   toStatus: pitchStatus.optional(),
-  gmail: z.strictObject({ messageId: z.string(), threadId: z.string(), to: z.string(), subject: z.string() }).optional(),
+  // account: the mailbox it was sent from or arrived in (whose Gmail checkReplies reads). Missing on older entries.
+  gmail: z.strictObject({ messageId: z.string(), threadId: z.string(), to: z.string(), subject: z.string(), account: z.string().optional() }).optional(),
   text: z.string().optional(),
 });
 export const ActivityInput = Activity.omit(serverMask);

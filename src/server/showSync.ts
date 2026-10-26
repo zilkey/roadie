@@ -29,7 +29,7 @@ export function eventTimes(show: { date: string; times: { loadIn?: string; set?:
 export const bandsintownEligible = (s: Doc) => isPublished(s) && s.status === "confirmed";
 
 async function syncCalendar(ctx: Ctx, show: Doc, create: boolean, remove: boolean, out: SyncResult) {
-  const cal = calendarClient();
+  const cal = calendarClient({ artistId: (show.artistId as string | undefined) ?? ctx.artistId });
   const gone = !!show.deletedAt || isOff(show) || remove;
   if (gone) {
     if (!show.calendarEventId) return;

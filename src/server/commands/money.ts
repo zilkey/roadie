@@ -255,8 +255,8 @@ export const receiptsSearch = defineCommand({
   name: "receipts.search", roles: ["admin", "member"],
   description: "Search Drive for a receipt file by name; returns driveFileId, name and url.",
   input: z.strictObject({ q: z.string().min(1) }),
-  async run(_ctx, { q }) {
-    const hits = await driveClient().search({ q });
+  async run(ctx, { q }) {
+    const hits = await driveClient({ artistId: ctx.artistId }).search({ q });
     return { files: hits.slice(0, 20).map((f) => ({ driveFileId: f.id, name: f.name, mimeType: f.mimeType, url: f.webViewLink })) };
   },
 });

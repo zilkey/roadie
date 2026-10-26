@@ -83,6 +83,8 @@ test("eligibility: band settings are open except creating a band; users.addToBan
   assert.equal(isExcluded("users.add"), true);
   assert.equal(isExcluded("users.update"), true);
   assert.equal(isExcluded("shows.setChecklists"), true);
+  assert.equal(isExcluded("google.disconnect"), true);
+  assert.equal(isExcluded("google.connectUrl"), true);
 });
 
 test("refusal: artists.update never touches the name, URL or Drive folder, even mixed with links", async () => {

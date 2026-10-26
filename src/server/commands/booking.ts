@@ -429,7 +429,7 @@ export const pitchesSendEmail = defineCommand({
     return run(ctx, async (w) => {
       const p = await requirePitch(w, i.id);
       const act = await w.create(`pitches/${i.id}/activity`, {
-        type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject },
+        type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject, account: user.email as string },
       });
       await w.update("pitches", i.id, { lastContactAt: w.now });
       if (i.markPitched && (p.status === "idea" || p.status === "toPitch")) {
@@ -472,12 +472,14 @@ export const pitchesCheckReplies = defineCommand({
   async run(ctx, { id }) {
     const pitch = await db.get("pitches", id);
     if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
-    const acts = await db.list(`pitches/${id}/activity`);
-    const threads = [...new Set(acts.filter((a) => a.gmail?.threadId).map((a) => a.gmail.threadId as string))];
+    const [acts, user] = await Promise.all([db.list(`pitches/${id}/activity`), db.get("users", ctx.uid)]);
+    // Each thread is read from the mailbox it was sent from; entries from before that was recorded use the caller's.
+    const threads = new Map<string, string>();
+    for (const a of acts) if (a.gmail?.threadId && !threads.has(a.gmail.threadId)) threads.set(a.gmail.threadId, (a.gmail.account as string | undefined) ?? (user?.email as string));
     const seen = new Set(acts.filter((a) => a.gmail?.messageId).map((a) => a.gmail.messageId as string));
     const fresh: MailMessage[] = [];
-    for (const t of threads) {
-      const th = await gmailClient().getThread(t).catch(gmailFail);
+    for (const [t, account] of threads) {
+      const th = await gmailClient().getThread(t, account).catch(gmailFail);
       fresh.push(...th.messages.filter((m) => m.direction === "received" && !seen.has(m.id)));
     }
     if (!fresh.length) return { added: 0 };
@@ -485,7 +487,7 @@ export const pitchesCheckReplies = defineCommand({
     await run(ctx, async (w) => {
       for (const m of fresh) {
         await w.create(`pitches/${id}/activity`, {
-          type: "emailReply", text: `From ${m.from}\n\n${m.body}`, gmail: { messageId: m.id, threadId: m.threadId, to: m.to.join(", "), subject: m.subject },
+          type: "emailReply", text: `From ${m.from}\n\n${m.body}`, gmail: { messageId: m.id, threadId: m.threadId, to: m.to.join(", "), subject: m.subject, account: m.account },
         });
       }
       await w.update("pitches", id, { lastContactAt: new Date(fresh[fresh.length - 1].date) });

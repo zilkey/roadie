@@ -126,6 +126,11 @@ export const Artist = entity({
   /** The opt-in wording fans see on the public list page (saved with each signup). Missing = DEFAULT_LIST_WORDING. */
   listWording: z.string().optional(),
   driveFolderId: z.string(),
+  /**
+   * The band's Google account: the admin whose Google grant puts shows on Calendar and looks things up in Drive
+   * (src/server/google/band.ts). Set only by the google.* commands; null or missing until an admin connects one.
+   */
+  google: z.strictObject({ uid: z.string(), email: z.string() }).nullable().optional(),
   /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
   songFields: z.array(SongField).default([]),
   /** Same, for shows: filled in on the show page's Custom fields card (Show.fields). Changed only by artists.addShowField & co. */

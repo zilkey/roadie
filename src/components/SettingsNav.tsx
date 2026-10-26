@@ -7,10 +7,10 @@ import type { Musician } from "@/schema";
 const HEAD = "px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-muted";
 const GROUPS = [
   { head: "Artist settings", items: [{ key: "general", href: "/admin/artist", label: "General" }, { key: "lineups", href: "/admin/lineups", label: "Lineups" }, { key: "people", href: "/admin/people", label: "People" }, { key: "fields", href: "/admin/fields", label: "Custom fields" }] },
-  { head: "Admin", items: [{ key: "integrations", href: "/admin/mcp", label: "Integrations" }, { key: "activity", href: "/admin/history", label: "Activity" }] },
+  { head: "Admin", items: [{ key: "google", href: "/admin/google", label: "Google" }, { key: "integrations", href: "/admin/mcp", label: "Integrations" }, { key: "activity", href: "/admin/history", label: "Activity" }] },
 ] as const;
 
-/** The artist-settings sub-nav: General, Lineups, People, Custom fields under ARTIST SETTINGS; Integrations, Activity under ADMIN. Counts show once loaded. */
+/** The artist-settings sub-nav: General, Lineups, People, Custom fields under ARTIST SETTINGS; Google, Integrations, Activity under ADMIN. Counts show once loaded. */
 export function SettingsNav() {
   const path = usePathname();
   const full = useHref();

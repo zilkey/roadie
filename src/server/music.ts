@@ -1,6 +1,6 @@
 /** Drive-facing helpers for the Music commands: who can open a file, is it in the band folder. */
 import { db, type Doc } from "./db";
-import { driveClient, type DriveFile } from "./integrations";
+import { driveClient, type DriveFile, type DriveService } from "./integrations";
 
 export interface Bandmate { id: string; name: string; email: string }
 export interface Inspection { file: DriveFile; missing: string[]; inBandFolder: boolean }
@@ -19,24 +19,30 @@ export async function bandFolderId(artistId?: string): Promise<string> {
   return (artist?.driveFolderId as string) || DEFAULT_BAND_FOLDER;
 }
 
-async function inFolder(id: string, folder: string, seen = new Set<string>(), depth = 0): Promise<boolean> {
+async function inFolder(drive: DriveService, id: string, folder: string, seen = new Set<string>(), depth = 0): Promise<boolean> {
   if (id === folder) return true;
   if (depth > 6 || seen.has(id)) return false;
   seen.add(id);
   let f: DriveFile;
-  try { f = await driveClient().get(id); } catch { return false; }
-  for (const p of f.parents) if (await inFolder(p, folder, seen, depth + 1)) return true;
+  try { f = await drive.get(id); } catch { return false; }
+  for (const p of f.parents) if (await inFolder(drive, p, folder, seen, depth + 1)) return true;
   return false;
 }
 
+/**
+ * Bandmates who can't open the file. Anyone-with-the-link and domain sharing count (real Drive only); a Google Group
+ * can't be expanded, so its members still show as missing until they're shared with directly.
+ */
 export function missingFor(file: DriveFile, mates: Bandmate[]): string[] {
+  if (file.anyoneWithLink) return [];
   const can = new Set([file.ownerEmail, ...file.permissions.map((p) => p.email)].map((e) => e.toLowerCase()));
-  return mates.filter((m) => !can.has(m.email)).map((m) => m.id);
+  const domains = file.domains ?? [];
+  return mates.filter((m) => !can.has(m.email) && !domains.some((d) => m.email.endsWith(`@${d}`))).map((m) => m.id);
 }
 
-export async function inspect(file: DriveFile, mates: Bandmate[], folder: string): Promise<Inspection> {
+export async function inspect(file: DriveFile, mates: Bandmate[], folder: string, drive: DriveService = driveClient()): Promise<Inspection> {
   let inBandFolder = false;
-  for (const p of file.parents) if (await inFolder(p, folder)) { inBandFolder = true; break; }
+  for (const p of file.parents) if (await inFolder(drive, p, folder)) { inBandFolder = true; break; }
   return { file, missing: missingFor(file, mates), inBandFolder };
 }
 

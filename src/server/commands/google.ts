@@ -1,0 +1,105 @@
+/**
+ * Connecting Google (Settings > Google). Each admin connects their own Google account for the features they pick
+ * (Gmail, Calendar, Drive). The flow: google.connectUrl gives the Google consent URL with a signed state; Google sends
+ * the browser to /api/google/callback, which forwards code and state to the Settings page; the page calls
+ * google.finishConnect as the signed-in admin, which checks the state is theirs and stores the grant (src/server/google).
+ */
+import { z } from "zod";
+import { defineCommand } from "./types";
+import { db } from "../db";
+import { AppError } from "../errors";
+import type { Ctx } from "../ctx";
+import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, signState, verifyState } from "../google/oauth";
+import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
+import { bandGoogle } from "../google/band";
+
+const artistOf = (ctx: Ctx) => {
+  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
+  return ctx.artistId;
+};
+const usableForBand = (g: Grant | null) => !!g && (g.features.includes("calendar") || g.features.includes("drive"));
+
+async function status(ctx: Ctx) {
+  const artistId = artistOf(ctx);
+  if (!googleConfigured()) return { configured: false, me: null, band: null };
+  const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
+  const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
+  return {
+    configured: true,
+    me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
+    band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
+  };
+}
+
+export const googleStatus = defineCommand({
+  name: "google.status", roles: ["admin"], input: z.strictObject({}),
+  description: "Read-only: whether Google is set up on this server, which features the caller's own Google account is connected for, and which admin's account the band's Calendar and Drive use.",
+  run: (ctx) => status(ctx),
+});
+
+export const googleConnectUrl = defineCommand({
+  name: "google.connectUrl", roles: ["admin"],
+  description: "The Google consent page URL for connecting the caller's own Google account for the chosen features (gmail, calendar, drive). Adds to what they connected before.",
+  input: z.strictObject({ features: z.array(z.enum(GOOGLE_FEATURES)).min(1) }),
+  async run(ctx, { features }) {
+    const artistId = artistOf(ctx);
+    if (!googleConfigured()) throw new AppError("google_not_configured", "Google isn't set up on this server", 503);
+    const [artist, user] = await Promise.all([db.get("artists", artistId), db.get("users", ctx.uid)]);
+    if (!artist) throw new AppError("not_found", "Artist not found", 404);
+    const state = signState({ uid: ctx.uid, artistId, slug: artist.slug as string, features: [...new Set(features)] });
+    return { url: authUrl(state, [...new Set(features)], user?.email as string | undefined) };
+  },
+});
+
+export const googleFinishConnect = defineCommand({
+  name: "google.finishConnect", roles: ["admin"],
+  description: "Finish connecting Google: exchange the code Google returned and store the caller's grant. The state must be one this admin started. " +
+    "The first account connected for Calendar or Drive becomes the band's.",
+  input: z.strictObject({ code: z.string().min(1), state: z.string().min(1) }),
+  async run(ctx, { code, state }) {
+    const artistId = artistOf(ctx);
+    const s = verifyState(state);
+    if (!s || s.uid !== ctx.uid || s.artistId !== artistId) throw new AppError("invalid_state", "That Google sign-in link has expired or isn't yours. Try Connect again.", 400);
+    const user = await db.get("users", ctx.uid);
+    if (!user) throw new AppError("forbidden", "No user for this account", 403);
+    let t;
+    try { t = await exchangeCode(code); } catch (e) {
+      if (e instanceof GoogleAuthError) throw new AppError("google_error", `Google: ${e.message}`, 502);
+      throw e;
+    }
+    const googleEmail = emailFromIdToken(t.id_token) ?? (user.email as string);
+    const grant = await saveGrant(ctx.uid, user.email as string, googleEmail, t);
+    const missing = s.features.filter((f) => !featuresOf(t.scope.split(" ")).includes(f));
+    if (usableForBand(grant) && !(await bandGoogle(artistId))) await db.update(ctx, "artists", artistId, { google: { uid: ctx.uid, email: grant.googleEmail } });
+    return { ...(await status(ctx)), missing };
+  },
+});
+
+export const googleUseForBand = defineCommand({
+  name: "google.useForBand", roles: ["admin"], input: z.strictObject({}),
+  description: "Make the caller's connected Google account the band's: new show events go on their Google Calendar and Drive lookups use their Drive. Events already on the old account's calendar stay there.",
+  async run(ctx) {
+    const artistId = artistOf(ctx);
+    const g = await getGrant(ctx.uid);
+    if (!usableForBand(g)) throw new AppError("invalid_input", "Connect your Google Calendar or Drive first", 400);
+    await db.update(ctx, "artists", artistId, { google: { uid: ctx.uid, email: g!.googleEmail } });
+    return status(ctx);
+  },
+});
+
+export const googleDisconnect = defineCommand({
+  name: "google.disconnect", roles: ["admin"], input: z.strictObject({}),
+  description: "Disconnect the caller's Google account: revoke Roadie's access at Google and forget the grant. If it was the band's account, the band has none until another admin connects.",
+  async run(ctx) {
+    artistOf(ctx);
+    const token = await removeGrant(ctx.uid);
+    if (token) await revoke(token);
+    // Every artist whose band account this was loses it, not only the one the caller is in.
+    for (const a of await db.list("artists")) {
+      if ((a.google as { uid?: string } | null | undefined)?.uid === ctx.uid) await db.update({ ...ctx, artistId: a.id }, "artists", a.id, { google: null });
+    }
+    return status(ctx);
+  },
+});
+
+export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect];

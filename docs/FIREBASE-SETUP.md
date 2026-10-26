@@ -48,11 +48,14 @@ env:
   - variable: APP_URL            # base of the "can you play?" links in emails
     value: https://<your production domain>
   # Do NOT set NEXT_PUBLIC_USE_EMULATORS (it shows the dev sign-in buttons) or any *_EMULATOR_HOST.
-  # Until the real clients exist (step 6) leave the *_BASE_URL variables unset; the defaults point at 127.0.0.1 fakes,
-  # so email, Drive, Calendar, Bandsintown and Spotify features will error in production.
-  # Secrets (step 5/7) go here once the clients read them:
+  # Leave the *_BASE_URL variables unset. Gmail, Drive and Calendar use the real APIs once step 5's OAuth client is set:
+  # - variable: GOOGLE_OAUTH_CLIENT_ID
+  #   value: <client id>.apps.googleusercontent.com
   # - variable: GOOGLE_OAUTH_CLIENT_SECRET
-  #   secret: google-oauth-client-secret
+  #   secret: GOOGLE_OAUTH_CLIENT_SECRET
+  # - variable: GOOGLE_TOKEN_KEY
+  #   secret: GOOGLE_TOKEN_KEY
+  # Bandsintown and Spotify defaults still point at 127.0.0.1 fakes, so those features error in production (step 6/7).
 ```
 
 - [ ] Secrets: `npx firebase apphosting:secrets:set <name> --project roadie-prod-iab`, then reference them in `apphosting.yaml`, and `apphosting:secrets:grantaccess`.
@@ -61,25 +64,31 @@ env:
 
 ## 5. Google Cloud OAuth (Gmail, Drive, Calendar)
 
-The Google clients are not written (step 6). This step prepares what they will need. One Google Cloud project (the Firebase project's) hosts it.
+The real Gmail, Drive and Calendar clients are written (`src/server/integrations/{gmail,drive,calendar}.ts`, OAuth and token store in `src/server/google/`). They switch on when `GOOGLE_OAUTH_CLIENT_ID` is set and the `GMAIL_/DRIVE_/CALENDAR_BASE_URL` variables are not. One Google Cloud project (the Firebase project's) hosts the OAuth client.
 
 - [ ] APIs & Services > Library: enable **Gmail API**, **Google Drive API**, **Google Calendar API**.
-- [ ] OAuth consent screen: **Internal** if the band's accounts are in one Workspace org; otherwise **External**, publishing status Testing, and add every admin's Google address as a **test user** (refresh tokens for Testing apps expire after 7 days; move to In production, and accept the "unverified app" warning or go through verification, to avoid that).
-- [ ] Add scopes: `https://www.googleapis.com/auth/gmail.send`, `gmail.compose` (drafts), `gmail.readonly` (reply checking), `https://www.googleapis.com/auth/drive` (needs full Drive: search files the band does not own, read permissions, copy, share; `drive.file` is not enough), `https://www.googleapis.com/auth/calendar.events`.
-- [ ] Credentials > Create **OAuth client ID** (Web application). Authorized redirect URI: `https://<production domain>/api/google/callback`. Store client id and secret as App Hosting secrets.
-- [ ] **How each admin connects (CODE NEEDED):** mail is sent as the signed-in admin, so each admin who sends mail or owns the Drive/Calendar grant must connect once: a "Connect Google" button on an admin page that runs the OAuth code flow (`access_type=offline`, `prompt=consent`), and a server route `/api/google/callback` that stores the refresh token (encrypted, per user, server-only; never in a client-readable collection). Neither the button, the route nor the token store exists yet.
-- [ ] Set the band's Drive folder id on the artist (Admin > Artist > `driveFolderId`) or `DRIVE_BAND_FOLDER_ID`.
+- [ ] OAuth consent screen (Google Auth Platform > Branding): app name Roadie, support email, home page `https://myroadie.online`, privacy policy `https://myroadie.online/privacy`, terms `https://myroadie.online/terms`, authorized domain `myroadie.online`.
+- [ ] Audience: **Internal** if the band's accounts are in one Workspace org; otherwise **External**. While it's in Testing, add every admin's Google address as a **test user**; refresh tokens for Testing apps expire after 7 days (admins then see "connection expired" and press Reconnect). To avoid that, publish it: Gmail (`gmail.compose`, `gmail.readonly`) and full Drive are *restricted* scopes, so an External app in production needs Google's verification and a security assessment, or stays unverified (limited to 100 users, with a warning screen).
+- [ ] Data Access > add scopes: `openid`, `email`, `https://www.googleapis.com/auth/gmail.compose` (send and drafts), `https://www.googleapis.com/auth/gmail.readonly` (reading replies in threads Roadie started), `https://www.googleapis.com/auth/calendar.events`, `https://www.googleapis.com/auth/drive` (full Drive: search files the band doesn't own, read sharing, copy, share; `drive.file` is not enough). Admins are asked only for the ones they tick.
+- [ ] Clients > Create client > **Web application**. Authorized redirect URI: `https://app.myroadie.online/api/google/callback` (APP_URL + `/api/google/callback`; add `http://localhost:3000/api/google/callback` too if you'll try it locally). This can be the same web client Firebase sign-in uses or a separate one.
+- [ ] Set the config on App Hosting (then uncomment the lines in `apphosting.yaml`; a referenced-but-missing secret fails the rollout):
+  - `GOOGLE_OAUTH_CLIENT_ID`: plain value in `apphosting.yaml`.
+  - `npx firebase apphosting:secrets:set GOOGLE_OAUTH_CLIENT_SECRET --project roadie-prod-iab`
+  - `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" | npx firebase apphosting:secrets:set GOOGLE_TOKEN_KEY --project roadie-prod-iab --data-file -` (encrypts refresh tokens; changing it later means everyone reconnects)
+  - `npx firebase apphosting:secrets:grantaccess GOOGLE_OAUTH_CLIENT_SECRET,GOOGLE_TOKEN_KEY --backend roadie-web-prod --project roadie-prod-iab`
+- [ ] Deploy rules (`googleGrants` has no rule on purpose: server-only).
+- [ ] Each admin who sends mail opens **Settings > Google**, ticks Gmail (and Calendar/Drive if theirs should be the band's) and presses **Connect Google**. The first admin to connect Calendar or Drive becomes the band's account: show events go on their calendar with invites to the musicians, and Drive search looks in their Drive. Another admin can take over with **Use my account**.
+- [ ] Set the band's Drive folder id on the artist (`driveFolderId`) or `DRIVE_BAND_FOLDER_ID`.
 
-## 6. Real integration implementations (CODE NEEDED, all of them)
+## 6. Real integration implementations
 
-Each file below defines an interface plus an HTTP client for the fake. Write a second implementation of the same interface using the real API and choose it by env (e.g. `GMAIL_BASE_URL` unset and `GOOGLE_*` present means real). Keep the fakes for tests.
+Done for Google: each of `gmail.ts`, `drive.ts`, `calendar.ts` holds the fake's client and the real API client behind one interface, and its factory picks one by env. Unit tests run the real clients against a stubbed `fetch` (`tests/unit/google.test.ts`); dev and e2e keep using the fakes.
 
-- [ ] `src/server/integrations/gmail.ts`: `users.messages.send`, `users.drafts.create`, `users.threads.list/get` (replies are detected by polling the thread). The fake-only `simulateReply` stays optional.
-- [ ] `src/server/integrations/drive.ts`: `files.list` (`q="name contains '...' and trashed=false"`, fields incl. `owners, parents, permissions`), `permissions.list/create`, `files.copy` into the band folder. Group/domain/"anyone with link" sharing needs handling in `src/server/music.ts` `missingFor`. Receipt search runs as the connected admin's Drive account.
-- [ ] `src/server/integrations/calendar.ts`: `events.insert/patch/delete/list` with `sendUpdates=all`. The payload already carries `timeZone: "America/Denver"` and local start/end strings (built in `src/server/showSync.ts`); attendees are musician emails.
+- [x] `src/server/integrations/gmail.ts`: `users.messages.send`, `users.drafts.create`, `users.threads.get` (replies are found by reading the thread again; each pitch email records the mailbox it went from). The fake-only `simulateReply` stays optional.
+- [x] `src/server/integrations/drive.ts`: `files.list/get/copy`, `permissions.list/create` (quiet, or with Drive's invite email for addresses without a Google account). "Anyone with the link" and domain sharing count in `missingFor` (`src/server/music.ts`); Google Groups can't be expanded.
+- [x] `src/server/integrations/calendar.ts`: `events.insert/patch/delete/get/list` with `sendUpdates=all` on the band account's primary calendar. Patches keep attendees' answers and bring back an event someone deleted in Calendar.
 - [ ] `src/server/integrations/bandsintown.ts`: see step 7 (needs approval; the public API is read-only).
 - [ ] `src/server/integrations/spotify.ts`: Web API client-credentials flow, `GET /v1/artists/{id}` (followers, popularity) and top tracks (market US). No history endpoint exists.
-- [ ] `src/server/integrations/index.ts`: the factory (`gmailClient()`, ...) that picks fake vs real.
 - [ ] Optional hardening: log the sent email before/with the send so a log failure can't lose it (`pitches.sendEmail` in `src/server/commands/booking.ts`).
 
 ## 7. Bandsintown and Spotify credentials
@@ -133,7 +142,7 @@ The id `demo-band-tracker` is correct for local work and tests and should stay i
 - [ ] Open the production URL, sign in with Google as the bootstrapped admin: you land on Home, no "Sign in as" dev buttons.
 - [ ] Admin > Users: invite a second Google account as member; sign in with it in a private window: lands on Home, no Booking tab, "My money" present. A non-invited Google account gets the "not invited" page.
 - [ ] As admin add a venue, flag it, move the pitch; Admin > History shows the run; Undo this run reverts it.
-- [ ] Create a show ("Booked it"). With step 6 done: the Calendar event appears with `America/Denver` times and attendees get invites; send a test pitch email to yourself; attach a Drive file and run the sharing check.
+- [ ] Settings > Google: connect Calendar, Gmail and Drive; the page names you as the band's account. Create a show ("Booked it"). With step 5 done: the Calendar event appears with `America/Denver` times and attendees get invites; send a test pitch email to yourself; attach a Drive file and run the sharing check.
 - [ ] Ask who's free from a show: the emailed link opens `/ask/...` with no login and the answer shows in the app.
 - [ ] Money: add an expense as the member, reimburse it as admin, check My money.
 - [ ] Browser console: no Firestore permission errors or missing-index errors on Home, Shows, Money.
