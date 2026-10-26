@@ -13,8 +13,11 @@ export default function SongsPage() {
   return <Suspense fallback={<div className="s">Loading…</div>}><Songs /></Suspense>;
 }
 
-type SegKey = "active" | "learning" | "idea" | "retired";
-const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"]];
+type SegKey = "active" | "learning" | "idea" | "retired" | "unlinked";
+// Unlinked cuts across statuses: every song with no Drive file yet (a Spotify/YouTube/web link doesn't count), to work through by hand.
+const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["unlinked", "Unlinked"]];
+/** `linked`: ids of songs with a Drive file. */
+const inSeg = (s: { id: string; status: string }, k: SegKey, linked: Set<string | undefined>) => (k === "unlinked" ? !linked.has(s.id) : s.status === k);
 
 function DocIcon() {
   return (
@@ -34,7 +37,7 @@ function Songs() {
   const cols = (useArtist().doc?.songFields ?? []).filter((f) => f.inTable);
   const { call, error, busy } = useCommand();
   const segParam = params.get("seg");
-  const [seg, setSeg] = useState<SegKey>(segParam === "learning" || segParam === "idea" || segParam === "retired" ? segParam : "active");
+  const [seg, setSeg] = useState<SegKey>(segParam === "learning" || segParam === "idea" || segParam === "retired" || segParam === "unlinked" ? segParam : "active");
   const [q, setQ] = useState("");
   const setlistParam = params.get("setlist");
 
@@ -42,11 +45,12 @@ function Songs() {
   useEffect(() => { if (setlistParam) router.replace(`/setlists/${setlistParam}`); }, [setlistParam, router]);
 
   const playable = useMemo(() => new Set(m.files.filter((f) => ["audio", "video"].includes(mimeGroup(f.mimeType))).map((f) => f.songId)), [m.files]);
+  const linked = useMemo(() => new Set(m.files.filter((f) => f.driveFileId).map((f) => f.songId)), [m.files]);
   const songs = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return m.songs.filter((s) => s.status === seg && (!t || s.title.toLowerCase().includes(t) || (s.writers ?? "").toLowerCase().includes(t))).sort((a, b) => a.title.localeCompare(b.title));
-  }, [m.songs, seg, q]);
-  const count = (k: SegKey) => m.songs.filter((s) => s.status === k).length;
+    return m.songs.filter((s) => inSeg(s, seg, linked) && (!t || s.title.toLowerCase().includes(t) || (s.writers ?? "").toLowerCase().includes(t))).sort((a, b) => a.title.localeCompare(b.title));
+  }, [m.songs, linked, seg, q]);
+  const count = (k: SegKey) => m.songs.filter((s) => inSeg(s, k, linked)).length;
 
   if (setlistParam) return <div className="s">Opening setlist…</div>;
 
