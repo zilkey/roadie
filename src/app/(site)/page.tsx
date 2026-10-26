@@ -188,7 +188,7 @@ export default async function Home() {
           <p className="sig">Named after the hardest-working person on any tour: the one who loads in, runs cable and tapes the setlist to the stage, so the band can just play.</p>
           <div className="ctas">
             <a className="btn primary" href={signIn}>Sign in with Google</a>
-            <a className="btn ghost" href="#open">Read the code</a>
+            <a className="btn ghost" href="https://github.com/zilkey/roadie">Read the code</a>
           </div>
         </div>
       </section>

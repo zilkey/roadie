@@ -13,7 +13,9 @@ export default function Privacy() {
 
         <h2>What Roadie collects</h2>
         <ul>
-          <li><b>Your Google account basics.</b> Signing in with Google gives Roadie your name and email address. Roadie doesn&apos;t ask for access to your Gmail, Drive, Calendar or contacts.</li>
+          <li><b>Your Google account basics.</b> Signing in with Google gives Roadie your name and email address. Signing in alone gives Roadie no access to your Gmail, Calendar, Drive or contacts.</li>
+          <li><b>Gmail, if a band admin connects it.</b> An admin can connect their Gmail so Roadie can send booking emails and pitches from it, save drafts there, and read the replies in those threads. Roadie only reads threads it started or that you point it to.</li>
+          <li><b>Google Calendar, if a band admin connects it.</b> Roadie adds, changes and removes the events for your band&apos;s shows and rehearsals on that calendar, and Google emails the invites to band members.</li>
           <li><b>What your band puts in.</b> Shows, venues, booking contacts, pitches, songs, setlists, rehearsals, tours, stage plots, income, expenses and notes, and the email addresses admins use to invite band members.</li>
           <li><b>Availability answers.</b> When a band sends a &ldquo;can you play?&rdquo; link, the yes or no you give for each date.</li>
           <li><b>Fan sign-ups.</b> If a band has a fan sign-up page, fans who join give an email address, and can add a first name and city.</li>
@@ -38,6 +40,7 @@ export default function Privacy() {
             <thead><tr><th>Service</th><th>What it receives</th><th>Why</th></tr></thead>
             <tbody>
               <tr><td>Google Firebase and Google Cloud (United States)</td><td>Everything above</td><td>Hosting, sign-in and the database</td></tr>
+              <tr><td>Gmail and Google Calendar (when an admin connects them)</td><td>The emails and events Roadie sends, drafts or updates, and the replies it reads</td><td>Booking emails and band calendar invites</td></tr>
               <tr><td>Google Vertex AI (Gemini)</td><td>Your messages to the assistant and the band data it needs to answer</td><td>The built-in assistant</td></tr>
               <tr><td>OpenRouteService</td><td>Addresses you look up or travel between</td><td>Address search and driving distances for gas estimates</td></tr>
               <tr><td>U.S. Energy Information Administration</td><td>Nothing about you</td><td>Roadie downloads weekly gas prices</td></tr>
@@ -47,6 +50,9 @@ export default function Privacy() {
           </table>
         </div>
         <p>Roadie doesn&apos;t send fan addresses anywhere. A band&apos;s admins may copy them into their own mailing-list service.</p>
+
+        <h2>Data from Google</h2>
+        <p>Roadie&apos;s use and transfer of information received from Google APIs follows the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including its Limited Use requirements. Gmail and Calendar data is used only to run the booking and calendar features you turned on, is never used for ads, is never sold, and is never used to train AI models. A person sees it only when you ask, to fix a problem, for security, or when the law requires it. An admin can disconnect Gmail or Calendar at any time from their <a href="https://myaccount.google.com/connections">Google account settings</a>.</p>
 
         <h2>Keeping and deleting</h2>
         <ul>
