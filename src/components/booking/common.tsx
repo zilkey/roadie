@@ -13,7 +13,7 @@ import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
 import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment } from "@/schema";
 
-export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number } };
+export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
 /** A venue as the band sees it: the shared room with this band's private notes laid over it (so `contactIds` etc. are the band's own). */
 export type VenueRow = Row<Omit<Venue, keyof NoteFields>> & NoteFields;

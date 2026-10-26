@@ -358,13 +358,13 @@ export const pitchesUpdate = defineCommand({
 });
 
 export const pitchesMove = defineCommand({
-  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline. Statuses: idea; toPitch = on the list, not sent; pitched = we sent it; waiting; talking; booked; declined = they said no; dropped = we stopped. " +
-    "Moving to pitched/waiting/talking records contact now (how \"I pitched X today\" is logged). booked alone creates no show: use shows.create with pitchId (\"Booked it\").",
+  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline. Statuses: idea = Future Pitch, a place we might pitch later; toPitch = To Pitch, on the list, not sent; pitched = we sent it, waiting to hear back; talking; booked; declined = they said no; dropped = we stopped. " +
+    "Moving to pitched/talking records contact now (how \"I pitched X today\" is logged). booked alone creates no show: use shows.create with pitchId (\"Booked it\").",
   input: z.strictObject({ id: z.string().min(1), status: pitchStatus, text: z.string().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const p = await requirePitch(w, i.id);
     if (p.status === i.status) return { id: i.id, changed: false };
-    await w.update("pitches", i.id, { status: i.status, ...(["pitched", "waiting", "talking"].includes(i.status) ? { lastContactAt: w.now } : {}) });
+    await w.update("pitches", i.id, { status: i.status, ...(["pitched", "talking"].includes(i.status) ? { lastContactAt: w.now } : {}) });
     await w.create(`pitches/${i.id}/activity`, { type: "status", fromStatus: p.status, toStatus: i.status, text: i.text });
     return { id: i.id, changed: true };
   }),

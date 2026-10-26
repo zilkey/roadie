@@ -8,7 +8,7 @@ import { db } from "../db";
 import { AppError } from "../errors";
 import { bandsintownClient } from "../integrations";
 import { undoRun, runsOf } from "../undo";
-import { buildSearchItems, searchItems, isActive, todayStr } from "@/lib/booking";
+import { buildSearchItems, searchItems, isActive, todayStr, daysSince, quietDays, QUIET_DAYS } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { bandsintownEligible } from "../showSync";
 import { bandFolderId, bandmates } from "../music";
@@ -141,12 +141,11 @@ export const recordsList = defineCommand({
 export const pitchesNeedingFollowUp = defineCommand({
   name: "pitches.needingFollowUp", roles: [...READ],
   description:
-    "Active pitches that need a nudge: next step due or overdue, or pitched/waiting with no contact for `quietDays` (default 10). " +
+    "Active pitches that need a nudge: next step due or overdue, or pitched/talking with no contact for `quietDays` (default 14). " +
     "Returns the pitch, why, days since last contact, and the people on the venue/promoter/festival with emails, ready for pitches.draftEmail.",
-  input: strict({ quietDays: z.number().int().min(1).default(10), today: dateStr.optional() }),
+  input: strict({ quietDays: z.number().int().min(1).default(QUIET_DAYS), today: dateStr.optional() }),
   async run(ctx, i) {
     const today = i.today ?? todayStr();
-    const day = (ms: number) => Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(new Date(ms).toISOString().slice(0, 10) + "T00:00:00Z")) / 86_400_000);
     const pitches = (await db.list("pitches")).filter((p) => isActive(p.status) && inArtist(ctx, "pitches", p));
     const contacts = new Map((await db.list("contacts")).map((c) => [c.id, c]));
     const out = [];
@@ -154,8 +153,8 @@ export const pitchesNeedingFollowUp = defineCommand({
       const reasons: string[] = [];
       if (p.nextStep?.due && p.nextStep.due <= today) reasons.push(`Next step "${p.nextStep.text}" was due ${p.nextStep.due}`);
       const last = (p.lastContactAt ?? p.createdAt)?.toMillis?.() as number | undefined;
-      const quiet = last ? day(last) : undefined;
-      if ((p.status === "pitched" || p.status === "waiting") && quiet !== undefined && quiet >= i.quietDays) reasons.push(`No contact for ${quiet} days`);
+      const quiet = last ? daysSince(last, today) : undefined;
+      if ((quietDays(p.status, last, today) ?? 0) >= i.quietDays) reasons.push(`No contact for ${quiet} days`);
       if (!reasons.length) continue;
       const kind = p.target.kind as string;
       const target = await db.get(kind === "venue" ? "venues" : kind === "promoter" ? "promoters" : "editions", p.target.id);

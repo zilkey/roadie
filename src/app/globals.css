@@ -11,7 +11,7 @@
   --success-bg: #e3f4ea; --success-text: #146c43; --success-dot: #1f8a55;
   --admin-bg: #fdf6e7; --admin-border: #efdcb2; --admin-label: #7a5200;
   --admin-empty: #fffdf8; --admin-empty-border: #d9c28f;
-  --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #d6336c;
+  --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #d6336c; --quiet: #FFF6CC;
   --unfinished: #fff6dc; --unfinished-text: #3d3a2e; --owed-text: #6e5410;
   --shadow: rgb(28 27 34 / .14); --backdrop: rgb(28 27 34 / .5);
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235f5d6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
@@ -32,7 +32,7 @@
     --success-bg: #13301f; --success-text: #6fd39a; --success-dot: #3fb874;
     --admin-bg: #2b2312; --admin-border: #4a3c1c; --admin-label: #e7b85a;
     --admin-empty: #241d0f; --admin-empty-border: #5c4a22;
-    --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #f06595;
+    --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #f06595; --quiet: #3A3418;
     --unfinished: #2e2814; --unfinished-text: #ecdfb8; --owed-text: #e7c870;
     --shadow: rgb(0 0 0 / .45); --backdrop: rgb(0 0 0 / .6);
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
@@ -250,6 +250,9 @@ fieldset.sec { margin: 0; }
 .book-table.wn td.pitch > .pw { min-width: 220px; }
 .book-table.wn th.name, .book-table.wn td.name { width: 100%; white-space: nowrap; }
 .book-table td.nw { white-space: nowrap; }
+/* Pitch List: the Last contact column, and a light-yellow row once a Pitched or Talking pitch has had no contact for two weeks */
+.book-table th.lc, .book-table td.lc { white-space: nowrap; padding-right: 22px; }
+.book-table tr[data-quiet="1"] td { background: var(--quiet); }
 .book-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
 .book-table .nm:hover { color: var(--accent-text); }
 .book-table .sub { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); }

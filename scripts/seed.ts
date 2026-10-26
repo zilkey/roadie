@@ -130,14 +130,14 @@ async function main() {
   await pitch({ kind: "venue", id: cervantes, name: "Cervantes' Other Side" }, "idea");
   await pitch({ kind: "venue", id: dairy, name: "Dairy Arts Center" }, "toPitch", { nextStep: { text: "Fill out the spring submission form", due: "2026-11-05" }, dates: ["2027-03-12", "2027-03-19"] });
   const pLost = await pitch({ kind: "venue", id: lostlake, name: "Lost Lake Lounge" }, "pitched", { nextStep: { text: "Follow up with Haylee", due: "2026-10-28" }, notes: "Support slot, winter.", dates: ["2026-09-12", "2027-01-16", "2027-01-23"] });
-  await pitch({ kind: "edition", id: folksEd, name: "Rocky Mountain Folks Festival 2027" }, "waiting", { assigneeId: uid.ingrid, nextStep: { text: "Check for decision", due: "2026-12-15" }, dates: ["2027-07-23"] });
-  await pitch({ kind: "venue", id: fox, name: "Fox Theatre" }, "talking", { pitchedAs: "full-band", personnel: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]) });
+  await pitch({ kind: "edition", id: folksEd, name: "Rocky Mountain Folks Festival 2027" }, "pitched", { assigneeId: uid.ingrid, nextStep: { text: "Check for decision", due: "2026-12-15" }, dates: ["2027-07-23"] });
+  await pitch({ kind: "venue", id: fox, name: "Fox Theatre" }, "talking", { pitchedAs: "full-band", personnel: ["ingrid", "jeff", "david", "eric", "emma"].map((k) => mid[k]), lastContactAt: new Date(Date.now() - 3 * 86_400_000) });
   const pHidive = await pitch({ kind: "venue", id: hidive, name: "Hi-Dive" }, "booked");
   await pitch({ kind: "venue", id: washingtons, name: "Washington's" }, "declined", { notes: "Booked through spring." });
   await pitch({ kind: "edition", id: umsEd, name: "Underground Music Showcase 2027" }, "dropped", { notes: "Too much travel for the fee." });
   await pitch({ kind: "edition", id: levittEd, name: "Levitt Pavilion Summer Series Summer 2027" }, "idea");
   // Calendar e2e: a live pitch date on 2026-12-12, the same day as the confirmed show below (a show + pitch date conflict).
-  await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: ["2026-12-12"] });
+  await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: ["2026-12-12"], lastContactAt: new Date(Date.now() - 20 * 86_400_000) }); // quiet: a yellow row on the Pitch List
   await create(`pitches/${pLost}/comments`, { authorId: uid.ingrid, body: "Mention the Roots show that drew 95." });
   await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
   await create(`pitches/${pLost}/activity`, { type: "note", text: "Haylee said to check back mid-November." });

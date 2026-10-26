@@ -82,7 +82,7 @@ function PitchPage() {
 
   const patch = (x: Record<string, unknown>) => as.patch(x, { now: true });
   const name = (uid?: string) => users.find((u) => u.id === uid)?.name ?? "Someone";
-  const flow: Status[] = ["idea", "toPitch", "pitched", "waiting", "talking", "booked"];
+  const flow: Status[] = ["idea", "toPitch", "pitched", "talking", "booked"];
   const stepVal = step ?? { text: p.nextStep?.text ?? "", due: p.nextStep?.due ?? "" };
   const people = crew ?? p.personnel;
   const timeline = [

@@ -13,7 +13,8 @@ import {
 } from "@/components/booking/common";
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
 import { fmtPhone, listRows, type ListRow, type Ref } from "@/components/booking/listRows";
-import { STATUSES, STATUS_LABEL, buildSearchItems, isActive, pitchCellText, searchItems, type Status } from "@/lib/booking";
+import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
+import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
@@ -151,7 +152,18 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
     : seg === "festivals" ? ["Festival", "Edition", "City", "Email", "Phone", "Pitch"]
     : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
     : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
+    : seg === "pitches" ? ["Name", "Type", "City", "Email", "Phone", "Pitch", "Last contact"]
     : ["Name", "Type", "City", "Email", "Phone", "Pitch"];
+  const today = todayStr();
+  // Pitch List: Pitched or Talking with no contact (or, never contacted, since it was added) for QUIET_DAYS turns the row yellow.
+  const quiet = (r: ListRow) => {
+    const p = r.pitch;
+    return seg === "pitches" && !!p && (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today) ?? 0) >= QUIET_DAYS;
+  };
+  const lastContact = (r: ListRow) => {
+    const at = r.pitch?.lastContactAt;
+    return <td className="lc" data-testid={`last-contact-${r.id}`}>{at ? fmtInstant(at.toMillis(), { month: "short", day: "numeric" }) : <Dash />}</td>;
+  };
   const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{r.name}</Link>;
   const flag = (r: ListRow) => {
     if (!r.flag) return <td className="flag" />;
@@ -192,11 +204,11 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
     <table className={wideName ? "book-table wn" : "book-table"}>
       <thead><tr>
         {flagged && <th className="flag" aria-label="Pitch List flag" />}
-        {heads.map((h, i) => <th key={h} className={h === "Pitch" ? "pitch" : wideName && i === 0 ? "name" : undefined}>{h}</th>)}
+        {heads.map((h, i) => <th key={h} className={h === "Pitch" ? "pitch" : h === "Last contact" ? "lc" : wideName && i === 0 ? "name" : undefined}>{h}</th>)}
       </tr></thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={`${r.kind}:${r.id}`} data-testid={`row-${r.kind}-${r.id}`}>
+          <tr key={`${r.kind}:${r.id}`} data-testid={`row-${r.kind}-${r.id}`} data-quiet={quiet(r) ? "1" : undefined}>
             {flagged && flag(r)}
             {seg === "festivals" ? (<>
               <td className="name">{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
@@ -214,6 +226,7 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
             {city(r)}
             {reach(r)}
             {seg !== "contacts" && pitchCell(r)}
+            {seg === "pitches" && lastContact(r)}
           </tr>
         ))}
       </tbody>

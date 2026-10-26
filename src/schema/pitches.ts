@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { entity, serverMask, id, dateStr, ts, sourcesShape } from "./common";
 
-export const pitchStatus = z.enum(["idea", "toPitch", "pitched", "waiting", "talking", "booked", "declined", "dropped"]);
+export const pitchStatus = z.enum(["idea", "toPitch", "pitched", "talking", "booked", "declined", "dropped"]);
 export type PitchStatus = z.infer<typeof pitchStatus>;
+/** Timeline entries also keep "waiting", a status merged into "pitched" (scripts/migrate-pitch-waiting.ts); old moves still read as they happened. */
+const activityStatus = z.enum([...pitchStatus.options, "waiting"]);
 
 export const Pitch = entity({
   target: z.strictObject({ kind: z.enum(["venue", "promoter", "edition"]), id, name: z.string().min(1) }),
@@ -33,8 +35,8 @@ export type Comment = z.infer<typeof Comment>;
 /** pitches/{id}/activity/{id}. Append only. */
 export const Activity = entity({
   type: z.enum(["status", "emailSent", "emailReply", "call", "email", "visit", "note"]),
-  fromStatus: pitchStatus.optional(),
-  toStatus: pitchStatus.optional(),
+  fromStatus: activityStatus.optional(),
+  toStatus: activityStatus.optional(),
   // account: the mailbox it was sent from or arrived in (whose Gmail checkReplies reads). Missing on older entries.
   gmail: z.strictObject({ messageId: z.string(), threadId: z.string(), to: z.string(), subject: z.string(), account: z.string().optional() }).optional(),
   text: z.string().optional(),

@@ -312,7 +312,7 @@ interface FrEvent {
   s?: string; e?: string; o?: string; ok?: "est" | "conf"; d?: string; dk?: "est" | "conf" | "target";
   url?: string; ct?: string; g?: string; nt?: string; sp?: 1;
 }
-const FR_STATUS: Record<string, string> = { todo: "toPitch", pitched: "pitched", waiting: "waiting", accepted: "booked", declined: "declined", skip: "dropped" };
+const FR_STATUS: Record<string, string> = { todo: "toPitch", pitched: "pitched", waiting: "pitched", accepted: "booked", declined: "declined", skip: "dropped" };
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const PHONE_RE = /^\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}$/;
 
@@ -380,7 +380,7 @@ async function importFestivalRun() {
 // ---------- Support Slots ----------
 
 interface SsVenue { id: string; tier: 1 | 2 | 3; n: string; c: string; cap: string; who: string; how: string; ct: string; verify?: boolean; ask?: string; why: string }
-const SS_STATUS: Record<string, string> = { todo: "toPitch", pitched: "pitched", waiting: "waiting", booked: "booked", declined: "declined", skip: "dropped" };
+const SS_STATUS: Record<string, string> = { todo: "toPitch", pitched: "pitched", waiting: "pitched", booked: "booked", declined: "declined", skip: "dropped" };
 const SS_TYPES: Record<string, string> = {
   hidive: "bar", lostlake: "club", larimer: "club", globe: "club", roots: "listening", velvet: "bar", swallow: "listening", seventh: "other",
   louisville: "bar", fox: "theater", bouldertheater: "theater", aggie: "theater", washingtons: "club", oriental: "theater", ophelias: "club",

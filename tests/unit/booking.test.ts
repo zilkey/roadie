@@ -361,13 +361,14 @@ test("move logs status activity; comments and notes go on the timeline", async (
   const v = await cmd("venues.create", venue("Lost Lake"));
   const { id } = await cmd("pitches.flag", { kind: "venue", id: v.id });
   assert.equal((await cmd("pitches.move", { id, status: "toPitch" })).changed, false);
-  await cmd("pitches.move", { id, status: "waiting" });
+  await cmd("pitches.move", { id, status: "pitched" });
   await cmd("pitches.comment", { id, body: "Mention the Roots show" });
   await cmd("pitches.log", { id, type: "call", text: "Left a voicemail" });
-  assert.equal((await db.get("pitches", id))!.status, "waiting");
+  assert.equal((await db.get("pitches", id))!.status, "pitched");
   assert.ok((await db.get("pitches", id))!.lastContactAt);
   const acts = await db.list(`pitches/${id}/activity`);
-  assert.ok(acts.some((a) => a.type === "status" && a.fromStatus === "toPitch" && a.toStatus === "waiting"));
+  assert.ok(acts.some((a) => a.type === "status" && a.fromStatus === "toPitch" && a.toStatus === "pitched"));
+  await assert.rejects(cmd("pitches.move", { id, status: "waiting" }), "waiting was merged into pitched");
   assert.ok(acts.some((a) => a.type === "call"));
   const comments = await db.list(`pitches/${id}/comments`);
   assert.equal(comments[0].authorId, uid);

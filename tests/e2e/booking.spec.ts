@@ -88,6 +88,27 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("comment-input")).toHaveValue("");
 });
 
+test("Pitch List: last contact column, quiet rows turn yellow, statuses without Waiting", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto("/booking/pitches");
+  const list = page.getByTestId("pitch-list");
+  await expect(list.locator("th", { hasText: "Last contact" })).toBeVisible();
+  // seed: Bluebird pitched, last contact 20 days ago; Fox talking, 3 days ago; Cervantes a Future Pitch, never contacted
+  const bluebird = list.locator("tr", { hasText: "Bluebird Room" });
+  await expect(bluebird).toHaveAttribute("data-quiet", "1");
+  await expect(bluebird.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
+  const fox = list.locator("tr", { hasText: "Fox Theatre" });
+  await expect(fox.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
+  await expect(fox).not.toHaveAttribute("data-quiet", "1");
+  const cervantes = list.locator("tr", { hasText: "Cervantes" });
+  await expect(cervantes.getByTestId("status-chip")).toHaveText("Future Pitch");
+  await expect(cervantes.getByTestId(/^last-contact-/)).toHaveText("—");
+  await expect(cervantes).not.toHaveAttribute("data-quiet", "1");
+  const filter = page.getByTestId("pitch-status-filter");
+  await expect(filter.locator("option", { hasText: "Waiting" })).toHaveCount(0);
+  await expect(filter.locator("option", { hasText: "To Pitch" })).toHaveCount(1);
+});
+
 test("send an email from a pitch; it shows in fake Gmail, on the timeline, and replies come back", async ({ page, request }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/booking"));

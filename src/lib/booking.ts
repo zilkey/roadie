@@ -2,14 +2,15 @@
 
 import { dateInBandZone } from "./timezone";
 
-export const STATUSES = ["idea", "toPitch", "pitched", "waiting", "talking", "booked", "declined", "dropped"] as const;
+export const STATUSES = ["idea", "toPitch", "pitched", "talking", "booked", "declined", "dropped"] as const;
 export type Status = (typeof STATUSES)[number];
-export const STATUS_LABEL: Record<Status, string> = {
-  idea: "Idea", toPitch: "To pitch", pitched: "Pitched", waiting: "Waiting", talking: "Talking",
+/** Labels for every status, plus "waiting", which only old timeline entries still carry (it was merged into pitched). */
+export const STATUS_LABEL: Record<Status | "waiting", string> = {
+  idea: "Future Pitch", toPitch: "To Pitch", pitched: "Pitched", waiting: "Waiting", talking: "Talking",
   booked: "Booked", declined: "Declined", dropped: "Dropped",
 };
 /** Statuses that mean the effort is still going: a flag on the target shows as filled. */
-export const ACTIVE_STATUSES: Status[] = ["idea", "toPitch", "pitched", "waiting", "talking"];
+export const ACTIVE_STATUSES: Status[] = ["idea", "toPitch", "pitched", "talking"];
 export const isActive = (s: string) => (ACTIVE_STATUSES as string[]).includes(s);
 
 // ---------- {{field}} fill-in ----------
@@ -114,6 +115,17 @@ export const fmtDate = (s?: string) => {
   const d = new Date(s + "T00:00:00");
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
+
+/** Whole calendar days (band timezone) from the day of instant `ms` to `today`. */
+export function daysSince(ms: number, today = todayStr()): number {
+  return Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(dateInBandZone(new Date(ms)) + "T00:00:00Z")) / 86_400_000);
+}
+/** A Pitched or Talking pitch goes quiet (yellow row, assistant nudge) this many days after its last contact. */
+export const QUIET_DAYS = 14;
+/** Days a pitch has been quiet, when its status is one that can go quiet (Pitched, Talking); else undefined. `lastMs` is the last contact, or creation when there was none. */
+export function quietDays(status: string, lastMs: number | undefined, today = todayStr()): number | undefined {
+  return (status === "pitched" || status === "talking") && lastMs !== undefined ? daysSince(lastMs, today) : undefined;
+}
 
 /** A pitch date is just a "YYYY-MM-DD" string. Docs written before that were `{date, endDate?, note?}`; reading one still works (until migrate:pitch-dates has run). */
 export type PitchDateIn = string | { date: string };
