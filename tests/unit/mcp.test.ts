@@ -102,7 +102,7 @@ const EXPECTED = [
   "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",
   "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.shareLink", "stagePlots.shareOff", "stagePlots.engineerLink",
   // money, stats
-  "expenses.setPaidBack", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
+  "expenses.setPaidBack", "expenses.payPerson", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // geo (address typeahead, read-only)
   "geo.autocomplete",
   // read tools and undo

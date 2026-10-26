@@ -10,6 +10,7 @@ import { routeMiles } from "../gas/route";
 import { areaFor, priceFor } from "../gas/price";
 import { ledgerCategory, driveRef, expenseGasBase, geoPoint, fuelGrade, type FuelAreaKind } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
+import { owesBack } from "@/lib/money";
 import type { Ctx } from "../ctx";
 
 const todayServer = () => dateInBandZone();
@@ -185,6 +186,22 @@ export const expensesSetPaidBack = defineCommand({
   }),
 });
 
+export const expensesPayPerson = defineCommand({
+  name: "expenses.payPerson", roles: ["admin", "mcp"],
+  description: "Pay someone back for everything the band owes them in one go: marks their unpaid pay-back expenses paid back (today, by you). " +
+    "userId is whose (context.now band[].userId); ids (from context.now openExpenses) limits it to those, else all of theirs. Use this, not expenses.setPaidBack one at a time, to settle up with a person.",
+  input: z.strictObject({ userId: z.string().min(1), ids: z.array(z.string().min(1)).min(1).optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const theirs = (await w.query("expenses", (q) => q.where("userId", "==", i.userId))).filter((x) => owesBack(x as never));
+    const byId = new Map(theirs.map((x) => [x.id, x]));
+    if (i.ids?.some((id) => !byId.has(id))) throw new AppError("not_found", "Not one of their unpaid expenses", 404);
+    const pay = i.ids ? i.ids.map((id) => byId.get(id)!) : theirs;
+    if (!pay.length) throw new AppError("not_found", "Nothing owed to them", 404);
+    for (const x of pay) await w.update("expenses", x.id, { paidBackAt: todayServer(), paidBackBy: ctx.uid });
+    return { paid: pay.map((x) => x.id), total: pay.reduce((n, x) => n + (x.amount as number), 0) };
+  }),
+});
+
 const ExpenseLine = z.strictObject({
   id: z.string().min(1).optional(), what: z.string().trim().min(1), amount: z.number().int().positive(), userId: z.string().min(1).optional(),
   payBack: z.boolean().default(true), receipt: driveRef.nullable().optional(),
@@ -261,4 +278,4 @@ export const receiptsSearch = defineCommand({
   },
 });
 
-export const moneyCommands = [expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
+export const moneyCommands = [expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];

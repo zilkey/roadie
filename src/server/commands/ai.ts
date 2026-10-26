@@ -107,13 +107,13 @@ export const recordsList = defineCommand({
   name: "records.list", roles: [...READ],
   description:
     "List records of one kind (newest changes first), live ones only. Use search to find specific ones. Optional filters, combined with AND: " +
-    "showId (expenses of a show; availability asks for a show), pitchId (availability asks for a pitch), rehearsalId, " +
+    "showId (expenses of a show; availability asks for a show), userId (whose expenses), pitchId (availability asks for a pitch), rehearsalId, " +
     "status (e.g. the Pitch List by status; pitch rows include every status, not just active ones), venueId (pitches or shows at a venue), " +
     "missing (dotted field paths that are empty, e.g. [\"address.city\"] for venues with no city). count is every match, however small limit is: " +
     "for \"how many\" questions pass limit 1, and fields (e.g. [\"name\"]) to keep long lists short.",
   input: strict({
     kind: kindEnum, limit: z.number().int().min(1).max(200).default(50),
-    showId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), pitchId: z.string().min(1).optional(),
+    showId: z.string().min(1).optional(), userId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), pitchId: z.string().min(1).optional(),
     status: z.string().min(1).optional(), venueId: z.string().min(1).optional(),
     missing: z.array(z.string().min(1)).optional(), fields: z.array(z.string().min(1)).optional(),
   }),
@@ -125,6 +125,7 @@ export const recordsList = defineCommand({
     }
     const venueOf = (d: Record<string, any>) => (i.kind === "shows" ? d.venue?.id : i.kind === "pitches" ? (d.target?.kind === "venue" ? d.target.id : undefined) : d.venueId);
     if (i.showId) rows = rows.filter((d) => d.showId === i.showId);
+    if (i.userId) rows = rows.filter((d) => d.userId === i.userId);
     if (i.rehearsalId) rows = rows.filter((d) => d.rehearsalId === i.rehearsalId);
     if (i.pitchId) rows = rows.filter((d) => d.pitchId === i.pitchId);
     if (i.status) rows = rows.filter((d) => d.status === i.status);

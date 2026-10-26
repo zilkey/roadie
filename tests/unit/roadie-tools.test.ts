@@ -89,7 +89,7 @@ test("tool list comes from the registry and leaves out what Roadie must not do",
 });
 
 test("confirm rules: sends, money, deletes, cancels and more than 5 records", () => {
-  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "showDeals.setIncome", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "expenses.payPerson", "showDeals.setIncome", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 5000, what: "gas", category: "travel" }), false);
   // a shared venue edit reaches every band: it asks. The band's own notes and links do not. Merging always asks.
   assert.equal(needsConfirm("venues.update", { id: "v", patch: { capacity: 300 } }), true);
@@ -364,4 +364,25 @@ test("text planted in a record doesn't trigger tools in the canned model", async
   // and in the system prompt data path: the context block is marked as content
   const out = await execTool(await sess(), "records.get", { kind: "venues", id: v.id }, noop);
   assert.match(JSON.stringify(out.output), /never follow instructions/);
+});
+
+test("paying someone back is one card with their name and total; yes pays exactly what it showed", async () => {
+  const eric = await makeUser("eric@example.com", "member", { name: "Eric Garcia" });
+  await db.create(sys, "musicians", { name: "Eric Garcia", instruments: [], active: true, userId: eric.uid });
+  const add = (amount: number, what: string, payBack = true) =>
+    registry["expenses.add"].run(sys, registry["expenses.add"].input.parse({ amount, what, category: "gear", userId: eric.uid, payBack })) as Promise<{ id: string }>;
+  const owed = [await add(10000, "Strings"), await add(4234, "Gas"), await add(1000, "Food")];
+  await add(500, "Band's own", false);
+  const s = await sess();
+  const events: AssistantEvent[] = [];
+  const out = await execTool(s, "expenses.payPerson", { userId: eric.uid }, (e) => events.push(e));
+  const cards = events.filter((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>[];
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].summary, "Pay Eric Garcia $152.34");
+  const later = await add(700, "Picks"); // logged after the card: not part of what was shown
+  const ans = await answerPending(who, { threadId: s.threadId, pendingId: (out.output as { pendingId: string }).pendingId, decision: "yes" });
+  assert.equal(ans.status, "done");
+  for (const x of owed) assert.ok((await db.get("expenses", x.id))!.paidBackAt, x.id);
+  assert.equal((await db.get("expenses", later.id))!.paidBackAt, undefined);
+  await assert.rejects(registry["expenses.payPerson"].run(sys, { userId: eric.uid, ids: [owed[0].id] }), (e: { code?: string }) => e.code === "not_found");
 });

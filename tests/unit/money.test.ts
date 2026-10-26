@@ -225,7 +225,7 @@ test("stats: daily pull is idempotent, CSV import writes snapshots, current + te
 });
 
 test("members cannot run admin money or stats commands", async () => {
-  for (const n of ["showDeals.setIncome", "expenses.setPaidBack", "stats.pull", "stats.importCsv", "stats.current"]) {
+  for (const n of ["showDeals.setIncome", "expenses.setPaidBack", "expenses.payPerson", "stats.pull", "stats.importCsv", "stats.current"]) {
     assert.equal(registry[n].roles.includes("member"), false, n);
   }
   for (const n of ["ledger.record", "ledger.correct", "shows.settle", "payouts.pay", "expenses.reimburse"]) assert.equal(registry[n], undefined, n);

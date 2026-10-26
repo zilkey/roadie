@@ -4,6 +4,7 @@
  */
 import { registry } from "../commands/registry";
 import type { Role } from "../ctx";
+import { formatCents } from "@/lib/money";
 
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
@@ -37,7 +38,7 @@ export function refusal(name: string, input: unknown): string | undefined {
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "availability.ask", "availability.remind",                      // sends
-  "expenses.setPaidBack", "showDeals.setIncome",                                          // money
+  "expenses.setPaidBack", "expenses.payPerson", "showDeals.setIncome",                                          // money
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
@@ -117,6 +118,7 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,
   "expenses.setPaidBack": (i) => (i.paid === false ? "Mark an expense as not paid back" : "Mark an expense as paid back"),
+  "expenses.payPerson": (_i, before) => `Pay ${before?.person ?? "them"}${before?.total ? ` ${formatCents(before.total)}` : " back"}`,
   "showDeals.setIncome": (i) => `Set the show's income${Array.isArray(i.income) ? ` (${dollars((i.income as { amount: number }[]).reduce((n, l) => n + l.amount, 0))} in all)` : ""}`,
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",

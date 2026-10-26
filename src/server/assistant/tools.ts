@@ -10,6 +10,7 @@ import type { Role } from "../ctx";
 import { AppError } from "../errors";
 import { RECORD_ROUTES, resolveRoute, routeNames, ROUTES, type RouteName } from "@/lib/routes";
 import { printQuery } from "@/lib/print";
+import { owesBack } from "@/lib/money";
 import type { PrintOptions } from "@/schema/print";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
 import { contextNow, searchAll, SEARCH_KINDS } from "./context";
@@ -146,6 +147,7 @@ function lookups(s: Session) {
 type L = ReturnType<typeof lookups>;
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<string> | string> = { // eslint-disable-line @typescript-eslint/no-explicit-any
+  "expenses.payPerson": async (i, r, _s, l) => `Paid ${await l.person(i.userId)} back ${dollars(r?.total ?? 0)} (${plural(r?.paid?.length ?? 0, "expense")})`,
   "expenses.add": async (i, _r, s, l) => `Logged ${dollars(i.amount)} ${i.what}, paid by ${i.userId ? await l.person(i.userId) : s.name}`,
   "shows.update": async (i, _r, _s, l) => {
     const p = (i.patch ?? {}) as Row;
@@ -255,6 +257,21 @@ async function fillNested(s: Session, name: string, input: unknown): Promise<{ i
     if (p && typeof p === "object" && !Array.isArray(p)) patch[f] = Object.fromEntries(Object.entries({ ...(before[f] ?? {}), ...p }).filter(([, v]) => v !== null));
   }
   return { input: { ...i, patch }, before };
+}
+
+/**
+ * Paying someone back: the card names the person and the total, and the stored input lists exactly the expenses it
+ * added up, so a Yes pays what was shown even if another expense lands before the tap.
+ */
+async function fillPayPerson(s: Session, input: unknown): Promise<{ input: unknown; before?: Row }> {
+  const i = input as Row | null;
+  if (typeof i?.userId !== "string") return { input };
+  let rows: Row[];
+  try { rows = ((await runAs(makeCtx(s), "records.list", { kind: "expenses", userId: i.userId, limit: 200 })).result as { rows: Row[] }).rows; } catch { return { input }; }
+  const owed = rows.filter((x) => owesBack(x as never));
+  const pay = Array.isArray(i.ids) ? owed.filter((x) => (i.ids as string[]).includes(x.id)) : owed;
+  const before = { person: await lookups(s).person(i.userId), total: pay.reduce((n, x) => n + (x.amount as number), 0) };
+  return { input: pay.length && !Array.isArray(i.ids) ? { ...i, ids: pay.map((x) => x.id) } : i, before };
 }
 
 /** "Explain this page": help.explain with no topic or page explains the one the person is on. */
@@ -381,7 +398,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const no = refusal(name, input);
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
-    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : await fillNested(s, name, input ?? {});
+    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : await fillNested(s, name, input ?? {});
     const parsed = cmd.input.safeParse(filled.input);
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
     const asks = needsConfirm(name, parsed.data);
