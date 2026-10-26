@@ -12,6 +12,7 @@ import { todayStr } from "@/lib/booking";
 import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
+import { Upload } from "@/components/music/Upload";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -192,7 +193,14 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <section className="sg-sec" aria-labelledby="song-files-h">
         <div className="sg-sech">
           <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
-          {admin && <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>}
+          {admin && (
+            <div className="flex flex-wrap items-start gap-2">
+              <Upload url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload a demo" accept="audio/*" testid="song-upload-demo"
+                disabled={!artistDoc?.demosFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
+                needsFolder={<>Choose the Demos folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+              <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
+            </div>
+          )}
         </div>
 
         {admin && (

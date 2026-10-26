@@ -41,6 +41,10 @@ test("add a song and attach files picked from a Drive search", async ({ page }) 
   await expect(page.getByTestId("files-chart").getByTestId("file-label")).toHaveText("Chart in E");
   await expect(page.getByTestId("files-demo")).toContainText("Last Train to Lyons demo.m4a");
   await expect(page.getByTestId("files-lyrics")).toBeVisible();
+  // Upload a demo puts it in the Demos folder (Settings > Google) under its own name and lists it under Demos
+  await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Last Train voice memo.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
+  await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Demos.");
+  await expect(page.getByTestId("files-demo")).toContainText("Last Train voice memo.m4a");
   // it shows up in the list with its key and length in their own columns
   await page.getByTestId("back").click();
   await page.getByTestId("songs-filter").fill("last train");
@@ -124,7 +128,7 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(open).toHaveAttribute("href", /fake-drive-demo-1/);
   await expect(open).toHaveAttribute("target", "_blank");
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 18");
-  for (const t of ["song-edit", "add-from-drive", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
+  for (const t of ["song-edit", "add-from-drive", "song-upload-demo", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
 
   // setlists and rehearsals are readable, read-only
   await page.goto(A("/setlists"));

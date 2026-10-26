@@ -1,21 +1,16 @@
 "use client";
 import Link, { useArtist } from "@/lib/artist";
 import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { ErrorBox } from "@/components/ui";
+import { useEffect, useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { FileIcon, Missing, useMusic, type FileRow } from "@/components/music/common";
 import { playerFor } from "@/lib/music";
 import { fmtLong } from "@/lib/shows";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
-import { artistHeaders } from "@/lib/commands";
-import { clientAuth } from "@/lib/firebase-client";
+import { Upload } from "@/components/music/Upload";
 import { DetailCard, DetailPage } from "@/components/booking/DetailCards";
 import type { Rehearsal } from "@/schema";
-
-/** Cloud Run turns away requests over 32 MB; say so before uploading rather than after. */
-const MAX_BYTES = 32 * 1024 * 1024;
 
 export default function RehearsalSongPage() {
   const { id, songId } = useParams<{ slug: string; id: string; songId: string }>();
@@ -69,7 +64,11 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
       </DetailCard>
 
       <DetailCard private title="Recordings" testid="reh-song-recordings-card">
-        {admin && <Upload rehearsalId={r.id} songId={songId} disabled={!hasFolder} />}
+        {admin && (
+          <Upload url={`/api/rehearsals/${encodeURIComponent(r.id)}/recording`} fields={{ songId }} label="Upload a recording" accept="audio/*,video/*"
+            testid="reh-song-upload" disabled={!hasFolder} tooBig="Trim it, or put it in Drive yourself and attach it from the rehearsal."
+            needsFolder={<>Choose the rehearsal recordings folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+        )}
         <div className="grid" data-testid="reh-song-files">
           {files.map((f: FileRow) => (
             <div key={f.id} className="d-row !flex-nowrap" data-testid={`file-${f.id}`}>
@@ -85,55 +84,5 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
         </div>
       </DetailCard>
     </DetailPage>
-  );
-}
-
-/** Pick a file and it uploads at once, with progress. Off (with the reason) until the recordings folder is chosen. */
-function Upload({ rehearsalId, songId, disabled }: { rehearsalId: string; songId: string; disabled: boolean }) {
-  const [pct, setPct] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-
-  async function upload(file: File) {
-    setError(null); setDone(null);
-    if (file.size > MAX_BYTES) { setError(`${file.name} is over 32 MB. Trim it, or put it in Drive yourself and attach it from the rehearsal.`); return; }
-    const user = clientAuth().currentUser;
-    if (!user) { setError("Not signed in"); return; }
-    const body = new FormData();
-    body.append("songId", songId);
-    body.append("file", file);
-    const token = await user.getIdToken();
-    setPct(0);
-    // XHR rather than fetch: fetch can't report upload progress, and a recording takes a while on a phone.
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/rehearsals/${encodeURIComponent(rehearsalId)}/recording`);
-    xhr.setRequestHeader("authorization", `Bearer ${token}`);
-    for (const [k, v] of Object.entries(artistHeaders())) xhr.setRequestHeader(k, v);
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) setPct(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onerror = () => { setPct(null); setError("You're offline"); };
-    xhr.onload = () => {
-      setPct(null);
-      if (input.current) input.current.value = "";
-      let json: { error?: { message?: string }; folder?: { name: string } } = {};
-      try { json = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
-      if (xhr.status >= 200 && xhr.status < 300) setDone(`Uploaded to ${json.folder?.name ?? "Drive"}.`);
-      else setError(json.error?.message ?? (xhr.status === 413 ? "That file is too big to upload." : `Upload failed (HTTP ${xhr.status})`));
-    };
-    xhr.send(body);
-  }
-
-  const busy = pct !== null;
-  return (
-    <div className="grid gap-2">
-      <label className={`btn acc justify-self-start${disabled || busy ? " pointer-events-none opacity-50" : ""}`} data-testid="reh-song-upload">
-        {busy ? `Uploading… ${pct}%` : "Upload a recording"}
-        <input ref={input} type="file" accept="audio/*,video/*" className="sr-only" disabled={disabled || busy} data-testid="reh-song-upload-input"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }} />
-      </label>
-      {disabled && <span className="s text-sm" data-testid="reh-song-upload-needs-folder">Choose the rehearsal recordings folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</span>}
-      {done && <span className="s text-sm" role="status" data-testid="reh-song-upload-done">{done}</span>}
-      <ErrorBox error={error} />
-    </div>
   );
 }

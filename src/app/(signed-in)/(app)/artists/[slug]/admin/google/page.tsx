@@ -241,9 +241,9 @@ const FOLDERS = {
   },
   demos: {
     title: "Demos folder", command: "google.setDemosFolder", tid: "demos-folder", card: "google-demos-folder",
-    saved: "Demos folder saved. Audio uploaded to a song goes here now.",
+    saved: "Demos folder saved. Upload a demo on a song puts it here now.",
     is: "Demos and other audio uploaded to a song go here, shared with the band.",
-    unset: "Not chosen yet. This is where audio uploaded to a song goes; uploading audio stays off until you choose it.",
+    unset: "Not chosen yet. This is where audio uploaded to a song goes; Upload a demo stays off until you choose it.",
   },
   rehearsal: {
     title: "Rehearsal recordings folder", command: "google.setRehearsalFolder", tid: "rehearsal-folder", card: "google-rehearsal-folder",
