@@ -6,7 +6,7 @@ import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
-import { guessKey, guessKind, isAttachable, providerFor } from "@/lib/music";
+import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 
@@ -351,7 +351,8 @@ export const setlistsSeed = defineCommand({
   name: "setlists.seed",
   roles: ["admin", "mcp"],
   description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, with song titles, lengths and keys refreshed from the songs). " +
-    'mode "replace" swaps the whole list (default), "append" adds to the end. Records where it came from; later edits to either side don\'t touch the other. Returns { showId, added, total }.',
+    'mode "replace" swaps the whole list (default), "append" adds to the end. Records where it came from; later edits to either side don\'t touch the other. Copying another show\'s setlist with mode "replace" also copies its average transition (transitionSec). ' +
+    'Returns { showId, added, total (items), lengthSec (the full length: songs + breaks + transitions), transitionSec }.',
   input: z.strictObject({
     showId: z.string().min(1),
     from: z.discriminatedUnion("kind", [
@@ -360,9 +361,10 @@ export const setlistsSeed = defineCommand({
     ]),
     mode: z.enum(["append", "replace"]).default("replace"),
   }),
-  run: (ctx, { showId, from, mode }): Promise<{ showId: string; added: number; total: number }> => run(ctx, async (w) => {
+  run: (ctx, { showId, from, mode }): Promise<{ showId: string; added: number; total: number; lengthSec: number; transitionSec: number }> => run(ctx, async (w) => {
     let srcItems: z.infer<typeof ItemIn>[];
     let name: string | undefined;
+    let srcShow: Doc | null = null;
     if (from.kind === "template") {
       const t = await w.get("setlistTemplates", from.id);
       if (!t || t.deletedAt) throw new AppError("not_found", "Setlist template not found", 404);
@@ -371,6 +373,7 @@ export const setlistsSeed = defineCommand({
     } else {
       const sl = await w.get("setlists", from.id);
       const src = await w.get("shows", from.id);
+      srcShow = src;
       if (!sl || sl.deletedAt) throw new AppError("not_found", "That show has no setlist", 404);
       srcItems = (sl.items ?? []) as typeof srcItems;
       name = src ? showName(src as ShowPlaceLike) : undefined;
@@ -382,7 +385,13 @@ export const setlistsSeed = defineCommand({
     const current = (prior && !prior.deletedAt ? prior.items ?? [] : []) as Record<string, unknown>[];
     const items = [...current, ...added];
     await upsertShowSetlist(w, showId, items, { kind: from.kind, id: from.id, ...(name ? { name } : {}) });
-    return { showId, added: added.length, total: items.length };
+    // A copy of another show's list takes its transition too, so the two add up the same. Appending keeps this show's own.
+    let transitionSec = transitionOf((await w.get("shows", showId)) as { transitionSec?: number } | null ?? undefined);
+    if (srcShow && mode === "replace" && transitionOf(srcShow as { transitionSec?: number }) !== transitionSec) {
+      transitionSec = transitionOf(srcShow as { transitionSec?: number });
+      await w.update("shows", showId, { transitionSec });
+    }
+    return { showId, added: added.length, total: items.length, lengthSec: setlistTotal(items, transitionSec), transitionSec };
   }),
 });
 export const setlistsRemove = defineCommand({

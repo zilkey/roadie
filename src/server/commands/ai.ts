@@ -4,12 +4,13 @@
  */
 import { z } from "zod";
 import { defineCommand } from "./types";
-import { db } from "../db";
+import { db, type Doc } from "../db";
 import { AppError } from "../errors";
 import { bandsintownClient } from "../integrations";
 import { undoRun, runsOf } from "../undo";
 import { buildSearchItems, searchItems, isActive, todayStr, daysSince, quietDays, QUIET_DAYS } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
+import { DEFAULT_TRANSITION_SEC, setlistTotal, transitionOf } from "@/lib/music";
 import { bandsintownEligible } from "../showSync";
 import { bandFolderId, bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
@@ -65,6 +66,16 @@ function present(ctx: { role: string }, kind: string, d: Record<string, unknown>
 }
 
 /**
+ * Setlists and templates as the app shows them: totalSec is the full length, songs + breaks + transitionSec between each
+ * two songs in a row (the stored totalSec leaves transitions out). A setlist takes transitionSec from its show; a template
+ * counts the default.
+ */
+function withLength(d: Doc, show?: Doc | null): Doc {
+  const transitionSec = show === undefined ? DEFAULT_TRANSITION_SEC : transitionOf(show as { transitionSec?: number } | null ?? undefined);
+  return { ...d, totalSec: setlistTotal(d.items ?? [], transitionSec), transitionSec };
+}
+
+/**
  * Records that say whose they are (an artist itself; shows and pitches carry artistId) are only visible from that artist.
  * Everything else isn't partitioned by artist yet (one band per project today), so it is visible to every member.
  */
@@ -79,7 +90,8 @@ export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
   description:
     "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch. " +
-    "A venue includes this band's notes (and archived: true if the band hid it); a festival, edition, promoter or contact includes this band's notes (notes, payNotes, howToPitch), never another band's. Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show.",
+    "A venue includes this band's notes (and archived: true if the band hid it); a festival, edition, promoter or contact includes this band's notes (notes, payNotes, howToPitch), never another band's. Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show. " +
+    "A setlist's or template's totalSec is its full length: songs + breaks + transitionSec between each two songs in a row (a setlist uses its show's transitionSec, a template 30); quote that as the setlist's length.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {
     const d = await db.get(i.kind, i.id);
@@ -87,6 +99,8 @@ export const recordsGet = defineCommand({
     const kind = i.kind;
     const out: Record<string, unknown> = isNotedKind(kind)
       ? present(ctx, kind, withBandNote(kind, d, (await bandNotesBy(kind, await callerArtistId(ctx))).get(d.id)))
+      : kind === "setlists" ? withLength(d, await db.get("shows", d.id))
+      : kind === "setlistTemplates" ? withLength(d)
       : present(ctx, kind, d);
     if (i.kind === "venues") {
       // The shared room plus this band's private notes (loadInNotes, notes, contactIds, promoterIds). Never another band's.
@@ -113,7 +127,7 @@ export const recordsList = defineCommand({
     "List records of one kind (newest changes first), live ones only. Use search to find specific ones. Optional filters, combined with AND: " +
     "showId (expenses of a show; availability asks for a show), userId (whose expenses), pitchId (availability asks for a pitch), rehearsalId, " +
     "status (e.g. the Pitch List by status; pitch rows include every status, not just active ones), venueId (pitches or shows at a venue), " +
-    "missing (dotted field paths that are empty, e.g. [\"address.city\"] for venues with no city). count is every match, however small limit is: " +
+    "missing (dotted field paths that are empty, e.g. [\"address.city\"] for venues with no city). Setlist and template rows carry their full length in totalSec (transitions included, as records.get). count is every match, however small limit is: " +
     "for \"how many\" questions pass limit 1, and fields (e.g. [\"name\"]) to keep long lists short.",
   input: strict({
     kind: kindEnum, limit: z.number().int().min(1).max(200).default(50),
@@ -132,6 +146,11 @@ export const recordsList = defineCommand({
       const notes = await bandNotesBy(kind, await callerArtistId(ctx));
       rows = rows.map((d) => withBandNote(kind, d, notes.get(d.id)));
     }
+    if (i.kind === "setlists") {
+      const shows = new Map((await db.list("shows")).map((s) => [s.id, s]));
+      rows = rows.map((d) => withLength(d, shows.get(d.id) ?? null));
+    }
+    if (i.kind === "setlistTemplates") rows = rows.map((d) => withLength(d));
     const venueOf = (d: Record<string, any>) => (i.kind === "shows" ? d.venue?.id : i.kind === "pitches" ? (d.target?.kind === "venue" ? d.target.id : undefined) : d.venueId);
     if (i.showId) rows = rows.filter((d) => d.showId === i.showId);
     if (i.userId) rows = rows.filter((d) => d.userId === i.userId);

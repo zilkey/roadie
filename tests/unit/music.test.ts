@@ -268,7 +268,7 @@ test("setlists.seed: from a template or another show, replace or append, records
 
   // from a template (replace is the default)
   const out = await cmd("setlists.seed", { showId: s1, from: { kind: "template", id: t } });
-  assert.deepEqual(out, { showId: s1, added: 3, total: 3 });
+  assert.deepEqual(out, { showId: s1, added: 3, total: 3, lengthSec: 200 + 60 + 250, transitionSec: 30 }); // the break takes the transition's place
   let sl = (await db.get("setlists", s1))!;
   assert.deepEqual(sl.items.map((i: any) => i.type), ["song", "break", "song"]);
   assert.equal(sl.items[0].title, "Glass Coast");
@@ -279,17 +279,20 @@ test("setlists.seed: from a template or another show, replace or append, records
   await cmd("setlistTemplates.update", { id: t, patch: { items: [{ type: "song", songId: b }] } });
   assert.equal(((await db.get("setlists", s1))!.items as unknown[]).length, 3);
 
-  // from another show; append keeps what was there, replace swaps it
+  // from another show; append keeps what was there (and this show's transition), replace swaps it and takes the other show's transition
+  await cmd("shows.update", { id: s1, patch: { transitionSec: 60 } });
   await cmd("setlists.setItems", { showId: s2, items: [{ type: "song", songId: b }] });
   const app = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "append" });
-  assert.deepEqual(app, { showId: s2, added: 3, total: 4 });
+  assert.deepEqual(app, { showId: s2, added: 3, total: 4, lengthSec: 250 + 30 + 200 + 60 + 250, transitionSec: 30 });
+  assert.equal((await db.get("shows", s2))!.transitionSec, undefined);
   sl = (await db.get("setlists", s2))!;
   assert.equal(sl.items[0].songId, b);
   assert.equal(sl.items.length, 4);
   assert.equal(sl.source.kind, "show");
   assert.equal(sl.source.id, s1);
   const rep = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "replace" });
-  assert.deepEqual(rep, { showId: s2, added: 3, total: 3 });
+  assert.deepEqual(rep, { showId: s2, added: 3, total: 3, lengthSec: 200 + 60 + 250, transitionSec: 60 });
+  assert.equal((await db.get("shows", s2))!.transitionSec, 60);
 
   await assert.rejects(cmd("setlists.seed", { showId: s1, from: { kind: "template", id: "nope" } }), /not found/i);
   await assert.rejects(cmd("setlists.seed", { showId: s1, from: { kind: "show", id: "nope" } }), /no setlist/i);
@@ -317,7 +320,7 @@ test("setlists: a song still in the Writing phase can't be added; one already on
   // seeding a show from that template leaves the Writing song out
   const p2 = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
   const show2 = (await cmd("shows.create", { pitchId: p2, date: "2027-02-20", venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
-  assert.deepEqual(await cmd("setlists.seed", { showId: show2, from: { kind: "template", id: t } }), { showId: show2, added: 1, total: 1 });
+  assert.deepEqual(await cmd("setlists.seed", { showId: show2, from: { kind: "template", id: t } }), { showId: show2, added: 1, total: 1, lengthSec: 0, transitionSec: 30 });
   assert.equal((await db.get("setlists", show2))!.items[0].songId, a);
 });
 
@@ -493,4 +496,28 @@ test("Songwriting folder: chosen on Settings > Google, for audio uploaded to Wri
   assert.equal(st.songwritingFolder.name, "Songwriting");
   assert.equal(await songwritingFolderId(artistId), "fake-folder-songwriting");
   assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { songwritingFolderId: "x" } }), "only google.setSongwritingFolder sets it");
+});
+
+test("records.get and records.list give a setlist's full length: songs + breaks + the show's transitions; a template counts 30s", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", lengthSec: 200, status: "active" })).id;
+  const b = (await cmd("songs.create", { title: "Weathervane", lengthSec: 250, status: "active" })).id;
+  const items = [{ type: "song", songId: a }, { type: "song", songId: b }, { type: "break", lengthSec: 300 }, { type: "song", songId: a }, { type: "song", songId: b }];
+  const t = (await cmd("setlistTemplates.create", { name: "Two sets", items })).id;
+  const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
+  const p = (await cmd("pitches.flag", { kind: "venue", id: v })).id;
+  const show = (await cmd("shows.create", { pitchId: p, date: "2027-01-16", venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
+  await cmd("setlists.setItems", { showId: show, items });
+  await cmd("shows.update", { id: show, patch: { transitionSec: 90 } });
+
+  const songsAndBreak = 2 * (200 + 250) + 300;
+  assert.equal((await db.get("setlists", show))!.totalSec, songsAndBreak, "the stored total leaves transitions out");
+  const sl = await cmd("records.get", { kind: "setlists", id: show });
+  assert.equal(sl.totalSec, songsAndBreak + 2 * 90);
+  assert.equal(sl.transitionSec, 90);
+  const tpl = await cmd("records.get", { kind: "setlistTemplates", id: t });
+  assert.deepEqual([tpl.totalSec, tpl.transitionSec], [songsAndBreak + 2 * 30, 30]);
+  const rows = (await cmd("records.list", { kind: "setlists", fields: ["totalSec", "transitionSec"] })).rows;
+  assert.deepEqual(rows.find((r: any) => r.id === show), { id: show, totalSec: songsAndBreak + 2 * 90, transitionSec: 90 });
+  const tRows = (await cmd("records.list", { kind: "setlistTemplates", fields: ["totalSec"] })).rows;
+  assert.deepEqual(tRows.find((r: any) => r.id === t), { id: t, totalSec: songsAndBreak + 2 * 30 });
 });
