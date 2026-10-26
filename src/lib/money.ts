@@ -43,6 +43,7 @@ export const owedExpenses = <T extends ExpenseLike>(xs: readonly T[]) => live(xs
 /**
  * Money the band is still waiting on: income lines not marked received, on shows dated today or earlier
  * (a later show's guarantee isn't due yet) that weren't canceled or dropped. Oldest show first.
+ * Merch is left out: unverified merch orders are their own thing (story 31), not a show waiting to pay.
  */
 export function unreceivedIncome<L extends IncomeLineLike>(i: {
   deals: readonly { id: string; income?: readonly L[]; deletedAt?: unknown }[];
@@ -53,7 +54,7 @@ export function unreceivedIncome<L extends IncomeLineLike>(i: {
   for (const d of live(i.deals)) {
     const s = i.show(d.id);
     if (!s || s.deletedAt || s.status === "canceled" || s.status === "dropped" || s.date > i.today) continue;
-    const lines = (d.income ?? []).filter((l) => !l.received && l.amount > 0);
+    const lines = (d.income ?? []).filter((l) => !l.received && l.amount > 0 && l.category !== "merch");
     if (lines.length) out.push({ showId: d.id, date: s.date, lines, total: sumIncome(lines) });
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
