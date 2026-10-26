@@ -10,6 +10,7 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { fmtPitchDate, sortedDates, todayStr } from "@/lib/booking";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
+import { celebrateBooking } from "@/components/Celebrate";
 import { ShowForm, dealOf, timesOf, whereInput, type ShowFormState } from "@/components/shows/ShowForm";
 import type { Artist, Availability, Contact, Edition, Musician, Pitch, Promoter, PromoterNote, Venue } from "@/schema";
 import { withBandNote } from "@/lib/bandNotes";
@@ -88,6 +89,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       if (!made) return;
       r ??= made;
     }
+    if (r && pitch) celebrateBooking(pitch.target.name, dates.map(fmtPitchDate));
     if (r) { await draft.clear(); router.push(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
   }
 

@@ -3,8 +3,9 @@ import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { Menu } from "@/components/Menu";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SaveStatus } from "@/components/SaveStatus";
+import { celebrateSong } from "@/components/Celebrate";
 import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
@@ -96,6 +97,13 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
   const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
   const [len, setLen] = useState<string | null>(null);
+  // Celebrate when the saved status leaves Writing (into anything but Retired), whoever changed it while this page is open.
+  const was = useRef({ id: song.id, status: song.status });
+  useEffect(() => {
+    const prev = was.current;
+    was.current = { id: song.id, status: song.status };
+    if (prev.id === song.id && prev.status === "writing" && song.status !== "writing" && song.status !== "retired") celebrateSong(song.title, STATUS_LABEL[song.status]);
+  }, [song.id, song.status, song.title]);
   // The artist's custom fields, in the artist's order. Typed values live here until saved (the patch is the whole list).
   const artistDoc = useArtist().doc;
   const defs = artistDoc?.songFields ?? [];

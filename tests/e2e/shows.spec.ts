@@ -67,6 +67,9 @@ test("Booked it turns a pitch into a show with a set length, show start and a de
   await expect(page.getByTestId("need-merch")).toBeChecked();
   await page.getByTestId("deal-guarantee").fill("400");
   await page.getByTestId("show-save").click();
+  // a pitch becoming a show is celebrated
+  await expect(page.getByTestId("celebration-title")).toHaveText("It's a show!");
+  await expect(page.getByTestId("celebration-text")).toContainText("Fox Theatre");
 
   await expect(page.getByTestId("show-page")).toBeVisible();
   const id = showId(page);

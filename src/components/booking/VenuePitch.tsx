@@ -14,6 +14,7 @@ import { ConfigurationPicker, Flagged, FlagIcon, PitchDates, PitchDatesField, ty
 import { DetailCard, type useSingleEdit } from "@/components/booking/DetailCards";
 import { fmtPitchDate, isActive, sortedDates, todayStr } from "@/lib/booking";
 import { calendarInvitees } from "@/lib/shows";
+import { celebrateBooking } from "@/components/Celebrate";
 import type { Comment, Musician, User } from "@/schema";
 
 type Stamp = { toMillis(): number };
@@ -209,9 +210,11 @@ function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; commentCount
   async function create(e: React.FormEvent) {
     e.preventDefault();
     if (invalid) return;
-    await call("shows.create", {
-      pitchId: p.id, venueId: p.target.id, date: date === "other" ? other : date, billedAs: cfg || null, sendInvites, copyPitchComments: copy && commentCount > 0,
+    const day = date === "other" ? other : date;
+    const r = await call("shows.create", {
+      pitchId: p.id, venueId: p.target.id, date: day, billedAs: cfg || null, sendInvites, copyPitchComments: copy && commentCount > 0,
     }, { clientMutationId: mutationId.current });
+    if (r) celebrateBooking(p.target.name, [fmtPitchDate(day)]);
   }
 
   return (

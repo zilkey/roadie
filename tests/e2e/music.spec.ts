@@ -45,6 +45,23 @@ test("Writing tab: add a song in the Writing phase and upload audio to the Songw
   await expect(page.getByTestId("songs-list")).not.toContainText("Halfway Home");
 });
 
+test("a song moving from Writing into Learning is celebrated", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("tab-songs").click();
+  await page.getByTestId("songs-seg-writing").click();
+  await page.getByTestId("add-song-btn").click();
+  await page.getByTestId("song-title").fill("Night Shift");
+  await page.getByTestId("save-song").click();
+  await expect(page.getByTestId("song-status")).toHaveText("Writing");
+  await expect(page.getByTestId("celebration")).toHaveCount(0);
+
+  await page.getByTestId("song-edit").click();
+  await page.getByTestId("edit-status").selectOption("learning");
+  await expect(page.getByTestId("song-status")).toHaveText("Learning");
+  await expect(page.getByTestId("celebration-title")).toHaveText("Out of the writing room!");
+  await expect(page.getByTestId("celebration-text")).toHaveText("Night Shift is now Learning");
+});
+
 test("add a song and attach files picked from a Drive search", async ({ page }) => {
   await signInAs(page, "jeff");
   await newSong(page, "Last Train");

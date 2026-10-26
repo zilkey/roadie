@@ -483,6 +483,16 @@ dialog.print-dlg.phone { width: 100vw; max-width: 100vw; margin: auto 0 0; borde
 /* Printing: toasts never print (the print route prints only its sheets). */
 @media print { .toasts { display: none; } }
 
+/* Celebrations (components/Celebrate): confetti over everything, a card that pops in mid-screen. Click the card to dismiss. */
+.celebrate { position: fixed; inset: 0; z-index: 70; pointer-events: none; display: grid; place-items: center; padding: 16px; }
+.celebrate-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.celebrate-card { pointer-events: auto; position: relative; display: grid; gap: 4px; text-align: center; max-width: 420px; padding: 20px 28px; border: 0; border-radius: 18px; background: var(--strong); color: var(--on-strong); box-shadow: 0 12px 40px var(--shadow); cursor: pointer; font: inherit; animation: celebrate-pop .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+.celebrate-title { font-family: var(--f-display); font-size: 24px; font-weight: 800; }
+.celebrate-text { font-size: 15px; opacity: .85; }
+@keyframes celebrate-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .celebrate-card { animation: none; } }
+@media print { .celebrate { display: none; } }
+
 /* Inline audio player (components/music/AudioPlayer): play/pause, a waveform that fills in as it plays, the time. */
 .ap { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--page); min-width: 0; }
 .ap-btn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; }
