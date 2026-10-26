@@ -18,7 +18,7 @@ Consolidated after the final pass. Spec: `docs/blueprint.html`; conventions: `PL
 
 **Shows**: Booked it (show + private deal in one transaction), billed-as/personnel/sound/needs, checklist from templates, a per-show gear list with who brings it (packed boxes; starts empty), Google Calendar event with attendees, Bandsintown listing (public + confirmed only), availability asks (members in-app, subs by hashed no-login link, reminders; by email, or posted to the band's Signal group when its link is set, with members answering signed in on the pitch or show page), after-the-show rating, Home logic ("How Home decides").
 
-**Music**: songs with Drive files (search, kind/key, sharing check, "copy to band folder", "share with band"), inline playback where the URL allows, setlists (drag + buttons, total vs set length, attach to a show), rehearsals.
+**Music**: songs with Drive files (search, kind/key, sharing check, "copy to band folder" once an admin chooses the band folder on Settings > Google (off until then), "share with band"), inline playback where the URL allows, setlists (drag + buttons, total vs set length, attach to a show), rehearsals.
 
 **Money + Reach**: ledger (income, spending, payouts, reimbursements, corrections with `reversesId`), expenses and receipts (Drive link), owed per person, settle a show (income + payouts atomically), My money for members, SVG charts, Stats page (Spotify current numbers + charts, Pull now, Spotify for Artists CSV import), `npm run stats:pull`.
 

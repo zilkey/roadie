@@ -11,7 +11,7 @@ import { undoRun, runsOf } from "../undo";
 import { buildSearchItems, searchItems, isActive, todayStr } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { bandsintownEligible } from "../showSync";
-import { bandmates } from "../music";
+import { bandFolderId, bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
 import { dateStr } from "@/schema";
 import { isOff, publicShowName, showName, type ShowPlaceLike, isPublished } from "@/lib/shows";
@@ -179,8 +179,8 @@ export const songsMissingFiles = defineCommand({
     "Songs (not retired) with no attached Drive file, which kinds each song has, and every attached file with a sharing problem: " +
     "who cannot open it, or it sits outside the band folder. Follow up with drive.search, files.attach, files.shareWithBand, files.copyToBand.",
   input: strict({ includeIdeas: z.boolean().default(false) }),
-  async run(_ctx, i) {
-    const [songs, files, mates] = await Promise.all([db.list("songs"), db.list("files"), bandmates()]);
+  async run(ctx, i) {
+    const [songs, files, mates, folder] = await Promise.all([db.list("songs"), db.list("files"), bandmates(), bandFolderId(ctx.artistId)]);
     const name = new Map(mates.map((m) => [m.id, m.name]));
     const live = songs.filter((s) => s.status !== "retired" && (i.includeIdeas || s.status !== "idea"));
     const byTitle = new Map(songs.map((s) => [s.id, s.title as string]));
@@ -192,11 +192,13 @@ export const songsMissingFiles = defineCommand({
       // Only files that have actually been looked up in Drive. An imported file has a driveFileId but no sharing or
       // inBandFolder yet: that is "not checked", not a problem to report, and reading the unset sharing would throw.
       sharingProblems: files.filter((f) => f.driveFileId && f.sharing !== undefined && f.inBandFolder !== undefined
-        && (f.sharing !== "ok" || !f.inBandFolder)).map((f) => ({
+        // With no band folder chosen, being outside it isn't a problem anyone can fix yet.
+        && (f.sharing !== "ok" || (!!folder && !f.inBandFolder))).map((f) => ({
         fileId: f.id, title: f.title, kind: f.kind, song: f.songId ? byTitle.get(f.songId) ?? null : null, url: f.url,
         cannotOpen: f.sharing === "ok" ? [] : ((f.sharing as { missing: string[] }).missing).map((m) => ({ musicianId: m, name: name.get(m) ?? m })),
-        outsideBandFolder: !f.inBandFolder,
+        outsideBandFolder: !!folder && !f.inBandFolder,
       })),
+      bandFolderChosen: !!folder,
     };
   },
 });

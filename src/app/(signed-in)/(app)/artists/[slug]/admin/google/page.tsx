@@ -7,10 +7,17 @@ import { runCommand } from "@/lib/commands";
 type Feature = "calendar" | "gmail" | "drive";
 interface Status {
   configured: boolean;
+  /** Set up, but still on the local fake (its *_BASE_URL is set). */
+  fakes?: Feature[];
   me: { googleEmail: string; features: Feature[] } | null;
   band: { email: string; name: string; isMe: boolean; features: Feature[] } | null;
   missing?: Feature[];
+  /** Drive can be used for this band: the local fake, or the band's Google account has Drive connected. */
+  driveReady: boolean;
+  /** The chosen band folder as Drive shows it now; name null (with error) when Drive can't open it. */
+  bandFolder: { id: string; name: string | null; url: string | null; error?: string } | null;
 }
+interface Folder { id: string; name: string; url: string; ownerEmail: string }
 
 /** Order and wording from the setup wireframe ("Connect Google for ..."). */
 const FEATURES: [Feature, string, string][] = [
@@ -75,6 +82,11 @@ function GoogleSettings() {
         </section>
       ) : (
         <>
+          {!!status.fakes?.length && (
+            <p className="err m-0" role="status" data-testid="google-fakes">
+              {list(status.fakes)} still {status.fakes.length > 1 ? "go" : "goes"} to the local fake: blank {status.fakes.map((f) => `${f.toUpperCase()}_BASE_URL`).join(", ")} (e.g. in .env.development.local) to use Google.
+            </p>
+          )}
           <section className="card" data-testid="google-me" aria-labelledby="google-me-title">
             <div className="card-head"><h2 id="google-me-title">Your Google account</h2>{me && <span className="tag" data-testid="google-me-email">{me.googleEmail}</span>}</div>
             <p className="m-0" data-testid="google-me-status">
@@ -117,6 +129,74 @@ function GoogleSettings() {
           </section>
         </>
       )}
+      {status && <BandFolderCard status={status} onChange={setStatus} />}
     </div>
+  );
+}
+
+/**
+ * The band folder: the shared Drive folder song files are checked against and copied into. Chosen by searching the band
+ * account's Drive for folders by name, or by pasting a folder link. Until it's set, "Copy to band folder" is off everywhere.
+ */
+function BandFolderCard({ status, onChange }: { status: Status; onChange(s: Status): void }) {
+  const { call, error, busy, setError } = useCommand();
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState<Folder[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const f = status.bandFolder;
+  const isLink = /drive\.google\.com|\/folders\//.test(q);
+
+  async function choose(folder: string) {
+    const s = await call<Status>("google.setBandFolder", { folder });
+    if (!s) return;
+    onChange(s); setOpen(false); setQ(""); setFound(null);
+    setNote("Band folder saved. Run the sharing check on a song to update which files are in it.");
+  }
+  async function find(e: React.FormEvent) {
+    e.preventDefault();
+    if (!q.trim()) return;
+    if (isLink) return choose(q.trim());
+    const r = await call<{ folders: Folder[] }>("google.findFolders", { q: q.trim() });
+    if (r) setFound(r.folders);
+  }
+
+  return (
+    <section className={`card${open ? " editing" : ""}`} data-testid="google-band-folder" aria-labelledby="google-folder-title">
+      <div className="card-head">
+        <h2 id="google-folder-title">Band folder</h2>
+        {status.driveReady && !open && (
+          <button type="button" className="card-edit" onClick={() => { setOpen(true); setNote(null); setError(null); }} data-testid="band-folder-change">{f ? "Change" : "Choose"}</button>
+        )}
+      </div>
+      <p className="m-0" data-testid="band-folder-status">
+        {f?.name ? <><a href={f.url ?? undefined} target="_blank" rel="noreferrer" data-testid="band-folder-link"><b>{f.name}</b> ↗</a>. Song files are checked against it, and Copy to band folder puts copies here.</>
+          : f ? <>Drive can&apos;t open the saved folder ({f.error ?? "unknown error"}). Choose it again.</>
+          : <>Not chosen yet. Copy to band folder stays off until you choose the band&apos;s shared folder.</>}
+      </p>
+      {!status.driveReady && <p className="s m-0" data-testid="band-folder-needs-drive">Connect Drive on the band&apos;s Google account (above) to choose it.</p>}
+      {note && <p className="s m-0" role="status" data-testid="band-folder-note">{note}</p>}
+      {open && (
+        <form className="grid gap-2" onSubmit={find} data-testid="band-folder-form">
+          <label htmlFor="band-folder-q" className="lbl">Folder name, or paste a Drive folder link</label>
+          <div className="flex gap-2">
+            <input id="band-folder-q" className="input" value={q} autoFocus onChange={(e) => { setQ(e.target.value); setFound(null); setError(null); }} data-testid="band-folder-q" />
+            <button className="btn ghost" disabled={busy || !q.trim()} data-testid="band-folder-search">{isLink ? "Use link" : "Search"}</button>
+          </div>
+          {found && found.length === 0 && <span className="s" data-testid="band-folder-empty">No folders with that name in the band&apos;s Drive.</span>}
+          {(found ?? []).map((x) => (
+            <div key={x.id} className="flex items-center gap-2 rounded-lg border border-line p-2" data-testid={`band-folder-hit-${x.name}`}>
+              <span className="grid min-w-0 flex-1"><b className="truncate text-sm">{x.name}</b><span className="s">{x.ownerEmail}</span></span>
+              <a className="btn ghost sm" href={x.url} target="_blank" rel="noreferrer">Open</a>
+              <button type="button" className="btn acc sm" disabled={busy || x.id === f?.id} onClick={() => choose(x.id)} data-testid="band-folder-choose">{x.id === f?.id ? "Current" : "Choose"}</button>
+            </div>
+          ))}
+          <ErrorBox error={error} />
+          <div className="card-foot"><div className="end">
+            <button type="button" className="btn text" onClick={() => { setOpen(false); setQ(""); setFound(null); setError(null); }} data-testid="band-folder-cancel">Cancel</button>
+          </div></div>
+        </form>
+      )}
+    </section>
   );
 }

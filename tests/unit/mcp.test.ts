@@ -351,10 +351,14 @@ test("read tools: search, follow-ups, availability, missing files, Bandsintown r
     kind: "chart", title: "chart", songId: withFile.id, driveFileId: "d1", url: "https://x.example", ownerEmail: "a@example.com",
     inBandFolder: false, sharing: { missing: ["m1"] }, checkedAt: new Date(),
   });
-  const mf = await call("songs.missingFiles", {});
+  let mf = await call("songs.missingFiles", {});
   assert.deepEqual(mf.songsWithoutFiles.map((x: any) => x.title), ["No File"]);
-  assert.equal(mf.sharingProblems[0].outsideBandFolder, true);
+  // No band folder chosen yet: being outside it isn't reported (the sharing gap still is).
+  assert.deepEqual([mf.bandFolderChosen, mf.sharingProblems[0].outsideBandFolder], [false, false]);
   assert.equal(mf.sharingProblems[0].song, "Has File");
+  await db.create(admin, "artists", { name: "Band A", slug: "band-a", configurations: [], links: {}, driveFolderId: "band-folder" }, { id: "a" });
+  mf = await call("songs.missingFiles", {});
+  assert.deepEqual([mf.bandFolderChosen, mf.sharingProblems[0].outsideBandFolder], [true, true]);
 
   // stats movement around a release and a played show
   const snap = (date: string, followers: number, monthlyListeners: number) =>

@@ -78,7 +78,25 @@ The real Gmail, Drive and Calendar clients are written (`src/server/integrations
   - `npx firebase apphosting:secrets:grantaccess GOOGLE_OAUTH_CLIENT_SECRET,GOOGLE_TOKEN_KEY --backend roadie-web-prod --project roadie-prod-iab`
 - [ ] Deploy rules (`googleGrants` has no rule on purpose: server-only).
 - [ ] Each admin who sends mail opens **Settings > Google**, ticks Gmail (and Calendar/Drive if theirs should be the band's) and presses **Connect Google**. The first admin to connect Calendar or Drive becomes the band's account: show events go on their calendar with invites to the musicians, and Drive search looks in their Drive. Another admin can take over with **Use my account**.
-- [ ] Set the band's Drive folder id on the artist (`driveFolderId`) or `DRIVE_BAND_FOLDER_ID`.
+- [ ] On **Settings > Google > Band folder**, choose the band's shared Drive folder (search by name or paste its link). Until it's chosen, "Copy to band folder" is off and nothing counts as in the band folder.
+
+### Real Google locally
+
+Dev uses the fakes because `.env.development` sets `GMAIL_/DRIVE_/CALENDAR_BASE_URL`. To use the real APIs from `npm run dev:all`, put the OAuth config in `.env.development.local` (gitignored; it beats `.env.development`, and `npm test` / `npm run e2e` ignore it):
+
+```
+GOOGLE_OAUTH_CLIENT_ID=...apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=...
+GOOGLE_TOKEN_KEY=<32 random bytes, base64>
+GMAIL_BASE_URL=
+DRIVE_BASE_URL=
+CALENDAR_BASE_URL=
+```
+
+- The OAuth client (the production one or a separate "Roadie local" web client) needs the redirect URI `http://127.0.0.1:3100/api/google/callback` (APP_URL's default in dev). Open the app at `http://127.0.0.1:3100`, not `localhost`: the callback lands on APP_URL's host, and your dev sign-in only exists on the host you signed in on.
+- While the consent screen is in Testing, your Google address must be a test user.
+- Sign in with a dev button, then Settings > Google > Connect Google. The grant is stored in the emulator (`.emulator-data/`), so it survives restarts; Settings > Google warns if a service still goes to a fake.
+- It's real: pitch emails and "can you play?" asks really send, show events invite the musicians' addresses with Google's emails, and "Share with band" adds those addresses to real Drive files. The seed data uses `example.com` addresses; check the emulator's musicians and contacts before sending. Choose a real band folder on Settings > Google for "copy to band folder" (the seed's `fake-band-folder` doesn't exist in Drive).
 
 ## 6. Real integration implementations
 

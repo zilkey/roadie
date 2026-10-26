@@ -11,7 +11,7 @@ import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
-import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
+import { DrivePicker, NoBandFolder, type Pick } from "@/components/music/DrivePicker";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -47,6 +47,9 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   const names = missing.map((id) => m.musicians.find((x) => x.id === id)?.name ?? "Someone").sort();
   const label = file.kind === "chart" && file.key ? `Chart in ${file.key}` : file.title;
   const fixIds = { ids: [file.id] };
+  // No band folder chosen: being outside it means nothing yet, and Copy to band folder can't run.
+  const hasFolder = !!useArtist().doc?.driveFolderId;
+  const outside = checked && hasFolder && !file.inBandFolder;
   return (
     <div className="sg-row" data-testid={`file-${file.id}`}>
       <div className="sg-rowh">
@@ -57,8 +60,8 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
           {/* The sharing state reads under the name: unchecked is a warning, a real gap lists who is locked out. */}
           {admin && isDrive && !checked && <span className="sg-warn" data-testid="file-unchecked">Not checked yet — run the sharing check.</span>}
           {admin && checked && names.length > 0 && <span className="sg-warn" data-testid="cant-open">Can&apos;t open: {names.join(", ")}</span>}
-          {admin && checked && !file.inBandFolder && <span className="sg-warn">Outside the band folder ({file.ownerEmail}).</span>}
-          {admin && checked && names.length === 0 && file.inBandFolder && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
+          {admin && outside && <span className="sg-warn">Outside the band folder ({file.ownerEmail}).</span>}
+          {admin && checked && names.length === 0 && !outside && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
         </span>
         <span className="sg-rowa">
           {inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
@@ -67,9 +70,12 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
         </span>
       </div>
       {open && inline && <Player file={file} />}
-      {admin && checked && (names.length > 0 || !file.inBandFolder) && (
-        <div className="flex flex-wrap gap-2" data-testid="file-gap">
-          {!file.inBandFolder && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>}
+      {admin && checked && (names.length > 0 || outside || !hasFolder) && (
+        <div className="flex flex-wrap items-center gap-2" data-testid="file-gap">
+          {(outside || !hasFolder) && (
+            <button className="btn ghost sm" disabled={busy || !hasFolder} title={hasFolder ? undefined : "Choose the band folder on Settings > Google first"}
+              onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>
+          )}
           {names.length > 0 && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.shareWithBand", fixIds)} data-testid="fix-share">Share with band</button>}
         </div>
       )}
@@ -86,7 +92,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
   const [len, setLen] = useState<string | null>(null);
   // The artist's custom fields, in the artist's order. Typed values live here until saved (the patch is the whole list).
-  const defs = useArtist().doc?.songFields ?? [];
+  const artistDoc = useArtist().doc;
+  const defs = artistDoc?.songFields ?? [];
   const [vals, setVals] = useState<Record<string, string> | null>(null);
   const saved = Object.fromEntries((song.fields ?? []).map((v) => [v.fieldId, v.value]));
   const valueOf = (fid: string) => (vals ?? saved)[fid] ?? "";
@@ -111,8 +118,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
     if (r) { setAdding(false); setPicks([]); }
   }
   async function check() {
-    const r = await call<{ checked: number; withGaps: number; outsideBandFolder: number; errors: unknown[] }>("files.check", {});
-    if (r) setCheckMsg(`Checked ${r.checked} files: ${r.withGaps} the band can't open, ${r.outsideBandFolder} outside the band folder${r.errors.length ? `, ${r.errors.length} not found in Drive` : ""}.`);
+    const r = await call<{ checked: number; withGaps: number; outsideBandFolder: number | null; errors: unknown[] }>("files.check", {});
+    if (r) setCheckMsg(`Checked ${r.checked} files: ${r.withGaps} the band can't open${r.outsideBandFolder === null ? "" : `, ${r.outsideBandFolder} outside the band folder`}${r.errors.length ? `, ${r.errors.length} not found in Drive` : ""}.`);
   }
 
   return (
@@ -196,6 +203,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
               <button className="btn outline" disabled={busy} onClick={check} data-testid="run-sharing-check">Run sharing check</button>
             </div>
             {checkMsg && <span className="s" data-testid="check-result">{checkMsg}</span>}
+            {!artistDoc?.driveFolderId && files.some((f) => f.driveFileId) && <NoBandFolder />}
             {adding && (
               <div className="card">
                 <DrivePicker syncWith={song.title} exclude={files.flatMap((f) => f.driveFileId ?? [])} onChange={setPicks} />

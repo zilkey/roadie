@@ -197,7 +197,8 @@ beforeEach(resetEmulators);
 test("google.status says when Google isn't set up", async () => {
   const jeff = await makeUser("jeff@example.com", "admin");
   const r = await dispatch("google.status", bearer(jeff.token), {});
-  assert.deepEqual((r.json as { result: unknown }).result, { configured: false, me: null, band: null });
+  const st = (r.json as { result: { configured: boolean; me: unknown; band: unknown; bandFolder: unknown } }).result;
+  assert.deepEqual([st.configured, st.me, st.band, st.bandFolder], [false, null, null, null]);
   assert.equal((await dispatch("google.connectUrl", bearer(jeff.token), { features: ["gmail"] })).status, 503);
 });
 
@@ -244,7 +245,8 @@ test("connect: consent URL, finish only for the admin who started it, band accou
     assert.equal(off.status, 200);
     assert.ok(seen.some((s) => s.url.href.startsWith(REVOKE_URL) && s.url.searchParams.get("token") === "1//rt"), "revoked at Google");
     assert.ok(!(await db.get("artists", TEST_ARTIST))?.google, "the band has no Google account now");
-    assert.deepEqual((off.json as { result: { me: unknown; band: unknown } }).result, { configured: true, me: null, band: null });
+    const after = (off.json as { result: { configured: boolean; me: unknown; band: unknown } }).result;
+    assert.deepEqual([after.configured, after.me, after.band], [true, null, null]);
   } finally {
     restore();
     if (gmailWas === undefined) delete process.env.GMAIL_BASE_URL; else process.env.GMAIL_BASE_URL = gmailWas;

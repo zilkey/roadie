@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { FileIcon } from "./common";
 import { KIND_LABEL, KIND_ORDER, type FileKind } from "@/lib/music";
+import { Link, useMaybeArtist } from "@/lib/artist";
 
 export interface Hit {
   driveFileId: string; name: string; mimeType: string; url: string; ownerEmail: string;
@@ -19,6 +20,8 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
   syncWith?: string; exclude?: string[]; defaultKind?: FileKind; onChange(picks: Pick[]): void; testid?: string;
 }) {
   const { call, error, busy } = useCommand();
+  // No band folder chosen yet: nothing can be "in" it, so its chips and Copy to band folder are off (Settings > Google sets it).
+  const hasFolder = !!useMaybeArtist()?.doc?.driveFolderId;
   const [q, setQ] = useState(syncWith ?? "");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [mates, setMates] = useState<Mate[]>([]);
@@ -56,8 +59,8 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
   const setPick = (id: string, p: Partial<{ kind: FileKind; key: string }>) => setSel((s) => ({ ...s, [id]: { ...s[id], ...p } }));
 
   const name = (id: string) => mates.find((m) => m.id === id)?.name ?? "Someone";
-  const gappy = (hits ?? []).filter((h) => sel[h.driveFileId] && (h.missing.length || !h.inBandFolder));
-  const outside = gappy.filter((h) => !h.inBandFolder);
+  const gappy = (hits ?? []).filter((h) => sel[h.driveFileId] && (h.missing.length || (hasFolder && !h.inBandFolder)));
+  const outside = hasFolder ? gappy.filter((h) => !h.inBandFolder) : [];
   const unshared = gappy.filter((h) => h.missing.length);
 
   async function fix(fix: "copy" | "share", list: Hit[]) {
@@ -89,7 +92,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
               <input type="checkbox" checked={!!on} onChange={() => toggle(h)} data-testid="hit-check" aria-label={`Pick ${h.name}`} />
               <FileIcon mime={h.mimeType} />
               <span className="grid min-w-0 flex-1"><b className="truncate text-sm">{h.name}</b><span className="s">{h.ownerEmail}</span></span>
-              {h.inBandFolder ? <span className="chip g">Band folder</span> : <span className="chip a" data-testid="outside-band">Outside band folder</span>}
+              {hasFolder && (h.inBandFolder ? <span className="chip g">Band folder</span> : <span className="chip a" data-testid="outside-band">Outside band folder</span>)}
             </label>
             {h.missing.length > 0 && <span className="s" data-testid="cant-open">Can&apos;t open: {h.missing.map(name).sort().join(", ")}</span>}
             {on && (
@@ -108,12 +111,23 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
           <b>{gappy.length} picked file{gappy.length === 1 ? "" : "s"} the band can&apos;t fully open</b>
           <span className="s">Fix it now, or attach and fix later.</span>
           <div className="flex flex-wrap gap-2">
-            {outside.length > 0 && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => fix("copy", outside)} data-testid="picker-copy">Copy to band folder</button>}
+            {(outside.length > 0 || !hasFolder) && (
+              <button type="button" className="btn ghost sm" disabled={busy || !hasFolder} title={hasFolder ? undefined : NO_FOLDER}
+                onClick={() => fix("copy", outside)} data-testid="picker-copy">Copy to band folder</button>
+            )}
             {unshared.length > 0 && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => fix("share", unshared)} data-testid="picker-share">Share with band</button>}
           </div>
+          {!hasFolder && <NoBandFolder />}
         </div>
       )}
       <ErrorBox error={error} />
     </div>
   );
+}
+
+const NO_FOLDER = "Choose the band folder on Settings > Google first";
+
+/** Why Copy to band folder is off, with the way to turn it on. */
+export function NoBandFolder() {
+  return <span className="s" data-testid="no-band-folder">No band folder chosen yet. <Link href="/admin/google">Choose it in Settings › Google</Link> to copy files into it.</span>;
 }

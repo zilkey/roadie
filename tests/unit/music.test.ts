@@ -349,3 +349,32 @@ test("a musician added after seeding: gap never blocks attach, share adds their 
   assert.ok(perms.includes("foo@example.com"));
   assert.deepEqual(((await cmd("drive.search", { q: "Cottonwood" })).files as any[]).find((f) => f.name === "Cottonwood demo.m4a").missing, []);
 });
+
+test("band folder: chosen on Settings > Google by search or link; until then nothing is in it and copying is refused", async () => {
+  const artistId = (await db.list("artists"))[0].id;
+  const a: Ctx = { ...ctx, artistId };
+  await db.update(ctx, "artists", artistId, { driveFolderId: "" });
+  const song = await cmd("songs.create", { title: "Glass Coast", status: "active" });
+  await cmd("files.attach", { songId: song.id, files: [{ driveFileId: "fake-drive-demo-1" }] });
+  const f = (await db.list("files"))[0];
+  assert.equal(f.inBandFolder, false, "no folder: nothing is in it");
+  await assert.rejects(cmd("files.copyToBand", { ids: [f.id] }), { code: "no_band_folder" });
+  await assert.rejects(cmd("drive.fix", { driveFileIds: ["fake-drive-demo-1"], fix: "copy" }), { code: "no_band_folder" });
+  const chk = await cmd("files.check", {});
+  assert.deepEqual([chk.outsideBandFolder, chk.bandFolder], [null, false]);
+  assert.equal((await cmd("songs.missingFiles", {}, a)).sharingProblems.some((p: { outsideBandFolder: boolean }) => p.outsideBandFolder), false);
+
+  const st = await cmd("google.status", {}, a);
+  assert.deepEqual([st.driveReady, st.bandFolder], [true, null], "the fake Drive is usable; no folder yet");
+  const found = await cmd("google.findFolders", { q: "charts" }, a);
+  assert.deepEqual(found.folders.map((x: { id: string }) => x.id), ["fake-folder-charts"], "folders only, not the chart files");
+
+  await assert.rejects(cmd("google.setBandFolder", { folder: "fake-lyrics-5" }, a), /is a file, not a folder/);
+  await assert.rejects(cmd("google.setBandFolder", { folder: "no-such-folder" }, a), { code: "not_found" });
+  await assert.rejects(cmd("google.setBandFolder", { folder: "https://example.com/x y" }, a), { code: "invalid_input" });
+  const set = await cmd("google.setBandFolder", { folder: "https://drive.google.com/drive/folders/fake-band-folder?usp=sharing" }, a);
+  assert.equal(set.bandFolder.name, "Ingrid Avison Band");
+  assert.equal((await db.get("artists", artistId))?.driveFolderId, "fake-band-folder");
+  assert.equal((await cmd("files.check", {})).outsideBandFolder, 0, "the demo is in the band folder now");
+  assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { driveFolderId: "x" } }), "only google.setBandFolder sets it");
+});

@@ -46,6 +46,8 @@ export default defineConfig({
         GMAIL_BASE_URL: GMAIL, DRIVE_BASE_URL: DRIVE, CALENDAR_BASE_URL: CAL, BANDSINTOWN_BASE_URL: BIT, SPOTIFY_BASE_URL: SPOTIFY,
         ORS_BASE_URL: ORS, EIA_BASE_URL: EIA,
         APP_URL: APP,
+        // Real Google set up in .env.development.local must not reach e2e: an empty value beats the file.
+        GOOGLE_OAUTH_CLIENT_ID: "",
       },
     },
   ],

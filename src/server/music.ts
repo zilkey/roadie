@@ -5,18 +5,19 @@ import { driveClient, type DriveFile, type DriveService } from "./integrations";
 export interface Bandmate { id: string; name: string; email: string }
 export interface Inspection { file: DriveFile; missing: string[]; inBandFolder: boolean }
 
-export const DEFAULT_BAND_FOLDER = process.env.DRIVE_BAND_FOLDER_ID ?? "fake-band-folder";
-
 /** Members = active musicians who have an email. */
 export async function bandmates(): Promise<Bandmate[]> {
   const ms = await db.list("musicians");
   return ms.filter((m: Doc) => m.active && m.email).map((m) => ({ id: m.id, name: m.name as string, email: String(m.email).toLowerCase() }));
 }
 
-/** The artist's Drive folder (the one artist there is when no id is given). */
-export async function bandFolderId(artistId?: string): Promise<string> {
+/**
+ * The artist's band folder (the one artist there is when no id is given), chosen on Settings > Google
+ * (google.setBandFolder). Null until an admin picks one: then nothing is "in the band folder" and copying into it is off.
+ */
+export async function bandFolderId(artistId?: string): Promise<string | null> {
   const artist = artistId ? await db.get("artists", artistId) : (await db.list("artists"))[0];
-  return (artist?.driveFolderId as string) || DEFAULT_BAND_FOLDER;
+  return (artist?.driveFolderId as string | undefined) || null;
 }
 
 async function inFolder(drive: DriveService, id: string, folder: string, seen = new Set<string>(), depth = 0): Promise<boolean> {
@@ -40,9 +41,9 @@ export function missingFor(file: DriveFile, mates: Bandmate[]): string[] {
   return mates.filter((m) => !can.has(m.email) && !domains.some((d) => m.email.endsWith(`@${d}`))).map((m) => m.id);
 }
 
-export async function inspect(file: DriveFile, mates: Bandmate[], folder: string, drive: DriveService = driveClient()): Promise<Inspection> {
+export async function inspect(file: DriveFile, mates: Bandmate[], folder: string | null, drive: DriveService = driveClient()): Promise<Inspection> {
   let inBandFolder = false;
-  for (const p of file.parents) if (await inFolder(drive, p, folder)) { inBandFolder = true; break; }
+  if (folder) for (const p of file.parents) if (await inFolder(drive, p, folder)) { inBandFolder = true; break; }
   return { file, missing: missingFor(file, mates), inBandFolder };
 }
 

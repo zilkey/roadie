@@ -62,7 +62,7 @@ const configurationsFor = (roster: BandRoster, musicianIds: Record<string, strin
  * and on a fresh project no musician exists yet -- but the people have to be added TO an artist, so the artist is
  * necessarily first.
  *
- * driveFolderId is "": the real Drive folder is set from the app later, and a fake id here would make the Music
+ * driveFolderId is "": the real Drive folder is chosen in the app (Settings > Google > Band folder), and a fake id here would make the Music
  * tab's sharing checks lie.
  */
 async function ensureArtist(ctx: Ctx, roster: BandRoster, dryRun: boolean) {

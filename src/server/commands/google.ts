@@ -12,6 +12,7 @@ import type { Ctx } from "../ctx";
 import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, signState, verifyState } from "../google/oauth";
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
 import { bandGoogle } from "../google/band";
+import { driveClient, IntegrationError, useRealGoogle } from "../integrations";
 
 const artistOf = (ctx: Ctx) => {
   if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
@@ -19,13 +20,45 @@ const artistOf = (ctx: Ctx) => {
 };
 const usableForBand = (g: Grant | null) => !!g && (g.features.includes("calendar") || g.features.includes("drive"));
 
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/** A folder id from what an admin pastes: a Drive folder link (…/folders/{id}, …?id={id}) or the bare id. */
+export function folderIdFrom(v: string): string | null {
+  const s = v.trim();
+  const m = /\/folders\/([\w-]+)/.exec(s) ?? /[?&]id=([\w-]+)/.exec(s);
+  if (m) return m[1];
+  return /^[\w-]{3,}$/.test(s) ? s : null;
+}
+
+/** Drive works for this artist: the local fake (DRIVE_BASE_URL set), or the real API with a band account that connected Drive. */
+async function driveReady(artistId: string): Promise<boolean> {
+  if (!useRealGoogle(process.env.DRIVE_BASE_URL)) return !!process.env.DRIVE_BASE_URL;
+  const band = await bandGoogle(artistId);
+  return !!band && !!(await getGrant(band.uid))?.features.includes("drive");
+}
+
+/** The chosen band folder as Drive sees it now (its name can change there), or why Drive can't show it. */
+async function bandFolder(artistId: string) {
+  const id = (await db.get("artists", artistId))?.driveFolderId as string | undefined;
+  if (!id) return null;
+  try {
+    const f = await driveClient({ artistId }).get(id);
+    return { id, name: f.name, url: f.webViewLink };
+  } catch (e) {
+    return { id, name: null, url: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 async function status(ctx: Ctx) {
   const artistId = artistOf(ctx);
-  if (!googleConfigured()) return { configured: false, me: null, band: null };
+  const [ready, folder] = await Promise.all([driveReady(artistId), bandFolder(artistId)]);
+  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder };
+  // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
+  const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
   const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
   const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
   return {
-    configured: true,
+    configured: true, fakes, driveReady: ready, bandFolder: folder,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
     band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
   };
@@ -102,4 +135,36 @@ export const googleDisconnect = defineCommand({
   },
 });
 
-export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect];
+export const googleFindFolders = defineCommand({
+  name: "google.findFolders", roles: ["admin"],
+  description: "Read-only: folders in the band's Google Drive whose name contains q, for choosing the band folder.",
+  input: z.strictObject({ q: z.string().trim().min(1) }),
+  async run(ctx, { q }) {
+    const artistId = artistOf(ctx);
+    if (!(await driveReady(artistId))) throw new AppError("drive_not_connected", "Connect Drive on the band's Google account first", 400);
+    const hits = await driveClient({ artistId }).search({ q, mimeType: FOLDER_MIME });
+    return { folders: hits.slice(0, 20).map((f) => ({ id: f.id, name: f.name, url: f.webViewLink, ownerEmail: f.ownerEmail })) };
+  },
+});
+
+export const googleSetBandFolder = defineCommand({
+  name: "google.setBandFolder", roles: ["admin"],
+  description: "Choose the band folder: the shared Drive folder songs' files are checked against and copied into. Takes a folder id or a Drive folder link; Drive must show it as a folder to the band's Google account.",
+  input: z.strictObject({ folder: z.string().trim().min(1) }),
+  async run(ctx, { folder }) {
+    const artistId = artistOf(ctx);
+    const id = folderIdFrom(folder);
+    if (!id) throw new AppError("invalid_input", "That isn't a Drive folder link", 400);
+    if (!(await driveReady(artistId))) throw new AppError("drive_not_connected", "Connect Drive on the band's Google account first", 400);
+    let f;
+    try { f = await driveClient({ artistId }).get(id); } catch (e) {
+      if (e instanceof IntegrationError && e.status === 404) throw new AppError("not_found", "Drive can't find that folder from the band's Google account", 404);
+      throw e;
+    }
+    if (f.mimeType !== FOLDER_MIME) throw new AppError("invalid_input", `${f.name} is a file, not a folder`, 400);
+    await db.update(ctx, "artists", artistId, { driveFolderId: f.id });
+    return status(ctx);
+  },
+});
+
+export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder];
