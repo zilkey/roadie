@@ -15,6 +15,9 @@ const config: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   serverExternalPackages: ["firebase-admin", "genkit", "@genkit-ai/google-genai", "pdfkit"],
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // App Hosting's Next adapter (14.0.21) builds standalone without copying public/, so the logos and icons 404 in prod.
+  // Tracing them into every route puts them in .next/standalone/public, where the standalone server serves them.
+  outputFileTracingIncludes: { "/*": ["./public/**/*"] },
   // authDomain is our own domain, so Google sign-in's helper pages (/__/auth, /__/firebase) must be served from it.
   // App Hosting doesn't serve them like classic Hosting does: proxy them to the project's firebaseapp.com.
   async rewrites() {
