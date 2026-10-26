@@ -20,8 +20,19 @@ Pick a short kebab-case slug from the story (e.g. `whos-free`). From the main ch
 ```sh
 git worktree add ../roadie-<slug> -b <slug> main
 cd ../roadie-<slug>
-ln -s ../band-tracker/node_modules node_modules
+npm ci > junk.ci.txt 2>&1; echo ci=$?; tail -3 junk.ci.txt
 ```
+
+The worktree needs its own real `node_modules`. **Never symlink it to the main checkout's**: Turbopack refuses to
+resolve packages outside the worktree root, so `next dev` in e2e dies with "Could not find the Next.js package
+(next/package.json)" and no test runs. `npm ci` takes about 10 seconds with a warm npm cache. Run it in the
+foreground, on its own, and check `ci=0` and "added N packages" before doing anything else. Don't chain it into a
+background e2e job: if that job gets stopped, the install is left half done. The `allow-scripts` and `EBADENGINE`
+warnings are expected and harmless.
+
+If a worktree from an earlier session still has a symlinked `node_modules` (`ls -ld node_modules` shows `->`),
+replace it: `rm node_modules && rm -rf .next-test && npm ci`. If an install is ever incomplete, run `rm -rf
+node_modules && npm ci` again; don't fall back to the symlink, even for a quick typecheck.
 
 Copy any gitignored files the work needs from the main checkout (e.g. `src/lib/band.ts`, `.secrets/`) only if the
 task actually needs them. Do all further work, edits included, inside the worktree path.
@@ -60,10 +71,18 @@ TEST_PORT_OFFSET=30 FIREBASE_TEST_CONFIG=firebase.worktree.json npm run e2e 2>&1
 ```
 
 - Run in the background for e2e (it takes minutes); read the tee'd file for failures.
-- Rerun single specs while fixing (`... npm run e2e -- tests/e2e/foo.spec.ts`), then the full suites once at the end.
+- Rerun single specs while fixing, then the full suites once at the end. `npm run e2e -- <spec>` does **not** work:
+  the extra argument goes to `firebase emulators:exec`, not to Playwright. Spell the command out instead:
+
+  ```sh
+  rm -rf .fake-data-test && TEST_PORT_OFFSET=30 npx firebase emulators:exec --config firebase.worktree.json \
+    --only firestore,auth --project demo-band-tracker \
+    "GCLOUD_PROJECT=demo-band-tracker tsx scripts/seed.ts && playwright test tests/e2e/foo.spec.ts"
+  ```
 - Fix failures your change caused. If a failure is clearly unrelated and also fails on main, note it and move on;
   don't fix other features' tests here.
-- If `next dev` refuses the symlinked `node_modules`, replace the link with `npm ci` and rerun.
+- If the e2e web server never starts, look at the first `[WebServer]` error in the tee'd file. "Could not find the
+  Next.js package" means `node_modules` is a symlink or only partly installed; see step 1.
 - Don't run screenshot specs or before/after captures.
 
 ## 5. Squash onto main
