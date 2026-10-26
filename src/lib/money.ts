@@ -40,6 +40,25 @@ export function showTotals(i: { income?: readonly { amount: number }[]; expenses
 /** What the band owes people: live pay-back expenses not yet paid back. */
 export const owedExpenses = <T extends ExpenseLike>(xs: readonly T[]) => live(xs).filter(owesBack);
 
+/**
+ * Money the band is still waiting on: income lines not marked received, on shows dated today or earlier
+ * (a later show's guarantee isn't due yet) that weren't canceled or dropped. Oldest show first.
+ */
+export function unreceivedIncome<L extends IncomeLineLike>(i: {
+  deals: readonly { id: string; income?: readonly L[]; deletedAt?: unknown }[];
+  show(id: string): { date: string; status: string; deletedAt?: unknown } | undefined;
+  today: string;
+}): { showId: string; date: string; lines: L[]; total: number }[] {
+  const out: { showId: string; date: string; lines: L[]; total: number }[] = [];
+  for (const d of live(i.deals)) {
+    const s = i.show(d.id);
+    if (!s || s.deletedAt || s.status === "canceled" || s.status === "dropped" || s.date > i.today) continue;
+    const lines = (d.income ?? []).filter((l) => !l.received && l.amount > 0);
+    if (lines.length) out.push({ showId: d.id, date: s.date, lines, total: sumIncome(lines) });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
 /** One amount in or out, for the Money page's totals and charts. */
 export interface MoneyRow { date: string; showId?: string; category: string; in: number; out: number }
 export function moneyRows(i: {

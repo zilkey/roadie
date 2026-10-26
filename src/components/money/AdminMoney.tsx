@@ -5,7 +5,8 @@ import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, byCategory, byMonth, byShow, formatCents, moneyRows, owedExpenses, totals } from "@/lib/money";
+import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, byCategory, byMonth, byShow, formatCents, moneyRows, owedExpenses, totals, unreceivedIncome } from "@/lib/money";
+import { dateInBandZone } from "@/lib/timezone";
 import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
@@ -39,6 +40,13 @@ function Admin() {
     const o = owedBy.get(x.userId) ?? { name: person(x.userId), total: 0, lines: [] };
     o.total += x.amount; o.lines.push(x); owedBy.set(x.userId, o);
   }
+  const waiting = unreceivedIncome({ deals: deals.rows ?? [], show: (id) => showById.get(id), today: dateInBandZone() });
+  const waitingTotal = waiting.reduce((n, w) => n + w.total, 0);
+  // setIncome replaces the whole list, so resend every line with just this one flipped.
+  const markReceived = (showId: string, lineId: string) => {
+    const income = deals.rows?.find((d) => d.id === showId)?.income ?? [];
+    return call("showDeals.setIncome", { id: showId, income: income.map((l) => (l.id === lineId ? { ...l, received: true } : l)) });
+  };
 
   // No income lines and no expenses yet: only the welcome card, none of the tabs or totals.
   const nothingYet = expenses.rows !== null && deals.rows !== null && rows.length === 0 && (expenses.rows ?? []).length === 0;
@@ -68,6 +76,25 @@ function Admin() {
             </div>
             <MonthBars data={byMonth(rows)} testid="chart-months" />
           </div>
+          <div className="grid content-start gap-5">
+          <div className="grid content-start gap-2" data-testid="unreceived">
+            <div className="flex justify-between"><span className="lbl">Not received yet</span>{waiting.length > 0 && <b className="font-mono" data-testid="unreceived-total">{formatCents(waitingTotal)}</b>}</div>
+            {waiting.length === 0 && <div className="empty"><span>Every show so far has paid up.</span></div>}
+            {waiting.map((w) => (
+              <div key={w.showId} className="card" data-testid={`unreceived-${w.showId}`}>
+                <div className="flex justify-between gap-2">
+                  <Link href={`/shows/${w.showId}`}><b>{showName(w.showId)}</b> <span className="s">{fmtLong(w.date)}</span></Link>
+                  <b className="font-mono">{formatCents(w.total)}</b>
+                </div>
+                {w.lines.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span>{INCOME_LABEL[l.category] ?? l.category} <span className="s">{formatCents(l.amount)}{l.method ? ` · ${METHOD_LABEL[l.method] ?? l.method}` : ""}</span></span>
+                    <button className="btn sm" disabled={busy} data-testid={`received-${l.id}`} onClick={() => markReceived(w.showId, l.id)}>Mark received</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
           <div className="grid content-start gap-2" data-testid="owed">
             <span className="lbl">Owed to people</span>
             {owed.length === 0 && <div className="empty"><span>Nobody is owed anything.</span></div>}
@@ -82,6 +109,7 @@ function Admin() {
                 ))}
               </div>
             ))}
+          </div>
           </div>
         </div>
       )}
