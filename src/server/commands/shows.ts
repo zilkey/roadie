@@ -125,7 +125,7 @@ export const showsCreate = defineCommand({
   description:
     "Create a show (and its admin-only showDeal) in one step. 'We booked X on DATE' = shows.create with pitchId + date; it is the pitch's 'Booked it' (links pitch.showIds, sets the pitch to booked). " +
     "The pitch does not supply the place: still give venueId, or for a house concert hostContactIds (contacts) + place {city, address?}. billedAs and personnel fall back to the pitch's. " +
-    "status hold|confirmed (default confirmed); kind: venue|house|festival|radio|other (default from the rest). editionId links a festival year (sets editionName). " +
+    "status hold|confirmed (default confirmed); kind: venue|house|festival|radio|other (default from the rest). editionId links a festival year (editionName is then always the festival name and year label). " +
     "billedAs is a configuration id (context.now artist.configurations; null = none, no personnel) and fills personnel; sound defaults from the venue; needs (poster/backline/merch). " +
     "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes the deal's first income line (not received). " +
     "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
@@ -162,7 +162,7 @@ export const showsCreate = defineCommand({
       const snd = i.sound ?? venue?.sound ?? { provider: kind === "house" ? "bandProvided" as const : "venueProvided" as const };
       const r = await w.create("shows", {
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
-        editionId: edition?.id, editionName: i.editionName ?? (edition ? editionLabel(edition) : undefined), times: i.times, artistId: artist.id,
+        editionId: edition?.id, editionName: edition ? editionLabel(edition) : i.editionName, times: i.times, artistId: artist.id,
         billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
         checklists: [],
         docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: i.dayOfContact,
@@ -234,7 +234,7 @@ export const showsUpdate = defineCommand({
         const h = hostContactIds.length ? await hostsOf(w, hostContactIds) : { hostContactIds: null, hostName: null };
         Object.assign(p, { hostContactIds: h.hostContactIds ?? null, hostName: h.hostName ?? null });
       }
-      if (editionId) { const e = await requireEdition(w, editionId); Object.assign(p, { editionId: e.id, editionName: patch.editionName ?? editionLabel(e) }); }
+      if (editionId) { const e = await requireEdition(w, editionId); Object.assign(p, { editionId: e.id, editionName: editionLabel(e) }); }
       if (editionId === null) Object.assign(p, { editionId: null, editionName: patch.editionName ?? null });
       const hasVenue = p.venue === undefined ? !!before.venue : !!p.venue;
       const hasPlace = p.place === undefined ? !!before.place : !!p.place;
