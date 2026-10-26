@@ -482,3 +482,18 @@ dialog.print-dlg.phone { width: 100vw; max-width: 100vw; margin: auto 0 0; borde
 
 /* Printing: toasts never print (the print route prints only its sheets). */
 @media print { .toasts { display: none; } }
+
+/* Inline audio player (components/music/AudioPlayer): play/pause, a waveform that fills in as it plays, the time. */
+.ap { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--page); min-width: 0; }
+.ap-btn { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 999px; border: 0; background: var(--accent); color: var(--on-accent); cursor: pointer; }
+.ap-btn:disabled { opacity: .5; cursor: default; }
+.ap-btn svg { width: 16px; height: 16px; fill: currentColor; }
+.ap-wave { flex: 1 1 auto; min-width: 0; height: 48px; display: flex; align-items: center; cursor: pointer; touch-action: none; border-radius: 6px; }
+.ap-wave:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ap-svg { width: 100%; height: 100%; display: block; }
+.ap-rest { fill: var(--input-border); }
+.ap-done { fill: var(--accent); }
+.ap-loading { font-size: 13px; color: var(--muted); }
+.ap-line { width: 100%; height: 4px; border-radius: 2px; background: var(--input-border); overflow: hidden; }
+.ap-line > div { height: 100%; background: var(--accent); }
+.ap-time { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }

@@ -11,8 +11,8 @@ export interface FakeReq {
   body: any;
   params: Record<string, string>;
 }
-/** Return a plain value for 200 JSON, or { status, json } / { redirect } / { html }. */
-export type FakeRes = { status?: number; json?: unknown; html?: string; redirect?: string } | unknown;
+/** Return a plain value for 200 JSON, or { status, json } / { redirect } / { html } / { bytes, type }. */
+export type FakeRes = { status?: number; json?: unknown; html?: string; redirect?: string; bytes?: Buffer; type?: string } | unknown;
 export type Route<S> = [method: string, pattern: string, handler: (req: FakeReq, state: S) => FakeRes | Promise<FakeRes>];
 
 export class HttpError extends Error {
@@ -55,7 +55,7 @@ export function defineFake<S>(def: FakeDef<S>) {
     let state = load();
     save();
     const server = http.createServer(async (rq, rs) => {
-      const send = (status: number, type: string, payload: string, extra: Record<string, string> = {}) => {
+      const send = (status: number, type: string, payload: string | Buffer, extra: Record<string, string> = {}) => {
         rs.writeHead(status, { "content-type": type, "access-control-allow-origin": "*", ...extra });
         rs.end(payload);
       };
@@ -81,8 +81,9 @@ export function defineFake<S>(def: FakeDef<S>) {
           const params = r.match(url.pathname);
           if (!params) continue;
           const out = (await r.h({ method, path: url.pathname, query: url.searchParams, body: body ?? {}, params }, state)) as
-            | { status?: number; json?: unknown; html?: string; redirect?: string } | undefined;
+            | { status?: number; json?: unknown; html?: string; redirect?: string; bytes?: Buffer; type?: string } | undefined;
           if (method !== "GET") save();
+          if (out && typeof out === "object" && out.bytes) return send(out.status ?? 200, out.type ?? "application/octet-stream", out.bytes);
           const wrapped = out && typeof out === "object" && ("redirect" in out || "html" in out || "json" in out);
           if (wrapped && out.redirect) return send(303, "text/plain", "", { location: out.redirect });
           if (wrapped && out.html) return send(out.status ?? 200, "text/html", out.html);

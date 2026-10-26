@@ -3,8 +3,8 @@ import Link, { useArtist } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useProfile } from "@/lib/auth";
-import { FileIcon, Missing, useMusic, type FileRow } from "@/components/music/common";
-import { playerFor } from "@/lib/music";
+import { Missing, useMusic, type FileRow } from "@/components/music/common";
+import { RecordingRow } from "@/components/music/RecordingRow";
 import { fmtLong } from "@/lib/shows";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
@@ -70,16 +70,7 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
             needsFolder={<>Choose the rehearsal recordings folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
         )}
         <div className="grid" data-testid="reh-song-files">
-          {files.map((f: FileRow) => (
-            <div key={f.id} className="d-row !flex-nowrap" data-testid={`file-${f.id}`}>
-              <span className="flex min-w-0 flex-1 items-center gap-2">
-                <FileIcon mime={f.mimeType} />
-                <span className="min-w-0 truncate font-semibold">{f.title}</span>
-              </span>
-              {playerFor(f).mode === "audio" && <audio controls preload="none" src={f.url} className="h-8 max-w-[160px]" />}
-              <a className="text-sm font-semibold" href={f.url} target="_blank" rel="noreferrer" data-testid="file-open">Open in Drive</a>
-            </div>
-          ))}
+          {files.map((f: FileRow) => <RecordingRow key={f.id} file={f} />)}
           {files.length === 0 && <span className="d-muted">No recordings of this song from this rehearsal yet.</span>}
         </div>
       </DetailCard>

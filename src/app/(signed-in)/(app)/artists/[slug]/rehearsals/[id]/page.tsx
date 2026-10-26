@@ -7,9 +7,9 @@ import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { Menu } from "@/components/Menu";
-import { FileIcon, Missing, useMusic, type FileRow } from "@/components/music/common";
+import { Missing, useMusic, type FileRow } from "@/components/music/common";
+import { RecordingRow } from "@/components/music/RecordingRow";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
-import { playerFor } from "@/lib/music";
 import { fmtLong, fmtTime } from "@/lib/shows";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
@@ -350,15 +350,8 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
           )}
           <div className="grid" data-testid="rehearsal-files">
             {files.map((f: FileRow) => (
-              <div key={f.id} className="d-row !flex-nowrap" data-testid={`file-${f.id}`}>
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  <FileIcon mime={f.mimeType} />
-                  <span className="min-w-0 truncate font-semibold">{f.title}</span>
-                </span>
-                {playerFor(f).mode === "audio" && <audio controls preload="none" src={f.url} className="h-8 max-w-[160px]" />}
-                <a className="text-sm font-semibold" href={f.url} target="_blank" rel="noreferrer" data-testid="file-open">Open in Drive</a>
-                {admin && <button type="button" aria-label="Remove recording" className="min-h-[44px] min-w-[44px] border-0 bg-transparent text-lg s" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">×</button>}
-              </div>
+              <RecordingRow key={f.id} file={f}
+                remove={admin && <button type="button" aria-label="Remove recording" className="min-h-[44px] min-w-[44px] border-0 bg-transparent text-lg s" disabled={busy} onClick={() => call("files.remove", { id: f.id })} data-testid="file-remove">×</button>} />
             ))}
             {files.length === 0 && <span className="d-muted">No recordings yet.</span>}
           </div>

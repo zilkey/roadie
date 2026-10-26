@@ -184,6 +184,21 @@ test("create a rehearsal, add songs from the search, attach the recording from D
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Try a ritard");
   await expect(page.getByTestId("rehearsal-files")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
 
+  // audio plays inline: Play opens the row into a waveform that fills in as it plays, Hide closes it; video has no Play
+  const files = page.getByTestId("rehearsal-files");
+  await expect(files.locator('[data-testid^="file-"]').filter({ hasText: "Ruby Hill ending.mp4" }).getByTestId("file-play")).toHaveCount(0);
+  const take = files.locator('[data-testid^="file-"]').filter({ hasText: "Low Light - 2026-10-20 Rehearsal.m4a" });
+  await take.getByTestId("file-play").click();
+  const panel = take.getByTestId("audio-panel");
+  await expect(panel.getByTestId("audio-wave").locator("rect").first()).toBeAttached();
+  await expect(panel).toHaveAttribute("data-state", "playing");
+  await expect(panel.getByTestId("audio-time")).toContainText("/ 0:04");
+  await expect(panel.getByTestId("audio-time")).not.toHaveText(/^0:00/);
+  await panel.getByTestId("audio-toggle").click();
+  await expect(panel).toHaveAttribute("data-state", "paused");
+  await take.getByTestId("file-play").click();
+  await expect(take.getByTestId("audio-panel")).toHaveCount(0);
+
   // a song can be added on the rehearsal itself, and taken off again
   await page.getByTestId("reh-song-search").fill("Ruby");
   await page.getByTestId("song-search-option").filter({ hasText: "Ruby Hill" }).click();

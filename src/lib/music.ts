@@ -101,6 +101,11 @@ export function playerFor(f: { url: string; mimeType?: string }): { mode: "audio
   return { mode: "link", src: f.url };
 }
 
+/** Audio the inline player can play: a Drive file (streamed through the app) or a direct link to an audio file. */
+export function playsInline(f: { url: string; mimeType?: string; driveFileId?: string }): boolean {
+  return mimeGroup(f.mimeType) === "audio" && (!!f.driveFileId || playerFor(f).mode === "audio");
+}
+
 /** Latest rehearsal date (YYYY-MM-DD) that ran each song. */
 export function lastRehearsed(rehearsals: { date: string; songs: { songId: string }[] }[]): Record<string, string> {
   const out: Record<string, string> = {};

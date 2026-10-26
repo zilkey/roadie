@@ -71,6 +71,11 @@ test("drive: seeded files, search, copy, share, permissions", async () => {
   assert.notEqual(copy.id, "fake-drive-chart-1");
   assert.ok((await d.search({ parent: "fake-band-folder", q: "(band)" })).some((f) => f.id === copy.id));
   await assert.rejects(d.get("missing"), /404/);
+  // audio has bytes to play (the fake's tone, as a WAV); other files don't
+  const wav = await d.download("fake-drive-demo-1");
+  assert.equal(wav.headers.get("content-type"), "audio/wav");
+  assert.equal(Buffer.from(await wav.arrayBuffer()).subarray(0, 4).toString(), "RIFF");
+  assert.equal((await d.download("fake-drive-chart-1")).status, 400);
 });
 
 test("calendar: create, update, list, delete", async () => {

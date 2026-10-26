@@ -9,10 +9,11 @@ import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, PROVIDER_LABEL, providerFor } from "@/lib/music";
+import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
+import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,8 +25,8 @@ export default function SongPage() {
 }
 
 function Player({ file }: { file: FileRow }) {
+  if (playsInline(file)) return <AudioPanel file={file} />;
   const pl = playerFor(file);
-  if (pl.mode === "audio") return <audio controls preload="none" src={pl.src} className="w-full" data-testid="player-audio" />;
   if (pl.mode === "video") return <video controls preload="none" src={pl.src} className="w-full rounded-lg" data-testid="player-video" />;
   if (pl.mode === "embed") return <iframe src={pl.src} title={file.title} allow="autoplay" className="h-24 w-full rounded-lg border-0" data-testid="player-embed" />;
   return null;
@@ -34,8 +35,8 @@ function Player({ file }: { file: FileRow }) {
 function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useMusic>; admin: boolean }) {
   const { call, error, busy } = useCommand();
   const [open, setOpen] = useState(false);
-  const pl = playerFor(file);
-  const inline = pl.mode !== "link";
+  const audio = playsInline(file);
+  const inline = audio || playerFor(file).mode !== "link";
   // Sharing and band-folder checks are Drive facts: a Spotify/YouTube/web link has neither, so it never shows (or lies about) them.
   const isDrive = !!file.driveFileId;
   // A Drive file imported from the song-list sheet has never been looked up in Drive, so inBandFolder and sharing are
@@ -68,8 +69,9 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
           {admin && checked && names.length === 0 && !outside && <span className="s" data-testid="file-ok">Everyone can open this.</span>}
         </span>
         <span className="sg-rowa">
-          {inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
-          <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
+          {audio ? <PlayToggle file={file} open={open} onOpen={setOpen} />
+            : inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
+          <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline && !audio ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
           {admin && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button>}
         </span>
       </div>

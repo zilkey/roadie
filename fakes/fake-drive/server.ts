@@ -1,4 +1,4 @@
-import { defineFake, runIfMain, esc, need, required, type Route } from "../lib";
+import { defineFake, runIfMain, esc, need, required, HttpError, type Route } from "../lib";
 
 export const MIME = {
   folder: "application/vnd.google-apps.folder",
@@ -49,6 +49,25 @@ function initial(): DriveState {
   return { seq: 0, files };
 }
 
+/**
+ * The fake keeps no bytes, so every audio file plays the same few seconds: a WAV of a tone that swells and fades, which
+ * gives the player a waveform with a shape. Built once.
+ */
+let toneWav: Buffer | null = null;
+function tone(): Buffer {
+  if (toneWav) return toneWav;
+  const rate = 8000, secs = 4, n = rate * secs;
+  const b = Buffer.alloc(44 + n * 2);
+  b.write("RIFF", 0); b.writeUInt32LE(36 + n * 2, 4); b.write("WAVE", 8); b.write("fmt ", 12);
+  b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write("data", 36); b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate, env = Math.abs(Math.sin(t * Math.PI * 1.5)) * (0.3 + 0.7 * Math.sin((t / secs) * Math.PI));
+    b.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 220 * t) * env * 0.8 * 32767), 44 + i * 2);
+  }
+  return (toneWav = b);
+}
+
 /** Hide nothing: the fake has a single flat view. */
 const find = (s: DriveState, id: string) => need(s.files.find((f) => f.id === id), "File");
 const emailsOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
@@ -66,6 +85,11 @@ const routes: Route<DriveState>[] = [
     return f;
   }],
   ["GET", "/files/:id", ({ params }, s) => find(s, params.id)],
+  ["GET", "/files/:id/content", ({ params }, s) => {
+    const f = find(s, params.id);
+    if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio");
+    return { bytes: tone(), type: "audio/wav" };
+  }],
   ["GET", "/files/:id/permissions", ({ params }, s) => find(s, params.id).permissions],
   ["POST", "/files/:id/copy", ({ params, body }, s) => {
     const src = find(s, params.id);

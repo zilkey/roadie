@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { demosFolderId, folderForRehearsal, rehearsalFolderId } from "@/server/music";
-import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, setlistSlack, setlistTotal } from "@/lib/music";
+import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, setlistSlack, setlistTotal } from "@/lib/music";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -67,6 +67,11 @@ test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => 
   assert.deepEqual(playerFor({ url: "https://drive.google.com/file/d/abc/view?usp=sharing", mimeType: "audio/mp4" }), { mode: "embed", src: "https://drive.google.com/file/d/abc/preview" });
   assert.equal(playerFor({ url: "http://localhost:3202/files/fake-drive-demo-1", mimeType: "audio/mp4" }).mode, "link");
   assert.equal(playerFor({ url: "https://x.test/a.mp3", mimeType: "application/pdf" }).mode, "link");
+  // The inline player takes any Drive audio (it streams through the app) and direct audio links; not video, not other links.
+  assert.equal(playsInline({ url: "http://localhost:3202/files/fake-drive-demo-1", mimeType: "audio/mp4", driveFileId: "fake-drive-demo-1" }), true);
+  assert.equal(playsInline({ url: "https://x.test/a.mp3", mimeType: "audio/mpeg" }), true);
+  assert.equal(playsInline({ url: "https://x.test/listen", mimeType: "audio/mpeg" }), false);
+  assert.equal(playsInline({ url: "https://x.test/a.mp4", mimeType: "video/mp4", driveFileId: "x" }), false);
   assert.deepEqual(lastRehearsed([{ date: "2026-10-04", songs: [{ songId: "a" }] }, { date: "2026-10-18", songs: [{ songId: "a" }, { songId: "b" }] }]), { a: "2026-10-18", b: "2026-10-18" });
 });
 

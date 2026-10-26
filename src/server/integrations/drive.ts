@@ -25,6 +25,8 @@ export interface DriveService {
   upload(opts: { name: string; mimeType: string; parentId: string; data: Blob }): Promise<DriveFile>;
   share(id: string, emails: string[], role?: "reader" | "writer"): Promise<DriveFile>;
   permissions(id: string): Promise<DrivePermission[]>;
+  /** The file's bytes as Drive sends them (streamed). `range` is passed on as the Range header. */
+  download(id: string, range?: string | null): Promise<Response>;
 }
 
 /**
@@ -53,6 +55,7 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     upload: (o) => call("POST", "/files", { body: { name: o.name, mimeType: o.mimeType, parents: [o.parentId], ownerEmail: FAKE_OWNER } }),
     share: (id, emails, role = "reader") => call("POST", `${f(id)}/share`, { body: { emails, role } }),
     permissions: (id) => call("GET", `${f(id)}/permissions`),
+    download: (id, range) => fetch(`${baseUrl}${f(id)}/content`, { headers: range ? { range } : {} }),
   };
 }
 
@@ -138,6 +141,17 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
     async permissions(id) {
       const r = await call<{ permissions?: GPermission[] }>("GET", `${f(id)}/permissions`, { query: { fields: `permissions(${PERM_FIELDS})`, ...ALL_DRIVES } });
       return people(r.permissions);
+    },
+    async download(id, range) {
+      const qs = new URLSearchParams({ alt: "media", ...ALL_DRIVES });
+      const get = async (force: boolean) => fetch(`${baseUrl}${f(id)}?${qs}`, { headers: { authorization: `Bearer ${await token(force)}`, ...(range ? { range } : {}) } });
+      let res = await get(false);
+      if (res.status === 401) res = await get(true);
+      if (!res.ok) {
+        const err = await res.json().catch(() => undefined);
+        throw new IntegrationError("drive", res.status, err?.error?.message ?? res.statusText);
+      }
+      return res;
     },
   };
 }
