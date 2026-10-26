@@ -82,7 +82,15 @@ export function toolDefs(role: Role): ToolDef[] {
 // ---------- results ----------
 
 export type Emit = (e: AssistantEvent) => void;
-export interface ToolOut { output: unknown; action?: AssistantAction; stop?: boolean }
+export interface ToolOut { output: unknown; action?: AssistantAction; also?: AssistantAction; stop?: boolean }
+
+/** Said after Roadie puts something on the Pitch List; the reply also carries a button that opens the pitch. */
+export const SEE_PITCH = "Want to see the pitch?";
+/** The "See the pitch" button for a pitches.flag result (new or already there). */
+export function seePitch(name: string, result: unknown): AssistantAction | undefined {
+  const id = (result as { id?: unknown } | null)?.id;
+  return name === "pitches.flag" && typeof id === "string" ? { kind: "link", label: "See the pitch", route: "pitch", params: { id } } : undefined;
+}
 
 /** Firestore Timestamps and Dates become ISO strings. */
 export function jsonSafe(v: unknown): unknown {
@@ -415,8 +423,9 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const r = await runCommandTool(s, name, parsed.data, recorded);
     if (r.wrote) {
       emit({ type: "readback", label: r.label!, runId: r.runId });
-      return { output: dataResult({ result: r.result ?? null, readback: r.label }), action: { kind: "readback", label: r.label!, runId: r.runId } };
+      return { output: dataResult({ result: r.result ?? null, readback: r.label }), action: { kind: "readback", label: r.label!, runId: r.runId }, also: seePitch(name, r.result) };
     }
+    if (seePitch(name, r.result)) return { output: dataResult(r.result ?? null), also: seePitch(name, r.result) };
     if (name === "setlists.printLink") { // the reply carries a Print button; nothing is printed from here
       const id = ((parsed.data as Row).setlistId ?? (parsed.data as Row).showId) as string;
       const query = printQuery((r.result as { options: PrintOptions }).options);

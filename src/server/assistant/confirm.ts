@@ -10,7 +10,7 @@ import { ConfirmRequest, UndoRequest } from "@/schema/assistant";
 import { isEligible } from "./policy";
 import { modelLabel } from "./ai";
 import type { Session } from "./run";
-import { runCommandTool, undoInThread } from "./tools";
+import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
 import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending } from "./threads";
 
 export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
@@ -57,9 +57,10 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
     const r = await runCommandTool(s, pending.command, pending.input, new Set());
     await setPending(req.threadId, req.pendingId, { status: "done", runId: r.runId });
     await patchMessageAction(req.threadId, pending.messageId, card, { status: "done" });
+    const see = seePitch(pending.command, r.result);
     await addAssistantMessage({
-      id: resultId, threadId: req.threadId, text: "Done.", pageContext: HERE,
-      actions: r.wrote ? [{ kind: "readback", label: r.label!, runId: r.runId }] : [],
+      id: resultId, threadId: req.threadId, text: see ? `Done. ${SEE_PITCH}` : "Done.", pageContext: HERE,
+      actions: [...(r.wrote ? [{ kind: "readback" as const, label: r.label!, runId: r.runId }] : []), ...(see ? [see] : [])],
     });
     return { status: "done", runId: r.wrote ? r.runId : undefined, label: r.label };
   } catch (e) {

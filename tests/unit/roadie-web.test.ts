@@ -4,9 +4,9 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { handleChat } from "@/server/assistant/chat";
-import { sessionFor, type Who } from "@/server/assistant/confirm";
-import { execTool, toolDefs, type Emit } from "@/server/assistant/tools";
-import { ensureThread, newThreadId } from "@/server/assistant/threads";
+import { answerPending, sessionFor, type Who } from "@/server/assistant/confirm";
+import { execTool, SEE_PITCH, toolDefs, type Emit } from "@/server/assistant/tools";
+import { ensureThread, loadHistory, newThreadId } from "@/server/assistant/threads";
 import {
   allowUrls, checkUrl, FAKE_SOURCE, isAllowedUrl, isBlockedAddress, MAX_QUERY_CHARS, newWebTurn, pageText, publicLookup, urlsIn, WEB_NOTICE,
 } from "@/server/assistant/web";
@@ -146,4 +146,24 @@ test("canned model: 'search the web for' calls web.search and names the source b
   assert.ok(events.some((e) => e.type === "action" && e.label === 'Searched the web for "grey eagle"'));
   assert.match(text, /In the book: Grey Eagle/);
   assert.match(text, new RegExp(FAKE_SOURCE.replace(/[.]/g, "\\.")));
+});
+
+test("pitching offers a See the pitch button, whether it runs straight away or after a Yes", async () => {
+  const s = await sess();
+  const direct = await execTool(s, "pitches.flag", { kind: "venue", id: venueId }, noop, new Set(), newWebTurn());
+  assert.equal(direct.action?.kind, "readback");
+  const pitchId = (await db.list("pitches"))[0].id;
+  assert.deepEqual(direct.also, { kind: "link", label: "See the pitch", route: "pitch", params: { id: pitchId } });
+  const again = await execTool(s, "pitches.flag", { kind: "venue", id: venueId }, noop, new Set(), newWebTurn());
+  assert.equal(again.also?.params?.id, pitchId); // already on the list: still offered
+
+  const other = ((await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Orange Peel", "Asheville")))) as { id: string }).id;
+  const w = newWebTurn();
+  await execTool(s, "web.search", { q: "orange peel booking" }, noop, new Set(), w);
+  const asked = await execTool(s, "pitches.flag", { kind: "venue", id: other }, noop, new Set(), w);
+  assert.equal(asked.action?.kind, "confirm");
+  assert.equal(asked.also, undefined); // nothing to see until they say yes
+  await answerPending(who, { threadId: s.threadId, pendingId: (asked.output as { pendingId: string }).pendingId, decision: "yes" });
+  const last = (await loadHistory(admin.uid, s.threadId))!.at(-1)!;
+  assert.equal(last.text, `Done. ${SEE_PITCH}`);
 });

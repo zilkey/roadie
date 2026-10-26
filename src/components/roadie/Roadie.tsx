@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRoadie, type ChatMsg, type Pending } from "./useRoadie";
 import { useVamp } from "./vamp";
 import type { AssistantAction } from "@/schema/assistant";
+import { linkify } from "@/lib/linkify";
 
 const useDesktop = () =>
   useSyncExternalStore(
@@ -30,7 +31,7 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
           );
         }
         if (a.kind === "link") {
-          return <button key={i} className="btn acc sm justify-self-start" data-testid="roadie-print-link" onClick={() => on.open(a)}>{a.label}</button>;
+          return <button key={i} className="btn acc sm justify-self-start" data-testid="roadie-link-button" onClick={() => on.open(a)}>{a.label}</button>;
         }
         if (a.kind === "confirm") {
           const open = (a.status ?? "pending") === "pending";
@@ -58,7 +59,11 @@ function Bubble({ role, text, actions = [], on }: { role: "user" | "assistant"; 
     <div className={`grid gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
       {role === "assistant" && <Actions actions={actions} on={on} />}
       {text && (
-        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-[var(--accent)] text-[var(--on-accent)]" : "bg-[var(--roadie-bubble)] text-[var(--ink)]"}`}>{text}</div>
+        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-[var(--accent)] text-[var(--on-accent)]" : "bg-[var(--roadie-bubble)] text-[var(--ink)]"}`}>
+          {linkify(text).map((s, i) => s.href
+            ? <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" title={s.href} className="break-all underline underline-offset-2" data-testid="roadie-link">{s.text}</a>
+            : <span key={i}>{s.text}</span>)}
+        </div>
       )}
     </div>
   );

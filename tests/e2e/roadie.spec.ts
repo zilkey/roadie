@@ -88,3 +88,14 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
   await expect(status).toHaveText("Canceled");
   await expect(page.getByTestId("roadie-readback").last()).toContainText("Canceled the show");
 });
+
+test("'google ...': the source in the reply is a link that opens in a new tab", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "google the Doghouse booking contact");
+  const link = page.getByTestId("roadie-msg-assistant").last().getByTestId("roadie-link");
+  await expect(link).toHaveText("https://example.com/roadie-fake-result");
+  await expect(link).toHaveAttribute("href", "https://example.com/roadie-fake-result");
+  await expect(link).toHaveAttribute("target", "_blank");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+});
