@@ -37,13 +37,13 @@ export function dealOf(s: ShowFormState) {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-/** The form has somewhere to put the show: a venue, or a city for a house concert. */
-export const hasPlace = (s: ShowFormState) => (s.where === "venue" ? !!s.venueId : !!s.city.trim());
+/** The form has somewhere to put the show: a venue (or a festival year, venue TBD), or a city for a house concert. */
+export const hasPlace = (s: ShowFormState) => (s.where === "venue" ? !!(s.venueId || s.editionId) : !!s.city.trim());
 export const placeOf = (s: ShowFormState) => ({ city: s.city.trim(), ...(s.address.trim() ? { address: s.address.trim() } : {}) });
 /** The where-fields of `shows.create`. */
 export function whereInput(s: ShowFormState) {
   return s.where === "venue"
-    ? { venueId: s.venueId, ...(s.editionId ? { kind: "festival" as const } : {}) }
+    ? { venueId: s.venueId || undefined, ...(s.editionId ? { kind: "festival" as const } : {}) }
     : { kind: "house" as const, place: placeOf(s), hostContactIds: s.hostContactIds };
 }
 const L = ({ children }: { children: React.ReactNode }) => <span className="lbl">{children}</span>;
@@ -80,12 +80,12 @@ export function ShowForm({ value, onChange, venues, contacts, editions, artist, 
         </label>
         {value.where === "venue" ? (
           <label className="grid gap-1"><L>Venue</L>
-            <select className="select" value={value.venueId} data-testid="show-venue" required
+            <select className="select" value={value.venueId} data-testid="show-venue" required={!value.editionId}
               onChange={(e) => {
                 const v = venues.find((x) => x.id === e.target.value);
                 set({ venueId: e.target.value, ...(!soundTouched && v?.sound ? { soundProvider: v.sound.provider, soundNotes: v.sound.notes ?? "" } : {}) });
               }}>
-              <option value="">Choose a venue…</option>
+              <option value="">{value.editionId ? "Venue TBD" : "Choose a venue…"}</option>
               {[...venues].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.address.city}</option>)}
             </select>
           </label>

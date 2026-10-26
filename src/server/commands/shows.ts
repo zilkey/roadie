@@ -58,7 +58,7 @@ async function hostsOf(w: Writer, ids: string[]) {
   return { hostContactIds: ids, hostName: joinNames(names) || undefined };
 }
 const place = z.strictObject({ city: z.string().trim().min(1), address: z.string().trim().optional() });
-const NO_PLACE = "Choose a venue, or give the city for a house concert";
+const NO_PLACE = "Choose a venue (or a festival year, venue TBD), or give the city for a house concert";
 export const editionLabel = (e: Doc) => `${e.festivalName} ${e.label}`;
 const venueCopy = (v: Doc) => ({
   id: v.id, name: v.name as string, address: [v.address?.street, v.address?.city].filter(Boolean).join(", "), city: v.address?.city as string | undefined,
@@ -140,7 +140,6 @@ export const showsCreate = defineCommand({
   }),
   async run(ctx, i) {
     const id = await run(ctx, async (w) => {
-      if (!i.venueId && !i.place) throw new AppError("invalid_input", NO_PLACE, 400);
       const venue = i.venueId ? await requireVenue(w, i.venueId) : null;
       const hosts = i.hostContactIds?.length ? await hostsOf(w, i.hostContactIds) : null;
       const pitch = i.pitchId ? await w.get("pitches", i.pitchId) : null;
@@ -155,6 +154,8 @@ export const showsCreate = defineCommand({
       const pitchEdition = (pitch?.target as { kind: string; id: string } | undefined)?.kind === "edition" ? (pitch!.target as { id: string }).id : undefined;
       const editionId = i.editionId ?? i.deal.editionId ?? pitchEdition;
       const edition = editionId ? await requireEdition(w, editionId) : null;
+      // A festival show can be booked before the festival says which stage or venue: venue TBD.
+      if (!venue && !i.place && !edition) throw new AppError("invalid_input", NO_PLACE, 400);
       const kind = i.kind ?? (hosts && !venue ? "house" : edition ? "festival" : venue ? "venue" : "other");
       // Most house concerts run on the band's own PA.
       const snd = i.sound ?? venue?.sound ?? { provider: kind === "house" ? "bandProvided" as const : "venueProvided" as const };
@@ -236,7 +237,8 @@ export const showsUpdate = defineCommand({
       if (editionId === null) Object.assign(p, { editionId: null, editionName: patch.editionName ?? null });
       const hasVenue = p.venue === undefined ? !!before.venue : !!p.venue;
       const hasPlace = p.place === undefined ? !!before.place : !!p.place;
-      if (!hasVenue && !hasPlace) throw new AppError("invalid_input", NO_PLACE, 400);
+      const hasEdition = p.editionId === undefined ? !!before.editionId : !!p.editionId;
+      if (!hasVenue && !hasPlace && !hasEdition) throw new AppError("invalid_input", NO_PLACE, 400);
       if (patch.billedAs !== undefined && patch.billedAs !== null) {
         const cfg = configOf(artist, patch.billedAs);
         if (!patch.personnel) p.personnel = cfg?.musicianIds;

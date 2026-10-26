@@ -39,7 +39,7 @@ function Page() {
 }
 
 /**
- * "[venue] · [date]" with the status pill; tabs Show Details / Setlist / Finances. The checklists are a 360px column on the right from lg up
+ * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Finances. The checklists are a 360px column on the right from lg up
  * (on all three tabs, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
  * Comments and Archive stay in the main column. The Setlist tab autosaves on its own (no Edit / Save).
  */
@@ -60,7 +60,7 @@ function ShowView({ show }: { show: ShowRow }) {
         <Link href="/shows" className="back-link" data-testid="back">← All shows</Link>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="page-title" data-testid="page-title">{showName(show)} · {fmtLongYear(show.date)}</h1>
+            <h1 className="page-title" data-testid="page-title">{show.editionName ? `${show.editionName} ${fmtLongYear(show.date)}` : `${showName(show)} · ${fmtLongYear(show.date)}`}</h1>
             <StatusPill show={show} admin={admin} />
           </div>
           {admin && <button type="button" className="btn outline" onClick={() => setRound((n) => n + 1)} data-testid="show-edit">Edit</button>}

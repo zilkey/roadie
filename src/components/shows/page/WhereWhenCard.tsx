@@ -99,7 +99,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
     setLocalError(null);
     if (lengthBad) { setLocalError("Couldn't read the set length. Try 2h, 2:30 or 90m."); return false; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date)) { setLocalError("Pick a date."); return false; }
-    if (form.where !== "house" && !form.venueId) { setLocalError("Choose a venue."); return false; }
+    if (form.where !== "house" && !form.venueId && !form.editionId) { setLocalError("Choose a venue, or the festival if the venue is TBD."); return false; }
     if (form.where === "house" && !form.city.trim()) { setLocalError("Add the city."); return false; }
     const was = formOf(show);
     const ne = (a: unknown, b: unknown) => JSON.stringify(a) !== JSON.stringify(b);
@@ -113,7 +113,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
       if (was.where !== "house" || ne(form.hostContactIds, was.hostContactIds)) patch.hostContactIds = form.hostContactIds;
       if (was.where === "house") delete patch.venueId;
     } else {
-      if (form.venueId !== was.venueId) patch.venueId = form.venueId;
+      if (form.venueId !== was.venueId) patch.venueId = form.venueId || null;
       if (was.where === "house") { patch.place = null; patch.hostContactIds = []; }
     }
     if (form.editionId !== was.editionId) patch.editionId = form.editionId || null;
@@ -163,7 +163,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
   const dc = show.dayOfContact;
   const nameEl = show.venue
     ? <Link href={`/booking/venues/${show.venue.id}`} className="text-[17px] font-bold" style={{ color: "var(--ink)" }} data-testid="where-venue">{show.venue.name}</Link>
-    : <span className="text-[17px] font-bold" data-testid="where-venue">{showName(show)}</span>;
+    : <span className="text-[17px] font-bold" data-testid="where-venue">{show.editionId && kindOf(show) !== "house" ? "Venue TBD" : showName(show)}</span>;
 
   const f = form;
   return (
@@ -214,7 +214,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
           {f.where === "house" ? <HostFields f={f} set={set} contacts={contacts.rows ?? []} /> : (
             <label className="grid gap-1"><L>Venue</L>
               <select className="select" value={f.venueId} onChange={(e) => set({ venueId: e.target.value, ...(f.dayOf.startsWith("c:") ? { dayOf: "" } : {}) })} data-testid="where-venue-select">
-                <option value="">Choose a venue…</option>
+                <option value="">{f.editionId ? "Venue TBD" : "Choose a venue…"}</option>
                 {f.venueId && !venue && show.venue && <option value={f.venueId}>{show.venue.name}</option>}
                 {[...(venues.rows ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map((v) => <option key={v.id} value={v.id}>{v.name} · {v.address.city}</option>)}
               </select>
