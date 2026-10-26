@@ -27,7 +27,7 @@ export const Setlist = entity({
   totalSec: z.number().int(),
   source: SetlistSource.optional(),
 });
-/** totalSec is computed by db.ts */
+/** totalSec is computed by db.ts: songs + breaks only. Transitions are added where it is shown (setlistTotal, the show's transitionSec). */
 export const SetlistTemplateInput = SetlistTemplate.omit({ ...serverMask, totalSec: true });
 export const SetlistInput = Setlist.omit({ ...serverMask, totalSec: true });
 export type SetlistTemplate = z.infer<typeof SetlistTemplate>;

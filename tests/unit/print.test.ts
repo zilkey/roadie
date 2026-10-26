@@ -5,7 +5,7 @@ import { buildSheets, type BuildInput, type PrintItem, type SheetRow } from "@/l
 import type { PrintOptions } from "@/schema/print";
 import { BREAK_ITEM, BREAK_TEXT, items25, items5, songs25, songs5, TOTAL_25_SEC } from "../fixtures/print-setlists";
 
-const opts = (over: Partial<PrintOptions> = {}): PrintOptions => ({ copy: "band", sheets: "one", fields: ["breaks"], titles: "wrap", header: true, paper: "letter", ...over });
+const opts = (over: Partial<PrintOptions> = {}): PrintOptions => ({ copy: "band", sheets: "one", fields: ["breaks"], titles: "wrap", header: true, transitions: true, paper: "letter", ...over });
 const songFields = [{ id: "capo", label: "Capo" }, { id: "midi", label: "MIDI" }];
 const base = (over: Partial<BuildInput> = {}): BuildInput => ({
   items: items25(), songs: songs25(), songFields, options: opts(), bandName: "Ingrid Avison Band", showName: "St. Vrain Cidery", date: "2026-11-13", ...over,
@@ -159,4 +159,19 @@ test("buildSheets: counts and total time", () => {
   assert.equal(five.totalSec, 5 * 214);
   assert.match(five.sheets[0].footer, /5 songs/);
   assert.equal(buildSheets(base()).songCount, 25);
+});
+
+test("buildSheets: transitions between songs in a row count into the set lengths, unless turned off", () => {
+  // 13 songs, a break, 12 songs: 12 + 11 transitions, none across the break.
+  const r = buildSheets(base({ transitionSec: 30, options: opts({ sheets: "perSet" }) }));
+  assert.equal(r.totalSec, TOTAL_25_SEC + 23 * 30);
+  assert.equal(r.sheets[1].sets[0].lengthSec, 12 * 214 - 10 + 11 * 30);
+  assert.equal(buildSheets(base({ transitionSec: 30, options: opts({ transitions: false }) })).totalSec, TOTAL_25_SEC);
+  assert.equal(buildSheets(base()).totalSec, TOTAL_25_SEC, "no transitionSec, nothing added");
+});
+
+test("printQuery round-trips transitions; a link without it keeps the fallback", () => {
+  const off = opts({ transitions: false });
+  assert.deepEqual(parsePrintQuery(new URLSearchParams(printQuery(off)), defaultPrintOptions(2)), off);
+  assert.equal(parsePrintQuery(new URLSearchParams("copy=band"), defaultPrintOptions(2)).transitions, true);
 });

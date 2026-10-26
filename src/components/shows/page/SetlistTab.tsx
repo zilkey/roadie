@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
-import { Dialog, ErrorBox, useCommand } from "@/components/ui";
+import { Dialog, ErrorBox, Select, useCommand } from "@/components/ui";
 import { CloseIcon } from "@/components/Sheet";
 import { Menu, type MenuItem } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -10,7 +10,7 @@ import { PrintDialog, PrintIcon } from "@/components/print/PrintDialog";
 import { SetlistItemsEditor, itemsPayload, type SetlistItemT } from "@/components/music/SetlistItemsEditor";
 import { runCommand } from "@/lib/commands";
 import { setLengthOf } from "@/lib/duration";
-import { fmtLen, setlistSlack } from "@/lib/music";
+import { TRANSITION_CHOICES, fmtLen, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
 import { showName } from "@/lib/shows";
 import type { ShowRow } from "../common";
 
@@ -52,7 +52,15 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
   }
   const save = (list: SetlistItemT[]) => { setItems(list); next.current = list; void drain(); };
 
-  const total = items.reduce((n, i) => n + (i.lengthSec ?? 0), 0);
+  // Songs + breaks + one transition between each two songs in a row. The transition lives on the show.
+  const transition = transitionOf(show);
+  const gaps = transitionCount(items);
+  const total = setlistTotal(items, transition);
+  async function setTransition(sec: number) {
+    setStatus("saving"); setSaveErr(null);
+    const r = await call("shows.update", { id: show.id, patch: { transitionSec: sec } });
+    setStatus(r ? "saved" : "idle");
+  }
   const setLen = setLengthOf(show.times);
   const slack = setlistSlack(total, setLen);
   const over = slack != null && slack < 0;
@@ -103,7 +111,14 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
           <b className="font-mono text-xl" style={over ? { color: "var(--danger)" } : undefined} data-testid="total-time">{fmtLen(total)}{setLen ? ` of ${fmtLen(setLen)}` : ""}</b>
           {slack != null && <span className={`chip ${over ? "" : "g"}`} style={over ? { background: "var(--danger-soft)", color: "var(--danger)" } : undefined} data-testid="fit">{over ? `${fmtLen(-slack)} over` : "Fits"}</span>}
         </div>
-        <span className="s">{plural(songCount(items))}{!setLen ? " · the show has no set length yet" : ""}</span>
+        <span className="s" data-testid="total-parts">{plural(songCount(items))}{gaps ? ` · ${gaps} ${gaps === 1 ? "transition" : "transitions"} of ${fmtTransition(transition)}` : ""}{!setLen ? " · the show has no set length yet" : ""}</span>
+        {admin && (
+          <label className="flex items-center gap-2 text-sm">
+            Average transition
+            <Select value={String(transition)} label="Average transition" testid="transition" onChange={(v) => void setTransition(Number(v))}
+              options={TRANSITION_CHOICES.map((n) => [String(n), fmtTransition(n)] as const)} className="!w-auto" />
+          </label>
+        )}
       </div>
 
       <SetlistItemsEditor items={items} onChange={save} songs={m.songs} admin={admin} bpm

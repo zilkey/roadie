@@ -16,7 +16,7 @@ const bearer = (t: string) => `Bearer ${t}`;
 type Out = { status: number; json: { result: any } };
 const call = (tok: string, name: string, body: unknown, artist = TEST_ARTIST) => dispatch(name, bearer(tok), body, artist) as Promise<Out>;
 
-const SAVED: PrintOptions = { copy: "band", sheets: "perSet", fields: ["key", "breaks"], titles: "short", header: false, paper: "a4" };
+const SAVED: PrintOptions = { copy: "band", sheets: "perSet", fields: ["key", "breaks"], titles: "short", header: false, transitions: false, paper: "a4" };
 const items = [
   { type: "song", title: "One", lengthSec: 200 }, { type: "break", title: "Break", note: "Merch", lengthSec: 900 }, { type: "song", title: "Two", lengthSec: 200 },
 ];
@@ -64,7 +64,7 @@ test("setlists.printLink for a template: the path mirrors the options, missing o
   // No options and no saved prefs: the defaults (two sets, so sheets stays "one"; breaks shown).
   const d = await call(jeff.token, "setlists.printLink", { setlistId: templateId });
   assert.equal(d.status, 200);
-  const dflt: PrintOptions = { copy: "band", sheets: "one", fields: ["breaks"], titles: "wrap", header: true, paper: "letter" };
+  const dflt: PrintOptions = { copy: "band", sheets: "one", fields: ["breaks"], titles: "wrap", header: true, transitions: true, paper: "letter" };
   assert.deepEqual(d.json.result.options, dflt);
   assert.equal(d.json.result.path, `/artists/ingrid-avison-band/setlists/${templateId}/print?${printQuery(dflt)}`);
   assert.match(d.json.result.url, /^https?:\/\//);
@@ -72,7 +72,7 @@ test("setlists.printLink for a template: the path mirrors the options, missing o
 
   // Passed options win and show up in the query.
   const o = await call(jeff.token, "setlists.printLink", { setlistId: templateId, sheets: "perSet", fields: ["key", "length"], titles: "short", header: false, paper: "a4" });
-  const want: PrintOptions = { copy: "band", sheets: "perSet", fields: ["key", "length"], titles: "short", header: false, paper: "a4" };
+  const want: PrintOptions = { copy: "band", sheets: "perSet", fields: ["key", "length"], titles: "short", header: false, transitions: true, paper: "a4" };
   assert.deepEqual(o.json.result.options, want);
   const q = new URL(o.json.result.url).searchParams;
   assert.equal(q.get("sheets"), "perSet");

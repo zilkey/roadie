@@ -52,6 +52,8 @@ export interface BuildInput {
   templateName?: string;
   /** The viewer's name, for "Jeff's copy". Ignored on the band copy. */
   copyName?: string;
+  /** Seconds between two songs in a row, added to the set lengths when options.transitions is on (the show's transitionSec). */
+  transitionSec?: number;
 }
 export interface BuildResult { sheets: PrintSheet[]; layout: RowLayout; songCount: number; setCount: number; totalSec: number }
 
@@ -90,7 +92,11 @@ export function buildSheets(input: BuildInput): BuildResult {
   let cur: PrintSet = { name: "Set 1", lengthSec: 0, rows: [] };
   let curSongs = 0;
   let n = 0;
+  const gap = options.transitions === false ? 0 : input.transitionSec ?? 0;
+  let prev: PrintItem | undefined;
   for (const item of input.items) {
+    const after = prev;
+    prev = item;
     const song = item.songId ? songsById.get(item.songId) : undefined;
     const sec = item.lengthSec ?? song?.lengthSec ?? 0;
     if (item.type === "break") {
@@ -107,6 +113,7 @@ export function buildSheets(input: BuildInput): BuildResult {
       continue;
     }
     n++;
+    if (after?.type === "song") cur.lengthSec += gap;
     curSongs++;
     cur.lengthSec += sec;
     const key = item.key ?? song?.key;

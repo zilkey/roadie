@@ -122,6 +122,10 @@ export function PrintDialog({ setlistId, onClose }: { setlistId: string; onClose
           <input type="checkbox" checked={opts.header} onChange={(e) => set({ header: e.target.checked })} data-testid="print-header" />
           Show name and date at top
         </label>
+        <label className="check flex min-h-11 items-center gap-2 text-sm">
+          <input type="checkbox" checked={opts.transitions !== false} onChange={(e) => set({ transitions: e.target.checked })} data-testid="print-transitions" />
+          Count transitions in set lengths
+        </label>
         <label className="flex items-center gap-2 text-sm">
           Paper
           <Select<PrintPaper> value={opts.paper} label="Paper" testid="print-paper" onChange={(v) => set({ paper: v })} options={(Object.keys(PAPER) as PrintPaper[]).map((k) => [k, PAPER[k].label] as const)} className="print-paper" />

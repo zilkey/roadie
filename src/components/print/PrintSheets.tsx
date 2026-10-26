@@ -105,7 +105,7 @@ function Sheet({ sheet, layout }: { sheet: PrintSheet; layout: BuildResult["layo
             </div>
           )}
         </div>
-        <div className="ps-foot"><span>{sheet.footer}</span><span>myroadie.online</span></div>
+        <div className="ps-foot"><span data-testid="print-footer">{sheet.footer}</span><span>myroadie.online</span></div>
       </div>
     </div>
   );

@@ -46,7 +46,8 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
       <ol className="grid gap-1.5" data-testid="setlist-items">
         {items.length === 0 && <li className="s">{empty}</li>}
         {items.map((it, i) => (
-          <li key={`${i}-${it.songId ?? it.title}`} className="flex items-center gap-2 rounded-lg border border-line bg-panel p-2" data-testid={`item-${i}`}
+          <li key={`${i}-${it.songId ?? it.title}`} className={`sl-row flex items-center gap-2 rounded-lg border p-2${it.type === "break" ? " break" : !it.lengthSec ? " nolen" : ""}`} data-testid={`item-${i}`}
+            data-kind={it.type} data-nolen={it.type === "song" && !it.lengthSec ? "1" : undefined}
             {...(admin ? { ...dr.row(i), ...dr.handle(i) } : {})}>
             {admin && <span className="cursor-grab select-none text-muted" aria-hidden>⋮⋮</span>}
             <span className="min-w-0 flex-1 truncate">

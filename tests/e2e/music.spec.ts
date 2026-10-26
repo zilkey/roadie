@@ -122,7 +122,9 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await page.getByTestId("add-break").click();
   await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await expect(titles).toHaveText(["Glass Coast", "Weathervane", "Talk / tune"]);
-  await expect(page.getByTestId("total-time")).toHaveText("9:02"); // 3:52 + 4:10 + 1:00
+  await expect(page.getByTestId("total-time")).toHaveText("9:32"); // 3:52 + 0:30 transition + 4:10 + 1:00; a template counts 30s
+  await expect(page.getByTestId("total-parts")).toHaveText("2 songs · 1 transition of 30s");
+  await expect(page.getByTestId("item-2")).toHaveAttribute("data-kind", "break");
   await expect(page.getByTestId("fit")).toHaveCount(0); // a template has no show
 
   await page.getByTestId("item-1").getByTestId("item-up").click();
@@ -143,16 +145,25 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await page.getByTestId("seed-confirm").click();
   await expect(page.getByTestId("seed-dialog")).toBeHidden();
   await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
-  await expect(page.getByTestId("total-time")).toHaveText("9:02 of 45:00");
+  await expect(page.getByTestId("total-time")).toHaveText("9:32 of 45:00");
   await expect(page.getByTestId("fit")).toHaveText("Fits");
   await expect(page.getByTestId("setlist-total")).toHaveAttribute("data-over", "0");
+
+  // the show's average transition is saved on the show and counted between the two songs
+  await expect(page.getByTestId("transition")).toHaveValue("30");
+  await page.getByTestId("transition").selectOption("60");
+  await expect(page.getByTestId("total-time")).toHaveText("10:02 of 45:00");
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await page.reload();
+  await expect(page.getByTestId("transition")).toHaveValue("60");
+  await expect(page.getByTestId("total-parts")).toContainText("1 transition of 1m");
 
   // a 40-minute break runs it over; removing it fits again
   await page.getByTestId("break-len").fill("40:00");
   await page.getByTestId("add-break").click();
-  await expect(page.getByTestId("total-time")).toHaveText("49:02 of 45:00");
+  await expect(page.getByTestId("total-time")).toHaveText("50:02 of 45:00");
   await expect(page.getByTestId("setlist-total")).toHaveAttribute("data-over", "1");
-  await expect(page.getByTestId("fit")).toHaveText("4:02 over");
+  await expect(page.getByTestId("fit")).toHaveText("5:02 over");
   await page.getByTestId("item-3").getByTestId("item-remove").click();
   await expect(page.getByTestId("setlist-total")).toHaveAttribute("data-over", "0");
 });

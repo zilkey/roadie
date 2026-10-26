@@ -5,6 +5,7 @@ import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { fmtDur } from "@/lib/shows";
+import { DEFAULT_TRANSITION_SEC, setlistTotal } from "@/lib/music";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -47,7 +48,7 @@ export function SetlistsList() {
       {[...m.templates].sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
         <Link key={s.id} href={`/setlists/${s.id}`} className="card" data-testid={`setlist-${s.id}`}>
           <div className="flex items-center justify-between"><b>{s.name}</b><span className="s font-semibold">Open ›</span></div>
-          <span className="s">{s.items.filter((i) => i.type === "song").length} songs · {fmtDur(s.totalSec)}</span>
+          <span className="s">{s.items.filter((i) => i.type === "song").length} songs · {fmtDur(setlistTotal(s.items, DEFAULT_TRANSITION_SEC))}</span>
         </Link>
       ))}
     </div>

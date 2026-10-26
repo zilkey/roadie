@@ -39,6 +39,8 @@ export const Show = entity({
     /** LEGACY minutes, until `npm run migrate:show-page` has run (it becomes setLengthSec). Never written. Read with setLengthOf(). */
     setLength: z.number().int().optional(),
   }),
+  /** Average song-to-song transition in seconds (15, 30, 60 or 90), counted into the setlist's length. Missing = 30: read with transitionOf(). */
+  transitionSec: z.number().int().positive().optional(),
   /** Who to call on the day: a copy the whole band can read (contacts are admin-only); contactId when picked from a contact. */
   dayOfContact: z.strictObject({ name: z.string().min(1), phone: z.string().optional(), contactId: id.optional() }).optional(),
   artistId: id,

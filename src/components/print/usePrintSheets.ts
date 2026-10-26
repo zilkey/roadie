@@ -4,6 +4,7 @@ import { useMusic } from "@/components/music/common";
 import { useArtist } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { buildSheets, type BuildResult } from "@/lib/printSheets";
+import { DEFAULT_TRANSITION_SEC, transitionOf } from "@/lib/music";
 import { showName } from "@/lib/shows";
 import type { SongField } from "@/schema";
 import type { PrintOptions } from "@/schema/print";
@@ -33,6 +34,7 @@ export function usePrintSheets(setlistId: string, options: PrintOptions) {
     return buildSheets({
       items, songs: m.songs, songFields, options: { ...options, copy }, bandName: artist.name,
       showName: show ? showName(show) : undefined, date: show?.date, templateName: template?.name, copyName: mineName,
+      transitionSec: show ? transitionOf(show) : DEFAULT_TRANSITION_SEC,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, m.songs, songFields, JSON.stringify(options), copy, artist.name, show, template?.name, mineName]);

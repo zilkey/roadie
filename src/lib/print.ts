@@ -10,16 +10,16 @@ export const FIELD_BREAKS = "breaks";
 /** The extra-field id for one of the artist's song fields. */
 export const songFieldId = (id: string) => `field:${id}`;
 
-/** Defaults: band copy, breaks shown, wrapped titles, header on, Letter. One sheet when there is one set; otherwise the saved choice. */
+/** Defaults: band copy, breaks shown, wrapped titles, header on, transitions counted, Letter. One sheet when there is one set; otherwise the saved choice. */
 export function defaultPrintOptions(setCount: number, saved?: Partial<PrintOptions> | null): PrintOptions {
-  const o: PrintOptions = { copy: "band", sheets: "one", fields: [FIELD_BREAKS], titles: "wrap", header: true, paper: "letter", ...(saved ?? {}) };
+  const o: PrintOptions = { copy: "band", sheets: "one", fields: [FIELD_BREAKS], titles: "wrap", header: true, transitions: true, paper: "letter", ...(saved ?? {}) };
   return setCount <= 1 ? { ...o, sheets: "one" } : o;
 }
 
 /** The query string for the print route; it mirrors the options exactly. */
 export function printQuery(o: PrintOptions): string {
   return new URLSearchParams({
-    copy: o.copy, sheets: o.sheets, fields: o.fields.join(","), titles: o.titles, header: o.header ? "1" : "0", paper: o.paper,
+    copy: o.copy, sheets: o.sheets, fields: o.fields.join(","), titles: o.titles, header: o.header ? "1" : "0", transitions: o.transitions === false ? "0" : "1", paper: o.paper,
   }).toString();
 }
 
@@ -28,12 +28,14 @@ export function parsePrintQuery(q: URLSearchParams, fallback: PrintOptions): Pri
   const pick = <T extends string>(k: string, vals: readonly T[], d: T): T => (vals as readonly string[]).includes(q.get(k) ?? "") ? (q.get(k) as T) : d;
   const fields = q.get("fields");
   const header = q.get("header");
+  const transitions = q.get("transitions");
   return {
     copy: pick("copy", ["band", "mine"], fallback.copy),
     sheets: pick("sheets", ["one", "perSet"], fallback.sheets),
     fields: fields == null ? fallback.fields : fields.split(",").filter(Boolean),
     titles: pick("titles", ["wrap", "short"], fallback.titles),
     header: header == null ? fallback.header : header !== "0",
+    transitions: transitions == null ? fallback.transitions : transitions !== "0",
     paper: pick("paper", ["letter", "a4"], fallback.paper),
   };
 }

@@ -4,6 +4,7 @@ import Link from "@/lib/artist";
 import { useDocs } from "@/lib/firestore-hooks";
 import { fmtDur, fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
 import { fmtDuration, setLengthOf } from "@/lib/duration";
+import { setlistTotal, transitionOf } from "@/lib/music";
 import type { ShowDeal, ShowField, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ShowRow } from "./common";
@@ -68,7 +69,7 @@ function Upcoming({ shows, setlists, cf }: { shows: ShowRow[]; setlists: Row<Set
               <td className="t">{orDash(fmtTime(s.times.set))}</td>
               <td>{s.sound.provider === "bandProvided" ? <span className="chip a">We provide</span> : <span className="chip">They provide</span>}</td>
               <td className="contact" data-testid="shows-contact">{s.dayOfContact ? <>{s.dayOfContact.name}{s.dayOfContact.phone && <> · <a href={`tel:${s.dayOfContact.phone.replace(/[^\d+]/g, "")}`}>{s.dayOfContact.phone}</a></>}</> : <Dash />}</td>
-              <td>{sl ? <Link href={`/shows/${s.id}?tab=setlist`}>{sl.items.filter((i) => i.type === "song").length} songs · {fmtDur(sl.totalSec)}</Link> : <Dash />}</td>
+              <td>{sl ? <Link href={`/shows/${s.id}?tab=setlist`}>{sl.items.filter((i) => i.type === "song").length} songs · {fmtDur(setlistTotal(sl.items, transitionOf(s)))}</Link> : <Dash />}</td>
               <FieldCells s={s} cf={cf} />
             </tr>
           );

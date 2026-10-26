@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
-import { fmtLen } from "@/lib/music";
+import { DEFAULT_TRANSITION_SEC, fmtLen, fmtTransition, setlistTotal, transitionCount } from "@/lib/music";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import { Menu } from "@/components/Menu";
@@ -32,6 +32,8 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
   const [items, setItems] = useState<SetlistItemT[]>(t.items);
   const serverKey = JSON.stringify(t.items);
   useEffect(() => { setItems(t.items); }, [serverKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A template has no show to take a transition from: it counts the default between each two songs in a row.
+  const gaps = transitionCount(items);
   const save = (next: SetlistItemT[]) => { setItems(next); as.patch({ items: itemsPayload(next) }, { now: true }); };
 
   return (
@@ -50,8 +52,8 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
         </div>
         <div className="col-side">
           <div className="card" data-testid="setlist-total">
-            <b className="font-mono text-xl" data-testid="total-time">{fmtLen(t.totalSec)}</b>
-            <span className="s">{items.filter((i) => i.type === "song").length} songs</span>
+            <b className="font-mono text-xl" data-testid="total-time">{fmtLen(setlistTotal(items, DEFAULT_TRANSITION_SEC))}</b>
+            <span className="s" data-testid="total-parts">{items.filter((i) => i.type === "song").length} songs{gaps ? ` · ${gaps} ${gaps === 1 ? "transition" : "transitions"} of ${fmtTransition(DEFAULT_TRANSITION_SEC)}` : ""}</span>
           </div>
           {admin && (
             <div className="card">

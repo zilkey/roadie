@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { demosFolderId, folderForRehearsal, rehearsalFolderId, songwritingFolderId } from "@/server/music";
-import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, setlistSlack, setlistTotal } from "@/lib/music";
+import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -60,6 +60,16 @@ test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => 
   assert.deepEqual(move([1, 2, 3, 4], 0, 2), [2, 3, 1, 4]);
   assert.deepEqual(move([1, 2], 0, 5), [1, 2]);
   assert.equal(setlistTotal([{ lengthSec: 60 }, {}, { lengthSec: 30 }]), 90);
+  // 5 songs, a 5m break, 5 songs at 30s transitions: 4 + 4 transitions, none next to the break.
+  const ten = [...Array(5).fill({ type: "song", lengthSec: 200 }), { type: "break", lengthSec: 300 }, ...Array(5).fill({ type: "song", lengthSec: 200 })];
+  assert.equal(transitionCount(ten), 8);
+  assert.equal(setlistTotal(ten, 30), 10 * 200 + 300 + 8 * 30);
+  assert.equal(transitionCount([{ type: "break" }, { type: "song" }, { type: "break" }]), 0);
+  assert.equal(fmtTransition(15), "15s");
+  assert.equal(fmtTransition(60), "1m");
+  assert.equal(fmtTransition(90), "1m 30s");
+  assert.equal(transitionOf({}), 30);
+  assert.equal(transitionOf({ transitionSec: 60 }), 60);
   assert.equal(setlistSlack(2400, 2700), 300);
   assert.equal(setlistSlack(3000, 2700), -300);
   assert.equal(playerFor({ url: "https://x.test/a.mp3", mimeType: "audio/mpeg" }).mode, "audio");

@@ -186,6 +186,15 @@ test("the dialog's options each change the preview, and each toggle flips", asyn
   await expect(header).toBeChecked({ checked: !headerWas });
   await header.setChecked(headerWas);
   await expect(header).toBeChecked({ checked: headerWas });
+  // Transitions on by default; off, the footer's total gets shorter.
+  const transitions = page.getByTestId("print-transitions");
+  await expect(transitions).toBeChecked();
+  const footer = page.getByTestId("print-preview").getByTestId("print-footer").first();
+  const withGaps = await footer.textContent();
+  await transitions.uncheck();
+  await expect(footer).not.toHaveText(withGaps ?? "");
+  await transitions.check();
+  await expect(footer).toHaveText(withGaps ?? "");
   await expect(page.getByTestId("print-paper")).toHaveValue("letter");
   await page.getByTestId("print-paper").selectOption("a4");
   await expect(page.getByTestId("print-paper")).toHaveValue("a4");

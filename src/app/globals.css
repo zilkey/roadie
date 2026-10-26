@@ -410,6 +410,10 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 /* The name and its status line take the slack; the actions keep their width and wrap below on a phone. */
 .sg-rowt { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
 .sg-rowa { flex: none; display: flex; flex-wrap: wrap; gap: 6px; }
+/* Setlist editor rows: a break a shade darker than the songs; a song with no length in yellow. */
+.sl-row { background: var(--panel); border-color: var(--line); }
+.sl-row.break { background: color-mix(in srgb, var(--soft) 70%, var(--panel)); }
+.sl-row.nolen { background: var(--admin-bg); border-color: var(--admin-border); }
 .sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 13px; }
 
 /* Booking detail pages (venue, festival, promoter, contact): one column of cards, shared ones carry a yellow top bar (everyone sees them), the band's private ones plain. */

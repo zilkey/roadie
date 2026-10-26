@@ -11,6 +11,8 @@ export const PrintOptions = z.strictObject({
   fields: z.array(z.string().min(1)),
   titles: z.enum(["wrap", "short"]),
   header: z.boolean(),
+  /** Set lengths count the song-to-song transitions (the show's transitionSec; 30s on a template). Missing = true (saved before this existed). */
+  transitions: z.boolean().optional(),
   paper: z.enum(["letter", "a4"]),
 });
 export type PrintOptions = z.infer<typeof PrintOptions>;

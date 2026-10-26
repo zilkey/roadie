@@ -77,7 +77,17 @@ export function parseLen(s: string): number | undefined {
   return /^\d+$/.test(t) ? Number(t) : undefined;
 }
 
-export const setlistTotal = (items: { lengthSec?: number }[]) => items.reduce((n, i) => n + (i.lengthSec ?? 0), 0);
+/** The average song-to-song gap a show's setlist length allows for (Show.transitionSec), and the choices offered. */
+export const TRANSITION_CHOICES = [15, 30, 60, 90] as const;
+export const DEFAULT_TRANSITION_SEC = 30;
+export const transitionOf = (show?: { transitionSec?: number }) => show?.transitionSec ?? DEFAULT_TRANSITION_SEC;
+/** "15s", "30s", "1m", "1m 30s". */
+export const fmtTransition = (sec: number) => [Math.floor(sec / 60) && `${Math.floor(sec / 60)}m`, sec % 60 && `${sec % 60}s`].filter(Boolean).join(" ");
+/** One transition between each two songs next to each other; a break takes the transition's place. */
+export const transitionCount = (items: { type?: string }[]) => items.filter((i, j) => j > 0 && i.type === "song" && items[j - 1].type === "song").length;
+/** Songs + breaks + transitions. */
+export const setlistTotal = (items: { type?: string; lengthSec?: number }[], transitionSec = 0) =>
+  items.reduce((n, i) => n + (i.lengthSec ?? 0), 0) + transitionCount(items) * transitionSec;
 /** Positive when under the set length, negative when over. */
 export const setlistSlack = (totalSec: number, setLengthSec?: number) => (setLengthSec ? setLengthSec - totalSec : undefined);
 
