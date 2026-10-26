@@ -40,6 +40,11 @@ function Admin() {
     const o = owedBy.get(x.userId) ?? { name: person(x.userId), total: 0, lines: [] };
     o.total += x.amount; o.lines.push(x); owedBy.set(x.userId, o);
   }
+  const owedTotal = owed.reduce((n, x) => n + x.amount, 0);
+  // One setPaidBack per line, in turn; a line that fails stays in the list with the error above.
+  const markAllPaid = async (lines: typeof owed) => {
+    for (const x of lines) await call("expenses.setPaidBack", { id: x.id, paid: true });
+  };
   const waiting = unreceivedIncome({ deals: deals.rows ?? [], show: (id) => showById.get(id), today: dateInBandZone() });
   const waitingTotal = waiting.reduce((n, w) => n + w.total, 0);
   // setIncome replaces the whole list, so resend every line with just this one flipped.
@@ -67,6 +72,7 @@ function Admin() {
       <ErrorBox error={error} />
 
       {tab === "overview" && (
+        <>
         <div className="grid gap-5 md:grid-cols-2">
           <div className="grid content-start gap-5">
             <div className="card" data-testid="money-totals">
@@ -76,7 +82,6 @@ function Admin() {
             </div>
             <MonthBars data={byMonth(rows)} testid="chart-months" />
           </div>
-          <div className="grid content-start gap-5">
           <div className="grid content-start gap-2" data-testid="unreceived">
             <div className="flex justify-between"><span className="lbl">Not received yet</span>{waiting.length > 0 && <b className="font-mono" data-testid="unreceived-total">{formatCents(waitingTotal)}</b>}</div>
             {waiting.length === 0 && <div className="empty"><span>Every show so far has paid up.</span></div>}
@@ -95,23 +100,29 @@ function Admin() {
               </div>
             ))}
           </div>
-          <div className="grid content-start gap-2" data-testid="owed">
-            <span className="lbl">Owed to people</span>
-            {owed.length === 0 && <div className="empty"><span>Nobody is owed anything.</span></div>}
-            {[...owedBy.entries()].map(([key, o]) => (
-              <div key={key} className="card" data-testid={`owed-${key}`}>
-                <div className="flex justify-between"><b>{o.name}</b><b className="font-mono">{formatCents(o.total)}</b></div>
-                {o.lines.map((x) => (
-                  <div key={x.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span>{x.what} <span className="s">{formatCents(x.amount)} · {fmtLong(x.date)}</span></span>
-                    <button className="btn sm" disabled={busy} data-testid={`paid-back-${x.id}`} onClick={() => call("expenses.setPaidBack", { id: x.id, paid: true })}>Mark paid back</button>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-          </div>
         </div>
+        <div className="card grid gap-4" data-testid="owed">
+          <div className="flex justify-between"><span className="lbl">Owed to people</span>{owed.length > 0 && <b className="font-mono" data-testid="owed-total">{formatCents(owedTotal)}</b>}</div>
+          {owed.length === 0 && <div className="empty"><span>Nobody is owed anything.</span></div>}
+          {[...owedBy.entries()].map(([key, o]) => (
+            <div key={key} className="grid gap-1 border-t border-line pt-3" data-testid={`owed-${key}`}>
+              <div className="flex items-center justify-between gap-2">
+                <b>{o.name}</b>
+                <span className="flex items-center gap-3">
+                  <b className="font-mono">{formatCents(o.total)}</b>
+                  {o.lines.length > 1 && <button className="btn sm" disabled={busy} data-testid={`paid-all-${key}`} onClick={() => markAllPaid(o.lines)}>Mark all paid</button>}
+                </span>
+              </div>
+              {o.lines.map((x) => (
+                <div key={x.id} className="flex items-center justify-between gap-2 text-sm">
+                  <span>{x.what} <span className="s">{formatCents(x.amount)} · {fmtLong(x.date)}</span></span>
+                  <button className="btn sm" disabled={busy} data-testid={`paid-back-${x.id}`} onClick={() => call("expenses.setPaidBack", { id: x.id, paid: true })}>Mark paid back</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        </>
       )}
 
       {tab === "shows" && (

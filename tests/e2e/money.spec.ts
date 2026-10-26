@@ -48,3 +48,28 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await david.close();
 });
 
+
+test("admin marks everything owed to one person paid in one go", async ({ page, browser }) => {
+  // Eric, not David: the seeded expense is David's, and show-finances expects it still owed.
+  const eric = await as(browser, "eric");
+  const p = eric.page;
+  const items = [`Strings ${Date.now()}`, `Cables ${Date.now()}`];
+  for (const what of items) {
+    await openTab(p, "money");
+    await p.getByTestId("add-expense-link").click();
+    await p.getByTestId("exp-amount").fill("20");
+    await p.getByTestId("exp-cat-gear").click();
+    await p.getByTestId("expense-what").fill(what);
+    await p.getByTestId("exp-save").click();
+    await expect(p).toHaveURL(/\/money$/);
+  }
+  await eric.close();
+
+  await signInAs(page, "jeff");
+  await openTab(page, "money");
+  const owed = page.getByTestId("owed");
+  const group = owed.locator('[data-testid^="owed-"]', { hasText: items[0] });
+  await expect(group).toContainText(items[1]);
+  await group.getByRole("button", { name: "Mark all paid" }).click();
+  for (const what of items) await expect(owed).not.toContainText(what);
+});
