@@ -14,17 +14,17 @@ const addDay = (d: string) => {
 
 /**
  * Everything the Calendar page draws. Shows and rehearsals load for everyone (same unfiltered queries as the Shows and
- * Rehearsals pages); festivals, editions and pitches are admin-only and skipped for members.
+ * Rehearsals pages); festivals, editions and pitches are admin-only and skipped for members. Pitches are this band's only.
  * `comingUp` is the next 6 opens/deadlines of editions not yet acted on (admins only).
  */
 export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarItem[]; loading: boolean; admin: boolean } {
-  const { role } = useArtist();
+  const { role, artistId } = useArtist();
   const admin = role === "admin";
   const shows = useCollection<Show>("shows");
   const rehearsals = useCollection<Rehearsal>("rehearsals");
   const festivals = useCollection<Festival>("festivals", { skip: !admin });
   const editions = useCollection<Edition>("editions", { skip: !admin });
-  const pitches = useCollection<Pitch>("pitches", { skip: !admin });
+  const pitches = useCollection<Pitch>("pitches", { where: [["artistId", "==", artistId]], skip: !admin });
   const loading = [shows, rehearsals, festivals, editions, pitches].some((c) => c.loading);
 
   const showRows = shows.rows, rehearsalRows = rehearsals.rows, festivalRows = festivals.rows, editionRows = editions.rows, pitchRows = pitches.rows;

@@ -13,6 +13,7 @@ export const Edition = entity({
   notifyDate: dateStr.optional(),
   applyUrl: z.string().optional(),
   venueIds: z.array(id),
+  /** LEGACY until `npm run migrate:band-notes`: payNotes and notes live in the band's editionNotes; the commands write them there. */
   payNotes: z.string().optional(),
   notes: z.string().optional(),
   ...sourcesShape,

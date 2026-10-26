@@ -8,6 +8,7 @@ import { useDoc } from "@/lib/firestore-hooks";
 import { BackLink, CopyButton, EntityForm, contactForm, hrefFor, useBooking, useNotFound, type Values } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { ShowLinks } from "@/components/shows/common";
+import { withBandNote } from "@/lib/bandNotes";
 import type { Contact } from "@/schema";
 
 export default function Page() { return <AdminOnly><ContactPage /></AdminOnly>; }
@@ -22,7 +23,7 @@ const infoForm = {
   fields: contactForm.fields.filter((f) => f.key !== "notes"),
   build: (v: Values) => Object.fromEntries(Object.entries(contactForm.build(v)).filter(([k]) => k !== "notes")),
 };
-/** Notes: the contact's shared notes only. */
+/** Notes: this band's private notes on the contact only (contactNotes). */
 const notesForm = {
   fields: contactForm.fields.filter((f) => f.key === "notes"),
   initial: (d: Contact): Values => ({ notes: d.notes ?? "" }),
@@ -32,12 +33,14 @@ const notesForm = {
 function ContactPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { doc: c, loading } = useDoc<Contact>("contacts", id);
+  const { doc: shared, loading } = useDoc<Contact>("contacts", id);
   const b = useBooking();
   const { call, error, busy } = useCommand();
   const edit = useSingleEdit<"info" | "works" | "notes">();
-  const nf = useNotFound(loading, c, "contact");
-  if (nf || !c) return nf;
+  const nf = useNotFound(loading, shared, "contact");
+  if (nf || !shared) return nf;
+  const note = b.bandNotes.contacts.get(id);
+  const c = withBandNote("contacts", shared, note);
   const at = [
     ...b.venues.filter((x) => x.contactIds.includes(id)).map((x) => ({ kind: "venue" as const, id: x.id, name: x.name })),
     ...b.promoters.filter((x) => x.contactIds.includes(id)).map((x) => ({ kind: "promoter" as const, id: x.id, name: x.name })),
@@ -114,19 +117,19 @@ function ContactPage() {
             </Link>
           ))}
         </DetailCard>
+      </CardGroup>
 
-        <DetailCard title="Notes" editKey="notes" edit={edit} warn={SHARED_WARN} editTestid="notes-edit"
+      <CardGroup kind="private">
+        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="notes-private" editTestid="notes-edit"
           editChildren={
             <div>
               <EntityForm testid="contact-notes" fields={notesForm.fields} initial={notesForm.initial(c)} build={notesForm.build}
-                autosave={{ command: "contacts.update", id, rev: c.rev, title: c.name }} />
+                autosave={{ command: "contacts.update", id, rev: note?.rev, title: `${c.name} notes` }} />
             </div>
           }>
           {c.notes ? <div className="whitespace-pre-wrap">{c.notes}</div> : <span className="d-muted">—</span>}
         </DetailCard>
-      </CardGroup>
 
-      <CardGroup kind="private">
         <DetailCard private title="House concerts hosted">
           <ShowLinks where={["hostContactIds", "array-contains", id]} empty="None." testid="hosted-shows" />
         </DetailCard>

@@ -68,6 +68,12 @@ service cloud.firestore {
     match /promoters/{id}          { allow read: if isAdmin(); }
     match /festivals/{id}          { allow read: if isAdmin(); }
     match /editions/{id}           { allow read: if isAdmin(); }
+    // One band's private notes on a festival, festival year, promoter or contact, id = {artistId}__{entityId}: that artist's admins only,
+    // by the per-artist role like venueNotes. The shared records above stay readable by every admin. Lists must filter where('artistId', '==', ...).
+    match /festivalNotes/{id}      { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    match /editionNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    match /promoterNotes/{id}      { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    match /contactNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     match /emailTemplates/{id}     { allow read: if isAdmin(); }
     match /showDeals/{id}          { allow read: if isAdmin(); }
     match /statSnapshots/{id}      { allow read: if isAdmin(); }
@@ -89,10 +95,12 @@ service cloud.firestore {
         allow read: if isAdmin() && get(/databases/$(database)/documents/assistantThreads/$(tid)).data.ownerUid == request.auth.uid;
       }
     }
+    // A pitch is one band's: only that artist's admins read it and its comments and activity. Lists must filter where('artistId', '==', ...).
     match /pitches/{id} {
-      allow read: if isAdmin();
-      match /comments/{cid}  { allow read: if isAdmin(); }
-      match /activity/{aid}  { allow read: if isAdmin(); }
+      function pitchAdmin() { return roleIn(get(/databases/$(database)/documents/pitches/$(id)).data.artistId) == 'admin'; }
+      allow read: if roleIn(resource.data.artistId) == 'admin';
+      match /comments/{cid}  { allow read: if pitchAdmin(); }
+      match /activity/{aid}  { allow read: if pitchAdmin(); }
     }
   }
 }

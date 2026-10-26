@@ -9,9 +9,10 @@ import { firestore } from "./admin";
 import { AppError, invalid } from "./errors";
 import type { Ctx } from "./ctx";
 import type { FieldDiff } from "@/schema/history";
-import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
+import { SCHEMA_VERSION, commonKeys, collections, computedFields, isNotedKind, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
 import { diffHasPrivateContent } from "@/lib/venues";
+import { diffHasNoteContent } from "@/lib/bandNotes";
 
 export type Doc = DocumentData & { id: string };
 
@@ -264,6 +265,8 @@ export class Writer {
     const kind = kindOf(path);
     // A not-yet-migrated venue still holds one band's private fields: a change that moves them (migrate:venue-notes) is that band's history.
     if (kind === "venues" && diff && diffHasPrivateContent(diff)) return this.ctx.artistId ?? null;
+    // Likewise a festival, edition, promoter or contact that still holds one band's notes (migrate:band-notes moves them).
+    if (isNotedKind(kind) && diff && diffHasNoteContent(kind, diff)) return this.ctx.artistId ?? null;
     if (kind === "artists") return id;
     if (kind === "showDeals") return ((await this.get("shows", id))?.artistId as string | undefined) ?? null;
     const seg = path.split("/");

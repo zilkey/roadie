@@ -4,6 +4,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestE
 import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
 
 let env: RulesTestEnvironment;
+const NOTE_COLLS = ["festivalNotes", "editionNotes", "promoterNotes", "contactNotes"];
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280").split(":");
 
 before(async () => {
@@ -17,9 +18,12 @@ before(async () => {
     const live = { deletedAt: null };
     for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", "venues", "contacts", "promoters",
       "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
-      await setDoc(doc(d, c, "x"), { ...live, n: 1, ...(c === "checklistTemplates" ? { artistId: "x" } : {}) });
+      await setDoc(doc(d, c, "x"), { ...live, n: 1, ...(c === "checklistTemplates" || c === "pitches" ? { artistId: "x" } : {}) });
     }
     await setDoc(doc(d, "checklistTemplates/y"), { ...live, artistId: "y", name: "Fern Valley's" });
+    await setDoc(doc(d, "pitches/y"), { ...live, artistId: "y" });
+    await setDoc(doc(d, "pitches/y/comments/c1"), { ...live });
+    await setDoc(doc(d, "pitches/y/activity/a1"), { ...live });
     await setDoc(doc(d, "venues/gone"), { deletedAt: new Date() });
     // Private venue notes: id = {artistId}__{venueId}, one per band.
     await setDoc(doc(d, "venueNotes/x__x"), { ...live, artistId: "x", venueId: "x", loadInNotes: "x's" });
@@ -28,6 +32,12 @@ before(async () => {
     await setDoc(doc(d, "fans/fx"), { ...live, artistId: "x", email: "fan@example.com" });
     await setDoc(doc(d, "fans/fy"), { ...live, artistId: "y", email: "other@example.com" });
     await setDoc(doc(d, "geocodes/g1"), { lat: 1, lng: 2 });
+    // Private notes on festivals, years, promoters and contacts: the same {artistId}__{entityId} shape, one per band.
+    for (const c of NOTE_COLLS) {
+      await setDoc(doc(d, `${c}/x__x`), { ...live, artistId: "x", notes: "x's" });
+      await setDoc(doc(d, `${c}/y__x`), { ...live, artistId: "y", notes: "y's" });
+      await setDoc(doc(d, `${c}/x__v/history/000001`), { ...live, runId: "r1", artistId: "x" });
+    }
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
     await setDoc(doc(d, "shows/x/comments/c1"), { ...live });
@@ -274,6 +284,75 @@ test("venues and venueNotes cannot be written from the client", async () => {
     await assertFails(updateDoc(doc(db, "venues", "x"), { capacity: 1 }));
     await assertFails(setDoc(doc(db, "venueNotes", "x__new"), { artistId: "x" }));
     await assertFails(deleteDoc(doc(db, "venueNotes", "x__x")));
+  }
+});
+
+// ---------- pitches are one band's ----------
+
+test("pitches: only that artist's admins read a pitch, its comments and its activity", async () => {
+  for (const p of ["pitches/y", "pitches/y/comments/c1", "pitches/y/activity/a1"]) {
+    await assertFails(getDoc(doc(admin(), p)));
+    await assertSucceeds(getDoc(doc(otherAdmin(), p)));
+  }
+  await assertFails(getDoc(doc(otherAdmin(), "pitches/x")));
+  await assertFails(getDoc(doc(legacyAdmin(), "pitches/x")));
+  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  await assertFails(getDoc(doc(mia, "pitches/x"))); // the per-artist role decides, not the best role
+});
+
+test("pitches: lists must filter by artistId", async () => {
+  await assertFails(getDocs(collection(admin(), "pitches")));
+  await assertSucceeds(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "y"))));
+  await assertSucceeds(getDocs(collection(admin(), "pitches/x/comments")));
+  await assertFails(getDocs(collection(otherAdmin(), "pitches/x/comments")));
+});
+
+// ---------- festivals, years, promoters, contacts: shared records plus private per-band notes ----------
+
+test("festival, edition, promoter and contact notes: only that artist's admins read them", async () => {
+  for (const c of NOTE_COLLS) {
+    await assertSucceeds(getDoc(doc(admin(), `${c}/x__x`)));
+    await assertFails(getDoc(doc(admin(), `${c}/y__x`)));
+    await assertSucceeds(getDoc(doc(otherAdmin(), `${c}/y__x`)));
+    await assertFails(getDoc(doc(otherAdmin(), `${c}/x__x`)));
+    await assertFails(getDoc(doc(david(), `${c}/x__x`)));
+    for (const who of [anon(), noRole(), aiLogin(), legacyAdmin()]) await assertFails(getDoc(doc(who, `${c}/x__x`)));
+  }
+});
+
+test("festival, edition, promoter and contact notes: the per-artist role decides, not the best role", async () => {
+  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  for (const c of NOTE_COLLS) {
+    await assertFails(getDoc(doc(mia, `${c}/x__x`)));
+    await assertSucceeds(getDoc(doc(mia, `${c}/y__x`)));
+  }
+});
+
+test("festival, edition, promoter and contact notes: lists must filter by artistId", async () => {
+  for (const c of NOTE_COLLS) {
+    await assertFails(getDocs(collection(admin(), c)));
+    await assertSucceeds(getDocs(query(collection(admin(), c), where("artistId", "==", "x"))));
+    await assertFails(getDocs(query(collection(admin(), c), where("artistId", "==", "y"))));
+    await assertFails(getDocs(query(collection(david(), c), where("artistId", "==", "x"))));
+  }
+});
+
+test("festival, edition, promoter and contact notes cannot be written from the client", async () => {
+  for (const db of [admin(), otherAdmin()]) {
+    for (const c of NOTE_COLLS) {
+      await assertFails(setDoc(doc(db, c, "x__new"), { artistId: "x" }));
+      await assertFails(updateDoc(doc(db, c, "x__x"), { notes: "hacked" }));
+      await assertFails(deleteDoc(doc(db, c, "x__x")));
+    }
+  }
+});
+
+test("history: festival, edition, promoter and contact notes entries read only for that artist's admins", async () => {
+  for (const c of NOTE_COLLS) {
+    await assertSucceeds(getDoc(doc(admin(), `${c}/x__v/history/000001`)));
+    await assertFails(getDoc(doc(otherAdmin(), `${c}/x__v/history/000001`)));
+    await assertFails(getDoc(doc(david(), `${c}/x__v/history/000001`)));
   }
 });
 

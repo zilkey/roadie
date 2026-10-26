@@ -13,7 +13,8 @@ import { statsMovement, type StatLike } from "@/lib/stats";
 import { bandsintownEligible } from "../showSync";
 import { bandFolderId, bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
-import { dateStr } from "@/schema";
+import { bandNotesBy, withBandNote } from "../bandNotes";
+import { dateStr, isNotedKind } from "@/schema";
 import { isOff, publicShowName, showName, type ShowPlaceLike, isPublished } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
@@ -78,12 +79,15 @@ export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
   description:
     "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch. " +
-    "A venue includes this band's notes (and archived: true if the band hid it). Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show.",
+    "A venue includes this band's notes (and archived: true if the band hid it); a festival, edition, promoter or contact includes this band's notes (notes, payNotes, howToPitch), never another band's. Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {
     const d = await db.get(i.kind, i.id);
     if (!d || d.deletedAt || !inArtist(ctx, i.kind, d)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
-    const out: Record<string, unknown> = present(ctx, i.kind, d);
+    const kind = i.kind;
+    const out: Record<string, unknown> = isNotedKind(kind)
+      ? present(ctx, kind, withBandNote(kind, d, (await bandNotesBy(kind, await callerArtistId(ctx))).get(d.id)))
+      : present(ctx, kind, d);
     if (i.kind === "venues") {
       // The shared room plus this band's private notes (loadInNotes, notes, contactIds, promoterIds). Never another band's.
       const note = (await notesByVenue(await callerArtistId(ctx))).get(d.id) ?? null;
@@ -122,6 +126,11 @@ export const recordsList = defineCommand({
     if (i.kind === "venues") {
       const notes = await notesByVenue(await callerArtistId(ctx));
       rows = rows.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
+    }
+    const kind = i.kind;
+    if (isNotedKind(kind)) {
+      const notes = await bandNotesBy(kind, await callerArtistId(ctx));
+      rows = rows.map((d) => withBandNote(kind, d, notes.get(d.id)));
     }
     const venueOf = (d: Record<string, any>) => (i.kind === "shows" ? d.venue?.id : i.kind === "pitches" ? (d.target?.kind === "venue" ? d.target.id : undefined) : d.venueId);
     if (i.showId) rows = rows.filter((d) => d.showId === i.showId);

@@ -7,6 +7,7 @@ import { gmailClient, IntegrationError } from "../integrations";
 import type { MailMessage } from "../integrations/gmail";
 import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
 import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, sharedOf, writeNote } from "../venues";
+import { createNoted, setVenuePromoters, updateNoted } from "../bandNotes";
 import {
   VenueInput, venueNoteId, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
@@ -26,17 +27,6 @@ const EditionIn = EditionInput.omit({ festivalName: true }).extend({ venueIds: a
 const lowerEmails = z.array(z.string().transform(lowerEmail).pipe(emailSchema));
 const ContactIn = ContactInput.extend({ emails: lowerEmails.default([]), phones: z.array(z.string().transform(e164).pipe(ContactInput.shape.phones.element)).default([]) });
 const parentKind = z.enum(["venues", "promoters", "festivals"]);
-
-/** Keep the band's venue promoterIds (venueNotes) and promoter.venueIds as two views of the same link. */
-async function syncVenuePromoters(w: Writer, venueId: string, promoterIds: string[]) {
-  const promoters = await w.query("promoters");
-  for (const p of promoters) {
-    const has = (p.venueIds as string[]).includes(venueId), want = promoterIds.includes(p.id);
-    if (has !== want) {
-      await w.update("promoters", p.id, { venueIds: want ? [...p.venueIds, venueId] : (p.venueIds as string[]).filter((x) => x !== venueId) });
-    }
-  }
-}
 
 async function requireVenue(w: Writer, id: string) {
   const v = await w.get("venues", id);
@@ -67,7 +57,7 @@ export const venuesCreate = defineCommand({
             contactIds: [...new Set([...fields.contactIds, ...((priv.contactIds as string[] | undefined) ?? [])])],
             promoterIds: [...new Set([...fields.promoterIds, ...((priv.promoterIds as string[] | undefined) ?? [])])],
           });
-          if (priv.promoterIds) await syncVenuePromoters(w, r.id, next.promoterIds);
+          if (priv.promoterIds) await setVenuePromoters(w, artistId, r.id, next.promoterIds);
         } else if (doc?.deletedAt) await ensureNote(w, venue, artistId); // adding a room this band had archived brings it back
       }
     }
@@ -91,7 +81,7 @@ export const venuesUpdate = defineCommand({
       // The autosave form sends the notes' rev: conflict checks follow the notes doc, not the shared one.
       if (ctx.baseRev?.id === id && !Object.keys(sharedPatch).length) ctx.baseRev = { id: venueNoteId(artistId, id), rev: ctx.baseRev.rev };
       await writeNote(w, venue, artistId, privPatch);
-      if (privPatch.promoterIds) await syncVenuePromoters(w, id, privPatch.promoterIds as string[]);
+      if (privPatch.promoterIds) await setVenuePromoters(w, artistId, id, privPatch.promoterIds as string[]);
       changed = true;
     }
     return { id, changed };
@@ -125,7 +115,8 @@ export const venuesMergeInto = defineCommand({
     for (const p of await w.query("pitches", (q) => q.where("target.id", "==", from))) {
       if (p.target?.kind === "venue") { await w.update("pitches", p.id, { target: { ...p.target, id: into, name: dst.name } }); moved.pitches++; }
     }
-    for (const [coll, key] of [["promoters", "promoters"], ["editions", "editions"]] as const) {
+    // promoterNotes: each band's promoter links; promoters: a not-yet-migrated promoter's links (migrate:band-notes moves them).
+    for (const [coll, key] of [["promoterNotes", "promoters"], ["promoters", "promoters"], ["editions", "editions"]] as const) {
       for (const d of await w.query(coll, (q) => q.where("venueIds", "array-contains", from))) {
         const ids = [...new Set((d.venueIds as string[]).map((x) => (x === from ? into : x)))];
         await w.update(coll, d.id, { venueIds: ids });
@@ -163,13 +154,15 @@ export const venuesMergeInto = defineCommand({
 
 export const promotersCreate = defineCommand({
   name: "promoters.create", roles: [...ROLES], input: PromoterIn,
-  description: "Add a promoter or booking group. Same name merges into the existing one. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds are the whole lists; link contacts with contacts.attach.",
-  run: (ctx, input) => db.create(ctx, "promoters", input),
+  description: "Add a promoter or booking group. Same name merges into the existing one. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds are the whole lists; link contacts with contacts.attach. " +
+    "notes and howToPitch are this band's private notes (other bands never see them); everything else is shared with every band.",
+  run: (ctx, input) => run(ctx, (w) => createNoted(w, "promoters", input)),
 });
 export const promotersUpdate = defineCommand({
   name: "promoters.update", roles: [...ROLES], input: patchInput(PromoterIn),
-  description: "Edit a promoter. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds replace the lists; link contacts with contacts.attach.",
-  run: (ctx, { id, patch }) => db.update(ctx, "promoters", id, patch as Record<string, unknown>),
+  description: "Edit a promoter. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds replace the lists; link contacts with contacts.attach. " +
+    "notes and howToPitch are this band's private notes (they replace the text: read first to add); everything else is shared with every band.",
+  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "promoters", id, patch as Record<string, unknown>)),
 });
 export const promotersRemove = defineCommand({
   name: "promoters.remove", roles: ["admin"], input: idInput, description: "Archive a promoter.",
@@ -178,13 +171,14 @@ export const promotersRemove = defineCommand({
 
 export const festivalsCreate = defineCommand({
   name: "festivals.create", roles: [...ROLES], input: FestivalIn,
-  description: "Add a festival or series. Same name merges into the existing one.",
-  run: (ctx, input) => db.create(ctx, "festivals", input),
+  description: "Add a festival or series. Same name merges into the existing one. notes is this band's private notes (other bands never see them); everything else is shared with every band.",
+  run: (ctx, input) => run(ctx, (w) => createNoted(w, "festivals", input)),
 });
 export const festivalsUpdate = defineCommand({
   name: "festivals.update", roles: [...ROLES], input: patchInput(FestivalIn),
-  description: "Edit a festival. type: festival|series. contactIds replaces the list; link contacts with contacts.attach. Renaming updates its editions and their pitches.",
-  run: (ctx, { id, patch }) => db.update(ctx, "festivals", id, patch as Record<string, unknown>),
+  description: "Edit a festival. type: festival|series. contactIds replaces the list; link contacts with contacts.attach. Renaming updates its editions and their pitches. " +
+    "notes is this band's private notes (replaces the text: read first to add); everything else is shared with every band.",
+  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "festivals", id, patch as Record<string, unknown>)),
 });
 export const festivalsRemove = defineCommand({
   name: "festivals.remove", roles: ["admin"], input: idInput, description: "Archive a festival and its editions.",
@@ -196,17 +190,17 @@ export const festivalsRemove = defineCommand({
 
 export const editionsCreate = defineCommand({
   name: "editions.create", roles: [...ROLES], input: EditionIn.extend({ festivalId: z.string().min(1) }),
-  description: "Add a dated year of a festival (applications, deadline, dates).",
+  description: "Add a dated year of a festival (applications, deadline, dates). notes and payNotes are this band's private notes (other bands never see them); everything else is shared with every band.",
   run: (ctx, input) => run(ctx, async (w) => {
     const f = await w.get("festivals", input.festivalId);
     if (!f || f.deletedAt) throw new AppError("not_found", "Festival not found", 404);
-    return w.create("editions", { ...input, festivalName: f.name });
+    return createNoted(w, "editions", { ...input, festivalName: f.name });
   }),
 });
 export const editionsUpdate = defineCommand({
   name: "editions.update", roles: [...ROLES], input: patchInput(EditionIn.omit({ festivalId: true })),
-  description: "Edit an edition. Changing the label updates its pitches.",
-  run: (ctx, { id, patch }) => db.update(ctx, "editions", id, patch as Record<string, unknown>),
+  description: "Edit an edition. Changing the label updates its pitches. notes and payNotes are this band's private notes (they replace the text: read first to add); everything else is shared with every band.",
+  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "editions", id, patch as Record<string, unknown>)),
 });
 export const editionsRemove = defineCommand({
   name: "editions.remove", roles: ["admin"], input: idInput, description: "Archive an edition.",
@@ -215,17 +209,17 @@ export const editionsRemove = defineCommand({
 
 export const contactsCreate = defineCommand({
   name: "contacts.create", roles: [...ROLES], input: ContactIn.extend({ attachTo: z.strictObject({ kind: parentKind, id: z.string().min(1) }).optional() }),
-  description: "Add a person. Same email (or name when no email) merges into the existing contact. attachTo links them to a venue, promoter or festival.",
+  description: "Add a person. Same email (or name when no email) merges into the existing contact. attachTo links them to a venue, promoter or festival. notes is this band's private notes (other bands never see them).",
   run: (ctx, { attachTo, ...input }) => run(ctx, async (w) => {
-    const r = await w.create("contacts", input);
+    const r = await createNoted(w, "contacts", input);
     if (attachTo) await attach(w, attachTo.kind, attachTo.id, r.id);
     return r;
   }),
 });
 export const contactsUpdate = defineCommand({
   name: "contacts.update", roles: [...ROLES], input: patchInput(ContactIn),
-  description: "Edit a contact. emails/phones replace the lists (first email is primary; emails lowercased, phones stored E.164): read first. Use contacts.attach/detach for links.",
-  run: (ctx, { id, patch }) => db.update(ctx, "contacts", id, patch as Record<string, unknown>),
+  description: "Edit a contact. emails/phones replace the lists (first email is primary; emails lowercased, phones stored E.164): read first. Use contacts.attach/detach for links. notes is this band's private notes (replaces the text: read first to add).",
+  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "contacts", id, patch as Record<string, unknown>)),
 });
 export const contactsRemove = defineCommand({
   name: "contacts.remove", roles: ["admin"], input: idInput, description: "Archive a contact and unlink them from places.",
@@ -323,10 +317,11 @@ export const pitchesFlag = defineCommand({
     nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
-    const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.target.kind === i.kind && isActive(p.status));
+    const artist = await artistOf(w);
+    // Another band's pitch on the same target is theirs: only this band's own active pitch counts as "already there".
+    const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.artistId === artist.id && p.target.kind === i.kind && isActive(p.status));
     if (open) return { id: open.id, existing: true };
     const name = await targetName(w, i.kind, i.id);
-    const artist = await artistOf(w);
     const assigneeId = i.assigneeId ?? ctx.uid;
     await requireUser(w, assigneeId);
     const r = await w.create("pitches", {

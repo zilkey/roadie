@@ -10,6 +10,7 @@ export const Festival = entity({
   contactIds: z.array(id),
   promoterId: id.optional(),
   typicalMonth: z.number().int().min(1).max(12).optional(),
+  /** LEGACY until `npm run migrate:band-notes`: the band's notes live in its notes doc (src/schema/bandNotes.ts); the commands write them there. */
   notes: z.string().optional(),
   matchKey: z.string().min(1),
   ...sourcesShape,

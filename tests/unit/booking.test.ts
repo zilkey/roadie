@@ -90,7 +90,7 @@ test("dedupe: venue, promoter, festival and contact creates merge instead of dup
   assert.equal((await cmd("festivals.create", { name: "ums", type: "festival", region: "denver" })).merged, true);
   assert.ok(f1.id);
   const c1 = await cmd("contacts.create", { name: "Haylee", emails: ["Haylee@x.com"] });
-  const c2 = await cmd("contacts.create", { name: "Haylee J", emails: ["haylee@x.com"], phones: ["303-555-0101"] });
+  const c2 = await cmd("contacts.create", { name: "Haylee J", emails: ["haylee@x.com"], phones: ["+13035550101"] });
   assert.equal(c2.id, c1.id);
   assert.deepEqual((await db.get("contacts", c1.id))!.phones, ["+13035550101"]);
   const hist = await db.listGroup("history", (q) => q.where("entity.id", "==", c1.id));
@@ -110,13 +110,30 @@ test("contacts attach to places, detach, and archive unlinks (a venue's links ar
   assert.deepEqual((await db.get("venueNotes", noteId))!.contactIds, []);
 });
 
-test("venue promoter links stay in sync both ways", async () => {
+test("venue promoter links stay in sync both ways, in the band's own notes", async () => {
   const p = await cmd("promoters.create", { name: "Promo", kind: "promoter" });
   const v = await cmd("venues.create", venue("Room", "Denver", { promoterIds: [p.id] }));
-  assert.deepEqual((await db.get("promoters", p.id))!.venueIds, [v.id]);
+  const pn = async () => (await db.get("promoterNotes", `${TEST_ARTIST}__${p.id}`))?.venueIds ?? null;
+  assert.deepEqual(await pn(), [v.id]);
+  assert.equal("venueIds" in (await db.get("promoters", p.id))!, false, "the shared promoter does not say which venues this band books there");
   assert.deepEqual((await db.get("venueNotes", `${TEST_ARTIST}__${v.id}`))!.promoterIds, [p.id]);
   await cmd("venues.update", { id: v.id, patch: { promoterIds: [] } });
-  assert.deepEqual((await db.get("promoters", p.id))!.venueIds, []);
+  assert.equal(await pn(), null);
+  // and from the promoter's side
+  await cmd("promoters.update", { id: p.id, patch: { venueIds: [v.id] } });
+  assert.deepEqual((await db.get("venueNotes", `${TEST_ARTIST}__${v.id}`))!.promoterIds, [p.id]);
+  await cmd("promoters.update", { id: p.id, patch: { venueIds: [] } });
+  assert.deepEqual((await db.get("venueNotes", `${TEST_ARTIST}__${v.id}`))!.promoterIds, []);
+});
+
+test("a patch leaves the fields it does not name alone (no create defaults)", async () => {
+  const c = await cmd("contacts.create", { name: "Ann", emails: ["a@x.com"], phones: ["+13035550101"] });
+  await cmd("contacts.update", { id: c.id, patch: { title: "Buyer" } });
+  const after = (await db.get("contacts", c.id))!;
+  assert.deepEqual([after.emails, after.phones], [["a@x.com"], ["+13035550101"]]);
+  const p = await cmd("promoters.create", { name: "Promo", kind: "promoter", contactIds: [c.id] });
+  await cmd("promoters.update", { id: p.id, patch: { website: "https://promo.example" } });
+  assert.deepEqual((await db.get("promoters", p.id))!.contactIds, [c.id]);
 });
 
 // ---------- venues: shared directory + private per-band notes ----------
@@ -238,7 +255,7 @@ test("venues.mergeInto: moves every band's shows, pitches and notes, fills the s
   // references moved
   assert.deepEqual((await db.get("shows", show.id))!.venue, { id: keep.id, name: "Hi-Dive", address: "Denver", city: "Denver" });
   assert.deepEqual([(await db.get("pitches", pitch.id))!.target.id, (await db.get("pitches", pitch.id))!.target.name], [keep.id, "Hi-Dive"]);
-  assert.deepEqual((await db.get("promoters", promo.id))!.venueIds, [keep.id]);
+  assert.deepEqual((await db.get("promoterNotes", `${TEST_ARTIST}__${promo.id}`))!.venueIds, [keep.id]);
   // each band's notes joined onto its notes for the survivor; the other band's stay its own
   const mine = (await noteDoc(TEST_ARTIST, keep.id))!, theirs = (await noteDoc(OTHER, keep.id))!;
   assert.equal(mine.notes, "keep notes\n\ndup notes"); assert.equal(mine.loadInNotes, "back door");
@@ -261,7 +278,7 @@ test("venues.mergeInto: moves every band's shows, pitches and notes, fills the s
   assert.equal((await db.get("venues", keep.id))!.website, undefined);
   assert.equal((await noteDoc(TEST_ARTIST, keep.id))!.notes, "keep notes");
   assert.equal((await noteDoc(OTHER, dup.id))!.notes, "other band's secret");
-  assert.deepEqual((await db.get("promoters", promo.id))!.venueIds, [dup.id]);
+  assert.deepEqual((await db.get("promoterNotes", `${TEST_ARTIST}__${promo.id}`))!.venueIds, [dup.id]);
   // refused: same venue, a merged-away venue
   await assert.rejects(cmd("venues.mergeInto", { from: keep.id, into: keep.id }), (e: { status: number }) => e.status === 400);
   await cmd("venues.mergeInto", { from: dup.id, into: keep.id });

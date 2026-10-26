@@ -5,6 +5,7 @@ import { ArtistInput } from "./artists";
 import { ContactInput } from "./contacts";
 import { VenueRecord } from "./venues";
 import { VenueNoteInput } from "./venueNotes";
+import { FestivalNoteInput, EditionNoteInput, PromoterNoteInput, ContactNoteInput } from "./bandNotes";
 import { PromoterInput } from "./promoters";
 import { FestivalInput } from "./festivals";
 import { EditionInput } from "./editions";
@@ -35,6 +36,7 @@ export * from "./artists";
 export * from "./contacts";
 export * from "./venues";
 export * from "./venueNotes";
+export * from "./bandNotes";
 export * from "./promoters";
 export * from "./festivals";
 export * from "./editions";
@@ -77,6 +79,10 @@ export const collections: Record<string, CollectionDef> = {
   promoters: { input: PromoterInput, dedupe: true },
   festivals: { input: FestivalInput, dedupe: true },
   editions: { input: EditionInput },
+  festivalNotes: { input: FestivalNoteInput },
+  editionNotes: { input: EditionNoteInput },
+  promoterNotes: { input: PromoterNoteInput },
+  contactNotes: { input: ContactNoteInput },
   pitches: { input: PitchInput },
   comments: { input: CommentInput },
   activity: { input: ActivityInput, appendOnly: true },

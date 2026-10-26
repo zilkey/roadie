@@ -15,6 +15,7 @@ import {
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { fmtDate, isActive } from "@/lib/booking";
+import { withBandNote } from "@/lib/bandNotes";
 import type { Edition, Festival, Show } from "@/schema";
 
 export default function Page() { return <AdminOnly><FestivalPage /></AdminOnly>; }
@@ -35,7 +36,7 @@ function FestivalPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { artistId } = useArtist();
-  const { doc: f, loading } = useDoc<Festival>("festivals", id);
+  const { doc: shared, loading } = useDoc<Festival>("festivals", id);
   const b = useBooking();
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId]] });
   const { call, error } = useCommand();
@@ -49,8 +50,11 @@ function FestivalPage() {
   const editions = useMemo(() => b.editions.filter((e) => e.festivalId === id).sort((a, c) => c.year - a.year), [b.editions, id]);
   const editionIds = useMemo(() => new Set(editions.map((e) => e.id)), [editions]);
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && editionIds.has(p.target.id)), [b.pitches, artistId, editionIds]);
-  const nf = useNotFound(loading, f, "festival");
-  if (nf || !f) return nf;
+  const nf = useNotFound(loading, shared, "festival");
+  if (nf || !shared) return nf;
+
+  const note = b.bandNotes.festivals.get(id);
+  const f = withBandNote("festivals", shared, note);
 
   const archive = async () => { if (confirm(`Archive ${f.name} and its years?`) && (await call("festivals.remove", { id }))) router.replace("/booking"); };
   const active = mine.find((p) => isActive(p.status));
@@ -126,15 +130,6 @@ function FestivalPage() {
 
         <DetailCard title="Contacts" editKey="contacts" edit={edit} testid="festival-contacts" editTestid="contacts-edit" editChildren={contacts}>{contacts}</DetailCard>
 
-        <DetailCard title="Notes" editKey="notes" edit={edit} warn={SHARED_WARN} testid="festival-notes-card" editTestid="notes-edit"
-          editChildren={
-            <div>
-              <EntityForm testid="festival-notes" fields={notesFields} initial={festivalForm.initial(f)} build={festivalForm.build}
-                autosave={{ command: "festivals.update", id, rev: f.rev, title: f.name }} />
-            </div>
-          }>
-          {f.notes ? <p className="m-0 whitespace-pre-wrap">{f.notes}</p> : <span className="d-muted">—</span>}
-        </DetailCard>
       </CardGroup>
 
       <CardGroup kind="private">
@@ -161,6 +156,16 @@ function FestivalPage() {
               </>)}</Flagged>
             </div>
           )}
+        </DetailCard>
+
+        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="festival-notes-card" editTestid="notes-edit"
+          editChildren={
+            <div>
+              <EntityForm testid="festival-notes" fields={notesFields} initial={festivalForm.initial(f)} build={festivalForm.build}
+                autosave={{ command: "festivals.update", id, rev: note?.rev, title: `${f.name} notes` }} />
+            </div>
+          }>
+          {f.notes ? <p className="m-0 whitespace-pre-wrap">{f.notes}</p> : <span className="d-muted">—</span>}
         </DetailCard>
 
         <DetailCard private title={`Our history here (${past.length + myShows.length})`} testid="festival-history">

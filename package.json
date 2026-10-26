@@ -61,6 +61,7 @@
     "migrate:rehearsal-location": "tsx scripts/migrate-rehearsal-location.ts",
     "migrate:crowd": "tsx scripts/migrate-crowd.ts",
     "migrate:pitch-waiting": "tsx scripts/migrate-pitch-waiting.ts",
+    "migrate:band-notes": "tsx scripts/migrate-band-notes.ts",
     "test:all": "tsx scripts/test-all.ts"
   },
   "dependencies": {

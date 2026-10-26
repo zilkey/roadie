@@ -92,10 +92,12 @@ async function main() {
   const marcus = await create("contacts", { name: "Marcus Webb", title: "Booking manager", emails: ["marcus@foxtheatre.example"], phones: [], sources: src("https://foxtheatre.example/booking") });
   const dana = await create("contacts", { name: "Dana Ortiz", title: "Programming director", emails: ["dana@dairyarts.example"], phones: ["+13035550177"] });
   const priya = await create("contacts", { name: "Priya Shah", title: "Festival producer", emails: ["priya@umsfest.example"], phones: [] });
-  const promo1 = await create("promoters", { name: "Front Range Presents", kind: "promoter", website: "https://frontrangepresents.example", contactIds: [marcus], venueIds: [], howToPitch: "Email Marcus with live video and two dates.", sources: src("https://frontrangepresents.example") });
-  const promo2 = await create("promoters", { name: "Dairy Arts Center", kind: "nonprofit", contactIds: [dana], venueIds: [], howToPitch: "Online submission form, twice a year." });
-  // Venues go through venues.create: the room is the shared directory record, contactIds/promoterIds/notes become this band's private venueNotes.
+  // howToPitch is the band's private note (promoterNotes); the venues they book are linked from the venues below.
   const bandCtx = importCtx("seed", undefined, artist);
+  const promoter = async (input: Record<string, unknown>) => ((await execute(bandCtx, "promoters.create", input)).result as { id: string }).id;
+  const promo1 = await promoter({ name: "Front Range Presents", kind: "promoter", website: "https://frontrangepresents.example", contactIds: [marcus], howToPitch: "Email Marcus with live video and two dates.", sources: src("https://frontrangepresents.example") });
+  const promo2 = await promoter({ name: "Dairy Arts Center", kind: "nonprofit", contactIds: [dana], howToPitch: "Online submission form, twice a year." });
+  // Venues go through venues.create: the room is the shared directory record, contactIds/promoterIds/notes become this band's private venueNotes.
   const v = async (name: string, type: string, city: string, region: string, extra: Record<string, unknown> = {}) =>
     ((await execute(bandCtx, "venues.create", { name, type, address: { city, state: "CO" }, region, ...extra })).result as { id: string }).id;
   const hidive = await v("Hi-Dive", "bar", "Denver", "denver", { address: { street: "7 S Broadway", city: "Denver", state: "CO" }, capacity: 250, ages: "21", sound: { provider: "venueProvided", notes: "House engineer" } });
@@ -108,8 +110,6 @@ async function main() {
   await v("Swallow Hill Music", "listening", "Denver", "denver", { capacity: 250, ages: "all" });
   // Calendar e2e: the room for the 2026-12-12 pitch date. No other seeded pitch targets it, and no e2e spec names it.
   const bluebird = await v("Bluebird Room", "club", "Denver", "denver", { capacity: 180, ages: "21" });
-  await db.update(ctx, "promoters", promo1, { venueIds: [fox] });
-  await db.update(ctx, "promoters", promo2, { venueIds: [dairy] });
 
   // --- a second band on the same directory: its own notes on a shared room, and a duplicate room to merge ---
   const other = await seedOtherBand(create, ctx);

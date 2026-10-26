@@ -21,6 +21,8 @@ import { formatSurvey, note, tally, type Note, type Survey } from "./survey";
 import { importCtx } from "../src/server/ctx";
 import { isPrivateField } from "../src/lib/venues";
 import { hasPrivate, noteOf, writeNote } from "../src/server/venues";
+import { fillBandNote, splitNotes } from "../src/server/bandNotes";
+import { isNotedKind } from "../src/schema/bandNotes";
 import { email as emailSchema } from "../src/schema/common";
 import { e164 } from "../src/schema/normalize";
 import { roleIn } from "../src/schema/users";
@@ -90,10 +92,17 @@ const configMusicians = (cfg: string) => (artist.configurations as { id: string;
 const hasConfig = (cfg: string) => !!configMusicians(cfg);
 
 /** Create with a fixed id unless that id already exists. Dedupe collections may merge into another id. */
-async function ensure(w: Writer, path: string, id: string, doc: Record<string, unknown>): Promise<string> {
+/**
+ * Festivals, years, promoters and contacts: their notes (and a promoter's venueIds) are this artist's private notes doc, filled in
+ * where the band has not said anything yet (the same split the booking commands make).
+ */
+async function ensure(w: Writer, path: string, id: string, input: Record<string, unknown>): Promise<string> {
+  const { shared: doc, notes: bandNotes } = isNotedKind(path) ? splitNotes(path, input) : { shared: input, notes: {} };
+  const fill = async (rid: string) => { if (isNotedKind(path) && Object.keys(bandNotes).length) await fillBandNote(w, path, (await w.get(path, rid))!, artist.id, bandNotes); };
   const existing = await w.get(path, id);
-  if (existing) { record(path, "already there", id); return id; }
+  if (existing) { record(path, "already there", id); await fill(id); return id; }
   const r = await w.create(path, doc, { id });
+  await fill(r.id);
   record(path, r.merged ? "merged into existing" : "created", r.id);
   // A dedupe merge means this name already existed under another id: the near-duplicate Jeff has to look at.
   if (r.merged) {
@@ -431,10 +440,8 @@ async function importSupportSlots() {
   for (const p of promoters) {
     await unit(async (w) => {
       const ids = p.venues.map((k) => venueIds[k]).filter(Boolean);
+      // ensure() joins the venues into the band's promoterNotes.venueIds, on a rerun too
       const id = await ensure(w, "promoters", `ss-${p.id}`, { name: p.name, kind: p.kind, website: p.website, contactIds: [], venueIds: ids, howToPitch: p.howToPitch, notes: p.notes, sources });
-      const prom = (await w.get("promoters", id))!;
-      const add = ids.filter((x) => !(prom.venueIds as string[]).includes(x));
-      if (add.length) await w.update("promoters", id, { venueIds: [...(prom.venueIds as string[]), ...add] });
       for (const vid of ids) {
         const venue = (await w.get("venues", vid))!;
         const { fields } = await noteOf(w, venue, artist.id);

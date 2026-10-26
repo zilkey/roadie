@@ -11,7 +11,9 @@ import { newMutationId } from "@/lib/commands";
 import { fmtPitchDate, sortedDates, todayStr } from "@/lib/booking";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { ShowForm, dealOf, timesOf, whereInput, type ShowFormState } from "@/components/shows/ShowForm";
-import type { Artist, Availability, Contact, Edition, Musician, Pitch, Promoter, Venue } from "@/schema";
+import type { Artist, Availability, Contact, Edition, Musician, Pitch, Promoter, PromoterNote, Venue } from "@/schema";
+import { withBandNote } from "@/lib/bandNotes";
+import type { PromoterRow } from "@/components/booking/common";
 
 export default function Page() { return <AdminOnly><Suspense><NewShow /></Suspense></AdminOnly>; }
 
@@ -22,21 +24,22 @@ function NewShow() {
   const pitch = useDoc<PitchDoc>("pitches", pitchId || "none");
   const venues = useCollection<Venue>("venues");
   const promoters = useCollection<Promoter>("promoters");
+  const { doc: artist, artistId } = useArtist();
+  const promoterNotes = useCollection<PromoterNote>("promoterNotes", { where: [["artistId", "==", artistId]] });
   const editions = useCollection<Edition>("editions");
   const contacts = useCollection<Contact>("contacts");
   const musicians = useCollection<Musician>("musicians");
-  const { doc: artist } = useArtist();
   const asks = useCollection<Availability>("availability");
-  const loading = ([venues, promoters, editions, contacts, musicians, asks].some((c) => c.loading) || !artist) || (!!pitchId && pitch.loading);
+  const loading = ([venues, promoters, promoterNotes, editions, contacts, musicians, asks].some((c) => c.loading) || !artist) || (!!pitchId && pitch.loading);
   if (loading) return <span className="s">Loading…</span>;
   return (
-    <NewShowForm pitchId={pitchId} pitch={pitchId ? pitch.doc : null} venues={venues.rows ?? []} promoters={promoters.rows ?? []} editions={editions.rows ?? []} contacts={contacts.rows ?? []}
+    <NewShowForm pitchId={pitchId} pitch={pitchId ? pitch.doc : null} venues={venues.rows ?? []} promoters={(promoters.rows ?? []).map((p) => withBandNote("promoters", p, promoterNotes.rows?.find((n) => n.promoterId === p.id)) as PromoterRow)} editions={editions.rows ?? []} contacts={contacts.rows ?? []}
       musicians={musicians.rows ?? []} artist={artist ?? undefined} asks={asks.rows ?? []} />
   );
 }
 
 function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, musicians, artist, asks }: {
-  pitchId: string; pitch: PitchDoc | null; venues: Row<Venue>[]; promoters: Row<Promoter>[]; editions: Row<Edition>[]; contacts: Row<Contact>[]; musicians: Row<Musician>[];
+  pitchId: string; pitch: PitchDoc | null; venues: Row<Venue>[]; promoters: PromoterRow[]; editions: Row<Edition>[]; contacts: Row<Contact>[]; musicians: Row<Musician>[];
   artist?: Row<Artist>; asks: Row<Availability>[];
 }) {
   const router = useRouter();

@@ -7,9 +7,10 @@ import { Menu } from "@/components/Menu";
 import { useDoc } from "@/lib/firestore-hooks";
 import { isActive } from "@/lib/booking";
 import {
-  BackLink, ContactsPanel, EntityForm, FlagIcon, Flagged, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound,
+  BackLink, ContactsPanel, EntityForm, FlagIcon, Flagged, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound, type PromoterRow,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
+import { withBandNote } from "@/lib/bandNotes";
 import type { Promoter } from "@/schema";
 
 export default function Page() { return <AdminOnly><PromoterPage /></AdminOnly>; }
@@ -18,7 +19,7 @@ const KIND_LABEL: Record<Promoter["kind"], string> = {
   promoter: "Promoter", venueGroup: "Venue group", nonprofit: "Nonprofit", buyer: "Buyer",
 };
 
-/** Shared fields (About, Notes) are one record for every band; the pitch and its notes are this artist's. */
+/** About and Contacts are one record for every band; the pitch, the venues they book for us and our notes are this artist's (promoterNotes). */
 const ABOUT_FIELDS = promoterForm.fields.filter((f) => ["name", "kind", "website"].includes(f.key));
 const NOTES_FIELDS = promoterForm.fields.filter((f) => ["howToPitch", "notes"].includes(f.key));
 
@@ -26,12 +27,15 @@ function PromoterPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { artistId } = useArtist();
-  const { doc: p, loading } = useDoc<Promoter>("promoters", id);
+  const { doc: shared, loading } = useDoc<Promoter>("promoters", id);
   const b = useBooking();
   const { call, error, busy } = useCommand();
   const edit = useSingleEdit<"about" | "venues" | "contacts" | "notes">();
-  const nf = useNotFound(loading, p, "promoter");
-  if (nf || !p) return nf;
+  const nf = useNotFound(loading, shared, "promoter");
+  if (nf || !shared) return nf;
+
+  const note = b.bandNotes.promoters.get(id);
+  const p = withBandNote("promoters", shared, note) as PromoterRow;
 
   const venues = b.venues.filter((v) => p.venueIds.includes(v.id) || v.promoterIds.includes(p.id));
   const mine = b.pitches.filter((x) => x.artistId === artistId && x.target.kind === "promoter" && x.target.id === id);
@@ -81,31 +85,8 @@ function PromoterPage() {
             </div>
           } />
 
-        <DetailCard title="Venues they book" edit={edit} editKey="venues" editTestid="venues-edit"
-          children={venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
-          editChildren={
-            <>
-              {venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
-              {linkable.length > 0 && (
-                <select className="select" value="" disabled={busy}
-                  onChange={(e) => { if (e.target.value) void linkVenue(e.target.value); }}>
-                  <option value="">Link a venue…</option>
-                  {linkable.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              )}
-            </>
-          } />
-
         <DetailCard title="Contacts" edit={edit} editKey="contacts" editTestid="contacts-edit" children={contacts} editChildren={contacts} />
 
-        <DetailCard title="Notes" edit={edit} editKey="notes" warn={SHARED_WARN} editTestid="notes-edit"
-          children={<KV rows={[["How to pitch", p.howToPitch ?? ""], ["Notes", p.notes ?? ""]]} />}
-          editChildren={
-            <div>
-              <EntityForm testid="promoter-notes" fields={NOTES_FIELDS} initial={promoterForm.initial(p)} build={promoterForm.build}
-                autosave={{ command: "promoters.update", id, rev: p.rev, title: p.name }} />
-            </div>
-          } />
       </CardGroup>
 
       <CardGroup kind="private">
@@ -130,6 +111,30 @@ function PromoterPage() {
             </div>)}
           </Flagged>
         </DetailCard>
+
+        <DetailCard private title="Venues they book" edit={edit} editKey="venues" editTestid="venues-edit"
+          children={venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
+          editChildren={
+            <>
+              {venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
+              {linkable.length > 0 && (
+                <select className="select" value="" disabled={busy}
+                  onChange={(e) => { if (e.target.value) void linkVenue(e.target.value); }}>
+                  <option value="">Link a venue…</option>
+                  {linkable.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              )}
+            </>
+          } />
+
+        <DetailCard private title="Our notes" edit={edit} editKey="notes" testid="notes-private" editTestid="notes-edit"
+          children={<KV rows={[["How to pitch", p.howToPitch ?? ""], ["Notes", p.notes ?? ""]]} />}
+          editChildren={
+            <div>
+              <EntityForm testid="promoter-notes" fields={NOTES_FIELDS} initial={promoterForm.initial(p)} build={promoterForm.build}
+                autosave={{ command: "promoters.update", id, rev: note?.rev, title: `${p.name} notes` }} />
+            </div>
+          } />
       </CardGroup>
     </DetailPage>
   );

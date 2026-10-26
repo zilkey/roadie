@@ -10,6 +10,7 @@ import { BackLink, EntityForm, Flagged, FlagIcon, PitchLinks, editionForm, hrefF
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { fmtDate, isActive } from "@/lib/booking";
 import { fmtLong, showName } from "@/lib/shows";
+import { withBandNote } from "@/lib/bandNotes";
 import type { Edition, Show } from "@/schema";
 
 export default function Page() { return <AdminOnly><EditionPage /></AdminOnly>; }
@@ -23,14 +24,17 @@ function EditionPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { artistId } = useArtist();
-  const { doc: e, loading } = useDoc<Edition>("editions", id);
+  const { doc: shared, loading } = useDoc<Edition>("editions", id);
   const b = useBooking();
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId], ["editionId", "==", id]] });
   const { call, error } = useCommand();
   const edit = useSingleEdit<"about" | "notes">();
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && p.target.id === id), [b.pitches, artistId, id]);
-  const nf = useNotFound(loading, e, "year");
-  if (nf || !e) return nf;
+  const nf = useNotFound(loading, shared, "year");
+  if (nf || !shared) return nf;
+
+  const note = b.bandNotes.editions.get(id);
+  const e = withBandNote("editions", shared, note);
 
   const name = `${e.festivalName} ${e.label}`;
   const archive = async () => { if (confirm("Archive this year?") && (await call("editions.remove", { id }))) router.replace(hrefFor("festival", e.festivalId)); };
@@ -58,10 +62,6 @@ function EditionPage() {
           ]} />
         </DetailCard>
 
-        <DetailCard title="Pay & notes" editKey="notes" edit={edit} warn={SHARED_WARN} testid="edition-notes-card" editTestid="notes-edit"
-          editChildren={<div><EntityForm testid="edition-notes" fields={notesFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>
-          <KV rows={[["Pay", e.payNotes ?? ""], ["Notes", e.notes ?? ""]]} />
-        </DetailCard>
       </CardGroup>
 
       <CardGroup kind="private">
@@ -84,6 +84,11 @@ function EditionPage() {
               {flagForm}
             </div>
           )}</Flagged>
+        </DetailCard>
+
+        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="edition-notes-card" editTestid="notes-edit"
+          editChildren={<div><EntityForm testid="edition-notes" fields={notesFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={{ ...autosave, rev: note?.rev, title: `${name} notes` }} /></div>}>
+          <KV rows={[["Pay", e.payNotes ?? ""], ["Notes", e.notes ?? ""]]} />
         </DetailCard>
 
         <DetailCard private title={`Our history here (${past.length + myShows.length})`} testid="edition-history">

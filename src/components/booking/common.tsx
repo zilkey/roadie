@@ -6,41 +6,65 @@ import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type PitchDateIn, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
 import { withNotes, type NoteFields } from "@/lib/venues";
+import { withBandNote } from "@/lib/bandNotes";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment } from "@/schema";
+import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
 /** A venue as the band sees it: the shared room with this band's private notes laid over it (so `contactIds` etc. are the band's own). */
 export type VenueRow = Row<Omit<Venue, keyof NoteFields>> & NoteFields;
+/**
+ * Festivals, years and contacts as the band sees them are their own Row type (the note fields are on the schema, legacy); a promoter
+ * always has the band's venueIds (withBandNote).
+ */
+export type PromoterRow = Row<Promoter> & { venueIds: string[] };
 
 /**
  * All booking collections, live. Small data set, so every page just loads what it needs.
  * Venues are the shared directory (everyone reads it); the band's private notes are `venueNotes` (admins only, so for members nothing
  * but the venues is loaded). `venues` leaves out rooms this band archived and carries the band's notes; `venueNotes` has them all, archived too.
+ * Festivals, years, promoters and contacts likewise carry this band's notes (`bandNotes` has the notes docs, for their revs).
+ * Pitches are this band's only.
  */
 export function useBooking() {
   const { artistId, role } = useArtist();
   const admin = role === "admin";
+  const mine = { where: [["artistId", "==", artistId]] as [string, "==", string][], skip: !admin };
   const venues = useCollection<Venue>("venues");
-  const notes = useCollection<VenueNote>("venueNotes", { where: [["artistId", "==", artistId]], includeDeleted: true, skip: !admin });
+  const notes = useCollection<VenueNote>("venueNotes", { ...mine, includeDeleted: true });
   const promoters = useCollection<Promoter>("promoters", { skip: !admin });
   const festivals = useCollection<Festival>("festivals", { skip: !admin });
   const editions = useCollection<Edition>("editions", { skip: !admin });
   const contacts = useCollection<Contact>("contacts", { skip: !admin });
-  const pitches = useCollection<PitchRow>("pitches", { skip: !admin });
+  const pitches = useCollection<PitchRow>("pitches", mine);
+  const fNotes = useCollection<FestivalNote>("festivalNotes", mine);
+  const eNotes = useCollection<EditionNote>("editionNotes", mine);
+  const pNotes = useCollection<PromoterNote>("promoterNotes", mine);
+  const cNotes = useCollection<ContactNote>("contactNotes", mine);
   const venueNotes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.venueId, n])), [notes.rows]);
   const venueRows = useMemo<VenueRow[]>(
     () => (venues.rows ?? []).filter((v) => !venueNotes.get(v.id)?.deletedAt).map((v) => withNotes(v, venueNotes.get(v.id)) as VenueRow),
     [venues.rows, venueNotes]);
+  const bandNotes = useMemo(() => ({
+    festivals: new Map((fNotes.rows ?? []).map((n) => [n.festivalId, n])),
+    editions: new Map((eNotes.rows ?? []).map((n) => [n.editionId, n])),
+    promoters: new Map((pNotes.rows ?? []).map((n) => [n.promoterId, n])),
+    contacts: new Map((cNotes.rows ?? []).map((n) => [n.contactId, n])),
+  }), [fNotes.rows, eNotes.rows, pNotes.rows, cNotes.rows]);
+  const noted = useMemo(() => ({
+    promoters: (promoters.rows ?? []).map((d) => withBandNote("promoters", d, bandNotes.promoters.get(d.id)) as PromoterRow),
+    festivals: (festivals.rows ?? []).map((d) => withBandNote("festivals", d, bandNotes.festivals.get(d.id)) as Row<Festival>),
+    editions: (editions.rows ?? []).map((d) => withBandNote("editions", d, bandNotes.editions.get(d.id)) as Row<Edition>),
+    contacts: (contacts.rows ?? []).map((d) => withBandNote("contacts", d, bandNotes.contacts.get(d.id)) as Row<Contact>),
+  }), [promoters.rows, festivals.rows, editions.rows, contacts.rows, bandNotes]);
   return {
-    venues: venueRows, venueNotes, promoters: promoters.rows ?? [], festivals: festivals.rows ?? [],
-    editions: editions.rows ?? [], contacts: contacts.rows ?? [], pitches: pitches.rows ?? [],
-    loading: [venues, notes, promoters, festivals, editions, contacts, pitches].some((c) => c.loading),
+    venues: venueRows, venueNotes, bandNotes, ...noted, pitches: pitches.rows ?? [],
+    loading: [venues, notes, promoters, festivals, editions, contacts, pitches, fNotes, eNotes, pNotes, cNotes].some((c) => c.loading),
   };
 }
 

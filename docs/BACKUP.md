@@ -135,3 +135,22 @@ npm run migrate:venue-notes                           # emulator
 npm run migrate:venue-notes -- --artist=<slug> --yes  # real Firestore (refused without --yes; --artist only needed with more than one artist)
 ```
 It writes `venueNotes` docs through `db.ts` under one History run (Admin -> History -> that run id -> Undo reverses the venue part), removes the four fields from the venues, and stamps `artistId` (the record's artist, else null) on every existing history entry, which the tightened history rule and the History page's two queries need. History entries that show a band's old private notes are stamped with that band, so other bands' admins cannot read them. Safe to run again. Order for production: backup; deploy the code and `firestore.indexes.json` (the History page's new `artistId` queries need those collection-group indexes, which build for a few minutes); `--dry-run`; `--yes`; then deploy `firestore.rules` last. The tolerated legacy fields in `src/schema/venues.ts` (`venueLegacyShape`) can be deleted after that.
+
+## Splitting festivals, years, promoters and contacts into the shared record and the band's notes (one time)
+Festivals, festival years (editions), promoters and contacts are shared by every band; what one band thinks of them now lives in
+that band's `festivalNotes`, `editionNotes`, `promoterNotes` and `contactNotes` (`{artistId}__{id}`, only that artist's admins
+read them; see `src/schema/bandNotes.ts`). The moved fields are festival `notes`; edition `notes` and `payNotes`; promoter `notes`,
+`howToPitch` and `venueIds` (the venues they book for this band); contact `notes`. Records written before the split still carry
+them; the code reads and updates them either way (the first note a band writes starts its notes doc from them), and this migration
+moves them.
+```
+npm run migrate:band-notes -- --dry-run              # count only, writes nothing
+npm run migrate:band-notes                           # emulator
+npm run migrate:band-notes -- --artist=<slug> --yes  # real Firestore (refused without --yes; --artist only needed with more than one artist)
+```
+It writes the notes docs through `db.ts` under one History run (Admin -> History -> that run id -> Undo reverses it), removes the
+fields from the shared records, and stamps the band's `artistId` on history entries of those records that show a note, so other
+bands' admins cannot read them. A notes doc the app already created is kept. Safe to run again. Order for production: backup; push
+the code and wait for the App Hosting rollout; deploy `firestore.rules` (the notes collections are unreadable until then, and pitches
+become readable only by their own band's admins, which the new code's queries respect); `--dry-run`; `--yes`. No new indexes. The
+tolerated legacy fields (`notes`/`payNotes`/`howToPitch` on the shared schemas, optional `venueIds` on promoters) can be deleted after that.

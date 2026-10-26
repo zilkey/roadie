@@ -31,7 +31,7 @@ export interface MigrateVenueNotesResult {
   historyStamped: number;
 }
 
-async function pickArtist(fs: Firestore, slug?: string): Promise<string> {
+export async function pickArtist(fs: Firestore, slug?: string): Promise<string> {
   const artists = (await fs.collection("artists").get()).docs.filter((d) => !d.data().deletedAt);
   if (slug) {
     const a = artists.find((d) => d.data().slug === slug);
