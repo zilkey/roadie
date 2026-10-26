@@ -129,3 +129,19 @@ test("a rehearsal goes on the band calendar only from its button, after a previe
   await expect(line).toContainText("Not on the band calendar");
   await close();
 });
+
+/** The seed has Oct 18 (Jeff's basement) and Oct 29 (The Loft); the clock is pinned between them. */
+test("rehearsals page splits into Upcoming and Past tables", async ({ browser }) => {
+  const { page, close } = await as(browser, "jeff");
+  await page.clock.setFixedTime(new Date("2026-10-26T12:00:00-06:00"));
+  await page.goto(A("/rehearsals"));
+  const upcoming = page.getByTestId("rehearsals-upcoming");
+  const past = page.getByTestId("rehearsals-past");
+  await expect(upcoming.getByRole("heading", { name: "Upcoming" })).toBeVisible();
+  await expect(past.getByRole("heading", { name: "Past" })).toBeVisible();
+  await expect(upcoming.getByText("The Loft")).toBeVisible();
+  await expect(upcoming.getByText("Jeff's basement")).toHaveCount(0);
+  await expect(past.getByText("Jeff's basement")).toBeVisible();
+  await expect(past.getByText("The Loft")).toHaveCount(0);
+  await close();
+});
