@@ -21,7 +21,10 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
 }) {
   const { call, error, busy } = useCommand();
   // No band folder chosen yet: nothing can be "in" it, so its chips and Copy to band folder are off (Settings > Google sets it).
-  const hasFolder = !!useMaybeArtist()?.doc?.driveFolderId;
+  const artistDoc = useMaybeArtist()?.doc;
+  const hasFolder = !!artistDoc?.driveFolderId;
+  // Copy to band folder copies into the Charts folder; without one it says where to choose it instead.
+  const hasCharts = !!artistDoc?.chartsFolderId;
   const [q, setQ] = useState(syncWith ?? "");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [mates, setMates] = useState<Mate[]>([]);
@@ -111,12 +114,12 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
           <b>{gappy.length} picked file{gappy.length === 1 ? "" : "s"} the band can&apos;t fully open</b>
           <span className="s">Fix it now, or attach and fix later.</span>
           <div className="flex flex-wrap gap-2">
-            {(outside.length > 0 || !hasFolder) && (
-              <button type="button" className="btn ghost sm" disabled={busy || !hasFolder} title={hasFolder ? undefined : NO_FOLDER}
-                onClick={() => fix("copy", outside)} data-testid="picker-copy">Copy to band folder</button>
+            {outside.length > 0 && hasCharts && (
+              <button type="button" className="btn ghost sm" disabled={busy} onClick={() => fix("copy", outside)} data-testid="picker-copy">Copy to band folder</button>
             )}
             {unshared.length > 0 && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => fix("share", unshared)} data-testid="picker-share">Share with band</button>}
           </div>
+          {outside.length > 0 && !hasCharts && <NoChartsFolder />}
           {!hasFolder && <NoBandFolder />}
         </div>
       )}
@@ -125,9 +128,12 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
   );
 }
 
-const NO_FOLDER = "Choose the band folder on Settings > Google first";
-
-/** Why Copy to band folder is off, with the way to turn it on. */
+/** No band folder: nothing is checked against it yet. */
 export function NoBandFolder() {
-  return <span className="s" data-testid="no-band-folder">No band folder chosen yet. <Link href="/admin/google">Choose it in Settings › Google</Link> to copy files into it.</span>;
+  return <span className="s" data-testid="no-band-folder">No band folder chosen yet. <Link href="/admin/google">Choose it in Settings › Google</Link> so song files are checked against it.</span>;
+}
+
+/** In place of Copy to band folder when there's no Charts folder: copies go there, so say where to choose it. */
+export function NoChartsFolder() {
+  return <span className="s" data-testid="no-charts-folder">You need to tell me where the lyrics and charts should go. <Link href="/admin/google">Choose the Charts folder in Settings › Google</Link> to copy files there.</span>;
 }

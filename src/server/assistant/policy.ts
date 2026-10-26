@@ -30,7 +30,7 @@ export function refusal(name: string, input: unknown): string | undefined {
   if (name !== "artists.update") return undefined;
   const patch = ((input as { patch?: Record<string, unknown> } | null)?.patch ?? {}) as Record<string, unknown>;
   if ("name" in patch || "slug" in patch) return BAND_SETTINGS;
-  if ("driveFolderId" in patch || "rehearsalFolderId" in patch) return DRIVE_SETTINGS;
+  if ("driveFolderId" in patch || "rehearsalFolderId" in patch || "chartsFolderId" in patch) return DRIVE_SETTINGS;
   return undefined;
 }
 

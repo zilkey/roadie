@@ -5,7 +5,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
-import { bandFolderId, bandmates, inspect, sharingOf, type Bandmate } from "../music";
+import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
@@ -20,7 +20,7 @@ type Attach = z.infer<typeof AttachFile>;
 // ---------- files ----------
 
 async function buildFileDocs(artistId: string | undefined, files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
-  const [mates, folder] = await Promise.all([bandmates(), bandFolderId(artistId)]);
+  const [mates, { all: folder }] = await Promise.all([bandmates(), bandFolders(artistId)]);
   const drive = driveClient({ artistId });
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
@@ -68,7 +68,7 @@ export const driveSearch = defineCommand({
   input: z.strictObject({ q: z.string().min(1) }),
   async run(ctx, { q }) {
     const drive = driveClient({ artistId: ctx.artistId });
-    const [hits, mates, folder] = await Promise.all([drive.search({ q }), bandmates(), bandFolderId(ctx.artistId)]);
+    const [hits, mates, { all: folder }] = await Promise.all([drive.search({ q }), bandmates(), bandFolders(ctx.artistId)]);
     const out = [];
     for (const f of hits.filter((h) => isAttachable(h.mimeType))) {
       const ins = await inspect(f, mates, folder, drive);
@@ -122,18 +122,20 @@ async function liveFiles(ids?: string[]): Promise<Doc[]> {
 
 type Fix = "check" | "share" | "copy";
 
-/** Apply a Drive-level fix to one file. "copy" moves it into the band folder (as a shared copy), "share" adds the people who can't open it. */
-export const NO_BAND_FOLDER = "Choose the band folder on Settings > Google first";
+/** Apply a Drive-level fix to one file. "copy" puts a shared copy in the Charts folder, "share" adds the people who can't open it. */
+export const NO_CHARTS_FOLDER = "You need to tell me where the lyrics and charts should go: choose the Charts folder on Settings > Google";
+type Folders = Awaited<ReturnType<typeof bandFolders>>;
 
-async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, mates: Bandmate[], folder: string | null) {
+async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, mates: Bandmate[], folders: Folders) {
+  const folder = folders.all;
   const drive = driveClient({ artistId });
   let file = await drive.get(id);
   let ins = await inspect(file, mates, folder, drive);
   let fixed = false;
   if (fix === "copy" && !ins.inBandFolder) {
-    if (!folder) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
-    const copy = await drive.copy(file.id, { parentId: folder, name: file.name });
-    // The band folder is shared with the band; share the copy too so it holds without relying on inheritance.
+    if (!folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
+    const copy = await drive.copy(file.id, { parentId: folders.charts, name: file.name });
+    // Share the copy with the band so it holds without relying on the folder's sharing.
     file = await drive.share(copy.id, mates.map((m) => m.email));
     ins = await inspect(file, mates, folder, drive);
     fixed = true;
@@ -147,14 +149,15 @@ async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, ma
 
 /** Re-reads Drive for each file (after an optional fix) and writes sharing, inBandFolder and checkedAt. */
 async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
-  const [mates, folder] = await Promise.all([bandmates(), bandFolderId(ctx.artistId)]);
-  if (fix === "copy" && !folder) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
+  const [mates, folders] = await Promise.all([bandmates(), bandFolders(ctx.artistId)]);
+  if (fix === "copy" && !folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
+  const folder = folders.band;
   const updates: { id: string; patch: Record<string, unknown> }[] = [];
   const errors: { id: string; title: string; message: string }[] = [];
   let fixed = 0;
   for (const f of files) {
     try {
-      const r = await fixInDrive(ctx.artistId, f.driveFileId, fix, mates, folder);
+      const r = await fixInDrive(ctx.artistId, f.driveFileId, fix, mates, folders);
       if (r.fixed) fixed++;
       updates.push({ id: f.id, patch: {
         ...(r.moved ? { driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail } : {}),
@@ -174,14 +177,14 @@ async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
 export const driveFix = defineCommand({
   name: "drive.fix",
   roles: ["admin", "mcp"],
-  description: "Before attaching: copy Drive files into the band folder or share them with the band. Returns each file's new id and state.",
+  description: "Before attaching: copy Drive files into the band's Charts folder (lyrics, chord sheets...) or share them with the band. Returns each file's new id and state. Copy is refused until an admin chooses the Charts folder on Settings > Google.",
   input: z.strictObject({ driveFileIds: z.array(z.string().min(1)).min(1), fix: z.enum(["copy", "share"]) }),
   async run(ctx, { driveFileIds, fix }) {
-    const [mates, folder] = await Promise.all([bandmates(), bandFolderId(ctx.artistId)]);
-    if (fix === "copy" && !folder) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
+    const [mates, folders] = await Promise.all([bandmates(), bandFolders(ctx.artistId)]);
+    if (fix === "copy" && !folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
     const out = [];
     for (const id of driveFileIds) {
-      const r = await fixInDrive(ctx.artistId, id, fix, mates, folder).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
+      const r = await fixInDrive(ctx.artistId, id, fix, mates, folders).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
       out.push({ oldId: id, driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail, inBandFolder: r.ins.inBandFolder, missing: r.ins.missing });
     }
     return { files: out };
@@ -207,7 +210,7 @@ export const filesShareWithBand = defineCommand({
 export const filesCopyToBand = defineCommand({
   name: "files.copyToBand",
   roles: ["admin", "mcp"],
-  description: "Copy files outside the band folder into it (shared with the band) and point the file at the copy. Refused until an admin chooses the band folder on Settings > Google.",
+  description: "Copy files outside the band folder into the band's Charts folder (lyrics, chord sheets...), shared with the band, and point the file at the copy. Refused until an admin chooses the Charts folder on Settings > Google.",
   input: fileIds,
   async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ids), "copy"); },
 });

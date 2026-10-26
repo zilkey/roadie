@@ -60,3 +60,19 @@ test("Settings > Google shows the band calendar; Change lists your calendars (vi
   await card.getByTestId("calendar-check-access").click();
   await expect(card.getByTestId("calendar-check")).toContainText("can add events to Ingrid Avison Band");
 });
+
+// The seed's Charts folder is the fake Drive's "Charts" (inside the band folder). Copy to band folder copies into it.
+test("Settings > Google shows the Charts folder, for lyrics and chord sheets", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("band-menu").click();
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-google").click();
+  const card = page.getByTestId("google-charts-folder");
+  await expect(card.getByRole("heading")).toHaveText("Charts folder");
+  await expect(card.getByTestId("charts-folder-link")).toContainText("Charts");
+  await expect(card.getByTestId("charts-folder-status")).toContainText("Lyrics, chord sheets and other charts");
+  await card.getByTestId("charts-folder-change").click();
+  await card.getByTestId("charts-folder-q").fill("Charts");
+  await card.getByTestId("charts-folder-search").click();
+  await expect(card.getByTestId("charts-folder-hit-Charts").getByTestId("charts-folder-choose")).toHaveText("Current");
+});

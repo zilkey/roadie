@@ -18,6 +18,8 @@ interface Status {
   bandFolder: FolderStatus;
   /** The chosen rehearsal recordings folder, the same way. */
   rehearsalFolder: FolderStatus;
+  /** The chosen Charts folder (lyrics, chord sheets), the same way. */
+  chartsFolder: FolderStatus;
   /** The caller can use Calendar: the local fake, or their own Google account has Calendar connected. */
   calendarReady: boolean;
   /** The band's shared calendar, as named when it was chosen. */
@@ -138,6 +140,7 @@ function GoogleSettings() {
       )}
       {status && <CalendarCard status={status} onChange={setStatus} />}
       {status && <FolderCard which="band" status={status} onChange={setStatus} />}
+      {status && <FolderCard which="charts" status={status} onChange={setStatus} />}
       {status && <FolderCard which="rehearsal" status={status} onChange={setStatus} />}
     </div>
   );
@@ -224,8 +227,14 @@ const FOLDERS = {
   band: {
     title: "Band folder", command: "google.setBandFolder", tid: "band-folder", card: "google-band-folder",
     saved: "Band folder saved. Run the sharing check on a song to update which files are in it.",
-    is: "Song files are checked against it, and Copy to band folder puts copies here.",
-    unset: "Not chosen yet. Copy to band folder stays off until you choose the band's shared folder.",
+    is: "Song files are checked against it: anything outside it (and outside the Charts folder) shows as outside the band folder.",
+    unset: "Not chosen yet. Until you choose the band's shared folder, song files aren't checked against it.",
+  },
+  charts: {
+    title: "Charts folder", command: "google.setChartsFolder", tid: "charts-folder", card: "google-charts-folder",
+    saved: "Charts folder saved. Copy to band folder puts copies here now.",
+    is: "Lyrics, chord sheets and other charts. Copy to band folder on a song puts its copies here, shared with the band.",
+    unset: "Not chosen yet. This is where lyrics, chord sheets and other charts go; Copy to band folder stays off until you choose it.",
   },
   rehearsal: {
     title: "Rehearsal recordings folder", command: "google.setRehearsalFolder", tid: "rehearsal-folder", card: "google-rehearsal-folder",
@@ -236,8 +245,8 @@ const FOLDERS = {
 } as const;
 
 /**
- * A Drive folder setting: the band folder (song files are checked against it and copied into it) or the rehearsal
- * recordings folder (uploads from a rehearsal go into it). Chosen by searching the band account's Drive for folders by
+ * A Drive folder setting: the band folder (song files are checked against it), the Charts folder (lyrics and chord
+ * sheets; Copy to band folder copies into it) or the rehearsal recordings folder (uploads from a rehearsal go into it). Chosen by searching the band account's Drive for folders by
  * name, or by pasting a folder link. Until it's set, what depends on it is off everywhere.
  */
 function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; status: Status; onChange(s: Status): void }) {
@@ -247,7 +256,7 @@ function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; 
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Folder[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const f = which === "band" ? status.bandFolder : status.rehearsalFolder;
+  const f = which === "band" ? status.bandFolder : which === "charts" ? status.chartsFolder : status.rehearsalFolder;
   const isLink = /drive\.google\.com|\/folders\//.test(q);
 
   async function choose(folder: string) {

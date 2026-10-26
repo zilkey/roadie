@@ -83,7 +83,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "The Songs page lists every song in four tabs with counts: Playing, Learning, Ideas and Retired. Use \"Search songs…\" to filter by title or writer. Columns: Title, Key, Time and Lyrics. A ♪ means the song has a recording. Admins get \"Add a song\", which searches Drive for audio, video and docs as you type the title.",
       "A song's page shows its status, key, BPM and length, plus Details (written by, last rehearsed, notes and any custom fields). Admins press \"Edit\" to change them; it saves as they type, and \"Done\" closes it. \"More\" has \"Archive song\".",
-      "\"Charts & recordings\" lists the song's files and links, grouped as Charts, Demos, Recordings, Rehearsal takes, Lyrics, Stems and Other. Audio and video have a Play button. Admins use \"+ Add from Drive\", and \"Run sharing check\" to flag files the band can't open or that sit outside the band folder.",
+      "\"Charts & recordings\" lists the song's files and links, grouped as Charts, Demos, Recordings, Rehearsal takes, Lyrics, Stems and Other. Audio and video have a Play button. Admins use \"+ Add from Drive\", and \"Run sharing check\" to flag files the band can't open or that sit outside the band folder. \"Copy to band folder\" puts a shared copy in the Charts folder (lyrics, chord sheets), chosen on Settings › Google.",
     ].join("\n\n"),
     related: ["setlists", "customFields", "rehearsals"],
   },

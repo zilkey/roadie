@@ -41,7 +41,7 @@ beforeEach(async () => {
   }
   ids.sam = (await db.create(ctx, "musicians", { name: "sam", instruments: [], active: true })).id; // no email: not a "member" for sharing
   ids.gone = (await db.create(ctx, "musicians", { name: "gone", instruments: [], active: false, email: "gone@example.com" })).id;
-  await db.create(ctx, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", links: {}, configurations: [] });
+  await db.create(ctx, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", chartsFolderId: "fake-folder-charts", links: {}, configurations: [] });
 });
 
 test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => {
@@ -169,7 +169,7 @@ test("sharing check, share with band, copy to band folder (against fake-drive)",
   assert.equal(l2.sharing, "ok");
   assert.equal(l2.inBandFolder, false); // sharing alone doesn't move it
 
-  // Copy to band folder: the doc now points at the copy
+  // Copy to band folder: the copy goes in the Charts folder, and the doc now points at it
   const c = await cmd("files.copyToBand", { ids: [lyrics.id] });
   assert.equal(c.fixed, 1);
   const l3 = (await db.get("files", lyrics.id))!;
@@ -177,7 +177,7 @@ test("sharing check, share with band, copy to band folder (against fake-drive)",
   assert.equal(l3.inBandFolder, true);
   assert.equal(l3.sharing, "ok");
   const copy = await driveClient().get(l3.driveFileId);
-  assert.deepEqual(copy.parents, ["fake-band-folder"]);
+  assert.deepEqual(copy.parents, ["fake-folder-charts"]);
   assert.equal(l3.url, copy.webViewLink);
   // second copy is a no-op
   assert.equal((await cmd("files.copyToBand", { ids: [lyrics.id] })).fixed, 0);
@@ -379,16 +379,16 @@ test("a musician added after seeding: gap never blocks attach, share adds their 
   assert.deepEqual(((await cmd("drive.search", { q: "Cottonwood" })).files as any[]).find((f) => f.name === "Cottonwood demo.m4a").missing, []);
 });
 
-test("band folder: chosen on Settings > Google by search or link; until then nothing is in it and copying is refused", async () => {
+test("band folder: chosen on Settings > Google by search or link; until then nothing is in it", async () => {
   const artistId = (await db.list("artists"))[0].id;
   const a: Ctx = { ...ctx, artistId };
-  await db.update(ctx, "artists", artistId, { driveFolderId: "" });
+  await db.update(ctx, "artists", artistId, { driveFolderId: "", chartsFolderId: null });
   const song = await cmd("songs.create", { title: "Glass Coast", status: "active" });
   await cmd("files.attach", { songId: song.id, files: [{ driveFileId: "fake-drive-demo-1" }] });
   const f = (await db.list("files"))[0];
   assert.equal(f.inBandFolder, false, "no folder: nothing is in it");
-  await assert.rejects(cmd("files.copyToBand", { ids: [f.id] }), { code: "no_band_folder" });
-  await assert.rejects(cmd("drive.fix", { driveFileIds: ["fake-drive-demo-1"], fix: "copy" }), { code: "no_band_folder" });
+  await assert.rejects(cmd("files.copyToBand", { ids: [f.id] }), { code: "no_charts_folder" });
+  await assert.rejects(cmd("drive.fix", { driveFileIds: ["fake-drive-demo-1"], fix: "copy" }), /tell me where the lyrics and charts should go/);
   const chk = await cmd("files.check", {});
   assert.deepEqual([chk.outsideBandFolder, chk.bandFolder], [null, false]);
   assert.equal((await cmd("songs.missingFiles", {}, a)).sharingProblems.some((p: { outsideBandFolder: boolean }) => p.outsideBandFolder), false);
@@ -406,4 +406,27 @@ test("band folder: chosen on Settings > Google by search or link; until then not
   assert.equal((await db.get("artists", artistId))?.driveFolderId, "fake-band-folder");
   assert.equal((await cmd("files.check", {})).outsideBandFolder, 0, "the demo is in the band folder now");
   assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { driveFolderId: "x" } }), "only google.setBandFolder sets it");
+});
+
+test("Charts folder: chosen on Settings > Google; Copy to band folder copies into it, and is refused until it's chosen", async () => {
+  const artistId = (await db.list("artists"))[0].id;
+  const a: Ctx = { ...ctx, artistId };
+  await db.update(ctx, "artists", artistId, { chartsFolderId: null });
+  const song = await cmd("songs.create", { title: "Stray", status: "active" });
+  await cmd("files.attach", { songId: song.id, files: [{ driveFileId: "fake-lyrics-5" }] });
+  const f = (await db.list("files")).find((x) => x.songId === song.id)!;
+  assert.equal(f.inBandFolder, false);
+  await assert.rejects(cmd("files.copyToBand", { ids: [f.id] }), { code: "no_charts_folder" });
+  assert.equal((await cmd("google.status", {}, a)).chartsFolder, null);
+
+  await assert.rejects(cmd("google.setChartsFolder", { folder: "fake-lyrics-5" }, a), /is a file, not a folder/);
+  const st = await cmd("google.setChartsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-charts" }, a);
+  assert.equal(st.chartsFolder.name, "Charts");
+  assert.equal((await db.get("artists", artistId))?.chartsFolderId, "fake-folder-charts");
+  await cmd("files.copyToBand", { ids: [f.id] });
+  const copied = (await db.get("files", f.id))!;
+  assert.deepEqual((await driveClient().get(copied.driveFileId)).parents, ["fake-folder-charts"]);
+  assert.equal(copied.inBandFolder, true);
+  assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { chartsFolderId: "x" } }), "only google.setChartsFolder sets it");
+  assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { calendar: { id: "x", name: "x" } } }), "only google.setCalendar sets the band calendar");
 });

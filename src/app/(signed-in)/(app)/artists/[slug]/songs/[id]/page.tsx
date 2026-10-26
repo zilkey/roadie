@@ -11,7 +11,7 @@ import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
 import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
-import { DrivePicker, NoBandFolder, type Pick } from "@/components/music/DrivePicker";
+import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -48,7 +48,10 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   const label = file.kind === "chart" && file.key ? `Chart in ${file.key}` : file.title;
   const fixIds = { ids: [file.id] };
   // No band folder chosen: being outside it means nothing yet, and Copy to band folder can't run.
-  const hasFolder = !!useArtist().doc?.driveFolderId;
+  const artistDoc = useArtist().doc;
+  const hasFolder = !!artistDoc?.driveFolderId;
+  // Copy to band folder copies into the Charts folder; until it's chosen the row says so instead of offering the button.
+  const hasCharts = !!artistDoc?.chartsFolderId;
   const outside = checked && hasFolder && !file.inBandFolder;
   return (
     <div className="sg-row" data-testid={`file-${file.id}`}>
@@ -72,10 +75,9 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
       {open && inline && <Player file={file} />}
       {admin && checked && (names.length > 0 || outside || !hasFolder) && (
         <div className="flex flex-wrap items-center gap-2" data-testid="file-gap">
-          {(outside || !hasFolder) && (
-            <button className="btn ghost sm" disabled={busy || !hasFolder} title={hasFolder ? undefined : "Choose the band folder on Settings > Google first"}
-              onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>
-          )}
+          {(outside || !hasFolder) && (hasCharts
+            ? <button className="btn ghost sm" disabled={busy} onClick={() => call("files.copyToBand", fixIds)} data-testid="fix-copy">Copy to band folder</button>
+            : <NoChartsFolder />)}
           {names.length > 0 && <button className="btn ghost sm" disabled={busy} onClick={() => call("files.shareWithBand", fixIds)} data-testid="fix-share">Share with band</button>}
         </div>
       )}

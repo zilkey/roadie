@@ -128,6 +128,8 @@ export const Artist = entity({
   driveFolderId: z.string(),
   /** Where recordings uploaded from a rehearsal go, one "{date} Rehearsal" folder per rehearsal inside it. Set only by google.setRehearsalFolder. */
   rehearsalFolderId: z.string().optional(),
+  /** Where lyrics, chord sheets and other charts go: Copy to band folder puts its copies here. Set only by google.setChartsFolder. */
+  chartsFolderId: z.string().optional(),
   /**
    * The band's shared Google Calendar: show and rehearsal events go here when an admin sends them (src/server/calendarSync.ts),
    * written with that admin's own Google grant. Its name as it was when chosen. Set only by google.setCalendar.

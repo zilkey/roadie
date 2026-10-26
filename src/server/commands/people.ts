@@ -298,7 +298,7 @@ const withConfigIds = <T extends { configurations?: z.infer<typeof ConfigIn>[] |
   return { ...x, configurations };
 };
 // songFields and showFields have their own commands: a plain patch could drop a field and leave its values behind on songs.
-const ArtistIn = ArtistInput.omit({ songFields: true, showFields: true, google: true, driveFolderId: true, rehearsalFolderId: true }).extend({ configurations: z.array(ConfigIn) });
+const ArtistIn = ArtistInput.omit({ songFields: true, showFields: true, google: true, driveFolderId: true, rehearsalFolderId: true, chartsFolderId: true, calendar: true }).extend({ configurations: z.array(ConfigIn) });
 
 /** Slugs are unique across artists (they are the URL: /artists/{slug}). Checked inside the write. */
 async function requireFreeSlug(w: Writer, value: string, self?: string) {
