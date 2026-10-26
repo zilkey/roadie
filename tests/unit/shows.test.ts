@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
-import { planHome, addDays, fmtTime, showFilter, showName, publicShowName, showCity } from "@/lib/shows";
+import { planHome, addDays, fmtTime, showFilter, showTabFor, showName, publicShowName, showCity } from "@/lib/shows";
 import { firestore } from "@/server/admin";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
@@ -559,6 +559,22 @@ test("showFilter: every show is upcoming, played, canceled or dropped", () => {
   assert.equal(f("hold", "2026-10-22"), "dropped");
   assert.equal(f("dropped", "2026-11-01"), "dropped");
   assert.equal(f("dropped", "2026-10-01"), "dropped");
+});
+
+test("showTabFor: a member sees only the past shows they played, and no canceled or dropped", () => {
+  const today = "2026-10-23";
+  const show = (status: "hold" | "confirmed" | "played" | "canceled" | "dropped", date: string, personnel: string[]) => ({ id: "x", status, date, personnel });
+  const david = { musicianId: "m-david" };
+  assert.equal(showTabFor(show("played", "2026-10-01", ["m-david"]), today, david), "played");
+  assert.equal(showTabFor(show("confirmed", "2026-10-01", ["m-david"]), today, david), "played");
+  assert.equal(showTabFor(show("played", "2026-10-01", ["m-eric"]), today, david), null);
+  assert.equal(showTabFor(show("played", "2026-10-01", ["m-eric"]), today, {}), null, "no musician: no past shows");
+  assert.equal(showTabFor(show("confirmed", "2026-11-01", ["m-eric"]), today, david), "upcoming", "upcoming shows are all listed");
+  assert.equal(showTabFor(show("canceled", "2026-11-01", ["m-david"]), today, david), null);
+  assert.equal(showTabFor(show("dropped", "2026-11-01", ["m-david"]), today, david), null);
+  assert.equal(showTabFor(show("hold", "2026-10-01", ["m-david"]), today, david), null);
+  assert.equal(showTabFor(show("played", "2026-10-01", ["m-eric"]), today, null), "played", "admins see every show");
+  assert.equal(showTabFor(show("canceled", "2026-11-01", []), today, null), "canceled");
 });
 
 test("cancel and drop: status and reason in one write (blank = no reason); update clears it; listings come off", async () => {

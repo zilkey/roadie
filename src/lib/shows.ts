@@ -139,6 +139,15 @@ export function showFilter(s: ShowLike, today: string): ShowFilter {
   if (isPlayed(s, today)) return "played";
   return s.status === "hold" && s.date < today ? "dropped" : "upcoming";
 }
+/** The tabs a member sees: no Canceled or Dropped. */
+export const MEMBER_SHOW_FILTERS: readonly ShowFilter[] = ["upcoming", "played"];
+/** The Shows tab a show is listed under for this viewer, or null when it isn't listed. A member's played shows are only the ones they played. */
+export function showTabFor(s: ShowLike & { personnel: string[] }, today: string, member: { musicianId?: string } | null): ShowFilter | null {
+  const f = showFilter(s, today);
+  if (!member) return f;
+  if (!MEMBER_SHOW_FILTERS.includes(f)) return null;
+  return f === "played" && !s.personnel.includes(member.musicianId ?? "") ? null : f;
+}
 
 export interface HomePlan<S extends ShowLike, A> {
   today: S[];

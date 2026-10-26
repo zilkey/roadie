@@ -234,6 +234,11 @@ test("Shows list: title row with New show and no subtitle; one table per tab; th
   const david = await as(browser, "david");
   await david.page.goto(A("/shows#played"));
   await expect(heads(david.page, "played")).toHaveText(["Date", "Venue", "Duration"]);
+  await expect(david.page.getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" })).toHaveCount(1); // he played it (trio)
+  await expect(david.page.getByTestId("shows-filter-canceled")).toHaveCount(0);
+  await expect(david.page.getByTestId("shows-filter-dropped")).toHaveCount(0);
+  await david.page.goto(A("/shows#canceled"));
+  await expect(david.page.getByTestId("shows-filter-upcoming")).toHaveAttribute("aria-selected", "true");
   await expect(david.page.getByTestId("new-show-btn")).toHaveCount(0);
   await expect(david.page.locator(".page-meta")).toHaveCount(0);
   await david.close();

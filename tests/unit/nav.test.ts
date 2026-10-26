@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { navFor } from "@/lib/nav";
-import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, SECTION_IDS, normalizeOrder } from "@/schema/sections";
+import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, defaultHidden, SECTION_IDS, normalizeOrder } from "@/schema/sections";
 
 const keys = (items: { key: string }[]) => items.map((n) => n.key);
 const label = (items: { key: string; label: string }[], key: string) => items.find((n) => n.key === key)?.label;
@@ -35,4 +35,9 @@ test("a custom order is respected; sections it leaves out are appended", () => {
 
 test("templates, setlists, rehearsals and stage plots start hidden", () => {
   assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "setlists", "rehearsals", "stagePlots"]);
+  assert.deepEqual(defaultHidden("admin"), [...DEFAULT_HIDDEN]);
+});
+
+test("a member starts with Rehearsals in the nav and My money in More", () => {
+  assert.deepEqual(defaultHidden("member"), ["templates", "setlists", "stagePlots", "money"]);
 });
