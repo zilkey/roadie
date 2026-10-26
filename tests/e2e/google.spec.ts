@@ -76,3 +76,19 @@ test("Settings > Google shows the Charts folder, for lyrics and chord sheets", a
   await card.getByTestId("charts-folder-search").click();
   await expect(card.getByTestId("charts-folder-hit-Charts").getByTestId("charts-folder-choose")).toHaveText("Current");
 });
+
+// The seed's Demos folder is the fake Drive's "Demos" (inside the band folder). Audio uploaded to a song goes there.
+test("Settings > Google shows the Demos folder, for audio uploaded to songs", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("band-menu").click();
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-google").click();
+  const card = page.getByTestId("google-demos-folder");
+  await expect(card.getByRole("heading")).toHaveText("Demos folder");
+  await expect(card.getByTestId("demos-folder-link")).toContainText("Demos");
+  await expect(card.getByTestId("demos-folder-status")).toContainText("audio uploaded to a song");
+  await card.getByTestId("demos-folder-change").click();
+  await card.getByTestId("demos-folder-q").fill("Demos");
+  await card.getByTestId("demos-folder-search").click();
+  await expect(card.getByTestId("demos-folder-hit-Demos").getByTestId("demos-folder-choose")).toHaveText("Current");
+});

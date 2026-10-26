@@ -56,6 +56,7 @@ async function main() {
     driveFolderId: "fake-band-folder",
     rehearsalFolderId: "fake-folder-rehearsals",
     chartsFolderId: "fake-folder-charts",
+    demosFolderId: "fake-folder-demos",
     calendar: { id: "fake-band-calendar", name: "Ingrid Avison Band" },
     features: { fans: true },
   });

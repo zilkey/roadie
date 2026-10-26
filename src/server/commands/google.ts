@@ -38,7 +38,7 @@ async function driveReady(artistId: string): Promise<boolean> {
 }
 
 /** A chosen folder (band or rehearsal recordings) as Drive sees it now (its name can change there), or why Drive can't show it. */
-async function folderStatus(artistId: string, field: "driveFolderId" | "rehearsalFolderId" | "chartsFolderId") {
+async function folderStatus(artistId: string, field: "driveFolderId" | "rehearsalFolderId" | "chartsFolderId" | "demosFolderId") {
   const id = (await db.get("artists", artistId))?.[field] as string | undefined;
   if (!id) return null;
   try {
@@ -67,18 +67,18 @@ async function accessTo(uid: string, calendarId: string): Promise<CalInfo | null
 
 async function status(ctx: Ctx) {
   const artistId = artistOf(ctx);
-  const [ready, folder, rehearsalFolder, chartsFolder, calReady, calendar] = await Promise.all([
-    driveReady(artistId), folderStatus(artistId, "driveFolderId"), folderStatus(artistId, "rehearsalFolderId"), folderStatus(artistId, "chartsFolderId"),
+  const [ready, folder, rehearsalFolder, chartsFolder, demosFolder, calReady, calendar] = await Promise.all([
+    driveReady(artistId), folderStatus(artistId, "driveFolderId"), folderStatus(artistId, "rehearsalFolderId"), folderStatus(artistId, "chartsFolderId"), folderStatus(artistId, "demosFolderId"),
     calendarReady(ctx.uid), bandCalendarOf(artistId),
   ]);
   const cal = { calendarReady: calReady, calendar };
-  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, ...cal };
+  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, ...cal };
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
   const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
   const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
   return {
-    configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, ...cal,
+    configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, ...cal,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
     band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
   };
@@ -259,4 +259,16 @@ export const googleSetChartsFolder = defineCommand({
   },
 });
 
-export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetChartsFolder, googleSetRehearsalFolder];
+export const googleSetDemosFolder = defineCommand({
+  name: "google.setDemosFolder", roles: ["admin"],
+  description: "Choose the Demos folder: where audio uploaded to a song goes. Takes a folder id or a Drive folder link.",
+  input: z.strictObject({ folder: z.string().trim().min(1) }),
+  async run(ctx, { folder }) {
+    const artistId = artistOf(ctx);
+    const f = await chosenFolder(artistId, folder);
+    await db.update(ctx, "artists", artistId, { demosFolderId: f.id });
+    return status(ctx);
+  },
+});
+
+export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetChartsFolder, googleSetDemosFolder, googleSetRehearsalFolder];

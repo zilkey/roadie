@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
-import { folderForRehearsal, rehearsalFolderId } from "@/server/music";
+import { demosFolderId, folderForRehearsal, rehearsalFolderId } from "@/server/music";
 import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, setlistSlack, setlistTotal } from "@/lib/music";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
@@ -429,4 +429,16 @@ test("Charts folder: chosen on Settings > Google; Copy to band folder copies int
   assert.equal(copied.inBandFolder, true);
   assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { chartsFolderId: "x" } }), "only google.setChartsFolder sets it");
   assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { calendar: { id: "x", name: "x" } } }), "only google.setCalendar sets the band calendar");
+});
+
+test("Demos folder: chosen on Settings > Google, for audio uploaded to songs", async () => {
+  const artistId = (await db.list("artists"))[0].id;
+  const a: Ctx = { ...ctx, artistId };
+  assert.equal((await cmd("google.status", {}, a)).demosFolder, null);
+  assert.equal(await demosFolderId(artistId), null);
+  await assert.rejects(cmd("google.setDemosFolder", { folder: "fake-lyrics-5" }, a), /is a file, not a folder/);
+  const st = await cmd("google.setDemosFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-demos" }, a);
+  assert.equal(st.demosFolder.name, "Demos");
+  assert.equal(await demosFolderId(artistId), "fake-folder-demos");
+  assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { demosFolderId: "x" } }), "only google.setDemosFolder sets it");
 });
