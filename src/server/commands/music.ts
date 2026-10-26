@@ -84,15 +84,15 @@ export const driveSearch = defineCommand({
 export const filesAttach = defineCommand({
   name: "files.attach",
   roles: ["admin", "mcp"],
-  description: "Attach Drive files (driveFileId) or links (url: Spotify, YouTube, any web page) to a song or a rehearsal as files docs. For Drive files kind, key, owner, inBandFolder and sharing are filled in from Drive; links get none of those.",
+  description: "Attach Drive files (driveFileId) or links (url: Spotify, YouTube, any web page) to a song, a rehearsal, or both (a song's take at that rehearsal) as files docs. For Drive files kind, key, owner, inBandFolder and sharing are filled in from Drive; links get none of those.",
   input: z.strictObject({ songId: z.string().min(1).optional(), rehearsalId: z.string().min(1).optional(), files: z.array(AttachFile).min(1) })
-    .refine((v) => !!v.songId !== !!v.rehearsalId, "Give exactly one of songId or rehearsalId"),
+    .refine((v) => !!v.songId || !!v.rehearsalId, "Give a songId, a rehearsalId or both"),
   async run(ctx, input) {
-    const parent = input.songId ? { songId: input.songId } : { rehearsalId: input.rehearsalId };
+    const parent = { ...(input.songId ? { songId: input.songId } : {}), ...(input.rehearsalId ? { rehearsalId: input.rehearsalId } : {}) };
     const docs = await buildFileDocs(ctx.artistId, input.files, parent, input.rehearsalId ? "rehearsal" : undefined);
     return run(ctx, async (w) => {
-      const p = input.songId ? await w.get("songs", input.songId) : await w.get("rehearsals", input.rehearsalId!);
-      if (!p || p.deletedAt) throw new AppError("not_found", input.songId ? "Song not found" : "Rehearsal not found", 404);
+      if (input.songId) { const s = await w.get("songs", input.songId); if (!s || s.deletedAt) throw new AppError("not_found", "Song not found", 404); }
+      if (input.rehearsalId) { const r = await w.get("rehearsals", input.rehearsalId); if (!r || r.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404); }
       return writeFiles(w, docs);
     });
   },
@@ -400,7 +400,7 @@ const LocationIn = z.strictObject({ name: z.string().optional(), address: z.stri
 export const rehearsalsCreate = defineCommand({
   name: "rehearsals.create",
   roles: ["admin", "mcp"],
-  description: "Log a rehearsal: date, place, who came, the songs run (with notes). Recordings attach through files.attach with rehearsalId.",
+  description: "Create a rehearsal: date, place, who's coming, the songs (with notes). Recordings attach through files.attach with rehearsalId.",
   input: z.strictObject({ ...RehFields, files: z.array(AttachFile).default([]) }),
   async run(ctx, { songs, files, ...r }) {
     const docs = await buildFileDocs(ctx.artistId, files, {}, "rehearsal");

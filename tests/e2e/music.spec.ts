@@ -142,16 +142,19 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(page).toHaveURL(/\/calendar$/);
 });
 
-test("log a rehearsal, tick the songs run, attach the recording from Drive", async ({ page }) => {
+test("create a rehearsal, add songs from the search, attach the recording from Drive", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/rehearsals/new"));
   await page.getByTestId("reh-date").fill("2026-10-20");
   await page.getByTestId("reh-location-input").fill("2363 Champa");
   await page.getByTestId("reh-location-suggestion").first().click();
   for (const n of ["Jeff", "David"]) await page.getByTestId(`reh-who-${n}`).click();
-  await page.getByTestId("reh-song-Low Light").check();
+  await page.getByTestId("song-search").fill("low li");
+  await page.getByTestId("song-search-option").filter({ hasText: "Low Light" }).click();
   await page.getByTestId("reh-note-Low Light").fill("Ending is loose");
-  await page.getByTestId("reh-song-Sundial").check();
+  await page.getByTestId("song-search").fill("Sundial");
+  await page.getByTestId("song-search").press("Enter");
+  await expect(page.getByTestId("reh-song-Sundial")).toBeVisible();
   await page.getByTestId("drive-q").fill("Rehearsal video");
   await page.getByTestId("drive-search").click();
   await page.getByTestId("hit-Rehearsal video Ruby Hill ending.mp4").getByTestId("hit-check").check();
@@ -162,12 +165,34 @@ test("log a rehearsal, tick the songs run, attach the recording from Drive", asy
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Low Light");
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Ending is loose");
   await expect(page.getByTestId("rehearsal-files")).toContainText("Rehearsal video Ruby Hill ending.mp4");
+  await expect(page.getByTestId("reh-songs-card").getByText("Edit", { exact: true })).toHaveCount(0);
 
-  // "last rehearsed" now reflects it
+  // a song's chevron opens it at this rehearsal: notes autosave and show on the rehearsal, a recording uploads to Drive
+  await page.getByTestId("reh-song-row-Low Light").getByTestId("reh-song-open").click();
+  await expect(page).toHaveURL(/\/rehearsals\/[^/]+\/songs\/[^/]+$/);
+  await expect(page.getByTestId("reh-song-notes")).toHaveValue("Ending is loose");
+  await page.getByTestId("reh-song-notes").fill("Ending is loose\nTry a ritard into the last chorus");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await page.getByTestId("reh-song-upload-input").setInputFiles({ name: "New Recording 4.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
+  await expect(page.getByTestId("reh-song-upload-done")).toContainText("2026-10-20 Rehearsal");
+  await expect(page.getByTestId("reh-song-files")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
+  await page.getByTestId("back").click();
+  await expect(page.getByTestId("rehearsal-songs")).toContainText("Try a ritard");
+  await expect(page.getByTestId("rehearsal-files")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
+
+  // a song can be added on the rehearsal itself, and taken off again
+  await page.getByTestId("reh-song-search").fill("Ruby");
+  await page.getByTestId("song-search-option").filter({ hasText: "Ruby Hill" }).click();
+  await expect(page.getByTestId("reh-song-row-Ruby Hill")).toBeVisible();
+  await page.getByTestId("reh-song-row-Ruby Hill").getByTestId("reh-song-remove").click();
+  await expect(page.getByTestId("reh-song-row-Ruby Hill")).toHaveCount(0);
+
+  // "last rehearsed" now reflects it, and the upload is in the song's files
   await page.goto(A("/songs"));
   await page.getByTestId("songs-filter").fill("low light");
   await page.getByTestId("songs-list").getByText("Low Light").first().click();
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 20");
+  await expect(page.getByTestId("files-rehearsal")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
 });
 
 test("a new song is a draft; an existing song autosaves with Undo", async ({ page }) => {

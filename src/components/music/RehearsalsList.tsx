@@ -7,7 +7,7 @@ import { useMusic } from "./common";
 const TH = "s whitespace-nowrap px-3 py-2.5 text-left text-[11.5px] font-bold uppercase tracking-wider";
 const TD = "px-3 py-3 align-middle";
 
-/** The Rehearsals page body: past rehearsals newest first, as a table. "Log a rehearsal" lives in the page header. */
+/** The Rehearsals page body: rehearsals newest first, as a table. "Create Rehearsal" lives in the page header. */
 export function RehearsalsList() {
   const m = useMusic();
   const router = useArtistRouter();
@@ -20,7 +20,7 @@ export function RehearsalsList() {
     <div className="max-w-full overflow-x-auto rounded-xl border border-line bg-panel" data-testid="rehearsals-list">
       <table className="w-full min-w-[640px] border-collapse text-sm">
         <thead>
-          <tr><th className={TH}>Date</th><th className={TH}>Where</th><th className={TH}>Who was there</th><th className={TH}>Songs</th><th className={TH}><span className="sr-only">Recording</span></th></tr>
+          <tr><th className={TH}>Date</th><th className={TH}>Where</th><th className={TH}>Band members</th><th className={TH}>Songs</th><th className={TH}><span className="sr-only">Recording</span></th></tr>
         </thead>
         <tbody>
           {rows.map((r) => {
@@ -39,7 +39,7 @@ export function RehearsalsList() {
                     </div>
                   )}
                 </td>
-                <td className={`${TD} s whitespace-nowrap`}>{r.songs.length} songs run</td>
+                <td className={`${TD} s whitespace-nowrap`}>{r.songs.length} songs</td>
                 <td className={TD}>{withRecording.has(r.id) && <span className="chip a">Recording</span>}</td>
               </tr>
             );

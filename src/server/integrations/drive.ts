@@ -1,6 +1,6 @@
 /**
  * Google Drive. Two implementations of DriveService: the fake's HTTP client (fakes/fake-drive; dev and tests) and the
- * Drive API v3 (files.list/get/copy, permissions.list/create), chosen by driveClient(). The real one runs as the band's
+ * Drive API v3 (files.list/get/create/copy, uploads, permissions.list/create), chosen by driveClient(). The real one runs as the band's
  * Google account (the admin named on the artist, see src/server/google/band.ts), so search sees that person's Drive.
  */
 import { IntegrationError, jsonClient } from "./http";
@@ -20,6 +20,9 @@ export interface DriveService {
   search(opts: { q?: string; parent?: string; mimeType?: string }): Promise<DriveFile[]>;
   get(id: string): Promise<DriveFile>;
   copy(id: string, opts: { parentId: string; name?: string }): Promise<DriveFile>;
+  createFolder(name: string, parentId: string): Promise<DriveFile>;
+  /** A new file in `parentId` with these bytes. */
+  upload(opts: { name: string; mimeType: string; parentId: string; data: Blob }): Promise<DriveFile>;
   share(id: string, emails: string[], role?: "reader" | "writer"): Promise<DriveFile>;
   permissions(id: string): Promise<DrivePermission[]>;
 }
@@ -34,6 +37,10 @@ export function driveClient(opts: string | { artistId?: string } = {}): DriveSer
   return fakeDriveClient(baseUrl ?? process.env.DRIVE_BASE_URL ?? "http://127.0.0.1:3202");
 }
 
+export const FOLDER_MIME = "application/vnd.google-apps.folder";
+/** Who owns what the app makes in the fake Drive (it has no band account). */
+const FAKE_OWNER = "jeff@example.com";
+
 export function fakeDriveClient(baseUrl: string): DriveService {
   const call = jsonClient("drive", baseUrl);
   const f = (id: string) => `/files/${encodeURIComponent(id)}`;
@@ -41,6 +48,9 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     search: (o) => call("GET", "/files", { query: { q: o.q, parent: o.parent, mimeType: o.mimeType } }),
     get: (id) => call("GET", f(id)),
     copy: (id, o) => call("POST", `${f(id)}/copy`, { body: o }),
+    createFolder: (name, parentId) => call("POST", "/files", { body: { name, mimeType: FOLDER_MIME, parents: [parentId], ownerEmail: FAKE_OWNER } }),
+    // The fake keeps no bytes: it records the file, like any other it holds.
+    upload: (o) => call("POST", "/files", { body: { name: o.name, mimeType: o.mimeType, parents: [o.parentId], ownerEmail: FAKE_OWNER } }),
     share: (id, emails, role = "reader") => call("POST", `${f(id)}/share`, { body: { emails, role } }),
     permissions: (id) => call("GET", `${f(id)}/permissions`),
   };
@@ -74,7 +84,7 @@ function toFile(f: GFile): DriveFile {
 
 const RANK = { reader: 1, writer: 2, owner: 3 } as const;
 
-export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapis.com/drive/v3"): DriveService {
+export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapis.com/drive/v3", uploadUrl = "https://www.googleapis.com/upload/drive/v3"): DriveService {
   const call = googleJson("drive", baseUrl, token);
   const f = (id: string) => `/files/${encodeURIComponent(id)}`;
   const get = async (id: string) => toFile(await call<GFile>("GET", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES } }));
@@ -87,6 +97,29 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
     get,
     async copy(id, o) {
       return toFile(await call<GFile>("POST", `${f(id)}/copy`, { query: { fields: FILE_FIELDS, ...ALL_DRIVES }, body: { ...(o.name ? { name: o.name } : {}), parents: [o.parentId] } }));
+    },
+    async createFolder(name, parentId) {
+      return toFile(await call<GFile>("POST", "/files", { query: { fields: FILE_FIELDS, ...ALL_DRIVES }, body: { name, mimeType: FOLDER_MIME, parents: [parentId] } }));
+    },
+    async upload(o) {
+      // Resumable, in one go: open a session with the metadata, then PUT the bytes to the URL it returns. Multipart is for 5 MB or less.
+      const qs = new URLSearchParams({ uploadType: "resumable", fields: FILE_FIELDS, ...ALL_DRIVES });
+      const start = async (force: boolean) => fetch(`${uploadUrl}/files?${qs}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${await token(force)}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": o.mimeType },
+        body: JSON.stringify({ name: o.name, mimeType: o.mimeType, parents: [o.parentId] }),
+      });
+      let res = await start(false);
+      if (res.status === 401) res = await start(true);
+      const session = res.headers.get("location");
+      if (!res.ok || !session) {
+        const err = await res.json().catch(() => undefined);
+        throw new IntegrationError("drive", res.status, err?.error?.message ?? res.statusText);
+      }
+      const put = await fetch(session, { method: "PUT", headers: { "content-type": o.mimeType }, body: o.data });
+      const data = await put.json().catch(() => undefined);
+      if (!put.ok) throw new IntegrationError("drive", put.status, data?.error?.message ?? put.statusText);
+      return toFile(data as GFile);
     },
     async share(id, emails, role = "reader") {
       const cur = await get(id);

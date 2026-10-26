@@ -1,6 +1,7 @@
 /** Drive-facing helpers for the Music commands: who can open a file, is it in the band folder. */
 import { db, type Doc } from "./db";
 import { driveClient, type DriveFile, type DriveService } from "./integrations";
+import { FOLDER_MIME } from "./integrations/drive";
 
 export interface Bandmate { id: string; name: string; email: string }
 export interface Inspection { file: DriveFile; missing: string[]; inBandFolder: boolean }
@@ -18,6 +19,21 @@ export async function bandmates(): Promise<Bandmate[]> {
 export async function bandFolderId(artistId?: string): Promise<string | null> {
   const artist = artistId ? await db.get("artists", artistId) : (await db.list("artists"))[0];
   return (artist?.driveFolderId as string | undefined) || null;
+}
+
+/** The artist's rehearsal recordings folder, chosen on Settings > Google (google.setRehearsalFolder). Null until an admin picks one. */
+export async function rehearsalFolderId(artistId?: string): Promise<string | null> {
+  const artist = artistId ? await db.get("artists", artistId) : (await db.list("artists"))[0];
+  return (artist?.rehearsalFolderId as string | undefined) || null;
+}
+
+/**
+ * One rehearsal's folder inside the recordings folder: the first whose name has the date, however it was typed by hand
+ * ("2026-10-04 Rehearsal", "2026-09-29 - Rehearsal", "2026-10-13"); otherwise a new "{date} Rehearsal".
+ */
+export async function folderForRehearsal(drive: DriveService, parent: string, date: string): Promise<DriveFile> {
+  const hit = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name.includes(date));
+  return hit ?? drive.createFolder(`${date} Rehearsal`, parent);
 }
 
 async function inFolder(drive: DriveService, id: string, folder: string, seen = new Set<string>(), depth = 0): Promise<boolean> {

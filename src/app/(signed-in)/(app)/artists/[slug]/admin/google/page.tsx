@@ -15,8 +15,11 @@ interface Status {
   /** Drive can be used for this band: the local fake, or the band's Google account has Drive connected. */
   driveReady: boolean;
   /** The chosen band folder as Drive shows it now; name null (with error) when Drive can't open it. */
-  bandFolder: { id: string; name: string | null; url: string | null; error?: string } | null;
+  bandFolder: FolderStatus;
+  /** The chosen rehearsal recordings folder, the same way. */
+  rehearsalFolder: FolderStatus;
 }
+type FolderStatus = { id: string; name: string | null; url: string | null; error?: string } | null;
 interface Folder { id: string; name: string; url: string; ownerEmail: string }
 
 /** Order and wording from the setup wireframe ("Connect Google for ..."). */
@@ -129,29 +132,48 @@ function GoogleSettings() {
           </section>
         </>
       )}
-      {status && <BandFolderCard status={status} onChange={setStatus} />}
+      {status && <FolderCard which="band" status={status} onChange={setStatus} />}
+      {status && <FolderCard which="rehearsal" status={status} onChange={setStatus} />}
     </div>
   );
 }
 
+/** What each folder card says and which command saves it. Test ids keep the band folder's "band-folder-*" names. */
+const FOLDERS = {
+  band: {
+    title: "Band folder", command: "google.setBandFolder", tid: "band-folder", card: "google-band-folder",
+    saved: "Band folder saved. Run the sharing check on a song to update which files are in it.",
+    is: "Song files are checked against it, and Copy to band folder puts copies here.",
+    unset: "Not chosen yet. Copy to band folder stays off until you choose the band's shared folder.",
+  },
+  rehearsal: {
+    title: "Rehearsal recordings folder", command: "google.setRehearsalFolder", tid: "rehearsal-folder", card: "google-rehearsal-folder",
+    saved: "Rehearsal recordings folder saved.",
+    is: "Recordings uploaded on a song at a rehearsal go here, in a folder for the rehearsal's date.",
+    unset: "Not chosen yet. Uploading a recording at a rehearsal stays off until you choose where they go.",
+  },
+} as const;
+
 /**
- * The band folder: the shared Drive folder song files are checked against and copied into. Chosen by searching the band
- * account's Drive for folders by name, or by pasting a folder link. Until it's set, "Copy to band folder" is off everywhere.
+ * A Drive folder setting: the band folder (song files are checked against it and copied into it) or the rehearsal
+ * recordings folder (uploads from a rehearsal go into it). Chosen by searching the band account's Drive for folders by
+ * name, or by pasting a folder link. Until it's set, what depends on it is off everywhere.
  */
-function BandFolderCard({ status, onChange }: { status: Status; onChange(s: Status): void }) {
+function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; status: Status; onChange(s: Status): void }) {
+  const c = FOLDERS[which];
   const { call, error, busy, setError } = useCommand();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Folder[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const f = status.bandFolder;
+  const f = which === "band" ? status.bandFolder : status.rehearsalFolder;
   const isLink = /drive\.google\.com|\/folders\//.test(q);
 
   async function choose(folder: string) {
-    const s = await call<Status>("google.setBandFolder", { folder });
+    const s = await call<Status>(c.command, { folder });
     if (!s) return;
     onChange(s); setOpen(false); setQ(""); setFound(null);
-    setNote("Band folder saved. Run the sharing check on a song to update which files are in it.");
+    setNote(c.saved);
   }
   async function find(e: React.FormEvent) {
     e.preventDefault();
@@ -162,38 +184,38 @@ function BandFolderCard({ status, onChange }: { status: Status; onChange(s: Stat
   }
 
   return (
-    <section className={`card${open ? " editing" : ""}`} data-testid="google-band-folder" aria-labelledby="google-folder-title">
+    <section className={`card${open ? " editing" : ""}`} data-testid={c.card} aria-labelledby={`google-${c.tid}-title`}>
       <div className="card-head">
-        <h2 id="google-folder-title">Band folder</h2>
+        <h2 id={`google-${c.tid}-title`}>{c.title}</h2>
         {status.driveReady && !open && (
-          <button type="button" className="card-edit" onClick={() => { setOpen(true); setNote(null); setError(null); }} data-testid="band-folder-change">{f ? "Change" : "Choose"}</button>
+          <button type="button" className="card-edit" onClick={() => { setOpen(true); setNote(null); setError(null); }} data-testid={`${c.tid}-change`}>{f ? "Change" : "Choose"}</button>
         )}
       </div>
-      <p className="m-0" data-testid="band-folder-status">
-        {f?.name ? <><a href={f.url ?? undefined} target="_blank" rel="noreferrer" data-testid="band-folder-link"><b>{f.name}</b> ↗</a>. Song files are checked against it, and Copy to band folder puts copies here.</>
+      <p className="m-0" data-testid={`${c.tid}-status`}>
+        {f?.name ? <><a href={f.url ?? undefined} target="_blank" rel="noreferrer" data-testid={`${c.tid}-link`}><b>{f.name}</b> ↗</a>. {c.is}</>
           : f ? <>Drive can&apos;t open the saved folder ({f.error ?? "unknown error"}). Choose it again.</>
-          : <>Not chosen yet. Copy to band folder stays off until you choose the band&apos;s shared folder.</>}
+          : c.unset}
       </p>
-      {!status.driveReady && <p className="s m-0" data-testid="band-folder-needs-drive">Connect Drive on the band&apos;s Google account (above) to choose it.</p>}
-      {note && <p className="s m-0" role="status" data-testid="band-folder-note">{note}</p>}
+      {!status.driveReady && <p className="s m-0" data-testid={`${c.tid}-needs-drive`}>Connect Drive on the band&apos;s Google account (above) to choose it.</p>}
+      {note && <p className="s m-0" role="status" data-testid={`${c.tid}-note`}>{note}</p>}
       {open && (
-        <form className="grid gap-2" onSubmit={find} data-testid="band-folder-form">
-          <label htmlFor="band-folder-q" className="lbl">Folder name, or paste a Drive folder link</label>
+        <form className="grid gap-2" onSubmit={find} data-testid={`${c.tid}-form`}>
+          <label htmlFor={`${c.tid}-q`} className="lbl">Folder name, or paste a Drive folder link</label>
           <div className="flex gap-2">
-            <input id="band-folder-q" className="input" value={q} autoFocus onChange={(e) => { setQ(e.target.value); setFound(null); setError(null); }} data-testid="band-folder-q" />
-            <button className="btn ghost" disabled={busy || !q.trim()} data-testid="band-folder-search">{isLink ? "Use link" : "Search"}</button>
+            <input id={`${c.tid}-q`} className="input" value={q} autoFocus onChange={(e) => { setQ(e.target.value); setFound(null); setError(null); }} data-testid={`${c.tid}-q`} />
+            <button className="btn ghost" disabled={busy || !q.trim()} data-testid={`${c.tid}-search`}>{isLink ? "Use link" : "Search"}</button>
           </div>
-          {found && found.length === 0 && <span className="s" data-testid="band-folder-empty">No folders with that name in the band&apos;s Drive.</span>}
+          {found && found.length === 0 && <span className="s" data-testid={`${c.tid}-empty`}>No folders with that name in the band&apos;s Drive.</span>}
           {(found ?? []).map((x) => (
-            <div key={x.id} className="flex items-center gap-2 rounded-lg border border-line p-2" data-testid={`band-folder-hit-${x.name}`}>
+            <div key={x.id} className="flex items-center gap-2 rounded-lg border border-line p-2" data-testid={`${c.tid}-hit-${x.name}`}>
               <span className="grid min-w-0 flex-1"><b className="truncate text-sm">{x.name}</b><span className="s">{x.ownerEmail}</span></span>
               <a className="btn ghost sm" href={x.url} target="_blank" rel="noreferrer">Open</a>
-              <button type="button" className="btn acc sm" disabled={busy || x.id === f?.id} onClick={() => choose(x.id)} data-testid="band-folder-choose">{x.id === f?.id ? "Current" : "Choose"}</button>
+              <button type="button" className="btn acc sm" disabled={busy || x.id === f?.id} onClick={() => choose(x.id)} data-testid={`${c.tid}-choose`}>{x.id === f?.id ? "Current" : "Choose"}</button>
             </div>
           ))}
           <ErrorBox error={error} />
           <div className="card-foot"><div className="end">
-            <button type="button" className="btn text" onClick={() => { setOpen(false); setQ(""); setFound(null); setError(null); }} data-testid="band-folder-cancel">Cancel</button>
+            <button type="button" className="btn text" onClick={() => { setOpen(false); setQ(""); setFound(null); setError(null); }} data-testid={`${c.tid}-cancel`}>Cancel</button>
           </div></div>
         </form>
       )}

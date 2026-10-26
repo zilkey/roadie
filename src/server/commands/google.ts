@@ -13,6 +13,7 @@ import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, 
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
 import { bandGoogle } from "../google/band";
 import { driveClient, IntegrationError, useRealGoogle } from "../integrations";
+import { FOLDER_MIME } from "../integrations/drive";
 
 const artistOf = (ctx: Ctx) => {
   if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
@@ -20,7 +21,6 @@ const artistOf = (ctx: Ctx) => {
 };
 const usableForBand = (g: Grant | null) => !!g && (g.features.includes("calendar") || g.features.includes("drive"));
 
-const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 /** A folder id from what an admin pastes: a Drive folder link (…/folders/{id}, …?id={id}) or the bare id. */
 export function folderIdFrom(v: string): string | null {
@@ -37,9 +37,9 @@ async function driveReady(artistId: string): Promise<boolean> {
   return !!band && !!(await getGrant(band.uid))?.features.includes("drive");
 }
 
-/** The chosen band folder as Drive sees it now (its name can change there), or why Drive can't show it. */
-async function bandFolder(artistId: string) {
-  const id = (await db.get("artists", artistId))?.driveFolderId as string | undefined;
+/** A chosen folder (band or rehearsal recordings) as Drive sees it now (its name can change there), or why Drive can't show it. */
+async function folderStatus(artistId: string, field: "driveFolderId" | "rehearsalFolderId") {
+  const id = (await db.get("artists", artistId))?.[field] as string | undefined;
   if (!id) return null;
   try {
     const f = await driveClient({ artistId }).get(id);
@@ -51,14 +51,14 @@ async function bandFolder(artistId: string) {
 
 async function status(ctx: Ctx) {
   const artistId = artistOf(ctx);
-  const [ready, folder] = await Promise.all([driveReady(artistId), bandFolder(artistId)]);
-  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder };
+  const [ready, folder, rehearsalFolder] = await Promise.all([driveReady(artistId), folderStatus(artistId, "driveFolderId"), folderStatus(artistId, "rehearsalFolderId")]);
+  if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder };
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
   const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
   const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
   return {
-    configured: true, fakes, driveReady: ready, bandFolder: folder,
+    configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
     band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
   };
@@ -147,24 +147,42 @@ export const googleFindFolders = defineCommand({
   },
 });
 
+/** The folder an admin pasted or picked, as Drive shows it to the band's Google account; refuses files and folders Drive can't find. */
+async function chosenFolder(artistId: string, folder: string) {
+  const id = folderIdFrom(folder);
+  if (!id) throw new AppError("invalid_input", "That isn't a Drive folder link", 400);
+  if (!(await driveReady(artistId))) throw new AppError("drive_not_connected", "Connect Drive on the band's Google account first", 400);
+  let f;
+  try { f = await driveClient({ artistId }).get(id); } catch (e) {
+    if (e instanceof IntegrationError && e.status === 404) throw new AppError("not_found", "Drive can't find that folder from the band's Google account", 404);
+    throw e;
+  }
+  if (f.mimeType !== FOLDER_MIME) throw new AppError("invalid_input", `${f.name} is a file, not a folder`, 400);
+  return f;
+}
+
 export const googleSetBandFolder = defineCommand({
   name: "google.setBandFolder", roles: ["admin"],
   description: "Choose the band folder: the shared Drive folder songs' files are checked against and copied into. Takes a folder id or a Drive folder link; Drive must show it as a folder to the band's Google account.",
   input: z.strictObject({ folder: z.string().trim().min(1) }),
   async run(ctx, { folder }) {
     const artistId = artistOf(ctx);
-    const id = folderIdFrom(folder);
-    if (!id) throw new AppError("invalid_input", "That isn't a Drive folder link", 400);
-    if (!(await driveReady(artistId))) throw new AppError("drive_not_connected", "Connect Drive on the band's Google account first", 400);
-    let f;
-    try { f = await driveClient({ artistId }).get(id); } catch (e) {
-      if (e instanceof IntegrationError && e.status === 404) throw new AppError("not_found", "Drive can't find that folder from the band's Google account", 404);
-      throw e;
-    }
-    if (f.mimeType !== FOLDER_MIME) throw new AppError("invalid_input", `${f.name} is a file, not a folder`, 400);
+    const f = await chosenFolder(artistId, folder);
     await db.update(ctx, "artists", artistId, { driveFolderId: f.id });
     return status(ctx);
   },
 });
 
-export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder];
+export const googleSetRehearsalFolder = defineCommand({
+  name: "google.setRehearsalFolder", roles: ["admin"],
+  description: "Choose the rehearsal recordings folder: recordings uploaded on a song in a rehearsal go into a \"{date} Rehearsal\" folder inside it. Takes a folder id or a Drive folder link.",
+  input: z.strictObject({ folder: z.string().trim().min(1) }),
+  async run(ctx, { folder }) {
+    const artistId = artistOf(ctx);
+    const f = await chosenFolder(artistId, folder);
+    await db.update(ctx, "artists", artistId, { rehearsalFolderId: f.id });
+    return status(ctx);
+  },
+});
+
+export const googleCommands = [googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetRehearsalFolder];

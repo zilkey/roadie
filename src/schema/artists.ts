@@ -126,6 +126,8 @@ export const Artist = entity({
   /** The opt-in wording fans see on the public list page (saved with each signup). Missing = DEFAULT_LIST_WORDING. */
   listWording: z.string().optional(),
   driveFolderId: z.string(),
+  /** Where recordings uploaded from a rehearsal go, one "{date} Rehearsal" folder per rehearsal inside it. Set only by google.setRehearsalFolder. */
+  rehearsalFolderId: z.string().optional(),
   /**
    * The band's Google account: the admin whose Google grant puts shows on Calendar and looks things up in Drive
    * (src/server/google/band.ts). Set only by the google.* commands; null or missing until an admin connects one.

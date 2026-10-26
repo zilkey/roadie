@@ -8,6 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
+import { folderForRehearsal, rehearsalFolderId } from "@/server/music";
 import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, setlistSlack, setlistTotal } from "@/lib/music";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
@@ -107,9 +108,37 @@ test("songs.create attaches picked files with kind, key, owner, inBandFolder and
   assert.equal((await db.list("songs")).filter((s) => s.title === "Nope").length, 0);
 });
 
-test("files.attach needs exactly one of song or rehearsal", async () => {
+test("files.attach needs a song, a rehearsal or both; both is a song's take at that rehearsal", async () => {
   await assert.rejects(cmd("files.attach", { files: [{ driveFileId: "fake-demo-2" }] }));
-  await assert.rejects(cmd("files.attach", { songId: "a", rehearsalId: "b", files: [{ driveFileId: "fake-demo-2" }] }));
+  await assert.rejects(cmd("files.attach", { songId: "a", rehearsalId: "b", files: [{ driveFileId: "fake-demo-2" }] }), { code: "not_found" });
+  const song = await cmd("songs.create", { title: "Weathervane", status: "active" });
+  const reh = await cmd("rehearsals.create", { date: "2026-10-20", songs: [{ songId: song.id }] });
+  await cmd("files.attach", { songId: song.id, rehearsalId: reh.id, files: [{ driveFileId: "fake-demo-2" }] });
+  const [f] = await db.list("files");
+  assert.deepEqual([f.songId, f.rehearsalId, f.kind], [song.id, reh.id, "rehearsal"]);
+  // the same file on the song alone is a different attachment; the same pair again is skipped
+  assert.equal((await cmd("files.attach", { songId: song.id, rehearsalId: reh.id, files: [{ driveFileId: "fake-demo-2" }] })).skipped, 1);
+});
+
+test("rehearsal recordings: a folder already named with the date is reused, otherwise \"{date} Rehearsal\" is made; uploads land in it", async () => {
+  const drive = driveClient();
+  const parent = (await drive.createFolder("Demos", "fake-band-folder")).id;
+  const handMade = await drive.createFolder("2026-09-29 - Rehearsal", parent);
+  await drive.createFolder("2026-10-13", parent);
+  assert.equal((await folderForRehearsal(drive, parent, "2026-09-29")).id, handMade.id);
+  const made = await folderForRehearsal(drive, parent, "2026-10-26");
+  assert.deepEqual([made.name, made.parents], ["2026-10-26 Rehearsal", [parent]]);
+  assert.equal((await folderForRehearsal(drive, parent, "2026-10-26")).id, made.id, "made once, then reused");
+  const up = await drive.upload({ name: "Animal - 2026-10-26 Rehearsal.m4a", mimeType: "audio/mp4", parentId: made.id, data: new Blob(["x"]) });
+  assert.deepEqual([up.name, up.mimeType, up.parents], ["Animal - 2026-10-26 Rehearsal.m4a", "audio/mp4", [made.id]]);
+
+  const artistId = (await db.list("artists"))[0].id;
+  const a: Ctx = { ...ctx, artistId };
+  assert.equal((await cmd("google.status", {}, a)).rehearsalFolder, null);
+  const set = await cmd("google.setRehearsalFolder", { folder: `https://drive.google.com/drive/folders/${parent}` }, a);
+  assert.equal(set.rehearsalFolder.name, "Demos");
+  assert.equal(await rehearsalFolderId(artistId), parent);
+  assert.throws(() => registry["artists.update"].input.parse({ id: artistId, patch: { rehearsalFolderId: "x" } }), "only google.setRehearsalFolder sets it");
 });
 
 test("sharing check, share with band, copy to band folder (against fake-drive)", async () => {

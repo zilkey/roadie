@@ -54,6 +54,7 @@ async function main() {
     ],
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/ingridavison", website: "https://ingridavison.example" },
     driveFolderId: "fake-band-folder",
+    rehearsalFolderId: "fake-folder-rehearsals",
     features: { fans: true },
   });
 

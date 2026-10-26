@@ -145,9 +145,10 @@ export const SHOW_TOPICS: HelpTopic[] = [
     id: "rehearsals",
     title: "Rehearsals",
     text: [
-      "The Rehearsals page lists past rehearsals, newest first: Date, Where, Who was there (initials), Songs (\"N songs run\") and a Recording chip. Click a row to open it. Admins get \"Log a rehearsal\".",
-      "Logging one takes: When, Where, Who was there, \"We ran\" (tick songs, with an optional note each), Notes and a Recording. \"Save rehearsal\" creates it. What you tick is what the song page's \"Last rehearsed\" uses.",
-      "A rehearsal's page autosaves for admins: date and times, a Location card (with \"Open in Maps\"), a Songs card (\"+ Song\" or \"Import from setlist\"), Band members with \"Coming\" boxes, Recordings (\"Attach from Google Drive\") and an Expenses card. \"+ Add an expense\" is where gas to rehearsal gets logged.",
+      "The Rehearsals page lists rehearsals, newest first: Date, Where, Band members (initials), Songs (\"N songs\") and a Recording chip. Click a row to open it. Admins get \"Create Rehearsal\".",
+      "Creating one takes: When, Where, Band members, Songs (search and add, with an optional note each), Notes and a Recording. \"Create Rehearsal\" creates it. The songs on a rehearsal are what the song page's \"Last rehearsed\" uses.",
+      "A rehearsal's page autosaves for admins: date and times, a Location card (with \"Open in Maps\"), a Songs card (an \"Add a song…\" search, or \"Import from setlist\"; × removes one), Band members with \"Coming\" boxes, Recordings (\"Attach from Google Drive\") and an Expenses card. \"+ Add an expense\" is where gas to rehearsal gets logged.",
+      "The › on a song opens that song at this rehearsal: Notes (autosaved; they show under the song on the rehearsal) and Recordings. \"Upload a recording\" puts the file in Drive, in the rehearsal recordings folder chosen on Settings > Google, inside a folder for the rehearsal's date (one already named with the date is reused, otherwise \"{date} Rehearsal\" is made), shares it with the band, and adds it to the song's files too.",
     ].join("\n\n"),
     related: ["songs", "expenses", "setlistTemplates"],
   },

@@ -22,6 +22,7 @@ import ImportSetlistDialog from "./ImportSetlistDialog";
 import { ExpensesCardFor } from "@/components/money/ExpensesCard";
 import { Tabs } from "@/components/booking/common";
 import { DetailCard, DetailPage, KV, useSingleEdit } from "@/components/booking/DetailCards";
+import { SongSearch } from "@/components/music/SongSearch";
 
 export default function RehearsalPage() { return <Suspense><Page /></Suspense>; }
 
@@ -62,12 +63,6 @@ function rehPatch(a: RehForm, b: RehForm): Record<string, unknown> {
   return p;
 }
 
-/** Songs that can be picked for a rehearsal: active ones, plus any already run (so they can be unticked). */
-function pickableSongs(m: Music, ran: Record<string, string>) {
-  return m.songs
-    .filter((s) => (s.status !== "retired" && s.status !== "idea") || ran[s.id] !== undefined)
-    .sort((a, b) => a.title.localeCompare(b.title));
-}
 const titleOf = (m: Music, sid: string) => m.songs.find((s) => s.id === sid)?.title ?? "Song";
 
 // ---------- location ----------
@@ -144,7 +139,6 @@ function NewRehearsal({ m }: { m: Music }) {
   const [picks, setPicks] = useState<Pick[]>([]);
   const mutationId = useRef(newMutationId());
   const v = draft.value;
-  const songs = pickableSongs(m, v.ran);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -158,7 +152,7 @@ function NewRehearsal({ m }: { m: Music }) {
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="rehearsal-page">
-      <PageTitle back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Log a rehearsal" sub="Check off what we ran. That's what powers 'last rehearsed'." />
+      <PageTitle back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Create Rehearsal" sub="When, where, who and which songs. The songs power 'last rehearsed'." />
       {!draft.ready ? <span className="s">Loading…</span> : <div className="cols">
         <div className="col-main">
           <div className="card">
@@ -170,29 +164,29 @@ function NewRehearsal({ m }: { m: Music }) {
                   onPick={(p) => draft.setValue({ ...v, location: placeOf(p) })} />
               </div>
             </div>
-            <span className="lbl">Who was there</span>
+            <span className="lbl">Band members</span>
             <div className="flex flex-wrap gap-1.5">
               {m.musicians.filter((x) => x.active).map((x) => (
                 <PickChip key={x.id} on={v.personnel.includes(x.id)} testid={`reh-who-${x.name}`}
                   onToggle={() => draft.setValue({ ...v, personnel: v.personnel.includes(x.id) ? v.personnel.filter((i) => i !== x.id) : [...v.personnel, x.id] })}>{x.name}</PickChip>
               ))}
             </div>
-            <span className="lbl">We ran</span>
+            <span className="lbl">Songs</span>
             <div className="grid gap-1.5" data-testid="reh-songs">
-              {songs.map((s) => (
-                <div key={s.id} className="flex items-center gap-2">
-                  <label className="flex flex-1 items-center gap-2 text-sm"><input type="checkbox" checked={v.ran[s.id] !== undefined} onChange={() => {
-                    const { [s.id]: on, ...rest } = v.ran;
-                    draft.setValue({ ...v, ran: on !== undefined ? rest : { ...v.ran, [s.id]: "" } });
-                  }} data-testid={`reh-song-${s.title}`} />{s.title}</label>
-                  {v.ran[s.id] !== undefined && <input className="input !w-1/2" placeholder="Note" value={v.ran[s.id]} onChange={(e) => draft.setValue({ ...v, ran: { ...v.ran, [s.id]: e.target.value } })} aria-label={`Note for ${s.title}`} data-testid={`reh-note-${s.title}`} />}
+              <SongSearch songs={m.songs} exclude={Object.keys(v.ran)} onAdd={(sid) => draft.setValue({ ...v, ran: { ...v.ran, [sid]: "" } })} />
+              {Object.keys(v.ran).map((sid) => (
+                <div key={sid} className="flex min-h-[44px] items-center gap-2" data-testid={`reh-song-${titleOf(m, sid)}`}>
+                  <span className="flex-1 text-sm font-semibold">{titleOf(m, sid)}</span>
+                  <input className="input !w-1/2" placeholder="Note" value={v.ran[sid]} onChange={(e) => draft.setValue({ ...v, ran: { ...v.ran, [sid]: e.target.value } })} aria-label={`Note for ${titleOf(m, sid)}`} data-testid={`reh-note-${titleOf(m, sid)}`} />
+                  <button type="button" aria-label={`Remove ${titleOf(m, sid)}`} className="min-h-[44px] min-w-[44px] border-0 bg-transparent text-lg s"
+                    onClick={() => { const { [sid]: _gone, ...rest } = v.ran; draft.setValue({ ...v, ran: rest }); }} data-testid="reh-song-remove">×</button>
                 </div>
               ))}
             </div>
             <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} value={v.notes} onChange={(e) => draft.setValue({ ...v, notes: e.target.value })} data-testid="reh-notes" /></label>
             <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
             <div className="flex items-center gap-2">
-              <button className="btn acc" disabled={busy || !v.date} data-testid="reh-save">Save rehearsal</button>
+              <button className="btn acc" disabled={busy || !v.date} data-testid="reh-save">Create Rehearsal</button>
             </div>
             <ErrorBox error={error} />
           </div>
@@ -209,11 +203,12 @@ function NewRehearsal({ m }: { m: Music }) {
 
 type Tab = "info" | "money";
 const TABS: Tab[] = ["info", "money"];
-type CardKey = "when" | "songs" | "notes";
+type CardKey = "when" | "notes";
 
 /**
  * One column of cards, like the booking detail pages, with Info and Money tabs like a show. Info: When & where, Band members,
- * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; a card's Edit opens it and Done closes it.
+ * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; a card's Edit opens it and Done closes it. Songs has no
+ * Edit: admins add from the search box and remove with ×; each song's chevron opens its notes and recordings for this rehearsal.
  */
 function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: boolean }) {
   const router = useRouter();
@@ -242,9 +237,9 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const activeMusicians = m.musicians.filter((x) => x.active);
   const fullBand = activeMusicians.length > 0 && activeMusicians.every((x) => form.personnel.includes(x.id));
   const toggleMember = (mid: string) => change({ ...form, personnel: form.personnel.includes(mid) ? form.personnel.filter((i) => i !== mid) : [...form.personnel, mid] });
-  const toggleSong = (sid: string) => { const { [sid]: on, ...rest } = form.ran; change({ ...form, ran: on !== undefined ? rest : { ...form.ran, [sid]: "" } }); };
+  const addSong = (sid: string) => { change({ ...form, ran: { ...form.ran, [sid]: "" } }); flush(); };
+  const removeSong = (sid: string) => { const { [sid]: _gone, ...rest } = form.ran; change({ ...form, ran: rest }); flush(); };
   const timeLine = form.startTime && form.endTime ? `${fmtTime(form.startTime)} – ${fmtTime(form.endTime)}` : form.startTime ? fmtTime(form.startTime) : "";
-  const songs = pickableSongs(m, form.ran);
   const ranIds = Object.keys(form.ran);
 
   const loc = existing.location;
@@ -313,30 +308,22 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
         </DetailCard>
 
         <DetailCard private title={<>Songs <span className="d-muted font-medium">· {ranIds.length}</span></>} testid="reh-songs-card"
-          editKey="songs" edit={admin ? edit : undefined} editTestid="reh-add-song" doneTestid="reh-songs-done" onDone={flush}
-          headerExtra={admin && !edit.is("songs") ? <ImportSetlistDialog rehearsalId={existing.id} songCount={existing.songs.length} /> : undefined}
-          editChildren={
-            <div className="grid gap-1.5" data-testid="reh-song-picker">
-              {songs.map((s) => (
-                <div key={s.id} className="flex min-h-[44px] items-center gap-2">
-                  <label className="flex flex-1 items-center gap-2 text-sm">
-                    <input type="checkbox" checked={form.ran[s.id] !== undefined} onChange={() => toggleSong(s.id)} data-testid={`reh-song-${s.title}`} />{s.title}
-                  </label>
-                  {form.ran[s.id] !== undefined && <input className="input !w-1/2" placeholder="Note" value={form.ran[s.id]} onChange={(e) => change({ ...form, ran: { ...form.ran, [s.id]: e.target.value } })} onBlur={flush} aria-label={`Note for ${s.title}`} data-testid={`reh-note-${s.title}`} />}
-                </div>
-              ))}
-              {songs.length === 0 && <span className="s">No songs to add.</span>}
-            </div>
-          }>
-          {ranIds.length === 0 ? <div className="d-muted">No songs yet.{admin ? " Import a setlist or tick what you ran." : ""}</div> : (
+          headerExtra={admin ? <ImportSetlistDialog rehearsalId={existing.id} songCount={existing.songs.length} /> : undefined}>
+          {admin && <SongSearch songs={m.songs} exclude={ranIds} onAdd={addSong} testid="reh-song-search" />}
+          {ranIds.length === 0 ? <div className="d-muted">No songs yet.{admin ? " Import a setlist or add songs above." : ""}</div> : (
             <ol className="m-0 grid list-none p-0" data-testid="rehearsal-songs">
               {ranIds.map((sid, i) => (
-                <li key={sid} className="d-row !flex-nowrap">
-                  <span className="flex min-w-0 flex-1 items-center gap-3">
+                <li key={sid} className="d-row !flex-nowrap" data-testid={`reh-song-row-${titleOf(m, sid)}`}>
+                  <Link href={`/rehearsals/${existing.id}/songs/${sid}`} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3" data-testid="reh-song-open">
                     <span className="w-5 shrink-0 text-sm d-muted">{i + 1}</span>
-                    <Link href={`/songs/${sid}`} className="min-w-0 truncate font-semibold">{titleOf(m, sid)}</Link>
-                  </span>
-                  {form.ran[sid] && <span className="text-sm d-muted">{form.ran[sid]}</span>}
+                    <span className="grid min-w-0 flex-1">
+                      <span className="truncate font-semibold">{titleOf(m, sid)}</span>
+                      {form.ran[sid] && <span className="truncate text-sm d-muted">{form.ran[sid]}</span>}
+                    </span>
+                    <span aria-hidden className="shrink-0 text-xl d-muted">›</span>
+                  </Link>
+                  {admin && <button type="button" aria-label={`Remove ${titleOf(m, sid)}`} className="min-h-[44px] min-w-[44px] shrink-0 border-0 bg-transparent text-lg s" disabled={busy}
+                    onClick={() => removeSong(sid)} data-testid="reh-song-remove">×</button>}
                 </li>
               ))}
             </ol>

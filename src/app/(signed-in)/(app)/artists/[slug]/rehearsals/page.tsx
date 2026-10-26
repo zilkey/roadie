@@ -9,7 +9,7 @@ export default function RehearsalsPage() {
   return (
     <div className="grid gap-5" data-testid="rehearsals-page">
       <PageTitle title="Rehearsals" center
-        actions={admin ? <Link href="/rehearsals/new" className="btn acc" data-testid="log-rehearsal">Log a rehearsal</Link> : undefined} />
+        actions={admin ? <Link href="/rehearsals/new" className="btn acc" data-testid="log-rehearsal">Create Rehearsal</Link> : undefined} />
       <RehearsalsList />
     </div>
   );
