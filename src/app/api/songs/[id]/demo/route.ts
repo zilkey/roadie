@@ -2,17 +2,19 @@ import { authenticate, execute, ARTIST_HEADER } from "@/server/commands/dispatch
 import { db } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { driveClient } from "@/server/integrations";
-import { bandmates, demosFolderId } from "@/server/music";
+import { bandmates, demosFolderId, songwritingFolderId } from "@/server/music";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const NO_DEMOS_FOLDER = "Choose the Demos folder on Settings > Google first";
+const NO_SONGWRITING_FOLDER = "Choose the Songwriting folder on Settings > Google first";
 
 /**
  * Upload a demo of a song: multipart form with `file`, `Authorization: Bearer <ID token>` and `x-artist-id`, like the
  * commands. The file goes into the Demos folder (Settings > Google) under its own name, shared with the band, then is
- * attached to the song as a demo through files.attach (so it is in history and the song's files).
+ * attached to the song as a demo through files.attach (so it is in history and the song's files). A song in the Writing
+ * phase uploads to the Songwriting folder instead.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -23,9 +25,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const file = form.get("file");
     if (!(file instanceof File) || file.size === 0) throw new AppError("invalid_input", "Choose a demo to upload", 400);
 
-    const [song, folderId] = await Promise.all([db.get("songs", id), demosFolderId(ctx.artistId)]);
+    const song = await db.get("songs", id);
     if (!song || song.deletedAt) throw new AppError("not_found", "Song not found", 404);
-    if (!folderId) throw new AppError("no_demos_folder", NO_DEMOS_FOLDER, 400);
+    const writing = song.status === "writing";
+    const folderId = await (writing ? songwritingFolderId : demosFolderId)(ctx.artistId);
+    if (!folderId) throw writing ? new AppError("no_songwriting_folder", NO_SONGWRITING_FOLDER, 400) : new AppError("no_demos_folder", NO_DEMOS_FOLDER, 400);
 
     const drive = driveClient({ artistId: ctx.artistId });
     const folder = await drive.get(folderId);

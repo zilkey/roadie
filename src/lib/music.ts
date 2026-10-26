@@ -31,6 +31,10 @@ export function providerFor(url: string): Provider {
   return "web";
 }
 
+export type SongStatus = "active" | "learning" | "idea" | "retired" | "writing";
+/** A song's status as the app names it (the Songs tabs say "Ideas" for the plural). */
+export const STATUS_LABEL: Record<SongStatus, string> = { active: "Playing", learning: "Learning", idea: "Idea", retired: "Retired", writing: "Writing" };
+
 export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other";
 export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
 export const KIND_LABEL: Record<FileKind, string> = {

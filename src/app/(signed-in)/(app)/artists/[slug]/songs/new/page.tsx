@@ -1,6 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -10,10 +11,12 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 
-export default function NewSong() { return <AdminOnly><Form /></AdminOnly>; }
+export default function NewSong() { return <AdminOnly><Suspense fallback={<div className="s">Loading…</div>}><Form /></Suspense></AdminOnly>; }
 
 function Form() {
   const router = useRouter();
+  // "Add a song" on the Writing tab links here with ?status=writing: the song starts in the Writing phase.
+  const writing = useSearchParams().get("status") === "writing";
   const { call, error, busy, setError } = useCommand();
   // New record = draft: typed values persist on this device and the server; "Add song" creates it. Drive picks come
   // from a live search, so they are re-picked after a restore (the title restores and re-runs the search).
@@ -29,14 +32,14 @@ function Form() {
     if (len.trim() && lengthSec === undefined) { setError("Length looks like 3:52"); return; }
     await draft.settle();
     const r = await call("songs.create", {
-      title: title.trim(), status: "active", ...(key.trim() ? { key: key.trim() } : {}), ...(lengthSec !== undefined ? { lengthSec } : {}), files: picks,
+      title: title.trim(), status: writing ? "writing" : "active", ...(key.trim() ? { key: key.trim() } : {}), ...(lengthSec !== undefined ? { lengthSec } : {}), files: picks,
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
     if (r?.id) { await draft.clear(); router.push(`/songs/${r.id}`); }
   }
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="add-song">
-      <PageTitle back={<Link href="/songs" className="back-link" data-testid="back">← All songs</Link>} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
+      <PageTitle back={<Link href={writing ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
       <div className="card">
       <label className="grid gap-1"><span className="lbl">Title</span>
         <input className="input" value={title} onChange={(e) => set({ title: e.target.value })} required disabled={!draft.ready} data-testid="song-title" />

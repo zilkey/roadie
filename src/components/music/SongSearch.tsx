@@ -1,7 +1,8 @@
 "use client";
 import { useRef, useState } from "react";
+import { STATUS_LABEL, type SongStatus } from "@/lib/music";
 
-interface SongLike { id: string; title: string; status: string }
+interface SongLike { id: string; title: string; status: SongStatus }
 
 /**
  * Song typeahead over the library: type a few letters, pick a match (click, or Enter for the top one) and it's added.
@@ -49,7 +50,7 @@ export function SongSearch({ songs, exclude, onAdd, testid = "song-search" }: {
               <button type="button" className={`min-h-[44px] w-full cursor-pointer rounded-md border-0 px-3 py-2 text-left ${i === hi ? "bg-soft" : "bg-transparent"}`}
                 style={{ color: "var(--ink)", font: "inherit" }}
                 onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHi(i)} onClick={() => add(s.id)}>
-                {s.title}{s.status !== "active" && <span className="s"> · {s.status === "learning" ? "Learning" : "Idea"}</span>}
+                {s.title}{s.status !== "active" && <span className="s"> · {STATUS_LABEL[s.status]}</span>}
               </button>
             </li>
           ))}

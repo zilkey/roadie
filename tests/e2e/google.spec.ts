@@ -92,3 +92,15 @@ test("Settings > Google shows the Demos folder, for audio uploaded to songs", as
   await card.getByTestId("demos-folder-search").click();
   await expect(card.getByTestId("demos-folder-hit-Demos").getByTestId("demos-folder-choose")).toHaveText("Current");
 });
+
+// The seed's Songwriting folder is the fake Drive's "Songwriting". Audio uploaded to a Writing song goes there.
+test("Settings > Google shows the Songwriting folder, for audio uploaded to Writing songs", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("band-menu").click();
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-google").click();
+  const card = page.getByTestId("google-songwriting-folder");
+  await expect(card.getByRole("heading")).toHaveText("Songwriting folder");
+  await expect(card.getByTestId("songwriting-folder-link")).toContainText("Songwriting");
+  await expect(card.getByTestId("songwriting-folder-status")).toContainText("Writing phase");
+});

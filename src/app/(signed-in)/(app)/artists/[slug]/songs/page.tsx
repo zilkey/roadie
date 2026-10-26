@@ -13,11 +13,13 @@ export default function SongsPage() {
   return <Suspense fallback={<div className="s">Loading…</div>}><Songs /></Suspense>;
 }
 
-type SegKey = "active" | "learning" | "idea" | "retired" | "unlinked";
+type SegKey = "active" | "learning" | "idea" | "retired" | "unlinked" | "writing";
 // Unlinked cuts across statuses: every song with no Drive file yet (a Spotify/YouTube/web link doesn't count), to work through by hand.
-const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["unlinked", "Unlinked"]];
+// Writing (songs still being written) is last, and a song there is never "unlinked": it isn't finished enough to need files.
+const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["unlinked", "Unlinked"], ["writing", "Writing"]];
+const isSeg = (k: string | null): k is SegKey => SEGS.some(([s]) => s === k);
 /** `linked`: ids of songs with a Drive file. */
-const inSeg = (s: { id: string; status: string }, k: SegKey, linked: Set<string | undefined>) => (k === "unlinked" ? !linked.has(s.id) : s.status === k);
+const inSeg = (s: { id: string; status: string }, k: SegKey, linked: Set<string | undefined>) => (k === "unlinked" ? s.status !== "writing" && !linked.has(s.id) : s.status === k);
 
 function DocIcon() {
   return (
@@ -37,7 +39,7 @@ function Songs() {
   const cols = (useArtist().doc?.songFields ?? []).filter((f) => f.inTable);
   const { call, error, busy } = useCommand();
   const segParam = params.get("seg");
-  const [seg, setSeg] = useState<SegKey>(segParam === "learning" || segParam === "idea" || segParam === "retired" || segParam === "unlinked" ? segParam : "active");
+  const [seg, setSeg] = useState<SegKey>(isSeg(segParam) ? segParam : "active");
   const [q, setQ] = useState("");
   const setlistParam = params.get("setlist");
 
@@ -68,7 +70,7 @@ function Songs() {
   return (
     <div className="grid gap-5" data-testid="songs-page">
       <PageTitle title="Songs" center
-        actions={admin ? <Link href="/songs/new" className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined} />
+        actions={admin ? <Link href={seg === "writing" ? "/songs/new?status=writing" : "/songs/new"} className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined} />
       <Tabs<SegKey> testid="songs-seg" value={seg} onChange={setSeg}
         options={SEGS.map(([k, label]) => [k, <>{label} <span className="chip a ml-1">{count(k)}</span></>])} />
       <input className="input" placeholder="Search songs…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="songs-filter" aria-label="Filter songs" />

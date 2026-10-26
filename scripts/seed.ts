@@ -57,6 +57,7 @@ async function main() {
     rehearsalFolderId: "fake-folder-rehearsals",
     chartsFolderId: "fake-folder-charts",
     demosFolderId: "fake-folder-demos",
+    songwritingFolderId: "fake-folder-songwriting",
     calendar: { id: "fake-band-calendar", name: "Ingrid Avison Band" },
     features: { fans: true },
   });
@@ -156,6 +157,7 @@ async function main() {
   const songIds: string[] = [];
   for (const [title, key, lengthSec, bpm] of songSpecs) songIds.push(await create("songs", { title, key, lengthSec, bpm, status: "active", writers: "Ingrid Avison" }));
   await create("songs", { title: "Untitled (bridge idea)", status: "idea" });
+  await create("songs", { title: "Halfway Home", status: "writing", writers: "Ingrid Avison" });
   const fileId = await create("files", { kind: "demo", title: "Glass Coast demo v3.m4a", songId: songIds[0], driveFileId: "fake-drive-demo-1", url: "http://localhost:3202/files/fake-drive-demo-1", mimeType: "audio/mp4", ownerEmail: "jeff@example.com", inBandFolder: true, sharing: "ok", checkedAt: new Date() });
   void fileId;
   await create("files", { kind: "chart", title: "Glass Coast chart F#m.docx", songId: songIds[0], key: "F#m", driveFileId: "fake-drive-chart-1", url: "http://localhost:3202/files/fake-drive-chart-1", ownerEmail: "ingrid@example.com", inBandFolder: false, sharing: { missing: [mid.eric, mid.emma] }, checkedAt: new Date() });

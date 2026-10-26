@@ -33,6 +33,12 @@ export async function demosFolderId(artistId?: string): Promise<string | null> {
   return (artist?.demosFolderId as string | undefined) || null;
 }
 
+/** The artist's Songwriting folder, chosen on Settings > Google (google.setSongwritingFolder): where audio uploaded to a Writing song goes. Null until an admin picks one. */
+export async function songwritingFolderId(artistId?: string): Promise<string | null> {
+  const artist = artistId ? await db.get("artists", artistId) : (await db.list("artists"))[0];
+  return (artist?.songwritingFolderId as string | undefined) || null;
+}
+
 /** The band folder and the Charts folder, and both as the list a file counts as "in the band folder" under. */
 export async function bandFolders(artistId?: string) {
   const [band, charts] = await Promise.all([bandFolderId(artistId), chartsFolderId(artistId)]);

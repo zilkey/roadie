@@ -185,13 +185,13 @@ export const pitchesNeedingFollowUp = defineCommand({
 export const songsMissingFiles = defineCommand({
   name: "songs.missingFiles", roles: [...READ],
   description:
-    "Songs (not retired) with no attached Drive file, which kinds each song has, and every attached file with a sharing problem: " +
+    "Songs (not retired or still being written) with no attached Drive file, which kinds each song has, and every attached file with a sharing problem: " +
     "who cannot open it, or it sits outside the band folder. Follow up with drive.search, files.attach, files.shareWithBand, files.copyToBand.",
   input: strict({ includeIdeas: z.boolean().default(false) }),
   async run(ctx, i) {
     const [songs, files, mates, folder] = await Promise.all([db.list("songs"), db.list("files"), bandmates(), bandFolderId(ctx.artistId)]);
     const name = new Map(mates.map((m) => [m.id, m.name]));
-    const live = songs.filter((s) => s.status !== "retired" && (i.includeIdeas || s.status !== "idea"));
+    const live = songs.filter((s) => s.status !== "retired" && s.status !== "writing" && (i.includeIdeas || s.status !== "idea"));
     const byTitle = new Map(songs.map((s) => [s.id, s.title as string]));
     const kindsOf = (id: string) => [...new Set(files.filter((f) => f.songId === id).map((f) => f.kind as string))];
     return {

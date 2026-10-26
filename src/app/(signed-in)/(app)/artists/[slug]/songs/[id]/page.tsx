@@ -9,7 +9,7 @@ import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor } from "@/lib/music";
+import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
@@ -130,9 +130,9 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   return (
     <div className="sg-page" data-testid="song-page">
       <PageTitle
-        back={<Link href="/songs" className="back-link" data-testid="back">← All songs</Link>}
+        back={<Link href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>}
         title={song.title}
-        pill={<span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{{ active: "Playing", learning: "Learning", idea: "Idea", retired: "Retired" }[song.status]}</span>}
+        pill={<span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
           {edit && <SaveStatus {...as.statusProps} />}
@@ -160,7 +160,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           </div>
           <label className="grid gap-1"><span className="lbl">Status</span>
             <select className="select" data-testid="edit-status" {...as.bind("status", song.status, { toPatch: (t) => t })}>
-              <option value="active">Playing</option><option value="learning">Learning</option><option value="idea">Idea</option><option value="retired">Retired</option>
+              <option value="active">Playing</option><option value="learning">Learning</option><option value="idea">Idea</option><option value="retired">Retired</option><option value="writing">Writing</option>
             </select></label>
           <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
@@ -197,9 +197,14 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
           {admin && (
             <div className="flex flex-wrap items-start gap-2">
-              <Upload url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload a demo" accept="audio/*" testid="song-upload-demo"
-                disabled={!artistDoc?.demosFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
-                needsFolder={<>Choose the Demos folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+              {/* A Writing song's audio goes to the Songwriting folder; the route picks the folder from the song's status. */}
+              {song.status === "writing"
+                ? <Upload key="writing" url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload audio" accept="audio/*" testid="song-upload-demo"
+                  disabled={!artistDoc?.songwritingFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
+                  needsFolder={<>Choose the Songwriting folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+                : <Upload key="demo" url={`/api/songs/${encodeURIComponent(song.id)}/demo`} label="Upload a demo" accept="audio/*" testid="song-upload-demo"
+                  disabled={!artistDoc?.demosFolderId} tooBig="Trim it, or put it in Drive yourself and add it from Drive."
+                  needsFolder={<>Choose the Demos folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />}
               <button className="btn acc" onClick={() => setAdding(!adding)} data-testid="add-from-drive">{adding ? "Cancel" : "+ Add from Drive"}</button>
             </div>
           )}

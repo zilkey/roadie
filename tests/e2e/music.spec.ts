@@ -17,6 +17,34 @@ async function newSong(page: Page, title: string) {
   await page.getByTestId("song-title").fill(title);
 }
 
+// Songs still being written live on the last tab, Writing. Their audio uploads go to the Songwriting folder, not Demos.
+test("Writing tab: add a song in the Writing phase and upload audio to the Songwriting folder", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("tab-songs").click();
+  const seg = page.getByTestId("songs-seg");
+  await expect(seg.getByRole("tab").last()).toContainText("Writing");
+  await page.getByTestId("songs-seg-writing").click();
+  await expect(page.getByTestId("songs-list")).toContainText("Halfway Home"); // seeded
+  await expect(page.getByTestId("songs-list")).not.toContainText("Glass Coast");
+
+  await page.getByTestId("add-song-btn").click();
+  await page.getByTestId("song-title").fill("Porch Light");
+  await page.getByTestId("save-song").click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await expect(page.getByTestId("song-status")).toHaveText("Writing");
+  await expect(page.getByTestId("song-upload-demo")).toContainText("Upload audio");
+  await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Porch Light work tape.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
+  await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Songwriting.");
+  await expect(page.getByTestId("files-demo")).toContainText("Porch Light work tape.m4a");
+
+  // back lands on the Writing tab, and the song isn't counted as Unlinked
+  await page.getByTestId("back").click();
+  await expect(page.getByTestId("songs-list")).toContainText("Porch Light");
+  await expect(page.getByTestId("songs-seg-writing")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("songs-seg-unlinked").click();
+  await expect(page.getByTestId("songs-list")).not.toContainText("Halfway Home");
+});
+
 test("add a song and attach files picked from a Drive search", async ({ page }) => {
   await signInAs(page, "jeff");
   await newSong(page, "Last Train");
