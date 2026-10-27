@@ -13,6 +13,7 @@ import { useAutosave } from "@/lib/autosave";
 import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
 import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
+import { VenueTypeSelect } from "@/components/booking/VenueTypeSelect";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
@@ -302,7 +303,7 @@ export function Tabs<T extends string>({ value, options, onChange, testid }: { v
 // ---------- generic entity form ----------
 
 export interface Field {
-  key: string; label: string; type?: "text" | "number" | "date" | "textarea" | "select"; required?: boolean;
+  key: string; label: string; type?: "text" | "number" | "date" | "textarea" | "select" | "venueType"; required?: boolean;
   options?: [string, string][]; placeholder?: string; half?: boolean;
 }
 export type Values = Record<string, string>;
@@ -316,6 +317,8 @@ export function FormFields({ fields, v, set, testid, onBlur }: { fields: Field[]
           <span className="lbl">{f.label}{f.required ? " *" : ""}</span>
           {f.type === "textarea" ? (
             <textarea className="input" rows={3} value={v[f.key] ?? ""} placeholder={f.placeholder} data-testid={`${testid}-${f.key}`} onChange={(e) => set(f.key, e.target.value)} />
+          ) : f.type === "venueType" ? (
+            <VenueTypeSelect value={v[f.key] ?? ""} testid={`${testid}-${f.key}`} onChange={(val) => set(f.key, val)} />
           ) : f.type === "select" ? (
             <select className="select" value={v[f.key] ?? ""} data-testid={`${testid}-${f.key}`} onChange={(e) => set(f.key, e.target.value)}>
               {f.options!.map(([val, l]) => <option key={val} value={val}>{l}</option>)}
@@ -444,7 +447,7 @@ const REGIONS = o(["boulder", "Boulder"], ["denver", "Denver"], ["north", "North
 export const roomForm = {
   fields: [
     { key: "name", label: "Name", required: true },
-    { key: "type", label: "Type", type: "select", half: true, options: o(["bar", "Bar"], ["club", "Club"], ["listening", "Listening room"], ["brewery", "Brewery"], ["theater", "Theater"], ["outdoor", "Outdoor"], ["house", "House"], ["other", "Other"]) },
+    { key: "type", label: "Type", type: "venueType", half: true },
     { key: "region", label: "Region", type: "select", half: true, options: REGIONS },
     { key: "city", label: "City", required: true, half: true }, { key: "state", label: "State", required: true, half: true },
     { key: "street", label: "Street", half: true }, { key: "zip", label: "Zip", half: true },
@@ -493,13 +496,13 @@ export const festivalForm = {
   fields: [
     { key: "name", label: "Name", required: true },
     { key: "type", label: "Type", type: "select", half: true, options: o(["festival", "Festival"], ["series", "Series"]) },
-    { key: "region", label: "Region", type: "select", half: true, options: REGIONS },
+    { key: "city", label: "City", required: true, half: true }, { key: "state", label: "State", required: true, half: true },
     { key: "genres", label: "Genres", half: true }, { key: "typicalMonth", label: "Usual month (1-12)", type: "number", half: true },
     { key: "website", label: "Website" }, { key: "notes", label: "Notes", type: "textarea" },
   ] as Field[],
-  blank: { type: "festival", region: "denver" } as Values,
-  initial: (d: Festival): Values => ({ name: d.name, type: d.type, region: d.region, genres: d.genres ?? "", typicalMonth: d.typicalMonth?.toString() ?? "", website: d.website ?? "", notes: d.notes ?? "" }),
-  build: (v: Values) => ({ name: v.name, type: v.type, region: v.region, genres: opt(v.genres ?? ""), typicalMonth: num(v.typicalMonth ?? ""), website: opt(v.website ?? ""), notes: opt(v.notes ?? "") }),
+  blank: { type: "festival", city: "", state: "CO" } as Values,
+  initial: (d: Festival): Values => ({ name: d.name, type: d.type, city: d.address?.city ?? "", state: d.address?.state ?? "CO", genres: d.genres ?? "", typicalMonth: d.typicalMonth?.toString() ?? "", website: d.website ?? "", notes: d.notes ?? "" }),
+  build: (v: Values) => ({ name: v.name, type: v.type, ...(v.city?.trim() ? { address: { city: v.city.trim(), state: (v.state ?? "").trim() } } : {}), genres: opt(v.genres ?? ""), typicalMonth: num(v.typicalMonth ?? ""), website: opt(v.website ?? ""), notes: opt(v.notes ?? "") }),
 };
 export const editionForm = {
   fields: [

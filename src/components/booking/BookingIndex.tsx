@@ -12,8 +12,11 @@ import {
   EntityForm, Tabs, StatusChip, contactForm, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
 } from "@/components/booking/common";
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
-import { fmtPhone, listRows, type ListRow, type Ref } from "@/components/booking/listRows";
-import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
+import { fmtPhone, listRows, type ListRow, type Place, type Ref } from "@/components/booking/listRows";
+import { useVenueTypes } from "@/lib/venueTypes";
+import { FESTIVAL_SORTS, type FestivalSort } from "@/lib/festivalPage";
+import { useFestivalPage } from "@/components/booking/useFestivalPage";
+import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
 import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
 
@@ -45,15 +48,46 @@ function Booking({ seg }: { seg: Seg }) {
     return ids;
   }, [b.venueNotes, b.pitches, shows.rows]);
 
-  // Pitch List only: narrow to one status ("" = every active pitch).
+  // Pitch List only: narrow to one status ("" = every active pitch), a category, a place and a venue type.
   const [status, setStatus] = useState<Status | "">("");
+  const [category, setCategory] = useState<Category | "">("");
+  const [place, setPlace] = useState("");
+  const [venueType, setVenueType] = useState("");
   const statusFilter = seg === "pitches" ? status : "";
-  const rows = useMemo(() => {
+  const listed = useMemo(() => {
     const searching = q.trim().length > 0;
     const hit = searching ? new Set(searchItems(buildSearchItems(b), q).map((i) => `${i.kind}:${i.id}`)) : null;
     return listRows(b, seg, ours, hit, statusFilter || undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches, ours, q, seg, statusFilter]);
+  const types = useVenueTypes();
+  const places = useMemo(() => placeOptions(listed), [listed]);
+  const typeFilter = category === "festival" ? "" : venueType; // venue types mean nothing to festivals: the filter hides
+  const rows = useMemo(() => seg !== "pitches" ? listed : listed.filter((r) =>
+    (!category || CATEGORY_KINDS[category].includes(r.kind)) && (!place || r.places.some((p) => placeKeys(p).includes(place))) && (!typeFilter || r.venueType === typeFilter),
+  ), [listed, seg, category, place, typeFilter]);
+  const filtering = !!(status || category || place || typeFilter);
+
+  // Festivals tab: the server searches, sorts and pages it (festivals.page); the rows are drawn from the live data in that order.
+  const [sort, setSortState] = useState<FestivalSort>(() => {
+    const s = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("sort");
+    return (FESTIVAL_SORTS as readonly string[]).includes(s ?? "") ? (s as FestivalSort) : "name";
+  });
+  const setSort = (s: FestivalSort) => {
+    setSortState(s);
+    const qs = new URLSearchParams({ ...(q.trim() ? { q } : {}), ...(s !== "name" ? { sort: s } : {}) }).toString();
+    router.replace(`/booking/festivals${qs ? `?${qs}` : ""}`);
+  };
+  const version = useMemo(() => JSON.stringify([b.festivals.map((f) => [f.id, f.rev]), b.editions.map((e) => [e.id, e.rev])]), [b.festivals, b.editions]);
+  const page = useFestivalPage({ q: q.trim(), sort, enabled: seg === "festivals", version });
+  const festivalRowsShown = useMemo(() => {
+    if (seg !== "festivals" || !page.rows) return [];
+    const all = new Map(listRows(b, "festivals", ours, null).map((r) => [`${r.kind}:${r.id}`, r]));
+    return page.rows.flatMap((ref) => all.get(`${ref.kind}:${ref.id}`) ?? []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seg, page.rows, b.festivals, b.editions, b.contacts, b.pitches, ours]);
+  const shownRows = seg === "festivals" ? festivalRowsShown : rows;
+  const listLoading = b.loading || (seg === "festivals" && !page.rows);
   const [target, setTarget] = useState<PitchTarget | null>(null);
   const activeCount = b.pitches.filter((p) => isActive(p.status)).length;
 
@@ -108,26 +142,66 @@ function Booking({ seg }: { seg: Seg }) {
       <ErrorBox error={error} />
 
       {seg === "pitches" && (
-        <label className="flex items-center gap-2 justify-self-start" data-testid="pitch-filter">
+        <div className="flex flex-wrap items-center gap-2 justify-self-start" data-testid="pitch-filter">
           <span className="s font-semibold whitespace-nowrap">Filter by</span>
           <select className="select w-auto" value={status} onChange={(e) => setStatus(e.target.value as Status | "")} aria-label="Filter pitches by status" data-testid="pitch-status-filter">
             <option value="">All active</option>
             {STATUSES.map((st) => <option key={st} value={st}>{STATUS_LABEL[st]}</option>)}
           </select>
-        </label>
+          <select className="select w-auto" value={category} onChange={(e) => setCategory(e.target.value as Category | "")} aria-label="Filter pitches by category" data-testid="pitch-category-filter">
+            <option value="">All categories</option>
+            {CATEGORIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+          </select>
+          <select className="select w-auto" value={place} onChange={(e) => setPlace(e.target.value)} aria-label="Filter pitches by city or state" data-testid="pitch-place-filter">
+            <option value="">All places</option>
+            {places.states.length > 0 && <optgroup label="States">{places.states.map((s) => <option key={s} value={`state:${s}`}>{s}</option>)}</optgroup>}
+            {places.cities.length > 0 && <optgroup label="Cities">{places.cities.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</optgroup>}
+          </select>
+          {category !== "festival" && (
+            <select className="select w-auto" value={venueType} onChange={(e) => setVenueType(e.target.value)} aria-label="Filter pitches by venue type" data-testid="pitch-type-filter">
+              <option value="">All venue types</option>
+              {types.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+          )}
+        </div>
       )}
       <div className="grid min-w-0 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
-        {b.loading && <span className="s">Loading…</span>}
-        {!b.loading && rows.length === 0 && (seg === "pitches" && !q.trim() && !status
+        {seg === "festivals" && <ErrorBox error={page.error} />}
+        {listLoading && <span className="s">Loading…</span>}
+        {!listLoading && shownRows.length === 0 && (seg === "pitches" && !q.trim() && !filtering
           ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
           : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
-        {rows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={rows} onFlag={setTarget} /></div>}
+        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} /></div>}
+        {seg === "festivals" && page.hasMore && (
+          <button type="button" className="btn ghost justify-self-center" disabled={page.loadingMore} onClick={() => void page.more()} data-testid="festivals-more">
+            {page.loadingMore ? "Loading…" : `Load more (${page.total - (page.rows?.length ?? 0)} left)`}
+          </button>
+        )}
       </div>
       <PitchModal target={target} onClose={() => setTarget(null)} />
       {form}
     </div>
   );
 }
+
+type Category = "venue" | "festival" | "promoter";
+const CATEGORIES: [Category, string][] = [["venue", "Venues"], ["festival", "Festivals"], ["promoter", "Promoters"]];
+const CATEGORY_KINDS: Record<Category, ListRow["kind"][]> = { venue: ["venue"], festival: ["festival", "edition"], promoter: ["promoter"] };
+const placeKeys = (p: Place) => [`state:${p.state}`, `city:${p.city}|${p.state}`];
+/** The place filter's choices: the states, then the towns ("Denver, CO"), of the rows on the list. */
+function placeOptions(rows: ListRow[]) {
+  const states = new Set<string>(), cities = new Map<string, string>();
+  for (const p of rows.flatMap((r) => r.places)) { states.add(p.state); cities.set(`city:${p.city}|${p.state}`, `${p.city}, ${p.state}`); }
+  return {
+    states: [...states].sort(),
+    cities: [...cities].map(([key, label]) => ({ key, label })).sort((a, b) => a.label.localeCompare(b.label)),
+  };
+}
+
+/** Festivals tab: the headers that sort, and what a tap does (a new column sorts soonest first; tapping it again flips it). */
+const SORT_BY: Record<string, "name" | "deadline" | "date"> = { Festival: "name", Dates: "date", Deadline: "deadline" };
+const nextSort = (cur: FestivalSort, by: "name" | "deadline" | "date"): FestivalSort =>
+  by === "name" ? "name" : cur === by ? (`-${by}` as FestivalSort) : by;
 
 const Dash = () => <span className="dash">—</span>;
 const SearchIcon = () => (
@@ -142,14 +216,14 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void }) {
+function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort: FestivalSort; onSort(s: FestivalSort): void }) {
   const router = useRouter();
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
   const flagged = seg !== "contacts";
   const wideName = seg !== "promoters" && seg !== "contacts";
   const heads: string[] = seg === "venues" ? ["Name", "City", "Email", "Phone", "Pitch"]
-    : seg === "festivals" ? ["Festival", "Edition", "City", "Email", "Phone", "Pitch"]
+    : seg === "festivals" ? ["Festival", "Edition", "Dates", "Deadline", "City", "Email", "Phone", "Pitch"]
     : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
     : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
     : seg === "pitches" ? ["Name", "Type", "City", "Email", "Phone", "Pitch", "Last contact"]
@@ -204,7 +278,20 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
     <table className={wideName ? "book-table wn" : "book-table"}>
       <thead><tr>
         {flagged && <th className="flag" aria-label="Pitch List flag" />}
-        {heads.map((h, i) => <th key={h} className={h === "Pitch" ? "pitch" : h === "Last contact" ? "lc" : wideName && i === 0 ? "name" : undefined}>{h}</th>)}
+        {heads.map((h, i) => {
+          const sortBy = seg === "festivals" ? SORT_BY[h] : undefined;
+          const on = sortBy && sort.replace("-", "") === sortBy;
+          return (
+            <th key={h} className={h === "Pitch" ? "pitch" : h === "Last contact" ? "lc" : wideName && i === 0 ? "name" : h === "Dates" || h === "Deadline" ? "nw" : undefined}
+              aria-sort={on ? (sort.startsWith("-") ? "descending" : "ascending") : undefined}>
+              {sortBy ? (
+                <button type="button" className="th-sort" data-testid={`sort-${sortBy}`} onClick={() => onSort(nextSort(sort, sortBy))}>
+                  {h}{on && <span aria-hidden> {sort.startsWith("-") ? "▼" : "▲"}</span>}
+                </button>
+              ) : h}
+            </th>
+          );
+        })}
       </tr></thead>
       <tbody>
         {rows.map((r) => (
@@ -213,6 +300,8 @@ function BookingTable({ seg, rows, onFlag }: { seg: Seg; rows: ListRow[]; onFlag
             {seg === "festivals" ? (<>
               <td className="name">{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
               <td className="nw">{r.edition ? <>{link(r.edition, `edition-full-${r.id}`)}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
+              <td className="nw" data-testid={`dates-${r.id}`}>{r.startDate ? `${fmtDate(r.startDate)}${r.endDate && r.endDate !== r.startDate ? `–${fmtDate(r.endDate)}` : ""}` : <Dash />}</td>
+              <td className="nw" data-testid={`deadline-${r.id}`}>{r.deadline ? <>{fmtDate(r.deadline.date)}{r.deadline.sure !== "confirmed" && <span className="s" title={r.deadline.sure === "target" ? "Our target" : "Estimated"}> {r.deadline.sure === "target" ? "(target)" : "(est.)"}</span>}</> : <Dash />}</td>
             </>) : seg === "promoters" ? (<>
               <td>{link(r.to, `promoter-full-${r.id}`)}{status(r)}</td>
               <td>{r.person ?? <Dash />}</td>

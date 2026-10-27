@@ -254,6 +254,9 @@ fieldset.sec { margin: 0; }
 .book-table td.nw { white-space: nowrap; }
 /* Pitch List: the Last contact column, and a light-yellow row once a Pitched or Talking pitch has had no contact for two weeks */
 .book-table th.lc, .book-table td.lc { white-space: nowrap; padding-right: 22px; }
+/* Festivals tab: a header that sorts (festivals.page) */
+.book-table .th-sort { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.book-table .th-sort:hover, .book-table th[aria-sort] .th-sort { color: var(--ink); }
 .book-table tr[data-quiet="1"] td { background: var(--quiet); }
 .book-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
 .book-table .nm:hover { color: var(--accent-text); }

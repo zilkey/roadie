@@ -14,7 +14,7 @@ import {
   BackLink, ContactsPanel, EntityForm, Flagged, FlagIcon, PitchLinks, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { fmtDate, isActive } from "@/lib/booking";
+import { cityState, fmtDate, isActive } from "@/lib/booking";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Edition, Festival, Show } from "@/schema";
 
@@ -22,12 +22,10 @@ export default function Page() { return <AdminOnly><FestivalPage /></AdminOnly>;
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => new Date(2000, i).toLocaleString("en-US", { month: "long" }));
 const monthOptions: [string, string][] = [["", "Not sure"], ...MONTHS.map((m, i): [string, string] => [String(i + 1), m])];
-const regionField = festivalForm.fields.find((x) => x.key === "region")!;
-const regionLabel = (r: string) => regionField.options?.find(([v]) => v === r)?.[1] ?? r;
 const byKey = (k: string) => festivalForm.fields.find((x) => x.key === k)!;
 const aboutFields: Field[] = [
   byKey("name"), byKey("website"), byKey("genres"),
-  { ...regionField, label: "Where" },
+  byKey("city"), byKey("state"),
   { key: "typicalMonth", label: "Usually", type: "select", half: true, options: monthOptions },
 ];
 const notesFields: Field[] = [byKey("notes")];
@@ -64,7 +62,7 @@ function FestivalPage() {
   const thisYear = new Date().getFullYear();
   const upcoming = editions.find((e) => e.year >= thisYear); // editions are newest first: the newest year that is this year or later
   const pitchCardFlag = !active ? upcoming : undefined; // the edition whose Flagged trigger the Pitch card shows (so Years omits its own)
-  const meta = [f.type === "series" ? "Series" : "Festival", regionLabel(f.region), f.typicalMonth ? `usually ${MONTHS[f.typicalMonth - 1]}` : null].filter(Boolean).join(" · ");
+  const meta = [f.type === "series" ? "Series" : "Festival", cityState(f.address), f.typicalMonth ? `usually ${MONTHS[f.typicalMonth - 1]}` : null].filter(Boolean).join(" · ");
 
   const contacts = <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />;
 
@@ -84,7 +82,7 @@ function FestivalPage() {
           <KV rows={[
             ["Website", f.website ? <a className="underline" href={/^https?:\/\//.test(f.website) ? f.website : `https://${f.website}`} target="_blank" rel="noreferrer">{f.website}</a> : ""],
             ["Genres", f.genres ?? ""],
-            ["Where", regionLabel(f.region)],
+            ["Where", cityState(f.address)],
             ["Usually", f.typicalMonth ? MONTHS[f.typicalMonth - 1] : ""],
           ]} />
         </DetailCard>

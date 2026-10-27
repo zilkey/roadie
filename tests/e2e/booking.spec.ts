@@ -155,6 +155,7 @@ test("create a promoter, a festival with a year, and open a contact", async ({ p
   await page.getByTestId("booking-add-actions").click();
   await page.getByTestId("add-festival").click();
   await page.getByTestId("new-festival-name").fill(`Fest ${stamp}`);
+  await page.getByTestId("new-festival-city").fill("Greeley");
   await page.getByTestId("new-festival-submit").click();
   await expect(page.getByTestId("festival-page")).toBeVisible();
   await page.getByTestId("years-edit").click();

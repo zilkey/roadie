@@ -86,8 +86,8 @@ test("dedupe: venue, promoter, festival and contact creates merge instead of dup
 
   const p1 = await cmd("promoters.create", { name: "Front Range Presents", kind: "promoter" });
   assert.equal((await cmd("promoters.create", { name: "Front-Range Presents", kind: "promoter", website: "https://x.example" })).id, p1.id);
-  const f1 = await cmd("festivals.create", { name: "UMS", type: "festival", region: "denver" });
-  assert.equal((await cmd("festivals.create", { name: "ums", type: "festival", region: "denver" })).merged, true);
+  const f1 = await cmd("festivals.create", { name: "UMS", type: "festival", address: { city: "Denver", state: "CO" } });
+  assert.equal((await cmd("festivals.create", { name: "ums", type: "festival", address: { city: "Denver", state: "CO" } })).merged, true);
   assert.ok(f1.id);
   const c1 = await cmd("contacts.create", { name: "Haylee", emails: ["Haylee@x.com"] });
   const c2 = await cmd("contacts.create", { name: "Haylee J", emails: ["haylee@x.com"], phones: ["+13035550101"] });
@@ -322,7 +322,7 @@ test("a venue not yet migrated (private fields still on the doc) reads, updates 
 test("renames keep denormalized names in sync (venue -> pitch, festival -> edition -> pitch)", async () => {
   const v = await cmd("venues.create", venue("Lost Lake"));
   const pv = await cmd("pitches.flag", { kind: "venue", id: v.id });
-  const f = await cmd("festivals.create", { name: "UMS", type: "festival", region: "denver" });
+  const f = await cmd("festivals.create", { name: "UMS", type: "festival", address: { city: "Denver", state: "CO" } });
   const e = await cmd("editions.create", { festivalId: f.id, year: 2027, label: "2027" });
   assert.equal((await db.get("editions", e.id))!.festivalName, "UMS");
   const pe = await cmd("pitches.flag", { kind: "edition", id: e.id });

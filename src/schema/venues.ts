@@ -10,7 +10,8 @@ const isTimeZone = (tz: string) => { try { new Intl.DateTimeFormat("en-US", { ti
  */
 const sharedShape = {
   name: z.string().min(1),
-  type: z.enum(["listening", "bar", "brewery", "club", "theater", "outdoor", "house", "other"]),
+  /** A key of venueTypes (src/schema/venueTypes.ts): "brewery", "listening", or one a band added. */
+  type: z.string().min(1),
   address: z.strictObject({
     street: z.string().optional(), city: z.string().min(1), state: z.string().min(1), zip: z.string().optional(),
   }),

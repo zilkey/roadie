@@ -33,6 +33,8 @@ service cloud.firestore {
     // The shared venue directory: every signed-in band user (admin or member of any artist) reads it; soft-deleted rooms only admins.
     // A band's own private notes about a room (load-in, contacts, promoters) are in venueNotes, below.
     match /venues/{id}           { allow read: if band(); }
+    // The one list of venue types (Bar, Brewery, ...) every band picks from, like the venues themselves. Server writes.
+    match /venueTypes/{id}       { allow read: if band(); }
     // One band's private venue notes, id = {artistId}__{venueId}. Needs that artist's admin role (roleIn, not the best role: an admin of
     // another artist who is only a member of this one gets 'member' here and fails). Lists must filter where('artistId', '==', ...).
     match /venueNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }

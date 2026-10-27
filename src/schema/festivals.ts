@@ -4,7 +4,10 @@ import { entity, serverMask, id, region, sourcesShape } from "./common";
 export const Festival = entity({
   name: z.string().min(1),
   type: z.enum(["festival", "series"]),
-  region,
+  /** Where it happens: one town (a series in several towns names its main one). festivals.create requires it; only festivals from before the festival-where migration lack it. */
+  address: z.strictObject({ city: z.string().min(1), state: z.string().min(1) }).optional(),
+  /** LEGACY until the festival-where migration has run in production: the old Colorado area. Read by nothing, cleared by festivals.update. */
+  region: region.optional(),
   website: z.string().optional(),
   genres: z.string().optional(),
   contactIds: z.array(id),

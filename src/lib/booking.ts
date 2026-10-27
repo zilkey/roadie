@@ -87,6 +87,9 @@ export function searchItems(items: SearchItem[], q: string): SearchItem[] {
   return items.filter((i) => { const h = i.haystack.toLowerCase(); return words.every((w) => h.includes(w)); });
 }
 
+/** "Denver, CO"; "" when there is no town yet (a festival from before the festival-where migration). */
+export const cityState = (a?: { city?: string; state?: string }) => [a?.city, a?.state].filter(Boolean).join(", ");
+
 // ---------- dates ----------
 
 export const todayStr = (d = new Date()) => dateInBandZone(d);

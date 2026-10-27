@@ -8,8 +8,10 @@ import type { MailMessage } from "../integrations/gmail";
 import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
 import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, sharedOf, writeNote } from "../venues";
 import { createNoted, setVenuePromoters, updateNoted } from "../bandNotes";
+import { ensureVenueTypes, requireVenueType } from "../venueTypes";
+import { FESTIVAL_PAGE_SIZE, FESTIVAL_SORTS, festivalRows } from "@/lib/festivalPage";
 import {
-  VenueInput, venueNoteId, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
+  VenueInput, venueNoteId, slug, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
 
 const ROLES = ["admin", "mcp"] as const;
@@ -23,6 +25,7 @@ const arr = <T extends z.ZodType>(s: T) => s.default([] as never);
 const VenueIn = VenueInput.extend({ contactIds: VenueInput.shape.contactIds.optional(), promoterIds: VenueInput.shape.promoterIds.optional() });
 const PromoterIn = PromoterInput.extend({ contactIds: arr(PromoterInput.shape.contactIds), venueIds: arr(PromoterInput.shape.venueIds) });
 const FestivalIn = FestivalInput.extend({ contactIds: arr(FestivalInput.shape.contactIds) });
+const FestivalNew = FestivalIn.extend({ address: FestivalInput.shape.address.unwrap() });
 const EditionIn = EditionInput.omit({ festivalName: true }).extend({ venueIds: arr(EditionInput.shape.venueIds) });
 const lowerEmails = z.array(z.string().transform(lowerEmail).pipe(emailSchema));
 const ContactIn = ContactInput.extend({ emails: lowerEmails.default([]), phones: z.array(z.string().transform(e164).pipe(ContactInput.shape.phones.element)).default([]) });
@@ -37,12 +40,13 @@ async function requireVenue(w: Writer, id: string) {
 export const venuesCreate = defineCommand({
   name: "venues.create", roles: [...VENUE_ROLES], input: VenueIn,
   description:
-    "Add a venue. A venue with the same name and city merges into the existing one ({id, merged: true}); adding a room this band archived brings it back. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
+    "Add a venue. type is a key from the venue type list (records.list venueTypes; add one with venueTypes.add). A venue with the same name and city merges into the existing one ({id, merged: true}); adding a room this band archived brings it back. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
     "every band that uses Roadie sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
   run: (ctx, input) => run(ctx, async (w) => {
     const priv = Object.fromEntries(Object.entries(input).filter(([k, v]) => isPrivateField(k) && v !== undefined));
     const shared = Object.fromEntries(Object.entries(input).filter(([k]) => !isPrivateField(k)));
     refusePrivate(ctx, Object.keys(priv));
+    await requireVenueType(w, shared.type);
     const r = await w.create("venues", shared);
     if (ctx.role !== "member") {
       const wants = hasPrivate(privateOf(priv));
@@ -74,6 +78,7 @@ export const venuesUpdate = defineCommand({
     const privPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => isPrivateField(k) && v !== undefined));
     refusePrivate(ctx, Object.keys(privPatch));
     const venue = await requireVenue(w, id);
+    await requireVenueType(w, sharedPatch.type, venue.type);
     let changed = false;
     if (Object.keys(sharedPatch).length) changed = (await w.update("venues", id, sharedPatch)).changed;
     if (Object.keys(privPatch).length) {
@@ -152,6 +157,45 @@ export const venuesMergeInto = defineCommand({
   }),
 });
 
+// ---------- venue types ----------
+
+/** The one list of venue types (src/schema/venueTypes.ts). A venue's type is the key; the label is what everyone sees. */
+export const venueTypesAdd = defineCommand({
+  name: "venueTypes.add", roles: [...VENUE_ROLES], input: z.strictObject({ label: z.string().trim().min(1) }),
+  description: "Add a venue type (\"Winery\") to the list every band picks from, and return its key ({id}) to set as a venue's type. One that is already there (any case) is returned as it is ({existing: true}).",
+  run: (ctx, { label }) => run(ctx, async (w) => {
+    await ensureVenueTypes(w);
+    const key = slug(label);
+    if (!key) throw new AppError("invalid_input", "Type a name with a letter or number in it", 400);
+    const same = (await w.query("venueTypes", (q) => q.where("matchKey", "==", key).limit(1)))[0] ?? (await w.get("venueTypes", key));
+    if (same && !same.deletedAt) return { id: same.id, existing: true };
+    if (same) { await w.restore("venueTypes", same.id); await w.update("venueTypes", same.id, { label }); return { id: same.id }; }
+    return w.create("venueTypes", { label }, { id: key });
+  }),
+});
+export const venueTypesRename = defineCommand({
+  name: "venueTypes.rename", roles: ["admin"], input: z.strictObject({ id: z.string().min(1), label: z.string().trim().min(1) }),
+  description: "Rename a venue type for every band. Its venues keep it (they hold the key, not the name).",
+  run: (ctx, { id, label }) => run(ctx, async (w) => {
+    await ensureVenueTypes(w);
+    const t = await w.get("venueTypes", id);
+    if (!t || t.deletedAt) throw new AppError("not_found", "Venue type not found", 404);
+    const clash = (await w.query("venueTypes", (q) => q.where("matchKey", "==", slug(label)).limit(2))).find((x) => x.id !== id);
+    if (clash) throw new AppError("conflict", `There is already a type called ${clash.label}`, 409);
+    return w.update("venueTypes", id, { label });
+  }),
+});
+export const venueTypesRemove = defineCommand({
+  name: "venueTypes.remove", roles: ["admin"], input: idInput,
+  description: "Take a venue type off the list for every band. Refused while any venue still has it: change those venues first.",
+  run: (ctx, { id }) => run(ctx, async (w) => {
+    await ensureVenueTypes(w);
+    const used = await w.query("venues", (q) => q.where("type", "==", id));
+    if (used.length) throw new AppError("conflict", `${used.length} ${used.length === 1 ? "venue has" : "venues have"} this type. Change ${used.length === 1 ? "it" : "them"} first.`, 409);
+    return w.softDelete("venueTypes", id);
+  }),
+});
+
 export const promotersCreate = defineCommand({
   name: "promoters.create", roles: [...ROLES], input: PromoterIn,
   description: "Add a promoter or booking group. Same name merges into the existing one. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds are the whole lists; link contacts with contacts.attach. " +
@@ -170,15 +214,34 @@ export const promotersRemove = defineCommand({
 });
 
 export const festivalsCreate = defineCommand({
-  name: "festivals.create", roles: [...ROLES], input: FestivalIn,
-  description: "Add a festival or series. Same name merges into the existing one. notes is this band's private notes (other bands never see them); everything else is shared with every band.",
+  name: "festivals.create", roles: [...ROLES], input: FestivalNew,
+  description: "Add a festival or series. address is {city, state}: the one town it happens in (a series in several towns: its main one). Same name merges into the existing one. notes is this band's private notes (other bands never see them); everything else is shared with every band.",
   run: (ctx, input) => run(ctx, (w) => createNoted(w, "festivals", input)),
 });
 export const festivalsUpdate = defineCommand({
   name: "festivals.update", roles: [...ROLES], input: patchInput(FestivalIn),
   description: "Edit a festival. type: festival|series. contactIds replaces the list; link contacts with contacts.attach. Renaming updates its editions and their pitches. " +
+    "address is {city, state}: the one town it happens in (a series in several towns: its main one). " +
     "notes is this band's private notes (replaces the text: read first to add); everything else is shared with every band.",
-  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "festivals", id, patch as Record<string, unknown>)),
+  // A festival given its town loses the old region it may still carry (until the festival-where migration has run).
+  run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "festivals", id, { ...patch, ...(patch.address ? { region: null } : {}) } as Record<string, unknown>)),
+});
+export const festivalsPage = defineCommand({
+  name: "festivals.page", roles: [...ROLES],
+  description:
+    "One page of the Festivals tab, in order: rows are {kind: edition|festival, id}, one per edition (a festival with no edition is one festival row). " +
+    `q matches a festival's name or its contacts, like the booking search. sort: ${FESTIVAL_SORTS.join("|")} (deadline = application deadline, date = edition start, "-" = latest first; ` +
+    `rows without one go last). offset/limit page through it (limit default ${FESTIVAL_PAGE_SIZE}); total is every match, nextOffset null on the last page.`,
+  input: z.strictObject({
+    q: z.string().default(""), sort: z.enum(FESTIVAL_SORTS).default("name"),
+    offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(500).default(FESTIVAL_PAGE_SIZE),
+  }),
+  async run(_ctx, i) {
+    const [festivals, editions, contacts] = await Promise.all([db.list("festivals"), db.list("editions"), db.list("contacts")]);
+    const all = festivalRows({ festivals, editions, contacts } as unknown as Parameters<typeof festivalRows>[0], i.q, i.sort);
+    const end = i.offset + i.limit;
+    return { total: all.length, rows: all.slice(i.offset, end), nextOffset: end < all.length ? end : null };
+  },
 });
 export const festivalsRemove = defineCommand({
   name: "festivals.remove", roles: ["admin"], input: idInput, description: "Archive a festival and its editions.",
@@ -493,7 +556,8 @@ export const pitchesCheckReplies = defineCommand({
 
 export const bookingCommands = [
   venuesCreate, venuesUpdate, venuesRemove, venuesMergeInto, promotersCreate, promotersUpdate, promotersRemove,
-  festivalsCreate, festivalsUpdate, festivalsRemove, editionsCreate, editionsUpdate, editionsRemove,
+  venueTypesAdd, venueTypesRename, venueTypesRemove,
+  festivalsCreate, festivalsUpdate, festivalsRemove, festivalsPage, editionsCreate, editionsUpdate, editionsRemove,
   contactsCreate, contactsUpdate, contactsRemove, contactsAttach, contactsDetach,
   pitchesFlag, pitchesUpdate, pitchesMove, pitchesComment, pitchesLog, pitchesRemove,
   templatesCreate, templatesUpdate, templatesRemove, pitchesSendEmail, pitchesDraftEmail, pitchesCheckReplies,

@@ -37,6 +37,8 @@ export function matchKeyFor(collection: string, d: MatchDoc): string | undefined
     case "promoters":
     case "festivals":
       return slug(str(d.name));
+    case "venueTypes":
+      return slug(str(d.label));
     default:
       return undefined;
   }

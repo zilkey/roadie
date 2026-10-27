@@ -12,11 +12,11 @@ import {
 } from "@/components/booking/common";
 import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
+import { useVenueTypes, venueTypeLabel } from "@/lib/venueTypes";
 import type { Show, Venue } from "@/schema";
 
 const ROOM_KEYS = ["name", "street", "city", "state", "zip", "type", "capacity", "website"];
 const roomFields = ROOM_KEYS.map((k) => roomForm.fields.find((f) => f.key === k)!);
-const typeOptions = roomForm.fields.find((f) => f.key === "type")!.options!;
 const notesFields = venueNotesForm.fields.map((f) => (f.key === "loadInNotes" ? { ...f, label: "Load-in" } : f));
 const href = (u: string) => (u.startsWith("http") ? u : `https://${u}`);
 
@@ -31,6 +31,7 @@ export default function VenuePage() {
   const admin = role === "admin";
   const { doc: v, loading } = useDoc<Venue>("venues", id, { includeDeleted: true });
   const b = useBooking();
+  const types = useVenueTypes();
   const shows = useCollection<Show>("shows", { where: [["venue.id", "==", id], ["artistId", "==", artistId]] });
   const { call, error } = useCommand();
   const edit = useSingleEdit<"about" | "pitch" | "contacts" | "notes">();
@@ -52,7 +53,7 @@ export default function VenuePage() {
 
   const street = [v.address.street, v.address.city, [v.address.state, v.address.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(street)}`;
-  const typeLabel = typeOptions.find(([k]) => k === v.type)?.[1] ?? v.type;
+  const typeLabel = venueTypeLabel(types, v.type);
   const unlink = (pid: string) => call("venues.update", { id, patch: { promoterIds: mine.promoterIds.filter((x) => x !== pid) } });
   const contacts = <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />;
 

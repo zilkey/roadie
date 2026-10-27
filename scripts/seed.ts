@@ -112,6 +112,8 @@ async function main() {
   await v("Swallow Hill Music", "listening", "Denver", "denver", { capacity: 250, ages: "all" });
   // Calendar e2e: the room for the 2026-12-12 pitch date. No other seeded pitch targets it, and no e2e spec names it.
   const bluebird = await v("Bluebird Room", "club", "Denver", "denver", { capacity: 180, ages: "21" });
+  // The shared venue type list: the built-in types (written on first use) plus one a band added with "Other…".
+  await execute(bandCtx, "venueTypes.add", { label: "Winery" });
 
   // --- a second band on the same directory: its own notes on a shared room, and a duplicate room to merge ---
   const other = await seedOtherBand(create, ctx);
@@ -121,9 +123,9 @@ async function main() {
   const hidiveDup = await v("The Hi-Dive", "bar", "Denver", "denver", { website: "https://hi-dive.example", notes: "Possible duplicate of Hi-Dive." });
   await execute(other.ctx, "venues.update", { id: hidiveDup, patch: { notes: "Fern Valley saw this room as The Hi-Dive." } });
 
-  const ums = await create("festivals", { name: "Underground Music Showcase", type: "festival", region: "denver", genres: "Indie, rock, folk", contactIds: [priya], typicalMonth: 7, website: "https://umsfest.example", sources: src("https://umsfest.example") });
-  const levitt = await create("festivals", { name: "Levitt Pavilion Summer Series", type: "series", region: "denver", contactIds: [], typicalMonth: 6 });
-  const folks = await create("festivals", { name: "Rocky Mountain Folks Festival", type: "festival", region: "boulder", genres: "Folk, Americana", contactIds: [], typicalMonth: 8 });
+  const ums = await create("festivals", { name: "Underground Music Showcase", type: "festival", address: { city: "Denver", state: "CO" }, genres: "Indie, rock, folk", contactIds: [priya], typicalMonth: 7, website: "https://umsfest.example", sources: src("https://umsfest.example") });
+  const levitt = await create("festivals", { name: "Levitt Pavilion Summer Series", type: "series", address: { city: "Littleton", state: "CO" }, contactIds: [], typicalMonth: 6 });
+  const folks = await create("festivals", { name: "Rocky Mountain Folks Festival", type: "festival", address: { city: "Lyons", state: "CO" }, genres: "Folk, Americana", contactIds: [], typicalMonth: 8 });
   const umsEd = await create("editions", { festivalId: ums, festivalName: "Underground Music Showcase", year: 2027, label: "2027", startDate: "2027-07-23", endDate: "2027-07-25",
     appOpens: { date: "2026-11-01", sure: "estimated" }, appDeadline: { date: "2027-01-15", sure: "target" }, applyUrl: "https://umsfest.example/apply", venueIds: [], sources: src("https://umsfest.example/apply") });
   const levittEd = await create("editions", { festivalId: levitt, festivalName: "Levitt Pavilion Summer Series", year: 2027, label: "Summer 2027", appOpens: { date: "2027-01-10", sure: "confirmed" }, appDeadline: { date: "2027-02-28", sure: "confirmed" }, venueIds: [] });

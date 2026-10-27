@@ -80,7 +80,7 @@ test("token auth: hashed lookup, lastUsedAt, revoked and no-AI-access are refuse
 
 const EXPECTED = [
   // places and people (read + write, with dedupe)
-  "venues.create", "venues.update", "venues.mergeInto", "promoters.create", "promoters.update", "festivals.create", "festivals.update", "editions.create", "editions.update",
+  "venues.create", "venues.update", "venues.mergeInto", "promoters.create", "promoters.update", "festivals.create", "festivals.update", "festivals.page", "venueTypes.add", "editions.create", "editions.update",
   "contacts.create", "contacts.update", "contacts.attach", "contacts.detach",
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
@@ -138,7 +138,7 @@ test("validation errors come back as structured tool errors listing the Zod issu
   const e = parse(r).error;
   assert.equal(e.code, "invalid_input");
   const paths = e.issues.map((i: any) => i.path);
-  assert.ok(paths.includes("name") && paths.includes("type") && paths.includes("address.state") && paths.includes("region"), paths.join(","));
+  assert.ok(paths.includes("name") && paths.includes("address.state") && paths.includes("region"), paths.join(","));
   assert.ok(e.issues.every((i: any) => typeof i.message === "string" && i.code));
   // nothing was written
   assert.equal((await db.list("venues")).length, 0);
