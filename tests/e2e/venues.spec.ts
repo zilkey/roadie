@@ -15,9 +15,10 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
   await page.getByTestId("booking-seg-venues").click();
   await page.getByTestId("booking-search").fill(search);
   const row = page.getByTestId(/^row-venue-/).filter({ hasText: exact ?? search }).first();
-  // a venue with a pitch opens the pitch from its name; the "Venue page" link under it is the place
-  const placeLink = row.getByTestId(/^page-link-/);
-  if (await placeLink.count()) await placeLink.click(); else await row.getByTestId(/^venue-full-/).click();
+  // a venue with an active pitch opens the pitch from its name; "Open venue" on the pitch page is the place
+  await row.getByTestId(/^venue-full-/).click();
+  await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
+  if (await page.getByTestId("pitch-page").count()) await page.getByRole("link", { name: "Open venue" }).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 
