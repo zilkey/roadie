@@ -194,7 +194,7 @@ function Booking({ seg }: { seg: Seg }) {
 
 /** The muted line under each tab's table (not Contacts, not the search buckets). */
 const CAPTION: Partial<Record<Seg, string>> = {
-  pitches: "Names and flags open the pitch. Yellow rows have gone quiet or have a step that's due.",
+  pitches: "Names and flags open the pitch. Yellow rows have gone quiet.",
   venues: "A venue with an active pitch opens the pitch; the venue page is one click under its name. Venues your band has something on come first.",
   festivals: "A year with an active pitch opens the pitch; the festival page is one click under its name.",
   promoters: "A promoter with an active pitch opens the pitch; the promoter page is one click under its name.",

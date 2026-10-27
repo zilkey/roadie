@@ -146,7 +146,7 @@ test("Pitch List: last contact column, quiet rows turn yellow, statuses without 
   const bluebird = list.locator("tr", { hasText: "Bluebird Room" });
   await expect(bluebird).toHaveAttribute("data-quiet", "1");
   await expect(bluebird.getByTestId(/^last-contact-/)).toContainText("days quiet");
-  await expect(list.getByTestId("table-caption")).toHaveText("Names and flags open the pitch. Yellow rows have gone quiet or have a step that's due.");
+  await expect(list.getByTestId("table-caption")).toHaveText("Names and flags open the pitch. Yellow rows have gone quiet.");
   const fox = list.locator("tr", { hasText: "Fox Theatre" });
   await expect(fox.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
   await expect(fox).not.toHaveAttribute("data-quiet", "1");
