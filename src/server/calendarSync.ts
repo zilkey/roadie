@@ -123,16 +123,28 @@ function googleError(e: unknown): never {
   throw e;
 }
 
+/** Venue words worth matching on: "The Loft" is just "loft". */
+const SKIP = new Set(["the", "and"]);
+const words = (v: string) => v.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2 && !SKIP.has(w));
+
+/** Could this event be the show or rehearsal? A rehearsal's has "rehearsal" in it; a show's says "show" or shares a word with the venue. */
+function looksLike(kind: CalendarKind, doc: Doc, title: string) {
+  if (kind === "rehearsals") return /rehearsal/i.test(title);
+  const t = new Set(words(title));
+  return t.has("show") || t.has("shows") || words(showName(doc as ShowPlaceLike)).some((w) => t.has(w));
+}
+
 /**
- * Events on the band calendar on the same day as `date` that nothing in the app is linked to yet; for a rehearsal, only
- * ones with "rehearsal" in the title. Google gives times in the event's own zone, so the day is the first ten characters. A Google error here just means no suggestions: the
+ * Events on the band calendar on the same day as the show or rehearsal that nothing in the app is linked to yet and
+ * that look like it (looksLike). Google gives times in the event's own zone, so the day is the first ten characters. A Google error here just means no suggestions: the
  * preview still works and the admin can add a new event.
  */
-async function sameDay(ctx: Ctx, kind: CalendarKind, calendarId: string, date: string): Promise<ExistingEvent[]> {
+async function sameDay(ctx: Ctx, kind: CalendarKind, doc: Doc, calendarId: string): Promise<ExistingEvent[]> {
+  const date = doc.date as string;
   const events = await client(ctx, calendarId).list({ from: addDays(date, -1), to: addDays(date, 2) }).catch(() => []);
   const linked = new Set((await Promise.all((["shows", "rehearsals"] as const).map((k) => db.list(k))))
     .flat().map((d) => d.calendarEventId as string | undefined).filter(Boolean));
-  return events.filter((e) => e.start.slice(0, 10) === date && !linked.has(e.id) && (kind === "shows" || /rehearsal/i.test(e.title))).map((e) => ({
+  return events.filter((e) => e.start.slice(0, 10) === date && !linked.has(e.id) && looksLike(kind, doc, e.title)).map((e) => ({
     id: e.id, title: e.title, start: e.start, end: e.end, allDay: !e.start.includes("T"), location: e.location ?? "",
   }));
 }
@@ -143,7 +155,7 @@ export async function calendarPreview(ctx: Ctx, kind: CalendarKind, id: string):
     calendar, action: doc.calendarEventId ? "update" : "create", unchanged: !!doc.calendarEventId && doc.calendarHash === hash,
     event: { title: input.title, start: input.start, end: input.end, allDay: !input.start.includes("T"), timeZone: input.timeZone ?? BAND_TIME_ZONE, location: input.location ?? "", description: input.description ?? "" },
     ...who,
-    existing: doc.calendarEventId ? [] : await sameDay(ctx, kind, calendar.id, doc.date as string),
+    existing: doc.calendarEventId ? [] : await sameDay(ctx, kind, doc, calendar.id),
   };
 }
 
