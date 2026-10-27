@@ -3,9 +3,8 @@ import { defineCommand } from "./types";
 import { patchInput, idInput } from "./util";
 import { db, run, type Writer, type Doc } from "../db";
 import { AppError } from "../errors";
-import { gmailClient, IntegrationError } from "../integrations";
-import type { MailMessage } from "../integrations/gmail";
-import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
+import { checkPitchReplies, draftMail, placeOfPitch, requirePitchDoc, sendMail } from "./email";
+import { isActive, sortedDates } from "@/lib/booking";
 import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
 import { CONTACT_ROLES } from "@/lib/venues";
 import { createNoted, setVenuePromoters, updateNoted } from "../bandNotes";
@@ -483,38 +482,16 @@ export const templatesRemove = defineCommand({
   run: (ctx, { id }) => db.softDelete(ctx, "emailTemplates", id),
 });
 
-const gmailFail = (e: unknown): never => {
-  if (e instanceof IntegrationError) throw new AppError("gmail_error", `Gmail: ${e.message}`, 502);
-  throw e;
-};
-
 export const pitchesSendEmail = defineCommand({
   name: "pitches.sendEmail", roles: ["admin"],
-  description: "Send an already filled-in email from the caller's Gmail, log emailSent on the pitch timeline and set lastContactAt. Refuses text that still has {{fields}}.",
+  description: "Send an already filled-in email from the caller's Gmail, log emailSent on the pitch timeline and set lastContactAt. The thread lands on the pitch's place (see email.send). Refuses text that still has {{fields}}.",
   input: z.strictObject({
     id: z.string().min(1), to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(),
     subject: z.string().min(1), body: z.string().min(1), threadId: z.string().optional(), markPitched: z.boolean().default(false),
   }),
-  async run(ctx, i) {
-    const missing = unfilledFields(`${i.subject}\n${i.body}`);
-    if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before sending`, 400);
-    const pitch = await db.get("pitches", i.id);
-    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
-    const user = await db.get("users", ctx.uid);
-    if (!user) throw new AppError("forbidden", "No user for this account", 403);
-    const msg = await gmailClient().send({ account: user.email, to: i.to, cc: i.cc, subject: i.subject, body: i.body, threadId: i.threadId }).catch(gmailFail);
-    return run(ctx, async (w) => {
-      const p = await requirePitch(w, i.id);
-      const act = await w.create(`pitches/${i.id}/activity`, {
-        type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject, account: user.email as string },
-      });
-      await w.update("pitches", i.id, { lastContactAt: w.now });
-      if (i.markPitched && (p.status === "idea" || p.status === "toPitch")) {
-        await w.update("pitches", i.id, { status: "pitched" });
-        await w.create(`pitches/${i.id}/activity`, { type: "status", fromStatus: p.status, toStatus: "pitched" });
-      }
-      return { id: act.id, messageId: msg.id, threadId: msg.threadId };
-    });
+  async run(ctx, { id, ...i }) {
+    const r = await sendMail(ctx, { ...i, pitchId: id, place: await placeOfPitch(await requirePitchDoc(id)) });
+    return { id: r.activityId, messageId: r.messageId, threadId: r.threadId };
   },
 });
 
@@ -527,50 +504,14 @@ export const pitchesDraftEmail = defineCommand({
     id: z.string().min(1), to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(),
     subject: z.string().min(1), body: z.string().min(1), threadId: z.string().optional(),
   }),
-  async run(ctx, i) {
-    const missing = unfilledFields(`${i.subject}\n${i.body}`);
-    if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before drafting`, 400);
-    const pitch = await db.get("pitches", i.id);
-    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
-    const user = await db.get("users", ctx.uid);
-    if (!user) throw new AppError("forbidden", "No user for this account", 403);
-    const draft = await gmailClient().createDraft({ account: user.email, to: i.to, cc: i.cc, subject: i.subject, body: i.body, threadId: i.threadId }).catch(gmailFail);
-    const act = await db.create(ctx, `pitches/${i.id}/activity`, {
-      type: "note", text: `Email drafted (not sent) to ${i.to.join(", ")}: ${i.subject}\n\n${i.body}`,
-    });
-    return { id: act.id, draftId: draft.id, sent: false };
-  },
+  run: (ctx, { id, ...i }) => draftMail(ctx, { ...i, pitchId: id }),
 });
 
 export const pitchesCheckReplies = defineCommand({
   name: "pitches.checkReplies", roles: ["admin"],
-  description: "Look in the Gmail threads of this pitch's sent emails and add new replies to the timeline as emailReply.",
+  description: "Look in the Gmail threads on this pitch's place and add new replies to the timeline as emailReply.",
   input: idInput,
-  async run(ctx, { id }) {
-    const pitch = await db.get("pitches", id);
-    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
-    const [acts, user] = await Promise.all([db.list(`pitches/${id}/activity`), db.get("users", ctx.uid)]);
-    // Each thread is read from the mailbox it was sent from; entries from before that was recorded use the caller's.
-    const threads = new Map<string, string>();
-    for (const a of acts) if (a.gmail?.threadId && !threads.has(a.gmail.threadId)) threads.set(a.gmail.threadId, (a.gmail.account as string | undefined) ?? (user?.email as string));
-    const seen = new Set(acts.filter((a) => a.gmail?.messageId).map((a) => a.gmail.messageId as string));
-    const fresh: MailMessage[] = [];
-    for (const [t, account] of threads) {
-      const th = await gmailClient().getThread(t, account).catch(gmailFail);
-      fresh.push(...th.messages.filter((m) => m.direction === "received" && !seen.has(m.id)));
-    }
-    if (!fresh.length) return { added: 0 };
-    fresh.sort((a, b) => a.date.localeCompare(b.date));
-    await run(ctx, async (w) => {
-      for (const m of fresh) {
-        await w.create(`pitches/${id}/activity`, {
-          type: "emailReply", text: `From ${m.from}\n\n${m.body}`, gmail: { messageId: m.id, threadId: m.threadId, to: m.to.join(", "), subject: m.subject, account: m.account },
-        });
-      }
-      await w.update("pitches", id, { lastContactAt: new Date(fresh[fresh.length - 1].date) });
-    });
-    return { added: fresh.length };
-  },
+  run: (ctx, { id }) => checkPitchReplies(ctx, id),
 });
 
 export const bookingCommands = [

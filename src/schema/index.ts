@@ -12,6 +12,7 @@ import { VenueTypeInput } from "./venueTypes";
 import { EditionInput } from "./editions";
 import { PitchInput, CommentInput, ActivityInput } from "./pitches";
 import { EmailTemplateInput } from "./emailTemplates";
+import { EmailThreadInput } from "./emailThreads";
 import { ShowInput, ShowDealInput } from "./shows";
 import { AvailabilityInput } from "./availability";
 import { FanInput } from "./fans";
@@ -44,6 +45,7 @@ export * from "./venueTypes";
 export * from "./editions";
 export * from "./pitches";
 export * from "./emailTemplates";
+export * from "./emailThreads";
 export * from "./shows";
 export * from "./availability";
 export * from "./fans";
@@ -90,6 +92,7 @@ export const collections: Record<string, CollectionDef> = {
   comments: { input: CommentInput },
   activity: { input: ActivityInput, appendOnly: true },
   emailTemplates: { input: EmailTemplateInput },
+  emailThreads: { input: EmailThreadInput },
   shows: { input: ShowInput },
   showDeals: { input: ShowDealInput },
   availability: { input: AvailabilityInput },

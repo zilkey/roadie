@@ -1,8 +1,9 @@
 import { defineFake, runIfMain, esc, need, required, type Route } from "../lib";
+import { matches } from "./query";
 
 export interface GMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
-  from: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; date: string;
+  from: string; /** Display name of the sender; missing on messages written before it existed. */ fromName?: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; date: string;
 }
 export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string }
 export interface GmailState { seq: number; messages: GMessage[]; drafts: GDraft[]; /** Gmail signature (HTML) per account, set with PUT /settings/signature. */ signatures?: Record<string, string> }
@@ -22,7 +23,7 @@ const routes: Route<GmailState>[] = [
     if (!to.length) return { status: 400, json: { error: { code: 400, message: "Missing field: to" } } };
     const id = `m${++s.seq}`;
     const threadId = body.threadId ? need(s.messages.find((m) => m.threadId === body.threadId), "Thread").threadId : `t${++s.seq}`;
-    const m: GMessage = { id, threadId, account: body.from, direction: "sent", from: body.from, to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), date: new Date().toISOString() };
+    const m: GMessage = { id, threadId, account: body.from, direction: "sent", from: body.from, fromName: "", to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), date: new Date().toISOString() };
     s.messages.push(m);
     return { json: m }; // wrapped: a bare object with an `html` key would be taken for an HTML page
   }],
@@ -34,9 +35,21 @@ const routes: Route<GmailState>[] = [
   }],
   ["GET", "/drafts", ({ query }, s) => s.drafts.filter((d) => !query.get("account") || d.account === query.get("account"))],
   ["GET", "/messages", ({ query }, s) => {
-    const q = query.get("q")?.toLowerCase();
-    return s.messages.filter((m) => (!query.get("account") || m.account === query.get("account")) && (!query.get("threadId") || m.threadId === query.get("threadId"))
-      && (!q || `${m.subject} ${m.body}`.toLowerCase().includes(q)));
+    const q = query.get("q");
+    return s.messages.filter((m) => (!query.get("account") || m.account === query.get("account")) && (!query.get("threadId") || m.threadId === query.get("threadId")) && matches(q, m));
+  }],
+  // A message that arrives from outside: a stranger's first email or a web form's auto-reply (new thread), or one more in an existing thread.
+  ["POST", "/messages/receive", ({ body }, s) => {
+    required(body, "from", "to", "subject");
+    const to = list(body.to);
+    if (!to.length) return { status: 400, json: { error: { code: 400, message: "Missing field: to" } } };
+    const inThread = body.threadId ? need(s.messages.find((m) => m.threadId === body.threadId), "Thread") : undefined;
+    const m: GMessage = {
+      id: `m${++s.seq}`, threadId: inThread ? inThread.threadId : `t${++s.seq}`, account: inThread ? inThread.account : to[0], direction: "received",
+      from: String(body.from).toLowerCase(), fromName: body.fromName ?? "", to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", date: new Date().toISOString(),
+    };
+    s.messages.push(m);
+    return m;
   }],
   ["GET", "/threads", ({ query }, s) => threadsOf(s, query.get("account") ?? undefined)],
   ["GET", "/threads/:id", ({ params }, s) => need(threadsOf(s).find((t) => t.id === params.id), "Thread")],
@@ -58,7 +71,7 @@ const routes: Route<GmailState>[] = [
     const lastSent = [...msgs].reverse().find((m) => m.direction === "sent") ?? msgs[msgs.length - 1];
     const m: GMessage = {
       id: `m${++s.seq}`, threadId: params.id, account: lastSent.account, direction: "received",
-      from: body.from || lastSent.to[0] || "someone@example.com", to: [lastSent.account], cc: [],
+      from: body.from || lastSent.to[0] || "someone@example.com", fromName: body.fromName ?? "", to: [lastSent.account], cc: [],
       subject: msgs[0].subject.startsWith("Re:") ? msgs[0].subject : `Re: ${msgs[0].subject}`,
       body: body.body || "Thanks for reaching out. We would love to have you play. What dates are you thinking?", date: new Date().toISOString(),
     };

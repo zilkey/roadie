@@ -12,7 +12,7 @@ import { accessTokenForEmail } from "../google/grants";
 export interface MailInput { account: string; to: string[]; cc?: string[]; subject: string; body: string; /** Sent as multipart/alternative next to `body` (the plain text). Sanitize it first (src/lib/email-html.ts). */ html?: string; threadId?: string }
 export interface MailMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
-  from: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
+  from: string; /** Display name from the From header, "" when none. */ fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
 }
 export interface MailDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; threadId?: string; date: string }
 export interface MailThread { id: string; subject: string; messages: MailMessage[]; lastDate: string }
@@ -39,19 +39,20 @@ export function gmailClient(baseUrl?: string): GmailService {
 
 export function fakeGmailClient(baseUrl: string): GmailService {
   const call = jsonClient("gmail", baseUrl);
+  const named = (m: MailMessage): MailMessage => ({ ...m, fromName: m.fromName ?? "" });
   const wire = (i: MailInput) => ({ from: i.account, to: i.to, cc: i.cc ?? [], subject: i.subject, body: i.body, ...(i.html ? { html: i.html } : {}), threadId: i.threadId });
   return {
-    send: (i) => call("POST", "/messages/send", { body: wire(i) }),
+    send: (i) => call<MailMessage>("POST", "/messages/send", { body: wire(i) }).then(named),
     createDraft: (i) => call("POST", "/drafts", { body: wire(i) }),
     listDrafts: (account) => call("GET", "/drafts", { query: { account } }),
-    listMessages: (o = {}) => call("GET", "/messages", { query: o }),
-    listThreads: (account) => call("GET", "/threads", { query: { account } }),
-    getThread: (id) => call("GET", `/threads/${encodeURIComponent(id)}`),
+    listMessages: (o = {}) => call<MailMessage[]>("GET", "/messages", { query: o }).then((r) => r.map(named)),
+    listThreads: (account) => call<MailThread[]>("GET", "/threads", { query: { account } }).then((r) => r.map((t) => ({ ...t, messages: t.messages.map(named) }))),
+    getThread: (id) => call<MailThread>("GET", `/threads/${encodeURIComponent(id)}`).then((t) => ({ ...t, messages: t.messages.map(named) })),
     async getSignature(account) {
       const r = await call<{ sendAs?: { isPrimary?: boolean; signature?: string }[] }>("GET", "/settings/sendAs", { query: { account } });
       return r.sendAs?.find((a) => a.isPrimary)?.signature ?? "";
     },
-    simulateReply: (id, o = {}) => call("POST", `/threads/${encodeURIComponent(id)}/reply`, { body: o }),
+    simulateReply: (id, o = {}) => call<MailMessage>("POST", `/threads/${encodeURIComponent(id)}/reply`, { body: o }).then(named),
   };
 }
 
@@ -62,6 +63,8 @@ interface GMessage { id: string; threadId: string; labelIds?: string[]; internal
 
 const header = (p: GPart | undefined, name: string) => p?.headers?.find((h) => h.name.toLowerCase() === name)?.value ?? "";
 const addresses = (v: string) => (v.match(/[^\s<>,"';:]+@[^\s<>,"';:]+/g) ?? []).map((a) => a.toLowerCase());
+/** The display name in a From header: `Haylee Jackson <h@x.com>` and `"Jackson, Haylee" <h@x.com>` give the name, a bare address gives "". */
+export const displayName = (v: string) => (v.includes("<") ? v.slice(0, v.indexOf("<")).trim().replace(/^"(.*)"$/, "$1").trim() : "");
 const decode = (data?: string) => (data ? Buffer.from(data, "base64url").toString("utf8") : "");
 /** Header text: plain ASCII as is, anything else as an RFC 2047 encoded word. Line breaks are dropped (no header injection). */
 const headerText = (v: string) => { const s = v.replace(/[\r\n]+/g, " "); return /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s).toString("base64")}?=`; };
@@ -80,7 +83,7 @@ function toMessage(m: GMessage, account: string): MailMessage {
   const p = m.payload;
   return {
     id: m.id, threadId: m.threadId, account, direction: m.labelIds?.includes("SENT") ? "sent" : "received",
-    from: addresses(header(p, "from"))[0] ?? "", to: addresses(header(p, "to")), cc: addresses(header(p, "cc")),
+    from: addresses(header(p, "from"))[0] ?? "", fromName: displayName(header(p, "from")), to: addresses(header(p, "to")), cc: addresses(header(p, "cc")),
     subject: header(p, "subject"), body: textOf(p), date: new Date(Number(m.internalDate ?? Date.now())).toISOString(),
   };
 }
@@ -137,7 +140,7 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
   return {
     async send(i) {
       const sent = await callAs(i.account)<{ id: string; threadId: string }>("POST", "/messages/send", { body: await encode(i) });
-      return { id: sent.id, threadId: sent.threadId, account: i.account, direction: "sent", from: i.account, to: i.to, cc: i.cc ?? [], subject: i.subject, body: i.body, date: new Date().toISOString() };
+      return { id: sent.id, threadId: sent.threadId, account: i.account, direction: "sent", from: i.account, fromName: "", to: i.to, cc: i.cc ?? [], subject: i.subject, body: i.body, date: new Date().toISOString() };
     },
     async createDraft(i) {
       const d = await callAs(i.account)<{ id: string; message: { id: string; threadId: string } }>("POST", "/drafts", { body: { message: await encode(i) } });

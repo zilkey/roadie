@@ -17,6 +17,7 @@ import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { roleFirst } from "@/lib/venues";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, sortedDates, unfilledFields, type Status } from "@/lib/booking";
+import { EmailCard } from "@/components/booking/EmailCard";
 import { BookedItForm } from "@/components/booking/BookedItForm";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
@@ -58,7 +59,6 @@ function PitchPage() {
   const [emailOpen, setEmailOpen] = useState(false);
   const [booking, setBooking] = useState(false);
   const [step, setStep] = useState<{ text: string; due: string } | null>(null);
-  const [replies, setReplies] = useState<string | null>(null);
   const nf = useNotFound(loading, p, "pitch");
   const as = useAutosave({ command: "pitches.update", id, rev: p?.rev, onUseTheirs: () => setStep(null) });
   // Follow the live pitch (someone else's edit, an Undo) once nothing of ours is waiting to be saved.
@@ -121,11 +121,6 @@ function PitchPage() {
     if (confirm("Abandon this pitch? It moves to Past pitches.")) await call("pitches.move", { id, status: "dropped" });
   }
 
-  async function checkReplies() {
-    const r = await call<{ added: number }>("pitches.checkReplies", { id });
-    if (r) setReplies(r.added ? `${r.added} new repl${r.added === 1 ? "y" : "ies"}` : "No new replies");
-  }
-
   const live = mode === "comment" ? commentDraft : callDraft;
   const submit = mode === "comment" ? post : logCall;
 
@@ -158,12 +153,6 @@ function PitchPage() {
             {p.nextStep && <button type="button" className="btn sm ghost self-start" onClick={() => { setStep({ text: "", due: "" }); patch({ nextStep: null }); }}>Clear</button>}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button className="btn acc" onClick={() => setEmailOpen(!emailOpen)} data-testid="email-toggle">Email</button>
-          <button className="btn ghost" onClick={checkReplies} disabled={busy} data-testid="check-replies">Check for replies</button>
-          {replies && <span className="s self-center" data-testid="replies-result">{replies}</span>}
-        </div>
-        {emailOpen && <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />}
       </section>
 
       <section className="card">
@@ -186,6 +175,10 @@ function PitchPage() {
           {users.filter((u) => roleIn(u, current.artistId) === "admin").map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
       </section>
+
+      <EmailCard target={p.target} open={emailOpen} onNew={() => setEmailOpen(!emailOpen)}>
+        <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />
+      </EmailCard>
 
       <section className="card" data-testid="pitch-dates-card">
         <div className="card-head">

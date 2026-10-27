@@ -401,3 +401,21 @@ test("history: collection-group queries must filter by artist; the other artist'
   await assertFails(getDocs(collectionGroup(otherAdmin(), "history")));
   await assertFails(group(admin(), ["runId", "==", "r1"])); // a run lookup alone no longer passes: the page adds the artist filter
 });
+
+test("emailThreads: only that artist's admins read them, lists must filter by artistId, no client writes", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), "emailThreads/x__t1"), { deletedAt: null, artistId: "x", threadId: "t1" });
+    await setDoc(doc(ctx.firestore(), "emailThreads/y__t1"), { deletedAt: null, artistId: "y", threadId: "t1" });
+  });
+  await assertSucceeds(getDoc(doc(admin(), "emailThreads/x__t1")));
+  await assertFails(getDoc(doc(admin(), "emailThreads/y__t1")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "emailThreads/y__t1")));
+  await assertFails(getDoc(doc(david(), "emailThreads/x__t1")));
+  for (const who of [anon(), noRole(), aiLogin(), legacyAdmin()]) await assertFails(getDoc(doc(who, "emailThreads/x__t1")));
+  await assertFails(getDocs(collection(admin(), "emailThreads")));
+  await assertSucceeds(getDocs(query(collection(admin(), "emailThreads"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(query(collection(david(), "emailThreads"), where("artistId", "==", "x"))));
+  await assertFails(setDoc(doc(admin(), "emailThreads/x__new"), { artistId: "x" }));
+  await assertFails(updateDoc(doc(admin(), "emailThreads/x__t1"), { subject: "hacked" }));
+  await assertFails(deleteDoc(doc(admin(), "emailThreads/x__t1")));
+});

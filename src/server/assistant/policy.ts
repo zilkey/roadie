@@ -17,6 +17,7 @@ export const EXCLUDED: readonly string[] = [
   "history.myRuns",   // Roadie sees only its own thread's runs, through history.undoRun
   "pitches.checkReplies", // reads the band's mail: Roadie never reads email
   "email.signature",  // reads the admin's Gmail settings: Roadie never reads email
+  "email.link", "email.sync", "email.thread", // the same: they read threads from Gmail
   "stats.importCsv",  // bulk import of someone's file
   "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
 ];
@@ -38,7 +39,7 @@ export function refusal(name: string, input: unknown): string | undefined {
 
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
-  "pitches.sendEmail", "availability.ask", "availability.remind",                      // sends
+  "pitches.sendEmail", "email.send", "availability.ask", "availability.remind",                      // sends
   "expenses.setPaidBack", "expenses.payPerson", "showDeals.setIncome",                                          // money
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
@@ -122,6 +123,7 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "expenses.payPerson": (_i, before) => `Pay ${before?.person ?? "them"}${before?.total ? ` ${formatCents(before.total)}` : " back"}`,
   "showDeals.setIncome": (i) => `Set the show's income${Array.isArray(i.income) ? ` (${dollars((i.income as { amount: number }[]).reduce((n, l) => n + l.amount, 0))} in all)` : ""}`,
   "pitches.sendEmail": () => "Send an email from your Gmail",
+  "email.send": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",
   "fans.markSynced": (i) => (i.group ? `Mark every fan in "${i.group}" as added to Bandzoogle: they won't be offered again` : `Mark ${Array.isArray(i.ids) ? i.ids.length : "these"} fans as added to Bandzoogle: they won't be offered again`),
   "fans.remove": () => "Delete this fan and their history for good (it can't be undone)",

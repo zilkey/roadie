@@ -209,6 +209,12 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.getByTestId("email-send").click();
   await expect(page.getByTestId("email-sent")).toBeVisible();
   await expect(page.getByTestId("timeline").getByTestId("tl-emailSent")).toContainText(subject);
+  // the thread is on the venue and listed on the Email card
+  const card = page.getByTestId("pitch-email-card");
+  await expect(card.locator("h2")).toHaveText("Email · 1 thread");
+  await expect(card.getByTestId("email-threads").locator("a")).toHaveCount(1);
+  await expect(card.getByTestId("email-threads")).toContainText(subject);
+  await expect(card.getByTestId(/^thread-new-/)).toHaveCount(0);
 
   const msgs = (await (await request.get(`${GMAIL}/messages?account=jeff@example.com`)).json()) as { subject: string; to: string[]; threadId: string }[];
   const mine = msgs.find((m) => m.subject === subject);
@@ -221,6 +227,10 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.getByTestId("check-replies").click();
   await expect(page.getByTestId("replies-result")).toHaveText("1 new reply");
   await expect(page.getByTestId("tl-emailReply")).toContainText("Mid-November works.");
+  await expect(card.getByTestId(/^thread-new-/)).toHaveText("New reply");
+  await expect(card.getByTestId("email-threads")).toContainText("Mid-November works.");
+  await expect(card.getByTestId(/^thread-count-/)).toHaveText("2");
+  await expect(page.getByTestId("checked")).toHaveText("Checked just now");
 });
 
 test("create a promoter, a festival with a year, and open a contact", async ({ page }) => {

@@ -77,6 +77,8 @@ service cloud.firestore {
     match /promoterNotes/{id}      { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     match /contactNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     match /emailTemplates/{id}     { allow read: if isAdmin(); }
+    // A band's Gmail thread summaries, id = {artistId}__{threadId}: that artist's admins only (no bodies are stored). Lists must filter where('artistId', '==', ...).
+    match /emailThreads/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     match /showDeals/{id}          { allow read: if isAdmin(); }
     match /statSnapshots/{id}      { allow read: if isAdmin(); }
     match /mcpTokens/{id}          { allow read: if isAdmin(); }
