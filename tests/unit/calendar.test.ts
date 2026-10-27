@@ -98,8 +98,8 @@ describe("layerFilter", () => {
     assert.equal(layerFilter(item("rehearsal", "r"), "shows"), false);
     assert.equal(layerFilter(item("rehearsal", "r"), "rehearsals"), true);
   });
-  test("booking covers pitch dates, opens, deadlines, series and festival days", () => {
-    for (const k of ["pitchDate", "opens", "deadline", "seriesStart", "festivalDay"] as const) {
+  test("booking covers pitch dates, next steps, opens, deadlines, series and festival days", () => {
+    for (const k of ["pitchDate", "nextStep", "opens", "deadline", "seriesStart", "festivalDay"] as const) {
       assert.equal(layerFilter(item(k, "x"), "booking"), true);
     }
     assert.equal(layerFilter(item("show", "s"), "booking"), false);
@@ -118,5 +118,9 @@ describe("upcoming", () => {
     ];
     assert.deepEqual(upcoming(items, "2026-11-01", 2).map((i) => i.sourceId), ["o1", "d2"]);
     assert.deepEqual(upcoming(items, "2026-11-01", 10).map((i) => i.sourceId), ["o1", "d2", "d3"]);
+  });
+  test("pitch next steps count; overdue ones don't", () => {
+    const items = [item("nextStep", "late", "2026-10-30"), item("nextStep", "n1", "2026-11-05"), item("pitchDate", "p", "2026-11-02"), item("deadline", "d", "2026-11-10")];
+    assert.deepEqual(upcoming(items, "2026-11-01", 10).map((i) => i.sourceId), ["n1", "d"]);
   });
 });

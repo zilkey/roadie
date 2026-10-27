@@ -64,6 +64,11 @@ const SPECIAL: ToolDef[] = [
     inputJsonSchema: obj({ runId: { type: "string" }, all: { type: "boolean" } }),
   },
   {
+    name: "ui.ask",
+    description: `Ask the person to pick what they meant. question is your reply; options (2-4, a few words each, naming the thing and the date) become buttons, and the one they tap comes back as their next message. Changes nothing; nothing else runs after it this message.`,
+    inputJsonSchema: obj({ question: { type: "string", minLength: 1, maxLength: 300 }, options: { type: "array", items: { type: "string", minLength: 1, maxLength: 80 }, minItems: 2, maxItems: 4 } }, ["question", "options"]),
+  },
+  {
     name: "ui.navigate",
     description: `Open a page in the app by route name. For one record, use the record's route (show, venue, pitch, song...) with {id} from search. Routes: ${routeNames.map((n) => `${n} (${ROUTES[n].title})`).join(", ")}.`,
     inputJsonSchema: obj({ route: { enum: routeNames }, params: { type: "object", additionalProperties: { type: "string" } } }, ["route"]),
@@ -82,7 +87,8 @@ export function toolDefs(role: Role): ToolDef[] {
 // ---------- results ----------
 
 export type Emit = (e: AssistantEvent) => void;
-export interface ToolOut { output: unknown; action?: AssistantAction; also?: AssistantAction; stop?: boolean }
+/** `choices`: ui.ask's answer buttons. `say`: words the reply must carry (ui.ask's question). */
+export interface ToolOut { output: unknown; action?: AssistantAction; also?: AssistantAction; choices?: AssistantAction[]; say?: string; stop?: boolean }
 
 /** Said after Roadie puts something on the Pitch List; the reply also carries a button that opens the pitch. */
 export const SEE_PITCH = "Want to see the pitch?";
@@ -386,6 +392,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
   try {
     if (s.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     if (name === "ui.navigate") return await navigate(s, input);
+    if (name === "ui.ask") return ask(input);
     if (name === "web.search") return await webSearch(s, input, w);
     if (name === "web.read") return await webRead(s, input, w);
     const ctx = makeCtx(s);
@@ -436,5 +443,15 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const out = fail(e);
     return { output: out, action: { kind: "action", label: `Couldn't: ${out.error.message}` } };
   }
+}
+/** ui.ask: the question becomes the reply, the options become buttons, and the message ends there. */
+function ask(input: unknown): ToolOut {
+  const p = z.strictObject({ question: z.string().trim().min(1).max(300), options: z.array(z.string().trim().min(1).max(80)).min(2).max(4) }).safeParse(input ?? {});
+  if (!p.success) throw new AppError("invalid_input", "A question and 2-4 short options", 400);
+  const options = [...new Set(p.data.options)];
+  return {
+    output: { asked: true, message: "Asked. Stop here and wait for their answer; don't change anything yet." },
+    choices: options.map((label) => ({ kind: "reply", label })), say: p.data.question, stop: true,
+  };
 }
 const runAsInvalid = (e: z.ZodError) => new AppError("invalid_input", "Input did not validate", 400, e.issues.map((i) => ({ path: i.path.join("."), message: i.message })));

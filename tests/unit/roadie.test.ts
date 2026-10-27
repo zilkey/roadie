@@ -6,7 +6,7 @@ import { execTool } from "@/server/assistant/tools";
 import { ensureThread, newMessageId, newThreadId } from "@/server/assistant/threads";
 import { newRunId } from "@/server/ctx";
 import { modelMode } from "@/server/assistant/ai";
-import { script, OFF_TOPIC, CANT_DO } from "@/server/assistant/script";
+import { script, OFF_TOPIC, CANT_DO, BAD_FINDER, CALENDAR_OPTIONS } from "@/server/assistant/script";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import { assistantSetPrefs } from "@/server/commands/assistant";
 import { dispatch } from "@/server/commands/dispatch";
@@ -113,6 +113,33 @@ test("flow: a bad route name fails safely (no navigate event)", async () => {
   assert.deepEqual((await execTool(s, "ui.navigate", { route: "http://evil.example" }, none)).output, { error: 'No page called "http://evil.example"' });
   assert.ok((await execTool(s, "ui.navigate", { route: "show" }, none)).output); // missing :id
   assert.equal((await execTool(s, "ui.navigate", { route: "show" }, none)).action?.kind, "action");
+});
+
+test("script: a calendar ask it can't place asks back, with options", () => {
+  for (const text of ["put a deadline in the calendar for Dec 5", "remind me to text Josh"]) {
+    assert.deepEqual(script({ text }).calls, [{ name: "ui.ask", input: { question: `${BAD_FINDER} Did you want:`, options: CALENDAR_OPTIONS } }]);
+  }
+});
+
+test("flow: ui.ask puts the question in the reply, the options as reply buttons, and changes nothing", async () => {
+  const { events, out } = await run("put a deadline on the calendar for Dec 5");
+  assert.match(textOf(events), /^I could just be a bad finder/);
+  assert.equal(out.text, `${BAD_FINDER} Did you want:`);
+  assert.deepEqual(events.filter((e) => e.type === "reply").map((e) => (e as { label: string }).label), CALENDAR_OPTIONS);
+  assert.deepEqual(out.actions, CALENDAR_OPTIONS.map((label) => ({ kind: "reply", label })));
+  assert.equal(events.some((e) => e.type === "readback" || e.type === "confirm"), false);
+});
+
+test("ui.ask: needs a question and 2-4 options", async () => {
+  const s = { ...(await session()), model: "roadie/fake" };
+  const none = () => {};
+  const one = await execTool(s, "ui.ask", { question: "Which?", options: ["Only one"] }, none);
+  assert.equal((one.output as { error: { code: string } }).error.code, "invalid_input");
+  assert.equal(one.choices, undefined);
+  const two = await execTool(s, "ui.ask", { question: "Which?", options: ["A", "A", "B"] }, none);
+  assert.deepEqual(two.choices, [{ kind: "reply", label: "A" }, { kind: "reply", label: "B" }]);
+  assert.equal(two.say, "Which?");
+  assert.equal(two.stop, true);
 });
 
 test("routes: registry resolves names, never raw URLs", () => {

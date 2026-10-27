@@ -1,6 +1,6 @@
 /** Pure calendar logic for the Calendar page (no server or browser imports). All dates are plain YYYY-MM-DD strings. */
 
-export type CalendarKind = "show" | "rehearsal" | "pitchDate" | "opens" | "deadline" | "seriesStart" | "festivalDay";
+export type CalendarKind = "show" | "rehearsal" | "pitchDate" | "nextStep" | "opens" | "deadline" | "seriesStart" | "festivalDay";
 
 export interface CalendarItem {
   /** Unique per item (e.g. `${kind}:${sourceId}:${date}`). */
@@ -15,7 +15,7 @@ export interface CalendarItem {
   subtitle: string;
   /** Artist-relative path to the record, e.g. "/shows/abc". */
   href: string;
-  /** Pitch date before today (struck through). */
+  /** Pitch date before today (struck through); a next step before today is overdue. */
   past?: boolean;
   /** The pitch, show, rehearsal or edition id; conflicts count each source once per day. */
   sourceId: string;
@@ -64,10 +64,10 @@ export function monthGrid(ym: string): string[] {
   return days;
 }
 
-/** Opens and deadlines on or after `today`, soonest first, first `n`. */
+/** Opens, deadlines and pitch next steps on or after `today`, soonest first, first `n`. */
 export function upcoming(items: CalendarItem[], today: string, n: number): CalendarItem[] {
   return items
-    .filter((i) => (i.kind === "opens" || i.kind === "deadline") && i.date >= today)
+    .filter((i) => (i.kind === "opens" || i.kind === "deadline" || i.kind === "nextStep") && i.date >= today)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
     .slice(0, n);
 }
@@ -82,7 +82,7 @@ export function layerFilter(item: CalendarItem, layer: CalendarLayer): boolean {
     case "rehearsals":
       return item.kind === "rehearsal";
     case "booking":
-      return ["pitchDate", "opens", "deadline", "seriesStart", "festivalDay"].includes(item.kind);
+      return ["pitchDate", "nextStep", "opens", "deadline", "seriesStart", "festivalDay"].includes(item.kind);
   }
 }
 

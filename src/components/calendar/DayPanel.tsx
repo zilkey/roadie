@@ -13,7 +13,7 @@ export function DayPanel({ date, allItems, items }: { date: string; allItems: Ca
       {conflict && <div className={s.banner} data-testid="conflict-banner">{conflict.label}</div>}
       {items.length === 0 ? <p className="s">Nothing on this day.</p> : items.map((i) => (
         <Link key={i.id} href={i.href} className={s.item}>
-          <span className={s.kind}>{KIND_LABEL[i.kind]}{i.kind === "deadline" ? (i.target ? " · pitch by" : i.estimated ? " · est." : "") : i.kind === "opens" && i.estimated ? " · est." : ""}</span>
+          <span className={s.kind}>{KIND_LABEL[i.kind]}{i.kind === "deadline" ? (i.target ? " · pitch by" : i.estimated ? " · est." : "") : i.kind === "opens" && i.estimated ? " · est." : i.kind === "nextStep" && i.past ? " · overdue" : ""}</span>
           <span className={`${s.name} ${i.kind === "pitchDate" && i.past ? s.past : ""}`} style={{ fontWeight: 700 }}>{i.title}</span>
           {i.subtitle && <span className="s">{i.subtitle}</span>}
         </Link>

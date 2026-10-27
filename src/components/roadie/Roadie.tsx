@@ -14,7 +14,7 @@ const useDesktop = () =>
 
 const actionText = (a: AssistantAction) => (a.kind === "navigate" ? `→ Opened ${a.label}` : a.label);
 
-interface Handlers { answer(pendingId: string, d: "yes" | "cancel"): void; undo(runId: string): void; open(a: AssistantAction): void }
+interface Handlers { answer(pendingId: string, d: "yes" | "cancel"): void; undo(runId: string): void; open(a: AssistantAction): void; reply(text: string): void }
 
 const CONFIRM_DONE = { done: "Done", canceled: "Canceled", expired: "Expired. Ask me again.", failed: "Didn't work" } as const;
 
@@ -22,6 +22,7 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
   return (
     <>
       {actions.map((a, i) => {
+        if (a.kind === "reply") return null; // drawn under the question (Replies)
         if (a.kind === "readback") {
           return (
             <div key={i} className="s flex flex-wrap items-center gap-2" data-testid="roadie-readback">
@@ -54,7 +55,18 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
   );
 }
 
-function Bubble({ role, text, actions = [], on }: { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; on: Handlers }) {
+/** Answers to Roadie's question (ui.ask). Only the latest reply's can be tapped; tapping sends the answer as your message. */
+function Replies({ actions, live, on }: { actions: AssistantAction[]; live: boolean; on: Handlers }) {
+  const replies = actions.filter((a) => a.kind === "reply");
+  if (!replies.length || !live) return null;
+  return (
+    <div className="flex flex-wrap gap-1" data-testid="roadie-replies">
+      {replies.map((a, i) => <button key={i} className="btn ghost sm" data-testid="roadie-reply" onClick={() => on.reply(a.label)}>{a.label}</button>)}
+    </div>
+  );
+}
+
+function Bubble({ role, text, actions = [], on, live = false }: { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; on: Handlers; live?: boolean }) {
   return (
     <div className={`grid gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
       {role === "assistant" && <Actions actions={actions} on={on} />}
@@ -65,6 +77,7 @@ function Bubble({ role, text, actions = [], on }: { role: "user" | "assistant"; 
             : <span key={i}>{s.text}</span>)}
         </div>
       )}
+      {role === "assistant" && <Replies actions={actions} live={live} on={on} />}
     </div>
   );
 }
@@ -83,11 +96,11 @@ function Chat({ messages, pending, busy, send, on, notice }: { messages: ChatMsg
       <div className="flex-1 overflow-y-auto" data-testid="roadie-messages">
         <div className="grid content-start gap-3 p-3">
           {!messages.length && !pending && <div className="s">Hey. I'm Roadie. Ask me about shows, tours or money.</div>}
-          {shown.map((m) => <Bubble key={m.id} {...m} on={on} />)}
+          {shown.map((m, i) => <Bubble key={m.id} {...m} on={on} live={!pending && !busy && i === shown.length - 1} />)}
           {pending && (
             <>
               <Bubble role="user" text={pending.text} on={on} />
-              <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} />
+              <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} live={!busy} />
               {busy && !pending.reply && !pending.actions.length && <div className="s italic" data-testid="roadie-vamp">{vamp}</div>}
               {pending.error && <div className="text-sm text-warn" data-testid="roadie-error">{pending.error}</div>}
             </>
@@ -123,7 +136,7 @@ export function Roadie() {
   const desktop = useDesktop();
   const [open, setOpen] = useState(false);
   const r = useRoadie(() => setOpen(false)); // after Roadie navigates, the phone sheet drops back to the pill
-  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo, open: r.open }} notice={r.notice} />;
+  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo, open: r.open, reply: r.send }} notice={r.notice} />;
 
   if (desktop) {
     if (r.width === "narrow") {

@@ -17,6 +17,9 @@ export const NO_PEOPLE = "I can't do that. I don't know that tune: invites and a
 /** Sending a stage plot by email isn't built (V1: download the PDF and attach it yourself, or share the engineer link). No tool call. */
 export const PLOT_NOT_SENT = "I can't send a stage plot yet. Download the PDF from the plot (or the show's Stage plot card) and attach it to your email, or I can get you the engineer link.";
 export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
+/** How Roadie opens a question it can't place (ui.ask). */
+export const BAD_FINDER = "I could just be a bad finder, but I don't know what you mean.";
+export const CALENDAR_OPTIONS = ["A pitch's next step", "A possible date on a pitch", "A hold show"];
 
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
 const PAGES: [RegExp, RouteName][] = [
@@ -150,6 +153,10 @@ function first(t: string, page?: Page, raw = t): Scripted {
     const q = go[2].replace(/\b(venue|pitch|song|promoter|festival|contact|show|page|tab|the)\b/g, "").replace(/\s+/g, " ").trim();
     if (q) return { text: "On it.", calls: [{ name: "search", input: { q, ...(kind ? { kinds: [kind] } : {}) } }] };
     return { text: "On it.", calls: [{ name: "ui.navigate", input: { route: go[2].replace(/\W+/g, "-") } }] };
+  }
+  // "Put a deadline on the calendar for Dec 5": a calendar thing could be several things here. Ask, don't guess.
+  if (/\b(?:on|in|to|into) (?:the |my |our )?calendar\b|\bremind me\b/.test(t)) {
+    return { calls: [{ name: "ui.ask", input: { question: `${BAD_FINDER} Did you want:`, options: CALENDAR_OPTIONS } }] };
   }
   if (/\b(delete|remove|send|pay|email|add|change|move|book|play|write|create)\b/.test(t)) return { text: CANT_DO };
   if (/\b(show|shows|gig|tour|money|song|setlist|rehearsal|load[- ]?in|band)\b/.test(t)) return { text: NOT_YET };

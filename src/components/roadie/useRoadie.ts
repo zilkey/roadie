@@ -80,6 +80,7 @@ export function useRoadie(onNavigated?: () => void) {
     else if (e.type === "action") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "action", label: e.label }] });
     else if (e.type === "readback") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "readback", label: e.label, runId: e.runId }] });
     else if (e.type === "confirm") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending" }] });
+    else if (e.type === "reply") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "reply", label: e.label }] });
     else if (e.type === "link") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "link", label: e.label, route: e.route, params: e.params }] });
     else if (e.type === "navigate") {
       const r = resolveRoute(e.route, e.params, slug); // always inside the artist you are in

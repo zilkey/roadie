@@ -23,18 +23,20 @@
 .k-show { background: var(--accent); color: var(--on-accent); }
 .k-rehearsal { background: transparent; color: var(--ink); border-color: var(--accent); border-style: dashed; }
 .k-pitchDate { background: color-mix(in srgb, var(--pitched) 16%, transparent); color: var(--pitched); border-color: var(--pitched); }
+.k-nextStep { background: var(--pitched); color: #fff; }
 .k-deadline { background: #b45309; color: #fff; }
 .k-deadline.outl { background: transparent; color: #b45309; border-color: #b45309; }
 .k-opens { background: var(--success-bg); color: var(--success-text); }
 .k-seriesStart { background: var(--divider); color: var(--ink); border-color: var(--muted); }
 .k-festivalDay { background: transparent; color: var(--accent-soft-text); border-color: var(--accent); }
-@media (prefers-color-scheme: dark) { .k-deadline { background: #d97706; } .k-deadline.outl { color: #f0a640; border-color: #f0a640; background: transparent; } }
+@media (prefers-color-scheme: dark) { .k-nextStep { color: #2b0a16; } .k-deadline { background: #d97706; } .k-deadline.outl { color: #f0a640; border-color: #f0a640; background: transparent; } }
 .past { text-decoration: line-through; opacity: .7; }
 .more { font-size: 11.5px; color: var(--muted); font-weight: 600; }
 .dot { display: inline-block; width: 8px; height: 8px; flex: none; }
 .d-show { border-radius: 50%; background: var(--accent); }
 .d-rehearsal { border-radius: 50%; border: 2px solid var(--accent); }
 .d-pitchDate { background: var(--pitched); }
+.d-nextStep { width: 7px; height: 7px; background: var(--pitched); transform: rotate(45deg); }
 .d-edition { width: 10px; height: 3px; background: #b45309; border-radius: 2px; }
 @media (max-width: 640px) {
   .cell { min-height: 56px; padding: 3px 2px; align-items: center; gap: 2px; }

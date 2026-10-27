@@ -15,7 +15,7 @@ const addDay = (d: string) => {
 /**
  * Everything the Calendar page draws. Shows and rehearsals load for everyone (same unfiltered queries as the Shows and
  * Rehearsals pages); festivals, editions and pitches are admin-only and skipped for members. Pitches are this band's only.
- * `comingUp` is the next 6 opens/deadlines of editions not yet acted on (admins only).
+ * `comingUp` is the next 6 opens/deadlines of editions not yet acted on and pitch next steps (admins only).
  */
 export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarItem[]; loading: boolean; admin: boolean } {
   const { role, artistId } = useArtist();
@@ -57,6 +57,15 @@ export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarI
             id: `pitchDate:${p.id}:${d}`, date: d, kind: "pitchDate", sourceId: p.id, href: `/booking/pitches/${p.id}`,
             title: p.target.name, subtitle: STATUS_LABEL[p.status as Status] ?? p.status, past: datePast(d, today),
           });
+        }
+        if (p.nextStep) {
+          const d = p.nextStep.due;
+          const step: CalendarItem = {
+            id: `nextStep:${p.id}:${d}`, date: d, kind: "nextStep", sourceId: p.id, href: `/booking/pitches/${p.id}`,
+            title: p.target.name, subtitle: p.nextStep.text, past: datePast(d, today) || undefined,
+          };
+          items.push(step);
+          comingUp.push(step);
         }
       }
 

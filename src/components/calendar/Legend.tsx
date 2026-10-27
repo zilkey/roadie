@@ -9,6 +9,7 @@ export function Legend({ admin }: { admin: boolean }) {
       <span>{sw(s["k-rehearsal"])}Rehearsal</span>
       {admin && <>
         <span>{sw(s["k-pitchDate"])}Pitch date</span>
+        <span>{sw(s["k-nextStep"])}Next step</span>
         <span>{sw(s["k-deadline"])}Deadline</span>
         <span>{sw(`${s["k-deadline"]} ${s.outl}`)}Est. / pitch by</span>
         <span>{sw(s["k-opens"])}Application opens</span>

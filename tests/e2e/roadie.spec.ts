@@ -39,6 +39,20 @@ test("admin: panel on the left, canned reply, survives navigation and reload", a
   await expect(page.getByTestId("roadie-msg-assistant").first()).toContainText("Roadie here");
 });
 
+test("a calendar ask Roadie can't place: it asks back with buttons, and a tap answers", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "put a deadline on the calendar for Dec 5");
+  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("I could just be a bad finder, but I don't know what you mean.");
+  const replies = page.getByTestId("roadie-reply");
+  await expect(replies).toHaveText(["A pitch's next step", "A possible date on a pitch", "A hold show"]);
+
+  await replies.first().click();
+  await expect(page.getByTestId("roadie-msg-user").last()).toHaveText("A pitch's next step");
+  await expect(page.getByTestId("roadie-msg-assistant")).toHaveCount(2);
+  await expect(page.getByTestId("roadie-reply")).toHaveCount(0); // only the latest question can be answered
+});
+
 const STAMP = Date.now();
 
 test("'add $50 gas': read-back line, the expense appears on Money live, Undo removes it", async ({ page }) => {
