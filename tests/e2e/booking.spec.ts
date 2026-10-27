@@ -7,13 +7,40 @@ async function signInAs(page: Page, key: string) {
   await expect(page).toHaveURL(/\/calendar$/);
 }
 
+test("search buckets the results by kind, marks the match, and clearing brings the tab back", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("tab-booking").click();
+  await page.getByTestId("booking-search").fill("lost");
+  await expect(page.getByTestId("search-summary")).toContainText("for \u201Clost\u201D");
+  const venues = page.getByTestId("bucket-venues");
+  await expect(venues).toContainText("Lost Lake Lounge");
+  await expect(venues.locator("mark").first()).toHaveText(/lost/i);
+  await expect(page.getByTestId("bucket-festivals")).toHaveCount(0);
+  const lost = venues.locator("tr", { hasText: "Lost Lake Lounge" });
+  await expect(lost.locator("[data-testid^='flag-'][data-flagged='1']")).toHaveCount(1);
+  await expect(lost.locator("a.nm")).toHaveAttribute("href", /\/booking\/pitches\//); // the name opens the pitch
+  await page.getByTestId("booking-search").fill("folks");
+  const fests = page.getByTestId("bucket-festivals");
+  await expect(fests).toContainText("2027");
+  await expect(page.getByTestId("bucket-venues")).toHaveCount(0);
+  await page.getByTestId("bucket-all-festivals").click();
+  await expect(page).toHaveURL(/\/booking\/festivals\?q=folks/);
+  await page.getByTestId("booking-search").fill("");
+  await expect(page.getByTestId("search-buckets")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/q=/);
+  await page.getByTestId("booking-seg-pitches").click();
+  await expect(page.getByTestId("pitch-list")).toBeVisible();
+  await expect(page).not.toHaveURL(/q=/);
+});
+
 test("flag a venue, move the pitch along, search finds it", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.getByTestId("tab-booking").click();
   await expect(page.getByTestId("booking-seg-pitches")).toHaveAttribute("aria-selected", "true"); // Booking opens on the Pitch List
   await page.getByTestId("booking-search").fill("swallow");
-  await expect(page.getByTestId("no-results")).toBeVisible(); // nothing pitched there yet
-  await page.getByTestId("booking-seg-venues").click(); // the search narrows every tab
+  await expect(page.getByTestId("bucket-venues")).toBeVisible(); // a search replaces the tab with buckets
+  await page.getByTestId("booking-seg-venues").click(); // and it follows to every tab
+  await expect(page).toHaveURL(/\/booking\/venues\?q=swallow/); // the tab's own page has mounted
   const row = page.getByTestId(/^row-venue-/);
   await expect(row).toHaveCount(1);
   const flag = row.locator("[data-testid^='flag-'][data-flagged]"); // the flag button itself, not its form's fields

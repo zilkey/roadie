@@ -75,11 +75,11 @@ test("Festivals tab: deadline and dates columns sort on the server, kept in ?sor
   await expect(names).toHaveText(["Underground Music Showcase", "Rocky Mountain Folks Festival", "Levitt Pavilion Summer Series"]);
   await expect(page.getByTestId("booking-list").locator("tr", { hasText: "Rocky" }).locator("[data-testid^='dates-']")).toHaveText("Aug 20–Aug 22");
 
-  // The sort survives a reload; the search runs on the server too.
+  // The sort survives a reload; a search replaces the list with buckets.
   await page.reload();
   await expect(names).toHaveText(["Underground Music Showcase", "Rocky Mountain Folks Festival", "Levitt Pavilion Summer Series"]);
   await page.getByTestId("booking-search").fill("priya");
-  await expect(names).toHaveText(["Underground Music Showcase"]);
+  await expect(page.getByTestId("bucket-festivals").locator("tbody tr td.name")).toHaveText(["Underground Music Showcase"]);
 });
 
 test("venue type: Other… adds a type for everyone; Settings lists it", async ({ page }) => {

@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -18,9 +18,10 @@ import { useVenueTypes } from "@/lib/venueTypes";
 import { CheckFilter } from "@/components/booking/CheckFilter";
 import { FESTIVAL_SORTS, type FestivalSort } from "@/lib/festivalPage";
 import { useFestivalPage } from "@/components/booking/useFestivalPage";
-import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
+import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, highlight, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
 import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
+import { SearchBuckets } from "@/components/booking/SearchBuckets";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
 export function BookingIndex({ seg }: { seg: Seg }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
@@ -36,6 +37,11 @@ function Booking({ seg }: { seg: Seg }) {
   const params = useSearchParams();
   const [q, setQ] = useState(() => params.get("q") ?? "");
   const setSeg = (s: Seg) => router.push(`/booking/${s}${q.trim() ? `?q=${encodeURIComponent(q)}` : ""}`);
+  // Clearing the search (the field's own cancel button, or deleting the text) brings the tab back and drops ?q= from the URL.
+  const changeQ = (v: string) => {
+    setQ(v);
+    if (!v.trim() && params.get("q") !== null) router.replace(`/booking/${seg}`);
+  };
   // An unfinished "new X" opens its form by itself (a draft link to it opens the form).
   const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")), contact: useHasDraft(draftPath.newIn("contacts")) };
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
@@ -136,7 +142,7 @@ function Booking({ seg }: { seg: Seg }) {
       <PageTitle title="Booking" center actions={<>
         <label className="search-field">
           <SearchIcon />
-          <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
+          <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => changeQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
         </label>
         {addActions}
       </>} />
@@ -144,7 +150,7 @@ function Booking({ seg }: { seg: Seg }) {
         options={[["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 
-      {seg === "pitches" && (
+      {seg === "pitches" && !q.trim() && (
         <div className="pitch-filter flex flex-wrap items-center gap-2 justify-self-start" data-testid="pitch-filter">
           <span className="s font-semibold whitespace-nowrap">Filter by</span>
           <select className="select w-auto" value={status} onChange={(e) => setStatus(e.target.value as Status | "")} aria-label="Filter pitches by status" data-testid="pitch-status-filter">
@@ -163,6 +169,7 @@ function Booking({ seg }: { seg: Seg }) {
           )}
         </div>
       )}
+      {q.trim() ? <SearchBuckets q={q} ours={ours} onFlag={setTarget} /> : <>
       <div className="grid min-w-0 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
         {seg === "festivals" && <ErrorBox error={page.error} />}
         {listLoading && <span className="s">Loading…</span>}
@@ -176,6 +183,7 @@ function Booking({ seg }: { seg: Seg }) {
           </button>
         )}
       </div>
+      </>}
       <PitchModal target={target} onClose={() => setTarget(null)} />
       {form}
     </div>
@@ -214,7 +222,13 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
   </svg>
 );
 
-function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort: FestivalSort; onSort(s: FestivalSort): void }) {
+/** `q` marks the matched text in the name and email cells; without `onSort` the headers don't sort (search buckets). */
+export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string }) {
+  const hl = (text: string): ReactNode => {
+    if (!q.trim()) return text;
+    const h = highlight(text, q);
+    return h.match ? <>{h.before}<mark>{h.match}</mark>{h.after}</> : text;
+  };
   const router = useRouter();
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
@@ -235,10 +249,10 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
     const at = r.pitch?.lastContactAt;
     return <td className="lc" data-testid={`last-contact-${r.id}`}>{at ? fmtInstant(at.toMillis(), { month: "short", day: "numeric" }) : <Dash />}</td>;
   };
-  const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{r.name}</Link>;
+  const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{hl(r.name)}</Link>;
   // A row with an active pitch opens the pitch from its name; the place page is one click under it ("Venue page"). Without a pitch the name is the place page.
   const nameLink = (r: ListRow, ref: Ref, testid: string, label?: string) => r.pitch ? (<>
-    <Link href={`/booking/pitches/${r.pitch.id}`} className="nm" data-testid={testid}>{ref.name}</Link>
+    <Link href={`/booking/pitches/${r.pitch.id}`} className="nm" data-testid={testid}>{hl(ref.name)}</Link>
     {label && <span className="sub"><Link href={hrefFor(r.to.kind, r.to.id)} data-testid={`page-link-${r.id}`}>{label}</Link></span>}
   </>) : link(ref, testid);
   const flag = (r: ListRow) => {
@@ -265,7 +279,7 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
   };
   const status = (r: ListRow) => r.pitch && <> <StatusChip status={r.pitch.status} /></>;
   const reach = (r: ListRow) => (<>
-    <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{r.email}</a> : <Dash />}</td>
+    <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{hl(r.email)}</a> : <Dash />}</td>
     <td className="nw">{r.phone ? <a className="ph" href={`tel:${r.phone}`}>{fmtPhone(r.phone)}</a> : <Dash />}</td>
   </>);
   const city = (r: ListRow) => <td className="nw">{r.city || <Dash />}</td>;
@@ -275,7 +289,7 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
   };
   const nameCell = (r: ListRow) => (
     <td className="name">
-      {seg === "pitches" ? <Link href={r.pitch ? `/booking/pitches/${r.pitch.id}` : hrefFor(r.to.kind, r.to.id)} className="nm" data-testid={`${r.kind}-full-${r.id}`}>{r.name}</Link>
+      {seg === "pitches" ? <Link href={r.pitch ? `/booking/pitches/${r.pitch.id}` : hrefFor(r.to.kind, r.to.id)} className="nm" data-testid={`${r.kind}-full-${r.id}`}>{hl(r.name)}</Link>
         : nameLink(r, r.to, `${r.kind}-full-${r.id}`, "Venue page")}{status(r)}
       {r.promoters.length > 0 && <span className="sub">promoted by {r.promoters.map((p, i) => <span key={p.id}>{i > 0 && ", "}<Link href={hrefFor("promoter", p.id)}>{p.name}</Link></span>)}</span>}
     </td>
@@ -286,13 +300,13 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
       <thead><tr>
         {flagged && <th className="flag" aria-label="Pitch List flag" />}
         {heads.map((h, i) => {
-          const sortBy = seg === "festivals" ? SORT_BY[h] : undefined;
+          const sortBy = seg === "festivals" && onSort ? SORT_BY[h] : undefined;
           const on = sortBy && sort.replace("-", "") === sortBy;
           return (
             <th key={h} className={h === "Pitch" ? "pitch" : h === "Last contact" ? "lc" : wideName && i === 0 ? "name" : h === "Dates" || h === "Deadline" ? "nw" : undefined}
               aria-sort={on ? (sort.startsWith("-") ? "descending" : "ascending") : undefined}>
               {sortBy ? (
-                <button type="button" className="th-sort" data-testid={`sort-${sortBy}`} onClick={() => onSort(nextSort(sort, sortBy))}>
+                <button type="button" className="th-sort" data-testid={`sort-${sortBy}`} onClick={() => onSort?.(nextSort(sort, sortBy))}>
                   {h}{on && <span aria-hidden> {sort.startsWith("-") ? "▼" : "▲"}</span>}
                 </button>
               ) : h}

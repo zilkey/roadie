@@ -87,6 +87,19 @@ export function searchItems(items: SearchItem[], q: string): SearchItem[] {
   return items.filter((i) => { const h = i.haystack.toLowerCase(); return words.every((w) => h.includes(w)); });
 }
 
+/**
+ * Splits `text` around the first place a query word appears (case-insensitive), so a cell can wrap it in <mark>.
+ * Words are tried in order; no match gives the whole text as `before`.
+ */
+export function highlight(text: string, q: string): { before: string; match: string; after: string } {
+  const low = text.toLowerCase();
+  for (const w of q.toLowerCase().split(/\s+/).filter(Boolean)) {
+    const at = low.indexOf(w);
+    if (at >= 0) return { before: text.slice(0, at), match: text.slice(at, at + w.length), after: text.slice(at + w.length) };
+  }
+  return { before: text, match: "", after: "" };
+}
+
 /** "Denver, CO"; "" when there is no town yet (a festival from before the festival-where migration). */
 export const cityState = (a?: { city?: string; state?: string }) => [a?.city, a?.state].filter(Boolean).join(", ");
 

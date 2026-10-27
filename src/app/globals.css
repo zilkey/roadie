@@ -526,3 +526,4 @@ dialog.print-dlg.phone { width: 100vw; max-width: 100vw; margin: auto 0 0; borde
 .ap-line { width: 100%; height: 4px; border-radius: 2px; background: var(--input-border); overflow: hidden; }
 .ap-line > div { height: 100%; background: var(--accent); }
 .ap-time { flex: none; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+mark { background: var(--quiet); color: inherit; }

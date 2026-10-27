@@ -22,3 +22,13 @@ test("no dates says No dates yet", () => {
   assert.equal(pitchCellText({ dates: [] }, configs).dates, "No dates yet");
   assert.equal(pitchCellText({}, configs).dates, "No dates yet");
 });
+
+import { highlight } from "@/lib/booking";
+
+test("highlight marks the first occurrence of a query word, ignoring case", () => {
+  assert.deepEqual(highlight("Lost Lake Lounge", "lost"), { before: "", match: "Lost", after: " Lake Lounge" });
+  assert.deepEqual(highlight("Fox Theatre", "THE"), { before: "Fox ", match: "The", after: "atre" });
+  assert.deepEqual(highlight("Hi-Dive", "zzz dive"), { before: "Hi-", match: "Dive", after: "" });
+  assert.deepEqual(highlight("Hi-Dive", "nope"), { before: "Hi-Dive", match: "", after: "" });
+  assert.deepEqual(highlight("Hi-Dive", "  "), { before: "Hi-Dive", match: "", after: "" });
+});
