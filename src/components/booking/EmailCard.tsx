@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useCollection } from "@/lib/firestore-hooks";
@@ -16,9 +16,9 @@ const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month
 
 /**
  * The Email card on a pitch: the Gmail threads of the pitch's place (venue, promoter or festival), newest first. Threads
- * belong to the place, so they stay when the pitch closes. `children` is the inline compose panel, shown while `open`.
+ * belong to the place, so they stay when the pitch closes. New email opens the compose page for this pitch.
  */
-export function EmailCard({ target, pitchId, open, onNew, children }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId?: string; open: boolean; onNew(): void; children?: ReactNode }) {
+export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId: string }) {
   const { artistId } = useArtist();
   const b = useBooking();
   const { call, error, busy } = useCommand();
@@ -58,11 +58,10 @@ export function EmailCard({ target, pitchId, open, onNew, children }: { target: 
         <h2>Email · {threads.length} thread{threads.length === 1 ? "" : "s"}</h2>
         <div className="flex items-center gap-2">
           <Link href={`/booking/email/search?target=${target.kind}:${target.id}${pitchId ? `&pitch=${pitchId}` : ""}`} className="btn sm" data-testid="search-gmail">Search Gmail</Link>
-          <button type="button" className="btn acc" onClick={onNew} aria-expanded={open} data-testid="email-toggle">New email</button>
+          <Link href={`/booking/email/new?target=${target.kind}:${target.id}&pitch=${pitchId}`} className="btn acc" data-testid="email-new">New email</Link>
         </div>
       </div>
       <ErrorBox error={error} />
-      {open && children}
       {rows !== null && threads.length === 0 && <div className="empty" data-testid="email-empty"><span>No threads yet. Send one from here, or link one from Gmail.</span></div>}
       {threads.length > 0 && (
         <div className="grid gap-1" data-testid="email-threads">

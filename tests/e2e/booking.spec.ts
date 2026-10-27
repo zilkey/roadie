@@ -196,18 +196,23 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Lost Lake Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await page.getByTestId("email-toggle").click();
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  const pitchUrl = page.url();
+  await page.getByTestId("email-new").click();
+  await expect(page).toHaveURL(/\/booking\/email\/new\?/);
   const templates = page.getByTestId("template");
   await expect(templates).toBeVisible();
+  await expect(page.getByTestId("to-chip-haylee@lostlake.example")).toBeVisible();
   await templates.selectOption({ label: "First pitch" });
   await expect(page.getByTestId("email-subject")).toHaveValue("Lost Lake Lounge · Ingrid Avison Band");
-  await expect(page.getByTestId("email-body")).toHaveValue(/Hi Haylee,/);
-  await expect(page.getByTestId("email-body")).toHaveValue(/Live video: https:\/\/ingridavison\.example/);
+  await expect(page.getByTestId("email-body")).toContainText("Hi Haylee,");
+  await expect(page.getByTestId("email-body")).toContainText("Live video: https://ingridavison.example");
   await expect(page.getByTestId("email-missing")).toHaveCount(0);
   const subject = `Support slot ${Date.now()}`;
   await page.getByTestId("email-subject").fill(subject);
   await page.getByTestId("email-send").click();
-  await expect(page.getByTestId("email-sent")).toBeVisible();
+  await expect(page).toHaveURL(/\/booking\/email\/(?!new)[^/?]+$/); // on to the thread page
+  await page.goto(pitchUrl);
   await expect(page.getByTestId("timeline").getByTestId("tl-emailSent")).toContainText(subject);
   // the thread is on the venue and listed on the Email card
   const card = page.getByTestId("pitch-email-card");
@@ -223,7 +228,7 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await expect(page.getByText(subject).first()).toBeVisible();
 
   await request.post(`${GMAIL}/threads/${mine!.threadId}/reply`, { data: { from: "haylee@lostlake.example", body: "Mid-November works." } });
-  await page.goBack();
+  await page.goto(pitchUrl);
   await page.getByTestId("check-replies").click();
   await expect(page.getByTestId("replies-result")).toHaveText("1 new reply");
   await expect(page.getByTestId("tl-emailReply")).toContainText("Mid-November works.");

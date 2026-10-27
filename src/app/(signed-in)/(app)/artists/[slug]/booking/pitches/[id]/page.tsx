@@ -3,10 +3,9 @@ import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import Link, { useArtist, useMaybeArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, PickChip, Select, useCommand } from "@/components/ui";
-import { useProfile } from "@/lib/auth";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
@@ -14,15 +13,13 @@ import { Menu } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
-import { roleFirst } from "@/lib/venues";
-import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, sortedDates, unfilledFields, type Status } from "@/lib/booking";
+import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useNotFound, type PitchRow } from "@/components/booking/common";
+import { STATUSES, STATUS_LABEL, sortedDates, type Status } from "@/lib/booking";
 import { EmailCard } from "@/components/booking/EmailCard";
 import { BookedItForm } from "@/components/booking/BookedItForm";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
-import { statsTemplateFields } from "@/lib/stats";
-import { emailThreadId, roleIn, type Activity, type EmailThread, type Artist, type Comment, type Contact, type EmailTemplate, type Musician, type Show, type StatSnapshot, type User } from "@/schema";
+import { emailThreadId, roleIn, type Activity, type EmailThread, type Comment, type Musician, type Show, type User } from "@/schema";
 
 /** Booking is admins' business. Members land here from a Who's free post in Signal: they get just the asks they're on, to answer. */
 export default function Page() {
@@ -50,13 +47,11 @@ function PitchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { doc: p, loading } = useDoc<PitchRow>("pitches", id);
-  const b = useBooking();
   const users = useCollection<User>("users").rows ?? [];
   const musicians = useCollection<Musician>("musicians").rows ?? [];
   const current = useArtist();
   const artist = current.doc ?? undefined;
   const { call, error, busy } = useCommand();
-  const [emailOpen, setEmailOpen] = useState(false);
   const [booking, setBooking] = useState(false);
   const [step, setStep] = useState<{ text: string; due: string } | null>(null);
   const nf = useNotFound(loading, p, "pitch");
@@ -178,9 +173,7 @@ function PitchPage() {
         </select>
       </section>
 
-      <EmailCard target={p.target} pitchId={p.id} open={emailOpen} onNew={() => setEmailOpen(!emailOpen)}>
-        <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />
-      </EmailCard>
+      <EmailCard target={p.target} pitchId={id} />
 
       <section className="card" data-testid="pitch-dates-card">
         <div className="card-head">
@@ -241,86 +234,4 @@ function TimelineRow({ t, threadHref }: { t: { at: number; who: string; kind: st
   }
   const read = threadHref && (t.kind === "emailSent" || t.kind === "emailReply");
   return <div className="grid gap-0.5 border-t pt-3 first:border-t-0 first:pt-0" style={{ borderColor: "var(--line)" }} data-testid={`tl-${t.kind}`}><span className="text-sm">{body}</span><span className="s">{date}{read && <> · <Link href={threadHref} className="font-semibold underline" data-testid={`tl-read-${t.kind}`}>read it</Link></>}</span></div>;
-}
-
-function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; artist?: Row<Artist>; contacts: Row<Contact>[]; onSent(): void }) {
-  const profile = useProfile();
-  const b = useBooking();
-  const templates = (useCollection<EmailTemplate>("emailTemplates").rows ?? []).filter((t) => !t.targetKinds.length || t.targetKinds.includes(pitch.target.kind));
-  const { call, error, busy } = useCommand();
-
-  const people = useMemo(() => {
-    const t = pitch.target;
-    let ids: string[] = [];
-    if (t.kind === "venue") { const v = b.venues.find((x) => x.id === t.id); ids = v ? roleFirst(v.contactIds.map((id) => ({ id })), v.bookingContactIds).map((c) => c.id) : []; } // booking contacts first: the default To and {contact.name}
-    if (t.kind === "promoter") ids = b.promoters.find((x) => x.id === t.id)?.contactIds ?? [];
-    if (t.kind === "edition") { const e = b.editions.find((x) => x.id === t.id); ids = b.festivals.find((f) => f.id === e?.festivalId)?.contactIds ?? []; }
-    return ids.map((i) => contacts.find((c) => c.id === i)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0);
-  }, [pitch.target, b.venues, b.promoters, b.editions, b.festivals, contacts]);
-
-  const snaps = useCollection<StatSnapshot>("statSnapshots").rows ?? [];
-  const [tplId, setTplId] = useState("");
-  const [picked, setPicked] = useState<string[] | null>(null);
-  const [extra, setExtra] = useState("");
-  const [text, setText] = useState<{ subject: string; body: string; dirty: boolean }>({ subject: "", body: "", dirty: false });
-  const [markPitched, setMarkPitched] = useState(pitch.status === "idea" || pitch.status === "toPitch");
-  const [sent, setSent] = useState(false);
-
-  const defaultTo = people[0] ? [people[0].emails[0]] : [];
-  const to = picked ?? defaultTo;
-  const recipients = [...to, ...extra.split(/[,\s]+/).filter((x) => x.includes("@"))];
-
-  function context(toList: string[]) {
-    const contact = people.find((c) => c.emails.some((e) => toList.includes(e))) ?? people[0];
-    const t = pitch.target;
-    const venue = t.kind === "venue" ? b.venues.find((v) => v.id === t.id) : undefined;
-    const ed = t.kind === "edition" ? b.editions.find((e) => e.id === t.id) : undefined;
-    return buildTemplateContext({
-      target: { kind: t.kind, name: t.name, city: venue?.address.city, festivalName: ed?.festivalName }, contact, artist,
-      configurationName: artist?.configurations.find((c) => c.id === pitch.pitchedAs)?.name, user: profile, stats: statsTemplateFields(snaps),
-    });
-  }
-  function apply(templateId: string, toList: string[], force: boolean) {
-    const t = templates.find((x) => x.id === templateId);
-    if (!t || (text.dirty && !force)) return;
-    const ctx = context(toList);
-    setText({ subject: fillTemplate(t.subject, ctx), body: fillTemplate(t.body, ctx), dirty: false });
-  }
-  const missing = unfilledFields(`${text.subject}\n${text.body}`);
-
-  async function send() {
-    const r = await call("pitches.sendEmail", { id: pitch.id, to: [...new Set(recipients)], subject: text.subject, body: text.body, markPitched });
-    if (r) { setSent(true); setTimeout(onSent, 800); }
-  }
-
-  return (
-    <div className="card" data-testid="email-panel">
-      <span className="lbl">Template</span>
-      <Select testid="template" label="Template" value={tplId} placeholder="Pick a template" onChange={(v) => { setTplId(v); apply(v, to, true); }} options={templates.map((t) => [t.id, t.name] as [string, string])} />
-      {templates.length === 0 && <span className="s">No templates yet. <Link href="/booking/templates" className="underline">Add one</Link>.</span>}
-      <span className="lbl">To</span>
-      <div className="grid gap-1">
-        {people.flatMap((c) => c.emails.map((e) => (
-          <label key={c.id + e} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={to.includes(e)} data-testid={`to-${e}`}
-              onChange={(ev) => { const n = ev.target.checked ? [...to, e] : to.filter((x) => x !== e); setPicked(n); if (tplId) apply(tplId, n, false); }} />
-            <b>{c.name}</b> <span className="s">{e}</span>
-          </label>
-        )))}
-        <input className="input" placeholder="Other email addresses" value={extra} onChange={(e) => setExtra(e.target.value)} data-testid="email-extra" />
-      </div>
-      <span className="lbl">Subject</span>
-      <input className="input" value={text.subject} onChange={(e) => setText({ ...text, subject: e.target.value, dirty: true })} data-testid="email-subject" />
-      <span className="lbl">Message</span>
-      <textarea className="input" rows={9} value={text.body} onChange={(e) => setText({ ...text, body: e.target.value, dirty: true })} data-testid="email-body" />
-      {missing.length > 0 && <div className="note s" data-testid="email-missing">Still to fill in: {missing.map((m) => `{{${m}}}`).join(", ")}</div>}
-      {(pitch.status === "idea" || pitch.status === "toPitch") && (
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={markPitched} onChange={(e) => setMarkPitched(e.target.checked)} data-testid="mark-pitched" />Move to Pitched</label>
-      )}
-      <span className="s">Sends from {profile.email}</span>
-      <ErrorBox error={error} />
-      {sent && <span className="chip g self-start" data-testid="email-sent">Sent</span>}
-      <button className="btn acc" disabled={busy || sent || !recipients.length || !text.subject.trim() || !text.body.trim() || missing.length > 0} onClick={send} data-testid="email-send">Send</button>
-    </div>
-  );
 }

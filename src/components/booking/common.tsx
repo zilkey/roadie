@@ -545,9 +545,11 @@ export const toPatch = (o: Record<string, unknown>) => Object.fromEntries(Object
  * plus linking an existing contact or adding a new one (a draft, with an explicit "Add contact"). An unfinished draft calls `onWantEdit`
  * so the card can switch to editing. A venue also passes `roles`: each person's Booking / Day-of labels, checkboxes while editing.
  */
-export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, editing = false, onWantEdit }: {
+export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, editing = false, onWantEdit, pitchId }: {
   kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
   roles?: Pick<NoteFields, "bookingContactIds" | "dayOfContactIds">; editing?: boolean; onWantEdit?(): void;
+  /** The active pitch for this place, if any: Email then logs the mail on it. */
+  pitchId?: string;
 }) {
   const { call, error, busy } = useCommand();
   const hasDraft = useHasDraft(draftPath.newUnder(kind, parentId, "contacts"));
@@ -587,8 +589,14 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, edi
                 )
                 : c.emails.length > 0 && (
                   <div className="grid w-full gap-1">
-                    {c.emails.map((e) => (
-                      <div key={e} className="flex items-center justify-between gap-2"><span className="font-mono text-sm break-all">{e}</span><CopyButton text={e} label="Copy email" /></div>
+                    {c.emails.map((e, i) => (
+                      <div key={e} className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-sm break-all">{e}</span>
+                        <span className="flex items-center gap-1">
+                          {i === 0 && <Link href={`/booking/email/new?target=${kind.slice(0, -1)}:${parentId}&to=${c.id}${pitchId ? `&pitch=${pitchId}` : ""}`} className="btn sm ghost" data-testid={`contact-email-${c.name}`}>Email</Link>}
+                          <CopyButton text={e} label="Copy email" />
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}
