@@ -1,23 +1,15 @@
 "use client";
-import { useEffect, useState } from "react";
 import { SetupRows, SETUP_ROWS } from "./SetupRows";
+import { useSetupStatus } from "./useSetupStatus";
 import { useArtist } from "@/lib/artist";
 import { runCommand } from "@/lib/commands";
 
-interface Status { people: boolean; links: boolean; google: boolean; dismissed: boolean }
-
-/** Home's "Finish setting up {band}" card (admins). Rows without a built screen (import) are left out; it goes away once every shown row is done or the admin dismisses it. */
+/** Home's "Finish setting up {band}" card (admins). It goes away once every row is done or the admin dismisses it. */
 export function FinishSetupCard() {
-  const { slug, name, artistId } = useArtist();
-  const [status, setStatus] = useState<Status | null>(null);
-  useEffect(() => {
-    let live = true;
-    runCommand<Status>("artists.setupStatus").then((s) => { if (live) setStatus(s); }, () => {});
-    return () => { live = false; };
-  }, [artistId]);
+  const { slug, name } = useArtist();
+  const { status, setStatus } = useSetupStatus();
   if (!status || status.dismissed) return null;
-  const shown = SETUP_ROWS.filter((r) => r.href).map((r) => r.id);
-  if (shown.every((id) => status[id as keyof Status])) return null;
+  if (SETUP_ROWS.every((r) => status[r.id])) return null;
   const dismiss = () => {
     setStatus({ ...status, dismissed: true });
     runCommand("artists.dismissSetup").catch(() => setStatus(status));
@@ -28,7 +20,7 @@ export function FinishSetupCard() {
         <h2 className="lbl m-0">Finish setting up {name}</h2>
         <button type="button" className="btn ghost" onClick={dismiss} data-testid="finish-setup-dismiss">Dismiss</button>
       </div>
-      <SetupRows slug={slug} only={shown} done={status} />
+      <SetupRows slug={slug} done={status} />
     </section>
   );
 }

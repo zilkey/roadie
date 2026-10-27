@@ -22,6 +22,10 @@ test("links from the sign-up flow: validate, save once, land on Ready, shown in 
   await page.getByTestId("wl-save").click();
 
   await expect(page).toHaveURL(/\/welcome$/);
+  await expect(page.getByTestId("setup-links")).toHaveAttribute("data-done", "true");
+  // the seeded band already has several members (people done); Google is not connected
+  await expect(page.getByTestId("setup-people")).toHaveAttribute("data-done", "true");
+  await expect(page.getByTestId("setup-google")).toHaveAttribute("data-done", "false");
   await page.goto(A("/admin/artist"));
   await expect(page.getByTestId("link-instagram-url")).toHaveValue("https://instagram.com/welcomelinks");
   await expect(page.getByTestId("link-website-url")).toHaveValue("https://welcome-links.example");

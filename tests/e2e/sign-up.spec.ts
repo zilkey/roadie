@@ -35,17 +35,16 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page 
   // Ready, then the app
   await expect(page).toHaveURL(/\/artists\/the-night-owls\/welcome$/);
   await expect(page.getByTestId("page-title")).toHaveText("The Night Owls is ready");
-  await expect(page.getByTestId("setup-rows").locator("li")).toHaveCount(4);
-  await expect(page.getByTestId("setup-import-soon")).toBeVisible();
+  await expect(page.getByTestId("setup-rows").locator("li")).toHaveCount(3);
+  for (const id of ["people", "links", "google"]) await expect(page.getByTestId(`setup-${id}`)).toHaveAttribute("data-done", "false");
   await page.getByTestId("go-to-app").click();
   await expect(page).toHaveURL(/\/artists\/the-night-owls\/calendar$/);
 
-  // Home asks them to finish setting up: three rows (import is hidden), none done. Dismiss hides it for good.
+  // Home asks them to finish setting up: three rows, none done. Dismiss hides it for good.
   const card = page.getByTestId("finish-setup");
   await expect(card).toContainText("Finish setting up The Night Owls");
   await expect(card.getByTestId("setup-rows").locator("li")).toHaveCount(3);
-  await expect(card.getByTestId("setup-import")).toHaveCount(0);
-  await expect(card.getByText("Done")).toHaveCount(0);
+  for (const id of ["people", "links", "google"]) await expect(card.getByTestId(`setup-${id}`)).toHaveAttribute("data-done", "false");
   await page.getByTestId("finish-setup-dismiss").click();
   await expect(card).toHaveCount(0);
   await page.reload();
