@@ -16,7 +16,7 @@ import { afterSignIn, artistPath, isLegacyPath, resolveRoute, routeForPath, spli
 import { proxy } from "@/proxy";
 import { migrateArtists } from "../../scripts/migrate-artists";
 import { stripGear } from "../../scripts/migrate-strip-gear";
-import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
+import { readySession, resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -120,7 +120,7 @@ test("session: lists your app artists (slug, name, role), sets {artists} claims;
   await makeArtist("Band A", "band-a", "a");
   await makeArtist("Bots", "bots", "z");
   const mia = await makeUser("mia@example.com", "admin", { artists: [{ artistId: "b", role: "member" }, { artistId: "a", role: "admin" }, { artistId: "z", role: "ai" }] });
-  const s = await startSession(bearer(await idToken(mia.uid)));
+  const s = await readySession(bearer(await idToken(mia.uid)));
   assert.deepEqual(s.artists, [
     { artistId: "a", slug: "band-a", name: "Band A", role: "admin" },
     { artistId: "b", slug: "band-b", name: "Band B", role: "member" },
@@ -251,7 +251,7 @@ test("migrate-artists: slugs from names, old single roles become memberships, cl
   assert.deepEqual((await adminAuth().getUser(jeff.uid)).customClaims, { artists: { band: "admin" } });
   assert.equal(r.claims, 1);
   // the migrated user signs in to their artist
-  const s = await startSession(bearer(await idToken(jeff.uid)));
+  const s = await readySession(bearer(await idToken(jeff.uid)));
   assert.deepEqual(s.artists.map((a) => a.slug), ["ingrid-avison-band"]);
 
   const again = await migrateArtists(fs);

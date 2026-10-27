@@ -45,3 +45,12 @@ export async function printPrefs(uid: string, artistId: string): Promise<PrintOp
 export async function setPrintPrefs(uid: string, artistId: string, o: PrintOptions): Promise<void> {
   await ref(uid).set({ uid, print: { [artistId]: o } }, { merge: true });
 }
+
+/** Whether the caller dismissed the "Finish setting up" card on Home for this artist. */
+export async function setupDismissed(uid: string, artistId: string): Promise<boolean> {
+  return (await ref(uid).get()).data()?.setupDismissed?.[artistId] === true;
+}
+
+export async function dismissSetup(uid: string, artistId: string): Promise<void> {
+  await ref(uid).set({ uid, setupDismissed: { [artistId]: true } }, { merge: true });
+}

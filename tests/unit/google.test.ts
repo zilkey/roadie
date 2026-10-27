@@ -272,3 +272,19 @@ test("connect: consent URL, finish only for the admin who started it, band accou
     if (gmailWas === undefined) delete process.env.GMAIL_BASE_URL; else process.env.GMAIL_BASE_URL = gmailWas;
   }
 });
+
+test("state: returnTo round-trips when artist-relative and is dropped otherwise", () => {
+  const restore = withGoogleEnv();
+  try {
+    const base = { uid: "u1", artistId: "a1", slug: "band", features: ["gmail" as const] };
+    assert.equal(verifyState(signState({ ...base, returnTo: "/welcome/google/setup" }))?.returnTo, "/welcome/google/setup");
+    assert.equal(verifyState(signState(base))?.returnTo, undefined);
+    for (const bad of ["https://evil.example/x", "//evil.example", "welcome", "/a/../b", "/..", "/a\\b", "/a?x=1", "/x://y", "javascript:alert(1)"]) {
+      assert.equal(verifyState(signState({ ...base, returnTo: bad }))?.returnTo, undefined, bad);
+    }
+    // a validly signed state whose returnTo is unsafe (e.g. signed by an older build) is also ignored on read
+    const body = b64(JSON.stringify({ ...base, returnTo: "//evil.example", exp: Date.now() + 60_000, n: "x" }));
+    const [, mac] = signState(base).split(".");
+    assert.equal(verifyState(`${body}.${mac}`), null, "re-bodied state fails the signature");
+  } finally { restore(); }
+});

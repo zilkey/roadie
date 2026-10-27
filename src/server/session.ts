@@ -27,7 +27,7 @@ export async function artistsFor(user: Doc): Promise<ArtistAccess[]> {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** After sign-in: find the invite by email and set custom claims. */
+/** After sign-in: find the invite by email and set custom claims. A verified account with no band gets `{status: "noBand"}` instead of an error. */
 export async function startSession(authHeader: string | null) {
   const m = /^Bearer (.+)$/.exec(authHeader ?? "");
   if (!m) throw new AppError("unauthenticated", "Missing bearer token", 401);
@@ -39,14 +39,20 @@ export async function startSession(authHeader: string | null) {
   }
   const email = decoded.email?.trim().toLowerCase();
   if (!email || decoded.email_verified === false) throw new AppError("unauthenticated", "A verified email is required", 401);
-  const [user] = await db.list("users", (q) => q.where("email", "==", email).limit(5));
-  if (!user) throw new AppError("not_invited", "This email hasn't been invited", 403);
-  const memberships = (user.artists ?? []) as Membership[];
-  if (!memberships.length) throw new AppError("not_invited", "This email hasn't been invited", 403);
+  const found = await db.list("users", (q) => q.where("email", "==", email).limit(5), { includeDeleted: true });
+  const user = found.find((u) => !u.deletedAt) ?? found[0];
+  if (user?.deletedAt) throw new AppError("not_invited", "This email hasn't been invited", 403);
+  const memberships = (user?.artists ?? []) as Membership[];
+  if (!user || !memberships.length) {
+    // A verified Google account with no band yet: signed in, but nothing to open. Claims say so (Firestore rules then read nothing); they can start a band.
+    await adminAuth().setCustomUserClaims(decoded.uid, { artists: {} });
+    return { status: "noBand" as const, uid: decoded.uid, email, name: (user?.name as string | undefined) ?? (typeof decoded.name === "string" && decoded.name.trim() ? decoded.name : email.split("@")[0]) };
+  }
   if (!memberships.some((x) => x.role === "admin" || x.role === "member")) throw new AppError("ai_only", "This login is for AI tools only; it can't sign in to the app", 403);
   const claims = claimsFor(user);
   await adminAuth().setCustomUserClaims(decoded.uid, claims);
   return {
+    status: "ready" as const,
     uid: decoded.uid, userId: user.id, name: user.name as string, email,
     ...(user.musicianId ? { musicianId: user.musicianId as string } : {}),
     mcpAccess: ((user.artists ?? []) as Membership[]).some((x) => mcpIn(user, x.artistId)), artists: await artistsFor(user),

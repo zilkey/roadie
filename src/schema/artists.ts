@@ -57,6 +57,17 @@ export const signalGroupUrl = z.string().transform((v, ctx) => {
   return z.NEVER;
 });
 
+/** Instagram link: an @handle (or bare handle) becomes https://instagram.com/<handle>; an instagram.com link is kept (https added). */
+export const INSTAGRAM_BAD = "Use your @handle or an instagram.com link";
+const INSTAGRAM_HANDLE = /^[A-Za-z0-9._]{1,30}$/;
+export function normalizeInstagramUrl(input: string): { url: string } | { error: string } {
+  const v = input.replace(/\s+/g, "");
+  const link = /^(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#]+)/i.exec(v);
+  if (link) return INSTAGRAM_HANDLE.test(link[1]) ? { url: /^https?:\/\//i.test(v) ? v : `https://${v}` } : { error: INSTAGRAM_BAD };
+  const handle = v.replace(/^@/, "");
+  return INSTAGRAM_HANDLE.test(handle) ? { url: `https://instagram.com/${handle}` } : { error: INSTAGRAM_BAD };
+}
+
 /** The payment apps a "Payment app" link can be. Only Venmo for now; add a case to PAYMENT_APPS to recognise another. */
 export type PaymentApp = "venmo";
 export const PAYMENT_URL_PREFIX = "https://venmo.com/u/";

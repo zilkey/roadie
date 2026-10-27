@@ -9,6 +9,7 @@ import { useCalendarItems } from "@/lib/calendarData";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { DayPanel } from "@/components/calendar/DayPanel";
 import { ComingUp } from "@/components/calendar/ComingUp";
+import { FinishSetupCard } from "@/components/welcome/FinishSetupCard";
 import { Legend } from "@/components/calendar/Legend";
 import s from "@/components/calendar/calendar.module.css";
 
@@ -46,6 +47,7 @@ function Calendar() {
   return (
     <div className="grid gap-5" data-testid="calendar-page">
       <PageTitle title="Calendar" />
+      {admin && <FinishSetupCard />}
       <div className={s.bar}>
         <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
         <div className={s.controls}>

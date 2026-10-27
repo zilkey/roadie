@@ -10,12 +10,15 @@ export interface Profile { uid: string; userId: string; name: string; email: str
 type State =
   | { status: "loading" }
   | { status: "signedOut"; error?: string }
+  /** Signed in with a verified Google account that is on no band's list yet: they can start a band. Stays signed in to Firebase. */
+  | { status: "noBand"; user: User; email: string; name: string }
+  /** Turned away (an AI-tools-only login, or a removed person): signed out of Firebase. */
   | { status: "notInvited"; email?: string }
   | { status: "ready"; user: User; profile: Profile };
 
 interface AuthApi {
   state: State; signInWithGoogle(): Promise<void>; devSignIn(p: { key: string; name: string; email: string }): Promise<void>; signOut(): Promise<void>;
-  /** Ask the server again (your artists, their slugs and your roles changed) and pick up new claims. */
+  /** Ask the server again (your artists, their slugs and your roles changed, or you started a band) and pick up new claims. */
   refresh(): Promise<void>;
 }
 const Ctx = createContext<AuthApi | null>(null);
@@ -29,6 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (res.status === 403 && json.error?.code === "not_invited") return { status: "notInvited", email: user.email ?? undefined };
     if (!res.ok) throw new Error(json.error?.message ?? "Sign-in failed");
     await user.getIdToken(true); // pick up the new custom claims
+    if (json.status === "noBand") return { status: "noBand", user, email: json.email ?? user.email ?? "", name: json.name ?? "" };
     return { status: "ready", user, profile: json as Profile };
   }, []);
 
@@ -55,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const user = clientAuth().currentUser;
     if (!user) return;
     const next = await load(user);
-    if (next.status === "ready") setState(next);
+    if (next.status === "ready" || next.status === "noBand") setState(next);
   }, [load]);
 
   const signInWithGoogle = useCallback(async () => { await signInWithPopup(clientAuth(), new GoogleAuthProvider()); }, []);

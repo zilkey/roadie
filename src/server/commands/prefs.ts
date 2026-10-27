@@ -2,7 +2,9 @@ import { z } from "zod";
 import { SectionOrderInput, SectionSetInput } from "@/schema/sections";
 import { PrintOptions } from "@/schema/print";
 import { AppError } from "../errors";
-import { hiddenSections, printPrefs, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
+import { db } from "../db";
+import { roleIn } from "@/schema";
+import { dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
 import { callerArtistId } from "../venues";
 import { defineCommand } from "./types";
 
@@ -44,4 +46,22 @@ export const setlistsSetPrintPrefs = defineCommand({
   async run(ctx, i) { await setPrintPrefs(ctx.uid, await artistOf(ctx), i.options); return { options: i.options }; },
 });
 
-export const prefsCommands = [sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];
+export const artistsSetupStatus = defineCommand({
+  name: "artists.setupStatus", roles: ["admin"], input: z.strictObject({}),
+  description: "What is still to do after starting this band, for Home's \"Finish setting up\" card: people (anyone besides the creator is in the band), links (any link set), google (Google connected), and dismissed (the caller hid the card).",
+  async run(ctx) {
+    const artistId = await artistOf(ctx);
+    const [artist, users, dismissed] = await Promise.all([db.get("artists", artistId), db.list("users"), setupDismissed(ctx.uid, artistId)]);
+    const members = users.filter((u) => !u.deletedAt && ["admin", "member"].includes(roleIn(u, artistId) ?? "")).length;
+    const links = Object.values((artist?.links ?? {}) as Record<string, unknown>).some((v) => typeof v === "string" && v.trim() !== "")
+      || (typeof artist?.signalGroupUrl === "string" && artist.signalGroupUrl.trim() !== "");
+    return { people: members > 1, links, google: !!artist?.google, dismissed };
+  },
+});
+export const artistsDismissSetup = defineCommand({
+  name: "artists.dismissSetup", roles: ["admin"], input: z.strictObject({}),
+  description: "Hide Home's \"Finish setting up\" card for the caller in this artist. Personal: nobody else's Home changes.",
+  async run(ctx) { await dismissSetup(ctx.uid, await artistOf(ctx)); return { dismissed: true }; },
+});
+
+export const prefsCommands = [artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];

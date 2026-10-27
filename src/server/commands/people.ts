@@ -15,9 +15,9 @@ function artistOfCtx(ctx: Ctx): string {
   if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
   return ctx.artistId;
 }
-const memberships = (u: Doc | null | undefined) => ((u?.artists ?? []) as Membership[]);
+export const memberships = (u: Doc | null | undefined) => ((u?.artists ?? []) as Membership[]);
 /** Set this artist's membership (adding it if missing). AI access is stored on the membership, written for admins only (members and legacy "ai" carry none). */
-const withRole = (ms: Membership[], artistId: string, role: ArtistRole, mcp = false): Membership[] => {
+export const withRole = (ms: Membership[], artistId: string, role: ArtistRole, mcp = false): Membership[] => {
   const entry: Membership = { artistId, role, ...(role === "admin" ? { mcpAccess: mcp } : {}) };
   return ms.some((m) => m.artistId === artistId) ? ms.map((m) => (m.artistId === artistId ? entry : m)) : [...ms, entry];
 };
@@ -301,17 +301,32 @@ const withConfigIds = <T extends { configurations?: z.infer<typeof ConfigIn>[] |
 const ArtistIn = ArtistInput.omit({ songFields: true, showFields: true, google: true, driveFolderId: true, rehearsalFolderId: true, chartsFolderId: true, demosFolderId: true, songwritingFolderId: true, calendar: true }).extend({ configurations: z.array(ConfigIn) });
 
 /** Slugs are unique across artists (they are the URL: /artists/{slug}). Checked inside the write. */
-async function requireFreeSlug(w: Writer, value: string, self?: string) {
+export async function requireFreeSlug(w: Writer, value: string, self?: string) {
   const taken = (await w.query("artists", (q) => q.where("slug", "==", value), { includeDeleted: true })).filter((a) => a.id !== self);
   if (taken.length) throw new AppError("slug_taken", `Another artist already uses "${value}"`, 409, [{ path: "slug", message: "Already taken" }]);
 }
 /** The first free slug for a name: "ingrid-avison", then "ingrid-avison-2"... */
-async function freeSlugFor(w: Writer, name: string) {
+export async function freeSlugFor(w: Writer, name: string) {
   const base = slugForArtist(name);
   for (let n = 1; ; n++) {
     const s = n === 1 ? base : `${base}-${n}`;
     if (!(await w.query("artists", (q) => q.where("slug", "==", s), { includeDeleted: true })).length) return s;
   }
+}
+
+/**
+ * Create an artist (checked or generated slug, starting checklist templates) and make `uid` its admin when they have a live
+ * users doc. Inside the caller's write unit; the caller runs `syncClaims(uid)` afterwards when `joined`. Shared by
+ * artists.create and the sign-up route (src/server/signUp.ts).
+ */
+export async function createArtistFor(w: Writer, uid: string, input: Record<string, unknown> & { name: string; slug?: string }) {
+  if (input.slug) await requireFreeSlug(w, input.slug);
+  const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
+  const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null }));
+  await seedDefaultTemplates(w, r.id);
+  const me = await w.get("users", uid);
+  if (me && !me.deletedAt) await w.update("users", uid, { artists: withRole(memberships(me), r.id, "admin") });
+  return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };
 }
 
 export const artistsCreate = defineCommand({
@@ -324,15 +339,7 @@ export const artistsCreate = defineCommand({
     driveFolderId: z.string().default(""),
   }),
   async run(ctx, input) {
-    const out = await run(ctx, async (w) => {
-      if (input.slug) await requireFreeSlug(w, input.slug);
-      const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
-      const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue }));
-      await seedDefaultTemplates(w, r.id);
-      const me = await w.get("users", ctx.uid);
-      if (me && !me.deletedAt) await w.update("users", ctx.uid, { artists: withRole(memberships(me), r.id, "admin") });
-      return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };
-    });
+    const out = await run(ctx, async (w) => createArtistFor(w, ctx.uid, input));
     if (out.joined) await syncClaims(ctx.uid);
     return { id: out.id, merged: out.merged, slug: out.slug };
   },

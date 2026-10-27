@@ -12,7 +12,7 @@ export default function SignIn() {
   const router = useRouter();
   const [err, setErr] = useState<string | null>(null);
   // Who is actually seeded, rather than a hardcoded roster: the emulator may hold the demo people (scripts/seed.ts)
-  // or the real band (scripts/seed-real.ts), and offering the wrong ones lands on /not-invited with no data.
+  // or the real band (scripts/seed-real.ts), and offering the wrong ones lands on /no-band with no data.
   const [people, setPeople] = useState<DevSignInPerson[]>([]);
 
   useEffect(() => {
@@ -27,6 +27,7 @@ export default function SignIn() {
     // back to the page that sent you here (a shared link, a bookmark), else your artists
     if (state.status === "ready") router.replace(afterSignIn(new URLSearchParams(location.search).get("next")));
     if (state.status === "notInvited") router.replace("/not-invited");
+    if (state.status === "noBand") router.replace("/no-band");
   }, [state.status, router]);
 
   const go = (fn: () => Promise<void>) => fn().catch((e) => setErr(e instanceof Error ? e.message : "Sign-in failed"));

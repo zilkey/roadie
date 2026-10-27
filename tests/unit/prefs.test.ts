@@ -46,3 +46,31 @@ test("sections.setOrder: per user, completed with the default order, duplicates 
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["home"] })).status, 400);
   assert.equal((await call(jeff.token, "sections.setOrder", { order: ["calendar"] })).status, 400);
 });
+
+test("artists.setupStatus: people, links and Google follow the artist; Dismiss is per user and per artist", async () => {
+  const { makeArtist } = await import("./helpers");
+  const { db } = await import("@/server/db");
+  const { importCtx } = await import("@/server/ctx");
+  await makeArtist("Owls", "owls");
+  const jeff = await makeUser("jeff@example.com", "admin");
+  const ingrid = await makeUser("ingrid@example.com", "admin");
+  const david = await makeUser("david@example.com", "member");
+  const status = async (tok: string) => (await dispatch("artists.setupStatus", bearer(tok), {}, "test-artist")).json as { result: { people: boolean; links: boolean; google: boolean; dismissed: boolean } };
+  assert.equal((await dispatch("artists.setupStatus", bearer(david.token), {}, "test-artist")).status, 403, "admins only");
+  assert.deepEqual((await status(jeff.token)).result, { people: true, links: false, google: false, dismissed: false });
+  await db.update(importCtx(), "artists", "test-artist", { links: { website: "https://owls.example" } });
+  assert.equal((await status(jeff.token)).result.links, true);
+  await db.update(importCtx(), "artists", "test-artist", { google: { uid: jeff.uid, email: "jeff@example.com" } });
+  assert.equal((await status(jeff.token)).result.google, true);
+  assert.equal((await dispatch("artists.dismissSetup", bearer(jeff.token), {}, "test-artist")).status, 200);
+  assert.equal((await status(jeff.token)).result.dismissed, true);
+  assert.equal((await status(ingrid.token)).result.dismissed, false, "someone else's Home is untouched");
+});
+
+test("artists.setupStatus: a band of one has no people yet", async () => {
+  const { makeArtist } = await import("./helpers");
+  await makeArtist("Owls", "owls");
+  const solo = await makeUser("solo@example.com", "admin");
+  const r = (await dispatch("artists.setupStatus", bearer(solo.token), {}, "test-artist")).json as { result: { people: boolean } };
+  assert.equal(r.result.people, false);
+});

@@ -19,6 +19,8 @@ const Meta = z.strictObject({
   autosave: z.boolean().optional(),
   /** Path of the unsubmitted draft to delete after the command succeeds (create forms): "expenses", "venues/{id}/contacts". */
   clearDraft: DraftPath.optional(),
+  /** Run this command inside a run the caller already started, so several calls share one History entry and one Undo. */
+  runId: z.string().regex(MUTATION_ID).optional(),
 });
 
 /** The header the app sends with every request: which artist (by id) the call is for. */
@@ -68,6 +70,7 @@ export async function execute(ctx: Ctx, name: string, body: unknown): Promise<Ex
   if (!parsed.success) throw invalid(parsed.error);
   const m = meta.data;
   if (m.autosave) ctx.autosave = true;
+  if (m.runId) ctx.runId = m.runId;
   if (m.baseRev !== undefined && typeof input.id === "string") ctx.baseRev = { id: input.id, rev: m.baseRev };
   ctx.touched = {};
   if (m.clientMutationId) {

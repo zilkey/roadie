@@ -136,6 +136,16 @@ test("signed-out, role-less and ai (AI-tools-only) logins read nothing", async (
   for (const c of [...ALL, ...SIGNED_IN_READS]) await assertFails(getDoc(doc(legacyAdmin(), c, "x")));
 });
 
+// A Google account with no band yet (session.ts "noBand": signed in, claim {artists: {}}) reads nothing of any band until it starts one.
+test("noBand: signed in with empty claims reads no band data, lists nothing, and sees no one else's history", async () => {
+  const fresh = () => env.authenticatedContext("new-person", { artists: {} }).firestore();
+  for (const c of [...ALL, ...SIGNED_IN_READS, "venueTypes", "setlistTemplates", "availability", "expenses", "venueNotes", "fans", "ledger"]) await assertFails(getDoc(doc(fresh(), c, "x")));
+  for (const c of ["users", "musicians", "artists", "shows", "venues", "pitches", "checklistTemplates"]) await assertFails(getDocs(collection(fresh(), c)));
+  await assertFails(getDocs(collectionGroup(fresh(), "history")));
+  await assertFails(getDoc(doc(fresh(), "users/jeff/private/driving")));
+  await assertFails(getDoc(doc(fresh(), "unsubmittedDrafts/jeff__expenses")));
+});
+
 test("artist docs: only that artist's members read them", async () => {
   await assertSucceeds(getDoc(doc(admin(), "artists/x")));
   await assertSucceeds(getDoc(doc(david(), "artists/x")));

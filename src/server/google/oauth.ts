@@ -44,12 +44,22 @@ function clientCreds() {
 
 // ---------- state: who started the flow, signed so the callback and finish step can trust it ----------
 
-export interface OAuthState { uid: string; artistId: string; slug: string; features: GoogleFeature[]; exp: number; n: string }
+export interface OAuthState { uid: string; artistId: string; slug: string; features: GoogleFeature[]; exp: number; n: string;
+  /** Where the callback lands inside the artist instead of Settings > Google (artist-relative path, see safeReturnTo). */
+  returnTo?: string }
+
+/** The path when it is artist-relative: starts with one "/", no "//", no scheme, no "..", no backslash, query, fragment or percent-escape. Otherwise undefined. */
+export function safeReturnTo(v: unknown): string | undefined {
+  if (typeof v !== "string" || v.length > 200 || !v.startsWith("/") || v.startsWith("//")) return undefined;
+  if (/[\\?#%\u0000-\u001f]/.test(v) || v.includes("://") || v.split("/").some((seg) => seg === "..")) return undefined;
+  return v;
+}
 const b64url = (b: Buffer | string) => Buffer.from(b).toString("base64url");
 const sign = (body: string) => createHmac("sha256", clientCreds().secret).update(body).digest("base64url");
 
 export function signState(s: Omit<OAuthState, "exp" | "n">, ttlMs = 15 * 60_000): string {
-  const body = b64url(JSON.stringify({ ...s, exp: Date.now() + ttlMs, n: randomBytes(9).toString("base64url") }));
+  const returnTo = safeReturnTo(s.returnTo);
+  const body = b64url(JSON.stringify({ ...s, returnTo, exp: Date.now() + ttlMs, n: randomBytes(9).toString("base64url") }));
   return `${body}.${sign(body)}`;
 }
 
@@ -61,7 +71,8 @@ export function verifyState(state: string, now = Date.now()): OAuthState | null 
   if (want.length !== got.length || !timingSafeEqual(want, got)) return null;
   try {
     const s = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as OAuthState;
-    return s.exp > now ? s : null;
+    if (!(s.exp > now)) return null;
+    return { ...s, returnTo: safeReturnTo(s.returnTo) };
   } catch { return null; }
 }
 

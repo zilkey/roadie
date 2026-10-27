@@ -9,7 +9,7 @@ import { defineCommand } from "./types";
 import { db } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, signState, verifyState } from "../google/oauth";
+import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, safeReturnTo, signState, verifyState } from "../google/oauth";
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
 import { bandGoogle } from "../google/band";
 import { calendarClient, canWrite, driveClient, IntegrationError, useRealGoogle, type CalInfo } from "../integrations";
@@ -94,13 +94,13 @@ export const googleStatus = defineCommand({
 export const googleConnectUrl = defineCommand({
   name: "google.connectUrl", roles: ["admin"],
   description: "The Google consent page URL for connecting the caller's own Google account for the chosen features (gmail, calendar, drive). Adds to what they connected before.",
-  input: z.strictObject({ features: z.array(z.enum(GOOGLE_FEATURES)).min(1) }),
-  async run(ctx, { features }) {
+  input: z.strictObject({ features: z.array(z.enum(GOOGLE_FEATURES)).min(1), returnTo: z.string().optional() }),
+  async run(ctx, { features, returnTo }) {
     const artistId = artistOf(ctx);
     if (!googleConfigured()) throw new AppError("google_not_configured", "Google isn't set up on this server", 503);
     const [artist, user] = await Promise.all([db.get("artists", artistId), db.get("users", ctx.uid)]);
     if (!artist) throw new AppError("not_found", "Artist not found", 404);
-    const state = signState({ uid: ctx.uid, artistId, slug: artist.slug as string, features: [...new Set(features)] });
+    const state = signState({ uid: ctx.uid, artistId, slug: artist.slug as string, features: [...new Set(features)], returnTo: safeReturnTo(returnTo) });
     return { url: authUrl(state, [...new Set(features)], user?.email as string | undefined) };
   },
 });

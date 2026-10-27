@@ -8,7 +8,7 @@ export class CommandError extends Error {
 }
 
 /** Optional envelope sent next to a command's input (see `Meta` in src/server/commands/dispatch.ts). */
-export interface CommandMeta { clientMutationId?: string; baseRev?: number; autosave?: boolean; clearDraft?: string }
+export interface CommandMeta { clientMutationId?: string; baseRev?: number; autosave?: boolean; clearDraft?: string; /** Share one History run (and one Undo) across several calls. */ runId?: string }
 export interface CommandOutcome<T> { result: T; runId: string; /** doc id -> rev after this call. */ revs: Record<string, number> }
 
 export const newMutationId = () => crypto.randomUUID();

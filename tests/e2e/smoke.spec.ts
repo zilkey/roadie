@@ -94,11 +94,3 @@ test("member sees 4 tabs with Rehearsals, 'My money' in More, and cannot open /b
   await page.getByTestId("to-my-artists").click();
   await expect(page).toHaveURL(new RegExp(`${A("/calendar")}$`));
 });
-
-test("uninvited email is turned away", async ({ page }) => {
-  await signInAs(page, "stranger");
-  await expect(page).toHaveURL(/\/not-invited$/);
-  await expect(page.getByTestId("not-invited")).toContainText("stranger@example.com");
-  await page.goto(A("/calendar"));
-  await expect(page).toHaveURL(/\/signin\?next=/);
-});

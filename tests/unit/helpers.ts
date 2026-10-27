@@ -1,7 +1,7 @@
 import { adminAuth } from "@/server/admin";
 import { importCtx } from "@/server/ctx";
 import { db } from "@/server/db";
-import { syncClaims } from "@/server/session";
+import { startSession, syncClaims } from "@/server/session";
 
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9319";
@@ -42,3 +42,10 @@ export async function idToken(uid: string) {
 export const venue = (name: string, city = "Denver", extra: Record<string, unknown> = {}) => ({
   name, type: "bar", address: { city, state: "CO" }, region: "denver", ...extra,
 });
+
+/** startSession for someone who belongs to a band (fails the test on a "noBand" answer). */
+export async function readySession(authHeader: string) {
+  const s = await startSession(authHeader);
+  if (s.status !== "ready") throw new Error(`expected a ready session, got ${s.status}`);
+  return s;
+}
