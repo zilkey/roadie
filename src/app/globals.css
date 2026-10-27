@@ -177,6 +177,9 @@ dialog.dlg::backdrop { background: var(--backdrop); }
 .menu-item[aria-disabled="true"] { opacity: .6; cursor: default; }
 .menu-item svg { flex: none; }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--divider); }
+.check-list { left: 0; right: auto; max-height: min(60vh, 420px); overflow-y: auto; }
+.pitch-filter .select { width: auto; }
+.select.muted { color: var(--muted); }
 .card.flush { padding: 0; gap: 0; }
 .people-table { width: 100%; border-collapse: collapse; }
 .people-table th { text-align: left; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; padding: 10px 14px; border-bottom: 1px solid var(--line); }

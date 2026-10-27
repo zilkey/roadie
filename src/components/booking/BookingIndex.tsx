@@ -14,6 +14,7 @@ import {
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
 import { fmtPhone, listRows, type ListRow, type Place, type Ref } from "@/components/booking/listRows";
 import { useVenueTypes } from "@/lib/venueTypes";
+import { CheckFilter } from "@/components/booking/CheckFilter";
 import { FESTIVAL_SORTS, type FestivalSort } from "@/lib/festivalPage";
 import { useFestivalPage } from "@/components/booking/useFestivalPage";
 import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
@@ -48,11 +49,11 @@ function Booking({ seg }: { seg: Seg }) {
     return ids;
   }, [b.venueNotes, b.pitches, shows.rows]);
 
-  // Pitch List only: narrow to one status ("" = every active pitch), a category, a place and a venue type.
+  // Pitch List only: narrow to one status ("" = every active pitch), a category, places and venue types (none checked = all).
   const [status, setStatus] = useState<Status | "">("");
   const [category, setCategory] = useState<Category | "">("");
-  const [place, setPlace] = useState("");
-  const [venueType, setVenueType] = useState("");
+  const [place, setPlace] = useState<string[]>([]);
+  const [venueType, setVenueType] = useState<string[]>([]);
   const statusFilter = seg === "pitches" ? status : "";
   const listed = useMemo(() => {
     const searching = q.trim().length > 0;
@@ -62,11 +63,11 @@ function Booking({ seg }: { seg: Seg }) {
   }, [b.venues, b.promoters, b.festivals, b.editions, b.contacts, b.pitches, ours, q, seg, statusFilter]);
   const types = useVenueTypes();
   const places = useMemo(() => placeOptions(listed), [listed]);
-  const typeFilter = category === "festival" ? "" : venueType; // venue types mean nothing to festivals: the filter hides
+  const typeFilter = category === "festival" ? [] : venueType; // venue types mean nothing to festivals: the filter hides
   const rows = useMemo(() => seg !== "pitches" ? listed : listed.filter((r) =>
-    (!category || CATEGORY_KINDS[category].includes(r.kind)) && (!place || r.places.some((p) => placeKeys(p).includes(place))) && (!typeFilter || r.venueType === typeFilter),
+    (!category || CATEGORY_KINDS[category].includes(r.kind)) && (!place.length || r.places.some((p) => placeKeys(p).some((k) => place.includes(k)))) && (!typeFilter.length || typeFilter.includes(r.venueType ?? "")),
   ), [listed, seg, category, place, typeFilter]);
-  const filtering = !!(status || category || place || typeFilter);
+  const filtering = !!(status || category || place.length || typeFilter.length);
 
   // Festivals tab: the server searches, sorts and pages it (festivals.page); the rows are drawn from the live data in that order.
   const [sort, setSortState] = useState<FestivalSort>(() => {
@@ -142,7 +143,7 @@ function Booking({ seg }: { seg: Seg }) {
       <ErrorBox error={error} />
 
       {seg === "pitches" && (
-        <div className="flex flex-wrap items-center gap-2 justify-self-start" data-testid="pitch-filter">
+        <div className="pitch-filter flex flex-wrap items-center gap-2 justify-self-start" data-testid="pitch-filter">
           <span className="s font-semibold whitespace-nowrap">Filter by</span>
           <select className="select w-auto" value={status} onChange={(e) => setStatus(e.target.value as Status | "")} aria-label="Filter pitches by status" data-testid="pitch-status-filter">
             <option value="">All active</option>
@@ -152,16 +153,11 @@ function Booking({ seg }: { seg: Seg }) {
             <option value="">All categories</option>
             {CATEGORIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
-          <select className="select w-auto" value={place} onChange={(e) => setPlace(e.target.value)} aria-label="Filter pitches by city or state" data-testid="pitch-place-filter">
-            <option value="">All places</option>
-            {places.states.length > 0 && <optgroup label="States">{places.states.map((s) => <option key={s} value={`state:${s}`}>{s}</option>)}</optgroup>}
-            {places.cities.length > 0 && <optgroup label="Cities">{places.cities.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</optgroup>}
-          </select>
+          <CheckFilter label="Filter pitches by city or state" all="All places" noun="places" testid="pitch-place-filter" value={place} onChange={setPlace}
+            groups={[{ label: "States", options: places.states.map((st) => ({ key: `state:${st}`, label: st })) }, { label: "Cities", options: places.cities }]} />
           {category !== "festival" && (
-            <select className="select w-auto" value={venueType} onChange={(e) => setVenueType(e.target.value)} aria-label="Filter pitches by venue type" data-testid="pitch-type-filter">
-              <option value="">All venue types</option>
-              {types.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
+            <CheckFilter label="Filter pitches by venue type" all="All venue types" noun="venue types" testid="pitch-type-filter" value={venueType} onChange={setVenueType}
+              groups={[{ options: types.map((t) => ({ key: t.id, label: t.label })) }]} />
           )}
         </div>
       )}

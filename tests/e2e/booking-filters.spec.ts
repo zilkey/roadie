@@ -22,22 +22,36 @@ test("Pitch List filters: category, city or state, venue type (hidden for festiv
   await expect(row("Rocky Mountain Folks Festival")).toHaveCount(0);
   await expect(row("Fox Theatre")).toHaveCount(1);
 
-  // Place: states first, then towns, from what is on the list; a festival's town counts too.
+  // Places: states first, then towns, from what is on the list; a festival's town counts too. Several can be checked.
   const place = page.getByTestId("pitch-place-filter");
-  await expect(place.locator("optgroup[label='States'] option")).toHaveText(["CO"]);
-  await place.selectOption({ label: "Boulder, CO" });
+  await place.click();
+  const placeList = page.getByTestId("pitch-place-filter-list");
+  await expect(placeList.getByTestId(/^pitch-place-filter-state:/)).toHaveCount(1);
+  await expect(placeList.getByTestId("pitch-place-filter-state:CO")).toHaveCount(1);
+  await placeList.getByLabel("Boulder, CO").check();
+  await expect(place).toHaveText("Boulder, CO");
   await expect(row("Fox Theatre")).toHaveCount(1);
   await expect(row("Dairy Arts Center")).toHaveCount(1);
   await expect(row("Lost Lake Lounge")).toHaveCount(0);
+  await placeList.getByLabel("Denver, CO").check();
+  await expect(place).toHaveText("2 places");
+  await expect(row("Lost Lake Lounge")).toHaveCount(1);
+  await placeList.getByLabel("Denver, CO").uncheck();
+  await page.keyboard.press("Escape");
+  await expect(placeList).toHaveCount(0);
 
-  await page.getByTestId("pitch-type-filter").selectOption({ label: "Theater" });
+  await page.getByTestId("pitch-type-filter").click();
+  await page.getByTestId("pitch-type-filter-list").getByLabel("Theater").check();
   await expect(row("Fox Theatre")).toHaveCount(1);
   await expect(row("Dairy Arts Center")).toHaveCount(0);
+  await page.getByTestId("pitch-type-filter-clear").click();
+  await expect(row("Dairy Arts Center")).toHaveCount(1);
+  await page.keyboard.press("Escape");
 
   await page.getByTestId("pitch-category-filter").selectOption("");
-  await place.selectOption("");
-  await page.getByTestId("pitch-type-filter").selectOption("");
-  await place.selectOption({ label: "Lyons, CO" });
+  await place.click();
+  await page.getByTestId("pitch-place-filter-clear").click();
+  await placeList.getByLabel("Lyons, CO").check();
   await expect(row("Rocky Mountain Folks Festival")).toHaveCount(1);
   await expect(list.locator("tbody tr")).toHaveCount(1);
 });
