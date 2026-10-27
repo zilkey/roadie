@@ -11,8 +11,9 @@ import { firestore } from "@/server/admin";
 import { handleChat } from "@/server/assistant/chat";
 import { answerPending, handleConfirm, handleUndo, sessionFor, type Who } from "@/server/assistant/confirm";
 import { EXCLUDED, needsConfirm } from "@/server/assistant/policy";
+import { makeCtx } from "@/server/assistant/run";
 import { execTool, toolDefs, undoInThread, type Emit } from "@/server/assistant/tools";
-import { contextNow, pageRecord, searchAll, tonightDate } from "@/server/assistant/context";
+import { contextNow, pageList, pageRecord, searchAll, tonightDate } from "@/server/assistant/context";
 import { MAX_REPLY_CHARS, MAX_STEPS } from "@/server/assistant/flow";
 import { ensureThread, getRuns, newThreadId, PENDING_TTL_MS } from "@/server/assistant/threads";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
@@ -385,4 +386,24 @@ test("paying someone back is one card with their name and total; yes pays exactl
   for (const x of owed) assert.ok((await db.get("expenses", x.id))!.paidBackAt, x.id);
   assert.equal((await db.get("expenses", later.id))!.paidBackAt, undefined);
   await assert.rejects(registry["expenses.payPerson"].run(sys, { userId: eric.uid, ids: [owed[0].id] }), (e: { code?: string }) => e.code === "not_found");
+});
+
+test("context: on the Shows page Roadie gets the rows of the tab in view", async () => {
+  const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Bluebird")))) as { id: string };
+  await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: "2026-09-01", venueId: v.id, status: "confirmed", times: { loadIn: "17:00", set: "20:00" } }));
+  const c = makeCtx(await sess());
+  const up = (await pageList(c, { route: "shows" }))!;
+  assert.equal(up.list, "shows");
+  assert.equal(up.tab, "upcoming");
+  assert.equal(up.count, 1);
+  assert.equal(up.rows[0].id, showId);
+  assert.equal(up.rows[0].venue, "Hi-Dive");
+  assert.equal(up.rows[0].date, "2026-11-14");
+  const played = (await pageList(c, { route: "shows", tab: "played" }))!;
+  assert.equal(played.tab, "played");
+  assert.equal(played.count, 1);
+  assert.equal(played.rows[0].venue, "Bluebird");
+  assert.equal(played.rows[0].date, "2026-09-01");
+  assert.ok(played.rows[0].id);
+  assert.equal(await pageList(c, { route: "calendar" }), null);
 });

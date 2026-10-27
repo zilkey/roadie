@@ -1,9 +1,10 @@
 import { z, type MessageData } from "genkit";
 import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assistant";
 import { getAi, modelLabel } from "./ai";
-import { contextNow, pageRecord } from "./context";
+import { contextNow, pageList, pageRecord } from "./context";
+import { claimsChange, cleanMessages, requestShape, withoutThoughts } from "./guard";
 import { makeCtx, type Session } from "./run";
-import { BAD_FINDER, PICK_THEN_YES, TAP_YES } from "./script";
+import { BAD_FINDER, NOTHING_CHANGED, NUDGE, PICK_THEN_YES, TAP_YES } from "./script";
 import { DATA_NOTICE, execTool, SEE_PITCH, toolDefs } from "./tools";
 import { allowUrls, newWebTurn, WEB_NOTICE } from "./web";
 
@@ -25,6 +26,8 @@ export const ChatFlowOutput = z.object({
     runId: z.string().optional(), pendingId: z.string().optional(), command: z.string().optional(), status: z.enum(["pending", "done", "canceled", "expired", "failed"]).optional(),
     fields: z.array(z.object({ label: z.string(), value: z.string(), path: z.string().optional(), options: z.array(z.object({ value: z.string(), label: z.string() })).optional() })).optional(),
   })),
+  /** The model call failed partway: `text` and `actions` are what happened before it did. */
+  failed: z.boolean().optional(),
 });
 export type ChatFlowOutput = z.infer<typeof ChatFlowOutput>;
 
@@ -46,6 +49,8 @@ const system = (ctx: PageContext) =>
   `${WEB_NOTICE} ` +
   `Say where to go instead: people and access are on the People page (route people); the band name and web address are on General settings (route artist). Offer to open it with ui.navigate. ` +
   `Editing part of a list (personnel, dates, notes, emails, instruments, setlists, income) replaces the whole value: read the record first and resend all of it. ` +
+  `Never say you changed something, or that you will ("let me…", "on it"), unless you call the tool for it in this same reply. If a value you need is missing (a time, a name), ask for it in one short question instead. ` +
+  `Never say something is on a record or a page unless a tool result or <this_page> shows it. ` +
   `Sending, paying, deleting, canceling and bulk changes ask the person first: call the tool, and a Yes / Cancel card appears. Don't ask twice. ` +
   `A show is canceled when they called it off (shows.cancel) and dropped when we pulled out (shows.drop); pass the reason when they give one. ` +
   `"Explain this page", "what am I looking at?", "what's a pitch?": call help.explain (no arguments for this page) and answer from its text only; explanations may run a few short lines. ` +
@@ -58,6 +63,7 @@ const system = (ctx: PageContext) =>
   `After pitches.flag the app itself asks "${SEE_PITCH}" with a button: don't ask it again. A yes is ui.navigate route pitch with that pitch's id (search for it if you don't have it). ` +
   `The user is on ${ctx.route}${ctx.tab ? ` (${ctx.tab} tab)` : ""}${ctx.recordKind ? `, looking at ${ctx.recordKind} ${ctx.recordId ?? ""}` : ""}. ` +
   `When <this_page> is below, it is that record: "this", "this one", "here" and questions with no other subject mean it; name it by its name, never the route. ` +
+  `When <this_page> has a list instead, it is the rows on their screen: "that show", "the one on the 13th" mean a row in it. ` +
   `Its customFields are the band's own fields for it: a label the person uses ("olive care is at Noel's") is that field, even when it sounds off-topic. ` +
   `Show fields are set with shows.setFields (resend every value you keep), song fields with songs.update's fields.`;
 
@@ -86,7 +92,7 @@ export function getChatFlow() {
         }
         // Every message: the record on the page now (the person may have moved since the last one). Marked as content.
         try {
-          const here = await pageRecord(makeCtx(s), input.pageContext);
+          const here = (await pageRecord(makeCtx(s), input.pageContext)) ?? (await pageList(makeCtx(s), input.pageContext));
           if (here) sys += `\n\n<this_page note="${DATA_NOTICE}">${JSON.stringify(here)}</this_page>`;
         } catch (e) { console.error(e); }
         let messages: MessageData[] = [
@@ -101,45 +107,84 @@ export function getChatFlow() {
         const web = newWebTurn();
         for (const h of input.history) if (h.role === "user") allowUrls(web, h.text);
         allowUrls(web, input.message);
+        // Each step's words are held until the step ends: a final reply that claims a change nobody made is never shown.
+        const say = (part: string) => {
+          const cut = part.slice(0, Math.max(0, MAX_REPLY_CHARS - sent));
+          if (!cut) return;
+          sent += cut.length; text += cut; sendChunk({ type: "text", delta: cut });
+        };
+        // Something happened this message: a write, a card, a page opened, an undo, a web search. Reads leave no action, and a failed step's line doesn't count.
+        const acted = () => actions.some((a) => a.kind !== "action" || !/^(Couldn't|No page|No \w+ with)/.test(a.label));
+        const generate = async () => {
+          let words = "";
+          const ask = (msgs: MessageData[]) => ai.generate({
+            model: model as never, system: sys, messages: msgs, tools, returnToolRequests: true,
+            onChunk: (c) => { if (c.text) words += c.text; },
+          });
+          try {
+            return { res: await ask(cleanMessages(messages)), words };
+          } catch (e) {
+            if ((e as { status?: string }).status !== "INVALID_ARGUMENT") throw e;
+            // Vertex rejected the conversation. Log its shape (never its words) and try once more without thoughts.
+            console.error(JSON.stringify({ roadieModel400: (e as Error).message, threadId: s.threadId, runId: s.runId, shape: requestShape(messages) }));
+            words = "";
+            return { res: await ask(withoutThoughts(messages)), words };
+          }
+        };
         let calls = 0;
         let stopped = false;
-        for (let step = 0; step < MAX_STEPS && !stopped; step++) {
-          const res = await ai.generate({
-            model: model as never, system: sys, messages, tools, returnToolRequests: true,
-            onChunk: (c) => {
-              if (!c.text || sent >= MAX_REPLY_CHARS) return;
-              const part = c.text.slice(0, MAX_REPLY_CHARS - sent);
-              sent += part.length; text += part; sendChunk({ type: "text", delta: part });
-            },
-          });
-          messages = res.messages;
-          const requests = res.toolRequests;
-          if (!requests.length) break;
-          const responses = [];
-          for (const tr of requests) {
-            const { name, ref, input: args } = tr.toolRequest;
-            const out = ++calls > MAX_TOOL_CALLS
-              ? { output: { error: "Too many steps in one message" }, action: undefined, stop: true }
-              : await execTool(s, name, args, sendChunk, recorded, web);
-            if (out.say && !text.includes(out.say)) {
-              const said = `${text.trim() ? " " : ""}${out.say}`;
-              text = text.trimEnd() + said;
-              sendChunk({ type: "text", delta: said });
+        let nudged = false;
+        let failed = false;
+        try {
+          for (let step = 0; step < MAX_STEPS && !stopped; step++) {
+            const { res, words } = await generate();
+            messages = res.messages;
+            const requests = res.toolRequests;
+            if (!requests.length) {
+              if (!acted() && claimsChange(words)) {
+                if (!nudged) {
+                  nudged = true;
+                  messages = [...messages, { role: "user", content: [{ text: NUDGE }] }];
+                  continue;
+                }
+                say(`${text.trim() ? " " : ""}${NOTHING_CHANGED}`);
+                break;
+              }
+              say(words);
+              break;
             }
-            for (const a of [out.action, out.also, ...(out.choices ?? [])]) {
-              if (!a) continue;
-              actions.push(a);
-              if (a.kind === "action") sendChunk({ type: "action", label: a.label });
-              else if (a.kind === "reply") sendChunk({ type: "reply", label: a.label });
-              else if (a.kind === "link") sendChunk({ type: "link", route: a.route!, params: a.params ?? {}, label: a.label });
-              else if (a.kind === "navigate") sendChunk({ type: "navigate", route: a.route!, params: a.params ?? {}, label: a.label });
+            say(words);
+            const responses = [];
+            for (const tr of requests) {
+              const { name, ref, input: args } = tr.toolRequest;
+              const out = ++calls > MAX_TOOL_CALLS
+                ? { output: { error: "Too many steps in one message" }, action: undefined, stop: true }
+                : await execTool(s, name, args, sendChunk, recorded, web);
+              if (out.say && !text.includes(out.say)) {
+                const said = `${text.trim() ? " " : ""}${out.say}`;
+                text = text.trimEnd() + said;
+                sendChunk({ type: "text", delta: said });
+              }
+              for (const a of [out.action, out.also, ...(out.choices ?? [])]) {
+                if (!a) continue;
+                actions.push(a);
+                if (a.kind === "action") sendChunk({ type: "action", label: a.label });
+                else if (a.kind === "reply") sendChunk({ type: "reply", label: a.label });
+                else if (a.kind === "link") sendChunk({ type: "link", route: a.route!, params: a.params ?? {}, label: a.label });
+                else if (a.kind === "navigate") sendChunk({ type: "navigate", route: a.route!, params: a.params ?? {}, label: a.label });
+              }
+              if (out.stop) stopped = true;
+              responses.push({ toolResponse: { name, ref, output: out.output } });
             }
-            if (out.stop) stopped = true;
-            responses.push({ toolResponse: { name, ref, output: out.output } });
+            messages = [...messages, { role: "tool", content: responses }];
+            text += text && !/\s$/.test(text) ? " " : "";
           }
-          messages = [...messages, { role: "tool", content: responses }];
-          text += text && !/\s$/.test(text) ? " " : "";
+        } catch (e) {
+          // The model call failed. What already happened (writes, cards) stands; chat.ts saves it with the message.
+          console.error(e);
+          failed = true;
         }
+        if (failed) return { text: text.trim(), actions, failed };
         // A pitch made (or found) this message: offer to open it, unless Roadie already took them there.
         if (actions.some((a) => a.kind === "link" && a.route === "pitch") && !actions.some((a) => a.kind === "navigate") && !/see the pitch/i.test(text)) {
           const ask = `${text.trim() ? " " : ""}${SEE_PITCH}`;

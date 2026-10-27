@@ -1,10 +1,12 @@
-import { genkit, type Genkit, type GenerateRequest, type GenerateResponseData, type Part } from "genkit";
+import { genkit, GenkitError, type Genkit, type GenerateRequest, type GenerateResponseData, type Part } from "genkit";
 // Imported statically, like genkit: a dynamic import() loads the plugin's ESM build next to genkit's CJS one under tsx,
 // and genkit then rejects the plugin's actions (instanceof across two copies). The plugins only need credentials when called.
 import { googleAI, vertexAI } from "@genkit-ai/google-genai";
 import { script, type Step } from "./script";
 
 export const FAKE_MODEL = "roadie/fake";
+/** A user message containing this makes the canned model fail like Vertex did on 2026-10-27 (a 400 after the stream began). Tests only. */
+export const FAKE_400 = "[fake: 400]";
 
 export type ModelMode = "fake" | "gemini" | "vertex";
 const hasKey = (env: NodeJS.ProcessEnv) => !!(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENAI_API_KEY);
@@ -50,6 +52,10 @@ function defineFake(ai: Genkit) {
     { name: FAKE_MODEL, label: "Roadie (canned)", supports: { tools: true, multiturn: true, systemRole: true, media: false } },
     async (req, send): Promise<GenerateResponseData> => {
       const turn = lastTurn(req);
+      if (turn.text.includes(FAKE_400)) {
+        send?.({ content: [{ text: "Sure, " }] });
+        throw new GenkitError({ status: "INVALID_ARGUMENT", message: "Interaction API returned an error: [invalid_request] Request contains an invalid argument." });
+      }
       const out = script(turn);
       const content: Part[] = [];
       if (out.text) {

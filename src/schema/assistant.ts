@@ -57,6 +57,8 @@ export const AssistantMessage = z.strictObject({
   actions: z.array(AssistantAction),
   pageContext: PageContext,
   at: ts,
+  /** A reply whose model call failed partway (the person's message above it is saved all the same). */
+  failed: z.literal(true).optional(),
 });
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
 
@@ -77,7 +79,8 @@ export type AssistantEvent =
   | { type: "readback"; label: string; runId: string }
   | { type: "confirm"; pendingId: string; command: string; summary: string; fields?: CardField[] }
   | { type: "done"; threadId: string; messageId?: string }
-  | { type: "error"; message: string };
+  /** threadId and messageId when the turn was saved anyway, so a retry continues the same conversation. */
+  | { type: "error"; message: string; threadId?: string; messageId?: string };
 
 /**
  * POST /api/assistant/confirm: answer a confirm card. The server runs the stored input, never anything sent here, except

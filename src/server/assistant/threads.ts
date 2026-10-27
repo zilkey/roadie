@@ -18,8 +18,14 @@ export async function loadHistory(uid: string, threadId: string, limit = 20): Pr
   // broke every later message in the thread. Its action labels stand in for it, and anything still empty is left out.
   return msgs.docs.reverse().flatMap((d): Turn[] => {
     const m = d.data();
-    const labels = ((m.actions as { label?: string }[] | undefined) ?? []).map((a) => a.label).filter(Boolean);
+    const acts = (m.actions as { kind?: string; label?: string }[] | undefined) ?? [];
+    const labels = acts.map((a) => a.label).filter(Boolean);
     const text = String(m.text ?? "").trim() || labels.join(". ");
+    // A reply that failed: say so plainly, so the next message picks the request back up instead of thinking it's done.
+    if (m.failed) {
+      const changed = acts.filter((a) => a.kind === "readback").map((a) => a.label);
+      return [{ role: m.role, text: `${text} [This reply failed partway. ${changed.length ? `Only these changes were made: ${changed.join("; ")}.` : "Nothing was changed."} The request before it is not done.]` }];
+    }
     return text ? [{ role: m.role, text }] : [];
   });
 }
@@ -37,6 +43,8 @@ export async function ensureThread(a: { uid: string; threadId: string; pageConte
 export async function saveTurn(a: {
   threadId: string; pageContext: PageContext; replyId?: string;
   userText: string; replyText: string; actions: AssistantAction[]; userAt: Date;
+  /** The model call failed partway: replyText and actions are what happened before it did. */
+  failed?: boolean;
 }): Promise<{ assistantMessageId: string }> {
   const ref = threads().doc(a.threadId);
   const batch = firestore().batch();
@@ -47,7 +55,7 @@ export async function saveTurn(a: {
   batch.set(user, { role: "user", text: a.userText, actions: [], pageContext: a.pageContext, at: Timestamp.fromDate(a.userAt) });
   // Never earlier than the user's message, so ordering by `at` is stable.
   const replyAt = Timestamp.fromMillis(Math.max(now.toMillis(), a.userAt.getTime() + 1));
-  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt });
+  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt, ...(a.failed ? { failed: true } : {}) });
   await batch.commit();
   return { assistantMessageId: reply.id };
 }

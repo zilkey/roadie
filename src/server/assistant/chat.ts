@@ -8,6 +8,7 @@ import type { Session } from "./run";
 import { ensureThread, loadHistory, newMessageId, newThreadId, saveTurn } from "./threads";
 
 const sse = (e: AssistantEvent) => `data: ${JSON.stringify(e)}\n\n`;
+export const DROPPED = "Roadie dropped a cable. Try again.";
 
 /** POST /api/assistant/chat: admins only. Errors before the stream starts are plain JSON; later ones are `error` events. */
 export async function handleChat(authHeader: string | null, body: unknown, artistHeader?: string | null): Promise<Response> {
@@ -34,19 +35,22 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     const stream = new ReadableStream<Uint8Array>({
       async start(c) {
         const send = (e: AssistantEvent) => c.enqueue(enc.encode(sse(e)));
+        // A failed reply is saved too, with the person's message, so a retry knows what they asked for.
+        const save = (text: string, actions: AssistantAction[], failed: boolean) => saveTurn({
+          threadId, replyId: session.replyId, pageContext: req.pageContext,
+          userText: req.message, replyText: failed ? [text, DROPPED].filter(Boolean).join(" ") : text, actions, userAt, failed,
+        });
         try {
           const flow = await getChatFlow();
           const { stream: chunks, output } = flow.stream({ message: req.message, history: history ?? [], pageContext: req.pageContext, session });
           for await (const e of chunks as AsyncIterable<AssistantEvent>) send(e);
-          const out = (await output) as { text: string; actions: AssistantAction[] };
-          const { assistantMessageId } = await saveTurn({
-            threadId, replyId: session.replyId, pageContext: req.pageContext,
-            userText: req.message, replyText: out.text, actions: out.actions, userAt,
-          });
-          send({ type: "done", threadId, messageId: assistantMessageId });
+          const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean };
+          const { assistantMessageId } = await save(out.text, out.actions, !!out.failed);
+          send(out.failed ? { type: "error", message: DROPPED, threadId, messageId: assistantMessageId } : { type: "done", threadId, messageId: assistantMessageId });
         } catch (e) {
           console.error(e);
-          send({ type: "error", message: "Roadie dropped a cable. Try again." });
+          const saved = await save("", [], true).catch((err) => { console.error(err); return null; });
+          send({ type: "error", message: DROPPED, threadId, ...(saved ? { messageId: saved.assistantMessageId } : {}) });
         } finally {
           c.close();
         }

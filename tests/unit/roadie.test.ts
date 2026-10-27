@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { handleChat } from "@/server/assistant/chat";
 import { getChatFlow } from "@/server/assistant/flow";
 import { execTool } from "@/server/assistant/tools";
-import { ensureThread, newMessageId, newThreadId } from "@/server/assistant/threads";
+import { ensureThread, loadHistory, newMessageId, newThreadId } from "@/server/assistant/threads";
 import { newRunId } from "@/server/ctx";
 import { modelMode } from "@/server/assistant/ai";
-import { script, OFF_TOPIC, CANT_DO, BAD_FINDER, CALENDAR_OPTIONS } from "@/server/assistant/script";
+import { script, OFF_TOPIC, CANT_DO, BAD_FINDER, CALENDAR_OPTIONS, ASK_MISSING } from "@/server/assistant/script";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import { assistantSetPrefs } from "@/server/commands/assistant";
 import { dispatch } from "@/server/commands/dispatch";
@@ -83,9 +83,9 @@ test("script: \"X canceled, <reason>\" cancels and \"we're dropping X, <reason>\
   assert.equal(script({ text: why, steps: got({ id: "s3", status: "canceled" }) }).text, "It was canceled, but nobody wrote down why.");
 });
 
-test("flow: greeting streams text word by word", async () => {
+test("flow: greeting streams its text (a step is held until it ends, then sent)", async () => {
   const { events, out } = await run("hi");
-  assert.ok(events.filter((e) => e.type === "text").length > 2);
+  assert.ok(events.filter((e) => e.type === "text").length >= 1);
   assert.equal(textOf(events), out.text);
   assert.match(out.text, /^Hey/);
   assert.deepEqual(out.actions, []);
@@ -212,4 +212,42 @@ test("command: assistant.setPrefs stores width and thread, members refused", asy
   await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null });
   assert.deepEqual((await firestore().collection("users").doc(admin.uid).get()).data()!.prefs, { assistant: { width: "narrow" } });
   assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { width: "huge" })).status, 400);
+});
+
+test("flow: a reply that promises a change with nothing written gets one nudge, then asks instead", async () => {
+  const { events, out } = await run("update the load-in");
+  assert.equal(out.text, ASK_MISSING);
+  assert.equal(textOf(events), ASK_MISSING);
+  assert.ok(!/let me update/i.test(textOf(events)));
+  assert.ok(!/let me update/i.test(out.text));
+  assert.ok(!out.actions.some((a) => a.kind === "readback" || a.kind === "confirm"), JSON.stringify(out.actions));
+});
+
+test("api: a failed model call still saves the person's message, the error event names the thread, history says it failed", async () => {
+  const admin = await makeUser("fail@example.com", "admin", { name: "Jeff" });
+  const message = "move load-in at Hi-Dive to 4:30 [fake: 400]";
+  const events = await readSse(await post(admin.token, { message, pageContext: ctx }));
+  const err = events.at(-1) as Extract<AssistantEvent, { type: "error" }>;
+  assert.equal(err.type, "error");
+  assert.equal(err.message, "Roadie dropped a cable. Try again.");
+  assert.ok(err.threadId);
+  assert.ok(err.messageId);
+
+  const thread = firestore().collection("assistantThreads").doc(err.threadId!);
+  const msgs = (await thread.collection("messages").orderBy("at").get()).docs.map((d) => d.data());
+  assert.deepEqual(msgs.map((m) => m.role), ["user", "assistant"]);
+  assert.equal(msgs[0].text, message);
+  assert.equal(msgs[1].failed, true);
+  assert.match(msgs[1].text, /Roadie dropped a cable\. Try again\.$/);
+
+  const history = await loadHistory(admin.uid, err.threadId!);
+  assert.equal(history?.length, 2);
+  assert.match(history![1].text, /This reply failed partway/);
+  assert.match(history![1].text, /Nothing was changed/);
+
+  const again = await readSse(await post(admin.token, { threadId: err.threadId, message: "hi", pageContext: ctx }));
+  const done = again.at(-1) as Extract<AssistantEvent, { type: "done" }>;
+  assert.equal(done.type, "done");
+  assert.equal(done.threadId, err.threadId);
+  assert.equal((await thread.collection("messages").get()).size, 4);
 });

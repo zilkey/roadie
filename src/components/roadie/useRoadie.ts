@@ -95,8 +95,15 @@ export function useRoadie(onNavigated?: () => void) {
       setThreadId(e.threadId);
       runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
       setPending((p) => p && { ...p, doneId: e.messageId });
-    } else if (e.type === "error") setPending((p) => p && { ...p, error: e.message });
-  }, [router, onNavigated, slug]);
+    } else if (e.type === "error") {
+      // Saved anyway: stay in this thread so the retry has the message, and let the saved copy replace this one.
+      if (e.threadId && e.threadId !== threadId) {
+        setThreadId(e.threadId);
+        runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
+      }
+      setPending((p) => p && { ...p, error: e.message, ...(e.messageId ? { doneId: e.messageId } : {}) });
+    }
+  }, [router, onNavigated, slug, threadId]);
 
   const send = useCallback(async (text: string) => {
     const message = text.trim();

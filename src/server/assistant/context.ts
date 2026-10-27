@@ -1,6 +1,6 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
-import { addDays, isOff, isPlayed, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
+import { addDays, isOff, isPlayed, SHOW_FILTERS, showCity, showFilter, showName, type ShowFilter, type ShowPlaceLike } from "@/lib/shows";
 import { owesBack } from "@/lib/money";
 import { RECORD_ROUTES } from "@/lib/routes";
 import type { PageContext } from "@/schema/assistant";
@@ -67,6 +67,23 @@ export async function pageRecord(ctx: Ctx, page: PageContext) {
   const json = JSON.stringify(record);
   const shown = json.length > PAGE_RECORD_CHARS ? `${json.slice(0, PAGE_RECORD_CHARS)}…(cut off: records.get for the rest)` : record;
   return { kind, id: page.recordId!, record: shown, ...(customFields ? { customFields } : {}) };
+}
+
+/** Rows of a list page shown to Roadie at most; the count says how many there are. */
+export const PAGE_LIST_ROWS = 40;
+
+/**
+ * The rows on a list page the person is looking at ("that show", "the one on the 13th"), read as them. Only the Shows
+ * page so far, by its tab (#played...; Upcoming when none). Null on every other page.
+ */
+export async function pageList(ctx: Ctx, page: PageContext) {
+  if (page.route !== "shows") return null;
+  const tab: ShowFilter = (SHOW_FILTERS as readonly string[]).includes(page.tab ?? "") ? (page.tab as ShowFilter) : "upcoming";
+  const today = dateInBandZone(ctx.now ?? new Date());
+  // Same order as the page: Upcoming soonest first, the rest most recent first.
+  const rows = (await list(ctx, "shows")).filter((s) => showFilter(s as never, today) === tab)
+    .sort((a, b) => (tab === "upcoming" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)));
+  return { list: "shows", tab, count: rows.length, rows: rows.slice(0, PAGE_LIST_ROWS).map(showLine) };
 }
 
 export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician", "setlistTemplate"] as const;

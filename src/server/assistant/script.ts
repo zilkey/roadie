@@ -21,6 +21,18 @@ export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
 export const PICK_THEN_YES = "Pick one from the list on the card, then tap Yes.";
 /** How Roadie opens a question it can't place (ui.ask). */
 export const BAD_FINDER = "I could just be a bad finder, but I don't know what you mean.";
+/**
+ * Sent by the app, as a user turn, when Roadie's reply says something changed (or will) but nothing was written this
+ * message. The model gets one more go: do it, ask for what's missing, or answer without the claim.
+ */
+export const NUDGE =
+  "(From the app, not the person: your reply says something was changed, will be changed, or is already on a record, but nothing was changed in this message and no tool showed it. " +
+  "If you have everything you need, call the tool now. If something is missing, like a time or a name, ask for it in one short question. " +
+  "If you were only answering a question, answer again from tool results without saying anything changed.)";
+/** What the canned model says to NUDGE: it asks for the value it doesn't have. */
+export const ASK_MISSING = "What should it be? I haven't changed anything yet.";
+/** Said instead of a reply that still claims a change after NUDGE, with nothing written. */
+export const NOTHING_CHANGED = "I didn't change anything. Tell me exactly what to change, with the new value.";
 export const CALENDAR_OPTIONS = ["A pitch's next step", "A possible date on a pitch", "A hold show"];
 
 // Page words -> named route. First match wins, so "ai keys" is checked before "keys".
@@ -93,6 +105,7 @@ export function script(input: { text: string; steps?: Step[]; page?: Page }): Sc
   const raw = input.text.trim();
   const t = raw.toLowerCase();
   const steps = input.steps ?? [];
+  if (raw === NUDGE) return { text: ASK_MISSING };
   return steps.length ? followUp(t, steps, input.page, raw) : first(t, input.page, raw);
 }
 
@@ -127,6 +140,8 @@ function first(t: string, page?: Page, raw = t): Scripted {
     return { calls: [{ name: "expenses.add", input: { amount: Math.round(parseFloat(exp[1] ?? exp[2]) * 100), what, category: category(what) } }] };
   }
 
+  // What the real model did on 2026-10-27: promised a load-in change with no time to set, and called nothing.
+  if (/\bupdate (?:the )?load[- ]?in\b/.test(t) && !/\d/.test(t)) return { text: "My bad, let me update that right now." };
   const mv = /\bmove (?:the )?load[- ]?in\s*(?:at |for |on )?(.*?)\s*to\s+(\d{1,2})(?::(\d\d))?\s*(am|pm)?\b/.exec(t);
   if (mv) {
     const q = mv[1].replace(/\b(the|show)\b/g, "").trim();
