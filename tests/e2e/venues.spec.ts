@@ -12,9 +12,12 @@ const STAMP = Date.now();
 /** Booking -> search -> the venue's full record, as an admin of `base`. */
 async function openVenue(page: Page, base: (p: string) => string, search: string, exact?: string) {
   await page.goto(base("/booking"));
+  await page.getByTestId("booking-seg-venues").click();
   await page.getByTestId("booking-search").fill(search);
   const row = page.getByTestId(/^row-venue-/).filter({ hasText: exact ?? search }).first();
-  await row.getByTestId(/^venue-full-/).click();
+  // a venue with a pitch opens the pitch from its name; the "Venue page" link under it is the place
+  const placeLink = row.getByTestId(/^page-link-/);
+  if (await placeLink.count()) await placeLink.click(); else await row.getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 

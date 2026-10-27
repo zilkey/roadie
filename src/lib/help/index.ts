@@ -19,7 +19,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   showsPlayed: "playedShows", showsCanceled: "canceledShows", showsDropped: "droppedShows",
   show: (tab) => (tab === "setlist" ? "setlists" : tab === "finances" ? "income" : "showPage"),
   showSetlist: "setlists", showFinances: "income", showAfter: "showPage", newShow: "showPage",
-  booking: "booking", bookingVenues: "booking", bookingFestivals: "booking", bookingPromoters: "booking", bookingContacts: "booking",
+  booking: "pitch", bookingVenues: "booking", bookingFestivals: "booking", bookingPromoters: "booking", bookingContacts: "booking",
   promoter: "booking", festival: "booking", edition: "booking", contact: "booking",
   bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",

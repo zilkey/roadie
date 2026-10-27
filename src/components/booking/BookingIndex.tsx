@@ -2,6 +2,7 @@
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
@@ -24,7 +25,7 @@ import type { Show } from "@/schema";
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
 export function BookingIndex({ seg }: { seg: Seg }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
 
-export type Seg = "all" | "pitches" | "venues" | "festivals" | "promoters" | "contacts";
+export type Seg = "pitches" | "venues" | "festivals" | "promoters" | "contacts";
 type Add = null | "venue" | "promoter" | "festival" | "contact";
 
 function Booking({ seg }: { seg: Seg }) {
@@ -32,8 +33,9 @@ function Booking({ seg }: { seg: Seg }) {
   const b = useBooking();
   const { call, error } = useCommand();
   // The search survives switching tabs: it rides along as ?q= on the tab's route.
-  const [q, setQ] = useState(() => (typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("q") ?? ""));
-  const setSeg = (s: Seg) => router.push(`/booking${s === "all" ? "" : `/${s}`}${q.trim() ? `?q=${encodeURIComponent(q)}` : ""}`);
+  const params = useSearchParams();
+  const [q, setQ] = useState(() => params.get("q") ?? "");
+  const setSeg = (s: Seg) => router.push(`/booking/${s}${q.trim() ? `?q=${encodeURIComponent(q)}` : ""}`);
   // An unfinished "new X" opens its form by itself (a draft link to it opens the form).
   const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")), contact: useHasDraft(draftPath.newIn("contacts")) };
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
@@ -139,7 +141,7 @@ function Booking({ seg }: { seg: Seg }) {
         {addActions}
       </>} />
       <Tabs<Seg> testid="booking-seg" value={seg} onChange={setSeg}
-        options={[["all", "All"], ["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
+        options={[["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["contacts", "Contacts"]]} />
       <ErrorBox error={error} />
 
       {seg === "pitches" && (
@@ -222,8 +224,7 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
     : seg === "festivals" ? ["Festival", "Edition", "Dates", "Deadline", "City", "Email", "Phone", "Pitch"]
     : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
     : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
-    : seg === "pitches" ? ["Name", "Type", "City", "Email", "Phone", "Pitch", "Last contact"]
-    : ["Name", "Type", "City", "Email", "Phone", "Pitch"];
+    : ["Name", "Type", "City", "Pitch", "Last contact", "Next step"];
   const today = todayStr();
   // Pitch List: Pitched or Talking with no contact (or, never contacted, since it was added) for QUIET_DAYS turns the row yellow.
   const quiet = (r: ListRow) => {
@@ -235,6 +236,11 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
     return <td className="lc" data-testid={`last-contact-${r.id}`}>{at ? fmtInstant(at.toMillis(), { month: "short", day: "numeric" }) : <Dash />}</td>;
   };
   const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{r.name}</Link>;
+  // A row with an active pitch opens the pitch from its name; the place page is one click under it ("Venue page"). Without a pitch the name is the place page.
+  const nameLink = (r: ListRow, ref: Ref, testid: string, label?: string) => r.pitch ? (<>
+    <Link href={`/booking/pitches/${r.pitch.id}`} className="nm" data-testid={testid}>{ref.name}</Link>
+    {label && <span className="sub"><Link href={hrefFor(r.to.kind, r.to.id)} data-testid={`page-link-${r.id}`}>{label}</Link></span>}
+  </>) : link(ref, testid);
   const flag = (r: ListRow) => {
     if (!r.flag) return <td className="flag" />;
     const on = !!r.pitch;
@@ -263,9 +269,14 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
     <td className="nw">{r.phone ? <a className="ph" href={`tel:${r.phone}`}>{fmtPhone(r.phone)}</a> : <Dash />}</td>
   </>);
   const city = (r: ListRow) => <td className="nw">{r.city || <Dash />}</td>;
+  const nextStep = (r: ListRow) => {
+    const n = r.pitch?.nextStep;
+    return <td className="ns" data-testid={`next-step-${r.id}`}>{n ? <>{n.text}<span className="sub">by {fmtDate(n.due)}</span></> : <Dash />}</td>;
+  };
   const nameCell = (r: ListRow) => (
     <td className="name">
-      {link(r.to, `${r.kind}-full-${r.id}`)}{status(r)}
+      {seg === "pitches" ? <Link href={r.pitch ? `/booking/pitches/${r.pitch.id}` : hrefFor(r.to.kind, r.to.id)} className="nm" data-testid={`${r.kind}-full-${r.id}`}>{r.name}</Link>
+        : nameLink(r, r.to, `${r.kind}-full-${r.id}`, "Venue page")}{status(r)}
       {r.promoters.length > 0 && <span className="sub">promoted by {r.promoters.map((p, i) => <span key={p.id}>{i > 0 && ", "}<Link href={hrefFor("promoter", p.id)}>{p.name}</Link></span>)}</span>}
     </td>
   );
@@ -295,23 +306,24 @@ function BookingTable({ seg, rows, onFlag, sort, onSort }: { seg: Seg; rows: Lis
             {flagged && flag(r)}
             {seg === "festivals" ? (<>
               <td className="name">{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>
-              <td className="nw">{r.edition ? <>{link(r.edition, `edition-full-${r.id}`)}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
+              <td className="nw">{r.edition ? <>{nameLink(r, r.edition, `edition-full-${r.id}`, "Festival page")}{status(r)}</> : <Link href={`/booking/festivals/${r.id}?addEdition=1`} className="nm" data-testid={`add-edition-${r.id}`}>Add edition</Link>}</td>
               <td className="nw" data-testid={`dates-${r.id}`}>{r.startDate ? `${fmtDate(r.startDate)}${r.endDate && r.endDate !== r.startDate ? `–${fmtDate(r.endDate)}` : ""}` : <Dash />}</td>
               <td className="nw" data-testid={`deadline-${r.id}`}>{r.deadline ? <>{fmtDate(r.deadline.date)}{r.deadline.sure !== "confirmed" && <span className="s" title={r.deadline.sure === "target" ? "Our target" : "Estimated"}> {r.deadline.sure === "target" ? "(target)" : "(est.)"}</span>}</> : <Dash />}</td>
             </>) : seg === "promoters" ? (<>
-              <td>{link(r.to, `promoter-full-${r.id}`)}{status(r)}</td>
+              <td>{nameLink(r, r.to, `promoter-full-${r.id}`, "Promoter page")}{status(r)}</td>
               <td>{r.person ?? <Dash />}</td>
             </>) : seg === "contacts" ? (<>
               <td>{link(r.to, `contact-full-${r.id}`)}</td>
               <td>{r.organization ? link(r.organization) : <Dash />}</td>
             </>) : (<>
               {nameCell(r)}
-              {(seg === "all" || seg === "pitches") && <td className="nw">{r.type}</td>}
+              {seg === "pitches" && <td className="nw">{r.type}</td>}
             </>)}
             {city(r)}
-            {reach(r)}
+            {seg !== "pitches" && reach(r)}
             {seg !== "contacts" && pitchCell(r)}
             {seg === "pitches" && lastContact(r)}
+            {seg === "pitches" && nextStep(r)}
           </tr>
         ))}
       </tbody>

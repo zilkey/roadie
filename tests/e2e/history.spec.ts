@@ -41,6 +41,7 @@ test("undo from the History page for an app change restores the earlier value", 
   await expect(page.locator('[data-testid="history-row"][data-op="delete"][data-kind="venues"]')).toHaveCount(1);
 
   await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-venues").click();
   await page.getByTestId("booking-search").fill(name);
   await expect(page.getByTestId(/^row-venue-/)).toHaveCount(0);
 });

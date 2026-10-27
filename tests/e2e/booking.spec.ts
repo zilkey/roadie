@@ -10,7 +10,10 @@ async function signInAs(page: Page, key: string) {
 test("flag a venue, move the pitch along, search finds it", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.getByTestId("tab-booking").click();
+  await expect(page.getByTestId("booking-seg-pitches")).toHaveAttribute("aria-selected", "true"); // Booking opens on the Pitch List
   await page.getByTestId("booking-search").fill("swallow");
+  await expect(page.getByTestId("no-results")).toBeVisible(); // nothing pitched there yet
+  await page.getByTestId("booking-seg-venues").click(); // the search narrows every tab
   const row = page.getByTestId(/^row-venue-/);
   await expect(row).toHaveCount(1);
   const flag = row.locator("[data-testid^='flag-'][data-flagged]"); // the flag button itself, not its form's fields
@@ -92,7 +95,10 @@ test("Pitch List: last contact column, quiet rows turn yellow, statuses without 
   await signInAs(page, "jeff");
   await page.goto("/booking/pitches");
   const list = page.getByTestId("pitch-list");
-  await expect(list.locator("th", { hasText: "Last contact" })).toBeVisible();
+  await expect(list.locator("th:not(.flag)")).toHaveText(["Name", "Type", "City", "Pitch", "Last contact", "Next step"]);
+  const dairy = list.locator("tr", { hasText: "Dairy Arts Center" }).first();
+  await expect(dairy.getByTestId(/^next-step-/)).toContainText("Fill out the spring submission form");
+  await expect(dairy.getByTestId(/^next-step-/)).toContainText("by Nov 5");
   // seed: Bluebird pitched, last contact 20 days ago; Fox talking, 3 days ago; Cervantes a Future Pitch, never contacted
   const bluebird = list.locator("tr", { hasText: "Bluebird Room" });
   await expect(bluebird).toHaveAttribute("data-quiet", "1");
@@ -107,6 +113,38 @@ test("Pitch List: last contact column, quiet rows turn yellow, statuses without 
   const filter = page.getByTestId("pitch-status-filter");
   await expect(filter.locator("option", { hasText: "Waiting" })).toHaveCount(0);
   await expect(filter.locator("option", { hasText: "To Pitch" })).toHaveCount(1);
+});
+
+test("names open the pitch when there is one, the place page one click under; no pitch opens the place", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/booking"));
+  await expect(page.getByTestId("booking-seg-all")).toHaveCount(0);
+  const lost = (p: Page) => p.getByTestId(/^row-venue-/).filter({ hasText: "Lost Lake Lounge" });
+  await lost(page).getByTestId(/^venue-full-/).click();
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+
+  await page.goto(A("/booking/venues"));
+  await lost(page).getByTestId(/^venue-full-/).click();
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await page.goto(A("/booking/venues"));
+  await lost(page).getByTestId(/^page-link-/).click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+
+  // a venue with no pitch: the name is the place page
+  const name = `No Pitch ${Date.now()}`;
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-add-actions").click();
+  await page.getByTestId("add-venue").click();
+  await page.getByTestId("new-venue-name").fill(name);
+  await page.getByTestId("new-venue-city").fill("Boulder");
+  await page.getByTestId("new-venue-submit").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  await page.goto(A("/booking/venues"));
+  await page.getByTestId("booking-search").fill(name);
+  const row = page.getByTestId(/^row-venue-/).filter({ hasText: name });
+  await expect(row.getByTestId(/^page-link-/)).toHaveCount(0);
+  await row.getByTestId(/^venue-full-/).click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
 });
 
 test("send an email from a pitch; it shows in fake Gmail, on the timeline, and replies come back", async ({ page, request }) => {

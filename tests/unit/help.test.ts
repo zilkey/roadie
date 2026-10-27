@@ -28,7 +28,8 @@ test("help: a page maps to its topic, the tab decides on Shows and a show", () =
   assert.equal(at("show"), "showPage");
   assert.equal(at("show", "setlist"), "setlists");
   assert.equal(at("show", "finances"), "income");
-  assert.equal(at("booking"), "booking");
+  assert.equal(at("booking"), "pitch");
+  assert.equal(at("bookingVenues"), "booking");
   assert.equal(at("bookingPitches"), "pitch");
   assert.equal(at("venue"), "venueSharing");
   assert.equal(at("setlists"), "setlistTemplates");

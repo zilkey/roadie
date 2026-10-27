@@ -1,14 +1,14 @@
 import { isActive } from "@/lib/booking";
 import type { PitchRow, useBooking } from "@/components/booking/common";
 
-export type ListSeg = "all" | "pitches" | "venues" | "festivals" | "promoters" | "contacts";
+export type ListSeg = "pitches" | "venues" | "festivals" | "promoters" | "contacts";
 type Booking = ReturnType<typeof useBooking>;
 export type Ref = { kind: "venue" | "promoter" | "festival" | "edition" | "contact"; id: string; name: string };
 
 /** One table row on a Booking tab. `to` is what the name links to; flags exist on venue, edition and promoter rows only. */
 export interface ListRow {
   kind: Ref["kind"]; id: string; to: Ref; type: "Venue" | "Festival" | "Promoter" | "Contact";
-  /** What the Name column shows (All / Pitch List): editions read "UMS 2027". */
+  /** What the Name column shows (Pitch List): editions read "UMS 2027". */
   name: string;
   /** Venue rows: "promoted by ..." */
   promoters: Ref[];
@@ -83,6 +83,7 @@ export function listRows(b: Booking, seg: ListSeg, ours: Set<string>, hit: Set<s
 
   const searching = hit !== null;
   const matches = (r: ListRow) => !hit || hit.has(`${r.kind === "edition" ? "festival" : r.kind}:${r.kind === "edition" ? r.festival!.id : r.id}`);
+  // The Pitch List walks every place with a pitch; search results also draw from it (A2 turns search into buckets).
   const rows = seg === "venues" ? venues : seg === "festivals" ? festivals : seg === "promoters" ? promoters : seg === "contacts" ? contacts
     : [...venues, ...festivals, ...promoters, ...(searching ? contacts : [])];
   return rows.filter((r) => matches(r) && (seg !== "pitches" || r.pitch));
