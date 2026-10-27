@@ -553,3 +553,17 @@ mark { background: var(--quiet); color: inherit; }
 .sig-body ul { list-style: disc; padding-left: 1.5em; }
 .sig-body ol { list-style: decimal; padding-left: 1.5em; }
 .sig-side { display: grid; gap: 6px; align-content: start; justify-items: start; }
+
+/* The thread page: messages read like mail, the reply card sits under them. */
+.avatar.grey { background: var(--divider); color: var(--ink); }
+.msg { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.msg.me { border-left: 4px solid var(--accent); }
+.msg-head { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.msg-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.msg-body p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 .75em; line-height: 1.5; }
+.msg-body a { color: var(--accent-text); text-decoration: underline; }
+.msg-quote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); font-size: 14px; }
+.quote-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-weight: 700; cursor: pointer; }
+.reply-card { display: grid; gap: 10px; padding: 14px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--panel); }
+.to-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.to-row .to-input { flex: 1; min-width: 160px; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; min-height: 32px; }

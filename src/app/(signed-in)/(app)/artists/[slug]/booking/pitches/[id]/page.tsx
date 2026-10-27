@@ -22,7 +22,7 @@ import { BookedItForm } from "@/components/booking/BookedItForm";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
-import { roleIn, type Activity, type Artist, type Comment, type Contact, type EmailTemplate, type Musician, type Show, type StatSnapshot, type User } from "@/schema";
+import { emailThreadId, roleIn, type Activity, type EmailThread, type Artist, type Comment, type Contact, type EmailTemplate, type Musician, type Show, type StatSnapshot, type User } from "@/schema";
 
 /** Booking is admins' business. Members land here from a Who's free post in Signal: they get just the asks they're on, to answer. */
 export default function Page() {
@@ -81,6 +81,8 @@ function PitchPage() {
   const shows = useCollection<Show>("shows").rows ?? [];
   const activity = useCollection<Activity>(`pitches/${id}/activity`).rows ?? [];
   const comments = useCollection<Comment>(`pitches/${id}/comments`).rows ?? [];
+  // Timeline rows link to the thread page when Roadie has the thread ("read it").
+  const linked = new Set((useCollection<EmailThread>("emailThreads", { where: [["artistId", "==", current.artistId]] }).rows ?? []).map((x) => x.id));
   if (nf || !p) return nf;
 
   const patch = (x: Record<string, unknown>) => as.patch(x, { now: true });
@@ -199,7 +201,7 @@ function PitchPage() {
         <div className="card-head"><h2>Activity</h2></div>
         <div className="grid gap-3" data-testid="timeline">
           {timeline.length === 0 && <div className="empty"><span>Nothing yet.</span></div>}
-          {timeline.map((t) => <TimelineRow key={t.kind + t.id} t={t} />)}
+          {timeline.map((t) => <TimelineRow key={t.kind + t.id} t={t} threadHref={t.a.gmail?.threadId && linked.has(emailThreadId(current.artistId, t.a.gmail.threadId)) ? `/booking/email/${emailThreadId(current.artistId, t.a.gmail.threadId)}` : undefined} />)}
         </div>
         {commentDraft.ready && callDraft.ready && (
           <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
@@ -223,7 +225,7 @@ function PitchPage() {
   );
 }
 
-function TimelineRow({ t }: { t: { at: number; who: string; kind: string; a: Row<Activity> & { body?: string } } }) {
+function TimelineRow({ t, threadHref }: { t: { at: number; who: string; kind: string; a: Row<Activity> & { body?: string } }; threadHref?: string }) {
   const a = t.a;
   const date = t.at ? new Date(t.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "";
   let body: React.ReactNode;
@@ -237,7 +239,8 @@ function TimelineRow({ t }: { t: { at: number; who: string; kind: string; a: Row
     case "comment": body = <><b>{t.who}:</b> {a.body}</>; break;
     default: body = <><b>{t.who}:</b> {a.text}</>;
   }
-  return <div className="grid gap-0.5 border-t pt-3 first:border-t-0 first:pt-0" style={{ borderColor: "var(--line)" }} data-testid={`tl-${t.kind}`}><span className="text-sm">{body}</span><span className="s">{date}</span></div>;
+  const read = threadHref && (t.kind === "emailSent" || t.kind === "emailReply");
+  return <div className="grid gap-0.5 border-t pt-3 first:border-t-0 first:pt-0" style={{ borderColor: "var(--line)" }} data-testid={`tl-${t.kind}`}><span className="text-sm">{body}</span><span className="s">{date}{read && <> · <Link href={threadHref} className="font-semibold underline" data-testid={`tl-read-${t.kind}`}>read it</Link></>}</span></div>;
 }
 
 function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; artist?: Row<Artist>; contacts: Row<Contact>[]; onSent(): void }) {
