@@ -11,6 +11,30 @@ import type { SongRow } from "./common";
 
 export type SetlistItemT = z.infer<typeof SetlistItem>;
 
+const DEFAULT_BREAK_TITLE = "Break";
+const DEFAULT_BREAK_LEN = "15:00";
+
+/**
+ * A break's title or length, click to edit: the value is a button until clicked, then an input that commits on Enter
+ * or blur and drops the change on Escape. `parse` turns the typed text into the stored value (undefined = invalid: keep
+ * the old one). The input is its own drag source that swallows drags, so selecting text in it never reorders the row.
+ */
+function BreakField({ value, display, parse, commit, label, testid, className }: {
+  value: string; display: React.ReactNode; parse(s: string): string | number | undefined; commit(v: string | number): void; label: string; testid: string; className?: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const done = () => { if (draft == null) return; const v = parse(draft); if (v !== undefined && v !== value) commit(v); setDraft(null); };
+  if (draft == null) {
+    return <button type="button" className={`rounded px-1 text-left hover:bg-divider ${className ?? ""}`} aria-label={`Edit ${label}`} data-testid={testid} onClick={() => setDraft(value)}>{display}</button>;
+  }
+  return (
+    <input autoFocus className={`input !h-8 ${className ?? ""}`} value={draft} aria-label={label} data-testid={`${testid}-input`} draggable
+      onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onChange={(e) => setDraft(e.target.value)} onBlur={done}
+      onKeyDown={(e) => { if (e.key === "Enter") done(); else if (e.key === "Escape") setDraft(null); }} />
+  );
+}
+
 /**
  * What the server needs: songs by id (it fills title, length, key), breaks with their own title and length.
  * An off-library song (a one-off with no song behind it) has nothing to look up, so it carries its own title,
@@ -29,7 +53,7 @@ export const itemsPayload = (items: SetlistItemT[]) => items.map((i) => {
 
 /**
  * The ordered list of songs and breaks, shared by the template editor and a show's Setlist tab: drag to reorder, remove,
- * add a song, add a break, and pin alternates to a song (Alt opens a song search). An alternate lives on its song's item,
+ * add a song, add a break (its name and length are click-to-edit on the row), and pin alternates to a song (Alt opens a song search). An alternate lives on its song's item,
  * so it drags with it, and it never counts toward the time. Stateless about saving: every change calls `onChange(next)` with the whole new list.
  * `bpm` shows each song's tempo before its time, read live from the song (items don't carry a copy).
  */
@@ -37,8 +61,8 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
   items: SetlistItemT[]; onChange(next: SetlistItemT[]): void; songs: SongRow[]; admin: boolean; empty?: string; bpm?: boolean;
 }) {
   const [songId, setSongId] = useState("");
-  const [breakTitle, setBreakTitle] = useState("Talk / tune");
-  const [breakLen, setBreakLen] = useState("1:00");
+  const [breakTitle, setBreakTitle] = useState(DEFAULT_BREAK_TITLE);
+  const [breakLen, setBreakLen] = useState(DEFAULT_BREAK_LEN);
   const [altFor, setAltFor] = useState<number | null>(null);
   const reorder = (from: number, to: number) => { const next = move(items, from, to); if (next !== items) onChange(next); };
   const dr = useDragReorder(reorder);
@@ -58,6 +82,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
     setAltFor(null);
   };
   const altItem = altFor != null ? items[altFor] : undefined;
+  const setBreak = (i: number, p: Partial<Pick<SetlistItemT, "title" | "lengthSec">>) => onChange(items.map((it, j) => (j === i ? { ...it, ...p } : it)));
 
   return (
     <div className="card">
@@ -70,11 +95,15 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
             <div className="flex items-center gap-2">
             {admin && <span className="cursor-grab select-none text-muted" aria-hidden>⋮⋮</span>}
             <span className="min-w-0 flex-1 truncate">
-              {it.type === "song" && it.songId ? <Link href={`/songs/${it.songId}`} className="font-semibold" data-testid="item-title">{songTitle(it)}</Link> : <span className="italic" data-testid="item-title">{it.title}</span>}
+              {it.type === "song" && it.songId ? <Link href={`/songs/${it.songId}`} className="font-semibold" data-testid="item-title">{songTitle(it)}</Link>
+                : it.type === "break" && admin ? <BreakField value={it.title} display={<span className="italic">{it.title}</span>} label="Break name" testid="item-title" parse={(s) => s.trim() || undefined} commit={(v) => setBreak(i, { title: String(v) })} />
+                : <span className="italic" data-testid="item-title">{it.title}</span>}
               {it.key && <span className="s"> · {it.key}</span>}
             </span>
             {bpm && songBpm(it) != null && <span className="s font-mono" data-testid="item-bpm">{songBpm(it)} bpm</span>}
-            <span className="font-mono text-sm" data-testid="item-len">{fmtLen(it.lengthSec ?? 0)}</span>
+            {it.type === "break" && admin
+              ? <BreakField value={fmtLen(it.lengthSec ?? 0)} display={fmtLen(it.lengthSec ?? 0)} label="Break length" testid="item-len" className="font-mono text-sm !w-20" parse={parseLen} commit={(v) => setBreak(i, { lengthSec: Number(v) })} />
+              : <span className="font-mono text-sm" data-testid="item-len">{fmtLen(it.lengthSec ?? 0)}</span>}
             {admin && (
               <span className="flex gap-1">
                 {it.type === "song" && <button className="btn ghost sm" onClick={() => setAltFor(i)} aria-label={`Add an alternate for ${songTitle(it)}`} data-testid="item-alt">Alt</button>}
@@ -130,7 +159,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
           <div className="flex gap-2">
             <input className="input" value={breakTitle} onChange={(e) => setBreakTitle(e.target.value)} aria-label="Break name" data-testid="break-title" />
             <input className="input !w-24" value={breakLen} onChange={(e) => setBreakLen(e.target.value)} aria-label="Break length" data-testid="break-len" />
-            <button className="btn ghost" data-testid="add-break" onClick={() => onChange([...items, { type: "break", title: breakTitle.trim() || "Break", lengthSec: parseLen(breakLen) ?? 60 }])}>+ Break</button>
+            <button className="btn ghost" data-testid="add-break" onClick={() => onChange([...items, { type: "break", title: breakTitle.trim() || DEFAULT_BREAK_TITLE, lengthSec: parseLen(breakLen) ?? 900 }])}>+ Break</button>
           </div>
         </div>
       )}

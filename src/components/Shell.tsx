@@ -59,13 +59,18 @@ function Dropdown({ label, testid, trigger, className, listTestid, left, childre
   );
 }
 
-/** The avatar menu's rows: your name, your profile, Customize menu, Claude Code (admins), Sign out. Band settings live in the band menu. */
-function AccountItems({ name, role, signOut, signoutTestid, switchTo, onEdit }: { name: string; role: string; signOut(): void; signoutTestid: string; switchTo?: string; onEdit(): void }) {
+/**
+ * The avatar menu's rows: your name, your profile, Customize menu, Claude Code (admins), Sign out. On desktop, band
+ * settings and the switcher live in the band menu; the phone bar has no band menu, so `phone` puts Switch band and
+ * Artist settings (admins) here instead.
+ */
+function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onEdit }: { name: string; role: string; signOut(): void; signoutTestid: string; switchTo?: string; phone?: boolean; onEdit(): void }) {
   const on = useOn();
   return (
     <>
       <div className="px-3 py-2" data-testid="whoami"><div className="text-sm font-bold">{name}</div><div className="s">{role}</div></div>
       {switchTo && <NextLink href={switchTo} role="menuitem" className="menu-item" data-testid="switch-artist-mobile">Switch band</NextLink>}
+      {phone && role === "admin" && <Link href="/admin/artist" role="menuitem" data-testid="artist-settings-mobile" className="menu-item">Artist settings</Link>}
       <div className="menu-sep" role="separator" />
       <Link href="/me" role="menuitem" data-testid="side-me" aria-current={on("/me") ? "page" : undefined} className={`menu-item${on("/me") ? " text-accent" : ""}`}>Your profile</Link>
       <button type="button" role="menuitem" className="menu-item" data-testid="account-edit-menu" onClick={onEdit}>Customize menu</button>
@@ -221,20 +226,8 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Desktop top bar */}
         <header className="@container hidden h-[68px] shrink-0 items-center gap-4 border-b border-border bg-surface px-5 min-[900px]:flex" data-testid="topbar">
-          {/* Only when the bar has room to spare: the nav tabs come first (with Roadie's panel open there often isn't) */}
+          {/* Logo, the nav, then the band and you on the right. The logo only when the bar has room to spare (with Roadie's panel open there often isn't) */}
           <NextLink href={ARTISTS_PATH} className="hidden shrink-0 @min-[1000px]:block" data-testid="topbar-logo"><img src="/logo-wordmark.svg" alt="Roadie" width={81} height={21} /></NextLink>
-          <Dropdown label="Band menu" testid="band-menu" left className={switcherClass} trigger={switcher} listTestid="band-menu-list">
-            <div className="px-3 py-2"><div className="text-sm font-bold">{artist.name}</div><div className="s">{profile.role === "admin" ? "You're an admin" : "You're a member"}</div></div>
-            {profile.role === "admin" && <Link href="/admin/artist" role="menuitem" data-testid="band-menu-settings" className="menu-item">Artist settings</Link>}
-            <div className="menu-sep" role="separator" />
-            <div className={MENU_HEAD}>Switch artist</div>
-            {profile.artists.map((a) => (
-              <NextLink key={a.slug} href={artistPath(a.slug)} role="menuitem" data-testid={`band-menu-artist-${a.slug}`} aria-current={a.slug === artist.slug ? "page" : undefined} className="menu-item">
-                <span className="flex-1 truncate">{a.name}</span>{a.slug === artist.slug && <span aria-label="Current artist">✓</span>}
-              </NextLink>
-            ))}
-            <button type="button" role="menuitem" aria-disabled="true" className="menu-item" data-testid="band-menu-add-artist" onClick={(e) => e.stopPropagation()}><span className="flex-1">Add an artist</span><span className="s">Not ready yet</span></button>
-          </Dropdown>
           <nav ref={navBox} className="relative min-w-0 flex-1" aria-label="Main">
             <div className="flex items-center gap-1">
               {inBar.map((n) => barLink(n, n.key === "fans" ? "nav-fans" : `tab-${n.key}`))}
@@ -248,6 +241,18 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
               <span data-m="more" className={`${NAV_LINK} gap-1 font-bold`}>More<Icon d={I.chevron} size={16} /></span>
             </div>
           </nav>
+          <Dropdown label="Band menu" testid="band-menu" className={switcherClass} trigger={switcher} listTestid="band-menu-list">
+            <div className="px-3 py-2"><div className="text-sm font-bold">{artist.name}</div><div className="s">{profile.role === "admin" ? "You're an admin" : "You're a member"}</div></div>
+            {profile.role === "admin" && <Link href="/admin/artist" role="menuitem" data-testid="band-menu-settings" className="menu-item">Artist settings</Link>}
+            <div className="menu-sep" role="separator" />
+            <div className={MENU_HEAD}>Switch artist</div>
+            {profile.artists.map((a) => (
+              <NextLink key={a.slug} href={artistPath(a.slug)} role="menuitem" data-testid={`band-menu-artist-${a.slug}`} aria-current={a.slug === artist.slug ? "page" : undefined} className="menu-item">
+                <span className="flex-1 truncate">{a.name}</span>{a.slug === artist.slug && <span aria-label="Current artist">✓</span>}
+              </NextLink>
+            ))}
+            <button type="button" role="menuitem" aria-disabled="true" className="menu-item" data-testid="band-menu-add-artist" onClick={(e) => e.stopPropagation()}><span className="flex-1">Add an artist</span><span className="s">Not ready yet</span></button>
+          </Dropdown>
           <Dropdown label="Account menu" testid="account-menu" className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-[15px] font-bold text-accent hover:brightness-95"
             trigger={initials(profile.name).slice(0, 1)}>
             <AccountItems name={profile.name} role={profile.role} signOut={signOut} signoutTestid="signout" onEdit={edit} />
@@ -259,7 +264,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           {atRoot ? <span className="w-2" /> : <button type="button" className="icon-btn text-ink" aria-label="Back" data-testid="back-button" onClick={() => router.back()}><Icon d={I.back} /></button>}
           <span className="min-w-0 flex-1 truncate text-base font-bold" data-testid="section-title">{title}</span>
           <Dropdown label="More actions" testid="account-menu-mobile" className="icon-btn text-ink" trigger={<Icon d={I.more} />}>
-            <AccountItems name={profile.name} role={profile.role} signOut={signOut} signoutTestid="signout-mobile" switchTo={switchTo} onEdit={edit} />
+            <AccountItems name={profile.name} role={profile.role} signOut={signOut} signoutTestid="signout-mobile" switchTo={switchTo} phone onEdit={edit} />
           </Dropdown>
         </header>
 

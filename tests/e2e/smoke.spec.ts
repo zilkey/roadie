@@ -30,6 +30,10 @@ test("admin: phone layout uses bottom tabs", async ({ page }) => {
   await signInAs(page, "ingrid");
   await expect(page.getByTestId("bottom-tabs").getByTestId(/^mtab-/)).toHaveCount(5);
   await expect(page.getByTestId("topbar")).toBeHidden();
+  // the phone bar has no band menu: an admin reaches Artist settings from the three-dot menu
+  await page.getByTestId("account-menu-mobile").click();
+  await page.getByTestId("artist-settings-mobile").click();
+  await expect(page).toHaveURL(new RegExp(`${A("/admin/artist")}$`));
 });
 
 test("settings: General edits the artist name", async ({ page }) => {

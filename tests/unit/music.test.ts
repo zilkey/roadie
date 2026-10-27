@@ -211,9 +211,9 @@ test("setlist templates and show setlists: totalSec computed, song data copied, 
   const { id } = await cmd("setlistTemplates.create", { name: "Hi-Dive 45", items: [{ type: "song", songId: a, title: "ignored" }, { type: "break", title: "Talk / tune" }, { type: "song", songId: b }, { type: "song", songId: noLen }] });
   let sl = (await db.get("setlistTemplates", id))!;
   assert.equal(sl.name, "Hi-Dive 45");
-  assert.equal(sl.totalSec, 232 + 60 + 250);
+  assert.equal(sl.totalSec, 232 + 900 + 250); // a break defaults to 15:00
   assert.equal(sl.items[0].title, "Glass Coast");
-  assert.equal(sl.items[1].lengthSec, 60);
+  assert.equal(sl.items[1].lengthSec, 900);
 
   // reorder + remove: total follows
   await cmd("setlistTemplates.update", { id, patch: { items: [{ type: "song", songId: b }, { type: "song", songId: a }] } });
@@ -268,11 +268,11 @@ test("setlists.seed: from a template or another show, replace or append, records
 
   // from a template (replace is the default)
   const out = await cmd("setlists.seed", { showId: s1, from: { kind: "template", id: t } });
-  assert.deepEqual(out, { showId: s1, added: 3, total: 3, lengthSec: 200 + 60 + 250, transitionSec: 30 }); // the break takes the transition's place
+  assert.deepEqual(out, { showId: s1, added: 3, total: 3, lengthSec: 200 + 900 + 250, transitionSec: 30 }); // the break takes the transition's place
   let sl = (await db.get("setlists", s1))!;
   assert.deepEqual(sl.items.map((i: any) => i.type), ["song", "break", "song"]);
   assert.equal(sl.items[0].title, "Glass Coast");
-  assert.equal(sl.totalSec, 200 + 60 + 250);
+  assert.equal(sl.totalSec, 200 + 900 + 250);
   assert.deepEqual(sl.source, { kind: "template", id: t, name: "Hi-Dive 45" });
 
   // later edits to the template don't touch the copy
@@ -283,7 +283,7 @@ test("setlists.seed: from a template or another show, replace or append, records
   await cmd("shows.update", { id: s1, patch: { transitionSec: 60 } });
   await cmd("setlists.setItems", { showId: s2, items: [{ type: "song", songId: b }] });
   const app = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "append" });
-  assert.deepEqual(app, { showId: s2, added: 3, total: 4, lengthSec: 250 + 30 + 200 + 60 + 250, transitionSec: 30 });
+  assert.deepEqual(app, { showId: s2, added: 3, total: 4, lengthSec: 250 + 30 + 200 + 900 + 250, transitionSec: 30 });
   assert.equal((await db.get("shows", s2))!.transitionSec, undefined);
   sl = (await db.get("setlists", s2))!;
   assert.equal(sl.items[0].songId, b);
@@ -291,7 +291,7 @@ test("setlists.seed: from a template or another show, replace or append, records
   assert.equal(sl.source.kind, "show");
   assert.equal(sl.source.id, s1);
   const rep = await cmd("setlists.seed", { showId: s2, from: { kind: "show", id: s1 }, mode: "replace" });
-  assert.deepEqual(rep, { showId: s2, added: 3, total: 3, lengthSec: 200 + 60 + 250, transitionSec: 60 });
+  assert.deepEqual(rep, { showId: s2, added: 3, total: 3, lengthSec: 200 + 900 + 250, transitionSec: 60 });
   assert.equal((await db.get("shows", s2))!.transitionSec, 60);
 
   await assert.rejects(cmd("setlists.seed", { showId: s1, from: { kind: "template", id: "nope" } }), /not found/i);

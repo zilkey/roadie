@@ -267,7 +267,7 @@ const songIdsOf = (items: unknown) => new Set(((items ?? []) as { songId?: strin
   .flatMap((i) => [...(i.songId ? [i.songId] : []), ...(i.alts ?? []).map((a) => a.songId)]));
 
 /**
- * Song items take title, length and key from the song; breaks default to 1:00 "Break". A song still in the Writing
+ * Song items take title, length and key from the song; breaks default to 15:00 "Break". A song still in the Writing
  * phase can't go on a setlist: adding one is refused, except a song already on the list (`keep`), so a list holding a
  * song that moved back to Writing can still be saved. `skipWriting` drops them instead (seeding copies another list).
  */
@@ -294,7 +294,7 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
   const out = [];
   for (const i of items) {
     if (i.type === "break") {
-      out.push({ type: "break" as const, title: i.title?.trim() || "Break", lengthSec: i.lengthSec ?? 60, ...(i.note ? { note: i.note } : {}) });
+      out.push({ type: "break" as const, title: i.title?.trim() || "Break", lengthSec: i.lengthSec ?? 900, ...(i.note ? { note: i.note } : {}) });
       continue;
     }
     if (!i.songId) {
