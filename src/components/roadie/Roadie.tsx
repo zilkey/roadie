@@ -37,8 +37,8 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
         if (a.kind === "confirm") {
           const open = (a.status ?? "pending") === "pending";
           return (
-            <div key={i} className="grid gap-2 rounded-xl border border-[var(--roadie-control-border)] bg-[var(--surface)] p-2 text-sm shadow-[var(--shadow)]" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
-              <span>{a.label}?</span>
+            <div key={i} className="grid min-w-0 gap-2 rounded-xl border border-[var(--roadie-control-border)] bg-[var(--surface)] p-2 text-sm shadow-[var(--shadow)]" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
+              <span className="[overflow-wrap:anywhere]">{a.label}?</span>
               {open ? (
                 <span className="flex gap-1">
                   <button className="btn acc sm" data-testid="roadie-confirm-yes" onClick={() => a.pendingId && on.answer(a.pendingId, "yes")}>Yes</button>
@@ -68,10 +68,10 @@ function Replies({ actions, live, on }: { actions: AssistantAction[]; live: bool
 
 function Bubble({ role, text, actions = [], on, live = false }: { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; on: Handlers; live?: boolean }) {
   return (
-    <div className={`grid gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
+    <div className={`grid grid-cols-[minmax(0,1fr)] gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
       {role === "assistant" && <Actions actions={actions} on={on} />}
       {text && (
-        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-[var(--accent)] text-[var(--on-accent)]" : "bg-[var(--roadie-bubble)] text-[var(--ink)]"}`}>
+        <div data-testid={`roadie-msg-${role}`} className={`max-w-[92%] whitespace-pre-wrap [overflow-wrap:anywhere] rounded-2xl px-3 py-2 text-sm ${role === "user" ? "bg-[var(--accent)] text-[var(--on-accent)]" : "bg-[var(--roadie-bubble)] text-[var(--ink)]"}`}>
           {linkify(text).map((s, i) => s.href
             ? <a key={i} href={s.href} target="_blank" rel="noopener noreferrer" title={s.href} className="break-all underline underline-offset-2" data-testid="roadie-link">{s.text}</a>
             : <span key={i}>{s.text}</span>)}
@@ -93,8 +93,8 @@ function Chat({ messages, pending, busy, send, on, notice }: { messages: ChatMsg
   const submit = () => { if (!text.trim() || busy) return; send(text); setText(""); };
   return (
     <>
-      <div className="flex-1 overflow-y-auto" data-testid="roadie-messages">
-        <div className="grid content-start gap-3 p-3">
+      <div className="min-w-0 flex-1 overflow-y-auto" data-testid="roadie-messages">
+        <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-3 p-3">
           {!messages.length && !pending && <div className="s">Hey. I'm Roadie. Ask me about shows, tours or money.</div>}
           {shown.map((m, i) => <Bubble key={m.id} {...m} on={on} live={!pending && !busy && i === shown.length - 1} />)}
           {pending && (
