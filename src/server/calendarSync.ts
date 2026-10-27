@@ -25,7 +25,11 @@ export interface CalendarPreview {
   event: { title: string; start: string; end: string; allDay: boolean; timeZone: string; location: string; description: string };
   invitees: Invitee[];
   noEmail: string[];
+  /** When it would create: events already on the band calendar that day that no other show or rehearsal is linked to. */
+  existing: ExistingEvent[];
 }
+/** An event someone put on the band calendar by hand, which the show or rehearsal can link to instead of adding another. */
+export interface ExistingEvent { id: string; title: string; start: string; end: string; allDay: boolean; location: string }
 
 const hhmm = (mins: number) => `${String(Math.floor(mins / 60) % 24).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -119,13 +123,43 @@ function googleError(e: unknown): never {
   throw e;
 }
 
+/**
+ * Events on the band calendar on the same day as `date` that nothing in the app is linked to yet; for a rehearsal, only
+ * ones with "rehearsal" in the title. Google gives times in the event's own zone, so the day is the first ten characters. A Google error here just means no suggestions: the
+ * preview still works and the admin can add a new event.
+ */
+async function sameDay(ctx: Ctx, kind: CalendarKind, calendarId: string, date: string): Promise<ExistingEvent[]> {
+  const events = await client(ctx, calendarId).list({ from: addDays(date, -1), to: addDays(date, 2) }).catch(() => []);
+  const linked = new Set((await Promise.all((["shows", "rehearsals"] as const).map((k) => db.list(k))))
+    .flat().map((d) => d.calendarEventId as string | undefined).filter(Boolean));
+  return events.filter((e) => e.start.slice(0, 10) === date && !linked.has(e.id) && (kind === "shows" || /rehearsal/i.test(e.title))).map((e) => ({
+    id: e.id, title: e.title, start: e.start, end: e.end, allDay: !e.start.includes("T"), location: e.location ?? "",
+  }));
+}
+
 export async function calendarPreview(ctx: Ctx, kind: CalendarKind, id: string): Promise<CalendarPreview> {
   const { doc, calendar, input, who, hash } = await build(ctx, kind, id);
   return {
     calendar, action: doc.calendarEventId ? "update" : "create", unchanged: !!doc.calendarEventId && doc.calendarHash === hash,
     event: { title: input.title, start: input.start, end: input.end, allDay: !input.start.includes("T"), timeZone: input.timeZone ?? BAND_TIME_ZONE, location: input.location ?? "", description: input.description ?? "" },
     ...who,
+    existing: doc.calendarEventId ? [] : await sameDay(ctx, kind, calendar.id, doc.date as string),
   };
+}
+
+/**
+ * Link to an event already on the band calendar (someone added it by hand) instead of adding a second one. Nothing is
+ * sent: the event stays as it is until an admin presses Update, whose preview shows what will change.
+ */
+export async function calendarLink(ctx: Ctx, kind: CalendarKind, id: string, eventId: string): Promise<{ id: string; calendar: "linked" }> {
+  const { doc, calendar } = await build(ctx, kind, id);
+  if (doc.calendarEventId) throw new AppError("invalid_input", "Already on the band calendar. Remove its event first to link another.", 400);
+  await client(ctx, calendar.id).get(eventId).catch((e) => {
+    if (notFound(e)) throw new AppError("not_found", "That event isn't on the band calendar anymore.", 404);
+    googleError(e);
+  });
+  await db.update(ctx, kind, id, { calendarEventId: eventId, calendarHash: null });
+  return { id, calendar: "linked" };
 }
 
 /** Send the event: update the one already there (or make it again if someone deleted it in Calendar), else create it. */

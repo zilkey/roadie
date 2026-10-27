@@ -85,7 +85,7 @@ const EXPECTED = [
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows
-  "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendarPreview", "shows.calendar", "showDeals.update",
+  "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendarPreview", "shows.calendar", "shows.calendarLink", "showDeals.update",
   "showDeals.setIncome", "shows.comment", "shows.editComment", "shows.removeComment",
   "shows.afterShow", "checklistTemplates.list", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "checklistTemplates.remove",
   // availability: ask and read, not mark
@@ -96,7 +96,7 @@ const EXPECTED = [
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
   "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.printLink", "setlists.setItems", "setlists.seed",
   "rehearsals.create", "rehearsals.update",
-  "rehearsals.setLocation", "rehearsals.importSetlist", "rehearsals.calendarPreview", "rehearsals.calendar",
+  "rehearsals.setLocation", "rehearsals.importSetlist", "rehearsals.calendarPreview", "rehearsals.calendar", "rehearsals.calendarLink",
   // stage plots
   "stagePlots.create", "stagePlots.copy", "stagePlots.rename", "stagePlots.setInputCount", "stagePlots.setMixCount", "stagePlots.updateInputs", "stagePlots.reorderInputs",
   "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",

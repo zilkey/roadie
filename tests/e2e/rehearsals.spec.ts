@@ -130,6 +130,38 @@ test("a rehearsal goes on the band calendar only from its button, after a previe
   await close();
 });
 
+/** Someone already put Oct 29 on the band calendar by hand: the preview offers it, and linking sends nothing. */
+test("a rehearsal links to an event already on the band calendar instead of adding another", async ({ browser, request }) => {
+  const made = (await (await request.post(`${CAL}/events`, { data: { calendarId: "fake-band-calendar", title: "IAB Rehearsal", start: "2026-10-29T18:00:00", end: "2026-10-29T20:30:00", location: "The Loft" } })).json()) as { id: string };
+  // Not a rehearsal by its title, so not offered
+  const dentist = (await (await request.post(`${CAL}/events`, { data: { calendarId: "fake-band-calendar", title: "Dentist", start: "2026-10-29T09:00:00", end: "2026-10-29T10:00:00" } })).json()) as { id: string };
+  const { page, close } = await as(browser, "jeff");
+  await openRehearsal(page, "Oct 29");
+  const line = page.getByTestId("reh-calendar");
+  await expect(line).toContainText("Not on the band calendar");
+  await page.getByTestId("reh-calendar-open").click();
+  const dlg = page.getByTestId("reh-calendar-dialog");
+  const ev = dlg.getByTestId("cal-existing-event");
+  await expect(ev).toHaveCount(1);
+  await expect(ev).toContainText("IAB Rehearsal");
+  await expect(ev).toContainText("6:00 pm – 8:30 pm");
+  await expect(dlg.getByTestId("cal-send")).toHaveText("Add a new event");
+  await ev.getByTestId("cal-link").click();
+  await expect(line).toContainText("On the band calendar");
+  await expect(page.getByTestId("reh-calendar-note")).toContainText("Linked");
+  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { title: string; start: string }[];
+  expect(events.filter((e) => e.start.startsWith("2026-10-29")).map((e) => e.title)).toEqual(["Dentist", "IAB Rehearsal"]);
+
+  // Update now shows the app's version, and Remove takes it off
+  await page.getByTestId("reh-calendar-open").click();
+  await expect(dlg.getByTestId("cal-send")).toHaveText("Update event");
+  await dlg.getByTestId("cal-remove").click();
+  await expect(line).toContainText("Not on the band calendar");
+  expect((await request.get(`${CAL}/events/${made.id}`)).status()).toBe(404);
+  await request.delete(`${CAL}/events/${dentist.id}`);
+  await close();
+});
+
 /** The seed has Oct 18 (Jeff's basement) and Oct 29 (The Loft); the clock is pinned between them. */
 test("rehearsals page splits into Upcoming and Past tables", async ({ browser }) => {
   const { page, close } = await as(browser, "jeff");

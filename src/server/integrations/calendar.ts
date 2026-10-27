@@ -43,7 +43,7 @@ export function calendarClient(opts: string | { uid?: string; calendarId?: strin
     }, o.calendarId);
   }
   const fake = fakeCalendarClient(baseUrl ?? process.env.CALENDAR_BASE_URL ?? "http://127.0.0.1:3203");
-  return o.calendarId ? { ...fake, create: (i) => fake.create({ calendarId: o.calendarId, ...i }) } : fake;
+  return o.calendarId ? { ...fake, create: (i) => fake.create({ calendarId: o.calendarId, ...i }), list: (l) => fake.list({ calendarId: o.calendarId, ...l }) } : fake;
 }
 
 export function fakeCalendarClient(baseUrl: string): CalendarService {

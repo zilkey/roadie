@@ -7,7 +7,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
-import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { noteOf } from "../venues";
 import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
 import { dateStr, timeStr, sound as soundSchema, cents, showKind, incomeCategory, payMethod } from "@/schema";
@@ -518,6 +518,13 @@ export const showsCalendarPreview = defineCommand({
   run: (ctx, { id }) => calendarPreview(ctx, "shows", id),
 });
 
+export const showsCalendarLink = defineCommand({
+  name: "shows.calendarLink", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), eventId: z.string().min(1) }),
+  description: "Link the show to an event someone already put on the band calendar (one of shows.calendarPreview's `existing`) instead of adding a second one. " +
+    "Sends nothing: the event stays as it is until shows.calendar on:true updates it.",
+  run: (ctx, i) => calendarLink(ctx, "shows", i.id, i.eventId),
+});
+
 export const showsCalendar = defineCommand({
   name: "shows.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
   description: "Send the show's event to the band's Google Calendar with invites (on:true: creates it, or updates the one there to match the show), or take it off (on:false). " +
@@ -672,6 +679,6 @@ export const showCommands = [
   showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync,
   showsSetChecklists, showsAddChecklist, showsRenameChecklist, showsRemoveChecklist, showsReorderChecklists,
   showsAddChecklistItem, showsEditChecklistItem, showsRemoveChecklistItem, showsCheckItem, showsSaveChecklistAsTemplate, showsUpdateTemplateFromChecklist,
-  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showDealsUpdate, showDealsSetIncome, showsAfter,
+  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showsCalendarLink, showDealsUpdate, showDealsSetIncome, showsAfter,
   checklistTemplatesList, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesReorder, checklistTemplatesRemove,
 ];

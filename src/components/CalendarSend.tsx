@@ -10,6 +10,7 @@ interface Preview {
   event: { title: string; start: string; end: string; allDay: boolean; timeZone: string; location: string; description: string };
   invitees: { name: string; email: string }[];
   noEmail: string[];
+  existing: { id: string; title: string; start: string; end: string; allDay: boolean; location: string }[];
 }
 
 const day = (v: string) => v.slice(0, 10);
@@ -24,7 +25,8 @@ export function eventWhen(e: Preview["event"]): string {
 /**
  * The calendar line on a show or rehearsal: whether it's on the band calendar, and for admins the button that opens a
  * preview of exactly what goes out (title, when, where, notes, who's invited) before anything is sent. Saving a show or
- * rehearsal never touches Calendar; only Send here (or Remove) does.
+ * rehearsal never touches Calendar; only Send here (or Remove) does. When something is already on the band calendar that
+ * day (added by hand), the preview offers to link to it instead of adding a second event.
  */
 export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid }: {
   kind: "shows" | "rehearsals"; id: string; eventId?: string; admin: boolean;
@@ -46,6 +48,12 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
     await beforeOpen?.();
     const p = await load.call<Preview>(`${kind}.calendarPreview`, { id });
     if (p) setPreview(p);
+  }
+  async function link(eventId: string) {
+    const r = await act.call(`${kind}.calendarLink`, { id, eventId });
+    if (!r) return;
+    setOpen(false);
+    setNote("Linked to the event already on the band calendar.");
   }
   async function send(on: boolean) {
     const r = await act.call<{ calendar: string }>(`${kind}.calendar`, { id, on });
@@ -85,6 +93,20 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
               </dd></div>
               <div className="grid gap-0.5"><dt className="lbl">Notes</dt><dd className="m-0 whitespace-pre-line" data-testid="cal-preview-notes">{preview.event.description || <span className="s">None</span>}</dd></div>
             </dl>
+            {!!preview.existing.length && (
+              <div className="grid gap-2" data-testid="cal-existing">
+                <p className="s m-0">Already on <b>{preview.calendar.name}</b> that day. If it&apos;s this {what}, link to it instead of adding another:</p>
+                {preview.existing.map((e) => (
+                  <div key={e.id} className="flex flex-wrap items-center gap-2" data-testid="cal-existing-event">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold">{e.title || "(no title)"}</div>
+                      <div className="s">{eventWhen({ ...e, timeZone: "", description: "" })}{e.location && ` · ${e.location}`}</div>
+                    </div>
+                    <button type="button" className="btn ghost" disabled={act.busy} onClick={() => void link(e.id)} data-testid="cal-link">Link to this event</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         <ErrorBox error={act.error} />
@@ -93,7 +115,7 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
           <button type="button" className="btn ghost" onClick={() => setOpen(false)} data-testid="cal-cancel">Cancel</button>
           {off
             ? <button type="button" className="btn acc" disabled={act.busy} onClick={() => void send(false)} data-testid="cal-remove">Remove from calendar</button>
-            : <button type="button" className="btn acc" disabled={act.busy || !preview} onClick={() => void send(true)} data-testid="cal-send">{preview?.action === "update" ? "Update event" : "Add to calendar"}</button>}
+            : <button type="button" className="btn acc" disabled={act.busy || !preview} onClick={() => void send(true)} data-testid="cal-send">{preview?.action === "update" ? "Update event" : preview?.existing.length ? "Add a new event" : "Add to calendar"}</button>}
         </div>
       </Dialog>
     </>

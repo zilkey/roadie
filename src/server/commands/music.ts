@@ -4,7 +4,7 @@ import { idInput, patchInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
-import { calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -522,6 +522,13 @@ export const rehearsalsCalendarPreview = defineCommand({
   run: (ctx, { id }) => calendarPreview(ctx, "rehearsals", id),
 });
 
+export const rehearsalsCalendarLink = defineCommand({
+  name: "rehearsals.calendarLink", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), eventId: z.string().min(1) }),
+  description: "Link the rehearsal to an event someone already put on the band calendar (one of rehearsals.calendarPreview's `existing`) instead of adding a second one. " +
+    "Sends nothing: the event stays as it is until rehearsals.calendar on:true updates it.",
+  run: (ctx, i) => calendarLink(ctx, "rehearsals", i.id, i.eventId),
+});
+
 export const rehearsalsCalendar = defineCommand({
   name: "rehearsals.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
   description: "Send the rehearsal's event to the band's Google Calendar with invites to everyone coming (on:true: creates it, or updates the one there), or take it off (on:false). " +
@@ -532,6 +539,6 @@ export const rehearsalsCalendar = defineCommand({
 export const musicCommands = [
   driveSearch, driveFix, filesAttach, filesUpdate, filesRemove, filesCheck, filesShareWithBand, filesCopyToBand,
   songsCreate, songsUpdate, songsRemove, setlistTemplatesCreate, setlistTemplatesUpdate, setlistTemplatesRemove, setlistsSetItems, setlistsSeed, setlistsRemove,
-  rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove, rehearsalsCalendarPreview, rehearsalsCalendar,
+  rehearsalsCreate, rehearsalsUpdate, rehearsalsSetLocation, rehearsalsImportSetlist, rehearsalsRemove, rehearsalsCalendarPreview, rehearsalsCalendar, rehearsalsCalendarLink,
 ];
 export type { Bandmate };

@@ -281,6 +281,33 @@ test("Calendar: only the button sends; preview shows what goes out; update and r
   assert.equal((await db.get("shows", r.id))!.calendarEventId, undefined);
 });
 
+test("Calendar: an event already on the band calendar that day is offered, linked without sending, then updated", async () => {
+  await useBandCalendar();
+  const r = await create({});
+  const cal = calendarClient({ calendarId: BAND_CALENDAR_ID });
+  const mine = await cal.create({ title: "Gig at Hi-Dive", start: "2027-01-16T19:00:00", end: "2027-01-16T22:00:00", location: "Hi-Dive" });
+  await cal.create({ title: "Next day", start: "2027-01-17T19:00:00", end: "2027-01-17T20:00:00" });
+  await calendarClient().create({ calendarId: "primary", title: "Someone's own calendar", start: "2027-01-16T12:00:00", end: "2027-01-16T13:00:00" });
+
+  const p = await cmd("shows.calendarPreview", { id: r.id });
+  assert.deepEqual(p.existing.map((e: any) => [e.id, e.title, e.location, e.allDay]), [[mine.id, "Gig at Hi-Dive", "Hi-Dive", false]]);
+
+  assert.equal((await cmd("shows.calendarLink", { id: r.id, eventId: mine.id })).calendar, "linked");
+  assert.equal((await db.get("shows", r.id))!.calendarEventId, mine.id);
+  assert.equal((await cal.get(mine.id)).title, "Gig at Hi-Dive", "linking sends nothing");
+  const p2 = await cmd("shows.calendarPreview", { id: r.id });
+  assert.deepEqual([p2.action, p2.unchanged, p2.existing], ["update", false, []]);
+  await assert.rejects(cmd("shows.calendarLink", { id: r.id, eventId: mine.id }), /Already on the band calendar/);
+
+  // Another show that day no longer sees it: it's taken
+  const other = await create({});
+  assert.deepEqual((await cmd("shows.calendarPreview", { id: other.id })).existing, []);
+  await assert.rejects(cmd("shows.calendarLink", { id: other.id, eventId: "nope" }), /isn't on the band calendar/);
+
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: true })).calendar, "updated");
+  assert.match((await cal.get(mine.id)).title, /Ingrid Avison Trio at Hi-Dive/);
+});
+
 test("Calendar: an event deleted in Google comes back on the next send; no write access fails with Google's reason", async () => {
   await useBandCalendar();
   const r = await create({});
