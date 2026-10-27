@@ -17,6 +17,8 @@ export const NO_PEOPLE = "I can't do that. I don't know that tune: invites and a
 /** Sending a stage plot by email isn't built (V1: download the PDF and attach it yourself, or share the engineer link). No tool call. */
 export const PLOT_NOT_SENT = "I can't send a stage plot yet. Download the PDF from the plot (or the show's Stage plot card) and attach it to your email, or I can get you the engineer link.";
 export const TAP_YES = "Tap Yes to go ahead, or Cancel.";
+/** Said under a confirm card with a dropdown on it (a value that wasn't on its list). */
+export const PICK_THEN_YES = "Pick one from the list on the card, then tap Yes.";
 /** How Roadie opens a question it can't place (ui.ask). */
 export const BAD_FINDER = "I could just be a bad finder, but I don't know what you mean.";
 export const CALENDAR_OPTIONS = ["A pitch's next step", "A possible date on a pitch", "A hold show"];
@@ -114,6 +116,10 @@ function first(t: string, page?: Page, raw = t): Scripted {
     const named = THIS_PAGE.test(t) ? undefined : topicInWords(t);
     if (named || THIS_PAGE.test(t)) return { calls: [{ name: "help.explain", input: named ? { topic: named.id } : {} }] };
   }
+
+  // "add the venue Aggie Theatre in Fort Collins as a music venue": the type as said, even when it isn't on the band's list.
+  const nv = /^add the venue (.+?) in (.+?) as (?:an? )?(.+?)[.!?]*$/i.exec(raw);
+  if (nv) return { calls: [{ name: "venues.create", input: { name: nv[1], type: nv[3].toLowerCase(), address: { city: nv[2], state: "CO" }, region: "north" } }] };
 
   const exp = /\badd\s+(?:\$\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s*(?:dollars?|bucks))\s*(?:for |of |in |on )?(.*)$/.exec(t);
   if (exp) {

@@ -79,7 +79,7 @@ export function useRoadie(onNavigated?: () => void) {
     if (e.type === "text") setPending((p) => p && { ...p, reply: p.reply + e.delta });
     else if (e.type === "action") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "action", label: e.label }] });
     else if (e.type === "readback") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "readback", label: e.label, runId: e.runId }] });
-    else if (e.type === "confirm") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending" }] });
+    else if (e.type === "confirm") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending", ...(e.fields ? { fields: e.fields } : {}) }] });
     else if (e.type === "reply") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "reply", label: e.label }] });
     else if (e.type === "link") setPending((p) => p && { ...p, actions: [...p.actions, { kind: "link", label: e.label, route: e.route, params: e.params }] });
     else if (e.type === "navigate") {
@@ -135,7 +135,7 @@ export function useRoadie(onNavigated?: () => void) {
 
   /** Yes / Cancel on a confirm card, and Undo on a read-back line. The server does the work from what it stored; the page just shows the result. */
   const [notice, setNotice] = useState<string | null>(null);
-  const post = useCallback(async (path: "confirm" | "undo", body: Record<string, string>) => {
+  const post = useCallback(async (path: "confirm" | "undo", body: Record<string, unknown>) => {
     setNotice(null);
     try {
       const token = await clientAuth().currentUser?.getIdToken();
@@ -149,7 +149,7 @@ export function useRoadie(onNavigated?: () => void) {
       setNotice(e instanceof Error ? e.message : "Roadie is unavailable");
     }
   }, [threadId]);
-  const answer = useCallback((pendingId: string, decision: "yes" | "cancel") => post("confirm", { pendingId, decision }), [post]);
+  const answer = useCallback((pendingId: string, decision: "yes" | "cancel", picks?: Record<string, string>) => post("confirm", { pendingId, decision, ...(picks ? { picks } : {}) }), [post]);
   const undo = useCallback((runId: string) => post("undo", { runId }), [post]);
 
   const busy = !!pending && !pending.doneId && !pending.error;

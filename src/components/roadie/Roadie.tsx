@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRoadie, type ChatMsg, type Pending } from "./useRoadie";
 import { useVamp } from "./vamp";
 import type { AssistantAction } from "@/schema/assistant";
@@ -14,7 +14,7 @@ const useDesktop = () =>
 
 const actionText = (a: AssistantAction) => (a.kind === "navigate" ? `→ Opened ${a.label}` : a.label);
 
-interface Handlers { answer(pendingId: string, d: "yes" | "cancel"): void; undo(runId: string): void; open(a: AssistantAction): void; reply(text: string): void }
+interface Handlers { answer(pendingId: string, d: "yes" | "cancel", picks?: Record<string, string>): void; undo(runId: string): void; open(a: AssistantAction): void; reply(text: string): void }
 
 const CONFIRM_DONE = { done: "Done", canceled: "Canceled", expired: "Expired. Ask me again.", failed: "Didn't work" } as const;
 
@@ -34,24 +34,49 @@ function Actions({ actions, on }: { actions: AssistantAction[]; on: Handlers }) 
         if (a.kind === "link") {
           return <button key={i} className="btn acc sm justify-self-start" data-testid="roadie-link-button" onClick={() => on.open(a)}>{a.label}</button>;
         }
-        if (a.kind === "confirm") {
-          const open = (a.status ?? "pending") === "pending";
-          return (
-            <div key={i} className="grid min-w-0 gap-2 rounded-xl border border-[var(--roadie-control-border)] bg-[var(--surface)] p-2 text-sm shadow-[var(--shadow)]" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
-              <span className="[overflow-wrap:anywhere]">{a.label}?</span>
-              {open ? (
-                <span className="flex gap-1">
-                  <button className="btn acc sm" data-testid="roadie-confirm-yes" onClick={() => a.pendingId && on.answer(a.pendingId, "yes")}>Yes</button>
-                  {/* Edit: not built today; not added here. */}
-                  <button className="btn ghost sm" data-testid="roadie-confirm-cancel" onClick={() => a.pendingId && on.answer(a.pendingId, "cancel")}>Cancel</button>
-                </span>
-              ) : <span className="s" data-testid="roadie-confirm-result">{CONFIRM_DONE[a.status as keyof typeof CONFIRM_DONE]}</span>}
-            </div>
-          );
-        }
+        if (a.kind === "confirm") return <Confirm key={a.pendingId ?? i} a={a} on={on} />;
         return <div key={i} className="s" data-testid="roadie-action">{actionText(a)}</div>;
       })}
     </>
+  );
+}
+
+/** A Yes / Cancel card: the headline, then one row per field it will write. A field whose value wasn't on its list is a dropdown, and Yes waits for it. */
+function Confirm({ a, on }: { a: AssistantAction; on: Handlers }) {
+  const open = (a.status ?? "pending") === "pending";
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  const fields = a.fields ?? [];
+  const missing = fields.some((f) => f.options && f.path && !picks[f.path]);
+  return (
+    <div className="grid min-w-0 gap-2 rounded-xl border border-[var(--roadie-control-border)] bg-[var(--surface)] p-2 text-sm shadow-[var(--shadow)]" data-testid="roadie-confirm" data-status={a.status ?? "pending"}>
+      <span className="font-semibold [overflow-wrap:anywhere]">{a.label}{fields.length ? "" : "?"}</span>
+      {fields.length > 0 && (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1" data-testid="roadie-confirm-fields">
+          {fields.map((f, j) => (
+            <Fragment key={j}>
+              <dt className="s whitespace-nowrap">{f.label}</dt>
+              {f.options && f.path ? (
+                <dd className="grid gap-0.5">
+                  <select className="select py-1.5" data-testid="roadie-confirm-pick" aria-label={f.label} disabled={!open} value={picks[f.path] ?? ""}
+                    onChange={(e) => setPicks((p) => ({ ...p, [f.path!]: e.target.value }))}>
+                    <option value="" disabled>Pick one…</option>
+                    {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  {f.value && <span className="s">&ldquo;{f.value}&rdquo; isn&rsquo;t on the list</span>}
+                </dd>
+              ) : <dd className="[overflow-wrap:anywhere]" data-testid="roadie-confirm-value">{linkify(f.value).map((x, k) => x.href ? <a key={k} href={x.href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{x.text}</a> : <span key={k}>{x.text}</span>)}</dd>}
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {open ? (
+        <span className="flex gap-1">
+          <button className="btn acc sm" data-testid="roadie-confirm-yes" disabled={missing} onClick={() => a.pendingId && on.answer(a.pendingId, "yes", Object.keys(picks).length ? picks : undefined)}>Yes</button>
+          {/* Edit: not built today; not added here. */}
+          <button className="btn ghost sm" data-testid="roadie-confirm-cancel" onClick={() => a.pendingId && on.answer(a.pendingId, "cancel")}>Cancel</button>
+        </span>
+      ) : <span className="s" data-testid="roadie-confirm-result">{CONFIRM_DONE[a.status as keyof typeof CONFIRM_DONE]}</span>}
+    </div>
   );
 }
 

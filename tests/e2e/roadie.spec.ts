@@ -103,6 +103,26 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
   await expect(page.getByTestId("roadie-readback").last()).toContainText("Canceled the show");
 });
 
+test("a venue type that isn't on the list: the card lists the fields and asks for the type in a dropdown; Yes waits for the pick", async ({ page }) => {
+  await signInAs(page, "ingrid");
+  await page.getByTestId("roadie-new").click();
+  const name = `Atrium ${STAMP}`;
+  await ask(page, `add the venue ${name} in Fort Collins as a music venue`);
+  const card = page.getByTestId("roadie-confirm").last();
+  await expect(card).toContainText(`Add the venue ${name}`);
+  const fields = card.getByTestId("roadie-confirm-fields");
+  await expect(fields).toContainText("Fort Collins, CO");
+  await expect(fields).toContainText("North");
+  await expect(fields).toContainText("“music venue” isn’t on the list");
+  await expect(page.getByTestId("roadie-msg-assistant").last()).toHaveText("Pick one from the list on the card, then tap Yes.");
+  await expect(card.getByTestId("roadie-confirm-yes")).toBeDisabled();
+  await card.getByTestId("roadie-confirm-pick").selectOption({ label: "Club" });
+  await card.getByTestId("roadie-confirm-yes").click();
+  await expect(card).toHaveAttribute("data-status", "done");
+  await expect(card.getByTestId("roadie-confirm-fields")).toContainText("Club");
+  await expect(page.getByTestId("roadie-readback").last()).toContainText(`Added the venue ${name}`);
+});
+
 test("'google ...': the source in the reply is a link that opens in a new tab", async ({ page }) => {
   await signInAs(page, "ingrid");
   await page.getByTestId("roadie-new").click();

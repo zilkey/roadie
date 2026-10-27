@@ -93,7 +93,7 @@ export const isEligible = (name: string, role: Role) => !!registry[name] && !isE
 const dollars = (cents: unknown) => (typeof cents === "number" ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "");
 type Before = Record<string, any> | undefined; // eslint-disable-line @typescript-eslint/no-explicit-any
 /** A venue field as readable text for old → new. */
-function fmtField(k: string, v: unknown): string {
+export function fmtField(k: string, v: unknown): string {
   if (v === null || v === undefined || v === "") return "none";
   const o = v as Record<string, unknown>;
   if (k === "address" && typeof v === "object") return [o.street, o.city, o.state, o.zip].filter(Boolean).join(", ");
@@ -135,6 +135,8 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     return `Change the shared room${i.label ? ` ${i.label}` : ""} for every band that uses Roadie (${diffs.join("; ")})`;
   },
 };
+/** True when the command has its own card headline (cancel, pay, send...): those cards need no field rows. */
+export const hasSummary = (name: string) => name in SUMMARY;
 /** What the confirm card says. `label` is a human name for the record (Roadie adds it from what it looked up). */
 export function summarize(name: string, input: unknown, label?: string, before?: Before): string {
   const i = (input ?? {}) as Record<string, unknown>;
@@ -142,5 +144,10 @@ export function summarize(name: string, input: unknown, label?: string, before?:
   if (base) return base;
   const [kind, verb] = name.split(".");
   const what = label ? `${kind} ${label}` : kind;
-  return verb === "remove" ? `Archive ${what}` : `Run ${name}${label ? ` on ${label}` : ""}`;
+  if (verb === "remove") return `Archive ${what}`;
+  // The card lists the fields underneath, so the headline only says what kind of change it is.
+  const one = kind.replace(/(ch|sh|ss|x)es$/, "$1").replace(/s$/, "");
+  if (verb === "create" || verb === "add") return `Add ${typeof i.name === "string" ? `the ${one} ${i.name}` : `a ${one}`}`;
+  if (verb === "update") return `Update ${label ?? `the ${one}`}`;
+  return `Run ${name}${label ? ` on ${label}` : ""}`;
 }

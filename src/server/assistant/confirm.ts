@@ -6,12 +6,13 @@ import { authenticate } from "../commands/dispatch";
 import { db } from "../db";
 import { AppError, invalid } from "../errors";
 import { newRunId, type Role } from "../ctx";
-import { ConfirmRequest, UndoRequest } from "@/schema/assistant";
+import { ConfirmRequest, UndoRequest, type CardField } from "@/schema/assistant";
 import { isEligible } from "./policy";
 import { modelLabel } from "./ai";
 import type { Session } from "./run";
 import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
-import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending } from "./threads";
+import { setPath } from "./card";
+import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending, type Pending } from "./threads";
 
 export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
 
@@ -44,6 +45,7 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
     return { status: "canceled" };
   }
 
+  const input = withPicks(pending, req.picks);
   try {
     await claimPending(req.threadId, req.pendingId, now);
   } catch (e) {
@@ -54,9 +56,9 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
   const s = sessionFor(who, req.threadId, resultId, now);
   try {
     if (!isEligible(pending.command, who.role)) throw new AppError("not_allowed", `Roadie can't use ${pending.command}`, 403);
-    const r = await runCommandTool(s, pending.command, pending.input, new Set());
-    await setPending(req.threadId, req.pendingId, { status: "done", runId: r.runId });
-    await patchMessageAction(req.threadId, pending.messageId, card, { status: "done" });
+    const r = await runCommandTool(s, pending.command, input, new Set());
+    await setPending(req.threadId, req.pendingId, { status: "done", runId: r.runId, ...(pending.picks?.length ? { input } : {}) });
+    await patchMessageAction(req.threadId, pending.messageId, card, { status: "done", ...(pending.fields ? { fields: picked(pending.fields, req.picks) } : {}) });
     const see = seePitch(pending.command, r.result);
     await addAssistantMessage({
       id: resultId, threadId: req.threadId, text: see ? `Done. ${SEE_PITCH}` : "Done.", pageContext: HERE,
@@ -72,6 +74,23 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
     return { status: "failed", message };
   }
 }
+
+/** The stored input with the person's dropdown picks filled in. Every pick the card asked for must be answered from its own options; nothing else may be set. */
+function withPicks(p: Pending, picks: Record<string, string> = {}): unknown {
+  const asked = p.picks ?? [];
+  for (const k of Object.keys(picks)) if (!asked.some((a) => a.path === k)) throw new AppError("invalid_input", "That card has no such choice", 400);
+  let input = p.input;
+  for (const a of asked) {
+    const v = picks[a.path];
+    if (v === undefined) throw new AppError("invalid_input", `Pick the ${a.path.split(".").pop()} first`, 400);
+    if (!a.options.includes(v)) throw new AppError("invalid_input", `"${v}" isn't one of the choices`, 400);
+    input = setPath(input, a.path, v);
+  }
+  return input;
+}
+/** The card's rows once answered: each dropdown becomes the label of what was picked. */
+const picked = (fields: CardField[], picks: Record<string, string> = {}): CardField[] =>
+  fields.map((f) => (f.options && f.path ? { label: f.label, value: f.options.find((o) => o.value === picks[f.path!])?.label ?? picks[f.path] ?? f.value } : f));
 
 /** Undo one of this conversation's runs. Anything else is refused. */
 export async function undoRunOf(who: Who, req: UndoRequest): Promise<{ undone: number }> {

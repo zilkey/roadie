@@ -14,7 +14,8 @@ import { owesBack } from "@/lib/money";
 import type { PrintOptions } from "@/schema/print";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
 import { contextNow, searchAll, SEARCH_KINDS } from "./context";
-import { eligibleCommands, isEligible, isReadOnly, needsConfirm, refusal, summarize } from "./policy";
+import { eligibleCommands, hasSummary, isEligible, isReadOnly, needsConfirm, refusal, summarize } from "./policy";
+import { cardFields, picksFor } from "./card";
 import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -369,12 +370,6 @@ async function webRead(s: Session, input: unknown, w: WebTurn): Promise<ToolOut>
   return { output: webResult({ page }), action: { kind: "action", label: `Read ${new URL(page.url).hostname}` } };
 }
 
-/** The confirm card for a write asked for after reading the web: what will be written, so a planted fact is easy to spot. */
-function taintedSummary(base: string, input: unknown) {
-  const shown = JSON.stringify(input);
-  return `${base}, from what I read on the web: ${shown.length > 300 ? `${shown.slice(0, 300)}…` : shown}`;
-}
-
 /**
  * Execute one tool request from the model. Never throws: failures come back as `{error}` for the model to read.
  * `recorded` is the set of run ids already saved on the thread in this message; `w` is the message's web state
@@ -414,18 +409,30 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
     const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : await fillNested(s, name, input ?? {});
-    const parsed = cmd.input.safeParse(filled.input);
+    let parsed = cmd.input.safeParse(filled.input);
+    // A value that isn't on its list (a venue type the band doesn't have, a region the schema doesn't know) becomes a dropdown on the card.
+    const choice = isReadOnly(name) ? null : await picksFor(s, name, filled.input, parsed.success ? [] : parsed.error.issues, filled.before);
+    if (!parsed.success && choice) parsed = cmd.input.safeParse(choice.input);
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
-    const asks = needsConfirm(name, parsed.data);
+    const picks = choice?.picks ?? [];
     const fromWeb = w.tainted && !isReadOnly(name);
-    if (asks || fromWeb) {
+    if (needsConfirm(name, parsed.data) || fromWeb || picks.length) {
       // The server never runs this from the flow. It stores the input and asks the person; only /api/assistant/confirm runs it.
       const open = await findOpenPending(s.threadId, name, parsed.data, s.now);
       const base = summarize(name, parsed.data, await labelFor(s, name, parsed.data), filled.before);
-      const p = open ?? await createPending(s.threadId, { command: name, input: parsed.data, summary: asks ? (fromWeb ? `${base} (after reading the web)` : base) : taintedSummary(base, parsed.data), messageId: s.replyId }, s.now);
-      const action: AssistantAction = { kind: "confirm", label: p.summary, pendingId: p.id, command: name, status: "pending" };
-      if (!open) emit({ type: "confirm", pendingId: p.id, command: name, summary: p.summary });
-      return { output: { needsConfirmation: true, pendingId: p.id, message: "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes." }, action: open ? undefined : action, stop: true };
+      // What will be written, row by row, so a planted web fact or a wrong guess is easy to spot.
+      const fields = fromWeb || picks.length || !hasSummary(name) ? await cardFields(name, parsed.data, picks, choice?.labels ?? {}, async (k, id) => (k === "shows" ? lookups(s).show(id) : (await lookups(s).get(k, id))?.name)) : [];
+      const p = open ?? await createPending(s.threadId, {
+        command: name, input: parsed.data, summary: fromWeb ? `${base} (from the web)` : base, messageId: s.replyId,
+        ...(fields.length ? { fields } : {}), ...(picks.length ? { picks: picks.map((x) => ({ path: x.path, options: x.options.map((o) => o.value) })) } : {}),
+      }, s.now);
+      const action: AssistantAction = { kind: "confirm", label: p.summary, pendingId: p.id, command: name, status: "pending", ...(p.fields?.length ? { fields: p.fields } : {}) };
+      if (!open) emit({ type: "confirm", pendingId: p.id, command: name, summary: p.summary, ...(p.fields?.length ? { fields: p.fields } : {}) });
+      const choose = picks.map((x) => `${x.path.split(".").pop()}${x.was ? ` ("${x.was}" isn't on the list)` : ""}`).join(", ");
+      const message = choose
+        ? `Not done yet. The card has a dropdown for ${choose}: the person picks one there, then taps Yes. Don't retry with another value or ask again; say in one line that they pick it on the card.`
+        : "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes.";
+      return { output: { needsConfirmation: true, pendingId: p.id, message }, action: open ? undefined : action, stop: true };
     }
     const r = await runCommandTool(s, name, parsed.data, recorded);
     if (r.wrote) {

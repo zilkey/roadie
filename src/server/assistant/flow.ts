@@ -3,7 +3,7 @@ import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assi
 import { getAi, modelLabel } from "./ai";
 import { contextNow, pageRecord } from "./context";
 import { makeCtx, type Session } from "./run";
-import { BAD_FINDER, TAP_YES } from "./script";
+import { BAD_FINDER, PICK_THEN_YES, TAP_YES } from "./script";
 import { DATA_NOTICE, execTool, SEE_PITCH, toolDefs } from "./tools";
 import { allowUrls, newWebTurn, WEB_NOTICE } from "./web";
 
@@ -23,6 +23,7 @@ export const ChatFlowOutput = z.object({
   actions: z.array(z.object({
     kind: z.enum(["action", "navigate", "link", "readback", "confirm", "reply"]), label: z.string(), route: z.string().optional(), params: z.record(z.string(), z.string()).optional(),
     runId: z.string().optional(), pendingId: z.string().optional(), command: z.string().optional(), status: z.enum(["pending", "done", "canceled", "expired", "failed"]).optional(),
+    fields: z.array(z.object({ label: z.string(), value: z.string(), path: z.string().optional(), options: z.array(z.object({ value: z.string(), label: z.string() })).optional() })).optional(),
   })),
 });
 export type ChatFlowOutput = z.infer<typeof ChatFlowOutput>;
@@ -146,8 +147,8 @@ export function getChatFlow() {
           sendChunk({ type: "text", delta: ask });
         }
         if (!text.trim() && actions.some((a) => a.kind === "confirm")) {
-          text = TAP_YES;
-          sendChunk({ type: "text", delta: TAP_YES });
+          text = actions.some((a) => a.kind === "confirm" && a.fields?.some((f) => f.options)) ? PICK_THEN_YES : TAP_YES;
+          sendChunk({ type: "text", delta: text });
         }
         return { text: text.trim(), actions };
       },

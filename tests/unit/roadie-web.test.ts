@@ -131,8 +131,8 @@ test("after web content comes back, every write in the message asks first; reads
   const after = await execTool(s, "contacts.create", { name: "Planted Booker", emails: ["booker@evil.example"] }, (e) => events.push(e), new Set(), w);
   assert.equal((after.output as { needsConfirmation?: boolean }).needsConfirmation, true);
   const card = events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>;
-  assert.match(card.summary, /from what I read on the web/);
-  assert.match(card.summary, /booker@evil\.example/); // the card shows what would be written
+  assert.equal(card.summary, "Add the contact Planted Booker (from the web)");
+  assert.deepEqual(card.fields, [{ label: "Name", value: "Planted Booker" }, { label: "Email", value: "booker@evil.example" }]); // the card shows what would be written, row by row
   assert.equal((await db.list("contacts")).length, 0);
   assert.equal((await db.list("expenses")).length, 1);
   const get = await execTool(s, "records.get", { kind: "venues", id: venueId }, noop, new Set(), w);
@@ -146,6 +146,48 @@ test("canned model: 'search the web for' calls web.search and names the source b
   assert.ok(events.some((e) => e.type === "action" && e.label === 'Searched the web for "grey eagle"'));
   assert.match(text, /In the book: Grey Eagle/);
   assert.match(text, new RegExp(FAKE_SOURCE.replace(/[.]/g, "\\.")));
+});
+
+test("a venue from the web with a type that isn't on the list: the card asks for the type in a dropdown, and Yes uses the pick", async () => {
+  const s = await sess();
+  const w = newWebTurn();
+  await execTool(s, "web.search", { q: "the atrium fort collins" }, noop, new Set(), w);
+  const events: AssistantEvent[] = [];
+  const input = { name: "The Atrium", type: "music venue", address: { street: "120 1/2 W Laurel St", city: "Fort Collins", state: "CO" }, region: "north", capacity: 70, sound: { provider: "venueProvided" }, website: "https://theatriumfortcollins.com" };
+  const asked = await execTool(s, "venues.create", input, (e) => events.push(e), new Set(), w);
+  const card = events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>;
+  assert.equal(card.summary, "Add the venue The Atrium (from the web)");
+  const type = card.fields!.find((f) => f.label === "Type")!;
+  assert.equal(type.path, "type");
+  assert.equal(type.value, "music venue");
+  assert.ok(type.options!.some((o) => o.value === "club" && o.label === "Club"));
+  assert.deepEqual(card.fields!.filter((f) => !f.options).map((f) => [f.label, f.value]), [
+    ["Name", "The Atrium"], ["Address", "120 1/2 W Laurel St, Fort Collins, CO"], ["Region", "North"], ["Capacity", "70"], ["Sound", "venue provides sound"], ["Website", "https://theatriumfortcollins.com"],
+  ]);
+  assert.match((asked.output as { message: string }).message, /dropdown for type \("music venue" isn't on the list\)/);
+
+  const pendingId = (asked.output as { pendingId: string }).pendingId;
+  await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId, decision: "yes" }), /Pick the type first/);
+  await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "music venue" } }), /isn't one of the choices/);
+  await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "club", name: "Evil" } }), /no such choice/);
+  assert.equal((await answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "club" } })).status, "done");
+  const made = (await db.list("venues")).find((v) => v.name === "The Atrium")!;
+  assert.equal(made.type, "club");
+});
+
+test("a write with a value its schema doesn't know (a region) asks for it in a dropdown, even without the web", async () => {
+  const s = await sess();
+  const events: AssistantEvent[] = [];
+  const asked = await execTool(s, "venues.create", venue("Aggie Theatre", "Fort Collins", { region: "northern colorado", type: "theater" }), (e) => events.push(e), new Set(), newWebTurn());
+  assert.equal(asked.action?.kind, "confirm");
+  const card = events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>;
+  const region = card.fields!.find((f) => f.path === "region")!;
+  assert.equal(region.value, "northern colorado");
+  assert.ok(region.options!.some((o) => o.value === "north" && o.label === "North"));
+  assert.equal(card.fields!.find((f) => f.label === "Type")!.value, "Theater"); // a type on the list reads as its label
+  // anything else wrong still goes back to the model
+  const bad = await execTool(s, "venues.create", { name: "No City", type: "bar", address: { state: "CO" }, region: "denver" }, noop, new Set(), newWebTurn());
+  assert.equal(errCode(bad.output), "invalid_input");
 });
 
 test("pitching offers a See the pitch button, whether it runs straight away or after a Yes", async () => {

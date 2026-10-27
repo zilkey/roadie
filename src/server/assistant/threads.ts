@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { firestore } from "../admin";
 import { AppError } from "../errors";
-import type { AssistantAction, PageContext } from "@/schema/assistant";
+import type { AssistantAction, CardField, PageContext } from "@/schema/assistant";
 
 // Chat transcripts are not business data: written with firebase-admin directly, so they never reach history/undo (like touchLastUsed in db.ts).
 const threads = () => firestore().collection("assistantThreads");
@@ -82,6 +82,10 @@ export const PENDING_TTL_MS = 10 * 60 * 1000;
 export type PendingStatus = "pending" | "done" | "canceled" | "expired" | "failed";
 export interface Pending {
   id: string; command: string; input: unknown; summary: string; messageId: string; status: PendingStatus; createdAt: number; expiresAt: number; runId?: string;
+  /** The card's rows. */
+  fields?: CardField[];
+  /** Dropdowns the person must answer before Yes runs: the input path and the values it may take. */
+  picks?: { path: string; options: string[] }[];
 }
 const pendings = (threadId: string) => threads().doc(threadId).collection("pending");
 

@@ -11,6 +11,16 @@ export const PageContext = z.strictObject({
 });
 export type PageContext = z.infer<typeof PageContext>;
 
+/** One row of a confirm card: a short label and the value Roadie wants to write. `options` makes it a dropdown the person must pick from (a value not on its list). */
+export const CardField = z.strictObject({
+  label: z.string(),
+  value: z.string(),
+  /** The input path the pick goes to ("type", "patch.type"). Only with options. */
+  path: z.string().optional(),
+  options: z.array(z.strictObject({ value: z.string(), label: z.string() })).optional(),
+});
+export type CardField = z.infer<typeof CardField>;
+
 /** One tool step shown in the chat: a plain action line, or a page Roadie opened. */
 export const AssistantAction = z.strictObject({
   /** link: a button the person taps to open a page (nothing opens by itself). reply: an answer to Roadie's question, sent as their message when tapped. */
@@ -27,6 +37,8 @@ export const AssistantAction = z.strictObject({
   command: z.string().optional(),
   /** confirm: pending until the person answers. */
   status: z.enum(["pending", "done", "canceled", "expired", "failed"]).optional(),
+  /** confirm: what will be written, one short row per field. */
+  fields: z.array(CardField).optional(),
 });
 export type AssistantAction = z.infer<typeof AssistantAction>;
 
@@ -63,12 +75,18 @@ export type AssistantEvent =
   | { type: "link"; route: string; params: Record<string, string>; label: string }
   | { type: "reply"; label: string }
   | { type: "readback"; label: string; runId: string }
-  | { type: "confirm"; pendingId: string; command: string; summary: string }
+  | { type: "confirm"; pendingId: string; command: string; summary: string; fields?: CardField[] }
   | { type: "done"; threadId: string; messageId?: string }
   | { type: "error"; message: string };
 
-/** POST /api/assistant/confirm: answer a confirm card. The server runs the stored input, never anything sent here. */
-export const ConfirmRequest = z.strictObject({ threadId: id, pendingId: id, decision: z.enum(["yes", "cancel"]) });
+/**
+ * POST /api/assistant/confirm: answer a confirm card. The server runs the stored input, never anything sent here, except
+ * `picks`: the person's choice for each dropdown on the card (path -> value), checked against the options the server stored.
+ */
+export const ConfirmRequest = z.strictObject({
+  threadId: id, pendingId: id, decision: z.enum(["yes", "cancel"]),
+  picks: z.record(z.string().max(100), z.string().max(200)).optional(),
+});
 export type ConfirmRequest = z.infer<typeof ConfirmRequest>;
 /** POST /api/assistant/undo: the Undo on a read-back line. Only runs this thread made. */
 export const UndoRequest = z.strictObject({ threadId: id, runId: z.string().min(1).max(100) });
