@@ -10,7 +10,7 @@ export const Song = entity({
   bpm: z.number().int().optional(),
   lengthSec: z.number().int().optional(),
   /** "writing": still being written (the Songwriting tab); its uploaded audio goes to the Songwriting folder, not Demos. */
-  status: z.enum(["active", "learning", "idea", "retired", "writing"]),
+  status: z.enum(["active", "learning", "retired", "writing"]),
   lyricsDoc: driveRef.optional(),
   notes: z.string().optional(),
   /** Values for the artist's songFields, by field id (not label: a rename keeps them). No entry = no value; never an empty string. */

@@ -31,7 +31,7 @@ test("Writing tab: add a song in the Writing phase and upload audio to the Songw
   await page.getByTestId("song-title").fill("Porch Light");
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  await expect(page.getByTestId("song-status")).toHaveText("Writing");
+  await expect(page.getByTestId("song-status-select")).toHaveValue("writing");
   await expect(page.getByTestId("song-upload-demo")).toContainText("Upload audio");
   await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Porch Light work tape.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
   await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Songwriting.");
@@ -52,12 +52,13 @@ test("a song moving from Writing into Learning is celebrated", async ({ page }) 
   await page.getByTestId("add-song-btn").click();
   await page.getByTestId("song-title").fill("Night Shift");
   await page.getByTestId("save-song").click();
-  await expect(page.getByTestId("song-status")).toHaveText("Writing");
+  await expect(page.getByTestId("song-status-select")).toHaveValue("writing");
   await expect(page.getByTestId("celebration")).toHaveCount(0);
 
-  await page.getByTestId("song-edit").click();
-  await page.getByTestId("edit-status").selectOption("learning");
-  await expect(page.getByTestId("song-status")).toHaveText("Learning");
+  // the status dropdown sits at the top right, outside Edit, and lists no Ideas
+  await expect(page.getByTestId("song-status-select").locator("option")).toHaveText(["Playing", "Learning", "Writing", "Retired"]);
+  await page.getByTestId("song-status-select").selectOption("learning");
+  await expect(page.getByTestId("song-status-select")).toHaveValue("learning");
   await expect(page.getByTestId("celebration-title")).toHaveText("Out of the writing room!");
   await expect(page.getByTestId("celebration-text")).toHaveText("Night Shift is now Learning");
 });

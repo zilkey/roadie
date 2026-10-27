@@ -15,9 +15,9 @@ export function celebrate(c: Celebration) { current = { ...c, n: ++seq }; emit()
 /** A pitch just became one or more shows. */
 export const celebrateBooking = (target: string, dates: string[]) =>
   celebrate({ title: "It's a show!", text: `${target}, ${dates.join(" and ")}` });
-/** A song just left Writing: `label` is where it went ("Learning", "Playing", "Idea"). */
+/** A song just left Writing: `label` is where it went ("Learning", "Playing"). */
 export const celebrateSong = (title: string, label: string) =>
-  celebrate({ title: "Out of the writing room!", text: `${title} is ${label === "Idea" ? "an Idea" : `now ${label}`}` });
+  celebrate({ title: "Out of the writing room!", text: `${title} is now ${label}` });
 
 const COLORS = ["#3a46c4", "#d6336c", "#1f8a55", "#f2b705", "#ff7a3d", "#7c5cff"];
 

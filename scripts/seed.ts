@@ -156,7 +156,7 @@ async function main() {
   ];
   const songIds: string[] = [];
   for (const [title, key, lengthSec, bpm] of songSpecs) songIds.push(await create("songs", { title, key, lengthSec, bpm, status: "active", writers: "Ingrid Avison" }));
-  await create("songs", { title: "Untitled (bridge idea)", status: "idea" });
+  await create("songs", { title: "Untitled (bridge idea)", status: "writing" });
   await create("songs", { title: "Halfway Home", status: "writing", writers: "Ingrid Avison" });
   const fileId = await create("files", { kind: "demo", title: "Glass Coast demo v3.m4a", songId: songIds[0], driveFileId: "fake-drive-demo-1", url: "http://localhost:3202/files/fake-drive-demo-1", mimeType: "audio/mp4", ownerEmail: "jeff@example.com", inBandFolder: true, sharing: "ok", checkedAt: new Date() });
   void fileId;

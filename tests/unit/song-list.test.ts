@@ -184,14 +184,14 @@ test("import: a cover keeps a clean title, writers 'cover', a chart from the tit
   assert.deepEqual(r.multiLinkCells, [{ row: 3, col: "J", text: "On Spotify and Cool Intro Lick", links: 2 }]);
 });
 
-test("import: sheet row 2 is the song 'February 17th', an idea", async () => {
+test("import: sheet row 2 is the song 'February 17th'", async () => {
   const r = await runImport();
   const row = rowOf(r, 2);
   assert.equal(row.title, "February 17th");
-  assert.equal(row.status, "idea");
+  assert.equal(row.status, "active");
   const song = (await db.get("songs", row.songId))!;
   assert.equal(song.title, "February 17th");
-  assert.equal(song.status, "idea");
+  assert.equal(song.status, "active");
   assert.match(row.issues.join("; "), /46070/);
 });
 
@@ -273,11 +273,11 @@ test("import: the M..AA columns are deferred with their tick counts, and no rehe
   assert.deepEqual(await db.list("setlists"), []);
 });
 
-test("import: a title-only row is an idea; a row with a key, tempo or length is active", async () => {
+test("import: every row is active, title-only or not", async () => {
   const r = await runImport();
-  assert.equal(rowOf(r, 2).status, "idea");
-  assert.equal(rowOf(r, 5).status, "idea");
-  assert.equal(rowOf(r, 6).status, "idea");
+  assert.equal(rowOf(r, 2).status, "active");
+  assert.equal(rowOf(r, 5).status, "active");
+  assert.equal(rowOf(r, 6).status, "active");
   assert.equal(rowOf(r, 3).status, "active");
   assert.equal(rowOf(r, 4).status, "active");
   // Each of the three alone is enough.
@@ -337,6 +337,5 @@ test("the song-list survey names the seven fields and each deferred column with 
   assert.ok(deferred.some((n) => /column N 7\/26\/26/.test(n.where ?? "") && n.detail === "1 song(s) marked"));
   assert.ok(deferred.some((n) => /column W 10\/16\/26 Show/.test(n.where ?? "") && n.detail === "1 song(s) marked"));
   assert.ok(s.notes.some((n) => /read but deliberately not imported/.test(n.reason) && /Rehearsed/.test(n.where ?? "")));
-  assert.equal(s.totals!.ideas, 3); // the three title-only rows: Feb 17, Plain Idea, Mar 3
   assert.equal(s.totals!.covers, 1);
 });

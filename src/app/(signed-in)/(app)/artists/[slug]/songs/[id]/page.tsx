@@ -10,7 +10,7 @@ import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor } from "@/lib/music";
+import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
@@ -97,6 +97,9 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
   const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
   const [len, setLen] = useState<string | null>(null);
+  // The picked status shows at once; once the saved song catches up, it shows the song's again.
+  const [status, setStatus] = useState<SongStatus | null>(null);
+  useEffect(() => setStatus(null), [song.status]);
   // Celebrate when the saved status leaves Writing (into anything but Retired), whoever changed it while this page is open.
   const was = useRef({ id: song.id, status: song.status });
   useEffect(() => {
@@ -140,10 +143,15 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <PageTitle
         back={<Link href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>}
         title={song.title}
-        pill={<span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}
+        pill={admin ? undefined : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
           {edit && <SaveStatus {...as.statusProps} />}
+          {/* Admins change the status here, outside Edit: it saves at once, with the usual Saved + Undo toast. */}
+          <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
+            onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
+            {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+          </select>
           <button className="btn ghost" onClick={() => { void as.flush(); setLen(null); setVals(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>
           <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
             items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
@@ -166,10 +174,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
                 }}
                 onBlur={() => { void as.flush(); if (!len?.trim() || parseLen(len) !== undefined) setLen(null); }} /></label>
           </div>
-          <label className="grid gap-1"><span className="lbl">Status</span>
-            <select className="select" data-testid="edit-status" {...as.bind("status", song.status, { toPatch: (t) => t })}>
-              <option value="active">Playing</option><option value="learning">Learning</option><option value="idea">Idea</option><option value="retired">Retired</option><option value="writing">Writing</option>
-            </select></label>
           <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
           {defs.map((d) => (

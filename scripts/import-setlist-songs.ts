@@ -309,7 +309,7 @@ export interface SetlistSongsReport {
   /** The song fields used, and whether this run had to create each one. Only a field some song has a value for appears. */
   fields: { id: string; label: string; action: "created" | "reused" }[];
   songs: {
-    title: string; songId: string; setlists: number; status: "active" | "idea";
+    title: string; songId: string; setlists: number; status: "active";
     action?: "created" | "updated" | "unchanged" | "skipped";
     key?: string; bpm?: number; lengthSec?: number;
     values: { label: string; value: string }[];
@@ -426,9 +426,8 @@ export async function importSetlistSongs(
     const key = got.get("key")?.value;
     const bpm = got.has("bpm") ? Number(got.get("bpm")!.value) : undefined;
     const lengthSec = got.has("lengthSec") ? Number(got.get("lengthSec")!.value) : undefined;
-    // import-song-list.ts's rule: an idea only when nothing but the title is known, active once there is a key, tempo or
-    // length. A custom field on its own does not make a song active there either.
-    const status: "active" | "idea" = key || bpm !== undefined || lengthSec !== undefined ? "active" : "idea";
+    // Every imported song is Playing: the app has no Ideas status any more.
+    const status = "active" as const;
     const values = FIELD_LABELS.flatMap((label) => (got.has(label) ? [{ label, value: got.get(label)!.value, fieldId: fieldIdFor.get(label)! }] : []));
 
     const out: SetlistSongsReport["songs"][number] = {
@@ -501,7 +500,6 @@ export function setlistSongsSurvey(r: SetlistSongsReport): Survey {
       artist: r.artist ? `${r.artist.name} (${r.artist.slug})` : "NONE -- nothing can be imported",
       "song fields": r.fields.length ? r.fields.map((f) => `${f.label} (${f.action})`).join(", ") : "none used",
       active: r.songs.filter((s) => s.status === "active").length,
-      ideas: r.songs.filter((s) => s.status === "idea").length,
       "with a key": had((s) => s.key), "with a bpm": had((s) => s.bpm), "with a length": had((s) => s.lengthSec),
       "with a capo": r.songs.filter((s) => s.values.some((v) => v.label === "Capo")).length,
       conflicts: r.conflicts.length,

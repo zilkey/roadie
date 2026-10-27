@@ -180,16 +180,15 @@ test("Morphine Smile is created as an original: writers unset, key harvested thr
   for (const s of await db.list("songs")) assert.equal(s.writers, undefined, s.id);
 });
 
-test("status: a title-only song is an idea, and one with a harvested key, bpm or length is active", async () => {
+test("status: every imported song is active, title-only or not", async () => {
   await world();
   const r = await runImport();
-  assert.equal(rowOf(r, "Witch").status, "idea");
-  assert.equal((await db.get("songs", idOf("Witch")))!.status, "idea");
-  assert.equal((await db.get("songs", idOf("Get Up Again")))!.status, "idea");
+  assert.equal(rowOf(r, "Witch").status, "active");
+  assert.equal((await db.get("songs", idOf("Witch")))!.status, "active");
+  assert.equal((await db.get("songs", idOf("Get Up Again")))!.status, "active");
   assert.equal((await db.get("songs", idOf("Walk With Me")))!.status, "active");
   assert.equal((await db.get("songs", idOf("Friends")))!.status, "active"); // length only
-  // A conflicted key is not a key: Saturn has nothing else, so it is an idea.
-  assert.equal((await db.get("songs", idOf("Saturn")))!.status, "idea");
+  assert.equal((await db.get("songs", idOf("Saturn")))!.status, "active");
   // A title-only song stores nothing it was not told.
   const witch = (await db.get("songs", idOf("Witch")))!;
   assert.equal(witch.key, undefined);
@@ -243,7 +242,7 @@ test("tabs that look like metadata but cannot be tied to a song are reported, an
   const r = await runImport();
   assert.deepEqual(r.unread.map((u) => u.tab), ["Roots 9.21.24", "Steve's Guitars 1.10.25"]);
   const witch = (await db.get("songs", idOf("Witch")))!;
-  assert.equal(witch.status, "idea");
+  assert.equal(witch.status, "active");
   assert.deepEqual(witch.fields, []);
   assert.equal(rowOf(r, "Witch").values.length, 0);
   assert.ok(group(setlistSongsSurvey(r).notes, "decide").some((g) => /was not read/.test(g.reason) && g.rows.some((n) => n.where === "Roots 9.21.24")));

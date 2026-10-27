@@ -119,7 +119,7 @@ test("songs.create attaches picked files with kind, key, owner, inBandFolder and
   assert.equal(again.skipped, 1);
   assert.equal((await db.list("files", (q) => q.where("songId", "==", id))).length, 2);
   // a bad Drive id fails the whole command, nothing written
-  await assert.rejects(cmd("songs.create", { title: "Nope", status: "idea", files: [{ driveFileId: "does-not-exist" }] }), /not found/i);
+  await assert.rejects(cmd("songs.create", { title: "Nope", status: "learning", files: [{ driveFileId: "does-not-exist" }] }), /not found/i);
   assert.equal((await db.list("songs")).filter((s) => s.title === "Nope").length, 0);
 });
 
@@ -207,7 +207,7 @@ test("sharing check, share with band, copy to band folder (against fake-drive)",
 test("setlist templates and show setlists: totalSec computed, song data copied, rename keeps titles in sync in both", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", key: "F#m", lengthSec: 232, status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Weathervane", key: "D", lengthSec: 250, status: "active" })).id;
-  const noLen = (await cmd("songs.create", { title: "Idea", status: "idea" })).id;
+  const noLen = (await cmd("songs.create", { title: "Idea", status: "learning" })).id;
   const { id } = await cmd("setlistTemplates.create", { name: "Hi-Dive 45", items: [{ type: "song", songId: a, title: "ignored" }, { type: "break", title: "Talk / tune" }, { type: "song", songId: b }, { type: "song", songId: noLen }] });
   let sl = (await db.get("setlistTemplates", id))!;
   assert.equal(sl.name, "Hi-Dive 45");

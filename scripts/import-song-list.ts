@@ -95,7 +95,7 @@ export interface SongListReport {
   /** The artist's song fields after the run, in order, and whether this run had to create each one. */
   fields: { id: string; label: string; action: "created" | "reused" }[];
   rows: {
-    row: number; title: string; songId: string; status: "active" | "idea";
+    row: number; title: string; songId: string; status: "active";
     action?: "created" | "updated" | "unchanged" | "skipped";
     writers?: string; key?: string; bpm?: number; lengthSec?: number;
     values: { label: string; value: string }[];
@@ -224,15 +224,8 @@ export async function importSongList(opts: { dryRun?: boolean; artist?: string; 
     // Column E is already seconds; column D is a fraction-of-a-day serial and is deliberately not used.
     if (lenRaw && !Number.isFinite(lengthSec)) issues.push(`column E Time (s) is "${lenRaw}", which is not a number`);
     if (bpmRaw && !Number.isFinite(bpm)) issues.push(`column C Tempo is "${bpmRaw}", which is not a number`);
-    // A song is an idea only when the row is title-only: nothing but the name (and the Original flag).
-    //
-    // Story 27 words this as "active when the row has a key and a tempo", but then names the nine rows that should
-    // land as ideas -- and those nine are exactly the title-only rows. Four songs (Great Migration, I Gotta Stop,
-    // Mother, What a Time to Live) have a key and no tempo, and they are played songs with charts, demos and ✅ marks
-    // on rehearsal columns, so a key-and-tempo rule would file four real songs as ideas. The named list is the
-    // intent, so "title-only" is the test and a key, tempo or length is enough to make a song active.
-    const titleOnly = !key && !bpmRaw && !lenRaw;
-    const status: "active" | "idea" = titleOnly ? "idea" : "active";
+    // Every imported song is Playing: the app has no Ideas status any more.
+    const status = "active" as const;
     // The Song schema has no boolean for "is this ours", and `writers` is the nearest honest field.
     const original = cell(r, COL.original).toUpperCase();
     const writers = original === "FALSE" ? "cover" : undefined;
@@ -389,7 +382,6 @@ export function songListSurvey(r: SongListReport): Survey {
         ? r.fields.map((f) => `${f.label}${f.action === "reused" ? " (reused)" : ""}`).join(", ")
         : "none",
       active: r.rows.filter((x) => x.status === "active").length,
-      ideas: r.rows.filter((x) => x.status === "idea").length,
       covers: r.rows.filter((x) => x.writers === "cover").length,
       "links by provider": ["drive", "spotify", "youtube", "web"].map((p) => `${p} ${byProvider(p)}`).join(", "),
       "songs with a link that isn't Drive": r.rows.filter((x) => x.files.some((f) => f.provider !== "drive")).length,

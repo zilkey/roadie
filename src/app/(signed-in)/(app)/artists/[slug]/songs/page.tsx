@@ -13,10 +13,10 @@ export default function SongsPage() {
   return <Suspense fallback={<div className="s">Loading…</div>}><Songs /></Suspense>;
 }
 
-type SegKey = "active" | "learning" | "idea" | "retired" | "unlinked" | "writing";
+type SegKey = "active" | "learning" | "retired" | "unlinked" | "writing";
 // Unlinked cuts across statuses: every song with no Drive file yet (a Spotify/YouTube/web link doesn't count), to work through by hand.
 // Writing (songs still being written) is last, and a song there is never "unlinked": it isn't finished enough to need files.
-const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["idea", "Ideas"], ["retired", "Retired"], ["unlinked", "Unlinked"], ["writing", "Writing"]];
+const SEGS: [SegKey, string][] = [["active", "Playing"], ["learning", "Learning"], ["retired", "Retired"], ["unlinked", "Unlinked"], ["writing", "Writing"]];
 const isSeg = (k: string | null): k is SegKey => SEGS.some(([s]) => s === k);
 /** `linked`: ids of songs with a Drive file. */
 const inSeg = (s: { id: string; status: string }, k: SegKey, linked: Set<string | undefined>) => (k === "unlinked" ? s.status !== "writing" && !linked.has(s.id) : s.status === k);
