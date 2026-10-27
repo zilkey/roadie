@@ -16,6 +16,7 @@ export const EXCLUDED: readonly string[] = [
   "drafts.",          // personal scratch, nothing to hand an assistant
   "history.myRuns",   // Roadie sees only its own thread's runs, through history.undoRun
   "pitches.checkReplies", // reads the band's mail: Roadie never reads email
+  "email.signature",  // reads the admin's Gmail settings: Roadie never reads email
   "stats.importCsv",  // bulk import of someone's file
   "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
 ];

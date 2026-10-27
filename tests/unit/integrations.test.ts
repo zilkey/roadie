@@ -54,6 +54,26 @@ test("gmail: send, draft, list, reply in thread", async () => {
   assert.equal((await g.getThread(sent.threadId)).messages.length, 3);
 });
 
+test("gmail: html is kept on sent messages and drafts; the signature routes answer like sendAs.list", async () => {
+  const g = gmailClient(urls["fake-gmail"]);
+  const sent = await g.send({ account: "sig@example.com", to: ["a@x.com"], subject: "Rich", body: "plain", html: "<p><b>rich</b></p>" });
+  await g.createDraft({ account: "sig@example.com", to: ["a@x.com"], subject: "Rich draft", body: "plain", html: "<p>draft</p>" });
+  const stored = (await g.listMessages({ q: "rich" })).find((m) => m.id === sent.id) as unknown as { html?: string; body: string };
+  assert.equal(stored.html, "<p><b>rich</b></p>");
+  assert.equal(stored.body, "plain");
+  assert.equal(((await g.listDrafts("sig@example.com")) as unknown as { html?: string }[])[0].html, "<p>draft</p>");
+  const plain = await g.send({ account: "sig@example.com", to: ["a@x.com"], subject: "Plain only", body: "p" });
+  assert.equal("html" in plain, false);
+
+  assert.equal(await g.getSignature("sig@example.com"), "", "none set yet");
+  const raw = await (await fetch(`${urls["fake-gmail"]}/settings/sendAs?account=sig@example.com`)).json();
+  assert.deepEqual(raw, { sendAs: [{ sendAsEmail: "sig@example.com", isPrimary: true, signature: "" }] });
+  const put = await fetch(`${urls["fake-gmail"]}/settings/signature`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ account: "sig@example.com", signature: "<div>Jeff Smith</div>" }) });
+  assert.equal(put.status, 200);
+  assert.equal(await g.getSignature("sig@example.com"), "<div>Jeff Smith</div>");
+  assert.equal(await g.getSignature("other@example.com"), "", "signatures are per account");
+});
+
 test("drive: seeded files, search, copy, share, permissions", async () => {
   const d = driveClient(urls["fake-drive"]);
   const glass = await d.search({ q: "glass coast" });

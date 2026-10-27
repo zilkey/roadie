@@ -4,11 +4,12 @@
  * gmailClient(). `account` is the sending mailbox: the admin whose own Google grant sends it (see src/server/google).
  * Replies are found by reading the thread again (pitches.checkReplies).
  */
+import { randomBytes } from "node:crypto";
 import { IntegrationError, jsonClient } from "./http";
 import { googleJson, useRealGoogle } from "./google";
 import { accessTokenForEmail } from "../google/grants";
 
-export interface MailInput { account: string; to: string[]; cc?: string[]; subject: string; body: string; threadId?: string }
+export interface MailInput { account: string; to: string[]; cc?: string[]; subject: string; body: string; /** Sent as multipart/alternative next to `body` (the plain text). Sanitize it first (src/lib/email-html.ts). */ html?: string; threadId?: string }
 export interface MailMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
   from: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
@@ -24,6 +25,8 @@ export interface GmailService {
   listThreads(account?: string): Promise<MailThread[]>;
   /** `account` is the mailbox the thread is in (the real API needs it; the fake has one shared view). */
   getThread(id: string, account?: string): Promise<MailThread>;
+  /** The Gmail signature (HTML, as Gmail stores it) of the account's primary address; "" when none is set. Throws IntegrationError(403) when the grant can't read settings. */
+  getSignature(account: string): Promise<string>;
   /** Fake only: pretend the recipient replied. Not part of the real API. */
   simulateReply?(threadId: string, opts?: { from?: string; body?: string }): Promise<MailMessage>;
 }
@@ -36,7 +39,7 @@ export function gmailClient(baseUrl?: string): GmailService {
 
 export function fakeGmailClient(baseUrl: string): GmailService {
   const call = jsonClient("gmail", baseUrl);
-  const wire = (i: MailInput) => ({ from: i.account, to: i.to, cc: i.cc ?? [], subject: i.subject, body: i.body, threadId: i.threadId });
+  const wire = (i: MailInput) => ({ from: i.account, to: i.to, cc: i.cc ?? [], subject: i.subject, body: i.body, ...(i.html ? { html: i.html } : {}), threadId: i.threadId });
   return {
     send: (i) => call("POST", "/messages/send", { body: wire(i) }),
     createDraft: (i) => call("POST", "/drafts", { body: wire(i) }),
@@ -44,6 +47,10 @@ export function fakeGmailClient(baseUrl: string): GmailService {
     listMessages: (o = {}) => call("GET", "/messages", { query: o }),
     listThreads: (account) => call("GET", "/threads", { query: { account } }),
     getThread: (id) => call("GET", `/threads/${encodeURIComponent(id)}`),
+    async getSignature(account) {
+      const r = await call<{ sendAs?: { isPrimary?: boolean; signature?: string }[] }>("GET", "/settings/sendAs", { query: { account } });
+      return r.sendAs?.find((a) => a.isPrimary)?.signature ?? "";
+    },
     simulateReply: (id, o = {}) => call("POST", `/threads/${encodeURIComponent(id)}/reply`, { body: o }),
   };
 }
@@ -78,14 +85,23 @@ function toMessage(m: GMessage, account: string): MailMessage {
   };
 }
 
-/** An RFC 2822 text/plain message, base64url as Gmail's `raw` wants it. */
+const b64Lines = (s: string) => Buffer.from(s, "utf8").toString("base64").match(/.{1,76}/g) ?? [];
+
+/** An RFC 2822 message, base64url as Gmail's `raw` wants it: text/plain, or multipart/alternative (plain text, then HTML) when `html` is given. */
 export function rawMessage(i: MailInput, reply?: { messageId: string; references: string }): string {
-  const lines = [
+  const head = [
     `To: ${i.to.join(", ")}`, ...(i.cc?.length ? [`Cc: ${i.cc.join(", ")}`] : []), `Subject: ${headerText(i.subject)}`,
     ...(reply?.messageId ? [`In-Reply-To: ${reply.messageId}`, `References: ${[reply.references, reply.messageId].filter(Boolean).join(" ")}`] : []),
-    "MIME-Version: 1.0", 'Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: base64", "",
-    ...(Buffer.from(i.body, "utf8").toString("base64").match(/.{1,76}/g) ?? []),
+    "MIME-Version: 1.0",
   ];
+  const part = (type: string, text: string) => [`Content-Type: ${type}; charset="UTF-8"`, "Content-Transfer-Encoding: base64", "", ...b64Lines(text)];
+  const lines = !i.html
+    ? [...head, ...part("text/plain", i.body)]
+    : (() => {
+        const boundary = `roadie_${randomBytes(12).toString("hex")}`;
+        return [...head, `Content-Type: multipart/alternative; boundary="${boundary}"`, "",
+          `--${boundary}`, ...part("text/plain", i.body), `--${boundary}`, ...part("text/html", i.html), `--${boundary}--`, ""];
+      })();
   return Buffer.from(lines.join("\r\n"), "utf8").toString("base64url");
 }
 
@@ -142,5 +158,9 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
       return Promise.all((r.threads ?? []).map((t) => getThread(t.id, account)));
     },
     getThread,
+    async getSignature(account) {
+      const r = await callAs(account)<{ sendAs?: { sendAsEmail?: string; isPrimary?: boolean; signature?: string }[] }>("GET", "/settings/sendAs");
+      return r.sendAs?.find((a) => a.isPrimary)?.signature ?? "";
+    },
   };
 }

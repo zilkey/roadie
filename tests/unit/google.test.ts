@@ -8,7 +8,7 @@ import { googleDrive } from "@/server/integrations/drive";
 import { googleCalendar } from "@/server/integrations/calendar";
 import { IntegrationError } from "@/server/integrations";
 import { signState, verifyState, featuresOf, FEATURE_SCOPES, TOKEN_URL, REVOKE_URL } from "@/server/google/oauth";
-import { seal, unseal, accessTokenForEmail } from "@/server/google/grants";
+import { seal, unseal, accessTokenForEmail, saveGrant } from "@/server/google/grants";
 import { missingFor } from "@/server/music";
 import { resetEmulators, makeUser, makeArtist, TEST_ARTIST } from "./helpers";
 
@@ -93,6 +93,77 @@ test("gmail: send builds a text/plain RFC 2822 message; replies carry In-Reply-T
   assert.equal(send.auth, "Bearer tok-jeff@example.com");
   assert.equal((send.body as { threadId: string }).threadId, "t1");
   assert.match(Buffer.from((send.body as { raw: string }).raw, "base64url").toString(), /In-Reply-To: <orig@mail>\r\nReferences: <orig@mail>/);
+});
+
+test("gmail: rawMessage with html is multipart/alternative, plain text first; headers and reply threading unchanged", () => {
+  const input = { account: "j@x.com", to: ["a@b.com"], cc: ["c@d.com"], subject: "Hi", body: "Plain Café", html: "<p>Rich <b>Café</b></p>" };
+  const reply = { messageId: "<orig@mail>", references: "<r0@mail>" };
+  const raw = Buffer.from(rawMessage(input, reply), "base64url").toString();
+  const plainRaw = Buffer.from(rawMessage({ ...input, html: undefined }, reply), "base64url").toString();
+  const headers = (r: string) => r.split("\r\n\r\n")[0].split("\r\n").filter((l) => !/^Content-/.test(l));
+  assert.deepEqual(headers(raw), headers(plainRaw), "To, Cc, Subject, In-Reply-To, References, MIME-Version are the same");
+  assert.match(raw, /In-Reply-To: <orig@mail>\r\nReferences: <r0@mail> <orig@mail>/);
+  const boundary = /Content-Type: multipart\/alternative; boundary="([^"]+)"/.exec(raw)![1];
+  const parts = raw.split(`--${boundary}`);
+  assert.equal(parts.length, 4, "preamble, text, html, closing marker");
+  assert.match(parts[1], /Content-Type: text\/plain; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n/);
+  assert.match(parts[2], /Content-Type: text\/html; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n/);
+  const decode = (part: string) => Buffer.from(part.split("\r\n\r\n")[1].replace(/\r\n/g, ""), "base64").toString("utf8");
+  assert.equal(decode(parts[1]), "Plain Café");
+  assert.equal(decode(parts[2]), "<p>Rich <b>Café</b></p>");
+  assert.ok(parts[3].startsWith("--"));
+  const other = /boundary="([^"]+)"/.exec(Buffer.from(rawMessage(input), "base64url").toString())![1];
+  assert.notEqual(other, boundary, "the boundary is random");
+  assert.doesNotMatch(plainRaw, /multipart/);
+});
+
+test("gmail: html goes through send and createDraft as multipart", async () => {
+  stubGoogle((s) => {
+    if (s.url.pathname.endsWith("/messages/send")) return { json: { id: "m1", threadId: "t1" } };
+    if (s.url.pathname.endsWith("/drafts")) return { json: { id: "d1", message: { id: "m", threadId: "t" } } };
+  });
+  const g = googleGmail(token);
+  const mail = { account: "j@x.com", to: ["a@b.com"], subject: "s", body: "b", html: "<p>b</p>" };
+  await g.send(mail);
+  await g.createDraft(mail);
+  for (const s of seen) assert.match(Buffer.from(((s.body as { raw?: string; message?: { raw: string } }).raw ?? (s.body as { message: { raw: string } }).message.raw), "base64url").toString(), /multipart\/alternative/);
+});
+
+test("gmail: getSignature reads the primary sendAs entry", async () => {
+  stubGoogle((s) => (s.url.pathname.endsWith("/settings/sendAs") ? { json: { sendAs: [{ sendAsEmail: "alias@x.com", signature: "no" }, { sendAsEmail: "j@x.com", isPrimary: true, signature: "<div>Jeff</div>" }] } } : undefined));
+  assert.equal(await googleGmail(token).getSignature("j@x.com"), "<div>Jeff</div>");
+  assert.equal(seen[0].auth, "Bearer tok");
+  stubGoogle(() => ({ json: { sendAs: [{ sendAsEmail: "j@x.com", isPrimary: true }] } }));
+  assert.equal(await googleGmail(token).getSignature("j@x.com"), "", "no signature set");
+});
+
+test("email.signature: the sanitized Gmail signature, and null when Gmail refuses (403) or isn't connected", async () => {
+  const restore = withGoogleEnv();
+  const gmailWas = process.env.GMAIL_BASE_URL;
+  try {
+    delete process.env.GMAIL_BASE_URL;
+    await makeArtist("Ingrid Avison Band", "iab");
+    const jeff = await makeUser("jeff@example.com", "admin");
+    const member = await makeUser("david@example.com", "member");
+    assert.equal((await dispatch("email.signature", bearer(member.token), {})).status, 403, "admins only");
+    const ask = async () => (await dispatch("email.signature", bearer(jeff.token), {})).json as { result: { html: string; text: string } | null };
+    assert.equal((await ask()).result, null, "no grant yet");
+
+    await saveGrant(jeff.uid, "jeff@example.com", "jeff@example.com", { access_token: "at-1", expires_in: 3600, refresh_token: "1//rt", scope: ["openid", ...FEATURE_SCOPES.gmail].join(" ") });
+    stubGoogle(() => ({ json: { sendAs: [{ sendAsEmail: "jeff@example.com", isPrimary: true, signature: '<div dir="ltr">Jeff<br><a href="javascript:alert(1)" onclick="x()">site</a> <a href="https://band.example">band</a><script>bad()</script></div>' }] } }));
+    const ok = (await ask()).result!;
+    assert.equal(ok.html, '<div>Jeff<br>site <a href="https://band.example" rel="noopener">band</a></div>');
+    assert.equal(ok.text, "Jeff\nsite band (https://band.example)");
+    assert.equal(seen[0].auth, "Bearer at-1");
+
+    stubGoogle(() => ({ status: 403, json: { error: { code: 403, message: "Request had insufficient authentication scopes." } } }));
+    assert.equal((await ask()).result, null);
+    stubGoogle(() => ({ status: 500, json: { error: { code: 500, message: "boom" } } }));
+    assert.equal((await dispatch("email.signature", bearer(jeff.token), {})).status, 500, "other failures are errors, not null");
+  } finally {
+    restore();
+    if (gmailWas === undefined) delete process.env.GMAIL_BASE_URL; else process.env.GMAIL_BASE_URL = gmailWas;
+  }
 });
 
 test("gmail: getThread reads sent and received messages, skips drafts, finds the plain text part", async () => {

@@ -2,10 +2,10 @@ import { defineFake, runIfMain, esc, need, required, type Route } from "../lib";
 
 export interface GMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
-  from: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
+  from: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; date: string;
 }
-export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; threadId?: string; date: string }
-export interface GmailState { seq: number; messages: GMessage[]; drafts: GDraft[] }
+export interface GDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; html?: string; threadId?: string; date: string }
+export interface GmailState { seq: number; messages: GMessage[]; drafts: GDraft[]; /** Gmail signature (HTML) per account, set with PUT /settings/signature. */ signatures?: Record<string, string> }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 const threadsOf = (s: GmailState, account?: string) => {
@@ -22,15 +22,15 @@ const routes: Route<GmailState>[] = [
     if (!to.length) return { status: 400, json: { error: { code: 400, message: "Missing field: to" } } };
     const id = `m${++s.seq}`;
     const threadId = body.threadId ? need(s.messages.find((m) => m.threadId === body.threadId), "Thread").threadId : `t${++s.seq}`;
-    const m: GMessage = { id, threadId, account: body.from, direction: "sent", from: body.from, to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", date: new Date().toISOString() };
+    const m: GMessage = { id, threadId, account: body.from, direction: "sent", from: body.from, to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), date: new Date().toISOString() };
     s.messages.push(m);
-    return m;
+    return { json: m }; // wrapped: a bare object with an `html` key would be taken for an HTML page
   }],
   ["POST", "/drafts", ({ body }, s) => {
     required(body, "from", "subject");
-    const d: GDraft = { id: `d${++s.seq}`, account: body.from, to: list(body.to), cc: list(body.cc), subject: body.subject, body: body.body ?? "", threadId: body.threadId, date: new Date().toISOString() };
+    const d: GDraft = { id: `d${++s.seq}`, account: body.from, to: list(body.to), cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), threadId: body.threadId, date: new Date().toISOString() };
     s.drafts.push(d);
-    return d;
+    return { json: d };
   }],
   ["GET", "/drafts", ({ query }, s) => s.drafts.filter((d) => !query.get("account") || d.account === query.get("account"))],
   ["GET", "/messages", ({ query }, s) => {
@@ -40,6 +40,17 @@ const routes: Route<GmailState>[] = [
   }],
   ["GET", "/threads", ({ query }, s) => threadsOf(s, query.get("account") ?? undefined)],
   ["GET", "/threads/:id", ({ params }, s) => need(threadsOf(s).find((t) => t.id === params.id), "Thread")],
+  // The Gmail signature, as users.settings.sendAs.list answers it: one primary address for the account.
+  ["GET", "/settings/sendAs", ({ query }, s) => {
+    const account = query.get("account") ?? "";
+    return { sendAs: [{ sendAsEmail: account, isPrimary: true, signature: s.signatures?.[account] ?? "" }] };
+  }],
+  // Test setup: PUT /settings/signature {account, signature}.
+  ["PUT", "/settings/signature", ({ body }, s) => {
+    required(body, "account");
+    (s.signatures ??= {})[body.account] = String(body.signature ?? "");
+    return { account: body.account, signature: s.signatures[body.account] };
+  }],
   // Simulate the recipient replying. `from` defaults to the first recipient of the thread's last sent message.
   ["POST", "/threads/:id/reply", ({ params, body }, s) => {
     const msgs = s.messages.filter((m) => m.threadId === params.id);
