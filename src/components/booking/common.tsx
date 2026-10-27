@@ -1,16 +1,15 @@
 "use client";
-import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type PitchDateIn, type Status } from "@/lib/booking";
-import { useCommand, ErrorBox, Select } from "@/components/ui";
+import { useCommand, ErrorBox, PickChip, Select } from "@/components/ui";
 import { CONTACT_ROLES, ROLE_LABEL, rolesOf, withNotes, type NoteFields } from "@/lib/venues";
 import { withBandNote } from "@/lib/bandNotes";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
-import { useDraft, useHasDraft } from "@/lib/drafts";
+import { useDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
 import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
 import { VenueTypeSelect } from "@/components/booking/VenueTypeSelect";
@@ -540,86 +539,74 @@ export const contactForm = {
 /** Turn builder output into a patch: undefined means clear. */
 export const toPatch = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === undefined ? null : v]));
 
+const NOUN = { venues: "venue", promoters: "promoter", festivals: "festival" } as const;
+
 /**
- * A place's people, for the body of a "Contacts" DetailCard. View: name, title, emails with a copy button. `editing`: Remove buttons,
- * plus linking an existing contact or adding a new one (a draft, with an explicit "Add contact"). An unfinished draft calls `onWantEdit`
- * so the card can switch to editing. A venue also passes `roles`: each person's Booking / Day-of labels, checkboxes while editing.
+ * A place's people, for the body of a "Contacts" DetailCard (its plus opens AddContactDialog). Each row: name, title, emails with Email
+ * and copy buttons; on a venue (`roles`) Booking and Day-of chips that toggle on tap; an × that unlinks the person (they stay in Contacts).
+ * `canEdit` false (members): the same rows as plain text, roles as pills, no toggles and no ×.
  */
-export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, editing = false, onWantEdit, pitchId }: {
+export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, canEdit = true, pitchId }: {
   kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
-  roles?: Pick<NoteFields, "bookingContactIds" | "dayOfContactIds">; editing?: boolean; onWantEdit?(): void;
+  roles?: Pick<NoteFields, "bookingContactIds" | "dayOfContactIds">; canEdit?: boolean;
   /** The active pitch for this place, if any: Email then logs the mail on it. */
   pitchId?: string;
 }) {
   const { call, error, busy } = useCommand();
-  const hasDraft = useHasDraft(draftPath.newUnder(kind, parentId, "contacts"));
-  const [explicit, setAdding] = useState<boolean | null>(null);
-  const adding = editing && (explicit ?? hasDraft); // an unfinished contact opens the form
-  useEffect(() => { if (hasDraft && !editing) onWantEdit?.(); }, [hasDraft, editing, onWantEdit]);
   const mine = contactIds.map((id) => contacts.find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
-  const others = contacts.filter((c) => !contactIds.includes(c.id)).sort((a, b) => a.name.localeCompare(b.name));
+  const noun = NOUN[kind];
   return (
     <div className="grid gap-2" data-testid="contacts-panel">
       <ErrorBox error={error} />
       {mine.length === 0 && <div className="empty">No one yet.</div>}
       {mine.length > 0 && (
         <div>
-          {mine.map((c) => (
-            <div key={c.id} className="d-row" data-testid={`contact-${c.name}`}>
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
-                {c.title && <span className="s">{c.title}</span>}
-                {roles && !editing && rolesOf(roles, c.id).map((r) => <span key={r} className="chip a" data-testid={`contact-role-${r}`}>{ROLE_LABEL[r]}</span>)}
-              </div>
-              {editing
-                ? (
-                  <div className="flex flex-wrap items-center gap-x-4">
-                    {roles && CONTACT_ROLES.map((r) => {
-                      const has = rolesOf(roles, c.id);
-                      return (
-                        <label key={r} className="flex min-h-[44px] items-center gap-2">
-                          <input type="checkbox" checked={has.includes(r)} disabled={busy} data-testid={`contact-role-${r}`}
-                            onChange={(e) => call("contacts.setRoles", { contactId: c.id, venueId: parentId, roles: e.target.checked ? [...has, r] : has.filter((x) => x !== r) })} />
+          {mine.map((c) => {
+            const has = roles ? rolesOf(roles, c.id) : [];
+            return (
+              <div key={c.id} className="d-row contact-row" data-testid={`contact-${c.name}`}>
+                <div className="grid min-w-0 flex-[1_1_260px] gap-1">
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                    <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
+                    {c.title && <span className="s">{c.title}</span>}
+                  </div>
+                  {c.emails.map((e, i) => (
+                    <div key={e} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-mono text-sm break-all">{e}</span>
+                      <span className="flex items-center gap-1">
+                        {i === 0 && <Link href={`/booking/email/new?target=${kind.slice(0, -1)}:${parentId}&to=${c.id}${pitchId ? `&pitch=${pitchId}` : ""}`} className="btn sm ghost" data-testid={`contact-email-${c.name}`}>Email</Link>}
+                        <CopyButton text={e} label="Copy email" />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {roles && (canEdit
+                  ? (
+                    <div className="contact-roles flex gap-1.5" role="group" aria-label={`${c.name}'s roles`}>
+                      {CONTACT_ROLES.map((r) => (
+                        <PickChip key={r} on={has.includes(r)} testid={`contact-role-${r}`}
+                          onToggle={() => { if (!busy) void call("contacts.setRoles", { contactId: c.id, venueId: parentId, roles: has.includes(r) ? has.filter((x) => x !== r) : [...has, r] }); }}>
                           {ROLE_LABEL[r]}
-                        </label>
-                      );
-                    })}
-                    <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
-                  </div>
-                )
-                : c.emails.length > 0 && (
-                  <div className="grid w-full gap-1">
-                    {c.emails.map((e, i) => (
-                      <div key={e} className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-sm break-all">{e}</span>
-                        <span className="flex items-center gap-1">
-                          {i === 0 && <Link href={`/booking/email/new?target=${kind.slice(0, -1)}:${parentId}&to=${c.id}${pitchId ? `&pitch=${pitchId}` : ""}`} className="btn sm ghost" data-testid={`contact-email-${c.name}`}>Email</Link>}
-                          <CopyButton text={e} label="Copy email" />
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                        </PickChip>
+                      ))}
+                    </div>
+                  )
+                  : has.length > 0 && <div className="flex gap-1.5">{has.map((r) => <span key={r} className="chip a" data-testid={`contact-role-${r}`}>{ROLE_LABEL[r]}</span>)}</div>)}
+                {canEdit && (
+                  <button type="button" className="row-x" aria-label={`Remove ${c.name} from this ${noun}`} title={`Remove from this ${noun}`} disabled={busy}
+                    onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })} data-testid={`contact-remove-${c.name}`}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                  </button>
                 )}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
-      {editing && (
-        <div className="flex gap-2">
-          {others.length > 0 && (
-            <select className="select" value="" data-testid="contact-link" onChange={(e) => e.target.value && call("contacts.attach", { contactId: e.target.value, kind, id: parentId })}>
-              <option value="">Link an existing contact…</option>
-              {others.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          )}
-          <button className="btn ghost" onClick={() => setAdding(!adding)} data-testid="contact-new">{adding ? "Close" : "New contact"}</button>
-        </div>
-      )}
-      {adding && (
-        <EntityForm testid="contact-form" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build} submitLabel="Add contact"
-          draft={{ path: draftPath.newUnder(kind, parentId, "contacts"), title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }}
-          onCancel={() => setAdding(false)}
-          onSubmit={async (d, meta) => { const r = await call("contacts.create", { ...d, attachTo: { kind, id: parentId } }, meta); if (r) setAdding(false); return !!r; }} />
+      {canEdit && mine.length > 0 && (
+        <span className="s" data-testid="contacts-foot">
+          {roles ? "Tap a role to turn it on or off. " : ""}× takes the person off this {noun}; they stay in Contacts.
+        </span>
       )}
     </div>
   );

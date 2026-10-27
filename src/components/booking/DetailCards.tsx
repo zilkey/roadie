@@ -2,6 +2,7 @@
 import { useCallback, useId, useMemo, useState, type ReactNode } from "react";
 import { useArtist } from "@/lib/artist";
 import { FlagIcon } from "./common";
+import { PencilButton } from "@/components/InlineValue";
 
 /** Shown at the top of an editing shared card. */
 export const SHARED_WARN = "Every band on Roadie sees these details.";
@@ -69,11 +70,11 @@ export function useSingleEdit<K extends string>() {
 }
 
 /**
- * A card (yellow top bar when shared with every band, plain when `private`) with a title and, if `editKey` + `edit` are given, an Edit link that swaps `children` for `editChildren` plus a Done footer.
+ * A card (yellow top bar when shared with every band, plain when `private`) with a title and, if `editKey` + `edit` are given, a pencil (`aria-label="Edit <title>"`; `editLabel` when the title is a node) that swaps `children` for `editChildren` plus a Done footer.
  * `warn` (editing only) shows a caution banner at the top. `headerExtra` sits beside the Edit link/tag. Autosave: Done just closes (after `onDone`).
  */
-export function DetailCard<K extends string = string>({ title, icon, private: priv, editKey, edit, warn, onDone, testid, editTestid, doneTestid, headerExtra, children, editChildren }: {
-  title: ReactNode; icon?: ReactNode; private?: boolean; editKey?: K; edit?: ReturnType<typeof useSingleEdit<K>>; warn?: ReactNode;
+export function DetailCard<K extends string = string>({ title, editLabel, icon, private: priv, editKey, edit, warn, onDone, testid, editTestid, doneTestid, headerExtra, children, editChildren }: {
+  title: ReactNode; editLabel?: string; icon?: ReactNode; private?: boolean; editKey?: K; edit?: ReturnType<typeof useSingleEdit<K>>; warn?: ReactNode;
   onDone?(): void; testid?: string; editTestid?: string; doneTestid?: string; headerExtra?: ReactNode; children?: ReactNode; editChildren?: ReactNode;
 }) {
   const id = useId();
@@ -86,7 +87,7 @@ export function DetailCard<K extends string = string>({ title, icon, private: pr
         <div className="flex items-center gap-2">
           {headerExtra}
           {editing ? <span className="d-tag">Editing</span>
-            : canEdit && <button type="button" className="d-edit" onClick={() => edit.open(editKey)} data-testid={editTestid}>Edit</button>}
+            : canEdit && <PencilButton label={`Edit ${editLabel ?? (typeof title === "string" ? title : "")}`.trim()} onClick={() => edit.open(editKey)} testid={editTestid} />}
         </div>
       </div>
       {editing ? (

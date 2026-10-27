@@ -2,22 +2,25 @@
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AdminOnly } from "@/components/Guard";
-import { ErrorBox, useCommand } from "@/components/ui";
+import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
-import { SaveStatus } from "@/components/SaveStatus";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { useHasDraft } from "@/lib/drafts";
-import { useAutosave } from "@/lib/autosave";
+import { useDraft, useHasDraft } from "@/lib/drafts";
+import { newMutationId } from "@/lib/commands";
+import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import {
-  BackLink, ContactsPanel, EntityForm, Flagged, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field,
+  BackLink, ContactsPanel, EntityForm, Flagged, FormFields, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field, type Values,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { FestivalPitchCard } from "@/components/booking/PitchSummaryCard";
+import { AddContactDialog, DialogClose, DialogFoot } from "@/components/booking/AddContactDialog";
+import { RowX } from "@/components/booking/PickDialog";
+import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { cityState, fmtDate, isActive } from "@/lib/booking";
 import { withBandNote } from "@/lib/bandNotes";
-import type { Edition, Festival, Show } from "@/schema";
+import type { Festival, Show } from "@/schema";
 
 export default function Page() { return <AdminOnly><FestivalPage /></AdminOnly>; }
 
@@ -29,7 +32,6 @@ const aboutFields: Field[] = [
   byKey("city"), byKey("state"),
   { key: "typicalMonth", label: "Usually", type: "select", half: true, options: monthOptions },
 ];
-const notesFields: Field[] = [byKey("notes")];
 
 function FestivalPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,13 +41,18 @@ function FestivalPage() {
   const b = useBooking();
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId]] });
   const { call, error } = useCommand();
-  const edit = useSingleEdit<"about" | "years" | "contacts" | "notes">();
-  const openEdit = edit.open;
-  const hasEdDraft = useHasDraft(draftPath.newUnder("festivals", id, "editions"));
-  const [addEdX, setAddEd] = useState<boolean | null>(null);
-  const [askedEd] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("addEdition") === "1");
-  const addEd = addEdX ?? (askedEd || hasEdDraft); // an unfinished year, or ?addEdition=1 (the Festivals tab's "Add edition"), opens the form
-  useEffect(() => { if (addEd) openEdit("years"); }, [addEd, openEdit]);
+  const edit = useSingleEdit<"about">();
+  const [addingContact, setAddingContact] = useState(false);
+  const edPath = draftPath.newUnder("festivals", id, "editions");
+  const hasEdDraft = useHasDraft(edPath);
+  const [addingEd, setAddingEd] = useState(false);
+  const askedEd = useRef(false); // the page-load draft or ?addEdition=1 opens the dialog once; after that a kept draft waits for the plus
+  useEffect(() => { if (addingEd) askedEd.current = true; }, [addingEd]);
+  useEffect(() => {
+    if (askedEd.current) return;
+    const asked = new URLSearchParams(window.location.search).get("addEdition") === "1"; // the Festivals tab's "Add edition"
+    if (asked || hasEdDraft) { askedEd.current = true; setAddingEd(true); }
+  }, [hasEdDraft]);
   const editions = useMemo(() => b.editions.filter((e) => e.festivalId === id).sort((a, c) => c.year - a.year), [b.editions, id]);
   const editionIds = useMemo(() => new Set(editions.map((e) => e.id)), [editions]);
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && editionIds.has(p.target.id)), [b.pitches, artistId, editionIds]);
@@ -63,7 +70,7 @@ function FestivalPage() {
   const pitchCardFlag = !active ? upcoming : undefined; // the edition whose Flagged trigger the Pitch card shows (so Years omits its own)
   const meta = [f.type === "series" ? "Series" : "Festival", cityState(f.address), f.typicalMonth ? `usually ${MONTHS[f.typicalMonth - 1]}` : null].filter(Boolean).join(" · ");
 
-  const contacts = <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />;
+  const contacts = <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} />;
 
   return (
     <DetailPage testid="festival-page" back={<BackLink href="/booking/festivals" label="All festivals" />} title={f.name}
@@ -87,20 +94,7 @@ function FestivalPage() {
           ]} />
         </DetailCard>
 
-        <DetailCard title="Years" editKey="years" edit={edit} testid="festival-years" editTestid="years-edit" doneTestid="years-done"
-          editChildren={
-            <div className="grid gap-3">
-              {editions.map((e) => <EditionRow key={e.id} e={e} festival={f} />)}
-              {editions.length === 0 && <div className="empty">No dates yet.</div>}
-              <button type="button" className="btn ghost sm justify-self-start" onClick={() => setAddEd(!addEd)} data-testid="add-edition">{addEd ? "Close" : "+ Add a year"}</button>
-              {addEd && (
-                <EntityForm testid="new-edition" fields={editionForm.fields} initial={editionForm.blank} build={editionForm.build} submitLabel="Add year"
-                  onCancel={() => setAddEd(false)}
-                  draft={{ path: draftPath.newUnder("festivals", id, "editions"), title: (v) => `New year · ${f.name} ${v.label ?? ""}`.trim() }}
-                  onSubmit={async (d, meta) => { const r = await call("editions.create", { ...d, festivalId: id }, meta); if (r) setAddEd(false); return !!r; }} />
-              )}
-            </div>
-          }>
+        <DetailCard title="Years" testid="festival-years" headerExtra={<PlusButton label="Add a year" testid="add-edition" onClick={() => setAddingEd(true)} />}>
           {editions.length === 0 ? <div className="empty">No dates yet.</div> : (
             <div>
               {editions.map((e) => {
@@ -117,6 +111,8 @@ function FestivalPage() {
                         {dates && <span className="d-muted text-sm">{dates}</span>}
                       </div>
                       {pitchCardFlag?.id !== e.id && flag}
+                      <RowX label={`Delete ${e.label}`} testid={`year-remove-${e.id}`}
+                        onClick={() => { if (confirm(`Delete ${e.label}?`)) void call("editions.remove", { id: e.id }); }} />
                       {pitchCardFlag?.id !== e.id && <div className="w-full empty:hidden">{flagForm}</div>}
                     </>)}</Flagged>
                   </div>
@@ -126,19 +122,17 @@ function FestivalPage() {
           )}
         </DetailCard>
 
-        <DetailCard title="Contacts" editKey="contacts" edit={edit} testid="festival-contacts" editTestid="contacts-edit" editChildren={contacts}>{contacts}</DetailCard>
+        <AddEditionDialog festival={f} path={edPath} open={addingEd} onClose={() => setAddingEd(false)} />
+
+        <DetailCard title="Contacts" testid="festival-contacts" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>{contacts}</DetailCard>
+        <AddContactDialog kind="festivals" parentId={id} parentName={f.name} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
 
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="festival-notes-card" editTestid="notes-edit"
-          editChildren={
-            <div>
-              <EntityForm testid="festival-notes" fields={notesFields} initial={festivalForm.initial(f)} build={festivalForm.build}
-                autosave={{ command: "festivals.update", id, rev: note?.rev, title: `${f.name} notes` }} />
-            </div>
-          }>
-          {f.notes ? <p className="m-0 whitespace-pre-wrap">{f.notes}</p> : <span className="d-muted">—</span>}
+        <DetailCard private title="Our notes" testid="festival-notes-card">
+          <InlineValue testid="festival-notes" label="Notes" kind="textarea" value={f.notes ?? ""} canEdit error={error}
+            onSave={async (next) => !!(await call("festivals.update", { id, patch: { notes: next || null } }))} />
         </DetailCard>
 
         <DetailCard private title="Our shows here" testid="festival-history">
@@ -158,54 +152,52 @@ function FestivalPage() {
   );
 }
 
-/** One year while its card is editing: every field autosaves as a patch on the edition. */
-function EditionRow({ e, festival }: { e: Edition; festival: Festival }) {
-  const as = useAutosave({ command: "editions.update", id: e.id, rev: e.rev, title: `${festival.name} ${e.label}` });
-  const [year, setYear] = useState(String(e.year));
-  const docEst = [e.appOpens?.sure, e.appDeadline?.sure].some((s) => s === "estimated");
-  const hasDocDates = !!(e.appOpens || e.appDeadline);
-  const [est, setEst] = useState(hasDocDates ? docEst : true);
-  useEffect(() => { if (!as.isBusy()) setYear(String(e.year)); }, [e.year]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (hasDocDates) setEst(docEst); }, [hasDocDates, docEst]);
-  const sureFor = (cur?: string) => (cur ?? (est ? "estimated" : "confirmed"));
-  const opens = as.bind("appOpens", e.appOpens?.date ?? "", { toPatch: (s) => (s ? { date: s, sure: sureFor(e.appOpens?.sure) } : null) });
-  const closes = as.bind("appDeadline", e.appDeadline?.date ?? "", { toPatch: (s) => (s ? { date: s, sure: sureFor(e.appDeadline?.sure) } : null) });
-  const onYear = (val: string) => {
-    setYear(val);
-    const n = Number(val);
-    if (!val.trim() || !Number.isInteger(n)) return;
-    as.patch(e.label === String(e.year) ? { year: n, label: String(n) } : { year: n });
-  };
-  const onEst = (checked: boolean) => {
-    setEst(checked);
-    const sure = checked ? "estimated" : "confirmed";
-    const p: Record<string, unknown> = {};
-    if (opens.value) p.appOpens = { date: opens.value, sure };
-    if (closes.value) p.appDeadline = { date: closes.value, sure };
-    as.patch(p);
-  };
-  const tid = `edition-edit-${e.id}`;
+/**
+ * The Years card's plus: today's new-year fields, kept as a draft (device + server) until "Add year" creates the edition.
+ * × and Escape close and keep the draft; Cancel throws it away.
+ */
+function AddEditionDialog({ festival, path, open, onClose }: { festival: Festival; path: string; open: boolean; onClose(): void }) {
+  const { call, error, busy, setError } = useCommand();
+  const formId = useId();
+  const close = () => { setError(null); onClose(); };
   return (
-    <div className="grid gap-2 border-b border-[var(--divider)] pb-3 last:border-b-0" data-testid={`edition-${e.id}`}>
-      <div className="grid grid-cols-2 gap-2" onBlur={() => void as.flush()}>
-        <label className="grid gap-1"><span className="lbl">Year</span>
-          <input className="input" type="number" value={year} onChange={(ev) => onYear(ev.target.value)} data-testid={`${tid}-year`} /></label>
-        <span aria-hidden />
-        <label className="grid gap-1"><span className="lbl">Starts</span>
-          <input className="input" type="date" data-testid={`${tid}-startDate`} {...as.bind("startDate", e.startDate ?? "")} /></label>
-        <label className="grid gap-1"><span className="lbl">Ends</span>
-          <input className="input" type="date" data-testid={`${tid}-endDate`} {...as.bind("endDate", e.endDate ?? "")} /></label>
-        <label className="grid gap-1"><span className="lbl">Applications open</span>
-          <input className="input" type="date" data-testid={`${tid}-appOpens`} {...opens} /></label>
-        <label className="grid gap-1"><span className="lbl">Applications close</span>
-          <input className="input" type="date" data-testid={`${tid}-appDeadline`} {...closes} /></label>
-        <label className="col-span-2 flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={est} onChange={(ev) => onEst(ev.target.checked)} data-testid={`${tid}-estimated`} />Dates are estimated</label>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <SaveStatus {...as.statusProps} />
-        <Link href={hrefFor("edition", e.id)} className="d-muted text-sm underline">Open year page</Link>
-      </div>
-    </div>
+    <Dialog open={open} onClose={close} title="Add a year" testid="year-add-dialog">
+      <DialogClose onClose={close} testid="year-add-close" />
+      <span className="s -mt-2">To {festival.name}</span>
+      <NewEditionForm path={path} formId={formId} busy={busy} festivalName={festival.name} onCancel={close}
+        onCreate={async (data, meta) => { const r = await call("editions.create", { ...data, festivalId: festival.id }, meta); if (r) close(); return !!r; }} />
+      <ErrorBox error={error} />
+    </Dialog>
+  );
+}
+
+function NewEditionForm({ path, formId, busy, festivalName, onCreate, onCancel }: {
+  path: string; formId: string; busy: boolean; festivalName: string; onCancel(): void;
+  onCreate(data: Record<string, unknown>, meta: { clientMutationId: string; clearDraft: string }): Promise<boolean>;
+}) {
+  const d = useDraft<Values>(path, editionForm.blank, { title: (v) => `New year · ${festivalName} ${v.label ?? ""}`.trim() });
+  const mutationId = useRef(newMutationId());
+  const [sending, setSending] = useState(false);
+  if (!d.ready) return <div className="s">Loading…</div>;
+  async function submit(ev: React.FormEvent) {
+    ev.preventDefault(); setSending(true);
+    try {
+      await d.settle();
+      if (await onCreate(editionForm.build(d.value), { clientMutationId: mutationId.current, clearDraft: d.draftId })) {
+        await d.clear({ reset: true }); mutationId.current = newMutationId();
+      }
+    } finally { setSending(false); }
+  }
+  return (
+    <>
+      <form id={formId} onSubmit={submit} className="grid gap-2" data-testid="new-edition">
+        <FormFields fields={editionForm.fields} v={d.value} set={(k, val) => d.setValue((x) => ({ ...x, [k]: val }))} testid="new-edition" />
+        <span className="s">Half-finished? It&apos;s kept as a draft until you press Add year.</span>
+        <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
+      </form>
+      <DialogFoot cancelTestid="new-edition-cancel" onCancel={onCancel}>
+        <button type="submit" form={formId} className="btn acc" disabled={busy || sending} data-testid="new-edition-submit">Add year</button>
+      </DialogFoot>
+    </>
   );
 }

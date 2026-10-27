@@ -32,7 +32,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await expect(page.getByTestId("page-title")).toHaveText("Hi-Dive");
   await expect(page.getByTestId("room-address")).toContainText("7 S Broadway");
   // the band's private notes are not there for a member: no notes form, no contacts, no merge, no archive
-  await expect(page.getByTestId("notes-loadInNotes")).toHaveCount(0);
+  await expect(page.getByTestId("venue-loadin")).toHaveCount(0);
   await expect(page.getByTestId("notes-private")).toHaveCount(0);
   await expect(page.getByTestId("contacts-panel")).toHaveCount(0);
   await expect(page.getByTestId("venue-actions")).toHaveCount(0);
@@ -59,9 +59,9 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await openVenue(op, OTHER, "hi-dive", "Hi-Dive");
   await expect(op.getByTestId("room-capacity")).toHaveText(capacity);
   await expect(op.getByTestId("notes-private")).toContainText("Fern Valley loads in the side door.");
-  await op.getByTestId("notes-edit").click();
-  await expect(op.getByTestId("notes-loadInNotes")).toHaveValue("Fern Valley loads in the side door.");
-  await expect(op.getByTestId("notes-notes")).toHaveValue(/Ask for Rae/);
+  await expect(op.getByTestId("notes-edit")).toHaveCount(0); // notes edit in place, no flip
+  await expect(op.getByTestId("venue-loadin")).toContainText("Fern Valley loads in the side door.");
+  await expect(op.getByTestId("venue-notes")).toContainText(/Ask for Rae/);
   await expect(op.locator("body")).not.toContainText("Alley door on Broadway");
   await expect(op.locator("body")).not.toContainText("Ask for Sam");
   // she can open the same room by the first band's venue id: she still only reads her own notes there
@@ -73,8 +73,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await signInAs(jp, "jeff");
   await jp.goto(venueUrl);
   await expect(jp.getByTestId("room-capacity")).toHaveText(capacity);
-  await jp.getByTestId("notes-edit").click();
-  await expect(jp.getByTestId("notes-loadInNotes")).toHaveValue("Alley door on Broadway; 20 minutes to load in.");
+  await expect(jp.getByTestId("venue-loadin")).toContainText("Alley door on Broadway; 20 minutes to load in.");
   await expect(jp.locator("body")).not.toContainText("Fern Valley");
 
   await olga.close(); await jeff.close();
@@ -96,9 +95,8 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   const keepUrl = page.url();
   expect(keepUrl).not.toBe(dupUrl);
   // the band's notes were joined onto the survivor's; the duplicate's website filled the survivor's empty one
-  await page.getByTestId("notes-edit").click();
-  await expect(page.getByTestId("notes-notes")).toHaveValue(/Possible duplicate of Hi-Dive\./);
-  await expect(page.getByTestId("notes-notes")).toHaveValue(/Ask for Sam/);
+  await expect(page.getByTestId("venue-notes")).toContainText(/Possible duplicate of Hi-Dive\./);
+  await expect(page.getByTestId("venue-notes")).toContainText(/Ask for Sam/);
   await expect(page.getByTestId("room-website")).toContainText("hi-dive.example");
   // the merged venue's old address redirects to the survivor
   await page.goto(dupUrl);
@@ -112,29 +110,87 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   const op = await olga.newPage();
   await signInAs(op, "olga");
   await op.goto(keepUrl.replace("/artists/ingrid-avison-band", "/artists/fern-valley-trio"));
-  await op.getByTestId("notes-edit").click();
-  await expect(op.getByTestId("notes-notes")).toHaveValue(/Fern Valley saw this room as The Hi-Dive\./);
+  await expect(op.getByTestId("venue-notes")).toContainText(/Fern Valley saw this room as The Hi-Dive\./);
   await expect(op.locator("body")).not.toContainText("Ask for Sam");
   await olga.close();
 });
 
 
-test("venue contacts: tick Booking and Day-of; the labels show on the Contacts card", async ({ page }) => {
+test("venue contacts: Booking and Day-of chips toggle on tap, no Edit on the card", async ({ page }) => {
   await signInAs(page, "jeff");
   await openVenue(page, A, "fox theatre", "Fox Theatre");
+  await expect(page.getByTestId("contacts-edit")).toHaveCount(0);
+  const marcus = page.getByTestId("contacts-panel").getByTestId("contact-Marcus Webb");
+  const booking = marcus.getByTestId("contact-role-booking"), dayOf = marcus.getByTestId("contact-role-dayOf");
+  await expect(booking).toHaveAttribute("aria-pressed", "false");
+  await expect(dayOf).toHaveAttribute("aria-pressed", "false");
+  await booking.click();
+  await expect(booking).toHaveAttribute("aria-pressed", "true");
+  await dayOf.click();
+  await expect(dayOf).toHaveAttribute("aria-pressed", "true");
+  await dayOf.click();
+  await expect(dayOf).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(booking).toHaveAttribute("aria-pressed", "true");
+  await expect(dayOf).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("contacts-foot")).toHaveText("Tap a role to turn it on or off. × takes the person off this venue; they stay in Contacts.");
+});
+
+test("venue contacts: the plus adds someone already in Contacts or a new person (kept as a draft until Add contact); × takes them off the venue only", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await openVenue(page, A, "cervantes", "Cervantes' Other Side");
   const panel = page.getByTestId("contacts-panel");
-  const marcus = panel.getByTestId("contact-Marcus Webb");
-  await expect(marcus.getByTestId("contact-role-booking")).toHaveCount(0);
-  await page.getByTestId("contacts-edit").click();
-  await marcus.getByTestId("contact-role-booking").click();
-  await expect(marcus.getByTestId("contact-role-booking")).toBeChecked();
-  await marcus.getByTestId("contact-role-dayOf").click();
-  await expect(marcus.getByTestId("contact-role-dayOf")).toBeChecked();
-  await marcus.getByTestId("contact-role-dayOf").click();
-  await expect(marcus.getByTestId("contact-role-dayOf")).not.toBeChecked();
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(marcus.getByTestId("contact-role-booking")).toHaveText("Booking");
-  await expect(marcus.getByTestId("contact-role-dayOf")).toHaveCount(0);
+  const dialog = page.getByTestId("contact-add-dialog");
+  await expect(panel).toContainText("No one yet.");
+
+  // Already in Contacts: find Priya by where she works, pick her, Add to venue (Booking is ticked by default)
+  await page.getByTestId("contact-add").click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("To Cervantes' Other Side");
+  await expect(page.getByTestId("contact-add-exist")).toBeChecked();
+  await page.getByTestId("contact-find").fill("umsfest");
+  await page.getByTestId(/^contact-hit-/).filter({ hasText: "Priya Shah" }).click();
+  await expect(page.getByTestId("contact-add-booking")).toBeChecked();
+  await expect(page.getByTestId("contact-add-dayOf")).not.toBeChecked();
+  await expect(page.getByTestId("contact-add-submit")).toHaveText("Add to venue");
+  await page.getByTestId("contact-add-submit").click();
+  await expect(dialog).toBeHidden();
+  const priya = panel.getByTestId("contact-Priya Shah");
+  await expect(priya.getByTestId("contact-role-booking")).toHaveAttribute("aria-pressed", "true");
+
+  // New person: half-finished, Cancel closes and the draft stays; the next visit opens the dialog on it
+  const name = `Day Of ${STAMP}`;
+  await page.getByTestId("contact-add").click();
+  await page.getByTestId("contact-add-new").check();
+  await page.getByTestId("contact-form-name").fill(name);
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("contact-add-cancel").click();
+  await expect(dialog).toBeHidden();
+  await page.reload();
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("contact-add-new")).toBeChecked();
+  await expect(page.getByTestId("contact-form-name")).toHaveValue(name);
+  await page.getByTestId("contact-form-emails").fill(`dayof${STAMP}@cervantes.example`);
+  await page.getByTestId("contact-add-booking").uncheck();
+  await page.getByTestId("contact-add-dayOf").check();
+  await expect(page.getByTestId("contact-add-submit")).toHaveText("Add contact");
+  await page.getByTestId("contact-add-submit").click();
+  await expect(dialog).toBeHidden();
+  const added = panel.getByTestId(`contact-${name}`);
+  await expect(added.getByTestId("contact-role-dayOf")).toHaveAttribute("aria-pressed", "true");
+  await expect(added.getByTestId("contact-role-booking")).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(dialog).toBeHidden(); // the draft went with the create
+  await expect(added).toBeVisible();
+
+  // × unlinks: the rows go, both people stay in Contacts
+  await priya.getByTestId("contact-remove-Priya Shah").click();
+  await added.getByTestId(`contact-remove-${name}`).click();
+  await expect(panel).toContainText("No one yet.");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-contacts").click();
+  await page.getByTestId("booking-search").fill(name);
+  await expect(page.getByTestId(/^row-contact-/).filter({ hasText: name })).toHaveCount(1);
 });
 
 test("a venue page opens with a slim pitch card: the active pitch with View pitch, or Not on the Pitch List with what came before", async ({ page }) => {

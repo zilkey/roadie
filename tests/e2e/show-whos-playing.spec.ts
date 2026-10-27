@@ -13,20 +13,50 @@ async function openShow(page: Page, venue: string) {
   await expect(page.getByTestId("whos-playing")).toBeVisible();
 }
 
-test("Saving a changed lineup updates the card, and it can be put back", async ({ page }) => {
+test("Who's playing: a chip saves on tap, picking a lineup fills the players, no Edit", async ({ page }) => {
   await signInAs(page, "jeff");
   await openShow(page, "Lost Lake Lounge");
   const card = page.getByTestId("whos-playing");
-  await expect(card.getByTestId("whos-billed-view")).toContainText("Ingrid Avison Trio (Trio)");
-  await expect(card.getByTestId("whos-player-Ingrid")).toContainText("✓ Confirmed");
-  await expect(card.getByTestId("whos-player-David")).toContainText("Waiting");
-  await card.getByTestId("whos-playing-edit").click();
-  await card.getByTestId("whos-pick-Emma").click();
-  await card.getByTestId("whos-playing-save").click();
-  await expect(card.getByTestId("whos-player-Emma")).toBeVisible();
-  await card.getByTestId("whos-playing-edit").click();
-  await card.getByTestId("whos-pick-Emma").click();
-  await card.getByTestId("whos-playing-save").click();
-  await expect(card.getByTestId("whos-player-Emma")).toHaveCount(0);
+  const chip = (name: string) => card.getByTestId(`whos-pick-${name}`);
+  await expect(card.getByTestId("whos-playing-edit")).toHaveCount(0);
+  await expect(card.getByTestId("whos-billed")).toContainText("Ingrid Avison Trio (Trio)");
+  await expect(card.getByTestId("whos-answers")).toContainText(/Asked .*Ingrid.* said yes/);
+  await expect(card.getByTestId("whos-answers")).toContainText(/David hasn.t answered/);
+  await expect(chip("David")).toHaveAttribute("aria-pressed", "true");
+  await expect(chip("Emma")).toHaveAttribute("aria-pressed", "false");
+
+  // Tap a chip: saved, it survives a reload; tap again to put it back.
+  await chip("Emma").click();
+  await expect(chip("Emma")).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  await expect(chip("Emma")).toHaveAttribute("aria-pressed", "true");
+  await chip("Emma").click();
+  await expect(chip("Emma")).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await expect(chip("Emma")).toHaveAttribute("aria-pressed", "false");
+  await expect(chip("David")).toHaveAttribute("aria-pressed", "true");
+
+  // Billed as is a value: picking the Duo lineup fills in its players; back to the Trio puts David back.
+  await card.getByTestId("whos-billed").click();
+  await card.getByTestId("whos-billed-input").selectOption({ label: "Ingrid Avison Duo (Duo)" });
+  await expect(card.getByTestId("whos-billed-saved")).toBeVisible();
+  await expect(card.getByTestId("whos-billed")).toContainText("Ingrid Avison Duo (Duo)");
+  await expect(chip("David")).toHaveAttribute("aria-pressed", "false");
+  await expect(chip("Jeff")).toHaveAttribute("aria-pressed", "true");
+  await card.getByTestId("whos-billed").click();
+  await card.getByTestId("whos-billed-input").selectOption({ label: "Ingrid Avison Trio (Trio)" });
+  await expect(card.getByTestId("whos-billed")).toContainText("Ingrid Avison Trio (Trio)");
+  await expect(chip("David")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("Who's playing: a member sees the players as names, nothing to tap", async ({ page }) => {
+  await signInAs(page, "david");
+  await openShow(page, "Lost Lake Lounge");
+  const card = page.getByTestId("whos-playing");
+  await expect(card.getByTestId("whos-player-Ingrid")).toBeVisible();
   await expect(card.getByTestId("whos-player-David")).toBeVisible();
+  await expect(card.getByTestId("whos-billed")).toHaveText("Ingrid Avison Trio (Trio)");
+  // No chips, no values to tap, no Ask (David's own "Can you play?" answer buttons are his, not the card's).
+  await expect(card.locator(".pick, .val")).toHaveCount(0);
+  await expect(card.getByTestId("whos-playing-ask")).toHaveCount(0);
 });

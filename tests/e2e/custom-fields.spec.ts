@@ -14,7 +14,7 @@ async function as(browser: Browser, key: string) {
   return { page, close: () => ctx.close() };
 }
 
-test("Custom fields: define a show field in admin, fill it on a show, see it; deleting the field clears it", async ({ page }) => {
+test("Custom fields: define a show field in admin, fill it on a show, see it; deleting the field clears it", async ({ page, browser }) => {
   const label = `Parking ${Date.now()}`;
   await signInAs(page, "jeff");
 
@@ -38,15 +38,26 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; de
   await expect(page.getByTestId("show-page")).toBeVisible();
   const card = page.getByTestId("custom-fields");
   await expect(card).toContainText(label);
-  await card.getByTestId("custom-fields-edit").click();
-  await card.getByLabel(label).fill("Lot B, behind the venue");
-  await card.getByTestId("custom-fields-save").click();
-  await expect(card.getByTestId("custom-fields-save")).toHaveCount(0);
-  await expect(card).toContainText("Lot B, behind the venue");
+  // No Edit: tap the value, type, Enter. A Saved tick confirms the write.
+  await expect(card.getByTestId("show-edit")).toHaveCount(0);
+  const fieldId = await card.locator("[data-testid^=custom-field-]").first().getAttribute("data-testid");
+  await card.getByTestId(fieldId!).click();
+  await card.getByTestId(`${fieldId}-input`).fill("Lot B, behind the venue");
+  await card.getByTestId(`${fieldId}-input`).press("Enter");
+  await expect(card.getByTestId(`${fieldId}-saved`)).toBeVisible();
+  await expect(card.getByTestId(fieldId!)).toContainText("Lot B, behind the venue");
 
   // It survives a reload.
   await page.reload();
   await expect(page.getByTestId("custom-fields")).toContainText("Lot B, behind the venue");
+
+  // A member never sees the card (nor any edit control on the page).
+  const david = await as(browser, "david");
+  await david.page.goto(page.url());
+  await expect(david.page.getByTestId("show-page")).toBeVisible();
+  await expect(david.page.getByTestId("custom-fields")).toHaveCount(0);
+  await expect(david.page.getByTestId("show-edit")).toHaveCount(0);
+  await david.close();
 
   // Deleting the field takes its values with it.
   const showUrl = page.url();
@@ -80,10 +91,11 @@ test("Custom fields: a field ticked In table is a column in the Shows and Songs 
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   const card = page.getByTestId("custom-fields");
-  await card.getByTestId("custom-fields-edit").click();
-  await card.getByLabel(showLabel).fill("Holiday Inn");
-  await card.getByTestId("custom-fields-save").click();
-  await expect(card.getByTestId("custom-fields-save")).toHaveCount(0);
+  await card.getByRole("button", { name: `Add… ${showLabel}` }).click();
+  const input = card.getByRole("textbox", { name: showLabel });
+  await input.fill("Holiday Inn");
+  await input.press("Enter");
+  await expect(card.getByRole("button", { name: `Edit ${showLabel}` })).toContainText("Holiday Inn");
   await page.goto(A("/shows"));
   await expect(page.getByTestId("shows-table-upcoming")).toBeVisible();
   await expect(page.getByTestId("shows-table-upcoming")).not.toContainText(showLabel);

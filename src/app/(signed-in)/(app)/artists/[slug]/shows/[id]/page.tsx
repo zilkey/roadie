@@ -1,6 +1,6 @@
 "use client";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { Tabs, useNotFound } from "@/components/booking/common";
@@ -8,7 +8,6 @@ import { useProfile } from "@/lib/auth";
 import { useDoc } from "@/lib/firestore-hooks";
 import { fmtLongYear, showName } from "@/lib/shows";
 import type { ShowRow } from "@/components/shows/common";
-import { ShowEditProvider } from "@/components/shows/page/kit";
 import { StatusPill } from "@/components/shows/page/StatusPill";
 import { WhereWhenCard } from "@/components/shows/page/WhereWhenCard";
 import { WhosPlayingCard } from "@/components/shows/page/WhosPlayingCard";
@@ -41,7 +40,7 @@ function Page() {
 /**
  * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Finances. The checklists are a 360px column on the right from lg up
  * (on all three tabs, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
- * Comments and Archive stay in the main column. The Setlist tab autosaves on its own (no Edit / Save).
+ * Comments and Archive stay in the main column. There is no page-level Edit: values edit where they sit, and only real forms flip.
  */
 function ShowView({ show }: { show: ShowRow }) {
   const p = useProfile();
@@ -50,8 +49,6 @@ function ShowView({ show }: { show: ShowRow }) {
   const sp = useSearchParams();
   const tab: Tab = TABS.includes(sp.get("tab") as Tab) ? (sp.get("tab") as Tab) : "details";
   const setTab = (t: Tab) => router.replace(`/shows/${show.id}${t === "details" ? "" : `?tab=${t}`}`);
-  // Edit (top right) opens every card on the current tab; each card still saves on its own.
-  const [round, setRound] = useState(0);
   const { call, error, busy } = useCommand();
 
   return (
@@ -63,7 +60,6 @@ function ShowView({ show }: { show: ShowRow }) {
             <h1 className="page-title" data-testid="page-title">{show.editionName ? `${show.editionName} ${fmtLongYear(show.date)}` : `${showName(show)} · ${fmtLongYear(show.date)}`}</h1>
             <StatusPill show={show} admin={admin} />
           </div>
-          {admin && <button type="button" className="btn outline" onClick={() => setRound((n) => n + 1)} data-testid="show-edit">Edit</button>}
         </div>
       </header>
 
@@ -71,7 +67,6 @@ function ShowView({ show }: { show: ShowRow }) {
 
       <div className="show-cols">
         <div className="show-main">
-          <ShowEditProvider key={tab} round={round}>
             {tab === "details" && <>
               <WhereWhenCard show={show} admin={admin} />
               <WhosPlayingCard show={show} admin={admin} />
@@ -86,7 +81,6 @@ function ShowView({ show }: { show: ShowRow }) {
               <ExpensesCard show={show} admin={admin} />
               {admin && <NetCard show={show} />}
             </>}
-          </ShowEditProvider>
         </div>
 
         <aside className="show-side" aria-label="Checklists"><ChecklistSidebar show={show} admin={admin} /></aside>

@@ -30,16 +30,23 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sound-notes-view")).toBeVisible();
 
-  // Promotion: private show with docs and a ticket link
-  await expect(page.getByTestId("ticket-none")).toHaveText("No ticket link yet");
-  await page.getByTestId("promotion-edit").click();
-  await page.getByTestId("ticket-url").fill("https://tickets.example.com/lost-lake");
+  // Promotion: no Edit. The ticket link is a value; docs add through the plus and leave through their ×.
+  await expect(page.getByTestId("promotion-edit")).toHaveCount(0);
+  await expect(page.getByTestId("docs-none")).toHaveText("Stage plot, poster, etc.");
+  await page.getByTestId("ticket-url").click();
+  await page.getByTestId("ticket-url-input").fill("https://tickets.example.com/lost-lake");
+  await page.getByTestId("ticket-url-input").press("Enter");
+  await expect(page.getByTestId("ticket-url-saved")).toBeVisible();
+  await expect(page.getByTestId("ticket-link")).toHaveAttribute("href", "https://tickets.example.com/lost-lake");
+  await page.getByTestId("doc-add").click();
   await page.getByTestId("doc-title").fill("Stage plot");
   await page.getByTestId("doc-url").fill("https://example.com/stage-plot.pdf");
-  await page.getByTestId("doc-add").click();
-  await page.getByTestId("promotion-save").click();
-  await expect(page.getByTestId("ticket-link")).toHaveAttribute("href", "https://tickets.example.com/lost-lake");
+  await page.getByTestId("doc-add-confirm").click();
+  await expect(page.getByTestId("doc-title")).toHaveCount(0);
   await expect(page.getByTestId("doc-link")).toHaveAttribute("href", "https://example.com/stage-plot.pdf");
+  await page.reload();
+  await expect(page.getByTestId("ticket-link")).toHaveAttribute("href", "https://tickets.example.com/lost-lake");
+  await expect(page.getByTestId("doc-link")).toHaveText("Stage plot");
   await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
   await expect(page.getByTestId("bit-detail")).toHaveText("Not published.");
   // Publish: a hold is published but waits to be confirmed before it lists
@@ -49,11 +56,14 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await expect(page.getByTestId("bit-publish")).toBeVisible();
 
   // Clean up so reruns start from the same place
-  await page.getByTestId("promotion-edit").click();
-  await page.getByTestId("ticket-url").fill("");
+  await page.getByTestId("ticket-url").locator(".pen").click(); // the pencil edits; the link itself opens the site
+  await page.getByTestId("ticket-url-input").fill("");
+  await page.getByTestId("ticket-url-input").press("Enter");
+  await expect(page.getByTestId("ticket-link")).toHaveCount(0);
+  await expect(page.getByTestId("ticket-url")).toHaveText("Add…");
   await page.getByTestId("doc-remove").click();
-  await page.getByTestId("promotion-save").click();
-  await expect(page.getByTestId("ticket-none")).toBeVisible();
+  await expect(page.getByTestId("doc-link")).toHaveCount(0);
+  await expect(page.getByTestId("docs-none")).toBeVisible();
   await page.getByTestId("sound-venueProvided").click();
   await expect(page.getByTestId("sound-venueProvided")).toBeChecked();
   await page.getByTestId("sound-notes-view").click();

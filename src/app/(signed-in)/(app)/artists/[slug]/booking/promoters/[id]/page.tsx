@@ -1,6 +1,7 @@
 "use client";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
@@ -11,6 +12,9 @@ import {
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { AddContactDialog } from "@/components/booking/AddContactDialog";
+import { InlineValue, PlusButton } from "@/components/InlineValue";
+import { PickDialog, RowX } from "@/components/booking/PickDialog";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Promoter } from "@/schema";
 
@@ -22,7 +26,6 @@ const KIND_LABEL: Record<Promoter["kind"], string> = {
 
 /** About and Contacts are one record for every band; the pitch, the venues they book for us and our notes are this artist's (promoterNotes). */
 const ABOUT_FIELDS = promoterForm.fields.filter((f) => ["name", "kind", "website"].includes(f.key));
-const NOTES_FIELDS = promoterForm.fields.filter((f) => ["howToPitch", "notes"].includes(f.key));
 
 function PromoterPage() {
   const { id } = useParams<{ id: string }>();
@@ -30,8 +33,10 @@ function PromoterPage() {
   const { artistId } = useArtist();
   const { doc: shared, loading } = useDoc<Promoter>("promoters", id);
   const b = useBooking();
-  const { call, error, busy } = useCommand();
-  const edit = useSingleEdit<"about" | "venues" | "contacts" | "notes">();
+  const { call, error, busy, setError } = useCommand();
+  const edit = useSingleEdit<"about">();
+  const [addingContact, setAddingContact] = useState(false);
+  const [linkingVenue, setLinkingVenue] = useState(false);
   const nf = useNotFound(loading, shared, "promoter");
   if (nf || !shared) return nf;
 
@@ -45,22 +50,23 @@ function PromoterPage() {
   const archive = async () => { if (confirm(`Archive ${p.name}?`) && (await call("promoters.remove", { id }))) router.replace("/booking"); };
   const unlinkVenue = (venueId: string) => call("promoters.update", { id, patch: { venueIds: p.venueIds.filter((x) => x !== venueId) } });
   const linkVenue = (venueId: string) => call("promoters.update", { id, patch: { venueIds: [...p.venueIds, venueId] } });
+  // A note saves itself; blank clears it.
+  const saveNote = async (key: "howToPitch" | "notes", next: string) => !!(await call("promoters.update", { id, patch: { [key]: next || null } }));
 
   const website = p.website ? <a className="underline" href={p.website} target="_blank" rel="noreferrer">{p.website}</a> : "";
   const contacts = (
-    <ContactsPanel kind="promoters" parentId={id} contactIds={p.contactIds} contacts={b.contacts}
-      editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />
+    <ContactsPanel kind="promoters" parentId={id} contactIds={p.contactIds} contacts={b.contacts} />
   );
   const venueRows = (
     <div className="grid">
       {venues.map((v) => (
-        <div key={v.id} className="d-row">
+        <div key={v.id} className="d-row" data-testid={`venue-${v.name}`}>
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <Link href={hrefFor("venue", v.id)} className="font-bold">{v.name}</Link>
             <span className="s">{v.address.city}</span>
           </div>
-          {edit.is("venues") && p.venueIds.includes(v.id) && (
-            <button type="button" className="btn danger sm" disabled={busy} onClick={() => unlinkVenue(v.id)}>Remove</button>
+          {p.venueIds.includes(v.id) && (
+            <RowX label={`Remove ${v.name} from this promoter`} disabled={busy} testid={`venue-remove-${v.name}`} onClick={() => void unlinkVenue(v.id)} />
           )}
         </div>
       ))}
@@ -86,34 +92,28 @@ function PromoterPage() {
             </div>
           } />
 
-        <DetailCard title="Contacts" edit={edit} editKey="contacts" editTestid="contacts-edit" children={contacts} editChildren={contacts} />
+        <DetailCard title="Contacts" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />} children={contacts} />
+        <AddContactDialog kind="promoters" parentId={id} parentName={p.name} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
 
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Venues they book" edit={edit} editKey="venues" editTestid="venues-edit"
-          children={venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
-          editChildren={
-            <>
-              {venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
-              {linkable.length > 0 && (
-                <select className="select" value="" disabled={busy}
-                  onChange={(e) => { if (e.target.value) void linkVenue(e.target.value); }}>
-                  <option value="">Link a venue…</option>
-                  {linkable.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              )}
-            </>
-          } />
+        <DetailCard private title="Venues they book" testid="promoter-venues"
+          headerExtra={<PlusButton label="Link a venue" testid="venues-add" onClick={() => setLinkingVenue(true)} />}
+          children={venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows} />
+        <PickDialog open={linkingVenue} onClose={() => { setError(null); setLinkingVenue(false); }} title="Link a venue" subtitle={`To ${p.name}`} testid="venues-add"
+          findLabel="Find it" placeholder="Venue name or city" addLabel="Link venue" busy={busy} error={error}
+          items={linkable.map((v) => ({ id: v.id, name: v.name, sub: v.address.city }))}
+          onPick={async (venueId) => !!(await linkVenue(venueId))} />
 
-        <DetailCard private title="Our notes" edit={edit} editKey="notes" testid="notes-private" editTestid="notes-edit"
-          children={<KV rows={[["How to pitch", p.howToPitch ?? ""], ["Notes", p.notes ?? ""]]} />}
-          editChildren={
-            <div>
-              <EntityForm testid="promoter-notes" fields={NOTES_FIELDS} initial={promoterForm.initial(p)} build={promoterForm.build}
-                autosave={{ command: "promoters.update", id, rev: note?.rev, title: `${p.name} notes` }} />
-            </div>
-          } />
+        <DetailCard private title="Our notes" testid="notes-private">
+          <KV rows={[
+            ["How to pitch", <InlineValue key="pitch" testid="promoter-howtopitch" label="How to pitch" kind="textarea" value={p.howToPitch ?? ""} canEdit
+              error={error} onSave={(next) => saveNote("howToPitch", next)} />],
+            ["Notes", <InlineValue key="notes" testid="promoter-notes" label="Notes" kind="textarea" value={p.notes ?? ""} canEdit
+              error={error} onSave={(next) => saveNote("notes", next)} />],
+          ]} />
+        </DetailCard>
       </CardGroup>
     </DetailPage>
   );

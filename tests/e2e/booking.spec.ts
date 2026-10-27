@@ -255,12 +255,11 @@ test("create a promoter, a festival with a year, and open a contact", async ({ p
   await page.getByTestId("new-festival-city").fill("Greeley");
   await page.getByTestId("new-festival-submit").click();
   await expect(page.getByTestId("festival-page")).toBeVisible();
-  await page.getByTestId("years-edit").click();
   await page.getByTestId("add-edition").click();
   await page.getByTestId("new-edition-label").fill("2099");
   await page.getByTestId("new-edition-submit").click();
-  await page.getByTestId("years-done").click();
-  const edition = page.getByTestId(/^edition-/).first();
+  await expect(page.getByTestId("year-add-dialog")).toBeHidden();
+  const edition = page.getByTestId("festival-years").getByTestId(/^edition-/).first();
   await expect(edition).toContainText("2099");
   await edition.getByRole("link").click();
   await expect(page.getByTestId("edition-page")).toBeVisible();
@@ -269,6 +268,79 @@ test("create a promoter, a festival with a year, and open a contact", async ({ p
   await page.getByTestId("booking-seg-contacts").click();
   await page.getByTestId(/^row-contact-/).first().getByTestId(/^contact-full-/).click();
   await expect(page.getByTestId("contact-page")).toBeVisible();
+});
+
+test("Works with, Venues they book and Years: a plus adds, an × removes, no Edit on the card", async ({ page }) => {
+  await signInAs(page, "jeff");
+  const stamp = Date.now();
+  const venue = `Room ${stamp}`, promoter = `Promo ${stamp}`, fest = `Fest ${stamp}`, person = `Booker ${stamp}`;
+  const create = async (kind: "venue" | "promoter" | "festival", name: string, city?: string) => {
+    await page.goto(A("/booking"));
+    await page.getByTestId("booking-add-actions").click();
+    await page.getByTestId(`add-${kind}`).click();
+    await page.getByTestId(`new-${kind}-name`).fill(name);
+    if (city) await page.getByTestId(`new-${kind}-city`).fill(city);
+    await page.getByTestId(`new-${kind}-submit`).click();
+    await expect(page.getByTestId(`${kind}-page`)).toBeVisible();
+  };
+  await create("venue", venue, "Lafayette");
+  await create("festival", fest, "Greeley");
+
+  // Years: the plus opens Add a year; Cancel closes but keeps the draft (as Add a contact does); × deletes after a confirm
+  const years = page.getByTestId("festival-years");
+  await expect(years.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
+  await page.getByTestId("add-edition").click();
+  const yearDialog = page.getByTestId("year-add-dialog");
+  await expect(yearDialog).toBeVisible();
+  await page.getByTestId("new-edition-label").fill("2098");
+  await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
+  await page.getByTestId("new-edition-cancel").click();
+  await expect(yearDialog).toBeHidden();
+  await page.getByTestId("add-edition").click();
+  await expect(page.getByTestId("new-edition-label")).toHaveValue("2098");
+  await page.getByTestId("new-edition-submit").click();
+  await expect(yearDialog).toBeHidden();
+  const year = years.getByTestId(/^edition-/).filter({ hasText: "2098" });
+  await expect(year).toHaveCount(1);
+  page.once("dialog", (d) => { expect(d.message()).toBe("Delete 2098?"); void d.accept(); });
+  await year.getByTestId(/^year-remove-/).click();
+  await expect(year).toHaveCount(0);
+  await expect(years).toContainText("No dates yet.");
+
+  // Venues they book: the plus finds the venue, Link venue; the × unlinks without asking
+  await create("promoter", promoter);
+  const booked = page.getByTestId("promoter-venues");
+  await expect(booked.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
+  await page.getByTestId("venues-add").click();
+  await expect(page.getByTestId("venues-add-dialog")).toBeVisible();
+  await page.getByTestId("venues-add-find").fill(venue);
+  await page.getByTestId("venues-add-hits").getByRole("button", { name: venue }).click();
+  await page.getByTestId("venues-add-submit").click();
+  await expect(page.getByTestId("venues-add-dialog")).toBeHidden();
+  await expect(booked.getByTestId(`venue-${venue}`)).toBeVisible();
+  await booked.getByTestId(`venue-remove-${venue}`).click();
+  await expect(booked.getByTestId(`venue-${venue}`)).toHaveCount(0);
+  await expect(booked).toContainText("None linked yet.");
+
+  // Works with: a new person on the promoter, then on their page link the festival and take them off it
+  await page.getByTestId("contact-add").click();
+  await page.getByTestId("contact-add-new").check();
+  await page.getByTestId("contact-form-name").fill(person);
+  await page.getByTestId("contact-add-submit").click();
+  await page.getByTestId(`contact-${person}`).getByRole("link", { name: person }).click();
+  await expect(page.getByTestId("contact-page")).toBeVisible();
+  const works = page.getByTestId("works-with");
+  await expect(works.getByRole("button", { name: /^Edit/ })).toHaveCount(0);
+  await expect(works.getByTestId(`works-${promoter}`)).toBeVisible();
+  await page.getByTestId("works-add").click();
+  await page.getByTestId("works-add-find").fill(fest);
+  await page.getByTestId("works-add-hits").getByRole("button", { name: fest }).click();
+  await page.getByTestId("works-add-submit").click();
+  await expect(page.getByTestId("works-add-dialog")).toBeHidden();
+  await expect(works.getByTestId(`works-${fest}`)).toBeVisible();
+  await works.getByTestId(`works-remove-${fest}`).click();
+  await expect(works.getByTestId(`works-${fest}`)).toHaveCount(0);
+  await expect(works.getByTestId(`works-${promoter}`)).toBeVisible();
 });
 
 test("Email templates: create one and edit it", async ({ page }) => {

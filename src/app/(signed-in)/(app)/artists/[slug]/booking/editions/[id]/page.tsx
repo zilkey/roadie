@@ -9,6 +9,7 @@ import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { BackLink, EntityForm, editionForm, hrefFor, useBooking, useNotFound, type Field } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { InlineValue } from "@/components/InlineValue";
 import { fmtDate, isActive } from "@/lib/booking";
 import { fmtLong, showName } from "@/lib/shows";
 import { withBandNote } from "@/lib/bandNotes";
@@ -16,9 +17,7 @@ import type { Edition, Show } from "@/schema";
 
 export default function Page() { return <AdminOnly><EditionPage /></AdminOnly>; }
 
-const byKey = (k: string) => editionForm.fields.find((x) => x.key === k)!;
 const aboutFields: Field[] = editionForm.fields.filter((x) => x.key !== "payNotes" && x.key !== "notes");
-const notesFields: Field[] = [byKey("payNotes"), byKey("notes")];
 const SURE: Record<string, string> = { estimated: "estimated", target: "our target" };
 
 function EditionPage() {
@@ -29,7 +28,7 @@ function EditionPage() {
   const b = useBooking();
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId], ["editionId", "==", id]] });
   const { call, error } = useCommand();
-  const edit = useSingleEdit<"about" | "notes">();
+  const edit = useSingleEdit<"about">();
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && p.target.id === id), [b.pitches, artistId, id]);
   const nf = useNotFound(loading, shared, "year");
   if (nf || !shared) return nf;
@@ -43,6 +42,8 @@ function EditionPage() {
   const myShows = [...(showRows.rows ?? [])].sort((a, c) => c.date.localeCompare(a.date));
   const dated = (d: { date: string; sure: string } | undefined) => d && <>{fmtDate(d.date)}{SURE[d.sure] && <span className="d-muted"> ({SURE[d.sure]})</span>}</>;
   const autosave = { command: "editions.update", id, rev: e.rev, title: name };
+  // A note saves itself; blank clears it.
+  const saveNote = async (key: "payNotes" | "notes", next: string) => !!(await call("editions.update", { id, patch: { [key]: next || null } }));
 
   return (
     <DetailPage testid="edition-page" back={<BackLink href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={name}
@@ -66,9 +67,13 @@ function EditionPage() {
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="edition-notes-card" editTestid="notes-edit"
-          editChildren={<div><EntityForm testid="edition-notes" fields={notesFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={{ ...autosave, rev: note?.rev, title: `${name} notes` }} /></div>}>
-          <KV rows={[["Pay", e.payNotes ?? ""], ["Notes", e.notes ?? ""]]} />
+        <DetailCard private title="Our notes" testid="edition-notes-card">
+          <KV rows={[
+            ["Pay", <InlineValue key="pay" testid="edition-pay" label="Pay" kind="text" value={e.payNotes ?? ""} canEdit
+              error={error} onSave={(next) => saveNote("payNotes", next)} />],
+            ["Notes", <InlineValue key="notes" testid="edition-notes" label="Notes" kind="textarea" value={e.notes ?? ""} canEdit
+              error={error} onSave={(next) => saveNote("notes", next)} />],
+          ]} />
         </DetailCard>
 
         <DetailCard private title="Our shows here" testid="edition-history">

@@ -1,7 +1,7 @@
 "use client";
 /**
- * Shared pieces of the show page. Every card edits on its own: Edit -> fields -> Cancel / Save (an explicit Save, not autosave).
- * The page's own Edit button puts every card on the current tab into edit mode at once (ShowEditProvider + useCardEdit).
+ * Shared pieces of the show page. A card flips into a form only when it really is one (Income, Expenses): pencil -> fields -> Cancel / Save.
+ * Everything else edits where it sits (InlineValue). There is no page-level Edit.
  *
  *   const ed = useCardEdit({ canEdit: admin, onStart: () => setForm(formOf(show)) });
  *   <EditableCard title="Sound" testid="sound" ed={ed} onSave={save} busy={busy} error={error}>
@@ -9,36 +9,26 @@
  *   </EditableCard>
  * onSave returns true when it saved; the card then goes back to view mode.
  */
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ErrorBox } from "@/components/ui";
+import { PencilButton } from "@/components/InlineValue";
 
-// ---------- edit every card on the tab ----------
-
-const EditAll = createContext(0);
-/** `round` goes up by one each time the page's Edit is pressed; cards that can edit open when it changes. */
-export function ShowEditProvider({ round, children }: { round: number; children: React.ReactNode }) {
-  return <EditAll.Provider value={round}>{children}</EditAll.Provider>;
-}
+// ---------- a card that flips ----------
 
 export interface CardEdit { editing: boolean; canEdit: boolean; start(): void; cancel(): void; done(): void }
 export function useCardEdit({ canEdit, onStart }: { canEdit: boolean; onStart?(): void }): CardEdit {
   const [editing, setEditing] = useState(false);
-  const round = useContext(EditAll);
-  const seen = useRef(round);
   const startRef = useRef(onStart); startRef.current = onStart;
   const start = () => { if (!canEdit) return; startRef.current?.(); setEditing(true); };
-  useEffect(() => {
-    if (round === seen.current) return;
-    seen.current = round;
-    if (canEdit && !editing) start();
-  }, [round]); // eslint-disable-line react-hooks/exhaustive-deps
   return { editing, canEdit, start, cancel: () => setEditing(false), done: () => setEditing(false) };
 }
 
 // ---------- the card ----------
 
-export function EditableCard({ title, testid, ed, badge, aside, onSave, onCancel, busy, error, saveLabel = "Save", footLeft, children }: {
+export function EditableCard({ title, editLabel, testid, ed, badge, aside, onSave, onCancel, busy, error, saveLabel = "Save", footLeft, children }: {
   title: React.ReactNode; testid: string; ed: CardEdit;
+  /** The pencil's aria-label is "Edit <title>"; pass this when `title` is a node. */
+  editLabel?: string;
   /** Beside the title (AdminOnlyBadge). */
   badge?: React.ReactNode;
   /** Right of the header in view mode, before Edit ("3 of 4"). */
@@ -56,7 +46,7 @@ export function EditableCard({ title, testid, ed, badge, aside, onSave, onCancel
         {ed.editing ? <span className="tag">Editing</span> : (
           <div className="flex items-center gap-2">
             {aside}
-            {ed.canEdit && <button type="button" className="card-edit" onClick={ed.start} data-testid={`${testid}-edit`}>Edit</button>}
+            {ed.canEdit && <PencilButton label={`Edit ${editLabel ?? (typeof title === "string" ? title : testid)}`} onClick={ed.start} testid={`${testid}-edit`} />}
           </div>
         )}
       </div>

@@ -177,3 +177,27 @@ test("rehearsals page splits into Upcoming and Past tables", async ({ browser })
   await expect(past.getByText("The Loft")).toHaveCount(0);
   await close();
 });
+
+/** The Notes card edits in place: an admin taps the text, types, leaves it, and it saves; a member reads plain text. */
+test("rehearsal notes edit in place for an admin and read as plain text for a member", async ({ browser }) => {
+  const note = `Run the new ending twice ${Date.now()}`;
+  const { page, close } = await as(browser, "jeff");
+  await openRehearsal(page, "Oct 29");
+  const card = page.getByTestId("reh-notes-card");
+  await expect(card.getByTestId("reh-edit")).toHaveCount(0); // no flip, no Done
+  await card.getByTestId("reh-notes").click();
+  await page.getByTestId("reh-notes-input").fill(note);
+  await page.getByTestId("reh-notes-input").blur();
+  await expect(page.getByTestId("reh-notes-saved")).toBeVisible();
+  await expect(card.getByTestId("reh-notes")).toContainText(note);
+  await page.reload();
+  await expect(page.getByTestId("reh-notes-card")).toContainText(note);
+  await close();
+
+  const david = await as(browser, "david");
+  await openRehearsal(david.page, "Oct 29");
+  await expect(david.page.getByTestId("reh-notes-card")).toContainText(note);
+  await expect(david.page.getByTestId("reh-notes")).toHaveCount(0);
+  await expect(david.page.getByTestId("reh-notes-card").getByRole("button")).toHaveCount(0);
+  await david.close();
+});

@@ -1,6 +1,7 @@
 "use client";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
@@ -8,6 +9,8 @@ import { useDoc } from "@/lib/firestore-hooks";
 import { BackLink, CopyButton, EntityForm, contactForm, hrefFor, useBooking, useNotFound, type Values } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { ShowLinks } from "@/components/shows/common";
+import { InlineValue, PlusButton } from "@/components/InlineValue";
+import { PickDialog, RowX, type PickItem } from "@/components/booking/PickDialog";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Contact } from "@/schema";
 
@@ -15,19 +18,13 @@ export default function Page() { return <AdminOnly><ContactPage /></AdminOnly>; 
 
 type Parent = "venues" | "promoters" | "festivals";
 const PARENT: Record<"venue" | "promoter" | "festival", Parent> = { venue: "venues", promoter: "promoters", festival: "festivals" };
-const PARENT_LABEL: Record<Parent, string> = { venues: "Venues", promoters: "Promoters", festivals: "Festivals" };
+const PARENT_NOUN: Record<Parent, string> = { venues: "venue", promoters: "promoter", festivals: "festival" };
 
 // Each card autosaves its own fields, so each form builds only its own keys: a key left out would be cleared on the server.
-/** Contact info: everything but the notes (the notes card saves those). */
+/** Contact info: everything but the notes (the notes card saves those in place, into this band's contactNotes). */
 const infoForm = {
   fields: contactForm.fields.filter((f) => f.key !== "notes"),
   build: (v: Values) => Object.fromEntries(Object.entries(contactForm.build(v)).filter(([k]) => k !== "notes")),
-};
-/** Notes: this band's private notes on the contact only (contactNotes). */
-const notesForm = {
-  fields: contactForm.fields.filter((f) => f.key === "notes"),
-  initial: (d: Contact): Values => ({ notes: d.notes ?? "" }),
-  build: (v: Values) => ({ notes: v.notes?.trim() || undefined }),
 };
 
 function ContactPage() {
@@ -35,8 +32,9 @@ function ContactPage() {
   const router = useRouter();
   const { doc: shared, loading } = useDoc<Contact>("contacts", id);
   const b = useBooking();
-  const { call, error, busy } = useCommand();
-  const edit = useSingleEdit<"info" | "works" | "notes">();
+  const { call, error, busy, setError } = useCommand();
+  const edit = useSingleEdit<"info">();
+  const [linking, setLinking] = useState(false);
   const nf = useNotFound(loading, shared, "contact");
   if (nf || !shared) return nf;
   const note = b.bandNotes.contacts.get(id);
@@ -46,16 +44,15 @@ function ContactPage() {
     ...b.promoters.filter((x) => x.contactIds.includes(id)).map((x) => ({ kind: "promoter" as const, id: x.id, name: x.name })),
     ...b.festivals.filter((x) => x.contactIds.includes(id)).map((x) => ({ kind: "festival" as const, id: x.id, name: x.name })),
   ];
-  // Things this contact is not linked to yet, for the "Works with" picker.
-  const free: Record<Parent, { id: string; name: string }[]> = {
-    venues: b.venues.filter((x) => !x.contactIds.includes(id)).sort((x, y) => x.name.localeCompare(y.name)),
-    promoters: b.promoters.filter((x) => !x.contactIds.includes(id)).sort((x, y) => x.name.localeCompare(y.name)),
-    festivals: b.festivals.filter((x) => !x.contactIds.includes(id)).sort((x, y) => x.name.localeCompare(y.name)),
-  };
+  // Things this contact is not linked to yet, for the "Works with" plus: `<kind>:<id>`, the kind and city on the muted line.
+  const places: [Parent, { id: string; name: string; contactIds: string[]; address?: { city?: string } }[]][] = [["venues", b.venues], ["promoters", b.promoters], ["festivals", b.festivals]];
+  const free: PickItem[] = places.flatMap(([k, rows]) => rows
+    .filter((x) => !x.contactIds.includes(id))
+    .map((x) => ({ id: `${k}:${x.id}`, name: x.name, sub: [PARENT_NOUN[k], x.address?.city].filter(Boolean).join(" · ") })));
   const archive = async () => { if (confirm(`Archive ${c.name}?`) && (await call("contacts.remove", { id }))) router.replace("/booking"); };
   const link = async (value: string) => {
     const [kind, parentId] = value.split(":");
-    if (kind && parentId) await call("contacts.attach", { contactId: id, kind, id: parentId });
+    return kind && parentId ? call("contacts.attach", { contactId: id, kind, id: parentId }) : undefined;
   };
 
   const infoRows: [string, React.ReactNode][] = [
@@ -88,46 +85,27 @@ function ContactPage() {
           <KV rows={infoRows} />
         </DetailCard>
 
-        <DetailCard title="Works with" editKey="works" edit={edit} editTestid="works-edit"
-          editChildren={
-            <div className="grid gap-3">
-              {at.map((a) => (
-                <div key={a.kind + a.id} className="d-row">
-                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2"><b>{a.name}</b><span className="d-muted">{a.kind}</span></div>
-                  <button type="button" className="btn danger sm" disabled={busy}
-                    onClick={() => call("contacts.detach", { contactId: id, kind: PARENT[a.kind], id: a.id })}>Remove</button>
-                </div>
-              ))}
-              <label className="grid gap-1">
-                <span className="lbl">Add a venue, festival or promoter</span>
-                <select className="select" value="" disabled={busy} data-testid="works-link" onChange={(e) => void link(e.target.value)}>
-                  <option value="">Choose…</option>
-                  {(Object.keys(free) as Parent[]).map((k) => free[k].length > 0 && (
-                    <optgroup key={k} label={PARENT_LABEL[k]}>
-                      {free[k].map((x) => <option key={x.id} value={`${k}:${x.id}`}>{x.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </label>
-            </div>
-          }>
+        <DetailCard title="Works with" testid="works-with" headerExtra={<PlusButton label="Link a venue, festival or promoter" testid="works-add" onClick={() => setLinking(true)} />}>
           {at.length === 0 ? <div className="empty"><span>Not linked to anything yet.</span></div> : at.map((a) => (
-            <Link key={a.kind + a.id} href={hrefFor(a.kind, a.id)} className="d-row">
-              <b>{a.name}</b><span className="d-muted">{a.kind}</span>
-            </Link>
+            <div key={a.kind + a.id} className="d-row" data-testid={`works-${a.name}`}>
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <Link href={hrefFor(a.kind, a.id)} className="font-bold">{a.name}</Link><span className="d-muted">{a.kind}</span>
+              </div>
+              <RowX label={`Remove ${c.name} from ${a.name}`} disabled={busy} testid={`works-remove-${a.name}`}
+                onClick={() => void call("contacts.detach", { contactId: id, kind: PARENT[a.kind], id: a.id })} />
+            </div>
           ))}
+          {at.length > 0 && <span className="s" data-testid="works-foot">× takes {c.name} off that place; they stay in Contacts.</span>}
         </DetailCard>
+        <PickDialog open={linking} onClose={() => { setError(null); setLinking(false); }} title="Link a place" subtitle={`For ${c.name}`} testid="works-add"
+          findLabel="Find it" placeholder="Name, kind or city" addLabel="Link" busy={busy} error={error} items={free}
+          onPick={async (value) => !!(await link(value))} />
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="notes-private" editTestid="notes-edit"
-          editChildren={
-            <div>
-              <EntityForm testid="contact-notes" fields={notesForm.fields} initial={notesForm.initial(c)} build={notesForm.build}
-                autosave={{ command: "contacts.update", id, rev: note?.rev, title: `${c.name} notes` }} />
-            </div>
-          }>
-          {c.notes ? <div className="whitespace-pre-wrap">{c.notes}</div> : <span className="d-muted">—</span>}
+        <DetailCard private title="Our notes" testid="notes-private">
+          <InlineValue testid="contact-notes" label="Notes" kind="textarea" value={c.notes ?? ""} canEdit error={error}
+            onSave={async (next) => !!(await call("contacts.update", { id, patch: { notes: next || null } }))} />
         </DetailCard>
 
         <DetailCard private title="House concerts hosted">

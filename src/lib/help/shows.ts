@@ -48,9 +48,10 @@ export const SHOW_TOPICS: HelpTopic[] = [
     id: "showPage",
     title: "A show's page",
     text: [
-      "A show's page has three tabs: \"Show Details\", \"Setlist\" and \"Finances\". The title shows the venue and date, with a status pill (Hold, Confirmed, Played, Canceled or Dropped). Admins can press the pill to change status, and use \"Edit\" to open every card on the tab.",
-      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add to calendar…\", which previews the event and its invites before sending it to the band calendar; saving a show never changes the calendar. A new show starts with the venue's day-of contact. Picking someone else, or \"Create new…\", also saves them as a day-of contact on the venue), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
-      "In Promotion, admins can \"Publish to Bandsintown\", \"Take off Bandsintown\" or \"Sync Bandsintown now\". Only Confirmed shows get listed.",
+      "A show's page has three tabs: \"Show Details\", \"Setlist\" and \"Finances\". The title shows the venue and date, with a status pill (Hold, Confirmed, Played, Canceled or Dropped). Admins can press the pill to change status. There is no page-wide Edit: tap a value on a card to change it, and it saves when you leave it.",
+      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add to calendar…\", which previews the event and its invites before sending it to the band calendar; saving a show never changes the calendar. Admins press the pencil to change the venue, date or kind of show: it saves as you go and Done closes it. Tap a time or the set length to change it; it saves when you leave it. A new show starts with the venue's day-of contact; tap the day-of contact to pick someone from the venue, \"Someone else…\" (added to the venue's contacts as a day-of contact) or None), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
+      "In Who's playing, admins tap a person to put them on the show or take them off; it saves at once. Picking a lineup under \"Billed as\" fills in its players. \"Ask who's free\" sits in the card's header, and the answers show under the players.",
+      "In Promotion, admins tap the ticket link to change it (it saves when you leave it), add a doc with the plus beside Docs and take one off with its ×. Admins can also \"Publish to Bandsintown\", \"Take off Bandsintown\" or \"Sync Bandsintown now\". Only Confirmed shows get listed.",
       "Checklists sit beside every tab, and Comments are at the bottom.",
       "\"How'd it go?\" is a separate admin page for a show that's happened: star ratings for the show and venue, crowd, paid attendance and notes. Saving it marks the show played.",
     ].join("\n\n"),
@@ -137,7 +138,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "Custom fields are the band's own extra facts, each a label with a text value: Capo or Tuning on songs, Parking or Hotel on shows.",
       "Admins define them in Artist settings, \"Custom fields\": a \"Show fields\" card and a \"Song fields\" card. Use \"New field\" to add one, the pencil to rename, the bin to delete, and drag to reorder. The table counts how many records have a value for each.",
-      "Values are filled in on the record. For songs, an admin presses \"Edit\" on the song page. For shows, it's the admin-only \"Custom fields\" card on Show Details. A blank value isn't stored.",
+      "Values are filled in on the record. For songs, an admin presses \"Edit\" on the song page. For shows, it's the admin-only \"Custom fields\" card on Show Details: tap a value, type, and it saves in place when you leave it. A blank value isn't stored.",
       "Deleting a field asks first, and removes its values from every show or song that has one.",
     ].join("\n\n"),
     related: ["songs", "showPage"],
@@ -148,7 +149,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "The Rehearsals page lists rehearsals, newest first: Date, Where, Band members (initials), Songs (\"N songs\") and a Recording chip. Click a row to open it. Admins get \"Create Rehearsal\".",
       "Creating one takes: When, Where, Band members, Songs (search and add, with an optional note each), Notes and a Recording. \"Create Rehearsal\" creates it. The songs on a rehearsal are what the song page's \"Last rehearsed\" uses.",
-      "A rehearsal's page autosaves for admins: date and times, a Location card (with \"Open in Maps\"), a Songs card (an \"Add a song…\" search, or \"Import from setlist\"; × removes one), Band members with \"Coming\" boxes, Recordings (\"Attach from Google Drive\") and an Expenses card. \"+ Add an expense\" is where gas to rehearsal gets logged.",
+      "A rehearsal's page autosaves for admins: date and times, a Location card (with \"Open in Maps\"), a Songs card (an \"Add a song…\" search, or \"Import from setlist\"; × removes one), Band members with \"Coming\" boxes, Notes (tap the text, or \"Add…\", type, and click away to save), Recordings (\"Attach from Google Drive\") and an Expenses card. \"+ Add an expense\" is where gas to rehearsal gets logged.",
       "The › on a song opens that song at this rehearsal: Notes (autosaved; they show under the song on the rehearsal) and Recordings. \"Upload a recording\" puts the file in Drive, in the rehearsal recordings folder chosen on Settings > Google, inside a folder for the rehearsal's date (one already named with the date is reused, otherwise \"{date} Rehearsal\" is made), shares it with the band, and adds it to the song's files too.",
     ].join("\n\n"),
     related: ["songs", "expenses", "setlistTemplates"],

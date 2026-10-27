@@ -445,8 +445,6 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .d-card.editing { border: 2px solid var(--accent); padding: 17px 21px 21px; }
 .d-ch { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: -6px 0 -4px; }
 .d-ct { margin: 0; font-size: 18px; font-weight: 700; color: var(--ink); display: flex; align-items: center; gap: 8px; }
-.d-edit { font: inherit; font-size: 15px; font-weight: 600; color: var(--accent-text); background: none; border: 0; padding: 0 8px; min-height: 44px; cursor: pointer; }
-.d-edit:focus-visible { outline: 2px solid var(--accent); border-radius: 8px; }
 .d-tag { font-size: 12px; font-weight: 700; color: var(--accent-soft-text); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; }
 .d-kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 16px; font-size: 15px; }
 .d-k { font-size: 13px; font-weight: 600; color: var(--muted); padding-top: 2px; }
@@ -567,3 +565,40 @@ mark { background: var(--quiet); color: inherit; }
 .reply-card { display: grid; gap: 10px; padding: 14px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--panel); }
 .to-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .to-row .to-input { flex: 1; min-width: 160px; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; min-height: 32px; }
+
+/* ---------- click to edit: the value is the control ---------- */
+.val { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; margin: 0 -10px; border-radius: 8px; border: 0; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; max-width: 100%; }
+.val:hover { background: var(--divider); }
+.val:focus-visible { outline: 2px solid var(--accent); }
+.val .pen { color: var(--muted); opacity: 0; flex: none; }
+.val:hover .pen, .val:focus-visible .pen { opacity: 1; }
+@media (hover: none) { .val .pen { opacity: .55; } }
+.val.add { color: var(--muted); font-weight: 600; }
+.val-saved { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--success-text); }
+.ib { width: 44px; height: 44px; border-radius: 10px; border: 0; background: none; color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.ib:hover { background: var(--accent-soft); }
+.ib:focus-visible { outline: 2px solid var(--accent); }
+
+/* ---------- story C: Promotion docs, an × per row (hover; always on touch) ---------- */
+.doc-x { color: var(--muted); opacity: 0; flex: none; }
+.doc-row:hover .doc-x, .doc-x:focus-visible { opacity: 1; }
+@media (hover: none) { .doc-x { opacity: 1; } }
+
+/* ---------- E: Contacts card rows and the Add a contact dialog ---------- */
+.row-x { flex: none; width: 44px; height: 44px; border: 0; border-radius: 10px; background: none; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; }
+.d-row:hover .row-x, .row-x:focus-visible { opacity: 1; }
+.row-x:hover { background: var(--danger-soft); color: var(--danger); }
+.row-x:focus-visible { outline: 2px solid var(--accent); }
+@media (hover: none) { .row-x { opacity: .6; } }
+.contact-roles .pick { position: relative; }
+.contact-roles .pick::after { content: ""; position: absolute; inset: -6px 0; } /* 44 px to tap, 32 px to see */
+dialog.dlg > div { position: relative; }
+.dlg-x { position: absolute; top: 6px; right: 6px; color: var(--muted); }
+.seg.wide { display: flex; width: 100%; }
+.seg.wide label { flex: 1 1 0; justify-content: center; min-height: 44px; }
+.hit-list { display: grid; border: 1px solid var(--line); border-radius: 12px; padding: 4px; max-height: 18rem; overflow-y: auto; }
+.hit-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 12px; min-height: 52px; padding: 6px 12px; border: 0; border-radius: 10px; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.hit-row:hover, .hit-row[aria-pressed="true"] { background: var(--divider); }
+.hit-row[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.hit-row:focus-visible { outline: 2px solid var(--accent); }
+.dlg-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid var(--divider); }

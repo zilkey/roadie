@@ -6,9 +6,11 @@ import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, VENUE_SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
 import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { AddContactDialog } from "@/components/booking/AddContactDialog";
+import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import {
-  BackLink, ContactsPanel, EntityForm, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type VenueRow,
+  BackLink, ContactsPanel, EntityForm, hrefFor, roomForm, useBooking, useNotFound, type VenueRow,
 } from "@/components/booking/common";
 import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
@@ -17,7 +19,6 @@ import type { Show, Venue } from "@/schema";
 
 const ROOM_KEYS = ["name", "street", "city", "state", "zip", "type", "capacity", "website"];
 const roomFields = ROOM_KEYS.map((k) => roomForm.fields.find((f) => f.key === k)!);
-const notesFields = venueNotesForm.fields.map((f) => (f.key === "loadInNotes" ? { ...f, label: "Load-in" } : f));
 const href = (u: string) => (u.startsWith("http") ? u : `https://${u}`);
 
 /**
@@ -34,8 +35,10 @@ export default function VenuePage() {
   const types = useVenueTypes();
   const shows = useCollection<Show>("shows", { where: [["venue.id", "==", id], ["artistId", "==", artistId]] });
   const { call, error } = useCommand();
-  const edit = useSingleEdit<"about" | "contacts" | "notes">();
+  const edit = useSingleEdit<"about" | "contacts">();
   const [merging, setMerging] = useState(false);
+  const [addingContact, setAddingContact] = useState(false);
+  const [linking, setLinking] = useState(false); // the Booked by plus shows the promoter picker
   const mergedInto = v?.deletedAt ? v.mergedInto : undefined;
   useEffect(() => { if (mergedInto) router.replace(hrefFor("venue", mergedInto)); }, [mergedInto, router]);
   const nf = useNotFound(loading, v && !v.deletedAt ? v : null, "venue");
@@ -55,7 +58,10 @@ export default function VenuePage() {
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(street)}`;
   const typeLabel = venueTypeLabel(types, v.type);
   const unlink = (pid: string) => call("venues.update", { id, patch: { promoterIds: mine.promoterIds.filter((x) => x !== pid) } });
-  const contacts = <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} roles={mine} editing={edit.is("contacts")} pitchId={b.pitches.find((p) => p.target.kind === "venue" && p.target.id === id && isActive(p.status))?.id} onWantEdit={() => edit.open("contacts")} />;
+  const canLink = b.promoters.some((p) => !promoters.some((x) => x.id === p.id));
+  // A note saves itself; blank clears it.
+  const saveNote = async (key: "loadInNotes" | "notes", next: string) => !!(await call("venues.update", { id, patch: { [key]: next || null } }));
+  const contacts = <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} roles={mine} pitchId={b.pitches.find((p) => p.target.kind === "venue" && p.target.id === id && isActive(p.status))?.id} />;
 
   return (
     <DetailPage testid="venue-page"
@@ -96,31 +102,31 @@ export default function VenuePage() {
       </CardGroup>
       {admin && (
         <CardGroup kind="private">
-          <DetailCard private title="Contacts" editKey="contacts" edit={edit} editTestid="contacts-edit" editChildren={contacts}>{contacts}</DetailCard>
-          <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="notes-private" editTestid="notes-edit" doneTestid="notes-done"
-            editChildren={
-              <div className="grid gap-3">
-                <div className="grid gap-2">
-                  <span className="lbl">Booked by</span>
+          <DetailCard private title="Contacts" testid="contacts-card" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>{contacts}</DetailCard>
+          <AddContactDialog kind="venues" parentId={id} parentName={v.name} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
+          <DetailCard private title="Our notes" testid="notes-private">
+            <KV rows={[
+              ["Booked by", (
+                <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
                   {promoters.length === 0 && <span className="d-muted">Books directly</span>}
                   {promoters.map((p) => (
-                    <div key={p.id} className="flex items-center gap-2">
+                    <span key={p.id} className="group inline-flex items-center">
                       <Link href={hrefFor("promoter", p.id)} className="underline" data-testid={`booked-by-${p.id}`}>{p.name}</Link>
-                      {mine.promoterIds.includes(p.id) && <button type="button" className="btn ghost sm" data-testid={`booked-by-remove-${p.id}`} onClick={() => unlink(p.id)}>Remove</button>}
-                    </div>
+                      {/* A promoter that lists this venue itself has no ×: unlink it from the promoter's page. */}
+                      {mine.promoterIds.includes(p.id) && (
+                        <button type="button" className="row-x group-hover:opacity-100" aria-label={`Unlink ${p.name}`} title={`Unlink ${p.name}`}
+                          data-testid={`booked-by-remove-${p.id}`} onClick={() => void unlink(p.id)}><XIcon /></button>
+                      )}
+                    </span>
                   ))}
-                  <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} />
+                  {linking ? <PromoterPicker venueId={id} current={mine.promoterIds} all={b.promoters} call={call} onClose={() => setLinking(false)} />
+                    : canLink && <PlusButton label="Link a promoter" className="!h-9 !w-9" onClick={() => setLinking(true)} testid="booked-by-add" />}
                 </div>
-                <div>
-                  <EntityForm testid="notes" fields={notesFields} initial={venueNotesForm.initial(mine)} build={venueNotesForm.build}
-                    autosave={{ command: "venues.update", id, rev: note?.rev, title: `${v.name} notes` }} />
-                </div>
-              </div>
-            }>
-            <KV rows={[
-              ["Booked by", promoters.length ? <span className="inline-flex flex-wrap gap-x-3">{promoters.map((p) => <Link key={p.id} href={hrefFor("promoter", p.id)} className="underline" data-testid={`booked-by-${p.id}`}>{p.name}</Link>)}</span> : <span className="d-muted">Books directly</span>],
-              ["Load-in", mine.loadInNotes ?? ""],
-              ["Notes", mine.notes ?? ""],
+              )],
+              ["Load-in", <InlineValue key="loadin" testid="venue-loadin" label="Load-in" kind="textarea" value={mine.loadInNotes ?? ""} canEdit
+                onSave={(next) => saveNote("loadInNotes", next)} error={error} />],
+              ["Notes", <InlineValue key="notes" testid="venue-notes" label="Notes" kind="textarea" value={mine.notes ?? ""} canEdit
+                placeholder="Anything the band should know" onSave={(next) => saveNote("notes", next)} error={error} />],
             ]} />
           </DetailCard>
           <DetailCard private title={`Our shows here (${past.length})`}>
@@ -181,14 +187,21 @@ function MergePanel({ v, venues, open, onClose, onDone }: { v: Venue & { id: str
   );
 }
 
-function PromoterPicker({ venueId, current, all, call }: { venueId: string; current: string[]; all: { id: string; name: string; venueIds: string[] }[]; call: (n: string, i: unknown) => Promise<unknown> }) {
+/** Opened by Booked by's plus: picking a promoter links it and closes; leaving it (or Escape) closes it unchanged. */
+function PromoterPicker({ venueId, current, all, call, onClose }: { venueId: string; current: string[]; all: { id: string; name: string; venueIds: string[] }[]; call: (n: string, i: unknown) => Promise<unknown>; onClose(): void }) {
   const linked = new Set([...current, ...all.filter((p) => p.venueIds.includes(venueId)).map((p) => p.id)]);
   const options = all.filter((p) => !linked.has(p.id));
   if (!options.length) return null;
   return (
-    <select className="select" value="" data-testid="promoter-link" onChange={(e) => e.target.value && call("venues.update", { id: venueId, patch: { promoterIds: [...linked, e.target.value] } })}>
+    <select className="select !w-auto" value="" autoFocus aria-label="Link a promoter" data-testid="promoter-link" onBlur={onClose}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } }}
+      onChange={(e) => { if (!e.target.value) return; void call("venues.update", { id: venueId, patch: { promoterIds: [...linked, e.target.value] } }); onClose(); }}>
       <option value="">Booked by a promoter…</option>
       {options.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
     </select>
   );
 }
+
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M18 6L6 18M6 6l12 12" /></svg>
+);

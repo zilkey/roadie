@@ -24,6 +24,7 @@ import { ExpensesCardFor } from "@/components/money/ExpensesCard";
 import { Tabs } from "@/components/booking/common";
 import { DetailCard, DetailPage, KV, useSingleEdit } from "@/components/booking/DetailCards";
 import { SongSearch } from "@/components/music/SongSearch";
+import { InlineValue } from "@/components/InlineValue";
 import { CalendarSend } from "@/components/CalendarSend";
 
 export default function RehearsalPage() { return <Suspense><Page /></Suspense>; }
@@ -205,11 +206,12 @@ function NewRehearsal({ m }: { m: Music }) {
 
 type Tab = "info" | "money";
 const TABS: Tab[] = ["info", "money"];
-type CardKey = "when" | "notes";
+type CardKey = "when";
 
 /**
  * One column of cards, like the booking detail pages, with Info and Money tabs like a show. Info: When & where, Band members,
- * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; a card's Edit opens it and Done closes it. Songs has no
+ * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; When & where's pencil opens it and Done closes it; Notes
+ * edits in place (tap the text, leave it, saved). Songs has no
  * Edit: admins add from the search box and remove with ×; each song's chevron opens its notes and recordings for this rehearsal.
  */
 function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: boolean }) {
@@ -337,9 +339,12 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
           )}
         </DetailCard>
 
-        <DetailCard private title="Notes" testid="reh-notes-card" editKey="notes" edit={admin ? edit : undefined} editTestid="reh-edit" doneTestid="reh-notes-done" onDone={flush}
-          editChildren={<textarea className="input" rows={3} aria-label="Notes" value={form.notes} onChange={(e) => change({ ...form, notes: e.target.value })} onBlur={flush} data-testid="reh-notes" />}>
-          {form.notes ? <p className="m-0 whitespace-pre-wrap">{form.notes}</p> : <span className="d-muted">No notes.</span>}
+        <DetailCard private title="Notes" testid="reh-notes-card">
+          {admin ? (
+            // Saves through the page's autosave (a failure shows in its Saved/Couldn't save status and retries).
+            <InlineValue testid="reh-notes" label="Notes" kind="textarea" value={form.notes} canEdit
+              onSave={async (next) => { change({ ...form, notes: next }); await as.flush(); return true; }} />
+          ) : form.notes ? <p className="m-0 whitespace-pre-wrap">{form.notes}</p> : <span className="d-muted">No notes.</span>}
         </DetailCard>
 
         <DetailCard private title="Recordings" testid="reh-recordings-card"
