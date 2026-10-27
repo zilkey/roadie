@@ -132,9 +132,34 @@ export function PitchDates({ pitchId, dates, onDatesChange, onBlur, personnel, p
           </table>
         </div>
       </div>
+      <MyDates pitchId={pitchId} dates={dates} />
       <div className="d-sep" />
       <AskAboutDates pitchId={pitchId} cols={cols} defaultIds={personnel} place={placeName} musicians={musicians} />
     </>
+  );
+}
+
+/** The signed-in admin's own answer for each of the pitch's dates, asked or not. */
+function MyDates({ pitchId, dates }: { pitchId: string; dates: string[] }) {
+  const { musicianId } = useProfile();
+  const { asks } = usePitchAsks(pitchId);
+  const { call, busy, error } = useCommand();
+  if (!musicianId || !dates.length) return null;
+  return (
+    <div className="grid gap-3" data-testid="my-dates">
+      <h3 className="text-[17px] font-semibold">Can you play?</h3>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {sortedDates(dates).map((d) => {
+          const on = asks.filter((a) => a.date === d && !a.deletedAt);
+          const r = on.map((a) => a.responses[musicianId]).find((x) => !!x);
+          return (
+            <DateAnswerCard key={d} busy={busy} onAnswer={(answer, note) => call("availability.answerPitchDate", { pitchId, date: d, answer, ...(note ? { note } : {}) })}
+              ask={{ id: d, date: d, title: fmtLong(d), closed: on.length > 0 && on.every((a) => !!a.closedAt), answer: r?.answer, note: r?.note }} />
+          );
+        })}
+      </div>
+      <ErrorBox error={error} />
+    </div>
   );
 }
 

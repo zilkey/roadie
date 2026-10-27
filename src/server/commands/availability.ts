@@ -205,6 +205,37 @@ export const availabilityAnswer = defineCommand({
   }),
 });
 
+export const availabilityAnswerPitchDate = defineCommand({
+  name: "availability.answerPitchDate", roles: ["admin"],
+  description: "Answer 'Can you play?' for yourself (signed in) on one of a pitch's dates, asked or not: any admin can say if they're free once a date is on the pitch. " +
+    "Uses the date's open ask on the pitch, or starts one for just you if there is none.",
+  input: z.strictObject({ pitchId: z.string().min(1), date: dateStr, answer, note: z.string().max(500).optional() }),
+  async run(ctx, i) {
+    const me = ctx.musicianId;
+    if (!me) throw new AppError("forbidden", "Your login isn't linked to anyone in the band", 403);
+    const pitch = await db.get("pitches", i.pitchId);
+    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
+    const asks = await db.list("availability", (q) => q.where("pitchId", "==", i.pitchId).where("date", "==", i.date));
+    if (!(pitch.dates as string[]).includes(i.date) && !asks.length) throw new AppError("invalid_input", "That date isn't on this pitch", 400);
+    const response = { answer: i.answer, ...(i.note?.trim() ? { note: i.note.trim() } : {}), by: "self" as const };
+    const open = asks.filter((a) => !a.closedAt && !a.deletedAt).sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))[0];
+    if (!open && asks.some((a) => !a.deletedAt)) throw new AppError("closed", "This question is closed.", 409);
+    if (!open) {
+      return db.create(ctx, "availability", {
+        date: i.date, label: `${pitch.target?.name ? `${pitch.target.name} · ` : ""}${fmtLong(i.date)}`, pitchId: i.pitchId,
+        askedMusicianIds: [me], responses: { [me]: { ...response, at: new Date() } }, linkTokens: {},
+      });
+    }
+    return run(ctx, async (w) => {
+      const cur = (await w.get("availability", open.id))!;
+      const asked = cur.askedMusicianIds as string[];
+      return w.update("availability", open.id, {
+        responses: { ...cur.responses, [me]: { ...response, at: w.now } }, askedMusicianIds: asked.includes(me) ? asked : [...asked, me],
+      });
+    });
+  },
+});
+
 export const availabilityClose = defineCommand({
   name: "availability.close", roles: [...ROLES], input: idInput, description: "Close the question: answers stop coming in.",
   run: (ctx, { id }) => run(ctx, async (w) => {
@@ -218,4 +249,4 @@ export const availabilityReopen = defineCommand({
   run: (ctx, { id }) => db.update(ctx, "availability", id, { closedAt: null }),
 });
 
-export const availabilityCommands = [availabilityAsk, availabilityRemind, availabilityMark, availabilityAnswer, availabilityClose, availabilityReopen];
+export const availabilityCommands = [availabilityAsk, availabilityRemind, availabilityMark, availabilityAnswer, availabilityAnswerPitchDate, availabilityClose, availabilityReopen];

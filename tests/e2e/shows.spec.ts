@@ -198,6 +198,12 @@ test("Ask who's free: one email per person for every date, a sub answers each da
   await expect(page.getByTestId("free-Sam-2027-03-12")).toHaveText("Maybe");
   await expect(page.getByTestId("free-David-2027-03-12")).toHaveText("Can't");
   await expect(page.getByTestId("free-total-2027-03-06")).toHaveText(/^1 of \d+$/);
+
+  // Jeff answers for himself on a date nobody asked him about
+  await page.reload();
+  await expect(page.getByTestId("my-dates")).toBeVisible();
+  await page.getByTestId("my-dates").getByTestId("answer-2027-03-19-yes").click();
+  await expect(page.getByTestId("my-dates").getByTestId("answer-2027-03-19-saved")).toBeVisible();
 });
 
 test("Shows list: title row with New show and no subtitle; one table per tab; the tab survives a reload", async ({ page, browser }) => {

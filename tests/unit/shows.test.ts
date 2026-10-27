@@ -518,6 +518,40 @@ test("availability: admin marks answers, reminds only those waiting (fresh links
   assert.ok(registry["availability.answer"].roles.includes("member") && !registry["availability.ask"].roles.includes("member"));
 });
 
+test("availability.answerPitchDate: an admin says if they're free for a pitch date, asked or not", async () => {
+  await cmd("pitches.update", { id: pitchId, patch: { dates: ["2027-01-16", "2027-01-17"] } });
+  const jeff = { ...ctx, musicianId: ids.jeff };
+  // no ask on the date yet: one is made with just the admin
+  const made = await cmd("availability.answerPitchDate", { pitchId, date: "2027-01-16", answer: "yes", note: " after 6 " }, jeff);
+  let av = (await db.get("availability", made.id))!;
+  assert.equal(av.pitchId, pitchId);
+  assert.equal(av.date, "2027-01-16");
+  assert.deepEqual(av.askedMusicianIds, [ids.jeff]);
+  assert.equal(av.responses[ids.jeff].answer, "yes");
+  assert.equal(av.responses[ids.jeff].note, "after 6");
+  assert.equal(av.responses[ids.jeff].by, "self");
+  // answering again changes the same ask
+  await cmd("availability.answerPitchDate", { pitchId, date: "2027-01-16", answer: "no" }, jeff);
+  assert.equal((await db.list("availability", (q) => q.where("pitchId", "==", pitchId))).length, 1);
+  assert.equal((await db.get("availability", made.id))!.responses[ids.jeff].answer, "no");
+
+  // an open ask the admin wasn't on: they're added to it
+  const asked = await cmd("availability.ask", { pitchId, date: "2027-01-17", musicianIds: [ids.david, ids.sam] });
+  await cmd("availability.answerPitchDate", { pitchId, date: "2027-01-17", answer: "maybe" }, jeff);
+  av = (await db.get("availability", asked.id))!;
+  assert.deepEqual(av.askedMusicianIds, [ids.david, ids.sam, ids.jeff]);
+  assert.equal(av.responses[ids.jeff].answer, "maybe");
+
+  // a date that isn't on the pitch (and has no ask) is refused
+  await assert.rejects(cmd("availability.answerPitchDate", { pitchId, date: "2027-02-01", answer: "yes" }, jeff), /isn't on this pitch/);
+  // closed
+  await cmd("availability.close", { id: asked.id });
+  await assert.rejects(cmd("availability.answerPitchDate", { pitchId, date: "2027-01-17", answer: "yes" }, jeff), /closed/);
+  // admins only, and they need to be someone in the band
+  assert.deepEqual(registry["availability.answerPitchDate"].roles, ["admin"]);
+  await assert.rejects(cmd("availability.answerPitchDate", { pitchId, date: "2027-01-16", answer: "yes" }), /isn't linked/);
+});
+
 test("availability: Signal asks send nothing, keep sign-in people's links on remind, and are app-only", async () => {
   await makeUser("david@example.com", "member", { name: "David", musicianId: ids.david });
   const actx = { ...ctx, artistId: TEST_ARTIST };
