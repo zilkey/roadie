@@ -131,9 +131,9 @@ function PitchPage() {
 
   return (
     <div className="show-page" data-testid="pitch-page">
-      <PageTitle back={<BackLink href="/booking/pitches" label="All pitches" />} title={p.target.name}
+      <PageTitle back={<BackLink href="/booking/pitches" label="Pitch List" />} title={p.target.name}
         sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
-          <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">Open {p.target.kind === "edition" ? "festival year" : p.target.kind}</Link></>}
+          <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">{p.target.kind === "venue" ? "Venue" : p.target.kind === "promoter" ? "Promoter" : "Festival"} page</Link></>}
         pill={<StatusPill status={p.status} />}
         actions={<div className="flex items-center gap-2">
           {p.status !== "declined" && p.status !== "dropped" && <button type="button" className="btn acc" onClick={() => setBooking(true)} disabled={busy} data-testid="booked-it">Booked it</button>}
@@ -225,7 +225,7 @@ function PitchPage() {
           </form>
         )}
       </section>
-      {p.status !== "dropped" && <div className="flex justify-end"><button type="button" className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button></div>}
+      {p.status !== "dropped" && <div className="flex justify-start"><button type="button" className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button></div>}
     </div>
   );
 }

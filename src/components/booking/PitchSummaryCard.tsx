@@ -4,20 +4,11 @@ import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useCollection } from "@/lib/firestore-hooks";
 import { Flagged, FlagIcon, PitchDates, StatusPill, type PitchRow } from "@/components/booking/common";
 import { fmtDate, isActive, todayStr } from "@/lib/booking";
+import { ms, pastPitches, pitchOutcome, pitchWhen } from "@/lib/pitchSummary";
 import type { Edition, User } from "@/schema";
 
-type Stamp = { toMillis(): number };
-const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
 const monDay = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
 const monYear = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: BAND_TIME_ZONE });
-
-/** How a finished pitch ended, as the card says it. */
-export const pitchOutcome = (p: Pick<PitchRow, "status" | "showIds">) =>
-  p.status === "booked" || p.showIds.length > 0 ? "Became a show" : p.status === "declined" ? "Declined" : "Dropped";
-/** When a past pitch happened: its last contact, else when it was made. */
-export const pitchWhen = (p: Pick<PitchRow, "lastContactAt" | "createdAt">) => ms(p.lastContactAt) || ms(p.createdAt);
-/** Pitches that ended, newest first. */
-export const pastPitches = (mine: PitchRow[]) => mine.filter((p) => !isActive(p.status)).sort((a, b) => pitchWhen(b) - pitchWhen(a));
 
 const ACTIVE_BORDER = "color-mix(in srgb, var(--accent) 45%, var(--border))";
 
