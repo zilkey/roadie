@@ -128,12 +128,28 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await expect(page.getByTestId("item-2")).toHaveAttribute("data-kind", "break");
   await expect(page.getByTestId("fit")).toHaveCount(0); // a template has no show
 
-  await page.getByTestId("item-1").getByTestId("item-up").click();
+  await expect(page.getByTestId("item-up")).toHaveCount(0); // drag is the only way to reorder
+  await expect(page.getByTestId("item-2").getByTestId("item-alt")).toHaveCount(0); // a break has no alternates
+
+  // Alt pins an alternate under Glass Coast; it adds no time
+  await page.getByTestId("item-0").getByTestId("item-alt").click();
+  await expect(page.getByTestId("alt-dialog")).toBeVisible();
+  await page.getByTestId("alt-search").fill("weather");
+  await page.getByTestId("alt-dialog").getByTestId("song-search-option").filter({ hasText: "Weathervane" }).click();
+  await expect(page.getByTestId("alt-dialog")).toBeHidden();
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect(page.getByTestId("item-0").getByTestId("alt-title")).toHaveText(["Weathervane"]);
+  await expect(page.getByTestId("total-time")).toHaveText("9:32");
+
+  // the alternate drags with its song
+  await page.getByTestId("item-1").dragTo(page.getByTestId("item-0"));
   await expect(titles).toHaveText(["Weathervane", "Glass Coast", "Talk / tune"]);
+  await expect(page.getByTestId("item-1").getByTestId("alt-title")).toHaveText(["Weathervane"]);
   await page.getByTestId("item-2").dragTo(page.getByTestId("item-0"));
   await expect(titles).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
   await page.reload();
   await expect(titles).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
+  await expect(page.getByTestId("item-2").getByTestId("alt-title")).toHaveText(["Weathervane"]);
 
   // open the seeded Hi-Dive show (Nov 14; other tests add more Hi-Dive shows) and seed its Setlist tab from the template
   await page.goto(A("/shows"));
@@ -146,9 +162,13 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await page.getByTestId("seed-confirm").click();
   await expect(page.getByTestId("seed-dialog")).toBeHidden();
   await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
+  await expect(page.getByTestId("item-2").getByTestId("alt-title")).toHaveText(["Weathervane"]); // seeding brings the alternate
   await expect(page.getByTestId("total-time")).toHaveText("9:32 of 45:00");
   await expect(page.getByTestId("fit")).toHaveText("Fits");
   await expect(page.getByTestId("setlist-total")).toHaveAttribute("data-over", "0");
+  await page.getByTestId("item-2").getByTestId("alt-remove").click();
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect(page.getByTestId("alt")).toHaveCount(0);
 
   // the show's average transition is saved on the show and counted between the two songs
   await expect(page.getByTestId("transition")).toHaveValue("30");

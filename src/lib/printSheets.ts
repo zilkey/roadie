@@ -4,20 +4,21 @@
  *
  * A setlist is one flat list of songs and breaks: breaks split it into sets ("Set 1", "Set 2", ...). Song numbers run on
  * across sets. A break ends its set and prints as a dashed box when "breaks" is among the fields; the last set has none
- * unless the list ends with a break.
+ * unless the list ends with a break. With "alts" among the fields, a song's alternates print under it (titles only, no number,
+ * and they add nothing to the set's length).
  */
 import type { SongField } from "@/schema";
 import type { PrintOptions } from "@/schema/print";
 import { fmtLen } from "@/lib/music";
-import { FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, songFieldId } from "@/lib/print";
+import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, songFieldId } from "@/lib/print";
 
 export interface PrintSong { id: string; title: string; shortTitle?: string; key?: string; lengthSec?: number; fields?: { fieldId: string; value: string }[] }
-export interface PrintItem { type: "song" | "break"; songId?: string; title: string; lengthSec?: number; key?: string; note?: string }
+export interface PrintItem { type: "song" | "break"; songId?: string; title: string; lengthSec?: number; key?: string; note?: string; alts?: { songId: string; title: string }[] }
 
 /** One extra-field value printed on a song row. */
 export interface RowField { id: string; label: string; value: string }
 export type SheetRow =
-  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; /** band copy: after the key; otherwise under the title or in columns */ fields: RowField[] }
+  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; /** band copy: after the key; otherwise under the title or in columns */ fields: RowField[]; /** alternate titles, when "alts" is picked */ alts?: string[] }
   | { kind: "break"; /** e.g. "Merch + tip jar · BREAK 15" */ text: string };
 export interface PrintSet { name: string; lengthSec: number; rows: SheetRow[] }
 /**
@@ -85,6 +86,7 @@ export function buildSheets(input: BuildInput): BuildResult {
     ...songFields.filter((f) => picked.has(songFieldId(f.id))).map((f) => ({ id: songFieldId(f.id), label: f.label })),
   ];
   const showBreaks = picked.has(FIELD_BREAKS);
+  const showAlts = picked.has(FIELD_ALTS);
   const songCount = input.items.filter((i) => i.type === "song").length;
   const layout: RowLayout = !mine ? "list" : selected.length >= 3 && songCount > 8 ? "table" : "underTitle";
 
@@ -117,7 +119,12 @@ export function buildSheets(input: BuildInput): BuildResult {
     curSongs++;
     cur.lengthSec += sec;
     const key = item.key ?? song?.key;
+    const titleOf = (id: string | undefined, fallback: string) => {
+      const s = id ? songsById.get(id) : undefined;
+      return options.titles === "short" && s?.shortTitle ? s.shortTitle : s?.title ?? fallback;
+    };
     const title = options.titles === "short" && song?.shortTitle ? song.shortTitle : item.title;
+    const alts = showAlts && item.alts?.length ? { alts: item.alts.map((a) => titleOf(a.songId, a.title)) } : {};
     const value = (id: string): string => {
       if (id === FIELD_KEY) return key ?? "";
       if (id === FIELD_LENGTH) return fmtLen(sec || undefined);
@@ -126,13 +133,13 @@ export function buildSheets(input: BuildInput): BuildResult {
     if (layout === "list") {
       // The key right after the title, then the other picked fields that have a value.
       const fields = selected.filter((f) => f.id !== FIELD_KEY).flatMap((f) => { const v = value(f.id); return v ? [{ id: f.id, label: f.label, value: v }] : []; });
-      cur.rows.push({ kind: "song", n, title, key: picked.has(FIELD_KEY) && key ? key : undefined, fields });
+      cur.rows.push({ kind: "song", n, title, key: picked.has(FIELD_KEY) && key ? key : undefined, fields, ...alts });
     } else {
       const fields = selected.flatMap((f) => {
         const v = value(f.id);
         return layout === "table" ? [{ id: f.id, label: f.label, value: v || "—" }] : v ? [{ id: f.id, label: f.label, value: v }] : [];
       });
-      cur.rows.push({ kind: "song", n, title, fields });
+      cur.rows.push({ kind: "song", n, title, fields, ...alts });
     }
   }
   if (curSongs || !sets.length) sets.push(cur);

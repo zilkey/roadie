@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { entity, serverMask, id } from "./common";
 
+/** A song the band might play instead of the one it's pinned to. A copy like the item's own; it never counts toward the set's time. */
+export const SetlistAlt = z.strictObject({
+  songId: id,
+  title: z.string(),
+  key: z.string().optional(),
+});
 export const SetlistItem = z.strictObject({
   type: z.enum(["song", "break"]),
   songId: id.optional(),
@@ -8,6 +14,8 @@ export const SetlistItem = z.strictObject({
   lengthSec: z.number().int().optional(),
   key: z.string().optional(),
   note: z.string().optional(),
+  /** Song items only: alternates pinned to this song, in the order they were added. They move with it. */
+  alts: z.array(SetlistAlt).optional(),
 });
 /** Reusable list: setlistTemplates/{autoId}. Song items are references; no show link. */
 export const SetlistTemplate = entity({

@@ -124,6 +124,7 @@ function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) 
         <div className="ps-stack">
           <span className="ps-t">{row.title}</span>
           {row.fields.length > 0 && <span className="ps-fields">{row.fields.map((f) => f.value).join(" · ")}</span>}
+          <Alts row={row} />
         </div>
       </div>
     );
@@ -131,14 +132,21 @@ function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) 
   return (
     <div className="ps-row" data-testid="print-row">
       <span className="ps-n">{row.n}</span>
-      <span className="ps-t">
-        {row.title}
-        {row.key && <span className="ps-key" data-testid="print-key">{row.key}</span>}
-        {row.fields.length > 0 && <span className="ps-key" data-testid="print-fields">{row.fields.map(listField).join(" · ")}</span>}
+      <span className="ps-stack">
+        <span className="ps-t">
+          {row.title}
+          {row.key && <span className="ps-key" data-testid="print-key">{row.key}</span>}
+          {row.fields.length > 0 && <span className="ps-key" data-testid="print-fields">{row.fields.map(listField).join(" · ")}</span>}
+        </span>
+        <Alts row={row} />
       </span>
     </div>
   );
 }
+
+/** A song's alternates, small on one line under its title. */
+const Alts = ({ row }: { row: Extract<SheetRow, { kind: "song" }> }) =>
+  row.alts?.length ? <span className="ps-alts" data-testid="print-alts">alt: {row.alts.join(" · ")}</span> : null;
 
 /** A band-copy field after the title: Length is plain ("4:05"); a song field names itself ("Capo 2"). */
 const listField = (f: RowField) => (f.id.startsWith("field:") ? `${f.label} ${f.value}` : f.value);
@@ -160,6 +168,7 @@ function Table({ sheet }: { sheet: PrintSheet }) {
                 <span className="ps-n">{r.n}</span>
                 <span className="ps-t">{r.title}</span>
                 {r.fields.map((f) => <span key={f.id} className="ps-tf">{f.value}</span>)}
+                {r.alts?.length ? <span className="ps-talt"><Alts row={r} /></span> : null}
               </div>
             ))}
         </div>
@@ -191,6 +200,8 @@ const CSS = `
 .ps-stack{display:flex;flex-direction:column;gap:calc(var(--u) * .07);min-width:0}
 .ps-under{margin-bottom:calc(var(--u) * .2)}
 .ps-fields{font-size:calc(var(--u) * .43);font-weight:600;line-height:1.2}
+.ps-alts{font-size:calc(var(--u) * .5);font-weight:600;font-style:italic;line-height:1.15;color:#555}
+.ps-trow > .ps-talt{grid-column:2 / -1;padding-top:0}
 .ps-break{margin-top:calc(var(--u) * .1);border:1.5px dashed #767676;border-radius:6px;padding:calc(var(--u) * .19) calc(var(--u) * .31);font-size:calc(var(--u) * .69);font-weight:600;font-style:italic}
 .ps-table{display:grid;column-gap:calc(var(--u) * .3);align-content:start}
 .ps-table > .ps-th{font-size:calc(var(--u) * .54);font-weight:700;letter-spacing:.06em;color:#555}

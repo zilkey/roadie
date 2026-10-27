@@ -62,7 +62,8 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "The Setlist tab is that show's own list of songs and breaks. It saves by itself as you change it, with a saved/saving status beside the buttons.",
       "Admins start one with \"Seed from template\" or \"Copy from another show\". If the list already has songs, you choose \"Add to end\" or \"Replace list\". The result is a copy: later edits to either side don't change the other.",
-      "\"+ Song\" lists only songs that are Playing or Learning. \"+ Break\" adds a named break with a length (default \"Talk / tune\", 1:00). Drag, or use the arrows, to reorder; the ✕ removes an item. Members can read it.",
+      "\"+ Song\" lists only songs that are Playing or Learning. \"+ Break\" adds a named break with a length (default \"Talk / tune\", 1:00). Drag to reorder; the ✕ removes an item. Members can read it.",
+      "\"Alt\" on a song opens a song search: the song you pick is pinned under it in orange as an alternate, and drags with it. A song can have several; ✕ removes one. Alternates don't count toward the running time. Seeding or copying a list brings its alternates, and Print has an \"Alternates\" box to print them under their songs.",
       "The total card compares the list's running time with the show's set length (from Where & when): \"Fits\", or how much it runs over.",
     ].join("\n\n"),
     related: ["setlistTemplates", "songs", "showPage"],

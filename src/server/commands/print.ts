@@ -25,7 +25,7 @@ export const setlistsPrintLink = defineCommand({
     "Get a link to the print page for a setlist template (setlistId) or a show's setlist (showId): exactly one. It only builds the link; nothing is printed, " +
     "so never say you printed it: give the person the link (or the Print button) and let them press Print. For \"tonight's setlist\", call context.now first, find today's show and pass its id as showId. " +
     "Options left out come from the caller's saved print choices, then the defaults. copy: band|mine; sheets: one|perSet; titles: wrap|short; header: boolean; transitions: boolean (set lengths count the show's song-to-song transitions; default true); paper: letter|a4. " +
-    "fields lists the extra columns to show: \"key\", \"length\", \"breaks\", or \"field:<songFieldId>\" for a custom song field (ids are in records.get artists, songFields). " +
+    "fields lists the extra columns to show: \"key\", \"length\", \"breaks\", \"alts\" (alternate songs, printed small under the song they're pinned to), or \"field:<songFieldId>\" for a custom song field (ids are in records.get artists, songFields). " +
     "Returns {url (absolute), path, options}.",
   input: z.strictObject({
     setlistId: z.string().min(1).optional(), showId: z.string().min(1).optional(),

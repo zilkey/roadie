@@ -4,7 +4,7 @@ import { CloseIcon } from "@/components/Sheet";
 import { Select } from "@/components/ui";
 import { useArtistRouter, useHref } from "@/lib/artist";
 import { runCommand } from "@/lib/commands";
-import { FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, PAPER, defaultPrintOptions, printPath, pxToPt, songFieldId } from "@/lib/print";
+import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, PAPER, defaultPrintOptions, printPath, pxToPt, songFieldId } from "@/lib/print";
 import type { PrintOptions, PrintPaper } from "@/schema/print";
 import { PrintSheets } from "./PrintSheets";
 import { usePrintSheets } from "./usePrintSheets";
@@ -74,7 +74,7 @@ export function PrintDialog({ setlistId, onClose }: { setlistId: string; onClose
   const sheetCount = fit?.sheetCount ?? result?.sheets.length ?? 1;
   const sheetLabel = `${sheetCount} ${sheetCount === 1 ? "sheet" : "sheets"}`;
   const ptLabel = fit ? `${pxToPt(fit.px)} pt` : "…";
-  const fields: [string, string][] = [[FIELD_KEY, "Key"], [FIELD_LENGTH, "Length"], ...songFields.map((f): [string, string] => [songFieldId(f.id), f.label]), [FIELD_BREAKS, "Breaks"]];
+  const fields: [string, string][] = [[FIELD_KEY, "Key"], [FIELD_LENGTH, "Length"], ...songFields.map((f): [string, string] => [songFieldId(f.id), f.label]), [FIELD_BREAKS, "Breaks"], [FIELD_ALTS, "Alternates"]];
   const scale = opts && result ? (PREVIEW_W[opts.sheets === "perSet" && result.sheets.length > 1 ? "perSet" : "one"]) / (PAPER[opts.paper].wIn * 96) : 1;
 
   const seg = <T extends string>(label: string, value: T, choices: { v: T; label: string; testid: string; disabled?: boolean }[], onPick: (v: T) => void) => (

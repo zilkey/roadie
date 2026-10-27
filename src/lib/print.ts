@@ -7,6 +7,8 @@ import type { PrintOptions, PrintPaper } from "@/schema/print";
 export const FIELD_KEY = "key";
 export const FIELD_LENGTH = "length";
 export const FIELD_BREAKS = "breaks";
+/** Alternates pinned to a song print small under it. Off by default. */
+export const FIELD_ALTS = "alts";
 /** The extra-field id for one of the artist's song fields. */
 export const songFieldId = (id: string) => `field:${id}`;
 

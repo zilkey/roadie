@@ -175,3 +175,16 @@ test("printQuery round-trips transitions; a link without it keeps the fallback",
   assert.deepEqual(parsePrintQuery(new URLSearchParams(printQuery(off)), defaultPrintOptions(2)), off);
   assert.equal(parsePrintQuery(new URLSearchParams("copy=band"), defaultPrintOptions(2)).transitions, true);
 });
+
+test("buildSheets: alternates print under their song only when Alternates is on, with short titles, and add no length", () => {
+  const songs = songs5();
+  const items = items5().map((i, n) => (n === 0 ? { ...i, alts: [{ songId: songs[2].id, title: "stale copy" }, { songId: "gone", title: "Off the list" }] } : i));
+  const plain = buildSheets(base({ items, songs }));
+  assert.equal(songRows(rowsOf(plain))[0].alts, undefined);
+  const on = buildSheets(base({ items, songs, options: opts({ fields: ["breaks", "alts"] }) }));
+  assert.deepEqual(songRows(rowsOf(on))[0].alts, [songs[2].title, "Off the list"]);
+  assert.equal(on.totalSec, plain.totalSec);
+  assert.equal(on.songCount, plain.songCount);
+  const short = songs.map((s, n) => (n === 2 ? { ...s, shortTitle: "Shorty" } : s));
+  assert.deepEqual(songRows(rowsOf(buildSheets(base({ items, songs: short, options: opts({ fields: ["alts"], titles: "short" }) }))))[0].alts, ["Shorty", "Off the list"]);
+});

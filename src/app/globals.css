@@ -13,6 +13,7 @@
   --admin-empty: #fffdf8; --admin-empty-border: #d9c28f;
   --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #d6336c; --quiet: #FFF6CC;
   --unfinished: #fff6dc; --unfinished-text: #3d3a2e; --owed-text: #6e5410;
+  --alt-bg: #ffe9d9; --alt-border: #f2b78c; --alt-text: #8f3d00;
   --shadow: rgb(28 27 34 / .14); --backdrop: rgb(28 27 34 / .5);
   --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235f5d6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
   --ctl-h: 44px;
@@ -34,6 +35,7 @@
     --admin-empty: #241d0f; --admin-empty-border: #5c4a22;
     --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #f06595; --quiet: #3A3418;
     --unfinished: #2e2814; --unfinished-text: #ecdfb8; --owed-text: #e7c870;
+    --alt-bg: #3a2416; --alt-border: #6e4223; --alt-text: #ffb07a;
     --shadow: rgb(0 0 0 / .45); --backdrop: rgb(0 0 0 / .6);
     --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a3a1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 6l4.5 4.5L12.5 6'/%3E%3C/svg%3E");
     color-scheme: dark;
@@ -414,6 +416,9 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sl-row { background: var(--panel); border-color: var(--line); }
 .sl-row.break { background: color-mix(in srgb, var(--soft) 70%, var(--panel)); }
 .sl-row.nolen { background: var(--admin-bg); border-color: var(--admin-border); }
+/* An alternate pinned under its song: orange, so it never reads as part of the set's running order. */
+.sl-alt { background: var(--alt-bg); border-color: var(--alt-border); color: var(--ink); }
+.sl-alt-tag { flex: none; color: var(--alt-text); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 13px; }
 
 /* Booking detail pages (venue, festival, promoter, contact): one column of cards, shared ones carry a yellow top bar (everyone sees them), the band's private ones plain. */

@@ -256,10 +256,15 @@ export const songsRemove = defineCommand({
 const ItemIn = z.strictObject({
   type: z.enum(["song", "break"]), songId: z.string().min(1).optional(), title: z.string().optional(),
   lengthSec: z.number().int().min(0).optional(), key: z.string().optional(), note: z.string().optional(),
-}).refine((i) => i.type === "break" || !!i.songId || !!i.title?.trim(), "A song item needs a songId or a title");
+  // Alternates pinned to a song: library songs only (title and key come from the song). Extra keys a stored copy carries
+  // (title, key) are dropped, so a list read back with records.get can be resent as is.
+  alts: z.array(z.object({ songId: z.string().min(1) })).optional(),
+}).refine((i) => i.type === "break" || !!i.songId || !!i.title?.trim(), "A song item needs a songId or a title")
+  .refine((i) => i.type === "song" || !i.alts?.length, "Only a song can have alternates");
 
-/** Ids of the library songs already on a stored list of items. */
-const songIdsOf = (items: unknown) => new Set(((items ?? []) as { songId?: string }[]).flatMap((i) => i.songId ?? []));
+/** Ids of the library songs already on a stored list of items, alternates included. */
+const songIdsOf = (items: unknown) => new Set(((items ?? []) as { songId?: string; alts?: { songId: string }[] }[])
+  .flatMap((i) => [...(i.songId ? [i.songId] : []), ...(i.alts ?? []).map((a) => a.songId)]));
 
 /**
  * Song items take title, length and key from the song; breaks default to 1:00 "Break". A song still in the Writing
@@ -267,6 +272,25 @@ const songIdsOf = (items: unknown) => new Set(((items ?? []) as { songId?: strin
  * song that moved back to Writing can still be saved. `skipWriting` drops them instead (seeding copies another list).
  */
 async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { keep?: Set<string>; skipWriting?: boolean } = {}) {
+  /** The library song for a songId, or null when it's in Writing and `skipWriting` drops it. Same rules for alternates. */
+  const song = async (songId: string) => {
+    const s = await w.get("songs", songId);
+    if (!s || s.deletedAt) throw new AppError("not_found", `Song ${songId} not found`, 404);
+    if (s.status === "writing" && !opts.keep?.has(s.id)) {
+      if (opts.skipWriting) return null;
+      throw new AppError("invalid_input", `${s.title} is still being written. Move it to Learning or Playing to put it on a setlist.`, 400);
+    }
+    return s;
+  };
+  const alts = async (i: z.infer<typeof ItemIn>) => {
+    const out: { songId: string; title: string; key?: string }[] = [];
+    for (const a of i.alts ?? []) {
+      if (a.songId === i.songId || out.some((x) => x.songId === a.songId)) continue;
+      const s = await song(a.songId);
+      if (s) out.push({ songId: s.id, title: s.title as string, ...(s.key ? { key: s.key as string } : {}) });
+    }
+    return out.length ? { alts: out } : {};
+  };
   const out = [];
   for (const i of items) {
     if (i.type === "break") {
@@ -278,18 +302,16 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
       out.push({
         type: "song" as const, title: i.title!.trim(),
         ...(i.lengthSec != null ? { lengthSec: i.lengthSec } : {}), ...(i.key ? { key: i.key } : {}), ...(i.note ? { note: i.note } : {}),
+        ...await alts(i),
       });
       continue;
     }
-    const s = await w.get("songs", i.songId);
-    if (!s || s.deletedAt) throw new AppError("not_found", `Song ${i.songId} not found`, 404);
-    if (s.status === "writing" && !opts.keep?.has(s.id)) {
-      if (opts.skipWriting) continue;
-      throw new AppError("invalid_input", `${s.title} is still being written. Move it to Learning or Playing to put it on a setlist.`, 400);
-    }
+    const s = await song(i.songId);
+    if (!s) continue;
     out.push({
       type: "song" as const, songId: s.id, title: s.title as string,
       ...(s.lengthSec != null ? { lengthSec: s.lengthSec as number } : {}), ...(s.key ? { key: s.key as string } : {}), ...(i.note ? { note: i.note } : {}),
+      ...await alts(i),
     });
   }
   return out;
@@ -298,7 +320,7 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
 export const setlistTemplatesCreate = defineCommand({
   name: "setlistTemplates.create",
   roles: ["admin", "mcp"],
-  description: "Create a reusable setlist template from songs and breaks, in order. totalSec is computed. Seed a show's setlist from it with setlists.seed.",
+  description: "Create a reusable setlist template from songs and breaks, in order. A song item can carry alts: [{ songId }], alternate songs pinned to it (they don't count toward the time). totalSec is computed. Seed a show's setlist from it with setlists.seed.",
   input: z.strictObject({ name: z.string().min(1), items: z.array(ItemIn).default([]) }),
   run: (ctx, { name, items }) => run(ctx, async (w) => w.create("setlistTemplates", { name, items: await resolveItems(w, items) })),
 });
@@ -340,7 +362,7 @@ async function upsertShowSetlist(w: Writer, showId: string, items: Record<string
 export const setlistsSetItems = defineCommand({
   name: "setlists.setItems",
   roles: ["admin", "mcp"],
-  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song; songs still in the Writing phase can't be added. totalSec is computed.",
+  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song; songs still in the Writing phase can't be added. A song item can carry alts: [{ songId }], alternate songs pinned to it, which move with it and don't count toward the time. totalSec is computed.",
   input: z.strictObject({ showId: z.string().min(1), items: z.array(ItemIn) }),
   run: (ctx, { showId, items }) => run(ctx, async (w) => {
     await upsertShowSetlist(w, showId, await resolveItems(w, items, { keep: songIdsOf((await w.get("setlists", showId))?.items) }));
@@ -350,7 +372,7 @@ export const setlistsSetItems = defineCommand({
 export const setlistsSeed = defineCommand({
   name: "setlists.seed",
   roles: ["admin", "mcp"],
-  description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, with song titles, lengths and keys refreshed from the songs). " +
+  description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, alternates included, with song titles, lengths and keys refreshed from the songs). " +
     'mode "replace" swaps the whole list (default), "append" adds to the end. Records where it came from; later edits to either side don\'t touch the other. Copying another show\'s setlist with mode "replace" also copies its average transition (transitionSec). ' +
     'Returns { showId, added, total (items), lengthSec (the full length: songs + breaks + transitions), transitionSec }.',
   input: z.strictObject({

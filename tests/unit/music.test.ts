@@ -324,6 +324,47 @@ test("setlists: a song still in the Writing phase can't be added; one already on
   assert.equal((await db.get("setlists", show2))!.items[0].songId, a);
 });
 
+test("setlists: alternates ride on their song: copied from the song, no time, carried by seeding, renamed with the song, Writing rules apply", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", status: "active", lengthSec: 232, key: "F#m" })).id;
+  const b = (await cmd("songs.create", { title: "Weathervane", status: "active", lengthSec: 250, key: "D" })).id;
+  const c = (await cmd("songs.create", { title: "Low Tide", status: "learning", lengthSec: 200 })).id;
+  const w = (await cmd("songs.create", { title: "Halfway Home", status: "writing" })).id;
+  const v = (await cmd("venues.create", venue("Hi-Dive"))).id;
+  const mkShow = async (date: string) => (await cmd("shows.create", { pitchId: (await cmd("pitches.flag", { kind: "venue", id: v })).id, date, venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
+  const show = await mkShow("2027-01-16");
+
+  // the song itself and a repeat are dropped; title and key come from the song; only the main songs count
+  await cmd("setlists.setItems", { showId: show, items: [{ type: "song", songId: a, alts: [{ songId: b }, { songId: a }, { songId: c }, { songId: b }] }, { type: "song", songId: c }] });
+  let sl = (await db.get("setlists", show))!;
+  assert.deepEqual(sl.items[0].alts, [{ songId: b, title: "Weathervane", key: "D" }, { songId: c, title: "Low Tide" }]);
+  assert.equal(sl.totalSec, 432);
+  // a stored copy can be sent back as is
+  await cmd("setlists.setItems", { showId: show, items: sl.items });
+  assert.equal((await db.get("setlists", show))!.items[0].alts.length, 2);
+
+  await assert.rejects(cmd("setlists.setItems", { showId: show, items: [{ type: "break", title: "B", alts: [{ songId: b }] }] }), /Only a song/);
+  await assert.rejects(cmd("setlists.setItems", { showId: show, items: [{ type: "song", songId: a, alts: [{ songId: w }] }] }), /still being written/);
+  await assert.rejects(cmd("setlistTemplates.create", { name: "T", items: [{ type: "song", songId: a, alts: [{ songId: "nope" }] }] }), /not found/i);
+
+  // renaming an alternate's song renames its copy
+  await cmd("songs.update", { id: b, patch: { title: "Weathervane (slow)" } });
+  sl = (await db.get("setlists", show))!;
+  assert.equal(sl.items[0].alts[0].title, "Weathervane (slow)");
+
+  // a template's alternates seed into a show; one that went back to Writing is left out, and an alt already there can stay
+  await cmd("songs.update", { id: w, patch: { status: "active" } });
+  const t = (await cmd("setlistTemplates.create", { name: "T", items: [{ type: "song", songId: a, alts: [{ songId: w }, { songId: b }] }] })).id;
+  await cmd("songs.update", { id: w, patch: { status: "writing" } });
+  await cmd("setlistTemplates.update", { id: t, patch: { items: [{ type: "song", songId: a, alts: [{ songId: w }, { songId: b }] }] } });
+  const show2 = await mkShow("2027-02-20");
+  await cmd("setlists.seed", { showId: show2, from: { kind: "template", id: t } });
+  assert.deepEqual((await db.get("setlists", show2))!.items[0].alts.map((x: { songId: string }) => x.songId), [b]);
+  // copying another show's list brings its alternates
+  const show3 = await mkShow("2027-03-20");
+  await cmd("setlists.seed", { showId: show3, from: { kind: "show", id: show } });
+  assert.deepEqual((await db.get("setlists", show3))!.items[0].alts.map((x: { songId: string }) => x.songId), [b, c]);
+});
+
 test("rehearsals: import songs from a setlist template (append and replace, breaks skipped); set and clear the location", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
