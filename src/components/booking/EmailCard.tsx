@@ -18,7 +18,7 @@ const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month
  * The Email card on a pitch: the Gmail threads of the pitch's place (venue, promoter or festival), newest first. Threads
  * belong to the place, so they stay when the pitch closes. `children` is the inline compose panel, shown while `open`.
  */
-export function EmailCard({ target, open, onNew, children }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; open: boolean; onNew(): void; children?: ReactNode }) {
+export function EmailCard({ target, pitchId, open, onNew, children }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId?: string; open: boolean; onNew(): void; children?: ReactNode }) {
   const { artistId } = useArtist();
   const b = useBooking();
   const { call, error, busy } = useCommand();
@@ -56,7 +56,10 @@ export function EmailCard({ target, open, onNew, children }: { target: { kind: "
     <section className="card" data-testid="pitch-email-card">
       <div className="card-head">
         <h2>Email · {threads.length} thread{threads.length === 1 ? "" : "s"}</h2>
-        <button type="button" className="btn acc" onClick={onNew} aria-expanded={open} data-testid="email-toggle">New email</button>
+        <div className="flex items-center gap-2">
+          <Link href={`/booking/email/search?target=${target.kind}:${target.id}${pitchId ? `&pitch=${pitchId}` : ""}`} className="btn sm" data-testid="search-gmail">Search Gmail</Link>
+          <button type="button" className="btn acc" onClick={onNew} aria-expanded={open} data-testid="email-toggle">New email</button>
+        </div>
       </div>
       <ErrorBox error={error} />
       {open && children}

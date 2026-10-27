@@ -14,7 +14,10 @@ import type { MailMessage, MailThread } from "../integrations/gmail";
 import { unfilledFields } from "@/lib/booking";
 import { snippetOf } from "@/lib/email-text";
 import { sanitizeHtml, htmlToText } from "@/lib/email-html";
-import { emailThreadId, email as emailSchema } from "@/schema";
+import { signatureOf } from "@/lib/email-signature";
+import { e164 } from "@/schema/normalize";
+import { emailThreadId, venueNoteId, email as emailSchema } from "@/schema";
+import { privateOf } from "../venues";
 
 export const gmailFail = (e: unknown): never => {
   if (e instanceof IntegrationError) throw new AppError("gmail_error", `Gmail: ${e.message}`, 502);
@@ -278,4 +281,111 @@ export const emailSignature = defineCommand({
   },
 });
 
-export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft];
+// ---------- search (Gmail, read only; nothing is copied until a thread is linked) ----------
+
+const MAX_MESSAGES = 50;
+const MAX_RESULTS = 25;
+
+/** The place's contacts that have an email, booking contacts first for a venue. Contacts are the shared directory; a venue's links are the band's private notes. */
+async function placeContacts(place: Place, artistId: string): Promise<Doc[]> {
+  const rec = (await db.get(COLL[place.kind], place.id))!;
+  let ids: string[];
+  if (place.kind === "venue") {
+    const fields = privateOf((await db.get("venueNotes", venueNoteId(artistId, place.id))) ?? rec);
+    const booking = (fields.bookingContactIds ?? []) as string[];
+    ids = [...(fields.contactIds as string[])].sort((a, b) => Number(booking.includes(b)) - Number(booking.includes(a)));
+  } else ids = (rec.contactIds ?? []) as string[];
+  const docs = await Promise.all(ids.map((id) => db.get("contacts", id)));
+  return docs.filter((c): c is Doc => !!c && !c.deletedAt && ((c.emails as string[] | undefined)?.length ?? 0) > 0);
+}
+
+const quote = (s: string) => `"${s.replace(/"/g, "")}"`;
+const anyOf = (xs: string[]) => (xs.length === 1 ? xs[0] : `(${xs.join(" OR ")})`);
+
+/** The Gmail query for the Threads tab: mail from or to the addresses, or matching the free text (the place's name unless the caller typed something). */
+export function threadsQuery(a: { addresses: string[]; domain?: string; text: string }): string {
+  const parts: string[] = [];
+  if (a.addresses.length) parts.push(`from:${anyOf(a.addresses)}`, `to:${anyOf(a.addresses)}`);
+  if (a.domain) parts.push(`from:@${a.domain}`, `to:@${a.domain}`);
+  if (a.text.trim()) parts.push(`(${a.text.trim()})`);
+  return parts.join(" OR ");
+}
+
+export interface ThreadHit { threadId: string; subject: string; snippet: string; lastDate: string; lastFrom: string; messageCount: number; participants: string[]; linkedId?: string }
+
+/** Group the messages Gmail matched by thread, newest thread first. */
+export function groupThreads(messages: MailMessage[], account: string, linked: Map<string, string>): ThreadHit[] {
+  const me = account.toLowerCase();
+  const by = new Map<string, MailMessage[]>();
+  for (const m of messages) (by.get(m.threadId) ?? by.set(m.threadId, []).get(m.threadId)!).push(m);
+  return [...by.entries()].map(([threadId, ms]) => {
+    ms.sort((a, b) => a.date.localeCompare(b.date));
+    const last = ms[ms.length - 1];
+    const people = [...new Set(ms.flatMap((m) => [m.from, ...m.to, ...m.cc]).map((x) => x.toLowerCase()).filter((x) => x !== me && validEmail(x)))];
+    return { threadId, subject: ms[0].subject, snippet: snippetOf(last.body), lastDate: last.date, lastFrom: last.from.toLowerCase(), messageCount: ms.length, participants: people, ...(linked.has(threadId) ? { linkedId: linked.get(threadId) } : {}) };
+  }).sort((a, b) => b.lastDate.localeCompare(a.lastDate)).slice(0, MAX_RESULTS);
+}
+
+export interface PersonHit { email: string; name: string; title?: string; phone?: string; lastDate: string; count: number; contactId?: string }
+
+/** Group the messages by the other party's address: the sender of a received message, the recipients of a sent one. */
+export function groupPeople(messages: MailMessage[], account: string, q: string, contacts: { id: string; name: string; emails: string[] }[]): PersonHit[] {
+  const me = account.toLowerCase();
+  const words = norm(q.replace(/^@/, "")).split(" ").filter(Boolean);
+  const newestFirst = [...messages].sort((a, b) => b.date.localeCompare(a.date));
+  const by = new Map<string, { msgs: MailMessage[]; fromThem: MailMessage[] }>();
+  for (const m of newestFirst) {
+    const others = m.direction === "received" ? [m.from] : m.to;
+    for (const raw of others) {
+      const addr = raw.toLowerCase();
+      if (addr === me || !validEmail(addr)) continue;
+      const e = by.get(addr) ?? by.set(addr, { msgs: [], fromThem: [] }).get(addr)!;
+      e.msgs.push(m);
+      if (m.direction === "received") e.fromThem.push(m);
+    }
+  }
+  const out: PersonHit[] = [];
+  for (const [addr, e] of by) {
+    const name = e.fromThem.find((m) => m.fromName)?.fromName ?? "";
+    const contact = contacts.find((c) => c.emails.includes(addr));
+    const hay = norm(`${name} ${contact?.name ?? ""} ${addr}`);
+    if (!words.every((w) => hay.includes(w))) continue; // the other party of a match on someone else's address
+    const sig = e.fromThem[0] ? signatureOf(e.fromThem[0].body, name) : {};
+    const phone = sig.phone ? e164(sig.phone) : "";
+    out.push({ email: addr, name, ...(sig.title ? { title: sig.title } : {}), ...(/^\+[1-9]\d{6,14}$/.test(phone) ? { phone } : {}), lastDate: e.msgs[0].date, count: e.msgs.length, ...(contact ? { contactId: contact.id } : {}) });
+  }
+  return out.sort((a, b) => b.lastDate.localeCompare(a.lastDate)).slice(0, MAX_RESULTS);
+}
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9@._ -]+/g, " ").replace(/\s+/g, " ").trim();
+
+export const emailSearch = defineCommand({
+  name: "email.search", roles: ["admin"],
+  description: "Search the caller's Gmail for threads about a place: mail from or to its contacts (or to the given addresses or domain) or matching the text (the place's name when none). Read only, newest first, at most 25 threads. linkedId says the thread is already on the place.",
+  input: z.strictObject({ target: targetIn, q: z.string().optional(), addresses: z.array(emailSchema).optional(), domain: z.string().regex(/^[a-z0-9.-]+$/i).optional() }),
+  async run(ctx, i) {
+    const [place, artistId, account] = [await resolvePlace(i.target), await artistIdFor(ctx), await accountOf(ctx)];
+    const addresses = i.addresses ?? (await placeContacts(place, artistId)).flatMap((c) => c.emails as string[]);
+    const q = threadsQuery({ addresses: [...new Set(addresses)], domain: i.domain, text: i.q ?? quote(place.name) });
+    if (!q) return [];
+    const msgs = (await gmailClient().listMessages({ account, q }).catch(gmailFail)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, MAX_MESSAGES);
+    const docs = (await db.list("emailThreads", (c) => c.where("artistId", "==", artistId).where("target.id", "==", place.id))).filter((d) => d.target.kind === place.kind);
+    return groupThreads(msgs, account, new Map(docs.map((d) => [d.threadId as string, d.id])));
+  },
+});
+
+export const emailPeople = defineCommand({
+  name: "email.people", roles: ["admin"],
+  description: "Who the caller has emailed with, from Gmail: q is a name, an address or a domain. Returns {email, name, title?, phone?, lastDate, count, contactId?}, with title and phone guessed from the sender's signature. Read only, newest first, at most 25.",
+  input: z.strictObject({ target: targetIn, q: z.string().trim().min(1) }),
+  async run(ctx, i) {
+    const account = await accountOf(ctx);
+    await resolvePlace(i.target);
+    const term = /^[^\s"()]+$/.test(i.q) ? i.q : quote(i.q);
+    const msgs = (await gmailClient().listMessages({ account, q: `from:${term} OR to:${term}` }).catch(gmailFail)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, MAX_MESSAGES);
+    const addrs = [...new Set(msgs.flatMap((m) => [m.from, ...m.to]).map((a) => a.toLowerCase()).filter(validEmail))];
+    const found = (await Promise.all(addrs.map((a) => db.list("contacts", (c) => c.where("emails", "array-contains", a))))).flat().filter((c) => !c.deletedAt);
+    return groupPeople(msgs, account, i.q, found.map((c) => ({ id: c.id, name: c.name as string, emails: c.emails as string[] })));
+  },
+});
+
+export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft, emailSearch, emailPeople];

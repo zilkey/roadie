@@ -30,6 +30,9 @@ export const ROUTES = {
   edition: { title: "Festival year", path: "/booking/editions/:id", params: ["id"] },
   contact: { title: "Contact", path: "/booking/contacts/:id", params: ["id"] },
   pitch: { title: "Pitch", path: "/booking/pitches/:id", params: ["id"] },
+  emailThread: { title: "Email thread", path: "/booking/email/:id", params: ["id"] },
+  emailNew: { title: "New email", path: "/booking/email/new" },
+  emailSearch: { title: "Search Gmail", path: "/booking/email/search" },
   bookingTemplates: { title: "Email templates", path: "/booking/templates" },
   songs: { title: "Songs", path: "/songs" },
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
@@ -55,7 +58,7 @@ export const ROUTES = {
 /** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
-  pitch: "pitches", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
+  pitch: "pitches", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
   showSetlist: "shows", showFinances: "shows",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */

@@ -176,7 +176,7 @@ function PitchPage() {
         </select>
       </section>
 
-      <EmailCard target={p.target} open={emailOpen} onNew={() => setEmailOpen(!emailOpen)}>
+      <EmailCard target={p.target} pitchId={p.id} open={emailOpen} onNew={() => setEmailOpen(!emailOpen)}>
         <EmailPanel pitch={p} artist={artist} contacts={b.contacts} onSent={() => setEmailOpen(false)} />
       </EmailCard>
 

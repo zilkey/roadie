@@ -1,9 +1,9 @@
 /**
  * The fake's tiny version of Gmail's search `q`: words and "quoted phrases" match the subject and body, `from:x` and `to:x`
- * match an address (to: also looks at cc), terms next to each other are AND, `OR` is the lower-precedence alternative and
+ * match an address (`@domain` too; from: also the sender's name) (to: also looks at cc), terms next to each other are AND, `OR` is the lower-precedence alternative and
  * parentheses group. A q with none of that is one plain substring, as before.
  */
-export interface QueryTarget { from: string; to: string[]; cc: string[]; subject: string; body: string }
+export interface QueryTarget { from: string; fromName?: string; to: string[]; cc: string[]; subject: string; body: string }
 type Node = { t: "word"; v: string } | { t: "from" | "to"; v: string } | { t: "and" | "or"; l: Node; r: Node };
 
 export function tokenize(q: string): string[] {
@@ -61,7 +61,7 @@ export function matches(q: string | null | undefined, m: QueryTarget): boolean {
   const ev = (n: Node): boolean => {
     switch (n.t) {
       case "word": return text.includes(n.v);
-      case "from": return m.from.toLowerCase().includes(n.v);
+      case "from": return m.from.toLowerCase().includes(n.v) || (m.fromName ?? "").toLowerCase().includes(n.v); // like Gmail, from: also finds a display name
       case "to": return [...m.to, ...m.cc].some((a) => a.toLowerCase().includes(n.v));
       case "and": return ev(n.l) && ev(n.r);
       case "or": return ev(n.l) || ev(n.r);
