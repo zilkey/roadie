@@ -46,6 +46,7 @@ export const BOOKING_TOPICS: HelpTopic[] = [
     text:
       "A venue page has two groups. \"Shared with every band on Roadie\" is the \"About the room\" card: name, address, type, capacity and website. There is one shared venue directory, so other bands using the app see these details, and an edit changes them for all of them. Your name goes in the history. The card warns: \"Every band on Roadie sees these details.\"\n\n" +
       "\"Only <your band> sees this\" holds your own pitch, contacts, \"Our notes\" (booked by, load-in, notes) and \"Our shows here\". Other bands never see those.\n\n" +
+      "On the \"Contacts\" card, tick \"Booking\" for whoever you pitch and book with and \"Day-of\" for whoever to call on the day of a show. One person can have both, and several people can share one. Pitch emails go to the booking contacts first. A new show here gets the first day-of contact.\n\n" +
       "\"Archive venue\" (in \"More\") hides it from your lists only. Other bands keep it. You can bring it back later.\n\n" +
       "\"Merge into another venue…\" fixes duplicates, and it affects every band. Their shows, pitches and notes move to the venue you keep. The other one is archived, and you can undo it from History.\n\n" +
       "Adding a new venue says: \"Other bands will see this venue's name, address and details.\"",

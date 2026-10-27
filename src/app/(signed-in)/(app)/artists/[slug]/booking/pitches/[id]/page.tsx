@@ -15,6 +15,7 @@ import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
+import { roleFirst } from "@/lib/venues";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, sortedDates, unfilledFields, type Status } from "@/lib/booking";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
@@ -245,7 +246,7 @@ function EmailPanel({ pitch, artist, contacts, onSent }: { pitch: PitchRow; arti
   const people = useMemo(() => {
     const t = pitch.target;
     let ids: string[] = [];
-    if (t.kind === "venue") ids = b.venues.find((v) => v.id === t.id)?.contactIds ?? [];
+    if (t.kind === "venue") { const v = b.venues.find((x) => x.id === t.id); ids = v ? roleFirst(v.contactIds.map((id) => ({ id })), v.bookingContactIds).map((c) => c.id) : []; } // booking contacts first: the default To and {contact.name}
     if (t.kind === "promoter") ids = b.promoters.find((x) => x.id === t.id)?.contactIds ?? [];
     if (t.kind === "edition") { const e = b.editions.find((x) => x.id === t.id); ids = b.festivals.find((f) => f.id === e?.festivalId)?.contactIds ?? []; }
     return ids.map((i) => contacts.find((c) => c.id === i)).filter((c): c is Row<Contact> => !!c && c.emails.length > 0);

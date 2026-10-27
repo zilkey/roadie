@@ -81,7 +81,7 @@ test("token auth: hashed lookup, lastUsedAt, revoked and no-AI-access are refuse
 const EXPECTED = [
   // places and people (read + write, with dedupe)
   "venues.create", "venues.update", "venues.mergeInto", "promoters.create", "promoters.update", "festivals.create", "festivals.update", "festivals.page", "venueTypes.add", "editions.create", "editions.update",
-  "contacts.create", "contacts.update", "contacts.attach", "contacts.detach",
+  "contacts.create", "contacts.update", "contacts.attach", "contacts.detach", "contacts.setRoles",
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows

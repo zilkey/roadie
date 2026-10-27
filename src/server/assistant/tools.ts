@@ -19,6 +19,7 @@ import { cardFields, picksFor } from "./card";
 import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
+import { ROLE_LABEL, type ContactRole } from "@/lib/venues";
 import { allowUrls, isAllowedUrl, MAX_QUERY_CHARS, MAX_WEB_READS, MAX_WEB_SEARCHES, newWebTurn, web, WEB_NOTICE, type WebTurn } from "./web";
 
 export const MAX_RESULT_CHARS = 20_000;
@@ -199,6 +200,10 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "contacts.update": async (i, _r, _s, l) => `Updated ${await l.contact(i.id)}: ${list(Object.keys(i.patch ?? {}))}`,
   "contacts.attach": async (i, _r, _s, l) => `Linked ${await l.contact(i.contactId)} to ${(await l.get(i.kind, i.id))?.name ?? "the place"}`,
   "contacts.detach": async (i, _r, _s, l) => `Unlinked ${await l.contact(i.contactId)} from ${(await l.get(i.kind, i.id))?.name ?? "the place"}`,
+  "contacts.setRoles": async (i, _r, _s, l) => {
+    const roles = ((i.roles ?? []) as ContactRole[]).map((r) => ROLE_LABEL[r].toLowerCase());
+    return `${await l.contact(i.contactId)} at ${await l.venue(i.venueId)}: ${roles.length ? `${list(roles)} contact` : "no role"}`;
+  },
   "musicians.create": (i) => `Added ${i.name} to the band`,
   "musicians.update": async (i, _r, _s, l) => `Updated ${await l.musician(i.id)}: ${list(Object.keys(i.patch ?? {}))}`,
   "musicians.archive": async (i, _r, _s, l) => `Archived ${await l.musician(i.id)}`,

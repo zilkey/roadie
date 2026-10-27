@@ -49,7 +49,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     title: "A show's page",
     text: [
       "A show's page has three tabs: \"Show Details\", \"Setlist\" and \"Finances\". The title shows the venue and date, with a status pill (Hold, Confirmed, Played, Canceled or Dropped). Admins can press the pill to change status, and use \"Edit\" to open every card on the tab.",
-      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add to calendar…\", which previews the event and its invites before sending it to the band calendar; saving a show never changes the calendar), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
+      "Show Details has the cards: \"Where & when\" (venue, map link, times, day-of contact, and \"Add to calendar…\", which previews the event and its invites before sending it to the band calendar; saving a show never changes the calendar. A new show starts with the venue's day-of contact. Picking someone else, or \"Create new…\", also saves them as a day-of contact on the venue), \"Who's playing\" (billed as, players, \"Ask who's free\"), \"Sound\", \"Promotion\" (ticket link, docs, Bandsintown) and, for admins, \"Custom fields\".",
       "In Promotion, admins can \"Publish to Bandsintown\", \"Take off Bandsintown\" or \"Sync Bandsintown now\". Only Confirmed shows get listed.",
       "Checklists sit beside every tab, and Comments are at the bottom.",
       "\"How'd it go?\" is a separate admin page for a show that's happened: star ratings for the show and venue, crowd, paid attendance and notes. Saving it marks the show played.",

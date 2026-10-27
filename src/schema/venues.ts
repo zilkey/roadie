@@ -37,6 +37,15 @@ export const venuePrivateShape = {
   promoterIds: z.array(id),
 };
 export const VENUE_PRIVATE_FIELDS = Object.keys(venuePrivateShape) as (keyof typeof venuePrivateShape)[];
+/**
+ * Also band-private, on venueNotes only (never on a legacy venue doc): which of the band's contacts for the room handle booking and
+ * who to call on the day. Each is a subset of contactIds, in the order they were ticked; a person may have both roles.
+ */
+export const venueRoleShape = {
+  bookingContactIds: z.array(id).optional(),
+  dayOfContactIds: z.array(id).optional(),
+};
+export const VENUE_ROLE_FIELDS = Object.keys(venueRoleShape) as (keyof typeof venueRoleShape)[];
 
 /**
  * LEGACY, until `npm run migrate:venue-notes` has run in production: venue docs written before the split still carry the four
@@ -55,5 +64,5 @@ export const Venue = entity({ ...sharedShape, ...venueLegacyShape });
 export const VenueRecord = Venue.omit({ ...serverMask, matchKey: true });
 /** What the venues commands accept: the shared fields and the private ones together, as before the split. The command splits them across the two docs. */
 export const VenueInput = VenueRecord.omit({ mergedInto: true, ...Object.fromEntries(VENUE_PRIVATE_FIELDS.map((k) => [k, true])) })
-  .extend(venuePrivateShape);
+  .extend({ ...venuePrivateShape, ...venueRoleShape });
 export type Venue = z.infer<typeof Venue>;

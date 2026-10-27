@@ -55,7 +55,7 @@ export default function VenuePage() {
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(street)}`;
   const typeLabel = venueTypeLabel(types, v.type);
   const unlink = (pid: string) => call("venues.update", { id, patch: { promoterIds: mine.promoterIds.filter((x) => x !== pid) } });
-  const contacts = <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />;
+  const contacts = <ContactsPanel kind="venues" parentId={id} contactIds={mine.contactIds} contacts={b.contacts} roles={mine} editing={edit.is("contacts")} onWantEdit={() => edit.open("contacts")} />;
 
   return (
     <DetailPage testid="venue-page"

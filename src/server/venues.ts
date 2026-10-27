@@ -8,7 +8,7 @@
  * both before and after the migration.
  */
 import { venueNoteId } from "@/schema";
-import { isPrivateField, privateOf, type NoteFields } from "@/lib/venues";
+import { CONTACT_ROLES, ROLE_FIELD, isPrivateField, privateOf, type ContactRole, type NoteFields } from "@/lib/venues";
 import { db, type Doc, type Writer } from "./db";
 import type { Ctx } from "./ctx";
 import { AppError } from "./errors";
@@ -30,7 +30,29 @@ function apply(fields: NoteFields, patch: Record<string, unknown>): NoteFields {
     if (v === null) delete out[k]; else out[k] = v;
   }
   out.contactIds ??= []; out.promoterIds ??= [];
-  return out as unknown as NoteFields;
+  return privateOf(out); // drops roles of people no longer linked
+}
+
+/** Note fields as stored: empty role lists are left off. */
+function compact(f: NoteFields) {
+  const { bookingContactIds, dayOfContactIds, ...rest } = f;
+  return { ...rest, ...(bookingContactIds.length ? { bookingContactIds } : {}), ...(dayOfContactIds.length ? { dayOfContactIds } : {}) };
+}
+
+/**
+ * Give one linked contact these roles on a venue (linking them first if they aren't). `roles` is the whole set for that person;
+ * `add` only ticks more, leaving the roles they have.
+ */
+export async function setContactRoles(w: Writer, venue: Doc, artistId: string, contactId: string, roles: ContactRole[], mode: "set" | "add" = "set") {
+  const { fields } = await noteOf(w, venue, artistId);
+  const patch: Record<string, unknown> = {};
+  if (!fields.contactIds.includes(contactId)) patch.contactIds = [...fields.contactIds, contactId];
+  for (const r of CONTACT_ROLES) {
+    const k = ROLE_FIELD[r], has = fields[k].includes(contactId), want = roles.includes(r) || (mode === "add" && has);
+    if (want && !has) patch[k] = [...fields[k], contactId];
+    if (!want && has) patch[k] = fields[k].filter((x) => x !== contactId);
+  }
+  if (Object.keys(patch).length) await writeNote(w, venue, artistId, patch);
 }
 
 /**
@@ -41,10 +63,13 @@ export async function writeNote(w: Writer, venue: Doc, artistId: string, patch: 
   const id = venueNoteId(artistId, venue.id);
   const { doc, fields } = await noteOf(w, venue, artistId);
   const next = apply(fields, patch);
-  if (!doc) await w.create("venueNotes", { artistId, venueId: venue.id, ...next }, { id });
+  if (!doc) await w.create("venueNotes", { artistId, venueId: venue.id, ...compact(next) }, { id });
   else {
     if (doc.deletedAt) await w.restore("venueNotes", id);
-    await w.update("venueNotes", id, { loadInNotes: next.loadInNotes ?? null, notes: next.notes ?? null, contactIds: next.contactIds, promoterIds: next.promoterIds });
+    await w.update("venueNotes", id, {
+      loadInNotes: next.loadInNotes ?? null, notes: next.notes ?? null, contactIds: next.contactIds, promoterIds: next.promoterIds,
+      bookingContactIds: next.bookingContactIds.length ? next.bookingContactIds : null, dayOfContactIds: next.dayOfContactIds.length ? next.dayOfContactIds : null,
+    });
   }
   return next;
 }
@@ -59,7 +84,7 @@ export async function ensureNote(w: Writer, venue: Doc, artistId: string) {
 export async function archiveNote(w: Writer, venue: Doc, artistId: string) {
   const id = venueNoteId(artistId, venue.id);
   const { doc, fields } = await noteOf(w, venue, artistId);
-  if (!doc) await w.create("venueNotes", { artistId, venueId: venue.id, ...fields }, { id });
+  if (!doc) await w.create("venueNotes", { artistId, venueId: venue.id, ...compact(fields) }, { id });
   await w.softDelete("venueNotes", id);
 }
 

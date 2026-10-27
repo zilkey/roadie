@@ -50,11 +50,11 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await card.getByTestId("where-length").fill("2h");
   await expect(card.getByTestId("where-length-says")).toHaveText("2 hours · ends at 8:30 PM");
 
-  // Day-of contact typed in, also saved to the venue's contacts (publishing is on the Promotion card, not here)
+  // Day-of contact created here is saved to the venue's contacts as a day-of contact (publishing is on the Promotion card, not here)
+  await expect(card.getByTestId("where-dayof-select").locator("option[value=other]")).toHaveText("Create new…");
   await card.getByTestId("where-dayof-select").selectOption("other");
   await card.getByTestId("where-other-name").fill("Taproom Tom");
   await card.getByTestId("where-other-phone").fill("(303) 555-0117");
-  await expect(card.getByTestId("where-other-save")).toBeChecked();
   await expect(card.getByTestId("where-public-check")).toHaveCount(0);
   await card.getByTestId("where-when-save").click();
   await expect(card).not.toHaveAttribute("data-editing", "1");
@@ -71,9 +71,9 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await expect(card.getByTestId("where-public")).toHaveCount(0);
   await expect(card.getByTestId("where-no-times")).toHaveCount(0);
 
-  // The saved contact now shows in the day-of list for this venue
+  // The saved contact now heads the venue's day-of contacts
   await card.getByTestId("where-when-edit").click();
-  await expect(card.getByTestId("where-dayof-select").locator("optgroup option", { hasText: "Taproom Tom" })).toHaveCount(1);
+  await expect(card.getByTestId("where-dayof-select").locator('optgroup[label="Day-of contacts"] option', { hasText: "Taproom Tom" })).toHaveCount(1);
   await card.getByTestId("where-dayof-select").selectOption("");
   await card.getByTestId("where-when-cancel").click();
   await expect(card.getByTestId("where-dayof")).toContainText("Taproom Tom"); // Cancel changed nothing

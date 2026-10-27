@@ -822,3 +822,17 @@ test("retargetAskMessage: a typed ask message swaps the dates it was typed with 
   assert.equal(retargetAskMessage("Show early March?", ["2027-03-06"], ["2027-03-12"]), null);
   assert.equal(retargetAskMessage("Show early March?", ["2027-03-06"], ["2027-03-06"]), "Show early March?");
 });
+
+test("day-of contacts: a new show takes the venue's first one; picking someone on a show makes them one at the venue", async () => {
+  const sam = (await cmd("contacts.create", { name: "Sam Ruiz", emails: [], phones: ["+13035550117"] })).id;
+  const kim = (await cmd("contacts.create", { name: "Kim", emails: [], attachTo: { kind: "venues", id: venueId } })).id;
+  await cmd("contacts.setRoles", { contactId: kim, venueId, roles: ["booking"] });
+  await cmd("contacts.setRoles", { contactId: sam, venueId, roles: ["dayOf"] });
+  const r = await create();
+  assert.deepEqual((await db.get("shows", r.id))!.dayOfContact, { name: "Sam Ruiz", phone: "(303) 555-0117", contactId: sam });
+  const typed = await create({ date: "2027-02-01", dayOfContact: { name: "Lee" } });
+  assert.deepEqual((await db.get("shows", typed.id))!.dayOfContact, { name: "Lee" }, "a given day-of contact wins");
+  await cmd("shows.update", { id: r.id, patch: { dayOfContact: { name: "Kim", contactId: kim } } });
+  const n = (await db.get("venueNotes", `${TEST_ARTIST}__${venueId}`))!;
+  assert.deepEqual([n.bookingContactIds, n.dayOfContactIds], [[kim], [sam, kim]], "Kim keeps Booking and is now Day-of too");
+});

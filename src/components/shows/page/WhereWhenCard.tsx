@@ -7,6 +7,7 @@ import { describeDuration, endsAt, fmtDuration, parseDuration, setLengthOf } fro
 import { fmtTime, isOff, kindOf, showAddress, showCity, showName } from "@/lib/shows";
 import { CalendarSend } from "@/components/CalendarSend";
 import type { Contact, Edition, Venue, VenueNote } from "@/schema";
+import { privateOf, roleFirst } from "@/lib/venues";
 import type { ShowRow } from "../common";
 import { EditableCard, UnfinishedPlaceholder, useCardEdit } from "./kit";
 
@@ -17,8 +18,8 @@ const TIMES: [TimeKey, string][] = [["loadIn", "Load in"], ["soundcheck", "Sound
 interface Form {
   where: Where; venueId: string; hostContactIds: string[]; city: string; address: string; editionId: string; date: string;
   times: Record<TimeKey, string>; setLength: string;
-  /** "" none, "c:<contactId>" a venue contact, "keep" the contact already on the show, "other" typed in. */
-  dayOf: string; otherName: string; otherPhone: string; saveToVenue: boolean;
+  /** "" none, "c:<contactId>" a venue contact, "keep" the contact already on the show, "other" typed in (at a venue: a new venue contact). */
+  dayOf: string; otherName: string; otherPhone: string;
 }
 
 const whereOf = (s: ShowRow): Where => { const k = kindOf(s); return k === "house" ? "house" : k === "festival" ? "festival" : "venue"; };
@@ -32,7 +33,7 @@ function formOf(s: ShowRow): Form {
     times: { loadIn: t.loadIn ?? "", soundcheck: t.soundcheck ?? "", doors: t.doors ?? "", showStart: t.showStart ?? "", set: t.set ?? "" },
     setLength: lengthText(s),
     dayOf: s.dayOfContact ? (s.dayOfContact.contactId ? `c:${s.dayOfContact.contactId}` : "keep") : "",
-    otherName: "", otherPhone: "", saveToVenue: true,
+    otherName: "", otherPhone: "",
   };
 }
 
@@ -85,12 +86,18 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
   const editions = useCollection<Edition>("editions", { skip: !admin || !ed.editing });
 
   const venue = (venues.rows ?? []).find((v) => v.id === form.venueId);
-  const venueContactIds = (() => {
-    const id = form.venueId;
-    const n = (notes.rows ?? []).find((x) => x.venueId === id);
-    return n?.contactIds ?? venue?.contactIds ?? [];
-  })();
-  const venueContacts = venueContactIds.map((id) => (contacts.rows ?? []).find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c);
+  const venueNotes = privateOf((notes.rows ?? []).find((x) => x.venueId === form.venueId) ?? venue);
+  // The venue's day-of contacts first, then its other people.
+  const venueContacts = roleFirst(
+    venueNotes.contactIds.map((id) => (contacts.rows ?? []).find((c) => c.id === id)).filter((c): c is Row<Contact> => !!c), venueNotes.dayOfContactIds,
+  );
+  const dayOfPeople = venueContacts.filter((c) => venueNotes.dayOfContactIds.includes(c.id));
+  const contactGroups: [string, Row<Contact>[]][] = [
+    ["Day-of contacts", dayOfPeople],
+    [`${dayOfPeople.length ? "Other " : ""}${venue?.name ?? show.venue?.name ?? "Venue"} contacts`, venueContacts.filter((c) => !dayOfPeople.includes(c))],
+  ];
+  // At a venue a typed-in person becomes one of its contacts; a house concert or a festival with the venue TBD just keeps the name.
+  const atVenue = form.where !== "house" && !!form.venueId;
 
   const sec = parseDuration(form.setLength);
   const lengthBad = !!form.setLength.trim() && sec === null;
@@ -132,13 +139,14 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
         if (!name) { setLocalError("Add the contact's name."); return false; }
         const phone = form.otherPhone.trim();
         let contactId: string | undefined;
-        if (form.saveToVenue && form.venueId && form.where !== "house") {
+        if (atVenue) {
           const e164 = phone ? toE164(phone) : null;
           if (phone && !e164) { setLocalError("That phone number doesn't look right. Use 10 digits, like (303) 555-0142."); return false; }
           const r = await call<{ id: string }>("contacts.create", { name, phones: e164 ? [e164] : [], emails: [], attachTo: { kind: "venues", id: form.venueId } });
           if (!r?.id) return false;
           contactId = r.id;
         }
+        // shows.update ticks them as a day-of contact at the venue.
         patch.dayOfContact = { name, ...(phone ? { phone } : {}), ...(contactId ? { contactId } : {}) };
       }
     }
@@ -249,18 +257,18 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
           <hr style={{ border: 0, borderTop: "1px solid var(--border)" }} />
           <label className="grid gap-1"><L>Day-of contact</L>
             <select className="select" value={f.dayOf} onChange={(e) => set({ dayOf: e.target.value })} data-testid="where-dayof-select">
-              {venueContacts.length > 0 && (
-                <optgroup label={`${venue?.name ?? show.venue?.name ?? "Venue"} contacts`}>
-                  {venueContacts.map((c) => <option key={c.id} value={`c:${c.id}`}>{c.name}{c.phones[0] ? ` · ${fmtPhone(c.phones[0])}` : ""}</option>)}
+              {contactGroups.filter(([, people]) => people.length > 0).map(([label, people]) => (
+                <optgroup key={label} label={label}>
+                  {people.map((c) => <option key={c.id} value={`c:${c.id}`}>{c.name}{c.phones[0] ? ` · ${fmtPhone(c.phones[0])}` : ""}</option>)}
                 </optgroup>
-              )}
+              ))}
               {show.dayOfContact && (f.dayOf === "keep" || (f.dayOf.startsWith("c:") && !venueContacts.some((c) => `c:${c.id}` === f.dayOf))) && (
                 <option value={f.dayOf}>{show.dayOfContact.name}{show.dayOfContact.phone ? ` · ${show.dayOfContact.phone}` : ""}</option>
               )}
               <option value="">None</option>
-              <option value="other">Other…</option>
+              <option value="other">{atVenue ? "Create new…" : "Other…"}</option>
             </select>
-            <span className="s">Pick someone from the venue, or choose Other to type someone in.</span>
+            <span className="s">{atVenue ? "Pick someone from the venue, or create a new contact. Either way they're saved as the venue's day-of contact." : "Choose Other to type someone in."}</span>
           </label>
           {f.dayOf === "other" && (
             <div className="grid gap-3 rounded-xl p-3.5" style={{ background: "var(--bg)" }}>
@@ -268,9 +276,6 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
                 <label className="grid gap-1"><L>Name</L><input className="input" value={f.otherName} onChange={(e) => set({ otherName: e.target.value })} data-testid="where-other-name" /></label>
                 <label className="grid gap-1"><L>Phone</L><input className="input" type="tel" value={f.otherPhone} onChange={(e) => set({ otherPhone: e.target.value })} data-testid="where-other-phone" /></label>
               </div>
-              {f.where !== "house" && (
-                <label className="flex min-h-[44px] items-center gap-2.5"><input type="checkbox" checked={f.saveToVenue} onChange={(e) => set({ saveToVenue: e.target.checked })} data-testid="where-other-save" />Also save to the venue&apos;s contacts</label>
-              )}
             </div>
           )}
         </div>

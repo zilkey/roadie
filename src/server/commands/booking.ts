@@ -6,12 +6,13 @@ import { AppError } from "../errors";
 import { gmailClient, IntegrationError } from "../integrations";
 import type { MailMessage } from "../integrations/gmail";
 import { unfilledFields, isActive, sortedDates } from "@/lib/booking";
-import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, sharedOf, writeNote } from "../venues";
+import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
+import { CONTACT_ROLES } from "@/lib/venues";
 import { createNoted, setVenuePromoters, updateNoted } from "../bandNotes";
 import { ensureVenueTypes, requireVenueType } from "../venueTypes";
 import { FESTIVAL_PAGE_SIZE, FESTIVAL_SORTS, festivalRows } from "@/lib/festivalPage";
 import {
-  VenueInput, venueNoteId, slug, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
+  VenueInput, VENUE_ROLE_FIELDS, venueNoteId, slug, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
 } from "@/schema";
 
 const ROLES = ["admin", "mcp"] as const;
@@ -41,7 +42,8 @@ export const venuesCreate = defineCommand({
   name: "venues.create", roles: [...VENUE_ROLES], input: VenueIn,
   description:
     "Add a venue. type is a key from the venue type list (records.list venueTypes; add one with venueTypes.add). A venue with the same name and city merges into the existing one ({id, merged: true}); adding a room this band archived brings it back. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the shared room: " +
-    "every band that uses Roadie sees them. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only; a member who sends them gets a 403).",
+    "every band that uses Roadie sees them. loadInNotes, notes, contactIds, promoterIds, bookingContactIds and dayOfContactIds are this band's private notes (admins only; a member who sends them gets a 403). " +
+    "bookingContactIds / dayOfContactIds say which of contactIds handle booking and who to call on the day (contacts.setRoles sets one person's).",
   run: (ctx, input) => run(ctx, async (w) => {
     const priv = Object.fromEntries(Object.entries(input).filter(([k, v]) => isPrivateField(k) && v !== undefined));
     const shared = Object.fromEntries(Object.entries(input).filter(([k]) => !isPrivateField(k)));
@@ -60,6 +62,7 @@ export const venuesCreate = defineCommand({
             ...(priv.loadInNotes && !fields.loadInNotes ? { loadInNotes: priv.loadInNotes } : {}), ...(priv.notes && !fields.notes ? { notes: priv.notes } : {}),
             contactIds: [...new Set([...fields.contactIds, ...((priv.contactIds as string[] | undefined) ?? [])])],
             promoterIds: [...new Set([...fields.promoterIds, ...((priv.promoterIds as string[] | undefined) ?? [])])],
+            ...Object.fromEntries(VENUE_ROLE_FIELDS.map((k) => [k, [...new Set([...fields[k], ...((priv[k] as string[] | undefined) ?? [])])]])),
           });
           if (priv.promoterIds) await setVenuePromoters(w, artistId, r.id, next.promoterIds);
         } else if (doc?.deletedAt) await ensureNote(w, venue, artistId); // adding a room this band had archived brings it back
@@ -71,8 +74,8 @@ export const venuesCreate = defineCommand({
 export const venuesUpdate = defineCommand({
   name: "venues.update", roles: [...VENUE_ROLES], input: patchInput(VenueIn),
   description:
-    "Edit a venue. address and sound are whole objects (city and state required; sound needs provider): Roadie fills missing keys from the record, other callers send the whole object. notes and loadInNotes replace the text (to add, read first and resend). contactIds/promoterIds replace the list (prefer contacts.attach/detach for contacts). ages is all|18|21. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
-    "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds and promoterIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
+    "Edit a venue. address and sound are whole objects (city and state required; sound needs provider): Roadie fills missing keys from the record, other callers send the whole object. notes and loadInNotes replace the text (to add, read first and resend). contactIds/promoterIds replace the list (prefer contacts.attach/detach for contacts; contacts.setRoles for who handles booking or is the day-of contact). ages is all|18|21. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
+    "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds, promoterIds, bookingContactIds and dayOfContactIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const sharedPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => !isPrivateField(k) && v !== undefined));
     const privPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => isPrivateField(k) && v !== undefined));
@@ -140,6 +143,7 @@ export const venuesMergeInto = defineCommand({
       const joined = {
         loadInNotes: joinText(a.loadInNotes, b.loadInNotes) ?? null, notes: joinText(a.notes, b.notes) ?? null,
         contactIds: [...new Set([...a.contactIds, ...b.contactIds])], promoterIds: [...new Set([...a.promoterIds, ...b.promoterIds])],
+        bookingContactIds: [...new Set([...a.bookingContactIds, ...b.bookingContactIds])], dayOfContactIds: [...new Set([...a.dayOfContactIds, ...b.dayOfContactIds])],
       };
       const archived = !!mine.doc?.deletedAt && !!theirs.doc?.deletedAt; // the room stays hidden for a band only if it hid both
       if (mine.doc?.deletedAt && !hasPrivate(mine.fields) && !theirs.doc) continue; // nothing to carry over
@@ -290,8 +294,10 @@ export const contactsRemove = defineCommand({
     for (const kind of parentKind.options) {
       if (kind === "venues") {
         // Archiving a contact unlinks them from every band's notes (contacts are shared, admin-only records), and from venues not yet migrated.
-        for (const n of await w.query("venueNotes", (q) => q.where("contactIds", "array-contains", id), { includeDeleted: true })) {
-          await w.update("venueNotes", n.id, { contactIds: (n.contactIds as string[]).filter((x) => x !== id) });
+        // An archived note (a room the band hid, or a merged duplicate) can't be written; the dead id there is skipped wherever contacts are read.
+        for (const n of await w.query("venueNotes", (q) => q.where("contactIds", "array-contains", id))) {
+          const drop = (k: string) => (n[k] as string[] | undefined)?.includes(id) ? { [k]: (n[k] as string[]).filter((x) => x !== id) } : {};
+          await w.update("venueNotes", n.id, { contactIds: (n.contactIds as string[]).filter((x) => x !== id), ...drop("bookingContactIds"), ...drop("dayOfContactIds") });
         }
         for (const v of await w.query("venues", (q) => q.where("contactIds", "array-contains", id))) {
           await w.update("venues", v.id, { contactIds: (v.contactIds as string[]).filter((x) => x !== id) });
@@ -334,8 +340,21 @@ export const contactsAttach = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => { await attach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
 });
 export const contactsDetach = defineCommand({
-  name: "contacts.detach", roles: [...ROLES], input: linkInput, description: "Unlink a contact from a venue, promoter or festival.",
+  name: "contacts.detach", roles: [...ROLES], input: linkInput, description: "Unlink a contact from a venue, promoter or festival (a venue contact's roles go with it).",
   run: (ctx, i) => run(ctx, async (w) => { await detach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
+});
+export const contactsSetRoles = defineCommand({
+  name: "contacts.setRoles", roles: [...ROLES],
+  input: z.strictObject({ contactId: z.string().min(1), venueId: z.string().min(1), roles: z.array(z.enum(CONTACT_ROLES)) }),
+  description:
+    "Say what a contact does for this band at a venue: roles is their whole set, booking (who you pitch and book with) and/or dayOf (who to call on the day of a show); [] clears both. " +
+    "Links them to the venue first if they aren't. Several people can share a role. A new show at the venue takes its first dayOf contact as the show's day-of contact; pitch emails go to booking contacts first.",
+  run: (ctx, i) => run(ctx, async (w) => {
+    const venue = await requireVenue(w, i.venueId);
+    if (!(await w.get("contacts", i.contactId))) throw new AppError("not_found", "Contact not found", 404);
+    await setContactRoles(w, venue, await artistIdOf(w), i.contactId, i.roles);
+    return { id: i.contactId };
+  }),
 });
 
 // ---------- pitches ----------
@@ -558,7 +577,7 @@ export const bookingCommands = [
   venuesCreate, venuesUpdate, venuesRemove, venuesMergeInto, promotersCreate, promotersUpdate, promotersRemove,
   venueTypesAdd, venueTypesRename, venueTypesRemove,
   festivalsCreate, festivalsUpdate, festivalsRemove, festivalsPage, editionsCreate, editionsUpdate, editionsRemove,
-  contactsCreate, contactsUpdate, contactsRemove, contactsAttach, contactsDetach,
+  contactsCreate, contactsUpdate, contactsRemove, contactsAttach, contactsDetach, contactsSetRoles,
   pitchesFlag, pitchesUpdate, pitchesMove, pitchesComment, pitchesLog, pitchesRemove,
   templatesCreate, templatesUpdate, templatesRemove, pitchesSendEmail, pitchesDraftEmail, pitchesCheckReplies,
 ];

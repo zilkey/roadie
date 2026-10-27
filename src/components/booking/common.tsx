@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type PitchDateIn, type Status } from "@/lib/booking";
 import { useCommand, ErrorBox, Select } from "@/components/ui";
-import { withNotes, type NoteFields } from "@/lib/venues";
+import { CONTACT_ROLES, ROLE_LABEL, rolesOf, withNotes, type NoteFields } from "@/lib/venues";
 import { withBandNote } from "@/lib/bandNotes";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
@@ -543,10 +543,11 @@ export const toPatch = (o: Record<string, unknown>) => Object.fromEntries(Object
 /**
  * A place's people, for the body of a "Contacts" DetailCard. View: name, title, emails with a copy button. `editing`: Remove buttons,
  * plus linking an existing contact or adding a new one (a draft, with an explicit "Add contact"). An unfinished draft calls `onWantEdit`
- * so the card can switch to editing.
+ * so the card can switch to editing. A venue also passes `roles`: each person's Booking / Day-of labels, checkboxes while editing.
  */
-export function ContactsPanel({ kind, parentId, contactIds, contacts, editing = false, onWantEdit }: {
-  kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[]; editing?: boolean; onWantEdit?(): void;
+export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, editing = false, onWantEdit }: {
+  kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
+  roles?: Pick<NoteFields, "bookingContactIds" | "dayOfContactIds">; editing?: boolean; onWantEdit?(): void;
 }) {
   const { call, error, busy } = useCommand();
   const hasDraft = useHasDraft(draftPath.newUnder(kind, parentId, "contacts"));
@@ -566,9 +567,24 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts, editing = 
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
                 {c.title && <span className="s">{c.title}</span>}
+                {roles && !editing && rolesOf(roles, c.id).map((r) => <span key={r} className="chip a" data-testid={`contact-role-${r}`}>{ROLE_LABEL[r]}</span>)}
               </div>
               {editing
-                ? <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
+                ? (
+                  <div className="flex flex-wrap items-center gap-x-4">
+                    {roles && CONTACT_ROLES.map((r) => {
+                      const has = rolesOf(roles, c.id);
+                      return (
+                        <label key={r} className="flex min-h-[44px] items-center gap-2">
+                          <input type="checkbox" checked={has.includes(r)} disabled={busy} data-testid={`contact-role-${r}`}
+                            onChange={(e) => call("contacts.setRoles", { contactId: c.id, venueId: parentId, roles: e.target.checked ? [...has, r] : has.filter((x) => x !== r) })} />
+                          {ROLE_LABEL[r]}
+                        </label>
+                      );
+                    })}
+                    <button className="btn danger sm" disabled={busy} onClick={() => call("contacts.detach", { contactId: c.id, kind, id: parentId })}>Remove</button>
+                  </div>
+                )
                 : c.emails.length > 0 && (
                   <div className="grid w-full gap-1">
                     {c.emails.map((e) => (

@@ -114,3 +114,21 @@ test("merge a duplicate venue into the room to keep: every band's notes move, th
   await olga.close();
 });
 
+
+test("venue contacts: tick Booking and Day-of; the labels show on the Contacts card", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await openVenue(page, A, "fox theatre", "Fox Theatre");
+  const panel = page.getByTestId("contacts-panel");
+  const marcus = panel.getByTestId("contact-Marcus Webb");
+  await expect(marcus.getByTestId("contact-role-booking")).toHaveCount(0);
+  await page.getByTestId("contacts-edit").click();
+  await marcus.getByTestId("contact-role-booking").click();
+  await expect(marcus.getByTestId("contact-role-booking")).toBeChecked();
+  await marcus.getByTestId("contact-role-dayOf").click();
+  await expect(marcus.getByTestId("contact-role-dayOf")).toBeChecked();
+  await marcus.getByTestId("contact-role-dayOf").click();
+  await expect(marcus.getByTestId("contact-role-dayOf")).not.toBeChecked();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(marcus.getByTestId("contact-role-booking")).toHaveText("Booking");
+  await expect(marcus.getByTestId("contact-role-dayOf")).toHaveCount(0);
+});

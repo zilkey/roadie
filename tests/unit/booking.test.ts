@@ -110,6 +110,32 @@ test("contacts attach to places, detach, and archive unlinks (a venue's links ar
   assert.deepEqual((await db.get("venueNotes", noteId))!.contactIds, []);
 });
 
+test("contacts.setRoles: booking and day-of per venue contact, linked if needed, dropped on detach, archive and merge keeps both sides", async () => {
+  const v = await cmd("venues.create", venue("Lost Lake"));
+  const a = await cmd("contacts.create", { name: "Haylee", emails: ["h@x.com"], attachTo: { kind: "venues", id: v.id } });
+  const b = await cmd("contacts.create", { name: "Sam", emails: [] });
+  const note = async (id = v.id) => (await db.get("venueNotes", `${TEST_ARTIST}__${id}`))!;
+  await cmd("contacts.setRoles", { contactId: a.id, venueId: v.id, roles: ["booking", "dayOf"] });
+  await cmd("contacts.setRoles", { contactId: b.id, venueId: v.id, roles: ["dayOf"] });
+  let n = await note();
+  assert.deepEqual([n.contactIds, n.bookingContactIds, n.dayOfContactIds], [[a.id, b.id], [a.id], [a.id, b.id]], "Sam was linked by giving a role");
+  await cmd("contacts.setRoles", { contactId: a.id, venueId: v.id, roles: ["booking"] });
+  assert.deepEqual((await note()).dayOfContactIds, [b.id]);
+  await cmd("contacts.detach", { contactId: b.id, kind: "venues", id: v.id });
+  assert.equal((await note()).dayOfContactIds, undefined, "an empty role list is left off");
+  await cmd("contacts.setRoles", { contactId: b.id, venueId: v.id, roles: ["dayOf"] });
+  // merge: roles on both rooms are joined
+  const dup = await cmd("venues.create", venue("Lost Lake Lounge"));
+  await cmd("contacts.setRoles", { contactId: a.id, venueId: dup.id, roles: ["dayOf"] });
+  await cmd("venues.mergeInto", { from: dup.id, into: v.id });
+  n = await note();
+  assert.deepEqual([n.bookingContactIds, n.dayOfContactIds], [[a.id], [b.id, a.id]]);
+  await cmd("contacts.remove", { id: a.id });
+  n = await note();
+  assert.deepEqual([n.contactIds, n.bookingContactIds ?? [], n.dayOfContactIds], [[b.id], [], [b.id]]);
+  assert.equal("bookingContactIds" in (await db.get("venues", v.id))!, false, "roles stay off the shared venue");
+});
+
 test("venue promoter links stay in sync both ways, in the band's own notes", async () => {
   const p = await cmd("promoters.create", { name: "Promo", kind: "promoter" });
   const v = await cmd("venues.create", venue("Room", "Denver", { promoterIds: [p.id] }));

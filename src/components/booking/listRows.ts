@@ -29,11 +29,7 @@ export type Place = { city: string; state: string };
 
 export const REGION_LABEL: Record<string, string> = { boulder: "Boulder", denver: "Denver", north: "North", south: "South", mountains: "Mountains", southwest: "Southwest", out: "Out of state" };
 
-/** `+13035551212` -> `(303) 555-1212`; anything else as stored. */
-export function fmtPhone(p: string) {
-  const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(p);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : p;
-}
+export { fmtPhone } from "@/lib/venues";
 
 /**
  * The rows for one tab. `hit` is the set of `kind:id` the search matched (null = no search); editions follow their festival.
