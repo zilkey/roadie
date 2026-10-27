@@ -14,7 +14,14 @@ export async function loadHistory(uid: string, threadId: string, limit = 20): Pr
   const snap = await ref.get();
   if (!snap.exists || snap.data()?.ownerUid !== uid) return null;
   const msgs = await ref.collection("messages").orderBy("at", "desc").limit(limit).get();
-  return msgs.docs.reverse().map((d) => ({ role: d.data().role, text: d.data().text }));
+  // A reply that only acted (a write, a navigate) is saved with no text; Gemini rejects an empty text part, which
+  // broke every later message in the thread. Its action labels stand in for it, and anything still empty is left out.
+  return msgs.docs.reverse().flatMap((d): Turn[] => {
+    const m = d.data();
+    const labels = ((m.actions as { label?: string }[] | undefined) ?? []).map((a) => a.label).filter(Boolean);
+    const text = String(m.text ?? "").trim() || labels.join(". ");
+    return text ? [{ role: m.role, text }] : [];
+  });
 }
 
 export const newThreadId = () => threads().doc().id;
