@@ -190,3 +190,19 @@ test("Email templates: create one and edit it", async ({ page }) => {
   await page.reload();
   await expect(page.getByTestId(`template-Tpl ${stamp}`)).toContainText("Hello again");
 });
+
+test("the pitch page has Booked it in its header (a form under it) and Abandon pitch at the foot", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto(A("/booking/pitches"));
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Lost Lake Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  const status = (await page.getByTestId("status-chip").textContent()) ?? "";
+  await page.getByTestId("booked-it").click();
+  await expect(page.getByTestId("book-form")).toBeVisible();
+  await expect(page.getByTestId("book-submit")).toBeVisible();
+  await page.getByTestId("book-cancel").click();
+  await expect(page.getByTestId("book-form")).toHaveCount(0);
+  page.once("dialog", (d) => void d.dismiss()); // look, don't abandon: other specs use this pitch
+  await page.getByTestId("pitch-abandon").click();
+  await expect(page.getByTestId("status-chip")).toHaveText(status);
+});

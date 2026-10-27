@@ -132,3 +132,24 @@ test("venue contacts: tick Booking and Day-of; the labels show on the Contacts c
   await expect(marcus.getByTestId("contact-role-booking")).toHaveText("Booking");
   await expect(marcus.getByTestId("contact-role-dayOf")).toHaveCount(0);
 });
+
+test("a venue page opens with a slim pitch card: the active pitch with View pitch, or Not on the Pitch List with what came before", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await openVenue(page, A, "Lost Lake Lounge"); // Fox Theatre gets booked by the shows spec; this pitch stays open
+  const card = page.getByTestId("venue-pitch-card");
+  await expect(card).toContainText("On the Pitch List");
+  await expect(card.getByTestId("status-chip")).toBeVisible();
+  await expect(card).toContainText("Trio");
+  await expect(card).toContainText("Haylee"); // the next step: Follow up with Haylee
+  await expect(page.getByTestId("pitch-abandon")).toHaveCount(0); // the work happens on the pitch page
+  await card.getByTestId("view-pitch").click();
+  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId("pitch-abandon")).toBeVisible();
+
+  await openVenue(page, A, "Hi-Dive", "Hi-Dive");
+  const none = page.getByTestId("venue-pitch-card");
+  await expect(none.getByTestId("not-on-pitch-list")).toContainText("Not on the Pitch List");
+  await expect(none.getByTestId("past-pitches")).toContainText("Pitched before");
+  await expect(none.getByTestId("past-pitches")).toContainText("Became a show");
+  await expect(none.getByTestId(/^flag-/).first()).toContainText("Add to Pitch List");
+});

@@ -7,9 +7,10 @@ import { Menu } from "@/components/Menu";
 import { useDoc } from "@/lib/firestore-hooks";
 import { isActive } from "@/lib/booking";
 import {
-  BackLink, ContactsPanel, EntityForm, FlagIcon, Flagged, PitchLinks, hrefFor, promoterForm, useBooking, useNotFound, type PromoterRow,
+  BackLink, ContactsPanel, EntityForm, hrefFor, promoterForm, useBooking, useNotFound, type PromoterRow,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
+import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Promoter } from "@/schema";
 
@@ -40,7 +41,6 @@ function PromoterPage() {
   const venues = b.venues.filter((v) => p.venueIds.includes(v.id) || v.promoterIds.includes(p.id));
   const mine = b.pitches.filter((x) => x.artistId === artistId && x.target.kind === "promoter" && x.target.id === id);
   const active = mine.find((x) => isActive(x.status));
-  const past = mine.filter((x) => !isActive(x.status));
   const linkable = b.venues.filter((v) => !venues.some((x) => x.id === v.id));
   const archive = async () => { if (confirm(`Archive ${p.name}?`) && (await call("promoters.remove", { id }))) router.replace("/booking"); };
   const unlinkVenue = (venueId: string) => call("promoters.update", { id, patch: { venueIds: p.venueIds.filter((x) => x !== venueId) } });
@@ -75,6 +75,7 @@ function PromoterPage() {
         <Menu label="More actions" testid="promoter" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive promoter", danger: true, onSelect: archive }]} />
       </div>}>
       <ErrorBox error={error} />
+      <PitchSummaryCard kind="promoter" id={id} mine={mine} testid="promoter-pitch" />
       <CardGroup kind="shared">
         <DetailCard title="About" edit={edit} editKey="about" warn={SHARED_WARN} editTestid="edit-toggle"
           children={<KV rows={[["Website", website], ["Kind", KIND_LABEL[p.kind]]]} />}
@@ -90,28 +91,6 @@ function PromoterPage() {
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Pitch" icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
-          <Flagged kind="promoter" id={id} pitches={mine} label="Add to the Pitch List">
-            {(button, form, strip) => (<div className="grid gap-3">
-              {active ? (<>
-                {strip}
-                <Link href={`/booking/pitches/${active.id}`} className="link" data-testid="promoter-pitch-open">Open pitch</Link>
-              </>) : (<>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>Not on the Pitch List.</span>
-                  {button}
-                </div>
-                {form}
-              </>)}
-              {past.length > 0 && (<>
-                <div className="d-sep" />
-                <span className="lbl">Past pitches</span>
-                <PitchLinks pitches={past} />
-              </>)}
-            </div>)}
-          </Flagged>
-        </DetailCard>
-
         <DetailCard private title="Venues they book" edit={edit} editKey="venues" editTestid="venues-edit"
           children={venues.length === 0 ? <div className="empty"><span>None linked yet.</span></div> : venueRows}
           editChildren={

@@ -6,8 +6,9 @@ import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { BackLink, EntityForm, Flagged, FlagIcon, PitchLinks, editionForm, hrefFor, useBooking, useNotFound, type Field } from "@/components/booking/common";
+import { BackLink, EntityForm, editionForm, hrefFor, useBooking, useNotFound, type Field } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
+import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
 import { fmtDate, isActive } from "@/lib/booking";
 import { fmtLong, showName } from "@/lib/shows";
 import { withBandNote } from "@/lib/bandNotes";
@@ -39,7 +40,6 @@ function EditionPage() {
   const name = `${e.festivalName} ${e.label}`;
   const archive = async () => { if (confirm("Archive this year?") && (await call("editions.remove", { id }))) router.replace(hrefFor("festival", e.festivalId)); };
   const active = mine.find((p) => isActive(p.status));
-  const past = mine.filter((p) => !isActive(p.status));
   const myShows = [...(showRows.rows ?? [])].sort((a, c) => c.date.localeCompare(a.date));
   const dated = (d: { date: string; sure: string } | undefined) => d && <>{fmtDate(d.date)}{SURE[d.sure] && <span className="d-muted"> ({SURE[d.sure]})</span>}</>;
   const autosave = { command: "editions.update", id, rev: e.rev, title: name };
@@ -50,6 +50,7 @@ function EditionPage() {
       meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
       more={<Menu label="More actions" testid="edition" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
+      <PitchSummaryCard kind="edition" id={id} mine={mine} testid="edition-pitch" />
       <CardGroup kind="shared">
         <DetailCard title="About this year" editKey="about" edit={edit} warn={SHARED_WARN} testid="edition-facts" editTestid="edit-toggle"
           editChildren={<div><EntityForm testid="edition-edit" fields={aboutFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>
@@ -65,46 +66,20 @@ function EditionPage() {
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Pitch" testid="edition-pitch"
-          icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
-          <Flagged kind="edition" id={id} pitches={mine} label={active ? undefined : `Add ${e.label} to the Pitch List`}>{(flag, flagForm, strip) => active ? (
-            <div className="grid gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{e.label} is on the Pitch List</span>
-                <Link href={`/booking/pitches/${active.id}`} className="underline">Open pitch</Link>
-              </div>
-              {strip}
-            </div>
-          ) : (
-            <div className="grid gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="d-muted">Not on the Pitch List.{e.appOpens ? ` Applications open ${fmtDate(e.appOpens.date)}.` : ""}</span>
-                {flag}
-              </div>
-              {flagForm}
-            </div>
-          )}</Flagged>
-        </DetailCard>
-
         <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="edition-notes-card" editTestid="notes-edit"
           editChildren={<div><EntityForm testid="edition-notes" fields={notesFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={{ ...autosave, rev: note?.rev, title: `${name} notes` }} /></div>}>
           <KV rows={[["Pay", e.payNotes ?? ""], ["Notes", e.notes ?? ""]]} />
         </DetailCard>
 
-        <DetailCard private title={`Our history here (${past.length + myShows.length})`} testid="edition-history">
-          {past.length + myShows.length === 0 ? <div className="empty">No past pitches or shows yet.</div> : (
-            <div className="grid gap-3">
-              {past.length > 0 && <PitchLinks pitches={past} />}
-              {myShows.length > 0 && (
-                <div data-testid="edition-shows">
-                  {myShows.map((s) => (
-                    <div key={s.id} className="d-row" data-testid={`edition-show-${s.id}`}>
-                      <Link href={`/shows/${s.id}`} className="font-bold">{showName(s)}</Link>
-                      <span className="d-muted text-sm">{fmtLong(s.date)} {s.date.slice(0, 4)}</span>
-                    </div>
-                  ))}
+        <DetailCard private title="Our shows here" testid="edition-history">
+          {myShows.length === 0 ? <div className="empty">No shows yet.</div> : (
+            <div data-testid="edition-shows">
+              {myShows.map((s) => (
+                <div key={s.id} className="d-row" data-testid={`edition-show-${s.id}`}>
+                  <Link href={`/shows/${s.id}`} className="font-bold">{showName(s)}</Link>
+                  <span className="d-muted text-sm">{fmtLong(s.date)} {s.date.slice(0, 4)}</span>
                 </div>
-              )}
+              ))}
             </div>
           )}
         </DetailCard>

@@ -37,7 +37,7 @@ test("Booked it turns a pitch into a show with a set length, show start and a de
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Fox Theatre" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
   await expect(page.getByTestId("pitch-page")).toBeVisible();
   const pitchUrl = page.url();
-  await page.getByTestId("booked-it").click();
+  await page.goto(pitchUrl.replace("/booking/pitches/", "/shows/new?pitch=")); // Booked it's form lives on the pitch page; this route stays for Roadie
 
   // prefilled from the pitch
   await expect(page.getByTestId("new-show")).toBeVisible();

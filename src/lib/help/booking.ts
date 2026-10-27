@@ -20,7 +20,7 @@ export const BOOKING_TOPICS: HelpTopic[] = [
       "A pitch is a venue, promoter or festival year you want to play, tracked on the Pitch List. Flag a place on any Booking tab to start one. It begins as \"To Pitch\". The \"Pitch List\" tab shows active pitches, with the date of last contact, and \"Filter by\" menus: one status, a category (venues, festivals or promoters), a city or state, and a venue type (hidden when you pick festivals).\n\n" +
       "Open a pitch to work it. \"Status\" has \"Where it's at\" and a \"Next step\" (words plus a date). \"Email\" fills one of your templates and sends from your own Gmail. \"Check for replies\" pulls answers into the timeline. \"Lineup\" sets the configuration, who's on it and who's handling it. \"Dates & shows\" holds the possible dates.\n\n" +
       "\"Activity\" is the timeline. Post a \"Comment\" for the band talking it over, or log a \"Call\". Calls, emails and sends count as contact. Comments don't.\n\n" +
-      "\"Booked it\" starts a new show from the pitch, and the pitch moves to Booked once that show is created.\n\n" +
+      "\"Booked it\" is a button in the page header. It opens a form under the header: pick the date, the final configuration, whether to send calendar invitations and whether to copy the comments. The pitch moves to Booked once the show is created. \"Abandon pitch\" at the bottom of the page moves it to Dropped.\n\n" +
       "A pitch needs a nudge when its next step is due or overdue, or when it is Pitched or Talking with no contact for 14 days. Those rows turn yellow on the Pitch List.",
     related: ["pitchStatuses", "booking", "upcomingShows", "showPage"],
   },
@@ -45,7 +45,7 @@ export const BOOKING_TOPICS: HelpTopic[] = [
     title: "Venue pages: shared and private",
     text:
       "A venue page has two groups. \"Shared with every band on Roadie\" is the \"About the room\" card: name, address, type, capacity and website. There is one shared venue directory, so other bands using the app see these details, and an edit changes them for all of them. Your name goes in the history. The card warns: \"Every band on Roadie sees these details.\"\n\n" +
-      "\"Only <your band> sees this\" holds your own pitch, contacts, \"Our notes\" (booked by, load-in, notes) and \"Our shows here\". Other bands never see those.\n\n" +
+      "The pitch is a small card at the very top, above both groups. It says \"On the Pitch List\" with the status, configuration, dates, last contact and next step, and \"View pitch\" opens the pitch page. Or it says \"Not on the Pitch List\" with \"Add to Pitch List\". A line underneath lists earlier pitches (\"Pitched before\"). All the work on a pitch happens on the pitch page.\n\n\"Only <your band> sees this\" holds your contacts, \"Our notes\" (booked by, load-in, notes) and \"Our shows here\". Other bands never see those.\n\n" +
       "On the \"Contacts\" card, tick \"Booking\" for whoever you pitch and book with and \"Day-of\" for whoever to call on the day of a show. One person can have both, and several people can share one. Pitch emails go to the booking contacts first. A new show here gets the first day-of contact.\n\n" +
       "\"Archive venue\" (in \"More\") hides it from your lists only. Other bands keep it. You can bring it back later.\n\n" +
       "\"Merge into another venue…\" fixes duplicates, and it affects every band. Their shows, pitches and notes move to the venue you keep. The other one is archived, and you can undo it from History.\n\n" +

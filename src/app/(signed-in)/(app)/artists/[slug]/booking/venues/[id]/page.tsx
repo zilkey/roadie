@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, VENUE_SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { VenuePitch, type PitchEdit } from "@/components/booking/VenuePitch";
+import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import {
   BackLink, ContactsPanel, EntityForm, hrefFor, roomForm, useBooking, useNotFound, venueNotesForm, type VenueRow,
@@ -34,7 +34,7 @@ export default function VenuePage() {
   const types = useVenueTypes();
   const shows = useCollection<Show>("shows", { where: [["venue.id", "==", id], ["artistId", "==", artistId]] });
   const { call, error } = useCommand();
-  const edit = useSingleEdit<"about" | "pitch" | "contacts" | "notes">();
+  const edit = useSingleEdit<"about" | "contacts" | "notes">();
   const [merging, setMerging] = useState(false);
   const mergedInto = v?.deletedAt ? v.mergedInto : undefined;
   useEffect(() => { if (mergedInto) router.replace(hrefFor("venue", mergedInto)); }, [mergedInto, router]);
@@ -77,6 +77,7 @@ export default function VenuePage() {
             onClick={() => call("venues.create", { name: v.name, type: v.type, address: v.address, region: v.region })}>Bring it back to our lists</button></div>
         </div>
       )}
+      {admin && <PitchSummaryCard kind="venue" id={id} mine={pitches.filter((p) => p.artistId === artistId)} testid="venue-pitch-card" />}
       <CardGroup kind="shared">
         <DetailCard title="About the room" editKey="about" edit={edit} warn={VENUE_SHARED_WARN} testid="room-card" editTestid="room-edit" doneTestid="room-save"
           editChildren={
@@ -95,7 +96,6 @@ export default function VenuePage() {
       </CardGroup>
       {admin && (
         <CardGroup kind="private">
-          <VenuePitch venueId={id} pitches={pitches} edit={edit as unknown as PitchEdit} />
           <DetailCard private title="Contacts" editKey="contacts" edit={edit} editTestid="contacts-edit" editChildren={contacts}>{contacts}</DetailCard>
           <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="notes-private" editTestid="notes-edit" doneTestid="notes-done"
             editChildren={

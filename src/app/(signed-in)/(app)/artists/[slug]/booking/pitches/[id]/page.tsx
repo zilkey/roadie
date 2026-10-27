@@ -17,6 +17,7 @@ import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useBooking, useNotFound, type PitchRow } from "@/components/booking/common";
 import { roleFirst } from "@/lib/venues";
 import { STATUSES, STATUS_LABEL, buildTemplateContext, fillTemplate, sortedDates, unfilledFields, type Status } from "@/lib/booking";
+import { BookedItForm } from "@/components/booking/BookedItForm";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
 import { fmtLong, showName } from "@/lib/shows";
 import { statsTemplateFields } from "@/lib/stats";
@@ -55,6 +56,7 @@ function PitchPage() {
   const artist = current.doc ?? undefined;
   const { call, error, busy } = useCommand();
   const [emailOpen, setEmailOpen] = useState(false);
+  const [booking, setBooking] = useState(false);
   const [step, setStep] = useState<{ text: string; due: string } | null>(null);
   const [replies, setReplies] = useState<string | null>(null);
   const nf = useNotFound(loading, p, "pitch");
@@ -115,6 +117,10 @@ function PitchPage() {
     if (r) { await callDraft.clear({ reset: true }); callId.current = newMutationId(); }
   }
 
+  async function abandon() {
+    if (confirm("Abandon this pitch? It moves to Past pitches.")) await call("pitches.move", { id, status: "dropped" });
+  }
+
   async function checkReplies() {
     const r = await call<{ added: number }>("pitches.checkReplies", { id });
     if (r) setReplies(r.added ? `${r.added} new repl${r.added === 1 ? "y" : "ies"}` : "No new replies");
@@ -129,9 +135,13 @@ function PitchPage() {
         sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
           <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">Open {p.target.kind === "edition" ? "festival year" : p.target.kind}</Link></>}
         pill={<StatusPill status={p.status} />}
-        actions={<Menu label="More actions" testid="pitch" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "remove", label: "Remove from Pitch List", danger: true,
-          onSelect: async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); } }]} />} />
+        actions={<div className="flex items-center gap-2">
+          {p.status !== "declined" && p.status !== "dropped" && <button type="button" className="btn acc" onClick={() => setBooking(true)} disabled={busy} data-testid="booked-it">Booked it</button>}
+          <Menu label="More actions" testid="pitch" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "remove", label: "Remove from Pitch List", danger: true,
+            onSelect: async () => { if (confirm("Take this off the Pitch List?") && (await call("pitches.remove", { id }))) router.replace("/booking"); } }]} />
+        </div>} />
       <ErrorBox error={error} />
+      {booking && <section className="card" data-testid="book-card"><BookedItForm p={p} commentCount={comments.length} onCancel={() => setBooking(false)} /></section>}
 
       <section className="card" data-testid="pitch-status-card">
         <div className="card-head"><h2>Status</h2><SaveStatus {...as.statusProps} /></div>
@@ -180,7 +190,6 @@ function PitchPage() {
       <section className="card" data-testid="pitch-dates-card">
         <div className="card-head">
           <h2>Dates &amp; shows</h2>
-          {p.status !== "declined" && p.status !== "dropped" && <Link href={`/shows/new?pitch=${id}`} className="btn acc" data-testid="booked-it">Booked it</Link>}
         </div>
         {p.showIds.length > 0 && (
           <div className="grid gap-2" data-testid="pitch-shows">
@@ -216,6 +225,7 @@ function PitchPage() {
           </form>
         )}
       </section>
+      {p.status !== "dropped" && <div className="flex justify-end"><button type="button" className="btn danger" onClick={abandon} disabled={busy} data-testid="pitch-abandon">Abandon pitch</button></div>}
     </div>
   );
 }

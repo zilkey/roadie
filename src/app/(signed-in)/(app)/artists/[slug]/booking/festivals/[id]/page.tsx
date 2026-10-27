@@ -11,9 +11,10 @@ import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { useAutosave } from "@/lib/autosave";
 import {
-  BackLink, ContactsPanel, EntityForm, Flagged, FlagIcon, PitchLinks, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field,
+  BackLink, ContactsPanel, EntityForm, Flagged, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
+import { FestivalPitchCard } from "@/components/booking/PitchSummaryCard";
 import { cityState, fmtDate, isActive } from "@/lib/booking";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Edition, Festival, Show } from "@/schema";
@@ -56,8 +57,6 @@ function FestivalPage() {
 
   const archive = async () => { if (confirm(`Archive ${f.name} and its years?`) && (await call("festivals.remove", { id }))) router.replace("/booking"); };
   const active = mine.find((p) => isActive(p.status));
-  const activeEd = active ? editions.find((e) => e.id === active.target.id) : undefined;
-  const past = mine.filter((p) => !isActive(p.status));
   const myShows = (showRows.rows ?? []).filter((s) => s.editionId && editionIds.has(s.editionId)).sort((a, c) => c.date.localeCompare(a.date));
   const thisYear = new Date().getFullYear();
   const upcoming = editions.find((e) => e.year >= thisYear); // editions are newest first: the newest year that is this year or later
@@ -71,6 +70,7 @@ function FestivalPage() {
       pill={active ? <PitchedPill /> : undefined} meta={meta}
       more={<Menu label="More actions" testid="festival" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive festival", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
+      <FestivalPitchCard editions={editions} mine={mine} upcoming={pitchCardFlag} />
       <CardGroup kind="shared">
         <DetailCard title="About the festival" editKey="about" edit={edit} warn={SHARED_WARN} testid="festival-about" editTestid="edit-toggle"
           editChildren={
@@ -131,31 +131,6 @@ function FestivalPage() {
       </CardGroup>
 
       <CardGroup kind="private">
-        <DetailCard private title="Pitch" testid="festival-pitch"
-          icon={<span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={!!active} /></span>}>
-          {active && activeEd ? (
-            <div className="grid gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span>{activeEd.label} is on the Pitch List</span>
-                <Link href={`/booking/pitches/${active.id}`} className="underline">Open pitch</Link>
-              </div>
-              <Flagged kind="edition" id={activeEd.id} pitches={mine}>{(_btn, _form, strip) => strip}</Flagged>
-            </div>
-          ) : !pitchCardFlag ? (
-            <span className="d-muted">{editions.length === 0 ? "Not on the Pitch List. Add a year first." : "Not on the Pitch List."}</span>
-          ) : (
-            <div className="grid gap-3">
-              <Flagged kind="edition" id={pitchCardFlag.id} pitches={mine} label={`Add ${pitchCardFlag.label} to the Pitch List`}>{(flag, flagForm) => (<>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="d-muted">Not on the Pitch List.{pitchCardFlag.appOpens ? ` ${pitchCardFlag.label} applications open ${fmtDate(pitchCardFlag.appOpens.date)}.` : ""}</span>
-                  {flag}
-                </div>
-                {flagForm}
-              </>)}</Flagged>
-            </div>
-          )}
-        </DetailCard>
-
         <DetailCard private title="Our notes" editKey="notes" edit={edit} testid="festival-notes-card" editTestid="notes-edit"
           editChildren={
             <div>
@@ -166,20 +141,15 @@ function FestivalPage() {
           {f.notes ? <p className="m-0 whitespace-pre-wrap">{f.notes}</p> : <span className="d-muted">—</span>}
         </DetailCard>
 
-        <DetailCard private title={`Our history here (${past.length + myShows.length})`} testid="festival-history">
-          {past.length + myShows.length === 0 ? <div className="empty">No past pitches or shows yet.</div> : (
-            <div className="grid gap-3">
-              {past.length > 0 && <PitchLinks pitches={past} />}
-              {myShows.length > 0 && (
-                <div>
-                  {myShows.map((s) => (
-                    <div key={s.id} className="d-row" data-testid={`festival-show-${s.id}`}>
-                      <Link href={`/shows/${s.id}`} className="font-bold">{s.editionName ?? s.venue?.name ?? s.place?.city ?? "Show"}</Link>
-                      <span className="d-muted text-sm">{s.date}</span>
-                    </div>
-                  ))}
+        <DetailCard private title="Our shows here" testid="festival-history">
+          {myShows.length === 0 ? <div className="empty">No shows yet.</div> : (
+            <div>
+              {myShows.map((s) => (
+                <div key={s.id} className="d-row" data-testid={`festival-show-${s.id}`}>
+                  <Link href={`/shows/${s.id}`} className="font-bold">{s.editionName ?? s.venue?.name ?? s.place?.city ?? "Show"}</Link>
+                  <span className="d-muted text-sm">{s.date}</span>
                 </div>
-              )}
+              ))}
             </div>
           )}
         </DetailCard>
