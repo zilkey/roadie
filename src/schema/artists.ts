@@ -139,6 +139,8 @@ export const Artist = entity({
   driveFolderId: z.string(),
   /** Where recordings uploaded from a rehearsal go, one "{date} Rehearsal" folder per rehearsal inside it. Set only by google.setRehearsalFolder. */
   rehearsalFolderId: z.string().optional(),
+  /** The iCloud link that installs the band's "Send to Roadie" Shortcut (Settings > Google). Set only by shortcut.setInstallUrl. */
+  shortcutUrl: z.string().url().nullable().optional(),
   /** Where lyrics, chord sheets and other charts go: Copy to band folder puts its copies here. Set only by google.setChartsFolder. */
   chartsFolderId: z.string().optional(),
   /** Where audio uploaded to a song goes (demos, voice memos, mixes). Set only by google.setDemosFolder. */

@@ -96,7 +96,7 @@ const EXPECTED = [
   "drive.search", "drive.fix", "files.attach", "files.update", "files.remove", "files.check", "files.shareWithBand", "files.copyToBand",
   "songs.create", "songs.update", "setlistTemplates.create", "setlistTemplates.update", "setlists.printLink", "setlists.setItems", "setlists.seed",
   "rehearsals.create", "rehearsals.update",
-  "rehearsals.setLocation", "rehearsals.importSetlist", "rehearsals.calendarPreview", "rehearsals.calendar", "rehearsals.calendarLink",
+  "rehearsals.setLocation", "rehearsals.importSetlist", "rehearsals.folder", "rehearsals.newRecordings", "rehearsals.adoptRecording", "rehearsals.calendarPreview", "rehearsals.calendar", "rehearsals.calendarLink",
   // stage plots
   "stagePlots.create", "stagePlots.copy", "stagePlots.rename", "stagePlots.setInputCount", "stagePlots.setMixCount", "stagePlots.updateInputs", "stagePlots.reorderInputs",
   "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",

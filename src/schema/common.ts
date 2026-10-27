@@ -18,7 +18,8 @@ export const ts = z.custom<TimestampLike | Date>(
   "Expected a timestamp",
 );
 
-export const via = z.enum(["app", "mcp", "import", "assistant"]);
+/** "shortcut": the iOS Shortcut, through a shortcut token (src/server/shortcut.ts). */
+export const via = z.enum(["app", "mcp", "import", "assistant", "shortcut"]);
 export type Via = z.infer<typeof via>;
 
 export const source = z.strictObject({ url: z.string().url(), checkedAt: z.string(), note: z.string().optional() });

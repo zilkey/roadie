@@ -24,6 +24,8 @@ export interface DriveService {
   /** A new file in `parentId` with these bytes. */
   upload(opts: { name: string; mimeType: string; parentId: string; data: Blob }): Promise<DriveFile>;
   share(id: string, emails: string[], role?: "reader" | "writer"): Promise<DriveFile>;
+  /** Give the file a new name (its id and place stay). */
+  rename(id: string, name: string): Promise<DriveFile>;
   permissions(id: string): Promise<DrivePermission[]>;
   /** The file's bytes as Drive sends them (streamed). `range` is passed on as the Range header. */
   download(id: string, range?: string | null): Promise<Response>;
@@ -54,6 +56,7 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     // The fake keeps no bytes: it records the file, like any other it holds.
     upload: (o) => call("POST", "/files", { body: { name: o.name, mimeType: o.mimeType, parents: [o.parentId], ownerEmail: FAKE_OWNER } }),
     share: (id, emails, role = "reader") => call("POST", `${f(id)}/share`, { body: { emails, role } }),
+    rename: (id, name) => call("PATCH", f(id), { body: { name } }),
     permissions: (id) => call("GET", `${f(id)}/permissions`),
     download: (id, range) => fetch(`${baseUrl}${f(id)}/content`, { headers: range ? { range } : {} }),
   };
@@ -137,6 +140,9 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
         try { await add(false); } catch (e) { if (e instanceof IntegrationError && e.status === 400) await add(true); else throw e; }
       }
       return get(id);
+    },
+    async rename(id, name) {
+      return toFile(await call<GFile>("PATCH", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES }, body: { name } }));
     },
     async permissions(id) {
       const r = await call<{ permissions?: GPermission[] }>("GET", `${f(id)}/permissions`, { query: { fields: `permissions(${PERM_FIELDS})`, ...ALL_DRIVES } });

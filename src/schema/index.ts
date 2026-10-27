@@ -26,6 +26,7 @@ import { ExpenseInput } from "./expenses";
 import { StatSnapshotInput } from "./statSnapshots";
 import { HistoryInput } from "./history";
 import { McpTokenInput } from "./mcpTokens";
+import { ShortcutTokenInput } from "./shortcutTokens";
 import { e164, lowerEmail, matchKeyFor } from "./normalize";
 
 export * from "./common";
@@ -60,6 +61,7 @@ export * from "./driving";
 export * from "./statSnapshots";
 export * from "./history";
 export * from "./mcpTokens";
+export * from "./shortcutTokens";
 
 export interface CollectionDef {
   /** Validates the writable fields (no server-stamped ones). */
@@ -108,6 +110,7 @@ export const collections: Record<string, CollectionDef> = {
   statSnapshots: { input: StatSnapshotInput, immutable: true },
   history: { input: HistoryInput, immutable: true },
   mcpTokens: { input: McpTokenInput },
+  shortcutTokens: { input: ShortcutTokenInput },
 };
 
 /** "pitches/abc/comments" -> "comments"; "venues" -> "venues". */

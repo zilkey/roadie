@@ -56,8 +56,11 @@ export async function rehearsalFolderId(artistId?: string): Promise<string | nul
  * ("2026-10-04 Rehearsal", "2026-09-29 - Rehearsal", "2026-10-13"); otherwise a new "{date} Rehearsal".
  */
 export async function folderForRehearsal(drive: DriveService, parent: string, date: string): Promise<DriveFile> {
-  const hit = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name.includes(date));
-  return hit ?? drive.createFolder(`${date} Rehearsal`, parent);
+  return (await findRehearsalFolder(drive, parent, date)) ?? drive.createFolder(`${date} Rehearsal`, parent);
+}
+/** The same lookup without making one: null when no folder in the recordings folder is named with the date. */
+export async function findRehearsalFolder(drive: DriveService, parent: string, date: string): Promise<DriveFile | null> {
+  return (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name.includes(date)) ?? null;
 }
 
 async function inFolder(drive: DriveService, id: string, folder: string, seen = new Set<string>(), depth = 0): Promise<boolean> {

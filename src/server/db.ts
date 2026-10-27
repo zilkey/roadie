@@ -547,8 +547,8 @@ export async function run<T>(
  * The one write outside history: `mcpTokens.lastUsedAt` is telemetry, not business data, so it is stamped directly
  * (no history entry, so undoing an AI run never blanks it) and at most once a minute per token.
  */
-export async function touchLastUsed(hash: string, now = new Date()): Promise<void> {
-  const ref = firestore().collection("mcpTokens").doc(hash);
+export async function touchLastUsed(hash: string, now = new Date(), collection: "mcpTokens" | "shortcutTokens" = "mcpTokens"): Promise<void> {
+  const ref = firestore().collection(collection).doc(hash);
   const snap = await ref.get();
   const last = snap.data()?.lastUsedAt as Timestamp | undefined;
   if (last && now.getTime() - last.toMillis() < 60_000) return;

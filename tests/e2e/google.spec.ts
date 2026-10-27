@@ -104,3 +104,29 @@ test("Settings > Google shows the Songwriting folder, for audio uploaded to Writ
   await expect(card.getByTestId("songwriting-folder-link")).toContainText("Songwriting");
   await expect(card.getByTestId("songwriting-folder-status")).toContainText("Writing phase");
 });
+
+test("Settings > Google: the voice memo shortcut card makes a token (shown once), remembers it was made, and takes the Shortcut's iCloud link", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.goto("/artists/ingrid-avison-band/admin/google");
+  const card = page.getByTestId("google-shortcut");
+  await expect(card.getByTestId("shortcut-token-status")).toContainText("No token yet");
+  await expect(card.getByTestId("shortcut-no-url")).toBeVisible();
+  await card.getByTestId("shortcut-make-token").click();
+  await expect(card.getByTestId("shortcut-token")).toContainText("rsk_");
+  await expect(card.getByTestId("shortcut-recipe")).toContainText("/api/shortcut/rehearsals");
+  await page.reload();
+  await expect(card.getByTestId("shortcut-token-status")).toContainText("You have a token");
+  await expect(card.getByTestId("shortcut-token")).toHaveCount(0);
+
+  await card.getByTestId("shortcut-url-change").click();
+  await card.getByTestId("shortcut-url").fill("https://example.com/not-a-shortcut");
+  await card.getByTestId("shortcut-url-save").click();
+  await expect(card.getByTestId("error")).toContainText("iCloud link");
+  await card.getByTestId("shortcut-url").fill("https://www.icloud.com/shortcuts/0123456789abcdef");
+  await card.getByTestId("shortcut-url-save").click();
+  await expect(card.getByTestId("shortcut-install")).toHaveAttribute("href", "https://www.icloud.com/shortcuts/0123456789abcdef");
+
+  page.on("dialog", (d) => d.accept());
+  await card.getByTestId("shortcut-revoke").click();
+  await expect(card.getByTestId("shortcut-token-status")).toContainText("No token yet");
+});

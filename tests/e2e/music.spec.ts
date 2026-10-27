@@ -261,6 +261,20 @@ test("create a rehearsal, add songs from the search, attach the recording from D
   await expect(page.getByTestId("rehearsal-songs")).toContainText("Try a ritard");
   await expect(page.getByTestId("rehearsal-files")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
 
+  // a voice memo shared into the rehearsal's Drive folder by hand shows up under Check Drive folder; attaching it to a song names it like an upload
+  const folders = (await (await fetch(`${DRIVE}/files?parent=fake-folder-rehearsals&mimeType=application/vnd.google-apps.folder`)).json()) as { id: string; name: string }[];
+  const folder = folders.find((f) => f.name.includes("2026-10-20"))!;
+  await fetch(`${DRIVE}/files`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "New Recording 7.m4a", mimeType: "audio/mp4", parents: [folder.id], ownerEmail: "david@example.com" }) });
+  await page.getByTestId("reh-check-folder").click();
+  await expect(page.getByTestId("reh-folder-open")).toContainText("2026-10-20 Rehearsal");
+  const memo = page.getByTestId("reh-new-New Recording 7.m4a");
+  await expect(memo).toBeVisible();
+  await expect(memo.getByTestId("reh-new-attach")).toBeDisabled();
+  await memo.getByTestId("reh-new-song").selectOption({ label: "Sundial" });
+  await memo.getByTestId("reh-new-attach").click();
+  await expect(page.getByTestId("reh-new-none")).toContainText("Nothing new in 2026-10-20 Rehearsal");
+  await expect(page.getByTestId("rehearsal-files")).toContainText("Sundial - 2026-10-20 Rehearsal.m4a");
+
   // audio plays inline: Play opens the row into a waveform that fills in as it plays, Hide closes it; video has no Play
   const files = page.getByTestId("rehearsal-files");
   await expect(files.locator('[data-testid^="file-"]').filter({ hasText: "Ruby Hill ending.mp4" }).getByTestId("file-play")).toHaveCount(0);

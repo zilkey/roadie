@@ -17,9 +17,10 @@ import { stagePlotCommands } from "./stagePlots";
 import { meCommands } from "./me";
 import { helpCommands } from "./help";
 import { googleCommands } from "./google";
+import { recordingCommands } from "./recordings";
 
 /** Every command. Slices append their arrays here. */
-const all = [...peopleCommands, ...bookingCommands, ...emailCommands, ...showCommands, ...availabilityCommands, ...fanCommands, ...musicCommands, ...moneyCommands, ...statsCommands, ...aiCommands, ...assistantCommands, ...draftCommands, ...prefsCommands, ...printCommands, ...stagePlotCommands, ...meCommands, ...helpCommands, ...googleCommands, ...emailCommands] as Command[];
+const all = [...peopleCommands, ...bookingCommands, ...emailCommands, ...showCommands, ...availabilityCommands, ...fanCommands, ...musicCommands, ...moneyCommands, ...statsCommands, ...aiCommands, ...assistantCommands, ...draftCommands, ...prefsCommands, ...printCommands, ...stagePlotCommands, ...meCommands, ...helpCommands, ...googleCommands, ...emailCommands, ...recordingCommands] as Command[];
 
 export const registry: Record<string, Command> = Object.fromEntries(all.map((c) => [c.name, c]));
 export const commandNames = Object.keys(registry);

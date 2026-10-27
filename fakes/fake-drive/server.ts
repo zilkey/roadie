@@ -86,6 +86,11 @@ const routes: Route<DriveState>[] = [
     return f;
   }],
   ["GET", "/files/:id", ({ params }, s) => find(s, params.id)],
+  ["PATCH", "/files/:id", ({ params, body }, s) => {
+    const f = find(s, params.id);
+    if (typeof body.name === "string" && body.name) f.name = body.name;
+    return f;
+  }],
   ["GET", "/files/:id/content", ({ params }, s) => {
     const f = find(s, params.id);
     if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio");

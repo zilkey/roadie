@@ -4,6 +4,7 @@ import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
 import { FolderCard } from "@/components/google/FolderCard";
+import { ShortcutCard } from "@/components/google/ShortcutCard";
 import { FEATURES, list, NotConfiguredCard, type Calendar, type Check, type Feature, type Status } from "@/components/google/shared";
 
 export default function GooglePage() { return <AdminOnly><GoogleSettings /></AdminOnly>; }
@@ -109,6 +110,7 @@ function GoogleSettings() {
       {status && <FolderCard which="demos" status={status} onChange={setStatus} />}
       {status && <FolderCard which="songwriting" status={status} onChange={setStatus} />}
       {status && <FolderCard which="rehearsal" status={status} onChange={setStatus} />}
+      {status && <ShortcutCard />}
     </div>
   );
 }
