@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
-import { planHome, addDays, fmtTime, showFilter, showTabFor, showName, publicShowName, showCity } from "@/lib/shows";
+import { planHome, addDays, retargetAskMessage, fmtTime, showFilter, showTabFor, showName, publicShowName, showCity } from "@/lib/shows";
 import { firestore } from "@/server/admin";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
@@ -812,4 +812,13 @@ test("sendInvites: only configuration members who are on the team; unticked invi
 
   const notSure = await create({ date: "2027-04-20", billedAs: null, sendInvites: true });
   assert.deepEqual(await emails(notSure.id), []);
+});
+
+test("retargetAskMessage: a typed ask message swaps the dates it was typed with for the new ones; null once they were rewritten", () => {
+  assert.equal(retargetAskMessage("Hey all, show on [date]?", [], ["2027-03-06"]), "Hey all, show on Sat, Mar 6?");
+  assert.equal(retargetAskMessage("Hey all, show on Sat, Mar 6?", ["2027-03-06"], ["2027-03-06", "2027-03-12"]), "Hey all, show on Sat, Mar 6 or Fri, Mar 12?");
+  assert.equal(retargetAskMessage("Show on Sat, Mar 6 or Fri, Mar 12!", ["2027-03-06", "2027-03-12"], ["2027-03-12"]), "Show on Fri, Mar 12!");
+  assert.equal(retargetAskMessage("Show on $& [date]", [], ["2027-03-06"]), "Show on $& Sat, Mar 6");
+  assert.equal(retargetAskMessage("Show early March?", ["2027-03-06"], ["2027-03-12"]), null);
+  assert.equal(retargetAskMessage("Show early March?", ["2027-03-06"], ["2027-03-06"]), "Show early March?");
 });

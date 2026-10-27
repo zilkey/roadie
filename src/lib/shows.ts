@@ -84,6 +84,18 @@ export function fmtTime(t?: string): string {
 }
 export const fmtLong = (s?: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "");
 export const fmtLongYear = (s?: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "");
+/** How an ask names its dates: "Sat, Mar 6 or Fri, Mar 12", or "[date]" before any is picked. */
+export const askDatesPhrase = (dates: string[]) => dates.map(fmtLong).join(" or ") || "[date]";
+/**
+ * A typed ask message written while `was` were the picked dates, moved to `now`: the dates it was written with are
+ * swapped for the new ones wherever they sit. Null when that wording isn't in it any more (the dates were rewritten by hand).
+ */
+export function retargetAskMessage(msg: string, was: string[], now: string[]): string | null {
+  const from = askDatesPhrase(was), to = askDatesPhrase(now);
+  if (from === to) return msg;
+  const i = msg.indexOf(from);
+  return i < 0 ? null : msg.slice(0, i) + to + msg.slice(i + from.length);
+}
 export const fmtDur = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`;
 
 // ---------- checklist ----------

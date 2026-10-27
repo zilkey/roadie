@@ -10,7 +10,7 @@ import { useArtist } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { fmtPitchDate, sortedDates, todayStr } from "@/lib/booking";
-import { fmtLong, type Answer } from "@/lib/shows";
+import { askDatesPhrase, fmtLong, retargetAskMessage, type Answer } from "@/lib/shows";
 import { ANSWER_FOOT, ANSWER_WORD, DateAnswerCard } from "@/components/shows/DateAnswers";
 import { ChannelPicker, PILL, Sent, finishSignal, startSignal, useAnswerPage, useLastChannel, type AskResult, type Channel, type SentResult } from "@/components/shows/Availability";
 import type { Availability, Musician } from "@/schema";
@@ -173,21 +173,28 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
   useEffect(() => setShare(shareSheetHere()), []);
   // The ask is an action (it emails people): its inputs are a draft per pitch until Send.
   const askPath = draftPath.newUnder("pitches", pitchId, "availability");
-  const draft = useDraft(askPath, { dates: null as string[] | null, picked: defaultIds, msg: null as string | null, channel: null as Channel | null }, { title: () => `Ask who's free · ${placeName}` });
+  const draft = useDraft(askPath, { dates: null as string[] | null, seen: null as string[] | null, picked: defaultIds, msg: null as string | null, msgOn: null as string[] | null, channel: null as Channel | null }, { title: () => `Ask who's free · ${placeName}` });
   const mutationId = useRef(newMutationId());
-  const { picked, msg } = draft.value;
-  // Every date still ahead is in the ask until it's tapped off.
-  const on = (draft.value.dates ?? cols.filter((d) => d >= todayStr())).filter((d) => cols.includes(d));
+  const { picked, msg, seen } = draft.value;
+  // Every date still ahead is in the ask until it's tapped off; one added to the pitch after a tap joins it too.
+  const fresh = cols.filter((d) => d >= todayStr() && !(seen ?? []).includes(d));
+  const on = draft.value.dates ? sortedDates([...new Set([...draft.value.dates.filter((d) => cols.includes(d)), ...fresh])]) : fresh;
   // No Signal group set: no choice at all, email as always.
   const channel: Channel = groupUrl ? (draft.value.channel ?? lastChannel ?? "email") : "email";
   const set = (v: Partial<typeof draft.value>) => draft.setValue({ ...draft.value, ...v });
   const [result, setResult] = useState<SentResult | null>(null);
-  const defaultMsg = `We have an option for a show at ${placeName} on ${on.map(fmtLong).join(" or ") || "[date]"}. Can you play? Tap your answer for each date:`;
+  const defaultMsg = `We have an option for a show at ${placeName} on ${askDatesPhrase(on)}. Can you play? Tap your answer for each date:`;
+  // A typed message follows the picked dates: the dates it was typed with are swapped for today's. If they were
+  // rewritten by hand, it's left as typed and a note offers the standard message instead. (Drafts from before
+  // msgOn: a "[date]" in them means it was typed with none.)
+  const msgOn = draft.value.msgOn ?? (msg?.includes("[date]") ? [] : on);
+  const moved = msg == null ? null : retargetAskMessage(msg, msgOn, on);
+  const shown = msg == null ? defaultMsg : moved ?? msg;
   const link = answerPage({ pitchId });
   const why = !on.length ? "Pick a date to send." : !picked.length ? "Pick at least one person." : "";
 
   async function send() {
-    const message = msg ?? defaultMsg;
+    const message = shown;
     const text = `${message}\n${link}`;
     // Before any await: Signal Desktop has to open inside the click.
     const started = channel === "signal" && groupUrl ? startSignal(text, groupUrl) : null;
@@ -213,7 +220,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
             {!cols.length && <span className="s sm:pt-2" data-testid="ask-no-dates">Add a date in the table above first.</span>}
             {cols.map((d) => {
               const isOn = on.includes(d);
-              return <PickChip key={d} on={isOn} testid={`ask-date-${d}`} onToggle={() => set({ dates: isOn ? on.filter((x) => x !== d) : sortedDates([...on, d]) })}>{fmtPitchDate(d)}</PickChip>;
+              return <PickChip key={d} on={isOn} testid={`ask-date-${d}`} onToggle={() => set({ dates: isOn ? on.filter((x) => x !== d) : sortedDates([...on, d]), seen: cols })}>{fmtPitchDate(d)}</PickChip>;
             })}
           </div>
 
@@ -233,7 +240,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
           <label className="lbl sm:pt-3" htmlFor="ask-message">Message</label>
           <div className="overflow-hidden rounded-[10px] border" style={{ borderColor: "var(--input-border)" }}>
             <textarea id="ask-message" className="block w-full resize-y border-0 bg-transparent px-3.5 py-3 text-[15px] leading-normal outline-none" rows={3}
-              value={msg ?? defaultMsg} onChange={(e) => set({ msg: e.target.value })} data-testid="ask-message" />
+              value={shown} onChange={(e) => set({ msg: e.target.value, msgOn: on })} data-testid="ask-message" />
             <div className="flex items-center justify-between gap-2 border-t px-3.5 py-2" style={{ borderColor: "var(--line)" }}>
               <span className="flex min-w-0 items-center gap-2 text-sm" style={{ color: "var(--accent-text)" }}>
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden className="flex-none">
@@ -244,6 +251,13 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
               <span className="s whitespace-nowrap">Added to every message</span>
             </div>
           </div>
+          {msg != null && moved == null && on.length > 0 && <>
+            <span />
+            <p className="s -mt-2 text-sm" data-testid="ask-message-dates">
+              The dates changed to {askDatesPhrase(on)}, and your message doesn&apos;t say the old ones any more, so it wasn&apos;t updated.{" "}
+              <button type="button" className="link" onClick={() => set({ msg: null, msgOn: null })} data-testid="ask-message-reset">Use the standard message</button>
+            </p>
+          </>}
         </div>
       )}
       <ErrorBox error={error} />

@@ -120,9 +120,24 @@ test("Ask who's free: the pitch's dates ahead are picked, and Send says why it's
   await expect(page.getByTestId("ask-no-dates")).toBeVisible();
   await expect(page.getByTestId("ask-send")).toBeDisabled();
   await expect(page.getByTestId("ask-send-why")).toHaveText("Pick a date to send.");
+  // A message typed before there's a date gets the real dates as they're added
+  await expect(page.getByTestId("ask-message")).toHaveValue(/on \[date\]\./);
+  await page.getByTestId("ask-message").fill("Hey all, Cervantes on [date]. In?");
   await page.getByTestId("pitch-dates-date").fill("2027-03-06");
   await page.getByTestId("pitch-dates-add").click();
   await expect(page.getByTestId("ask-date-2027-03-06")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Cervantes on Sat, Mar 6. In?");
+  await page.getByTestId("pitch-dates-date").fill("2027-03-13");
+  await page.getByTestId("pitch-dates-add").click();
+  await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Cervantes on Sat, Mar 6 or Sat, Mar 13. In?");
+  // Dates rewritten by hand aren't touched; a note offers the standard message
+  await page.getByTestId("ask-message").fill("Hey all, Cervantes in early March. In?");
+  await page.getByTestId("ask-date-2027-03-13").click();
+  await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Cervantes in early March. In?");
+  await expect(page.getByTestId("ask-message-dates")).toContainText("Sat, Mar 6");
+  await page.getByTestId("ask-message-reset").click();
+  await expect(page.getByTestId("ask-message")).toHaveValue(/show at Cervantes' Other Side on Sat, Mar 6\. Can you play\?/);
+  await page.getByTestId("pitch-dates-remove-1").click();
   await expect(page.getByTestId("ask-send")).toBeEnabled();
   await expect(page.getByTestId("ask-send-why")).toHaveCount(0);
   // the column's × takes the date off the pitch again
