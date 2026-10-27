@@ -239,6 +239,10 @@ fieldset.sec { margin: 0; }
 .search-field { position: relative; display: block; flex: none; width: 320px; }
 .search-field .search-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .search-field .input { padding-left: 38px; }
+.search-field .input:has(+ .search-clear) { padding-right: 76px; }
+.search-field .search-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); min-height: 36px; padding: 0 10px; font: inherit; font-size: 13px; font-weight: 600; background: none; border: 0; border-radius: 8px; color: var(--accent-text); cursor: pointer; }
+.search-field .search-clear:hover { background: var(--accent-soft); }
+.search-field .search-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .search-field .input::-webkit-search-cancel-button { cursor: pointer; }
 @media (max-width: 719px) { .search-field { width: 100%; } .page-actions:has(.search-field) { flex: 1 1 100%; } }
 .show-tw { min-width: 0; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }

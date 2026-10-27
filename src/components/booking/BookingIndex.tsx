@@ -143,6 +143,7 @@ function Booking({ seg }: { seg: Seg }) {
         <label className="search-field">
           <SearchIcon />
           <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => changeQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
+          {q.trim() && <button type="button" className="search-clear" onClick={() => changeQ("")} data-testid="search-clear">Clear</button>}
         </label>
         {addActions}
       </>} />
@@ -169,7 +170,7 @@ function Booking({ seg }: { seg: Seg }) {
           )}
         </div>
       )}
-      {q.trim() ? <SearchBuckets q={q} ours={ours} onFlag={setTarget} /> : <>
+      {q.trim() ? <SearchBuckets q={q} ours={ours} onFlag={setTarget} onLeave={() => setQ("")} /> : <>
       <div className="grid min-w-0 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
         {seg === "festivals" && <ErrorBox error={page.error} />}
         {listLoading && <span className="s">Loading…</span>}
@@ -177,6 +178,7 @@ function Booking({ seg }: { seg: Seg }) {
           ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
           : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
         {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} /></div>}
+        {shownRows.length > 0 && CAPTION[seg] && <p className="s" data-testid="table-caption">{CAPTION[seg]}</p>}
         {seg === "festivals" && page.hasMore && (
           <button type="button" className="btn ghost justify-self-center" disabled={page.loadingMore} onClick={() => void page.more()} data-testid="festivals-more">
             {page.loadingMore ? "Loading…" : `Load more (${page.total - (page.rows?.length ?? 0)} left)`}
@@ -189,6 +191,14 @@ function Booking({ seg }: { seg: Seg }) {
     </div>
   );
 }
+
+/** The muted line under each tab's table (not Contacts, not the search buckets). */
+const CAPTION: Partial<Record<Seg, string>> = {
+  pitches: "Names and flags open the pitch. Yellow rows have gone quiet or have a step that's due.",
+  venues: "A venue with an active pitch opens the pitch; the venue page is one click under its name. Venues your band has something on come first.",
+  festivals: "A year with an active pitch opens the pitch; the festival page is one click under its name.",
+  promoters: "A promoter with an active pitch opens the pitch; the promoter page is one click under its name.",
+};
 
 type Category = "venue" | "festival" | "promoter";
 const CATEGORIES: [Category, string][] = [["venue", "Venues"], ["festival", "Festivals"], ["promoter", "Promoters"]];
@@ -223,7 +233,7 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 );
 
 /** `q` marks the matched text in the name and email cells; without `onSort` the headers don't sort (search buckets). */
-export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string }) {
+export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean }) {
   const hl = (text: string): ReactNode => {
     if (!q.trim()) return text;
     const h = highlight(text, q);
@@ -234,9 +244,10 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" 
   const configs = artist.doc?.configurations ?? [];
   const flagged = seg !== "contacts";
   const wideName = seg !== "promoters" && seg !== "contacts";
-  const heads: string[] = seg === "venues" ? ["Name", "City", "Email", "Phone", "Pitch"]
-    : seg === "festivals" ? ["Festival", "Edition", "Dates", "Deadline", "City", "Email", "Phone", "Pitch"]
-    : seg === "promoters" ? ["Promoter", "Name", "City", "Email", "Phone", "Pitch"]
+  // compact (search buckets) drops Phone, and on festivals Email and Pitch too
+  const heads: string[] = seg === "venues" ? ["Name", "City", "Email", ...(compact ? [] : ["Phone"]), "Pitch"]
+    : seg === "festivals" ? ["Festival", "Edition", "Dates", "Deadline", "City", ...(compact ? [] : ["Email", "Phone", "Pitch"])]
+    : seg === "promoters" ? ["Promoter", "Name", "City", "Email", ...(compact ? [] : ["Phone"]), "Pitch"]
     : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
     : ["Name", "Type", "City", "Pitch", "Last contact", "Next step"];
   const today = todayStr();
@@ -245,9 +256,14 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" 
     const p = r.pitch;
     return seg === "pitches" && !!p && (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today) ?? 0) >= QUIET_DAYS;
   };
+  const quietFor = (r: ListRow) => {
+    const p = r.pitch;
+    return seg === "pitches" && p ? quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today) : null;
+  };
   const lastContact = (r: ListRow) => {
     const at = r.pitch?.lastContactAt;
-    return <td className="lc" data-testid={`last-contact-${r.id}`}>{at ? fmtInstant(at.toMillis(), { month: "short", day: "numeric" }) : <Dash />}</td>;
+    const days = quiet(r) ? quietFor(r) : null;
+    return <td className="lc" data-testid={`last-contact-${r.id}`}>{at ? fmtInstant(at.toMillis(), { month: "short", day: "numeric" }) : <Dash />}{days != null && <span className="sub">{days} days quiet</span>}</td>;
   };
   const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{hl(r.name)}</Link>;
   // A row with an active pitch opens the pitch from its name; the place page is one click under it ("Venue page"). Without a pitch the name is the place page.
@@ -279,8 +295,8 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" 
   };
   const status = (r: ListRow) => r.pitch && <> <StatusChip status={r.pitch.status} /></>;
   const reach = (r: ListRow) => (<>
-    <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{hl(r.email)}</a> : <Dash />}</td>
-    <td className="nw">{r.phone ? <a className="ph" href={`tel:${r.phone}`}>{fmtPhone(r.phone)}</a> : <Dash />}</td>
+    {!(compact && seg === "festivals") && <td>{r.email ? <a className="em" href={`mailto:${r.email}`}>{hl(r.email)}</a> : <Dash />}</td>}
+    {!(compact && seg !== "contacts") && <td className="nw">{r.phone ? <a className="ph" href={`tel:${r.phone}`}>{fmtPhone(r.phone)}</a> : <Dash />}</td>}
   </>);
   const city = (r: ListRow) => <td className="nw">{r.city || <Dash />}</td>;
   const nextStep = (r: ListRow) => {
@@ -335,7 +351,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "" 
             </>)}
             {city(r)}
             {seg !== "pitches" && reach(r)}
-            {seg !== "contacts" && pitchCell(r)}
+            {seg !== "contacts" && !(compact && seg === "festivals") && pitchCell(r)}
             {seg === "pitches" && lastContact(r)}
             {seg === "pitches" && nextStep(r)}
           </tr>

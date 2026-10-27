@@ -16,15 +16,31 @@ test("search buckets the results by kind, marks the match, and clearing brings t
   await expect(venues).toContainText("Lost Lake Lounge");
   await expect(venues.locator("mark").first()).toHaveText(/lost/i);
   await expect(page.getByTestId("bucket-festivals")).toHaveCount(0);
+  await expect(venues.locator("th", { hasText: "Phone" })).toHaveCount(0); // buckets are compact
+  await expect(venues.locator("th", { hasText: "Pitch" })).toHaveCount(1);
+  await expect(page.getByTestId("table-caption")).toHaveCount(0);
   const lost = venues.locator("tr", { hasText: "Lost Lake Lounge" });
   await expect(lost.locator("[data-testid^='flag-'][data-flagged='1']")).toHaveCount(1);
   await expect(lost.locator("a.nm")).toHaveAttribute("href", /\/booking\/pitches\//); // the name opens the pitch
   await page.getByTestId("booking-search").fill("folks");
   const fests = page.getByTestId("bucket-festivals");
   await expect(fests).toContainText("2027");
+  await expect(fests.locator("th", { hasText: "Pitch" })).toHaveCount(0);
   await expect(page.getByTestId("bucket-venues")).toHaveCount(0);
+  // the visible Clear returns to the tab with no ?q=
+  await page.getByTestId("search-clear").click();
+  await expect(page.getByTestId("booking-search")).toHaveValue("");
+  await expect(page.getByTestId("search-buckets")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/q=/);
+  await expect(page.getByTestId("search-clear")).toHaveCount(0);
+  // "All festivals" opens the whole tab, search cleared
+  await page.getByTestId("booking-search").fill("folks");
   await page.getByTestId("bucket-all-festivals").click();
-  await expect(page).toHaveURL(/\/booking\/festivals\?q=folks/);
+  await expect(page).toHaveURL(/\/booking\/festivals$/);
+  await expect(page.getByTestId("booking-search")).toHaveValue("");
+  await expect(page.getByTestId("booking-list")).toBeVisible();
+  await expect(page.getByTestId("search-buckets")).toHaveCount(0);
+  await page.getByTestId("booking-search").fill("folks");
   await page.getByTestId("booking-search").fill("");
   await expect(page.getByTestId("search-buckets")).toHaveCount(0);
   await expect(page).not.toHaveURL(/q=/);
@@ -129,7 +145,8 @@ test("Pitch List: last contact column, quiet rows turn yellow, statuses without 
   // seed: Bluebird pitched, last contact 20 days ago; Fox talking, 3 days ago; Cervantes a Future Pitch, never contacted
   const bluebird = list.locator("tr", { hasText: "Bluebird Room" });
   await expect(bluebird).toHaveAttribute("data-quiet", "1");
-  await expect(bluebird.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
+  await expect(bluebird.getByTestId(/^last-contact-/)).toContainText("days quiet");
+  await expect(list.getByTestId("table-caption")).toHaveText("Names and flags open the pitch. Yellow rows have gone quiet or have a step that's due.");
   const fox = list.locator("tr", { hasText: "Fox Theatre" });
   await expect(fox.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
   await expect(fox).not.toHaveAttribute("data-quiet", "1");

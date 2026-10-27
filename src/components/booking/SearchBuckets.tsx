@@ -15,7 +15,7 @@ const BUCKETS: { seg: Exclude<Seg, "pitches">; title: string; all: string }[] = 
 ];
 
 /** What a search shows in place of the tab: one card per kind that matched. */
-export function SearchBuckets({ q, ours, onFlag }: { q: string; ours: Set<string>; onFlag(t: PitchTarget): void }) {
+export function SearchBuckets({ q, ours, onFlag, onLeave }: { q: string; ours: Set<string>; onFlag(t: PitchTarget): void; onLeave(): void }) {
   const b = useBooking();
   const buckets = useMemo(() => {
     const hit = new Set(searchItems(buildSearchItems(b), q).map((i) => `${i.kind}:${i.id}`));
@@ -33,9 +33,9 @@ export function SearchBuckets({ q, ours, onFlag }: { q: string; ours: Set<string
           <header className="flex flex-wrap items-center gap-2">
             <h2 className="font-semibold">{k.title}</h2>
             <span className="chip a" data-testid={`bucket-count-${k.seg}`}>{k.rows.length}</span>
-            <Link href={`/booking/${k.seg}?q=${encodeURIComponent(q.trim())}`} className="s ml-auto" data-testid={`bucket-all-${k.seg}`}>{k.all}</Link>
+            <Link href={`/booking/${k.seg}`} onClick={onLeave} className="s ml-auto" data-testid={`bucket-all-${k.seg}`}>{k.all}</Link>
           </header>
-          <div className="book-tw"><BookingTable seg={k.seg} rows={k.rows} onFlag={onFlag} q={q} /></div>
+          <div className="book-tw"><BookingTable seg={k.seg} rows={k.rows} onFlag={onFlag} q={q} compact /></div>
         </section>
       ))}
     </div>
