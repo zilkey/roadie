@@ -1,7 +1,7 @@
 "use client";
 import Link, { useArtist } from "@/lib/artist";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { Missing, useMusic, type FileRow } from "@/components/music/common";
 import { RecordingRow } from "@/components/music/RecordingRow";
@@ -10,6 +10,7 @@ import { SaveStatus } from "@/components/SaveStatus";
 import { useAutosave } from "@/lib/autosave";
 import { Upload } from "@/components/music/Upload";
 import { DetailCard, DetailPage } from "@/components/booking/DetailCards";
+import { AutoGrowTextarea } from "@/components/AutoGrowTextarea";
 import type { Rehearsal } from "@/schema";
 
 export default function RehearsalSongPage() {
@@ -37,8 +38,10 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
   const serverNote = r.songs.find((s) => s.songId === songId)?.note ?? "";
   const [note, setNote] = useState(serverNote);
   const as = useAutosave({ command: "rehearsals.update", id: r.id, rev: r.rev, scope: `song-${songId}`, onUseTheirs: () => setNote(serverNote) });
-  // Keep in step with the record when it changes under us (Undo, someone else), unless we have unsaved edits.
-  useEffect(() => { if (!as.isBusy()) setNote(serverNote); }, [serverNote]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Keep in step with the record when it changes under us (Undo, someone else), unless we have unsaved edits or the box has
+  // focus: the saved note is trimmed, and writing it back mid-typing would eat the space or new line just typed.
+  const focused = useRef(false);
+  useEffect(() => { if (!focused.current && !as.isBusy()) setNote(serverNote); }, [serverNote]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function changeNote(v: string) {
     setNote(v);
@@ -50,6 +53,9 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
   }
 
   const files = m.files.filter((f) => f.songId === songId && f.rehearsalId === r.id);
+  // Charts, lyrics and the rest of the song's files, one tap away mid-rehearsal (recordings are listed below).
+  const refs = m.files.filter((f) => f.songId === songId && f.kind !== "rehearsal" && f.kind !== "recording")
+    .sort((a, b) => (a.kind === "chart" ? 0 : a.kind === "lyrics" ? 1 : 2) - (b.kind === "chart" ? 0 : b.kind === "lyrics" ? 1 : 2));
 
   return (
     <DetailPage testid="rehearsal-song-page" back={<Link href={`/rehearsals/${r.id}`} className="back-link" data-testid="back">← Rehearsal · {fmtLong(r.date)}</Link>}
@@ -58,9 +64,22 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
       more={admin ? <SaveStatus {...as.statusProps} /> : undefined}>
       <DetailCard private title="Notes" testid="reh-song-notes-card">
         {admin ? (
-          <textarea className="input" rows={6} aria-label={`Notes on ${title}`} placeholder="What to fix, who's changing what, the tempo…" value={note}
-            onChange={(e) => changeNote(e.target.value)} onBlur={() => void as.flush()} data-testid="reh-song-notes" />
+          <AutoGrowTextarea className="input" rows={6} aria-label={`Notes on ${title}`} placeholder="What to fix, who's changing what, the tempo…" value={note}
+            onChange={(e) => changeNote(e.target.value)} onFocus={() => { focused.current = true; }}
+            onBlur={() => { focused.current = false; setNote((n) => n.trim()); void as.flush(); }} data-testid="reh-song-notes" />
         ) : note ? <p className="m-0 whitespace-pre-wrap">{note}</p> : <span className="d-muted">No notes.</span>}
+      </DetailCard>
+
+      <DetailCard private title="Charts & lyrics" testid="reh-song-refs-card">
+        <div className="grid" data-testid="reh-song-refs">
+          {refs.map((f) => (
+            <a key={f.id} href={f.url} target="_blank" rel="noreferrer" className="flex min-h-[44px] items-center justify-between gap-3 underline" data-testid={`reh-song-ref-${f.kind}`}>
+              <span className="truncate">{f.kind === "chart" && f.key ? `Chart in ${f.key}` : f.title}</span>
+              <span className="shrink-0 text-sm d-muted">{f.kind}</span>
+            </a>
+          ))}
+          {refs.length === 0 && <span className="d-muted">No charts or lyrics on this song yet.</span>}
+        </div>
       </DetailCard>
 
       <DetailCard private title="Recordings" testid="reh-song-recordings-card">

@@ -324,7 +324,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
                     <span className="w-5 shrink-0 text-sm d-muted">{i + 1}</span>
                     <span className="grid min-w-0 flex-1">
                       <span className="truncate font-semibold">{titleOf(m, sid)}</span>
-                      {form.ran[sid] && <span className="truncate text-sm d-muted">{form.ran[sid]}</span>}
+                      {form.ran[sid] && <span className="line-clamp-3 whitespace-pre-line text-sm d-muted" data-testid="reh-song-note">{form.ran[sid]}</span>}
                     </span>
                     <span aria-hidden className="shrink-0 text-xl d-muted">›</span>
                   </Link>

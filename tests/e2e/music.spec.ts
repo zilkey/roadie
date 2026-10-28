@@ -267,6 +267,11 @@ test("create a rehearsal, add songs from the search, attach the recording from D
   await expect(page.getByTestId("reh-song-notes")).toHaveValue("Ending is loose");
   await page.getByTestId("reh-song-notes").fill("Ending is loose\nTry a ritard into the last chorus");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  // a trailing space survives the save landing while the box has focus; the song's other files are one tap away
+  await page.getByTestId("reh-song-notes").pressSequentially(" ");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("reh-song-notes")).toHaveValue("Ending is loose\nTry a ritard into the last chorus ");
+  await expect(page.getByTestId("reh-song-refs")).toContainText("Low Light demo");
   await page.getByTestId("reh-song-upload-input").setInputFiles({ name: "New Recording 4.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
   await expect(page.getByTestId("reh-song-upload-done")).toContainText("2026-10-20 Rehearsal");
   await expect(page.getByTestId("reh-song-files")).toContainText("Low Light - 2026-10-20 Rehearsal.m4a");
