@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -141,7 +142,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   return (
     <div className="sg-page" data-testid="song-page">
       <PageTitle
-        back={<Link href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>}
+        back={<BackLink href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} label="All songs" />}
         title={song.title}
         pill={admin ? undefined : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}

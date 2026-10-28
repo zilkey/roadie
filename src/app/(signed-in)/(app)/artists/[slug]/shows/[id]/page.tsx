@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -54,7 +55,7 @@ function ShowView({ show }: { show: ShowRow }) {
   return (
     <div className="show-page" data-testid="show-page" data-show-id={show.id}>
       <header className="grid gap-1.5">
-        <Link href="/shows" className="back-link" data-testid="back">← All shows</Link>
+        <BackLink href="/shows" label="All shows" />
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="page-title" data-testid="page-title">{show.editionName ? `${show.editionName} ${fmtLongYear(show.date)}` : `${showName(show)} · ${fmtLongYear(show.date)}`}</h1>

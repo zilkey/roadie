@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
@@ -71,9 +72,7 @@ export function useBooking() {
 export const KIND_PATH = { venue: "venues", promoter: "promoters", edition: "editions", festival: "festivals", contact: "contacts" } as const;
 export const hrefFor = (kind: keyof typeof KIND_PATH, id: string) => `/booking/${KIND_PATH[kind]}/${id}`;
 
-export function BackLink({ href, label }: { href: string; label: string }) {
-  return <Link href={href} className="back-link" data-testid="back">← {label}</Link>;
-}
+export { BackLink };
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);

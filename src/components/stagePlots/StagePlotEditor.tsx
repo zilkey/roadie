@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { useEffect, useMemo, useState } from "react";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import type { Musician, StagePlot } from "@/schema";
@@ -93,7 +94,7 @@ function Editor({ plot }: { plot: Row<StagePlot> }) {
   return (
     <div className="grid gap-5" data-testid="stage-plot-page">
       <PageTitle
-        back={<Link href="/stage-plots" className="back-link" data-testid="back">← All stage plots</Link>}
+        back={<BackLink href="/stage-plots" label="All stage plots" />}
         title={plot.name}
         sub={`${lineup?.name ?? "Any lineup"} · v${plot.version}`}
         actions={<>

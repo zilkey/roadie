@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -39,7 +40,7 @@ function View({ t, m }: { t: ReturnType<typeof useMusic>["templates"][number]; m
   return (
     <div className="grid gap-5" data-testid="setlist-page">
       <PageTitle
-        back={<Link href="/setlists" className="back-link" data-testid="back">← All setlist templates</Link>}
+        back={<BackLink href="/setlists" label="All setlist templates" />}
         title={t.name}
         actions={<>
           <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}><PrintIcon />Print</button>

@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
@@ -261,7 +262,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const archive = async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); };
 
   return (
-    <DetailPage testid="rehearsal-page" back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
+    <DetailPage testid="rehearsal-page" back={<BackLink href="/rehearsals" label="All rehearsals" />}
       title={`Rehearsal · ${fmtLong(form.date)}`}
       meta={<span data-testid="reh-times">{[timeLine, loc?.name ?? loc?.address ?? "", fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
       more={<div className="flex flex-wrap items-center gap-2">

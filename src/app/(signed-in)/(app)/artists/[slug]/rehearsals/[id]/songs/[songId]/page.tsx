@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import Link, { useArtist } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -58,7 +59,7 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
     .sort((a, b) => (a.kind === "chart" ? 0 : a.kind === "lyrics" ? 1 : 2) - (b.kind === "chart" ? 0 : b.kind === "lyrics" ? 1 : 2));
 
   return (
-    <DetailPage testid="rehearsal-song-page" back={<Link href={`/rehearsals/${r.id}`} className="back-link" data-testid="back">← Rehearsal · {fmtLong(r.date)}</Link>}
+    <DetailPage testid="rehearsal-song-page" back={<BackLink href={`/rehearsals/${r.id}`} label={`Rehearsal · ${fmtLong(r.date)}`} />}
       title={title}
       meta={<span>Rehearsal · {fmtLong(r.date)}{song && <> · <Link href={`/songs/${song.id}`} className="underline" data-testid="open-song">Song page</Link></>}</span>}
       more={admin ? <SaveStatus {...as.statusProps} /> : undefined}>
