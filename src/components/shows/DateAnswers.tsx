@@ -15,7 +15,7 @@ export function DateAnswerCard({ ask, busy, onAnswer }: { ask: DateAsk; busy?: b
   return (
     <div className="card" data-testid={t}>
       <div className="flex items-baseline justify-between gap-2">
-        <b className="text-[17px]">{ask.title}</b>
+        <b className="text-[1.0625rem]">{ask.title}</b>
         {ask.closed ? <span className="s" data-testid={`${t}-closed`}>Closed</span> : ask.answer && <span className="s" data-testid={`${t}-saved`}>Saved</span>}
       </div>
       <div role="group" aria-label={ask.title} className="grid grid-cols-3 gap-2">

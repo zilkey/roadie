@@ -77,13 +77,13 @@ export function ChecklistCard({ show, list, admin, templateLive, autoFocusAdd }:
               else if (e.key === "Escape") { e.stopPropagation(); void finishRename(false); }
             }} />
         ) : (
-          <h3 className="min-w-0 break-words text-[18px] font-bold" data-testid={`checklist-title-${list.id}`}>{list.name}</h3>
+          <h3 className="min-w-0 break-words text-[1.125rem] font-bold" data-testid={`checklist-title-${list.id}`}>{list.name}</h3>
         )}
         <div className="flex shrink-0 items-center gap-2">
           <span className="s" data-testid={`checklist-count-${list.id}`}>{done} of {list.items.length}</span>
           {admin && (
             <>
-              <button type="button" className="card-edit !px-0 !text-[14px]" disabled={busy} onClick={() => void template()}
+              <button type="button" className="card-edit !px-0 !text-[0.875rem]" disabled={busy} onClick={() => void template()}
                 data-testid={`checklist-${templateLive ? "update" : "save"}-template-${list.id}`}>
                 {saved ? "Saved" : templateLive ? "Update template" : "Save as template"}
               </button>

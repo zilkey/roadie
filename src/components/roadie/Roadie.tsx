@@ -223,7 +223,7 @@ export function Roadie() {
     if (fieldFocused) return null; // the keyboard is up for some other field: the pill would float over it
     return (
       <button className="fixed inset-x-3 z-10 flex min-w-0 items-center gap-2.5 rounded-full bg-[var(--strong)] p-1.5 pr-4 text-left text-[var(--on-strong)] shadow-[var(--shadow)]"
-        style={{ bottom: "calc(var(--tabbar-h, 64px) + env(safe-area-inset-bottom) + 8px)" }}
+        style={{ bottom: "calc(var(--tabbar-h, 64px) + 8px)" }}
         data-testid="roadie-pill" aria-label="Open Roadie" onClick={() => setOpen(true)}>
         <Badge size={32} />
         <span className="text-sm opacity-80">Ask or tell Roadie…</span>

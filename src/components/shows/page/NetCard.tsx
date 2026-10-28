@@ -12,6 +12,6 @@ export function NetCard({ show }: { show: ShowRow }) {
   const expenses = useCollection<ExpenseLike>("expenses", { where: [["showId", "==", show.id]] }).rows ?? [];
   const net = sumIncome(deal?.income ?? []) - sumExpenses(expenses);
   return (
-    <ShowCard title="Net for the show" testid="net" badge={<AdminOnlyBadge />} aside={<b style={{ fontSize: 22 }} data-testid="net-amount">{formatCents(net)}</b>}>{null}</ShowCard>
+    <ShowCard title="Net for the show" testid="net" badge={<AdminOnlyBadge />} aside={<b style={{ fontSize: "1.375rem" }} data-testid="net-amount">{formatCents(net)}</b>}>{null}</ShowCard>
   );
 }

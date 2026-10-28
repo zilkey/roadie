@@ -16,7 +16,7 @@ function Head({ active, status, children }: { active: boolean; status?: string; 
   return (
     <div className="flex items-center gap-2.5">
       <span className="inline-flex" style={{ color: active ? "var(--pitched)" : "var(--muted)" }}><FlagIcon filled={active} /></span>
-      <b className="text-[16px]">{children}</b>
+      <b className="text-[1rem]">{children}</b>
       {status && <StatusPill status={status} />}
     </div>
   );
@@ -39,10 +39,10 @@ function ActiveRow({ p, label }: { p: PitchRow; label?: string }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {label && <b>{label}</b>}
           {label && <StatusPill status={p.status} />}
-          <b className="text-[16px]" data-testid="pitch-config">{config}</b>
+          <b className="text-[1rem]" data-testid="pitch-config">{config}</b>
           <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="No dates yet" />
         </div>
-        {line && <span className="d-muted text-[14px]" data-testid="pitch-summary-line">{line}</span>}
+        {line && <span className="d-muted text-[0.875rem]" data-testid="pitch-summary-line">{line}</span>}
       </div>
       <Link href={`/booking/pitches/${p.id}`} className="btn acc" data-testid={label ? `view-pitch-${p.id}` : "view-pitch"}>View pitch</Link>
     </div>
@@ -59,7 +59,7 @@ function PastLine({ past }: { past: PitchRow[] }) {
   return (
     <>
       <div className="d-sep" />
-      <p className="d-muted m-0 text-[14px]" data-testid="past-pitches">
+      <p className="d-muted m-0 text-[0.875rem]" data-testid="past-pitches">
         Pitched before: {name(first)}{when(first)} · {pitchOutcome(first)} · <Link href={`/booking/pitches/${first.id}`} className="underline" data-testid={`pitch-link-${first.id}`}>see it</Link>
         {more.length > 0 && <> and {more.length} more: {more.map((p, i) => (
           <span key={p.id}>{i > 0 && ", "}<Link href={`/booking/pitches/${p.id}`} className="underline" data-testid={`pitch-link-${p.id}`}>{name(p)}{when(p)}</Link></span>

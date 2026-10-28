@@ -46,9 +46,9 @@ function PitchForm({ target, onClose }: { target: PitchTarget; onClose(): void }
           <path d="M5 21V4M5 4h12l-2.5 4L17 12H5" />
         </svg>
         <div className="grid min-w-0 flex-1">
-          <span className="text-[13px] font-semibold text-muted">Add to the Pitch List</span>
-          <h2 id="pitch-modal-title" className="text-[20px] font-extrabold leading-[1.3]">{name}</h2>
-          <span className="text-[14px] text-muted">{meta}</span>
+          <span className="text-[0.8125rem] font-semibold text-muted">Add to the Pitch List</span>
+          <h2 id="pitch-modal-title" className="text-[1.25rem] font-extrabold leading-[1.3]">{name}</h2>
+          <span className="text-[0.875rem] text-muted">{meta}</span>
         </div>
         <button type="button" onClick={onClose} aria-label="Close" data-testid={`flag-close-${id}`}
           className="grid shrink-0 place-items-center border-0 bg-transparent text-muted" style={{ width: 44, height: 44, borderRadius: 10 }}>

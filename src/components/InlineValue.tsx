@@ -138,7 +138,7 @@ export function InlineValue({ testid, label, kind, value, display, link, emptyLa
         <input {...common} className="input" type={kind === "time" ? "time" : kind === "url" ? "url" : "text"} inputMode={inputMode}
           value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => void finish()} />
       )}
-      {shownError && <span className="text-[13px] font-semibold text-[var(--danger)]" role="alert" data-testid={`${testid}-error`}>{shownError}</span>}
+      {shownError && <span className="text-[0.8125rem] font-semibold text-[var(--danger)]" role="alert" data-testid={`${testid}-error`}>{shownError}</span>}
     </span>
   );
 }

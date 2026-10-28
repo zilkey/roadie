@@ -5,7 +5,7 @@ import { todayStr } from "@/lib/booking";
 import { initials } from "@/components/shows/page/kit";
 import { useMusic } from "./common";
 
-const TH = "s whitespace-nowrap px-3 py-2.5 text-left text-[11.5px] font-bold uppercase tracking-wider";
+const TH = "s whitespace-nowrap px-3 py-2.5 text-left text-[0.7188rem] font-bold uppercase tracking-wider";
 const TD = "px-3 py-3 align-middle";
 
 /** The Rehearsals page body: an Upcoming table (today on, soonest first) above a Past table (newest first).

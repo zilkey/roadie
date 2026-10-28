@@ -59,7 +59,7 @@ export function StatusPill({ show, admin }: { show: ShowRow; admin: boolean }) {
   return (
     <div className="relative inline-flex items-center gap-2" ref={root}>
       <button
-        ref={trigger} type="button" className={pillClass(status)} style={{ minHeight: 44, border: 0, cursor: "pointer", font: "inherit", fontWeight: 700, fontSize: 13 }}
+        ref={trigger} type="button" className={pillClass(status)} style={{ minHeight: 44, border: 0, cursor: "pointer", font: "inherit", fontWeight: 700, fontSize: "0.8125rem" }}
         aria-label={`Change status, currently ${label}`} aria-expanded={open} aria-haspopup="dialog" aria-controls={open ? dialogId : undefined}
         onClick={toggle} data-testid="show-status"
       >

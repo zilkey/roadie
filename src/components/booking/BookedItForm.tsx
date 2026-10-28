@@ -43,8 +43,8 @@ export function BookedItForm({ p, commentCount, onCancel }: { p: PitchRow; comme
   return (
     <form className="grid gap-4" onSubmit={create} aria-labelledby={`book-h-${p.id}`} data-testid="book-form">
       <div className="grid gap-1">
-        <h3 id={`book-h-${p.id}`} className="m-0 text-[18px] font-bold">Booked it! Turn this pitch into a show</h3>
-        <p className="d-muted m-0 text-[14px]">The pitch ends as “Became a show”.</p>
+        <h3 id={`book-h-${p.id}`} className="m-0 text-[1.125rem] font-bold">Booked it! Turn this pitch into a show</h3>
+        <p className="d-muted m-0 text-[0.875rem]">The pitch ends as “Became a show”.</p>
       </div>
       <fieldset className="m-0 grid gap-2 border-0 p-0">
         <legend className="lbl mb-2 p-0">Which date?</legend>

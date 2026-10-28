@@ -45,8 +45,8 @@ export function Times({ times }: { times: Show["times"] }) {
   if (!items.length) return <span className="s">Times not set yet.</span>;
   return (
     <div className="flex flex-wrap gap-x-5 gap-y-1" data-testid="times">
-      {items.map(([l, t]) => <span key={l} className="grid"><b className="font-mono text-[15px]">{fmtTime(t)}</b><span className="s">{l}</span></span>)}
-      {len ? <span className="grid"><b className="font-mono text-[15px]">{fmtDuration(len)}</b><span className="s">Length</span></span> : null}
+      {items.map(([l, t]) => <span key={l} className="grid"><b className="font-mono text-[0.9375rem]">{fmtTime(t)}</b><span className="s">{l}</span></span>)}
+      {len ? <span className="grid"><b className="font-mono text-[0.9375rem]">{fmtDuration(len)}</b><span className="s">Length</span></span> : null}
     </div>
   );
 }

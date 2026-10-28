@@ -68,7 +68,7 @@ export function PitchDates({ pitchId, dates, onDatesChange, onBlur, personnel, p
     <>
       <div className="grid gap-3" data-testid="whos-free">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <h3 className="text-[17px] font-semibold">Who&apos;s free</h3>
+          <h3 className="text-[1.0625rem] font-semibold">Who&apos;s free</h3>
           <span className="s" data-testid="whos-free-status">
             {last ? `Asked ${lastAt}${last.channel ? ` via ${last.channel === "signal" ? "Signal" : "email"}` : ""} · ${everyDate} of ${people.length} answered every date` : "Not asked yet"}
           </span>
@@ -147,7 +147,7 @@ function MyDates({ pitchId, dates }: { pitchId: string; dates: string[] }) {
   if (!musicianId || !dates.length) return null;
   return (
     <div className="grid gap-3" data-testid="my-dates">
-      <h3 className="text-[17px] font-semibold">Can you play?</h3>
+      <h3 className="text-[1.0625rem] font-semibold">Can you play?</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {sortedDates(dates).map((d) => {
           const on = asks.filter((a) => a.date === d && !a.deletedAt);
@@ -209,7 +209,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
   return (
     <div className="grid gap-4" data-testid="ask-form">
       <div className="grid gap-1">
-        <h3 className="text-[17px] font-semibold">Ask who&apos;s free</h3>
+        <h3 className="text-[1.0625rem] font-semibold">Ask who&apos;s free</h3>
         <p className="s text-sm">One link to this pitch. Everyone answers each date there.</p>
       </div>
       {result && <Sent r={result} />}
@@ -239,7 +239,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
 
           <label className="lbl sm:pt-3" htmlFor="ask-message">Message</label>
           <div className="overflow-hidden rounded-[10px] border" style={{ borderColor: "var(--input-border)" }}>
-            <textarea id="ask-message" className="block w-full resize-y border-0 bg-transparent px-3.5 py-3 text-[15px] leading-normal outline-none" rows={3}
+            <textarea id="ask-message" className="block w-full resize-y border-0 bg-transparent px-3.5 py-3 text-[0.9375rem] leading-normal outline-none" rows={3}
               value={shown} onChange={(e) => set({ msg: e.target.value, msgOn: on })} data-testid="ask-message" />
             <div className="flex items-center justify-between gap-2 border-t px-3.5 py-2" style={{ borderColor: "var(--line)" }}>
               <span className="flex min-w-0 items-center gap-2 text-sm" style={{ color: "var(--accent-text)" }}>
@@ -286,7 +286,7 @@ export function MemberDates({ pitchId, empty }: { pitchId: string; empty: React.
   if (!byDate.length) return loading ? null : <>{empty}</>;
   return (
     <div className="grid gap-4" data-testid="member-dates">
-      <p className="s text-[15px]">{place(byDate[0].label)}. Tap an answer for each date.</p>
+      <p className="s text-[0.9375rem]">{place(byDate[0].label)}. Tap an answer for each date.</p>
       <div className="grid gap-3">
         {byDate.map((a) => {
           const r = musicianId ? a.responses[musicianId] : undefined;

@@ -111,7 +111,7 @@ export const FlagIcon = ({ filled }: { filled: boolean }) => (
 export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { value: string; onChange(id: string): void; testid?: string; onKeyDown?: React.KeyboardEventHandler }) {
   const artist = useArtist();
   const configs = artist.doc?.configurations ?? [];
-  const edit = artist.role === "admin" && <Link href="/admin/artist" className="link text-[13px] font-semibold" data-testid="edit-configurations">{configs.length === 0 ? "Add configurations" : "Edit"}</Link>;
+  const edit = artist.role === "admin" && <Link href="/admin/artist" className="link text-[0.8125rem] font-semibold" data-testid="edit-configurations">{configs.length === 0 ? "Add configurations" : "Edit"}</Link>;
   return (
     <div className="grid gap-1" onKeyDown={onKeyDown}>
       <div className="flex items-baseline justify-between gap-2">

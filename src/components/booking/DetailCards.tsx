@@ -30,7 +30,7 @@ export function DetailPage({ back, title, pill, meta, more, children, testid }: 
               <h1 className="page-title" data-testid="page-title">{title}</h1>
               {pill}
             </div>
-            {meta && <span className="text-[16px] text-muted">{meta}</span>}
+            {meta && <span className="text-[1rem] text-muted">{meta}</span>}
           </div>
           {more}
         </div>

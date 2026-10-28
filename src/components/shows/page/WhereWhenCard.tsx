@@ -118,8 +118,8 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
   const nothing = !t.loadIn && !t.soundcheck && !t.doors && !t.showStart && !t.set && !len;
   const setText = t.set ? (len ? `${fmtTime(t.set)} – ${endsAt(t.set, len).toLowerCase()}` : fmtTime(t.set)) : "";
   const nameEl = show.venue
-    ? <Link href={`/booking/venues/${show.venue.id}`} className="text-[17px] font-bold" style={{ color: "var(--ink)" }} data-testid="where-venue">{show.venue.name}</Link>
-    : <span className="text-[17px] font-bold" data-testid="where-venue">{show.editionId && kindOf(show) !== "house" ? "Venue TBD" : showName(show)}</span>;
+    ? <Link href={`/booking/venues/${show.venue.id}`} className="text-[1.0625rem] font-bold" style={{ color: "var(--ink)" }} data-testid="where-venue">{show.venue.name}</Link>
+    : <span className="text-[1.0625rem] font-bold" data-testid="where-venue">{show.editionId && kindOf(show) !== "house" ? "Venue TBD" : showName(show)}</span>;
 
   const cell = (k: TimeKey, label: string) => (
     <div key={k} className="grid min-w-0 content-start gap-0.5"><span className="lbl">{label}</span>

@@ -45,13 +45,13 @@ export function PromotionCard({ show, admin }: { show: ShowRow; admin: boolean }
           {!admin && !show.ticketUrl ? <span className="s" data-testid="ticket-none">No ticket link yet</span> : (
             <InlineValue testid="ticket-url" label="Ticket link" kind="url" value={show.ticketUrl ?? ""} placeholder="https://" canEdit={admin}
               error={ticket.error} className="break-all"
-              link={show.ticketUrl ? <a href={show.ticketUrl} target="_blank" rel="noreferrer" className="text-[15px] font-semibold underline" data-testid="ticket-link">{show.ticketUrl}</a> : undefined}
+              link={show.ticketUrl ? <a href={show.ticketUrl} target="_blank" rel="noreferrer" className="text-[0.9375rem] font-semibold underline" data-testid="ticket-link">{show.ticketUrl}</a> : undefined}
               onSave={async (v) => !!(await ticket.call("shows.update", { id: show.id, patch: { ticketUrl: v || null } }))} />
           )}
         </div>
         <div className="grid gap-1">
           <div className="flex items-center justify-between gap-2">
-            <b className="text-[15px]">Bandsintown</b>
+            <b className="text-[0.9375rem]">Bandsintown</b>
             <span className={`chip ${bit?.state === "listed" ? "g" : bit?.state === "error" ? "a" : ""}`} data-testid="bit-state">
               {bit?.state === "listed" ? "Listed" : bit?.state === "error" ? "Error" : bit?.state === "pending" ? "Pending" : "Not listed"}
             </span>
@@ -75,7 +75,7 @@ export function PromotionCard({ show, admin }: { show: ShowRow; admin: boolean }
           </div>
           {show.docs.map((d, i) => (
             <div key={d.url + i} className="doc-row flex min-h-[44px] items-center justify-between gap-2">
-              <a href={d.url} target="_blank" rel="noreferrer" className="min-w-0 break-words text-[15px] font-semibold underline" data-testid="doc-link">{d.title}</a>
+              <a href={d.url} target="_blank" rel="noreferrer" className="min-w-0 break-words text-[0.9375rem] font-semibold underline" data-testid="doc-link">{d.title}</a>
               {admin && (
                 <button type="button" className="ib doc-x" aria-label={`Remove ${d.title}`} title={`Remove ${d.title}`} disabled={docsCmd.busy}
                   onClick={() => void saveDocs(show.docs.filter((_, j) => j !== i))} data-testid="doc-remove">

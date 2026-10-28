@@ -46,9 +46,9 @@ export function SoundCard({ show, admin }: { show: ShowRow; admin: boolean }) {
         </label>
       ) : saved.trim() ? (
         admin
-          ? <button type="button" className="cursor-text rounded-lg text-left text-[15px] leading-relaxed whitespace-pre-line hover:bg-[var(--divider)]"
+          ? <button type="button" className="cursor-text rounded-lg text-left text-[0.9375rem] leading-relaxed whitespace-pre-line hover:bg-[var(--divider)]"
               aria-label="Edit sound notes" onClick={() => { escaped.current = false; setDraft(saved); }} data-testid="sound-notes-view">{saved}</button>
-          : <p className="m-0 whitespace-pre-line text-[15px] leading-relaxed" data-testid="sound-notes-view">{saved}</p>
+          : <p className="m-0 whitespace-pre-line text-[0.9375rem] leading-relaxed" data-testid="sound-notes-view">{saved}</p>
       ) : admin && (
         <div><button type="button" className="btn ghost" onClick={() => { escaped.current = false; setDraft(""); }} data-testid="sound-add-notes">Add notes</button></div>
       )}

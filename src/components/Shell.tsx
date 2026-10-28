@@ -34,7 +34,7 @@ export const ADMIN_LINKS = [
   { href: "/admin/history", label: "Activity", testid: "admin-history" },
 ];
 
-const NAV_LINK = "inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-xl px-3.5 text-[15px] no-underline";
+const NAV_LINK = "inline-flex h-11 shrink-0 items-center whitespace-nowrap rounded-xl px-3.5 text-[0.9375rem] no-underline";
 const MENU_HEAD = "px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-muted";
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
@@ -213,14 +213,14 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const switcher = (
     <>
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--strong)] text-xs font-bold text-[var(--on-strong)]" aria-hidden>{initials(artist.name)}</span>
-      <span className="truncate text-[15px] font-bold" data-testid="current-artist">{artist.name}</span>
+      <span className="truncate text-[0.9375rem] font-bold" data-testid="current-artist">{artist.name}</span>
       <Icon d={I.chevron} size={16} />
     </>
   );
   const switcherClass = "flex h-11 min-w-0 max-w-[260px] items-center gap-2.5 rounded-xl px-1.5 text-ink no-underline";
 
   return (
-    <div className="min-h-dvh min-[900px]:flex" style={{ "--tabbar-h": "calc(60px + env(safe-area-inset-bottom))" } as React.CSSProperties}>
+    <div className="min-h-dvh min-[900px]:flex" style={{ "--tabbar-h": "calc(3.5rem + env(safe-area-inset-bottom))" } as React.CSSProperties}>
       {profile.role === "admin" && <Roadie />}
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -253,14 +253,14 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
             ))}
             <button type="button" role="menuitem" aria-disabled="true" className="menu-item" data-testid="band-menu-add-artist" onClick={(e) => e.stopPropagation()}><span className="flex-1">Add an artist</span><span className="s">Not ready yet</span></button>
           </Dropdown>
-          <Dropdown label="Account menu" testid="account-menu" className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-[15px] font-bold text-accent hover:brightness-95"
+          <Dropdown label="Account menu" testid="account-menu" className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-[0.9375rem] font-bold text-accent hover:brightness-95"
             trigger={initials(profile.name).slice(0, 1)}>
             <AccountItems name={profile.name} role={profile.role} signOut={signOut} signoutTestid="signout" onEdit={edit} />
           </Dropdown>
         </header>
 
         {/* Phone top bar */}
-        <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 min-[900px]:hidden" data-testid="phonebar">
+        <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 min-[900px]:hidden" data-testid="phonebar">
           {atRoot ? <span className="w-2" /> : <button type="button" className="icon-btn text-ink" aria-label="Back" data-testid="back-button" onClick={() => router.back()}><Icon d={I.back} /></button>}
           <span className="min-w-0 flex-1 truncate text-base font-bold" data-testid="section-title">{title}</span>
           <Dropdown label="More actions" testid="account-menu-mobile" className="icon-btn text-ink" trigger={<Icon d={I.more} />}>
@@ -268,14 +268,14 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           </Dropdown>
         </header>
 
-        <main className={`w-full ${wide ? "" : "max-w-[1240px] "}flex-1 px-4 pb-[calc(var(--tabbar-h)+200px)] pt-5 min-[900px]:px-8 min-[900px]:pb-[200px] min-[900px]:pt-6`}>{children}</main>
+        <main className={`w-full ${wide ? "" : "max-w-[1240px] "}flex-1 px-4 pb-[calc(var(--tabbar-h)+72px)] pt-4 min-[900px]:px-8 min-[900px]:pb-[200px] min-[900px]:pt-6`}>{children}</main>
 
         <nav className="fixed inset-x-0 bottom-0 z-10 grid h-[var(--tabbar-h)] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] min-[900px]:hidden"
           style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, 1fr)` }} data-testid="bottom-tabs">
           {phoneTabs.map((n) => (
             <Link key={n.key} href={n.href} data-testid={`mtab-${n.key}`} aria-current={on(n.href) ? "page" : undefined}
               className={`flex flex-col items-center justify-center gap-0.5 text-xs font-semibold no-underline ${on(n.href) ? "text-accent" : "text-muted"}`}>
-              <span className="relative"><Icon d={n.icon} />{n.badge ? <span className="absolute -right-2 -top-1 grid min-w-4 place-items-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-bold leading-4 text-[var(--on-accent)]" data-testid="mtab-fans-badge">{n.badge}</span> : null}</span>{n.label}
+              <span className="relative"><Icon d={n.icon} />{n.badge ? <span className="absolute -right-2 -top-1 grid min-w-4 place-items-center rounded-full bg-[var(--accent)] px-1 text-[0.625rem] font-bold leading-4 text-[var(--on-accent)]" data-testid="mtab-fans-badge">{n.badge}</span> : null}</span>{n.label}
             </Link>
           ))}
           <button type="button" data-testid="mtab-more" aria-expanded={sheet} onClick={() => setSheet(!sheet)}
