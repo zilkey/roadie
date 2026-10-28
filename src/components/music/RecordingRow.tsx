@@ -12,7 +12,7 @@ export function RecordingRow({ file, remove }: { file: FileRow; remove?: ReactNo
     <div className="d-row !block" data-testid={`file-${file.id}`}>
       <div className="flex items-center gap-3">
         <span className="flex min-w-0 flex-1 items-center gap-2">
-          <FileIcon mime={file.mimeType} />
+          <FileIcon mime={file.mimeType} kind={file.kind} />
           <span className="min-w-0 truncate font-semibold">{file.title}</span>
         </span>
         {playable && <PlayToggle file={file} open={open} onOpen={setOpen} />}

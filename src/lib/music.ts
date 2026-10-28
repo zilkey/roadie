@@ -14,12 +14,10 @@ export function mimeGroup(mime?: string): MimeGroup {
 }
 /** Drive search only offers audio, video, Docs and Word files. */
 export const isAttachable = (mime?: string) => ["audio", "video", "doc"].includes(mimeGroup(mime));
-export const MIME_ICON: Record<MimeGroup, string> = { audio: "♪", video: "▶", doc: "▤", pdf: "▤", other: "▢" };
 
 
 export type Provider = "drive" | "spotify" | "youtube" | "web";
 export const PROVIDER_LABEL: Record<Provider, string> = { drive: "Drive", spotify: "Spotify", youtube: "YouTube", web: "Web" };
-export const PROVIDER_ICON: Record<Provider, string> = { drive: "▢", spotify: "♫", youtube: "▶", web: "↗" };
 /** Where a link goes, from its host. Anything unrecognised (or unparseable) is just "web". */
 export function providerFor(url: string): Provider {
   let h = "";
@@ -42,6 +40,18 @@ export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal"
 export const KIND_LABEL: Record<FileKind, string> = {
   chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
 };
+
+/**
+ * What icon a file gets. The mimeType wins when it says something; files that never got one (imported from the song list) fall back to
+ * what kind of file they are, so a chart is a document and a demo is audio instead of an unknown box.
+ */
+export function fileGroup(f: { mimeType?: string; kind?: FileKind }): MimeGroup {
+  const g = mimeGroup(f.mimeType);
+  if (g !== "other") return g;
+  if (f.kind === "chart" || f.kind === "lyrics") return "doc";
+  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "stems") return "audio";
+  return "other";
+}
 
 /** Best guess at what a file or link is from its name, type and (for links) provider. */
 export function guessKind(name: string, mime?: string, provider?: Provider): FileKind {

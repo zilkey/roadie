@@ -59,7 +59,7 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
   return (
     <div className="sg-row" data-testid={`file-${file.id}`}>
       <div className="sg-rowh">
-        <FileIcon mime={file.mimeType} provider={isDrive ? undefined : provider} />
+        <FileIcon mime={file.mimeType} kind={file.kind} provider={isDrive ? undefined : provider} />
         <span className="sg-rowt">
           <b className="truncate" data-testid="file-label">{label}</b>
           {label !== file.title && <span className="s truncate">{file.title}</span>}

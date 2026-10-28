@@ -9,7 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { demosFolderId, folderForRehearsal, rehearsalFolderId, songwritingFolderId } from "@/server/music";
-import { guessKey, guessKind, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
+import { guessKey, guessKind, fileGroup, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
 import { resetEmulators, makeUser, venue } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -561,4 +561,14 @@ test("records.get and records.list give a setlist's full length: songs + breaks 
   assert.deepEqual(rows.find((r: any) => r.id === show), { id: show, totalSec: songsAndBreak + 2 * 90, transitionSec: 90 });
   const tRows = (await cmd("records.list", { kind: "setlistTemplates", fields: ["totalSec"] })).rows;
   assert.deepEqual(tRows.find((r: any) => r.id === t), { id: t, totalSec: songsAndBreak + 2 * 30 });
+});
+
+test("fileGroup falls back to the file's kind when the mimeType is missing", () => {
+  assert.equal(fileGroup({ kind: "demo" }), "audio");
+  assert.equal(fileGroup({ kind: "stems" }), "audio");
+  assert.equal(fileGroup({ kind: "chart" }), "doc");
+  assert.equal(fileGroup({ kind: "lyrics" }), "doc");
+  assert.equal(fileGroup({ kind: "other" }), "other");
+  assert.equal(fileGroup({ mimeType: "application/pdf", kind: "demo" }), "pdf");
+  assert.equal(fileGroup({ mimeType: "video/mp4", kind: "chart" }), "video");
 });
