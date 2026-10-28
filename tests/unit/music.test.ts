@@ -172,6 +172,11 @@ test("sharing check, share with band, copy to band folder (against fake-drive)",
   assert.equal(r.outsideBandFolder, 1);
   const demo2 = (await db.get("files", demo.id))!;
   assert.equal(demo2.sharing, "ok");
+
+  // a file imported without a mimeType (import-song-list) gets Drive's on the next check, so it plays inline
+  await db.update(ctx, "files", demo.id, { mimeType: null });
+  await cmd("files.check", { ids: [demo.id] });
+  assert.equal((await db.get("files", demo.id))!.mimeType, "audio/mp4");
   assert.ok(demo2.checkedAt.toMillis() >= demo.checkedAt.toMillis());
 
   // Share with band: owner stays, only missing people are added

@@ -147,7 +147,7 @@ async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, ma
   return { file, ins, fixed, moved: file.id !== id };
 }
 
-/** Re-reads Drive for each file (after an optional fix) and writes sharing, inBandFolder and checkedAt. */
+/** Re-reads Drive for each file (after an optional fix) and writes mimeType, sharing, inBandFolder and checkedAt. */
 async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
   const [mates, folders] = await Promise.all([bandmates(), bandFolders(ctx.artistId)]);
   if (fix === "copy" && !folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
@@ -196,7 +196,7 @@ const fileIds = z.strictObject({ ids: z.array(z.string().min(1)).min(1) });
 export const filesCheck = defineCommand({
   name: "files.check",
   roles: ["admin", "mcp"],
-  description: "Run the sharing check: re-read Drive for every song file (or the given ids) and update sharing, inBandFolder and checkedAt.",
+  description: "Run the sharing check: re-read Drive for every song file (or the given ids) and update mimeType, sharing, inBandFolder and checkedAt. Files imported without a mimeType get one here.",
   input: z.strictObject({ ids: z.array(z.string().min(1)).optional() }),
   async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ids), "check"); },
 });
