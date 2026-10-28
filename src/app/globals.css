@@ -618,3 +618,16 @@ dialog.dlg > div { position: relative; }
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), textarea, select, .input, .select { font-size: max(16px, 1em); }
   .toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 8px); }
 }
+
+/* Loading bar (#21): 3px accent line above everything, under the iOS status bar. Creeps to 80% while running, fills and fades on done. */
+.loadbar { position: fixed; z-index: 80; left: 0; right: 0; top: env(safe-area-inset-top); height: 3px; pointer-events: none; opacity: 0; transition: opacity .3s ease .1s; }
+.loadbar-fill { height: 100%; width: 0; background: var(--accent); transform-origin: left; }
+.loadbar[data-phase="run"] { opacity: 1; transition: none; }
+.loadbar[data-phase="run"] .loadbar-fill { width: 80%; transition: width 10s cubic-bezier(.1, .6, .2, 1); }
+.loadbar[data-phase="done"] { opacity: 0; }
+.loadbar[data-phase="done"] .loadbar-fill { width: 100%; transition: width .2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .loadbar-fill, .loadbar[data-phase] .loadbar-fill { transition: none; }
+  .loadbar[data-phase="run"] .loadbar-fill { width: 100%; }
+  .loadbar { transition: none; }
+}

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { collection, collectionGroup, doc, documentId, limit as limitTo, onSnapshot, orderBy, query, where, type WhereFilterOp } from "firebase/firestore";
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
+import { useBusyWhile } from "./busy";
 
 export type Row<T> = T & { id: string };
 type Where = [field: string, op: WhereFilterOp, value: unknown];
@@ -31,7 +32,9 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, key]);
-  return { rows, error, loading: rows === null && !error && !opts.skip };
+  const loading = rows === null && !error && !opts.skip;
+  useBusyWhile(loading);
+  return { rows, error, loading };
 }
 
 /** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc, with its `deletedAt`). */
@@ -48,7 +51,9 @@ export function useDoc<T = Record<string, unknown>>(path: string, id: string, op
       (e) => setError(e.message),
     );
   }, [ready, path, id, opts.includeDeleted]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { doc: value?.doc ?? null, loading: value === null && !error, error };
+  const loading = value === null && !error;
+  useBusyWhile(loading);
+  return { doc: value?.doc ?? null, loading, error };
 }
 
 /**
@@ -77,5 +82,7 @@ export function useDocs<T = Record<string, unknown>>(path: string, ids: readonly
     return () => offs.forEach((f) => f());
   }, [ready, path, key]);
   const rows = Object.values(byChunk).flat();
-  return { rows, byId: new Map(rows.map((r) => [r.id, r])), error, loading: ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error };
+  const loading = ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error;
+  useBusyWhile(loading);
+  return { rows, byId: new Map(rows.map((r) => [r.id, r])), error, loading };
 }

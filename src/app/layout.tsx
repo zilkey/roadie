@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { FontLoader } from "@/components/FontLoader";
+import { LoadingBar } from "@/components/LoadingBar";
 import { appUrl } from "@/lib/app-url";
 
 // Icons come from the file conventions next to this file (favicon.ico, icon.svg, apple-icon.png) and manifest.ts.
@@ -19,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <FontLoader />
+        <Suspense fallback={null}><LoadingBar /></Suspense>
         {children}
       </body>
     </html>

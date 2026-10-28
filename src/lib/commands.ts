@@ -1,4 +1,5 @@
 import { clientAuth } from "./firebase-client";
+import { beginBusy } from "./busy";
 
 export class CommandError extends Error {
   /** `data` carries structured detail, e.g. `{conflicts, currentRev}` on a 409 `conflict`. `status` 0 = the request never reached the server. */
@@ -22,6 +23,11 @@ export const artistHeaders = (): Record<string, string> => (currentArtistId ? { 
 
 /** Like runCommand, but also returns the runId (for Undo) and the new revs. */
 export async function runCommandFull<T = { id?: string }>(name: string, input: unknown = {}, meta?: CommandMeta): Promise<CommandOutcome<T>> {
+  const end = beginBusy(); // the top loading bar shows while a command is in flight
+  try { return await execCommand<T>(name, input, meta); } finally { end(); }
+}
+
+async function execCommand<T>(name: string, input: unknown, meta?: CommandMeta): Promise<CommandOutcome<T>> {
   const user = clientAuth().currentUser;
   if (!user) throw new CommandError("unauthenticated", "Not signed in", 401);
   let res: Response;
