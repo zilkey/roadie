@@ -22,6 +22,8 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await p.getByTestId("exp-amount").fill("64");
   await p.getByTestId("exp-cat-gear").click();
   await p.getByTestId("expense-what").fill(WHAT);
+  await expect(p.getByTestId("receipt-search")).toBeHidden(); // receipts live behind More
+  await p.getByTestId("exp-more-toggle").click();
   await p.getByTestId("receipt-search").fill("Glass");
   await p.getByTestId("receipt-search-go").click();
   await p.locator('[data-testid^="receipt-hit-"]').first().click();

@@ -63,15 +63,20 @@ function AddExpense() {
     fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
     {
       amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "gas" : "gear") as Chip, showId: fromShow, link: "", payBack: true,
-      forId: "", fromPick: null as Place | null, toPick: null as Place | null, roundTrip: true, mpgText: "",
+      forId: "", date: "", fromPick: null as Place | null, toPick: null as Place | null, roundTrip: true, mpgText: "",
       saveMpg: true, saveHome: true, setRehearsal: true,
     },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
   const { amount, what, cat, showId, link, forId, fromPick, toPick, roundTrip, mpgText } = draft.value;
   const payBack = draft.value.payBack !== false;
+  const todayLocal = () => new Date().toLocaleDateString("en-CA");
   const patch = (p: Partial<typeof draft.value>) => draft.setValue((d) => ({ ...d, ...p }));
   const [q, setQ] = useState("");
+  // Everything past amount, what, date and category sits behind More; it opens by itself when something in it is set (opened from a show, a restored draft).
+  const moreSet = !!(showId || link || forId || draft.value.payBack === false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => { if (moreSet) setMoreOpen(true); }, [moreSet]);
   const [hits, setHits] = useState<Hit[] | null>(null);
   const search = useCommand();
   const [need, setNeed] = useState({ mpg: false, home: false, dest: false });
@@ -142,7 +147,7 @@ function AddExpense() {
     } : undefined;
     const own = !forOther;
     const r = await call("expenses.add", {
-      amount: cents, what: whatOut, category: chip[2], payBack,
+      amount: cents, what: whatOut, category: chip[2], payBack, ...(draft.value.date ? { date: draft.value.date } : {}),
       ...(showId && !rehearsalId ? { showId } : {}), ...(rehearsalId ? { rehearsalId } : {}),
       ...(forOther ? { userId: forId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
@@ -175,13 +180,16 @@ function AddExpense() {
           </div>
         </div>
 
-        {isAdmin && <label className="grid gap-1">
-          <span className="lbl">For (optional) · Admins only</span>
-          <Select testid="exp-for" value={forId} onChange={(v) => { setNeed({ mpg: false, home: false, dest: false }); setLast(null); patch({ forId: v, mpgText: "" }); }}
-            options={[["", `Me (${me.name ?? "you"})`] as [string, string], ...bandmates.map((u) => [u.id, u.name] as [string, string])]} />
-          <span className="s">Pick a bandmate to log it for them. It shows in their expenses and they get paid back. Gas uses their home address and MPG.</span>
-        </label>}
+        <label className="grid gap-1"><span className="lbl">{cat === "gas" ? "Amount" : "How much"}</span>
+          <input className="input font-mono" inputMode="decimal" placeholder={cat === "gas" ? "Or type the amount yourself" : "$0.00"} value={amount}
+            onChange={(e) => patch({ amount: e.target.value, amountEdited: e.target.value.trim() !== "" })} data-testid="exp-amount" />
+          {good && <span className="s">Pre-filled from the estimate. Change it if you paid something different.</span>}
+        </label>
+        <label className="grid gap-1"><span className="lbl">{base ? "Note (optional)" : "What for"}</span>
+          <input className="input" placeholder={base ? "e.g. picked up Eric on the way" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
 
+        <label className="grid gap-1"><span className="lbl">Date</span>
+          <input className="input" type="date" value={draft.value.date || todayLocal()} onChange={(e) => patch({ date: e.target.value })} data-testid="exp-date" /></label>
         {cat === "gas" && <>
           {showHomeBox ? (
             <div className={warnBox} style={warnStyle}>
@@ -251,13 +259,15 @@ function AddExpense() {
           <ErrorBox error={est.error} />
         </>}
 
-        <label className="grid gap-1"><span className="lbl">{cat === "gas" ? "Amount" : "How much"}</span>
-          <input className="input font-mono" inputMode="decimal" placeholder={cat === "gas" ? "Or type the amount yourself" : "$0.00"} value={amount}
-            onChange={(e) => patch({ amount: e.target.value, amountEdited: e.target.value.trim() !== "" })} data-testid="exp-amount" />
-          {good && <span className="s">Pre-filled from the estimate. Change it if you paid something different.</span>}
-        </label>
-        <label className="grid gap-1"><span className="lbl">{base ? "Note (optional)" : "What for"}</span>
-          <input className="input" placeholder={base ? "e.g. picked up Eric on the way" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
+        <details className="grid gap-3" open={moreOpen} onToggle={(e) => setMoreOpen(e.currentTarget.open)} data-testid="exp-more">
+          <summary className="cursor-pointer font-semibold" data-testid="exp-more-toggle">More{moreSet ? " · filled in" : ""}</summary>
+          <div className="mt-3 grid gap-3">
+        {isAdmin && <label className="grid gap-1">
+          <span className="lbl">For (optional) · Admins only</span>
+          <Select testid="exp-for" value={forId} onChange={(v) => { setNeed({ mpg: false, home: false, dest: false }); setLast(null); patch({ forId: v, mpgText: "" }); }}
+            options={[["", `Me (${me.name ?? "you"})`] as [string, string], ...bandmates.map((u) => [u.id, u.name] as [string, string])]} />
+          <span className="s">Pick a bandmate to log it for them. It shows in their expenses and they get paid back. Gas uses their home address and MPG.</span>
+        </label>}
 
         {!rehearsalId && <label className="grid gap-1"><span className="lbl">For a show?</span>
           <select className="select" value={showId} onChange={(e) => patch({ showId: e.target.value })} data-testid="expense-show">
@@ -277,6 +287,8 @@ function AddExpense() {
         ))}
         <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => patch({ payBack: e.target.checked })} data-testid="expense-payback" /><span>Pay me back</span></label>
         <span className="s">You can edit or remove it on My money until it's been paid back.</span>
+          </div>
+        </details>
         <ErrorBox error={error} />
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <div className="flex justify-end gap-2">
