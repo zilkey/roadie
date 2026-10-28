@@ -1,11 +1,12 @@
 import { z, type MessageData } from "genkit";
-import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assistant";
+import type { AssistantAction, AssistantEvent, PageContext, ToolTrace } from "@/schema/assistant";
 import { getAi, modelLabel } from "./ai";
 import { contextNow, pageList, pageRecord } from "./context";
 import { claimsChange, cleanMessages, requestShape, withoutThoughts } from "./guard";
 import { makeCtx, type Session } from "./run";
 import { BAD_FINDER, NOTHING_CHANGED, NUDGE, PICK_THEN_YES, TAP_YES } from "./script";
-import { DATA_NOTICE, execTool, SEE_PITCH, toolDefs } from "./tools";
+import { DATA_NOTICE, execTool, loadedGroups, SEE_PITCH, toolDefs } from "./tools";
+import { groupsFor, selectTools } from "./toolset";
 import { allowUrls, newWebTurn, WEB_NOTICE } from "./web";
 
 // Genkit bundles zod 3; the app uses zod 4. Flow schemas use Genkit's z, the types come from src/schema/assistant.ts.
@@ -28,6 +29,8 @@ export const ChatFlowOutput = z.object({
   })),
   /** The model call failed partway: `text` and `actions` are what happened before it did. */
   failed: z.boolean().optional(),
+  /** Every tool call made, in order: saved with the reply so a bad one can be read back from Firestore. */
+  trace: z.array(z.object({ name: z.string(), input: z.string(), ok: z.boolean(), error: z.string().optional(), ms: z.number() })).optional(),
 });
 export type ChatFlowOutput = z.infer<typeof ChatFlowOutput>;
 
@@ -44,12 +47,18 @@ const system = (ctx: PageContext) =>
   `Call context.now first in a conversation: "I" is the speaker, "tonight" is today's show (until 6am the next morning, the show that just happened). Use search to find records by name, then act on the id. ` +
   `Questions across many records ("how many venues have no city?", "which pitches are declined?") are records.list with its filters, not search; its count is the total. ` +
   `You can't invite people, change access, AI keys or feature switches, delete the band or read email: say so in one line and call nothing. ` +
-  `Answer from the band's data when it's enough. To find venues or check a venue fact it doesn't have, call web.search (it checks the band's data too), then web.read on a source if you need the details. ` +
+  `Answer from the band's data when it's enough. ` +
+  `Adding a place that isn't in the band's data: call venues.draft (the name, the city, any link they gave, the type they said), one call per venue, then venues.create with its draft; the person confirms on a card. ` +
+  `Add what was found even when fields are blank: only a name, city, state and type are required; street, zip, capacity, website and ages are optional and never worth a question. If the type isn't clear, send your best guess: the card lets them pick or add one. ` +
+  `An Instagram or Facebook link is the venue's instagram field, not a page to read. Several venues in one message: draft them all in one step, then create them all in one step; each gets its own card. ` +
+  `For a venue fact the band's data doesn't have, call web.search (it checks the band's data too), then web.read on a source if you need the details. ` +
   `Say where every web fact came from (the link). Never put the band's money, notes, emails or phone numbers in a web search. Never save a web fact without asking: after web content, every change gets a Yes / Cancel card. ` +
   `${WEB_NOTICE} ` +
   `Say where to go instead: people and access are on the People page (route people); the band name and web address are on General settings (route artist). Offer to open it with ui.navigate. ` +
   `Editing part of a list (personnel, dates, notes, emails, instruments, setlists, income) replaces the whole value: read the record first and resend all of it. ` +
-  `Never say you changed something, or that you will ("let me…", "on it"), unless you call the tool for it in this same reply. If a value you need is missing (a time, a name), ask for it in one short question instead. ` +
+  `Never say you changed something, or that you will ("let me…", "on it"), unless you call the tool for it in this same reply. If a required value is missing (a time, a name, a city), ask for it in one short, friendly question ("Just one quick question: which city is it in?") instead; never ask for an optional one. ` +
+  `Be polite and plain: say what you did, what you couldn't find and what that costs, and offer the next step ("want me to search some more?"). ` +
+  `You start with the core tools (places, contacts, pitches, shows, money, the web); when a request is about stage plots, checklists, setlists, songs, rehearsals, email, availability, fans, the calendar, people, band settings or stats, call tools.load for that group first instead of saying you can't. ` +
   `Never say something is on a record or a page unless a tool result or <this_page> shows it. ` +
   `Sending, paying, deleting, canceling and bulk changes ask the person first: call the tool, and a Yes / Cancel card appears. Don't ask twice. ` +
   `A show is canceled when they called it off (shows.cancel) and dropped when we pulled out (shows.drop); pass the reason when they give one. ` +
@@ -80,7 +89,9 @@ export function getChatFlow() {
     // Registered once per process. The model sees name, description and JSON Schema; the flow runs the calls itself
     // (returnToolRequests), as the person typing, so the tool bodies are never used.
     const never = async () => { throw new Error("Roadie tools run in the flow, not in Genkit"); };
-    const tools = toolDefs("admin").map((d) => ai.defineTool({ name: d.name, description: d.description, inputJsonSchema: d.inputJsonSchema as never }, never));
+    const defs = toolDefs("admin");
+    const tools = defs.map((d) => ai.defineTool({ name: d.name, description: d.description, inputJsonSchema: d.inputJsonSchema as never }, never));
+    const byName = new Map(defs.map((d, i) => [d.name, tools[i]]));
     return ai.defineFlow(
       { name: "assistant.chat", inputSchema: ChatFlowInput, outputSchema: ChatFlowOutput, streamSchema: z.custom<AssistantEvent>() },
       async (input, { sendChunk }) => {
@@ -103,6 +114,10 @@ export function getChatFlow() {
         let sent = 0;
         const actions: AssistantAction[] = [];
         const recorded = new Set<string>();
+        const trace: ToolTrace[] = [];
+        // The core tools plus the groups this message calls for; tools.load adds more mid-message.
+        const groups = new Set(groupsFor(input.message, input.history, input.pageContext));
+        const offered = () => selectTools(defs, groups).map((d) => byName.get(d.name)!);
         // Links the person typed (this message or earlier ones) may be opened. Never links from Roadie's own replies.
         const web = newWebTurn();
         for (const h of input.history) if (h.role === "user") allowUrls(web, h.text);
@@ -118,7 +133,7 @@ export function getChatFlow() {
         const generate = async () => {
           let words = "";
           const ask = (msgs: MessageData[]) => ai.generate({
-            model: model as never, system: sys, messages: msgs, tools, returnToolRequests: true,
+            model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true,
             onChunk: (c) => { if (c.text) words += c.text; },
           });
           try {
@@ -157,9 +172,15 @@ export function getChatFlow() {
             const responses = [];
             for (const tr of requests) {
               const { name, ref, input: args } = tr.toolRequest;
+              const started = Date.now();
               const out = ++calls > MAX_TOOL_CALLS
                 ? { output: { error: "Too many steps in one message" }, action: undefined, stop: true }
                 : await execTool(s, name, args, sendChunk, recorded, web);
+              for (const g of loadedGroups(out.output)) groups.add(g);
+              const err = (out.output as { error?: { message?: string } | string } | null)?.error;
+              const error = err === undefined ? undefined : typeof err === "string" ? err : (err?.message ?? "error");
+              trace.push({ name, input: (JSON.stringify(args ?? {}) ?? "{}").slice(0, 600), ok: error === undefined, ...(error ? { error: error.slice(0, 300) } : {}), ms: Date.now() - started });
+              console.info(JSON.stringify({ roadieTool: name, ok: error === undefined, ...(error ? { error: error.slice(0, 120) } : {}), ms: Date.now() - started, threadId: s.threadId, runId: s.runId }));
               if (out.say && !text.includes(out.say)) {
                 const said = `${text.trim() ? " " : ""}${out.say}`;
                 text = text.trimEnd() + said;
@@ -184,7 +205,7 @@ export function getChatFlow() {
           console.error(e);
           failed = true;
         }
-        if (failed) return { text: text.trim(), actions, failed };
+        if (failed) return { text: text.trim(), actions, failed, trace };
         // A pitch made (or found) this message: offer to open it, unless Roadie already took them there.
         if (actions.some((a) => a.kind === "link" && a.route === "pitch") && !actions.some((a) => a.kind === "navigate") && !/see the pitch/i.test(text)) {
           const ask = `${text.trim() ? " " : ""}${SEE_PITCH}`;
@@ -195,7 +216,7 @@ export function getChatFlow() {
           text = actions.some((a) => a.kind === "confirm" && a.fields?.some((f) => f.options)) ? PICK_THEN_YES : TAP_YES;
           sendChunk({ type: "text", delta: text });
         }
-        return { text: text.trim(), actions };
+        return { text: text.trim(), actions, trace };
       },
     );
   })());

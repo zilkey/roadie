@@ -130,6 +130,18 @@ function first(t: string, page?: Page, raw = t): Scripted {
     if (named || THIS_PAGE.test(t)) return { calls: [{ name: "help.explain", input: named ? { topic: named.id } : {} }] };
   }
 
+  // "Add SoFar as a venue in Fort Collins and Denver" (links in order, the type in quotes): one venues.draft per city; the creates follow its answers.
+  const av = /^add (.+?) as a venue in (.+?)(?:[.;\n]|$)/i.exec(raw);
+  if (av) {
+    const cities = av[2].split(/\s*(?:,|\band\b)\s*/).map((c) => c.trim()).filter(Boolean);
+    const urls = [...raw.matchAll(/https?:\/\/[^\s"'<>)\]]+/g)].map((m) => m[0]);
+    const type = /\b(?:type|kind)\b[^"\n]*"([^"]+)"/i.exec(raw)?.[1];
+    return { calls: cities.map((city, k) => ({ name: "venues.draft", input: { name: cities.length > 1 ? `${av[1]} ${city}` : av[1], city, ...(urls[k] ? { url: urls[k] } : {}), ...(type ? { type } : {}) } })) };
+  }
+  // "add a new venue type option called "supper club"": venueTypes.add, nothing to ask.
+  const vt = /\badd (?:a )?(?:new )?venue type(?: option)?(?: called| named)?\s+(?:"([^"]+)"|([a-z][a-z ]*?))\s*(?:[.!,]|$)/i.exec(raw);
+  if (vt) return { calls: [{ name: "venueTypes.add", input: { label: (vt[1] ?? vt[2]).trim() } }] };
+
   // "add the venue Aggie Theatre in Fort Collins as a music venue": the type as said, even when it isn't on the band's list.
   const nv = /^add the venue (.+?) in (.+?) as (?:an? )?(.+?)[.!?]*$/i.exec(raw);
   if (nv) return { calls: [{ name: "venues.create", input: { name: nv[1], type: nv[3].toLowerCase(), address: { city: nv[2], state: "CO" }, region: "north" } }] };
@@ -195,7 +207,8 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
   const last = steps[steps.length - 1];
   const err = errorOf(last.output);
   const out = unwrap(last.output);
-  if ((last.output as { needsConfirmation?: boolean } | null)?.needsConfirmation) return { text: TAP_YES };
+  // After a card the flow says "Tap Yes" or "Pick one from the list" itself (flow.ts); the canned model adds nothing.
+  if ((last.output as { needsConfirmation?: boolean } | null)?.needsConfirmation) return {};
 
   if (last.name === "ui.navigate") return { text: err ? "I can't do that. I don't know that page." : "There you go." };
   if (last.name === "help.explain") {
@@ -213,6 +226,22 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
     return { text: `${book} ${src ? `The web has something: ${src.url}` : "Nothing on the web either."}` };
   }
   if (last.name === "web.read") return { text: err ? `Couldn't read it: ${err}` : `Read it: ${out?.page?.url ?? "the page"}` };
+
+  // Every draft of the step answered: one venues.create per draft, as the draft says. The cards (and the missing-fields note) come from tools.ts.
+  if (last.name === "venues.draft") {
+    const calls: Call[] = [];
+    for (const d of steps.filter((x) => x.name === "venues.draft")) {
+      const e = errorOf(d.output), o = unwrap(d.output);
+      if (e) return { text: `Couldn't look that up: ${e}` };
+      if (o?.existing?.length) return { text: `${o.existing[0].name} is already in the book.` };
+      if (!o?.draft?.address) return { text: "Just one quick question: which city is it in?" };
+      const said = (d.input as { type?: string } | null)?.type;
+      calls.push({ name: "venues.create", input: { ...o.draft, ...(o.draft.type ? {} : { type: said ?? o.typeOptions?.[0]?.value ?? "club" }) } });
+    }
+    return { calls };
+  }
+  if (last.name === "venues.create") return err ? { text: `Couldn't add it: ${err}` } : { text: "Added it." };
+  if (last.name === "venueTypes.add") return { text: err ? `Couldn't add the type: ${err}` : "" };
 
   if (last.name === "search") {
     const hits = (out?.results ?? []) as Hit[];

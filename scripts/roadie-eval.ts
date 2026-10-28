@@ -1,0 +1,106 @@
+/**
+ * `npm run eval:roadie [-- name...]`: run real conversations through Roadie's flow against the REAL model (Vertex, billed to
+ * roadie-prod-iab; `gcloud auth application-default login` first) and the real web, with the data in your local emulators,
+ * and check what it did: which tools it called, whether it made cards, whether it asked instead of acting. The unit tests
+ * use the canned model and prove the plumbing; this proves the model behaves. Each run makes a throwaway band, so your
+ * emulator data is untouched (the eval band stays; wipe it with `npm run wipe` whenever).
+ *
+ * A scenario is a list of turns. Each turn's checks: `calls` (tool names that must appear, in order, as regexes),
+ * `noCalls`, `cards` (how many confirm cards), `text` / `noText` (regexes on the reply), `noAsk` (no ui.ask buttons).
+ */
+import { getChatFlow } from "../src/server/assistant/flow";
+import { ensureThread, newMessageId, newThreadId } from "../src/server/assistant/threads";
+import { modelLabel, modelMode } from "../src/server/assistant/ai";
+import { newRunId, importCtx } from "../src/server/ctx";
+import { db } from "../src/server/db";
+import { adminAuth } from "../src/server/admin";
+import { syncClaims } from "../src/server/session";
+import type { AssistantAction, AssistantEvent, ToolTrace } from "../src/schema/assistant";
+
+interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean }
+interface Turn extends Check { say: string }
+interface Scenario { name: string; route?: string; turns: Turn[] }
+
+const SOFAR =
+  "Add SoFar as a venue in Fort Collins and Denver and Colorado Springs\n\n" +
+  "use this website for the one in fort collins: https://www.instagram.com/sofarfortcollins/\n\n" +
+  "use this website for the one in denver: https://www.instagram.com/sofardenver/\n\n" +
+  "and this one for Colorado Springs:\n\nhttps://www.instagram.com/sofarcoloradosprings/";
+const REFUSES = /\b(can't|cannot|unable|I need|need a|required|street address)\b/i;
+
+const SCENARIOS: Scenario[] = [
+  { name: "sofar-three", turns: [{ say: SOFAR, calls: [/venues\.draft/, /venues\.draft/, /venues\.draft/, /venues\.create/, /venues\.create/, /venues\.create/], cards: 3, noAsk: true, noText: REFUSES }] },
+  { name: "sofar-then-type", turns: [
+    { say: "Add SoFar as a venue in Fort Collins. Their page is https://www.instagram.com/sofarfortcollins/", calls: [/venues\.draft/, /venues\.create/], cards: 1, noAsk: true },
+    { say: "it's a listening room", noText: REFUSES },
+  ] },
+  { name: "atrium", turns: [{ say: "Add The Atrium in Fort Collins as a venue", calls: [/venues\.draft/, /venues\.create/], cards: 1, noAsk: true, noText: REFUSES }] },
+  { name: "deli-type-unclear", turns: [{ say: "add Pelo's Deli in Longmont to our venues", calls: [/venues\.draft/, /venues\.create/], cards: 1, noText: REFUSES }] },
+  { name: "instagram-only", turns: [{ say: "Add https://www.instagram.com/sofardenver/ as a venue in Denver", calls: [/venues\.draft/, /venues\.create/], noCalls: [/web\.read/], cards: 1, noText: REFUSES }] },
+  { name: "no-city", turns: [{ say: "Add The Lariat as a venue", calls: [/venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
+  { name: "new-type", turns: [{ say: 'add a new venue type option called "supper club"', calls: [/venueTypes\.add/], noText: REFUSES }] },
+  { name: "expense", turns: [{ say: "log $12 for gas", calls: [/expenses\.add/], noText: REFUSES }] },
+  { name: "stage-plot-group", turns: [{ say: "who still needs the new stage plot?", calls: [/tools\.load/, /stagePlots\.staleShows/], noText: REFUSES }] },
+  { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
+];
+
+async function band() {
+  const slug = `eval-${Date.now().toString(36)}`;
+  const sys = importCtx();
+  const artist = await db.create(sys, "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [] }, { id: slug });
+  const email = `${slug}@example.com`;
+  const u = await adminAuth().createUser({ email, emailVerified: true, displayName: "Eval admin" });
+  await db.create(sys, "users", { email, name: "Eval admin", artists: [{ artistId: artist.id, role: "admin" }], mcpAccess: false }, { id: u.uid });
+  await syncClaims(u.uid);
+  return { uid: u.uid, artistId: artist.id };
+}
+
+async function runScenario(sc: Scenario, who: { uid: string; artistId: string }) {
+  const flow = await getChatFlow();
+  const threadId = newThreadId();
+  const pageContext = { route: sc.route ?? "bookingVenues" };
+  await ensureThread({ uid: who.uid, threadId, pageContext, at: new Date() });
+  const history: { role: "user" | "assistant"; text: string }[] = [];
+  const failures: string[] = [];
+  for (const [n, t] of sc.turns.entries()) {
+    const session = { uid: who.uid, role: "admin" as const, artistId: who.artistId, name: "Eval admin", threadId, runId: newRunId(), replyId: newMessageId() };
+    const { stream, output } = flow.stream({ message: t.say, history, pageContext, session });
+    for await (const _ of stream as AsyncIterable<AssistantEvent>) { /* drain */ }
+    const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean; trace?: ToolTrace[] };
+    const trace = out.trace ?? [];
+    const names = trace.map((x) => x.name);
+    const cards = out.actions.filter((a) => a.kind === "confirm").length;
+    const asks = out.actions.filter((a) => a.kind === "reply").length;
+    const where = `turn ${n + 1}`;
+    if (out.failed) failures.push(`${where}: the model call failed`);
+    let at = 0;
+    for (const re of t.calls ?? []) { const i = names.findIndex((x, k) => k >= at && re.test(x)); if (i < 0) failures.push(`${where}: expected a call ${re} (calls: ${names.join(", ") || "none"})`); else at = i + 1; }
+    for (const re of t.noCalls ?? []) if (names.some((x) => re.test(x))) failures.push(`${where}: unexpected call ${re}`);
+    if (t.cards !== undefined && cards !== t.cards) failures.push(`${where}: ${cards} card(s), expected ${t.cards}`);
+    if (t.noAsk && asks) failures.push(`${where}: asked with buttons instead of acting`);
+    if (t.text && !t.text.test(out.text)) failures.push(`${where}: reply doesn't match ${t.text}`);
+    if (t.noText && t.noText.test(out.text)) failures.push(`${where}: reply matches ${t.noText}: "${out.text.slice(0, 160)}"`);
+    const bad = trace.filter((x) => !x.ok).map((x) => `${x.name}: ${x.error}`);
+    console.log(`  ${where}: "${t.say.slice(0, 60).replace(/\n/g, " ")}"\n    calls: ${names.join(", ") || "none"}${bad.length ? `\n    errors: ${bad.join(" | ")}` : ""}\n    cards: ${cards}, asks: ${asks}\n    reply: ${out.text.replace(/\n/g, " ").slice(0, 300)}`);
+    history.push({ role: "user", text: t.say }, { role: "assistant", text: out.text || out.actions.map((a) => a.label).join(". ") });
+  }
+  return failures;
+}
+
+(async () => {
+  if (modelMode() === "fake") { console.error("ROADIE_MODEL is fake: set ROADIE_MODEL=vertex (or gemini with GEMINI_API_KEY)."); process.exit(2); }
+  const only = process.argv.slice(2);
+  const picked = only.length ? SCENARIOS.filter((s) => only.includes(s.name)) : SCENARIOS;
+  console.log(`Roadie eval: ${picked.length} scenario(s) on ${modelLabel()} (${modelMode()})`);
+  const who = await band();
+  const results: [string, string[]][] = [];
+  for (const sc of picked) {
+    console.log(`\n${sc.name}`);
+    try { results.push([sc.name, await runScenario(sc, who)]); } catch (e) { results.push([sc.name, [`threw: ${(e as Error).message}`]]); }
+  }
+  console.log("\n==== results");
+  let failed = 0;
+  for (const [name, f] of results) { if (f.length) failed++; console.log(`${f.length ? "FAIL" : "ok  "} ${name}${f.length ? `\n     ${f.join("\n     ")}` : ""}`); }
+  console.log(`\n${results.length - failed}/${results.length} passed`);
+  process.exit(failed ? 1 : 0);
+})();

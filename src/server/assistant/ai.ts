@@ -24,11 +24,11 @@ export function modelMode(env: NodeJS.ProcessEnv = process.env): ModelMode {
   return hasKey(env) ? "gemini" : "vertex";
 }
 
-/** The model's name as history records it. Defaults: Flash-Lite on Vertex (the spec's cheap default; Gemini 2.5 shut down in October 2026), the latest Flash alias on the Gemini API. */
+/** The model's name as history records it. Defaults: Flash on Vertex (Flash-Lite could not pick its way through 190 tools: it asked instead of acting; Gemini 2.5 shut down in October 2026), the latest Flash alias on the Gemini API. */
 export const modelLabel = (env: NodeJS.ProcessEnv = process.env) => {
   const mode = modelMode(env);
   if (mode === "fake") return FAKE_MODEL;
-  return env.ROADIE_GEMINI_MODEL ?? (mode === "vertex" ? "gemini-3.5-flash-lite" : "gemini-flash-latest");
+  return env.ROADIE_GEMINI_MODEL ?? (mode === "vertex" ? "gemini-3.5-flash" : "gemini-flash-latest");
 };
 
 /** The user's last typed message and the tool calls made (and answered) since, rebuilt from the conversation. */

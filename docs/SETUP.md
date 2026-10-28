@@ -47,7 +47,7 @@ ROADIE_MODEL=gemini GEMINI_API_KEY=<your key> npm run genkit:ui
 
 `ROADIE_GEMINI_MODEL` picks the model (default `gemini-flash-latest`). Start the emulators first (`npm run emulators`).
 
-To run the whole app the way production does (Vertex AI in `roadie-prod-iab`, same default model `gemini-3.5-flash-lite`, same `global` location) against your local emulators and fakes:
+To run the whole app the way production does (Vertex AI in `roadie-prod-iab`, same default model `gemini-3.5-flash`, same `global` location) against your local emulators and fakes:
 
 ```sh
 gcloud auth application-default login   # once; your account needs the Vertex AI User role on roadie-prod-iab
@@ -55,6 +55,21 @@ npm run dev:vertex
 ```
 
 `ROADIE_VERTEX_PROJECT` sends only the model calls to the real project; `GCLOUD_PROJECT` stays `demo-band-tracker`, so all data stays in the emulators. Calls are billed to the production project.
+
+### Checking Roadie against the real model
+
+The unit tests drive Roadie with a canned model, which proves the plumbing, not the model. `scripts/roadie-eval.ts` runs
+real conversations ("Add SoFar as a venue in Fort Collins and Denver…", "log $12 for gas", "who still needs the new stage
+plot?") through the real model and the real web, with a throwaway band in your local emulators, and checks what it did:
+which tools it called, how many confirm cards it made, whether it asked instead of acting, whether it said "I can't".
+Run it after any change to the prompt, the tools or the model, with the emulators up:
+
+```sh
+gcloud auth application-default login   # if it has been a while
+npm run eval:roadie                      # every scenario; or: npm run eval:roadie -- sofar-three atrium
+```
+
+It prints each turn's tool calls and reply, then a pass/fail list. Billed to the production project like `dev:vertex`.
 
 ---
 
@@ -113,7 +128,7 @@ npx firebase apps:sdkconfig WEB --project roadie-prod-iab
 - `.firebaserc` has `"prod": "roadie-prod-iab"`. `default` stays `demo-band-tracker`, so tests never touch the real project.
 - `apphosting.yaml` holds the web config, `GCLOUD_PROJECT=roadie-prod-iab` and `ROADIE_MODEL=vertex`. `APP_URL` is the backend URL.
 - `.github/workflows/backup.yml`, `scripts/bootstrap-admin.ts`, `docs/FIREBASE-SETUP.md`, `docs/BACKUP.md` and `docs/MCP.md` say `roadie-prod-iab`.
-- Roadie uses Vertex AI in production (the backend's service account, same Google bill, no key; default model `gemini-3.5-flash-lite` in the `global` location; Gemini 2.5 shut down in October 2026). A `GEMINI_API_KEY` still works for trying it locally.
+- Roadie uses Vertex AI in production (the backend's service account, same Google bill, no key; default model `gemini-3.5-flash` in the `global` location; Gemini 2.5 shut down in October 2026). A `GEMINI_API_KEY` still works for trying it locally.
 
 Not renamed yet: the npm package and the emulator project id.
 

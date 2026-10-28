@@ -51,6 +51,17 @@ export const AssistantThread = z.strictObject({
 });
 export type AssistantThread = z.infer<typeof AssistantThread>;
 
+/** One tool call the model made for a reply, as saved with it: enough to see what Roadie tried without the model's words. Inputs are cut short. */
+export const ToolTrace = z.strictObject({
+  name: z.string(),
+  input: z.string().max(600),
+  ok: z.boolean(),
+  /** The error the model was handed back, when the call failed. */
+  error: z.string().max(300).optional(),
+  ms: z.number().int(),
+});
+export type ToolTrace = z.infer<typeof ToolTrace>;
+
 export const AssistantMessage = z.strictObject({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
@@ -59,6 +70,8 @@ export const AssistantMessage = z.strictObject({
   at: ts,
   /** A reply whose model call failed partway (the person's message above it is saved all the same). */
   failed: z.literal(true).optional(),
+  /** Every tool call made for this reply, in order (replies only). */
+  trace: z.array(ToolTrace).optional(),
 });
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
 

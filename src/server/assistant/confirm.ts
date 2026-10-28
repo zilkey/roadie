@@ -11,7 +11,8 @@ import { isEligible } from "./policy";
 import { modelLabel } from "./ai";
 import type { Session } from "./run";
 import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
-import { setPath } from "./card";
+import { newTypeLabel, setPath } from "./card";
+import { makeCtx, runAs } from "./run";
 import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending, type Pending } from "./threads";
 
 export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
@@ -45,7 +46,7 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
     return { status: "canceled" };
   }
 
-  const input = withPicks(pending, req.picks);
+  let input = withPicks(pending, req.picks);
   try {
     await claimPending(req.threadId, req.pendingId, now);
   } catch (e) {
@@ -56,6 +57,7 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
   const s = sessionFor(who, req.threadId, resultId, now);
   try {
     if (!isEligible(pending.command, who.role)) throw new AppError("not_allowed", `Roadie can't use ${pending.command}`, 403);
+    input = await addNewTypes(s, pending, input);
     const r = await runCommandTool(s, pending.command, input, new Set());
     await setPending(req.threadId, req.pendingId, { status: "done", runId: r.runId, ...(pending.picks?.length ? { input } : {}) });
     await patchMessageAction(req.threadId, pending.messageId, card, { status: "done", ...(pending.fields ? { fields: picked(pending.fields, req.picks) } : {}) });
@@ -88,6 +90,18 @@ function withPicks(p: Pending, picks: Record<string, string> = {}): unknown {
   }
   return input;
 }
+/** A pick of "Add X as a new type" on a venue card: the type goes on the list first (same run, so one Undo takes both back), and its key goes in the input. */
+async function addNewTypes(s: Session, p: Pending, input: unknown): Promise<unknown> {
+  for (const a of p.picks ?? []) {
+    const v = getPathValue(input, a.path);
+    const label = typeof v === "string" ? newTypeLabel(v) : undefined;
+    if (!label) continue;
+    const r = await runAs(makeCtx(s), "venueTypes.add", { label });
+    input = setPath(input, a.path, (r.result as { id: string }).id);
+  }
+  return input;
+}
+const getPathValue = (o: unknown, path: string): unknown => path.split(".").reduce<unknown>((x, k) => (x && typeof x === "object" ? (x as Record<string, unknown>)[k] : undefined), o);
 /** The card's rows once answered: each dropdown becomes the label of what was picked. */
 const picked = (fields: CardField[], picks: Record<string, string> = {}): CardField[] =>
   fields.map((f) => (f.options && f.path ? { label: f.label, value: f.options.find((o) => o.value === picks[f.path!])?.label ?? picks[f.path] ?? f.value } : f));

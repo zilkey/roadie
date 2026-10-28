@@ -1,7 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { firestore } from "../admin";
 import { AppError } from "../errors";
-import type { AssistantAction, CardField, PageContext } from "@/schema/assistant";
+import type { AssistantAction, CardField, PageContext, ToolTrace } from "@/schema/assistant";
 
 // Chat transcripts are not business data: written with firebase-admin directly, so they never reach history/undo (like touchLastUsed in db.ts).
 const threads = () => firestore().collection("assistantThreads");
@@ -45,6 +45,8 @@ export async function saveTurn(a: {
   userText: string; replyText: string; actions: AssistantAction[]; userAt: Date;
   /** The model call failed partway: replyText and actions are what happened before it did. */
   failed?: boolean;
+  /** The tool calls made for the reply (saved so a bad reply can be read back from Firestore). */
+  trace?: ToolTrace[];
 }): Promise<{ assistantMessageId: string }> {
   const ref = threads().doc(a.threadId);
   const batch = firestore().batch();
@@ -55,7 +57,7 @@ export async function saveTurn(a: {
   batch.set(user, { role: "user", text: a.userText, actions: [], pageContext: a.pageContext, at: Timestamp.fromDate(a.userAt) });
   // Never earlier than the user's message, so ordering by `at` is stable.
   const replyAt = Timestamp.fromMillis(Math.max(now.toMillis(), a.userAt.getTime() + 1));
-  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt, ...(a.failed ? { failed: true } : {}) });
+  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt, ...(a.failed ? { failed: true } : {}), ...(a.trace?.length ? { trace: a.trace } : {}) });
   await batch.commit();
   return { assistantMessageId: reply.id };
 }

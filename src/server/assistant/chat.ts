@@ -2,7 +2,7 @@ import { authenticate } from "../commands/dispatch";
 import { db } from "../db";
 import { newRunId } from "../ctx";
 import { AppError, invalid } from "../errors";
-import { ChatRequest, type AssistantAction, type AssistantEvent } from "@/schema/assistant";
+import { ChatRequest, type AssistantAction, type AssistantEvent, type ToolTrace } from "@/schema/assistant";
 import { getChatFlow } from "./flow";
 import type { Session } from "./run";
 import { ensureThread, loadHistory, newMessageId, newThreadId, saveTurn } from "./threads";
@@ -36,16 +36,16 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
       async start(c) {
         const send = (e: AssistantEvent) => c.enqueue(enc.encode(sse(e)));
         // A failed reply is saved too, with the person's message, so a retry knows what they asked for.
-        const save = (text: string, actions: AssistantAction[], failed: boolean) => saveTurn({
+        const save = (text: string, actions: AssistantAction[], failed: boolean, trace: ToolTrace[] = []) => saveTurn({
           threadId, replyId: session.replyId, pageContext: req.pageContext,
-          userText: req.message, replyText: failed ? [text, DROPPED].filter(Boolean).join(" ") : text, actions, userAt, failed,
+          userText: req.message, replyText: failed ? [text, DROPPED].filter(Boolean).join(" ") : text, actions, userAt, failed, trace,
         });
         try {
           const flow = await getChatFlow();
           const { stream: chunks, output } = flow.stream({ message: req.message, history: history ?? [], pageContext: req.pageContext, session });
           for await (const e of chunks as AsyncIterable<AssistantEvent>) send(e);
-          const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean };
-          const { assistantMessageId } = await save(out.text, out.actions, !!out.failed);
+          const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean; trace?: ToolTrace[] };
+          const { assistantMessageId } = await save(out.text, out.actions, !!out.failed, out.trace);
           send(out.failed ? { type: "error", message: DROPPED, threadId, messageId: assistantMessageId } : { type: "done", threadId, messageId: assistantMessageId });
         } catch (e) {
           console.error(e);

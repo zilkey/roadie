@@ -22,11 +22,16 @@ export function setPath<T>(o: T, path: string, v: unknown): T {
   return { ...x, [k]: rest.length ? setPath(x[k], rest.join("."), v) : v } as T;
 }
 
+const sameWords = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === b.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+/** A dropdown value that means "add this label to the venue type list first" (confirm.ts runs venueTypes.add, then the command with its key). */
+export const NEW_TYPE = "new:";
+export const newTypeValue = (label: string) => `${NEW_TYPE}${label}`;
+export const newTypeLabel = (v: string) => (v.startsWith(NEW_TYPE) ? v.slice(NEW_TYPE.length) : undefined);
 const humanize = (k: string) => { const w = k.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); };
 
 // ---------- lists the model can't see ----------
 
-async function venueTypes(s: Session): Promise<Option[]> {
+export async function venueTypes(s: Session): Promise<Option[]> {
   const rows = ((await runAs(makeCtx(s), "records.list", { kind: "venueTypes", limit: 200 })).result as { rows: Row[] }).rows;
   const list = rows.length ? rows.map((r) => ({ value: r.id as string, label: r.label as string })) : BUILTIN_VENUE_TYPES.map(([value, label]) => ({ value, label }));
   return list.sort((a, b) => a.label.localeCompare(b.label));
@@ -66,7 +71,12 @@ export async function picksFor(s: Session, name: string, input: unknown, issues:
     let options: Option[];
     try { options = await l.options(s); } catch { continue; }
     labels[l.path] = options;
-    if (!options.some((o) => o.value === v) && v !== before?.[l.path.split(".").pop()!]) picks.push({ path: l.path, options, was: v });
+    if (options.some((o) => o.value === v) || v === before?.[l.path.split(".").pop()!]) continue;
+    // "Listening Room" for the key "listening": the label, in any case, is the value.
+    const byLabel = options.find((o) => sameWords(o.label, v) || sameWords(o.value, v));
+    if (byLabel) { out = setPath(out, l.path, byLabel.value); continue; }
+    // Not on the list at all: the card's dropdown offers the list, plus adding what Roadie said as a new type.
+    picks.push({ path: l.path, options: [...options, { value: newTypeValue(v), label: `Add "${v}" as a new type` }], was: v });
   }
   return { input: out, picks, labels };
 }

@@ -20,7 +20,9 @@ import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { ROLE_LABEL, type ContactRole } from "@/lib/venues";
-import { allowUrls, isAllowedUrl, MAX_QUERY_CHARS, MAX_WEB_READS, MAX_WEB_SEARCHES, newWebTurn, web, WEB_NOTICE, type WebTurn } from "./web";
+import { allowUrls, isAllowedUrl, MAX_QUERY_CHARS, MAX_WEB_READS, MAX_WEB_SEARCHES, newWebTurn, socialOf, web, WEB_NOTICE, type WebTurn } from "./web";
+import { draftVenue, MAX_DRAFTS } from "./lookup";
+import { GROUPS, groupKeys } from "./toolset";
 
 export const MAX_RESULT_CHARS = 20_000;
 /** Tool results are wrapped so the model reads them as content, never as instructions. */
@@ -54,6 +56,22 @@ const SPECIAL: ToolDef[] = [
     description: `Search the open web (Google), after the band's data. Returns {local: band records matching \`local\` (default: q), web: {answer, sources: [{title, url}]}}. ` +
       `Use it to find venues or check a venue fact the band's data doesn't have. Public words only, at most ${MAX_QUERY_CHARS} characters: never put money, notes, emails or phone numbers from the band's data in a query. At most ${MAX_WEB_SEARCHES} per message.`,
     inputJsonSchema: obj({ q: { type: "string", minLength: 1, maxLength: MAX_QUERY_CHARS }, local: { type: "string", minLength: 1, description: "The name to look up in the band's data, when it differs from q (\"Grey Eagle\" for \"Grey Eagle Asheville capacity\")." } }, ["q"]),
+  },
+  {
+    name: "venues.draft",
+    description: `Look a venue up on the web and get an input ready for venues.create: it searches, reads the venue's own site, pulls out the address, capacity, ages, website, Instagram and booking emails, picks the type from the band's list and the region from the city. ` +
+      `Give the name, the city (and state) when you know it, any link the person gave (an Instagram or Facebook link becomes the instagram field; it is never opened), and the type they said. ` +
+      `Returns {draft, missing, typeOptions?, emails, existing, sources, next}: do what \`next\` says. Use it whenever someone wants a place added that isn't in the band's data, one call per venue, at most ${MAX_DRAFTS} per message.`,
+    inputJsonSchema: obj({
+      name: { type: "string", minLength: 1, maxLength: 120 }, city: { type: "string", minLength: 1, maxLength: 80 }, state: { type: "string", minLength: 2, maxLength: 2, description: "Two letters (CO)" },
+      url: { type: "string", minLength: 1, description: "A link the person gave" }, type: { type: "string", minLength: 1, maxLength: 60, description: "What they said it is (\"listening room\")" },
+    }, ["name"]),
+  },
+  {
+    name: "tools.load",
+    description: `Get more tools. You start with the band's places, pitches, shows, money and the web; the rest come in groups: ${GROUPS.map((g) => `${g.key} (${g.title})`).join("; ")}. ` +
+      `Call this with the groups you need and they're available from your next step. If a request is about one of these and you don't see its tools, load the group instead of saying you can't.`,
+    inputJsonSchema: obj({ groups: { type: "array", items: { enum: groupKeys }, minItems: 1, maxItems: 4 } }, ["groups"]),
   },
   {
     name: "web.read",
@@ -194,6 +212,7 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "pitches.update": async (i, _r, _s, l) => `Updated the ${await l.pitch(i.id)} pitch: ${list(Object.keys(i.patch ?? {}))}`,
   "pitches.comment": async (i, _r, _s, l) => `Commented on the ${await l.pitch(i.id)} pitch`,
   "pitches.log": async (i, _r, _s, l) => `Logged a ${i.type} on the ${await l.pitch(i.id)} pitch`,
+  "venueTypes.add": (i, r) => (r?.existing ? `${i.label} was already a venue type` : `Added the venue type ${i.label}`),
   "venues.create": (i, r) => (r?.merged ? `${i.name} was already in the directory: merged into the existing venue` : `Added the venue ${i.name}`),
   "venues.update": async (i, _r, _s, l) => `Updated ${await l.venue(i.id)}: ${list(Object.keys(i.patch ?? {}))}`,
   "contacts.create": (i, r) => (r?.merged ? `${i.name} was already a contact: merged into the existing one` : `Added the contact ${i.name}`),
@@ -367,12 +386,41 @@ async function webRead(s: Session, input: unknown, w: WebTurn): Promise<ToolOut>
   const p = z.strictObject({ url: z.string().trim().min(1) }).safeParse(input ?? {});
   if (!p.success) throw new AppError("invalid_input", "Which page?", 400);
   if (!isAllowedUrl(w, p.data.url)) throw new AppError("not_allowed", "I can only open a link from a web search, your message or the band's records", 403);
+  const social = socialOf(p.data.url);
+  if (social) throw new AppError("not_allowed", `${social.kind === "instagram" ? "Instagram" : social.kind === "facebook" ? "Facebook" : "Social"} pages can't be read (login wall). Keep the link as the venue's ${social.kind === "instagram" ? "instagram" : "website"} field and use venues.draft or web.search for the facts.`, 403);
   if (w.reads >= MAX_WEB_READS) throw new AppError("too_many", `That's ${MAX_WEB_READS} pages for one message`, 429);
   w.reads++;
   const page = await web.read(p.data.url);
   w.tainted = true;
   console.info(JSON.stringify({ roadieWeb: "read", threadId: s.threadId, runId: s.runId, uid: s.uid, url: page.url }));
   return { output: webResult({ page }), action: { kind: "action", label: `Read ${new URL(page.url).hostname}` } };
+}
+
+/** venues.draft: the whole lookup, server-side (lookup.ts). The reply shows what was looked up. */
+async function draft(s: Session, input: unknown, w: WebTurn): Promise<ToolOut> {
+  const d = await draftVenue(s, input, w);
+  const name = String((input as { name?: unknown } | null)?.name ?? "");
+  console.info(JSON.stringify({ roadieWeb: "draft", threadId: s.threadId, runId: s.runId, uid: s.uid, name, found: Object.keys(d.draft), missing: d.missing }));
+  return { output: webResult({ ...d }), action: { kind: "action", label: `Looked up ${quoteQ(name)}` } };
+}
+/** tools.load: the flow reads `loaded` and offers those groups from the next step on. */
+function loadTools(input: unknown): ToolOut {
+  const p = z.strictObject({ groups: z.array(z.enum(groupKeys as [string, ...string[]])).min(1).max(4) }).safeParse(input ?? {});
+  if (!p.success) throw new AppError("invalid_input", `Which groups? One or more of: ${groupKeys.join(", ")}`, 400);
+  return { output: { loaded: p.data.groups, message: "Loaded. Their tools are available from your next step: go ahead and call them." } };
+}
+export const loadedGroups = (out: unknown): string[] => ((out as { loaded?: unknown } | null)?.loaded as string[] | undefined) ?? [];
+
+/** The fields a venue from the web is missing, said politely: what's blank and what it costs, so the person can add it anyway or send Roadie back out. */
+export function missingVenueNote(input: unknown): string | undefined {
+  const i = (input ?? {}) as Row;
+  const blank: string[] = [];
+  if (!i.address?.street) blank.push("a street address");
+  if (!i.capacity) blank.push("the capacity");
+  if (!i.website && !i.instagram) blank.push("a website");
+  if (!blank.length) return undefined;
+  const list = blank.length === 1 ? blank[0] : `${blank.slice(0, -1).join(", ")} or ${blank[blank.length - 1]}`;
+  return `I couldn't find ${list} for ${i.name ?? "it"}, so that's blank on the card; it still shows up in the city, region and type filters. Yes adds it as is, or tell me where to look and I'll try again.`;
 }
 
 /**
@@ -382,8 +430,8 @@ async function webRead(s: Session, input: unknown, w: WebTurn): Promise<ToolOut>
  */
 export async function execTool(s: Session, name: string, input: unknown, emit: Emit, recorded: Set<string> = new Set(), w: WebTurn = newWebTurn()): Promise<ToolOut> {
   const out = await execOne(s, name, input, emit, recorded, w);
-  // Links in the band's own records may be opened later in the message. Never links from web content.
-  if (!name.startsWith("web.") && !errorIn(out.output)) allowUrls(w, JSON.stringify(out.output) ?? "");
+  // Links in the band's own records may be opened later in the message. Never links from web content (a draft's facts came off the web; its search sources are already allowed).
+  if (!name.startsWith("web.") && name !== "venues.draft" && !errorIn(out.output)) allowUrls(w, JSON.stringify(out.output) ?? "");
   return out;
 }
 const errorIn = (o: unknown) => !!(o as { error?: unknown } | null)?.error;
@@ -395,6 +443,8 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (name === "ui.ask") return ask(input);
     if (name === "web.search") return await webSearch(s, input, w);
     if (name === "web.read") return await webRead(s, input, w);
+    if (name === "venues.draft") return await draft(s, input, w);
+    if (name === "tools.load") return loadTools(input);
     const ctx = makeCtx(s);
     if (name === "context.now") return { output: dataResult(await contextNow(ctx, s)) };
     if (name === "search") {
@@ -417,7 +467,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     let parsed = cmd.input.safeParse(filled.input);
     // A value that isn't on its list (a venue type the band doesn't have, a region the schema doesn't know) becomes a dropdown on the card.
     const choice = isReadOnly(name) ? null : await picksFor(s, name, filled.input, parsed.success ? [] : parsed.error.issues, filled.before);
-    if (!parsed.success && choice) parsed = cmd.input.safeParse(choice.input);
+    if (choice) parsed = cmd.input.safeParse(choice.input); // a label matched to its key, or a pick's placeholder
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
     const picks = choice?.picks ?? [];
     const fromWeb = w.tainted && !isReadOnly(name);
@@ -432,12 +482,14 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
         ...(fields.length ? { fields } : {}), ...(picks.length ? { picks: picks.map((x) => ({ path: x.path, options: x.options.map((o) => o.value) })) } : {}),
       }, s.now);
       const action: AssistantAction = { kind: "confirm", label: p.summary, pendingId: p.id, command: name, status: "pending", ...(p.fields?.length ? { fields: p.fields } : {}) };
+      const note = fromWeb && name === "venues.create" && !open ? missingVenueNote(parsed.data) : undefined;
       if (!open) emit({ type: "confirm", pendingId: p.id, command: name, summary: p.summary, ...(p.fields?.length ? { fields: p.fields } : {}) });
       const choose = picks.map((x) => `${x.path.split(".").pop()}${x.was ? ` ("${x.was}" isn't on the list)` : ""}`).join(", ");
       const message = choose
         ? `Not done yet. The card has a dropdown for ${choose}: the person picks one there, then taps Yes. Don't retry with another value or ask again; say in one line that they pick it on the card.`
-        : "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes.";
-      return { output: { needsConfirmation: true, pendingId: p.id, message }, action: open ? undefined : action, stop: true };
+        : "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes. If the request had more in it (another venue, another change), go on with that now.";
+      // A send, pay, delete or cancel card ends the message. A card for a plain write (from the web, or with a pick) doesn't: the rest of the request (the next venue) goes on, each with its own card.
+      return { output: { needsConfirmation: true, pendingId: p.id, message: note ? `${message} The reply already says what's missing; don't repeat it.` : message }, action: open ? undefined : action, ...(note ? { say: note } : {}), stop: needsConfirm(name, parsed.data) };
     }
     const r = await runCommandTool(s, name, parsed.data, recorded);
     if (r.wrote) {

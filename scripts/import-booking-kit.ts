@@ -24,6 +24,8 @@ import { hasPrivate, noteOf, writeNote } from "../src/server/venues";
 import { fillBandNote, splitNotes } from "../src/server/bandNotes";
 import { isNotedKind } from "../src/schema/bandNotes";
 import { email as emailSchema } from "../src/schema/common";
+import { regionForCity } from "../src/lib/regions";
+export { regionForCity };
 import { e164 } from "../src/schema/normalize";
 import { roleIn } from "../src/schema/users";
 import { joinNames } from "../src/lib/shows";
@@ -56,18 +58,6 @@ const SKIP_CONTACTS = new Set(["angel"]);
 
 // ---------- shared helpers ----------
 
-const REGION_CITIES: [Region, RegExp][] = [
-  ["boulder", /boulder|longmont|lyons|lafayette|gold hill|jamestown|hygiene|gunbarrel|louisville|superior|niwot|erie/i],
-  ["denver", /denver|westminster|arvada|castle rock|englewood|golden|parker|wheat ridge|broomfield|aurora|lakewood/i],
-  ["north", /fort collins|loveland|greeley|milliken|berthoud|windsor|northern co/i],
-  ["south", /colorado springs|manitou|divide|pueblo|ca[nñ]on city/i],
-  ["mountains", /idaho springs|silver plume|buena vista|salida|carbondale|nederland|conifer|dillon|frisco|breckenridge|steamboat|vail|ridgway|palisade/i],
-  ["southwest", /durango|cortez|dolores|pagosa|del norte|alamosa|montrose|telluride/i],
-];
-export function regionForCity(city: string, state = "CO"): Region | undefined {
-  if (state && state !== "CO") return "out";
-  return REGION_CITIES.find(([, re]) => re.test(city))?.[0];
-}
 const FEST_REGIONS: Record<string, Region> = {
   "Denver metro": "denver", "Boulder County": "boulder", "Northern CO": "north", "Southern CO": "south",
   Mountains: "mountains", "Upper Arkansas": "mountains", "Western Slope": "mountains",

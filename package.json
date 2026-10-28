@@ -40,6 +40,7 @@
     "import:venue-book:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-venue-book-sheet.ts",
     "import:demos:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-demos.ts",
     "stats:pull": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/stats-pull.ts",
+    "eval:roadie": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-vertex} ROADIE_VERTEX_PROJECT=roadie-prod-iab tsx scripts/roadie-eval.ts",
     "genkit:ui": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-fake} genkit start -- tsx src/server/assistant/dev.ts",
     "typecheck": "tsc --noEmit",
     "leak-check": "tsx scripts/leak-check.ts",

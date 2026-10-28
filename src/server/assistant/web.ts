@@ -25,8 +25,8 @@ const TIMEOUT_MS = 8_000;
 const MAX_REDIRECTS = 3;
 
 /** One message's web state. `tainted` is set once any web content has come back. */
-export interface WebTurn { tainted: boolean; searches: number; reads: number; urls: Set<string> }
-export const newWebTurn = (): WebTurn => ({ tainted: false, searches: 0, reads: 0, urls: new Set() });
+export interface WebTurn { tainted: boolean; searches: number; reads: number; drafts: number; urls: Set<string> }
+export const newWebTurn = (): WebTurn => ({ tainted: false, searches: 0, reads: 0, drafts: 0, urls: new Set() });
 
 export interface WebSource { title: string; url: string }
 export interface WebAnswer { answer: string; sources: WebSource[] }
@@ -47,6 +47,28 @@ export function urlsIn(text: string): string[] {
   }
   return out;
 }
+/**
+ * Social pages (Instagram, Facebook...) sit behind login walls and carry no readable text: the link is a field on the venue,
+ * never a page to open. `handle` is the Instagram account when the link is one.
+ */
+const SOCIAL: [RegExp, "instagram" | "facebook" | "other"][] = [
+  [/(^|\.)instagram\.com$/, "instagram"], [/(^|\.)(facebook|fb)\.com$/, "facebook"], [/(^|\.)(tiktok|x|twitter|threads|linktr)\.(com|ee|net)$/, "other"],
+];
+export function socialOf(u: string): { kind: "instagram" | "facebook" | "other"; handle?: string } | undefined {
+  const n = normalizeUrl(u);
+  if (!n) return undefined;
+  const x = new URL(n);
+  const host = x.hostname.replace(/^www\./, "").toLowerCase();
+  const kind = SOCIAL.find(([re]) => re.test(host))?.[1];
+  if (!kind) return undefined;
+  const first = x.pathname.split("/").filter(Boolean)[0];
+  const handle = kind === "instagram" && first && !/^(p|reel|reels|explore|accounts|stories)$/.test(first) ? first.replace(/^@/, "") : undefined;
+  return { kind, ...(handle ? { handle } : {}) };
+}
+/** Pages that list venues rather than being one: skipped when picking a venue's own site to read. */
+const AGGREGATOR = /(^|\.)(yelp|tripadvisor|google|bandsintown|songkick|eventbrite|ticketmaster|axs|foursquare|mapquest|yellowpages|bing|apple|do303|westword|reddit|wikipedia)\.(com|org|net)$/i;
+export const isAggregator = (u: string) => { const n = normalizeUrl(u); return !!n && AGGREGATOR.test(new URL(n).hostname.replace(/^www\./, "")); };
+
 export function allowUrls(w: WebTurn, text: string) { for (const u of urlsIn(text)) w.urls.add(u); }
 export const isAllowedUrl = (w: WebTurn, u: string) => { const n = normalizeUrl(u); return !!n && w.urls.has(n); };
 
