@@ -45,6 +45,7 @@
     "leak-check": "tsx scripts/leak-check.ts",
     "lint": "tsc --noEmit",
     "worktree:ports": "tsx scripts/worktree-ports.ts",
+    "shortcut:build": "tsx scripts/build-shortcut.ts",
     "mcp:stdio": "tsx mcp/server.ts --stdio",
     "backup": "tsx scripts/backup.ts",
     "wipe": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/wipe.ts",

@@ -44,7 +44,7 @@ async function shortcutStatus(ctx: Ctx) {
     installUrl: (artist?.shortcutUrl as string | undefined) ?? null,
     token: token ? { createdAt: token.createdAt.toDate().toISOString(), lastUsedAt: token.lastUsedAt ? token.lastUsedAt.toDate().toISOString() : null } : null,
     /** What the Shortcut calls: shown on the settings page for whoever builds it. */
-    endpoints: { rehearsals: `${appUrl()}/api/shortcut/rehearsals`, songs: `${appUrl()}/api/shortcut/rehearsals/{rehearsalId}/songs`, upload: `${appUrl()}/api/rehearsals/{rehearsalId}/recording` },
+    endpoints: { now: `${appUrl()}/api/shortcut/now`, rehearsals: `${appUrl()}/api/shortcut/rehearsals`, songs: `${appUrl()}/api/shortcut/rehearsals/{rehearsalId}/songs`, upload: `${appUrl()}/api/rehearsals/{rehearsalId}/recording` },
   };
 }
 

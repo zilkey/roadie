@@ -10,7 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { adoptRecording, ensureRehearsalFolder, newRecordings, recordingName, uploadRecording } from "@/server/recordings";
 import { authenticateShortcut, createShortcutToken } from "@/server/shortcut";
-import { recentRehearsals, rehearsalSongs } from "@/server/shortcutLists";
+import { recentRehearsals, rehearsalSongs, shortcutNow } from "@/server/shortcutLists";
 import { resetEmulators, makeUser } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -61,8 +61,24 @@ test("rehearsals.folder makes the rehearsal's folder once, shared with the band;
   assert.deepEqual(made.parents, [RECORDINGS]);
   for (const e of ["ingrid", "jeff", "david"]) assert.ok(made.permissions.some((p) => p.email === `${e}@example.com`) || made.ownerEmail === `${e}@example.com`, e);
   assert.equal((await ensureRehearsalFolder(ctx, reh.id)).id, f.id, "made once, then reused");
+  await assert.rejects(cmd("rehearsals.folder", { id: "nope" }), { code: "not_found" });
+});
+
+test("with no recordings folder chosen, the first one needed is made in the band folder, shared, saved and then reused", async () => {
   await db.update(ctx, "artists", artistId, { rehearsalFolderId: null });
-  await assert.rejects(cmd("rehearsals.folder", { id: reh.id }), { code: "no_rehearsal_folder" });
+  const song = await cmd("songs.create", { title: "Big River", status: "active" });
+  const reh = await cmd("rehearsals.create", { date: "2026-10-27", songs: [{ songId: song.id }] });
+  assert.deepEqual(await newRecordings(ctx, reh.id), { folder: null, files: [] }, "looking doesn't make one");
+  const r = await uploadRecording(ctx, reh.id, song.id, new File(["x"], "New Recording 3.m4a", { type: "audio/mp4" }));
+  const made = (await db.get("artists", artistId))?.rehearsalFolderId as string;
+  const folder = await driveClient().get(made);
+  assert.deepEqual([folder.name, folder.parents], ["Rehearsal Recordings", ["fake-band-folder"]]);
+  for (const e of ["ingrid", "david"]) assert.ok(folder.permissions.some((p) => p.email === `${e}@example.com`), `shared with ${e}`);
+  assert.deepEqual((await driveClient().get(r.folder.id)).parents, [made], "the rehearsal's folder is inside it");
+  // chosen folder cleared again: the one already in the band folder is found, not a second one made
+  await db.update(ctx, "artists", artistId, { rehearsalFolderId: null });
+  await cmd("rehearsals.folder", { id: reh.id });
+  assert.equal((await db.get("artists", artistId))?.rehearsalFolderId, made);
   await assert.rejects(cmd("rehearsals.folder", { id: "nope" }), { code: "not_found" });
 });
 
@@ -108,6 +124,21 @@ test("uploadRecording puts the file in the rehearsal's folder under the song's n
   const [doc] = await db.list("files", (q) => q.where("driveFileId", "==", r.driveFileId));
   assert.deepEqual([doc.songId, doc.rehearsalId], [song.id, reh.id]);
   assert.deepEqual((await newRecordings(ctx, reh.id)).files, [], "an upload isn't 'new'");
+});
+
+test("uploadRecording of several songs (a run in one memo) names the file for them in order and attaches it to each", async () => {
+  const a = await cmd("songs.create", { title: "Big River", status: "active" });
+  const b = await cmd("songs.create", { title: "Low Light", status: "active" });
+  const reh = await cmd("rehearsals.create", { date: "2026-10-27", songs: [{ songId: a.id }, { songId: b.id }] });
+  const r = await uploadRecording(ctx, reh.id, [b.id, a.id, b.id], new File(["x"], "New Recording 4.m4a", { type: "audio/mp4" }));
+  assert.equal(r.name, "Low Light, Big River - 2026-10-27 Rehearsal.m4a");
+  assert.deepEqual([r.ok, r.message], [true, "Uploaded Low Light, Big River - 2026-10-27 Rehearsal.m4a to 2026-10-27 Rehearsal"], "what the Shortcut's notification shows");
+  assert.equal(r.ids.length, 2, "one files doc per song, duplicates dropped");
+  const docs = await db.list("files", (q) => q.where("driveFileId", "==", r.driveFileId));
+  assert.deepEqual(docs.map((d) => d.songId).sort(), [a.id, b.id].sort());
+  assert.ok(docs.every((d) => d.rehearsalId === reh.id && d.title === r.name));
+  await assert.rejects(uploadRecording(ctx, reh.id, [], new File(["x"], "m.m4a")), { code: "invalid_input" });
+  await assert.rejects(uploadRecording(ctx, reh.id, [a.id, "nope"], new File(["x"], "m.m4a")), { code: "not_found" });
 });
 
 test("shortcut tokens: made once per admin per artist, hashed, replaced by the next one, revocable; the Shortcut's context is that admin", async () => {
@@ -172,4 +203,21 @@ test("the Shortcut's lists: rehearsals around today nearest first (today's first
   assert.deepEqual(s.songs.labels, ["Big River", "Low Light"]);
   assert.deepEqual(s.songs.ids, { "Big River": a.id, "Low Light": b.id });
   await assert.rejects(rehearsalSongs(ctx, gone.id), { code: "not_found" });
+});
+
+test("the Shortcut's first call: the rehearsal on now (band time, start to end) skips the picker; otherwise the list, with repeat labels kept apart", async () => {
+  const song = await cmd("songs.create", { title: "Big River", status: "active" });
+  const on = await cmd("rehearsals.create", { date: "2026-10-27", startTime: "18:00", endTime: "21:00", location: { name: "The Loft", address: "x", lat: 1, lng: 2 }, songs: [{ songId: song.id }] });
+  const twin = await cmd("rehearsals.create", { date: "2026-10-27", location: { name: "The Loft", address: "x", lat: 1, lng: 2 } });
+  // 20:00 in Denver (MDT, UTC-6) on Oct 27 is 02:00Z on Oct 28: still "today" for the band.
+  const during = await shortcutNow(ctx, new Date("2026-10-28T02:00:00Z")) as any;
+  assert.deepEqual([during.rehearsal.id, during.rehearsal.date, during.rehearsal.label], [on.id, "2026-10-27", "Tue, Oct 27 · The Loft"]);
+  assert.deepEqual(during.songs.ids, { "Big River": song.id });
+  const after = await shortcutNow(ctx, new Date("2026-10-28T04:00:00Z")) as any; // 22:00, over
+  assert.equal(after.rehearsal, undefined);
+  assert.deepEqual(Object.values(after.rehearsals.ids).sort(), [on.id, twin.id].sort());
+  assert.equal(after.rehearsals.labels.length, 2);
+  assert.equal(new Set(after.rehearsals.labels).size, 2);
+  const before = await shortcutNow(ctx, new Date("2026-10-27T22:00:00Z")) as any; // 16:00, not yet
+  assert.equal(before.rehearsal, undefined);
 });

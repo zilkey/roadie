@@ -114,6 +114,9 @@ test("Settings > Google: the voice memo shortcut card makes a token (shown once)
   await card.getByTestId("shortcut-make-token").click();
   await expect(card.getByTestId("shortcut-token")).toContainText("rsk_");
   await expect(card.getByTestId("shortcut-recipe")).toContainText("/api/shortcut/rehearsals");
+  await expect(card.getByTestId("shortcut-recipe")).toContainText("/api/shortcut/now");
+  await expect(card.getByTestId("shortcut-download")).toHaveAttribute("href", /\/shortcuts\/send-to-roadie\.shortcut\?v=\d+$/);
+  expect((await page.request.get("/shortcuts/send-to-roadie.shortcut")).status()).toBe(200);
   await page.reload();
   await expect(card.getByTestId("shortcut-token-status")).toContainText("You have a token");
   await expect(card.getByTestId("shortcut-token")).toHaveCount(0);

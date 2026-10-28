@@ -1,6 +1,6 @@
 /**
- * The iOS Shortcut ("Send to Roadie"): share a voice memo, pick the rehearsal and the song, and it lands in Drive and on
- * the rehearsal like an upload from the app. The Shortcut can't sign in, so it carries a long-lived token (rsk_…) that an
+ * The iOS Shortcut ("Send to Roadie"): share a voice memo, pick the rehearsal and the songs, and it lands in Drive and
+ * on the rehearsal like an upload from the app. The Shortcut can't sign in, so it carries a long-lived token (rsk_…) that an
  * admin makes on Settings > Google and types into the Shortcut when installing it. Tokens are stored hashed in
  * shortcutTokens (sha256, like MCP keys); one live token per admin per artist. The routes are under /api/shortcut.
  */
@@ -39,6 +39,16 @@ export async function revokeShortcutTokens(ctx: Ctx): Promise<number> {
   let n = 0;
   for (const t of await liveTokens(ctx)) { await db.update(ctx, "shortcutTokens", t.id, { revokedAt: new Date() }); n++; }
   return n;
+}
+
+/**
+ * An error as the Shortcut routes answer it: the usual `error: { code, message }` plus `ok: false` and a top-level
+ * `message` ("Upload failed: …") that the Shortcut shows in a notification with one Get Dictionary Value.
+ * Unknown errors are logged and answered as 500 without their details.
+ */
+export function shortcutErrorResponse(e: unknown, prefix: string): Response {
+  const err = e instanceof AppError ? e : (console.error(e), new AppError("internal", "Something went wrong", 500));
+  return Response.json({ ok: false, message: `${prefix}: ${err.message}`, ...err.toJSON() }, { status: err.status });
 }
 
 /** The request context for a shortcut token: the admin who made it, in the artist it was made for. */
