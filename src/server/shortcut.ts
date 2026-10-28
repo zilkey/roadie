@@ -1,6 +1,6 @@
 /**
- * The iOS Shortcut ("Send to Roadie"): share a voice memo, pick the rehearsal and the song, and it lands in Drive and on
- * the rehearsal like an upload from the app. The Shortcut can't sign in, so it carries a long-lived token (rsk_…) that an
+ * The iOS Shortcut ("Send to Roadie"): share a voice memo, pick the rehearsal and the songs, and it lands in Drive and
+ * on the rehearsal like an upload from the app. The Shortcut can't sign in, so it carries a long-lived token (rsk_…) that an
  * admin makes on Settings > Google and types into the Shortcut when installing it. Tokens are stored hashed in
  * shortcutTokens (sha256, like MCP keys); one live token per admin per artist. The routes are under /api/shortcut.
  */

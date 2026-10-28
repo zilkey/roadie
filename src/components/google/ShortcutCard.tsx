@@ -13,7 +13,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month:
 
 /**
  * Settings > Google: the "Send to Roadie" iOS Shortcut. Share a voice memo to it and it asks which rehearsal and
- * which song, then uploads through /api/rehearsals/{id}/recording with a shortcut token (rsk_…, shown once here).
+ * which songs (one memo can hold a run of them), then uploads through /api/rehearsals/{id}/recording with a shortcut token (rsk_…, shown once here).
  * The band builds the Shortcut once and saves its iCloud link here as the Install button; the recipe is under
  * "How to build it".
  */
@@ -48,7 +48,7 @@ export function ShortcutCard() {
         {status && !editUrl && <button type="button" className="card-edit" onClick={() => { setEditUrl(true); setUrl(status.installUrl ?? ""); setError(null); }} data-testid="shortcut-url-change">{status.installUrl ? "Change link" : "Add link"}</button>}
       </div>
       <p className="m-0">
-        Record a song in Voice Memos, share it to <b>Send to Roadie</b>, pick the rehearsal and the song, and it lands in that rehearsal&apos;s Drive folder and on the song, like an upload from the app.
+        Record a song in Voice Memos, share it to <b>Send to Roadie</b>, pick the rehearsal and the songs on it (one or several, for a run of songs in one memo), and it lands in that rehearsal&apos;s Drive folder and on each song, like an upload from the app.
       </p>
       {!status ? <p className="s m-0" data-testid="shortcut-loading">Loading…</p> : (
         <>
@@ -91,8 +91,8 @@ export function ShortcutCard() {
               <li><b>Text</b>: paste your token. When you share the Shortcut as an iCloud link, mark this Text as an import question (&ldquo;Your Roadie shortcut token&rdquo;) so each admin enters their own.</li>
               <li><b>Get Contents of URL</b>: <code className="break-all">{status.endpoints.rehearsals}</code>, method GET, header <code>Authorization</code> = <code>Bearer</code> + the Text.</li>
               <li><b>Get Dictionary Value</b> rehearsals → <b>Get Dictionary Value</b> labels → <b>Choose from List</b> (&ldquo;Which rehearsal?&rdquo;) → <b>Get Dictionary Value</b> the chosen item from rehearsals → ids. That is the rehearsal id.</li>
-              <li><b>Get Contents of URL</b>: <code className="break-all">{status.endpoints.songs}</code> with the rehearsal id in place of <code>{"{rehearsalId}"}</code>, same header. Then songs → labels → <b>Choose from List</b> (&ldquo;Which song?&rdquo;) → songs → ids → the song id.</li>
-              <li><b>Get Contents of URL</b>: <code className="break-all">{status.endpoints.upload}</code> with the rehearsal id, method POST, same header, Request Body <b>Form</b>: <code>songId</code> = the song id, <code>file</code> = Shortcut Input (as a file).</li>
+              <li><b>Get Contents of URL</b>: <code className="break-all">{status.endpoints.songs}</code> with the rehearsal id in place of <code>{"{rehearsalId}"}</code>, same header. Then songs → labels → <b>Choose from List</b> (&ldquo;Which songs?&rdquo;) with <b>Select Multiple</b> on → <b>Repeat with Each</b> chosen item: <b>Get Dictionary Value</b> the Repeat Item from songs → ids → <b>End Repeat</b> → <b>Combine Text</b> the Repeat Results with Commas. Those are the song ids.</li>
+              <li><b>Get Contents of URL</b>: <code className="break-all">{status.endpoints.upload}</code> with the rehearsal id, method POST, same header, Request Body <b>Form</b>: <code>songIds</code> = the song ids, <code>file</code> = Shortcut Input (as a file).</li>
               <li><b>Show Notification</b>: &ldquo;Uploaded to&rdquo; + <b>Get Dictionary Value</b> folder → name. Share the Shortcut (Copy iCloud Link) and add the link above.</li>
             </ol>
           </details>

@@ -66,25 +66,35 @@ export async function newRecordings(ctx: Ctx, rehearsalId: string): Promise<{ fo
   return { folder: info(folder), files };
 }
 
-/** Rename, share and attach one file to a song at the rehearsal (files.attach, so it is in history and on both pages). */
-async function adopt(ctx: Ctx, drive: DriveService, reh: Doc, song: Doc, file: DriveFile) {
-  const name = recordingName(song.title as string, reh.date as string, file.name);
+/** Rename, share and attach one file to the songs at the rehearsal (files.attach, so it is in history and on every page). */
+async function adopt(ctx: Ctx, drive: DriveService, reh: Doc, songs: Doc[], file: DriveFile) {
+  const name = recordingName(songs.map((s) => s.title as string).join(", "), reh.date as string, file.name);
   if (file.name !== name) await drive.rename(file.id, name);
   // The folder is usually shared with the band already; share the file too so it holds without relying on inheritance.
   await drive.share(file.id, (await bandmates()).map((m) => m.email));
-  // Straight to the command (not dispatch): the caller is already an admin here, and dispatch would pull the registry in.
-  const out = (await filesAttach.run(ctx, filesAttach.input.parse({ songId: song.id, rehearsalId: reh.id, files: [{ driveFileId: file.id, kind: "rehearsal", title: name }] }))) as { ids: string[]; skipped: number };
-  return { ...out, driveFileId: file.id, name, url: file.webViewLink };
+  const ids: string[] = [];
+  let skipped = 0;
+  for (const song of songs) {
+    // Straight to the command (not dispatch): the caller is already an admin here, and dispatch would pull the registry in.
+    const out = (await filesAttach.run(ctx, filesAttach.input.parse({ songId: song.id, rehearsalId: reh.id, files: [{ driveFileId: file.id, kind: "rehearsal", title: name }] }))) as { ids: string[]; skipped: number };
+    ids.push(...out.ids); skipped += out.skipped;
+  }
+  return { ids, skipped, driveFileId: file.id, name, url: file.webViewLink };
 }
 
-/** Upload one recording of a song at a rehearsal into its Drive folder, named for the song, and attach it. */
-export async function uploadRecording(ctx: Ctx, rehearsalId: string, songId: string, file: File) {
-  const [reh, song, parent] = await Promise.all([liveRehearsal(rehearsalId), liveSong(songId), recordingsFolder(ctx.artistId)]);
+/**
+ * Upload one recording of one or more songs at a rehearsal (a run of songs in one memo) into its Drive folder, named
+ * for the songs in order ("A, B - {date} Rehearsal.m4a"), and attach it to each of them.
+ */
+export async function uploadRecording(ctx: Ctx, rehearsalId: string, songIds: string | string[], file: File) {
+  const ids = [...new Set(typeof songIds === "string" ? [songIds] : songIds)];
+  if (ids.length === 0) throw new AppError("invalid_input", "Which song is this a recording of?", 400);
+  const [reh, parent, ...songs] = await Promise.all([liveRehearsal(rehearsalId), recordingsFolder(ctx.artistId), ...ids.map(liveSong)]) as [Doc, string, ...Doc[]];
   const drive = driveClient({ artistId: ctx.artistId });
   const folder = await folderForRehearsal(drive, parent, reh.date as string);
-  const name = recordingName(song.title as string, reh.date as string, file.name);
+  const name = recordingName(songs.map((s) => s.title as string).join(", "), reh.date as string, file.name);
   const up = await drive.upload({ name, mimeType: file.type || "application/octet-stream", parentId: folder.id, data: file });
-  const out = await adopt(ctx, drive, reh, song, up);
+  const out = await adopt(ctx, drive, reh, songs, up);
   return { ...out, folder: info(folder) };
 }
 
@@ -97,5 +107,5 @@ export async function adoptRecording(ctx: Ctx, rehearsalId: string, songId: stri
   let file: DriveFile;
   try { file = await drive.get(driveFileId); } catch { throw new AppError("not_found", "Drive can't find that file", 404); }
   if (!file.parents.includes(folder.id)) throw new AppError("invalid_input", `${file.name} isn't in the ${folder.name} folder`, 400);
-  return adopt(ctx, drive, reh, song, file);
+  return adopt(ctx, drive, reh, [song], file);
 }

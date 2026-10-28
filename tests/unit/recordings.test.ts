@@ -110,6 +110,20 @@ test("uploadRecording puts the file in the rehearsal's folder under the song's n
   assert.deepEqual((await newRecordings(ctx, reh.id)).files, [], "an upload isn't 'new'");
 });
 
+test("uploadRecording of several songs (a run in one memo) names the file for them in order and attaches it to each", async () => {
+  const a = await cmd("songs.create", { title: "Big River", status: "active" });
+  const b = await cmd("songs.create", { title: "Low Light", status: "active" });
+  const reh = await cmd("rehearsals.create", { date: "2026-10-27", songs: [{ songId: a.id }, { songId: b.id }] });
+  const r = await uploadRecording(ctx, reh.id, [b.id, a.id, b.id], new File(["x"], "New Recording 4.m4a", { type: "audio/mp4" }));
+  assert.equal(r.name, "Low Light, Big River - 2026-10-27 Rehearsal.m4a");
+  assert.equal(r.ids.length, 2, "one files doc per song, duplicates dropped");
+  const docs = await db.list("files", (q) => q.where("driveFileId", "==", r.driveFileId));
+  assert.deepEqual(docs.map((d) => d.songId).sort(), [a.id, b.id].sort());
+  assert.ok(docs.every((d) => d.rehearsalId === reh.id && d.title === r.name));
+  await assert.rejects(uploadRecording(ctx, reh.id, [], new File(["x"], "m.m4a")), { code: "invalid_input" });
+  await assert.rejects(uploadRecording(ctx, reh.id, [a.id, "nope"], new File(["x"], "m.m4a")), { code: "not_found" });
+});
+
 test("shortcut tokens: made once per admin per artist, hashed, replaced by the next one, revocable; the Shortcut's context is that admin", async () => {
   let s = await cmd("shortcut.status", {});
   assert.equal(s.token, null);
