@@ -23,11 +23,12 @@ export const artistHeaders = (): Record<string, string> => (currentArtistId ? { 
 
 /** Like runCommand, but also returns the runId (for Undo) and the new revs. */
 export async function runCommandFull<T = { id?: string }>(name: string, input: unknown = {}, meta?: CommandMeta): Promise<CommandOutcome<T>> {
-  const end = beginBusy(); // the top loading bar shows while a command is in flight
-  try { return await execCommand<T>(name, input, meta); } finally { end(); }
+  const end = meta?.autosave ? () => {} : beginBusy(); // the top loading bar shows while a command is in flight; background autosaves don't count
+  try { return await runCommandQuiet<T>(name, input, meta); } finally { end(); }
 }
 
-async function execCommand<T>(name: string, input: unknown, meta?: CommandMeta): Promise<CommandOutcome<T>> {
+/** runCommandFull without the top loading bar, for saves that happen in the background (drafts). */
+export async function runCommandQuiet<T>(name: string, input: unknown, meta?: CommandMeta): Promise<CommandOutcome<T>> {
   const user = clientAuth().currentUser;
   if (!user) throw new CommandError("unauthenticated", "Not signed in", 401);
   let res: Response;

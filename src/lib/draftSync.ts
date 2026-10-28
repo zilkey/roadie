@@ -2,7 +2,7 @@
 import { doc, getDoc } from "firebase/firestore";
 import { onIdTokenChanged } from "firebase/auth";
 import { clientAuth, clientDb } from "./firebase-client";
-import { artistHeaders, CommandError, runCommand } from "./commands";
+import { artistHeaders, CommandError, runCommandQuiet } from "./commands";
 import { draftDocId } from "@/schema/drafts";
 import type { SaveState } from "./autosave";
 
@@ -79,8 +79,8 @@ export class DraftChannel {
     const l = readLocal(this.uid, this.path);
     if (!l || l.sent) return;
     try {
-      if (l.cleared) await runCommand("drafts.clear", { path: this.path });
-      else await runCommand("drafts.save", { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev });
+      if (l.cleared) await runCommandQuiet("drafts.clear", { path: this.path });
+      else await runCommandQuiet("drafts.save", { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev });
       removeLocal(this.uid, this.path, l.at);
       this.onStatus(readLocal(this.uid, this.path) ? "saving" : l.cleared ? "idle" : "saved");
     } catch (e) {

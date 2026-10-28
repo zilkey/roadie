@@ -32,7 +32,7 @@ function Calendar() {
   const param = useSearchParams().get("m") ?? "";
   const today = todayStr();
   const ym = /^\d{4}-(0[1-9]|1[0-2])$/.test(param) ? param : today.slice(0, 7);
-  const { items, comingUp, loading, admin } = useCalendarItems();
+  const { items, comingUp, admin } = useCalendarItems();
   const [layer, setLayer] = useState<CalendarLayer>("all");
   // The picked day belongs to the month it was picked in; a different month falls back to the default.
   const [pick, setPick] = useState<{ ym: string; date: string } | null>(null);

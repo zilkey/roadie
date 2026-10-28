@@ -627,7 +627,7 @@ export function PitchLinks({ pitches }: { pitches: PitchRow[] }) {
 }
 
 export function useNotFound<T>(loading: boolean, d: T | null, what: string) {
-  if (loading) return <></>;
+  if (loading) return <></>; // not null: callers do `if (nf) return nf`, and the top bar shows the wait
   if (!d) return <div className="empty" data-testid="not-found"><span>That {what} isn&apos;t here any more.</span> <Link href="/booking" className="font-bold">Back to Booking</Link></div>;
   return null;
 }
