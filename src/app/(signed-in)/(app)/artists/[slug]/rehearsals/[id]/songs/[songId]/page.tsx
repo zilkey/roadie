@@ -16,7 +16,7 @@ export default function RehearsalSongPage() {
   const { id, songId } = useParams<{ slug: string; id: string; songId: string }>();
   const m = useMusic();
   const r = m.rehearsals.find((x) => x.id === id);
-  if (m.loading) return <div className="s">Loading…</div>;
+  if (m.loading) return null;
   if (!r) return <Missing what="rehearsal" />;
   if (!r.songs.some((s) => s.songId === songId)) return <Missing what="song at this rehearsal" />;
   return <RehearsalSong r={r} songId={songId} m={m} />;

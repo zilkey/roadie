@@ -21,7 +21,7 @@ import { statsTemplateFields } from "@/lib/stats";
 import { email as emailSchema, type Contact, type EmailTemplate, type EmailThread, type StatSnapshot } from "@/schema";
 
 export default function Page() {
-  return <AdminOnly><Suspense fallback={<div className="s">Loading…</div>}><Compose /></Suspense></AdminOnly>;
+  return <AdminOnly><Suspense fallback={null}><Compose /></Suspense></AdminOnly>;
 }
 
 /** With `thread=` the thread's doc is read first, so the form starts from it. */
@@ -32,7 +32,7 @@ function Compose() {
 }
 function WithThread({ id }: { id: string }) {
   const { doc, loading } = useDoc<EmailThread>("emailThreads", id);
-  if (loading) return <div className="s">Loading…</div>;
+  if (loading) return null;
   if (!doc) return <div className="empty" data-testid="compose-missing">That thread isn&apos;t on Roadie any more.</div>;
   return <ComposeForm thread={doc} />;
 }

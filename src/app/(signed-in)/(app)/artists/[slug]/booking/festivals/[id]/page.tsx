@@ -178,7 +178,7 @@ function NewEditionForm({ path, formId, busy, festivalName, onCreate, onCancel }
   const d = useDraft<Values>(path, editionForm.blank, { title: (v) => `New year · ${festivalName} ${v.label ?? ""}`.trim() });
   const mutationId = useRef(newMutationId());
   const [sending, setSending] = useState(false);
-  if (!d.ready) return <div className="s">Loading…</div>;
+  if (!d.ready) return null;
   async function submit(ev: React.FormEvent) {
     ev.preventDefault(); setSending(true);
     try {

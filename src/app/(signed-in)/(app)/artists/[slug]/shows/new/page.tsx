@@ -32,7 +32,7 @@ function NewShow() {
   const musicians = useCollection<Musician>("musicians");
   const asks = useCollection<Availability>("availability");
   const loading = ([venues, promoters, promoterNotes, editions, contacts, musicians, asks].some((c) => c.loading) || !artist) || (!!pitchId && pitch.loading);
-  if (loading) return <span className="s">Loading…</span>;
+  if (loading) return null;
   return (
     <NewShowForm pitchId={pitchId} pitch={pitchId ? pitch.doc : null} venues={venues.rows ?? []} promoters={(promoters.rows ?? []).map((p) => withBandNote("promoters", p, promoterNotes.rows?.find((n) => n.promoterId === p.id)) as PromoterRow)} editions={editions.rows ?? []} contacts={contacts.rows ?? []}
       musicians={musicians.rows ?? []} artist={artist ?? undefined} asks={asks.rows ?? []} />
@@ -96,7 +96,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   return (
     <div className="grid gap-5" data-testid="new-show">
       <PageTitle back={<Link href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} className="back-link" data-testid="back">{pitchId ? "← Pitch" : "← All shows"}</Link>} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
-      {!draft.ready ? <span className="s">Loading…</span> : <>
+      {!draft.ready ? null : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <ShowForm value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}
           dateSlot={pitchDates.length ? (

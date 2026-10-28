@@ -7,6 +7,7 @@ import { useHref } from "./artist";
 import { DraftChannel, openDraft, pushPending } from "./draftSync";
 import { DRAFT_TTL_MS, isEditPath } from "@/schema/drafts";
 import type { SaveState } from "./autosave";
+import { useBusyWhile } from "./busy";
 
 /** Keep a channel's flush hooks wired for as long as the component is mounted. */
 export function useChannelLifecycle(ch: DraftChannel | null) {
@@ -40,6 +41,7 @@ export function useDraft<T extends object>(path: string, initial: T, meta: { tit
   const toHrefRef = useRef(toHref); toHrefRef.current = toHref;
   const [value, setVal] = useState<T>(initial);
   const [ready, setReady] = useState(false);
+  useBusyWhile(!ready); // the top loading bar covers restoring a saved draft
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   const [status, setStatus] = useState<SaveState>("idle");
   const initialRef = useRef(initial);

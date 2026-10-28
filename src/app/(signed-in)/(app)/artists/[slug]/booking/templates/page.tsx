@@ -96,7 +96,7 @@ function NewTemplate({ onDone }: { onDone(): void }) {
   const { call, busy } = useCommand();
   const d = useDraft<T>(draftPath.newIn("emailTemplates"), blank, { title: (v) => `New template${v.name ? ` · ${v.name}` : ""}` });
   const mutationId = useRef(newMutationId());
-  if (!d.ready) return <div className="card s">Loading…</div>;
+  if (!d.ready) return null;
   const v = d.value;
   async function add(e: React.FormEvent) {
     e.preventDefault();

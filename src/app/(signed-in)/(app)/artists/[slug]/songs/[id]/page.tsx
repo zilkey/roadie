@@ -20,7 +20,7 @@ export default function SongPage() {
   const { id } = useParams<{ id: string }>();
   const m = useMusic();
   const song = m.songs.find((s) => s.id === id);
-  if (m.loading) return <div className="s">Loading…</div>;
+  if (m.loading) return null;
   if (!song) return <Missing what="song" />;
   return <SongView song={song} m={m} />;
 }

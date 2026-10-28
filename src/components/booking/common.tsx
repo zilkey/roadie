@@ -416,7 +416,7 @@ function DraftEntityForm({ fields, initial, build, submitLabel, onSubmit, testid
   const d = useDraft<Values>(draft.path, initial, { title: draft.title, route: draft.route });
   const [busy, setBusy] = useState(false);
   const mutationId = useRef(newMutationId());
-  if (!d.ready) return <div className="card s">Loading…</div>;
+  if (!d.ready) return null;
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setBusy(true);
     try {
@@ -627,7 +627,7 @@ export function PitchLinks({ pitches }: { pitches: PitchRow[] }) {
 }
 
 export function useNotFound<T>(loading: boolean, d: T | null, what: string) {
-  if (loading) return <div className="s">Loading…</div>;
+  if (loading) return <></>;
   if (!d) return <div className="empty" data-testid="not-found"><span>That {what} isn&apos;t here any more.</span> <Link href="/booking" className="font-bold">Back to Booking</Link></div>;
   return null;
 }

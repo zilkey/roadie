@@ -11,7 +11,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 
-export default function NewSong() { return <AdminOnly><Suspense fallback={<div className="s">Loading…</div>}><Form /></Suspense></AdminOnly>; }
+export default function NewSong() { return <AdminOnly><Suspense fallback={null}><Form /></Suspense></AdminOnly>; }
 
 function Form() {
   const router = useRouter();

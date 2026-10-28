@@ -34,7 +34,7 @@ function Page() {
   const m = useMusic();
   const admin = useProfile().role === "admin";
   const r = id === "new" ? null : m.rehearsals.find((x) => x.id === id);
-  if (m.loading) return <div className="s">Loading…</div>;
+  if (m.loading) return null;
   if (id === "new" && !admin) return <Missing what="rehearsal" />;
   if (id !== "new" && !r) return <Missing what="rehearsal" />;
   // New = a draft with an explicit create button; existing = autosave.
@@ -156,7 +156,7 @@ function NewRehearsal({ m }: { m: Music }) {
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="rehearsal-page">
       <PageTitle back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Create Rehearsal" sub="When, where, who and which songs. The songs power 'last rehearsed'." />
-      {!draft.ready ? <span className="s">Loading…</span> : <div className="cols">
+      {!draft.ready ? null : <div className="cols">
         <div className="col-main">
           <div className="card">
             <div className="grid grid-cols-2 gap-2">

@@ -37,7 +37,7 @@ export default function MySettingsPage() {
     <div className="grid gap-5">
       <PageTitle title="My settings" />
       <ErrorBox error={error ?? null} />
-      {loading ? <p className="s">Loading…</p>
+      {loading ? null
         : doc ? <SavedDriving key="saved" saved={doc} /> : <NewDriving key="new" />}
     </div>
   );

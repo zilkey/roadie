@@ -8,6 +8,7 @@ import { signUpBand } from "@/lib/sign-up";
 import { artistPath } from "@/lib/routes";
 import { ErrorBox } from "@/components/ui";
 import { useNoBand } from "@/components/welcome/useNoBand";
+import { AuthLoading } from "@/components/Guard";
 import { artistSlug, parseInstruments, slugForArtist } from "@/schema";
 
 /**
@@ -26,7 +27,7 @@ export function StartBandForm({ termsUrl }: { termsUrl: string }) {
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!me) return <div className="grid min-h-dvh place-items-center s" data-testid="auth-loading">Loading…</div>;
+  if (!me) return <AuthLoading />;
 
   const derived = slugForArtist(name.trim() || "your band");
   const slug = custom ?? derived;

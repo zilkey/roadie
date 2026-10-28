@@ -36,7 +36,7 @@ function LineupsEditor() {
   const liveKey = JSON.stringify(artist ? artist.configurations : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!artist) return <p className="s">Loading…</p>;
+  if (!artist) return null;
   const name = artist.name;
 
   function editCfgs(next: Cfg[]) {

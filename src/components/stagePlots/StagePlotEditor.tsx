@@ -16,7 +16,7 @@ import { useRowEdits } from "./useRowEdits";
 
 export function StagePlotEditor({ id }: { id: string }) {
   const { doc, loading } = useDoc<StagePlot>("stagePlots", id);
-  if (loading) return <div className="s">Loading…</div>;
+  if (loading) return null;
   if (!doc) return <div className="card" data-testid="not-found">That stage plot isn&apos;t here any more. <Link href="/stage-plots" className="font-bold">Back to Stage plots</Link></div>;
   return <Editor plot={doc} />;
 }

@@ -23,7 +23,7 @@ function shiftMonth(ym: string, n: number): string {
 const monthTitle = (ym: string) => new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
 export default function CalendarPage() {
-  return <Suspense fallback={<div className="s">Loading…</div>}><Calendar /></Suspense>;
+  return <Suspense fallback={null}><Calendar /></Suspense>;
 }
 
 function Calendar() {
@@ -61,7 +61,6 @@ function Calendar() {
         <div className={s.main}>
           <MonthGrid ym={ym} allByDay={allByDay} shownByDay={shownByDay} today={today} selected={selected}
             onSelect={(d) => setPick({ ym, date: d })} />
-          {loading && <p className="s">Loading…</p>}
           {admin && <ComingUp items={comingUp} today={today} />}
         </div>
         <aside className={s.side}>

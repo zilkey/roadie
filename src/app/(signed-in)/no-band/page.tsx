@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth";
 import { useNoBand } from "@/components/welcome/useNoBand";
+import { AuthLoading } from "@/components/Guard";
 
 /** Signed in with Google but on no band's list yet: start a band, or wait to be added. */
 export default function NoBand() {
@@ -10,7 +11,7 @@ export default function NoBand() {
   const me = useNoBand();
   const [checking, setChecking] = useState(false);
   const [still, setStill] = useState(false);
-  if (!me) return <div className="grid min-h-dvh place-items-center s" data-testid="auth-loading">Loading…</div>;
+  if (!me) return <AuthLoading />;
 
   async function check() {
     setChecking(true); setStill(false);

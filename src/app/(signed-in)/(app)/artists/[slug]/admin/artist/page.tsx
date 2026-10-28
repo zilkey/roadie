@@ -181,7 +181,7 @@ function ArtistEditor() {
   const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!artist) return <p className="s">Loading…</p>;
+  if (!artist) return null;
 
   function editLinks(next: Links) {
     setLinks(next);

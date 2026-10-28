@@ -10,7 +10,7 @@ import { useMusic } from "@/components/music/common";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 
 export default function SongsPage() {
-  return <Suspense fallback={<div className="s">Loading…</div>}><Songs /></Suspense>;
+  return <Suspense fallback={null}><Songs /></Suspense>;
 }
 
 type SegKey = "active" | "learning" | "retired" | "unlinked" | "writing";

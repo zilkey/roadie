@@ -23,7 +23,7 @@ const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month
 const domainOf = (a: string) => a.split("@")[1] ?? "";
 
 export default function Page() {
-  return <AdminOnly><Suspense fallback={<div className="s">Loading…</div>}><SearchGmail /></Suspense></AdminOnly>;
+  return <AdminOnly><Suspense fallback={null}><SearchGmail /></Suspense></AdminOnly>;
 }
 
 function SearchGmail() {
@@ -54,7 +54,7 @@ function SearchGmail() {
   const domains = useMemo(() => [...new Set(contacts.flatMap((c) => c.emails.map(domainOf)))], [contacts]);
   const sharedDomain = contacts.length > 0 && domains.length === 1 ? domains[0] : "";
 
-  if (b.loading) return <div className="s">Loading…</div>;
+  if (b.loading) return null;
   if (!found) return <div className="card" data-testid="search-no-place"><p className="s">Pick a venue, festival or promoter to search for first. <Link href="/booking" className="underline">Back to Booking</Link></p></div>;
   return <Search place={found.place} pitch={pitch} contacts={contacts} sharedDomain={sharedDomain} account={me.email} />;
 }

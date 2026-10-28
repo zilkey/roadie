@@ -35,7 +35,6 @@ export default function PrintPage() {
   return (
     <div className="print-page" data-testid="print-page" data-ready={fit ? "true" : undefined}>
       <style>{`@page{size:${PAPER[options.paper].css};margin:0}html,body{background:#fff !important}.print-page{background:#fff;min-height:100dvh;display:flex;justify-content:center;padding:24px 0}@media print{.print-page{padding:0;display:block;min-height:0}}`}</style>
-      {p.loading && <div className="s">Loading…</div>}
       {p.missing && <div className="s" data-testid="not-found">That setlist isn&apos;t here any more.</div>}
       {p.result && <PrintSheets result={p.result} paper={options.paper} onFit={setFit} />}
     </div>

@@ -16,7 +16,7 @@ export default function SetlistTemplatePage() {
   const { id } = useParams<{ id: string }>();
   const m = useMusic();
   const t = m.templates.find((s) => s.id === id);
-  if (m.loading) return <div className="s">Loading…</div>;
+  if (m.loading) return null;
   if (!t) return <Missing what="setlist template" />;
   return <View t={t} m={m} />;
 }

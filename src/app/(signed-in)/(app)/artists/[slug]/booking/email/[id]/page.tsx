@@ -80,7 +80,7 @@ function ThreadPage() {
         </div>} />
       <p className="s" data-testid="thread-private">Only {artist?.name ?? "your band"} sees this · sent and received from {t.account}</p>
       <ErrorBox error={error} />
-      {messages === null ? <div className="s">Loading…</div> : (
+      {messages !== null && (
         <div className="grid gap-3" data-testid="thread-messages">
           {messages.map((m, n) => <MessageView key={m.id} m={m} n={n} last={n === messages.length - 1} isNew={n === messages.length - 1 && m.direction === "received" && fresh === true} account={t.account} nameOf={nameOf} />)}
         </div>

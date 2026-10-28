@@ -165,7 +165,7 @@ function AddExpense() {
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
       <PageTitle back={<Link href={returnTo} className="back-link" data-testid="back">{rehearsalId ? "← Rehearsal" : fromShow ? "← Show" : "← My money"}</Link>} title="Add an expense"
         sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : fromShowDoc ? showName(fromShowDoc) : undefined} />
-      {!draft.ready ? <span className="s">Loading…</span> : <div className="card">
+      {!draft.ready ? null : <div className="card">
         <div className="grid gap-2">
           <span className="lbl">Category</span>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Category">

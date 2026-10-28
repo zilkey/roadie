@@ -69,7 +69,7 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
     <div className="grid gap-5" data-testid="after-page">
       <PageTitle back={<Link href={`/shows/${id}`} className="back-link" data-testid="back">← {showName(show)}</Link>} title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
       <ErrorBox error={error} />
-      {!draft.ready ? <span className="s">Loading…</span> : (
+      {!draft.ready ? null : (
         <div className="card">
           <Stars label="The show" value={v.show} onChange={(n) => set({ show: n })} testid="rate-show" />
           <Stars label="The venue" value={v.venue} onChange={(n) => set({ venue: n })} testid="rate-venue" />
