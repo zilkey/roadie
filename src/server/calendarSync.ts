@@ -190,15 +190,24 @@ export async function calendarSend(ctx: Ctx, kind: CalendarKind, id: string): Pr
   return { id, calendar: "created" };
 }
 
+/**
+ * Delete a show's or rehearsal's event (and so everyone's invite) from the band calendar. Already gone there is fine.
+ * Google refusing (no access, not connected) throws, so an archive never silently leaves an event behind.
+ * Does nothing when the doc has no event. The doc itself is left for the caller to update.
+ */
+export async function calendarDeleteEvent(ctx: Ctx, doc: Doc): Promise<boolean> {
+  if (!doc.calendarEventId) return false;
+  const artist = await artistOf(ctx, doc);
+  const calendar = artist?.calendar as { id: string } | null | undefined;
+  if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
+  try { await client(ctx, calendar.id).delete(doc.calendarEventId as string); } catch (e) { if (!notFound(e)) googleError(e); }
+  return true;
+}
+
 /** Take the event off the band calendar. Already gone there is fine. */
 export async function calendarRemove(ctx: Ctx, kind: CalendarKind, id: string): Promise<{ id: string; calendar: "removed" }> {
   const doc = await load(kind, id);
-  if (doc.calendarEventId) {
-    const artist = await artistOf(ctx, doc);
-    const calendar = artist?.calendar as { id: string } | null | undefined;
-    if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
-    try { await client(ctx, calendar.id).delete(doc.calendarEventId as string); } catch (e) { if (!notFound(e)) googleError(e); }
-  }
+  await calendarDeleteEvent(ctx, doc);
   await db.update(ctx, kind, id, { calendarEventId: null, calendarHash: null });
   return { id, calendar: "removed" };
 }

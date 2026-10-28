@@ -4,7 +4,7 @@ import { idInput, patchInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
-import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarDeleteEvent, calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -508,12 +508,17 @@ export const rehearsalsImportSetlist = defineCommand({
 export const rehearsalsRemove = defineCommand({
   name: "rehearsals.remove",
   roles: ["admin"],
-  description: "Archive a rehearsal and detach its recordings.",
+  description: "Archive a rehearsal and detach its recordings. If it is on the band calendar, its event (and everyone's invite) is deleted from Google Calendar first; Undo restores the rehearsal but not the event, so press the calendar button again.",
   input: idInput,
-  run: (ctx, { id }) => run(ctx, async (w) => {
-    for (const f of await w.query("files", (q) => q.where("rehearsalId", "==", id))) await w.softDelete("files", f.id);
-    return w.softDelete("rehearsals", id);
-  }),
+  async run(ctx, { id }) {
+    const reh = await db.get("rehearsals", id);
+    if (reh && !reh.deletedAt) await calendarDeleteEvent(ctx, reh);
+    return run(ctx, async (w) => {
+      for (const f of await w.query("files", (q) => q.where("rehearsalId", "==", id))) await w.softDelete("files", f.id);
+      if (reh?.calendarEventId) await w.update("rehearsals", id, { calendarEventId: null, calendarHash: null });
+      return w.softDelete("rehearsals", id);
+    });
+  },
 });
 
 export const rehearsalsCalendarPreview = defineCommand({

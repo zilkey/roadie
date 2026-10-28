@@ -7,7 +7,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
-import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarDeleteEvent, calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { noteOf, setContactRoles } from "../venues";
 import { dayOfContactOf } from "@/lib/venues";
 import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
@@ -321,10 +321,13 @@ export const showsDrop = defineCommand({
 
 export const showsRemove = defineCommand({
   name: "shows.remove", roles: ["admin"], input: idInput,
-  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Takes it off Bandsintown; remove its Calendar event first (shows.calendar on:false).",
+  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Takes it off Bandsintown and deletes its Google Calendar event (and so everyone's invite); Undo restores the show but not the event.",
   async run(ctx, { id }) {
+    const before = await db.get("shows", id);
+    if (before && !before.deletedAt) await calendarDeleteEvent(ctx, before);
     await run(ctx, async (w) => {
       await requireShow(w, id);
+      if (before?.calendarEventId) await w.update("shows", id, { calendarEventId: null, calendarHash: null });
       await w.softDelete("shows", id);
       if (await w.get("showDeals", id)) await w.softDelete("showDeals", id);
     });

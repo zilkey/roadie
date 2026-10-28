@@ -349,6 +349,47 @@ test("Rehearsals: preview and send to the band calendar; all day without a start
   assert.equal((await calendarClient().list()).length, 0);
 });
 
+test("Archiving a rehearsal or show deletes its band calendar event; an event already gone is fine; a failure keeps both", async () => {
+  await useBandCalendar();
+  const r = await cmd("rehearsals.create", { date: "2026-12-05", startTime: "19:00", endTime: "21:00", personnel: [ids.ingrid], songs: [] });
+  await cmd("rehearsals.calendar", { id: r.id, on: true });
+  const evId = (await db.get("rehearsals", r.id))!.calendarEventId;
+  assert.equal((await calendarClient().list()).length, 1);
+  await cmd("rehearsals.remove", { id: r.id });
+  assert.equal((await calendarClient().list()).length, 0, "the invite is gone for everyone");
+  await assert.rejects(calendarClient().get(evId));
+  const gone = (await db.get("rehearsals", r.id))!;
+  assert.ok(gone.deletedAt);
+  assert.equal(gone.calendarEventId, undefined);
+
+  // One with no event, and one whose event someone already deleted in Google, still archive
+  const plain = await cmd("rehearsals.create", { date: "2026-12-06", personnel: [], songs: [] });
+  await cmd("rehearsals.remove", { id: plain.id });
+  assert.ok((await db.get("rehearsals", plain.id))!.deletedAt);
+  const stale = await cmd("rehearsals.create", { date: "2026-12-07", personnel: [ids.ingrid], songs: [] });
+  await cmd("rehearsals.calendar", { id: stale.id, on: true });
+  await calendarClient().delete((await db.get("rehearsals", stale.id))!.calendarEventId);
+  await cmd("rehearsals.remove", { id: stale.id });
+  assert.ok((await db.get("rehearsals", stale.id))!.deletedAt);
+
+  // A show too
+  const show = await create({});
+  await cmd("shows.calendar", { id: show.id, on: true });
+  assert.equal((await calendarClient().list()).length, 1);
+  await cmd("shows.remove", { id: show.id });
+  assert.equal((await calendarClient().list()).length, 0);
+  assert.equal((await db.get("shows", show.id))!.calendarEventId, undefined);
+
+  // If the event can't be taken off (no band calendar to delete it from), the archive fails and the rehearsal keeps its event
+  const keep = await cmd("rehearsals.create", { date: "2026-12-08", personnel: [ids.ingrid], songs: [] });
+  await cmd("rehearsals.calendar", { id: keep.id, on: true });
+  await db.update(ctx, "artists", artistId, { calendar: null });
+  await assert.rejects(cmd("rehearsals.remove", { id: keep.id }), /No band calendar yet/);
+  const kept = (await db.get("rehearsals", keep.id))!;
+  assert.ok(!kept.deletedAt);
+  assert.ok(kept.calendarEventId);
+});
+
 test("Settings > Google: choose the band calendar from your own list; check your access", async () => {
   const actx = { ...ctx, artistId };
   const { calendars } = await cmd("google.calendars", {}, actx);
