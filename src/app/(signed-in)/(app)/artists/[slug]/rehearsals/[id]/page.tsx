@@ -1,6 +1,6 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
@@ -238,7 +238,6 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const flush = () => void as.flush();
 
   const files = m.files.filter((f) => f.rehearsalId === existing.id);
-  const hasRecordingsFolder = !!useArtist().doc?.rehearsalFolderId;
   const activeMusicians = m.musicians.filter((x) => x.active);
   const fullBand = activeMusicians.length > 0 && activeMusicians.every((x) => form.personnel.includes(x.id));
   const toggleMember = (mid: string) => change({ ...form, personnel: form.personnel.includes(mid) ? form.personnel.filter((i) => i !== mid) : [...form.personnel, mid] });
@@ -355,7 +354,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
               <button type="button" className="btn acc justify-self-start" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
             </div>
           )}
-          {admin && <NewRecordings rehearsalId={existing.id} songs={ranIds.map((sid) => ({ id: sid, title: titleOf(m, sid) }))} hasFolder={hasRecordingsFolder} />}
+          {admin && <NewRecordings rehearsalId={existing.id} songs={ranIds.map((sid) => ({ id: sid, title: titleOf(m, sid) }))} />}
           <div className="grid" data-testid="rehearsal-files">
             {files.map((f: FileRow) => (
               <RecordingRow key={f.id} file={f}

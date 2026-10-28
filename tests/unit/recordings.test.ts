@@ -61,8 +61,24 @@ test("rehearsals.folder makes the rehearsal's folder once, shared with the band;
   assert.deepEqual(made.parents, [RECORDINGS]);
   for (const e of ["ingrid", "jeff", "david"]) assert.ok(made.permissions.some((p) => p.email === `${e}@example.com`) || made.ownerEmail === `${e}@example.com`, e);
   assert.equal((await ensureRehearsalFolder(ctx, reh.id)).id, f.id, "made once, then reused");
+  await assert.rejects(cmd("rehearsals.folder", { id: "nope" }), { code: "not_found" });
+});
+
+test("with no recordings folder chosen, the first one needed is made in the band folder, shared, saved and then reused", async () => {
   await db.update(ctx, "artists", artistId, { rehearsalFolderId: null });
-  await assert.rejects(cmd("rehearsals.folder", { id: reh.id }), { code: "no_rehearsal_folder" });
+  const song = await cmd("songs.create", { title: "Big River", status: "active" });
+  const reh = await cmd("rehearsals.create", { date: "2026-10-27", songs: [{ songId: song.id }] });
+  assert.deepEqual(await newRecordings(ctx, reh.id), { folder: null, files: [] }, "looking doesn't make one");
+  const r = await uploadRecording(ctx, reh.id, song.id, new File(["x"], "New Recording 3.m4a", { type: "audio/mp4" }));
+  const made = (await db.get("artists", artistId))?.rehearsalFolderId as string;
+  const folder = await driveClient().get(made);
+  assert.deepEqual([folder.name, folder.parents], ["Rehearsal Recordings", ["fake-band-folder"]]);
+  for (const e of ["ingrid", "david"]) assert.ok(folder.permissions.some((p) => p.email === `${e}@example.com`), `shared with ${e}`);
+  assert.deepEqual((await driveClient().get(r.folder.id)).parents, [made], "the rehearsal's folder is inside it");
+  // chosen folder cleared again: the one already in the band folder is found, not a second one made
+  await db.update(ctx, "artists", artistId, { rehearsalFolderId: null });
+  await cmd("rehearsals.folder", { id: reh.id });
+  assert.equal((await db.get("artists", artistId))?.rehearsalFolderId, made);
   await assert.rejects(cmd("rehearsals.folder", { id: "nope" }), { code: "not_found" });
 });
 

@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtist } from "@/lib/artist";
+import Link from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useProfile } from "@/lib/auth";
@@ -27,11 +27,10 @@ type Row = Rehearsal & { id: string };
 /**
  * One song at one rehearsal: its notes (the rehearsal's per-song note, autosaved through rehearsals.update) and the
  * recordings of it from that rehearsal. Upload a recording sends it to /api/rehearsals/{id}/recording, which puts it in
- * Drive and attaches it to both the song and the rehearsal.
+ * Drive (making the recordings folder if none is chosen) and attaches it to both the song and the rehearsal.
  */
 function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType<typeof useMusic> }) {
   const admin = useProfile().role === "admin";
-  const hasFolder = !!useArtist().doc?.rehearsalFolderId;
   const song = m.songs.find((s) => s.id === songId);
   const title = song?.title ?? r.songs.find((s) => s.songId === songId)?.title ?? "Song";
   const serverNote = r.songs.find((s) => s.songId === songId)?.note ?? "";
@@ -66,8 +65,7 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
       <DetailCard private title="Recordings" testid="reh-song-recordings-card">
         {admin && (
           <Upload url={`/api/rehearsals/${encodeURIComponent(r.id)}/recording`} fields={{ songId }} label="Upload a recording" accept="audio/*,video/*"
-            testid="reh-song-upload" disabled={!hasFolder} tooBig="Trim it, or put it in Drive yourself and attach it from the rehearsal."
-            needsFolder={<>Choose the rehearsal recordings folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+            testid="reh-song-upload" disabled={false} tooBig="Trim it, or put it in Drive yourself and attach it from the rehearsal." needsFolder={null} />
         )}
         <div className="grid" data-testid="reh-song-files">
           {files.map((f: FileRow) => <RecordingRow key={f.id} file={f} />)}

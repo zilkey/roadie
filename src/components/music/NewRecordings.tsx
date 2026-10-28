@@ -1,6 +1,5 @@
 "use client";
 import { useState } from "react";
-import Link from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 
 interface Folder { id: string; name: string; url: string }
@@ -8,11 +7,11 @@ interface Fresh { folder: Folder | null; files: { driveFileId: string; name: str
 
 /**
  * The rehearsal's Drive folder and what landed in it by hand (the Drive app's share sheet, a voice memo shared from
- * the phone): Drive folder makes the folder if needed and links to it; Check Drive folder lists the audio and video
+ * the phone): Drive folder makes the folder if needed (and the recordings folder, when none is chosen) and links to it; Check Drive folder lists the audio and video
  * in it that isn't attached yet, each with a song to attach it to. Attaching renames the file to the app's
  * "{song} - {date} Rehearsal" convention, shares it with the band and puts it on the song and the rehearsal.
  */
-export function NewRecordings({ rehearsalId, songs, hasFolder }: { rehearsalId: string; songs: { id: string; title: string }[]; hasFolder: boolean }) {
+export function NewRecordings({ rehearsalId, songs }: { rehearsalId: string; songs: { id: string; title: string }[] }) {
   const { call, error, busy } = useCommand();
   const [folder, setFolder] = useState<Folder | null>(null);
   const [fresh, setFresh] = useState<Fresh | null>(null);
@@ -33,9 +32,6 @@ export function NewRecordings({ rehearsalId, songs, hasFolder }: { rehearsalId: 
     if (await call("rehearsals.adoptRecording", { id: rehearsalId, songId, driveFileId })) await check();
   }
 
-  if (!hasFolder) {
-    return <div className="text-xs s" data-testid="reh-folder-needs-setting">Choose the rehearsal recordings folder on <Link href="/admin/google" className="underline">Settings › Google</Link> to give this rehearsal a Drive folder.</div>;
-  }
   return (
     <div className="grid gap-2" data-testid="reh-drive-folder">
       <div className="flex flex-wrap items-center gap-2">
