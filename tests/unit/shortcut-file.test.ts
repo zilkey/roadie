@@ -33,7 +33,7 @@ test("the built Shortcut: token question, one first call, skip-the-picker branch
   assert.deepEqual([calls[2].WFHTTPMethod, calls[2].WFHTTPBodyType], ["POST", "Form"]);
   const form = calls[2].WFFormValues.Value.WFDictionaryFieldValueItems;
   assert.deepEqual(form.map((f: any) => [f.WFKey.Value.string, f.WFItemType]), [["songIds", 0], ["file", 5]], "the memo goes as a File field (a Text field is what broke the hand-built one)");
-  assert.deepEqual(form[1].WFValue.Value, { Type: "ExtensionInput" }, "the shared memo itself");
+  assert.deepEqual(form[1].WFValue, { Value: { Value: { Type: "ExtensionInput" }, WFSerializationType: "WFTextTokenAttachment" }, WFSerializationType: "WFTokenAttachmentParameterState" }, "the shared memo itself, as a File item's parameter state");
 
   // control flow: every If / Repeat is closed, in order
   const open: string[] = [];

@@ -6,7 +6,7 @@
  * Google offers as Download Send to Roadie. The token is an import question, asked once when the Shortcut is installed,
  * so the file is the same for every admin. Bump SHORTCUT_VERSION whenever the recipe changes and rebuild.
  */
-export const SHORTCUT_VERSION = 2;
+export const SHORTCUT_VERSION = 3;
 export const SHORTCUT_NAME = "Send to Roadie";
 export const SHORTCUT_PATH = "/shortcuts/send-to-roadie.shortcut";
 export const SHORTCUT_PLIST_PATH = "/shortcuts/send-to-roadie.plist";
@@ -121,7 +121,8 @@ export function buildShortcut(appUrl: string): { [k: string]: Plist } {
     WFURL: text([`${base}/api/rehearsals/`, variable("Rehearsal ID"), "/recording"]),
     WFHTTPMethod: "POST", WFHTTPHeaders: header(token), Advanced: true, ShowHeaders: true,
     WFHTTPBodyType: "Form",
-    WFFormValues: fields([field("songIds", text([variable("Song IDs")])), field("file", attachment(shortcutInput), FIELD_FILE)]),
+    // A File item's value is an attachment inside a parameter state (a bare attachment makes Shortcuts crash on import).
+    WFFormValues: fields([field("songIds", text([variable("Song IDs")])), field("file", { Value: attachment(shortcutInput), WFSerializationType: "WFTokenAttachmentParameterState" }, FIELD_FILE)]),
   });
   const result = dictValue(output(upload, "Contents of URL"), "message");
   notify(text([output(result, "Dictionary Value")]));
