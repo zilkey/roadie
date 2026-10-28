@@ -10,7 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { adoptRecording, ensureRehearsalFolder, newRecordings, recordingName, uploadRecording } from "@/server/recordings";
 import { authenticateShortcut, createShortcutToken } from "@/server/shortcut";
-import { recentRehearsals, rehearsalSongs } from "@/server/shortcutLists";
+import { recentRehearsals, rehearsalSongs, shortcutNow } from "@/server/shortcutLists";
 import { resetEmulators, makeUser } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -202,4 +202,21 @@ test("the Shortcut's lists: rehearsals around today nearest first (today's first
   assert.deepEqual(s.songs.labels, ["Big River", "Low Light"]);
   assert.deepEqual(s.songs.ids, { "Big River": a.id, "Low Light": b.id });
   await assert.rejects(rehearsalSongs(ctx, gone.id), { code: "not_found" });
+});
+
+test("the Shortcut's first call: the rehearsal on now (band time, start to end) skips the picker; otherwise the list, with repeat labels kept apart", async () => {
+  const song = await cmd("songs.create", { title: "Big River", status: "active" });
+  const on = await cmd("rehearsals.create", { date: "2026-10-27", startTime: "18:00", endTime: "21:00", location: { name: "The Loft", address: "x", lat: 1, lng: 2 }, songs: [{ songId: song.id }] });
+  const twin = await cmd("rehearsals.create", { date: "2026-10-27", location: { name: "The Loft", address: "x", lat: 1, lng: 2 } });
+  // 20:00 in Denver (MDT, UTC-6) on Oct 27 is 02:00Z on Oct 28: still "today" for the band.
+  const during = await shortcutNow(ctx, new Date("2026-10-28T02:00:00Z")) as any;
+  assert.deepEqual([during.rehearsal.id, during.rehearsal.date, during.rehearsal.label], [on.id, "2026-10-27", "Tue, Oct 27 · The Loft"]);
+  assert.deepEqual(during.songs.ids, { "Big River": song.id });
+  const after = await shortcutNow(ctx, new Date("2026-10-28T04:00:00Z")) as any; // 22:00, over
+  assert.equal(after.rehearsal, undefined);
+  assert.deepEqual(Object.values(after.rehearsals.ids).sort(), [on.id, twin.id].sort());
+  assert.equal(after.rehearsals.labels.length, 2);
+  assert.equal(new Set(after.rehearsals.labels).size, 2);
+  const before = await shortcutNow(ctx, new Date("2026-10-27T22:00:00Z")) as any; // 16:00, not yet
+  assert.equal(before.rehearsal, undefined);
 });
