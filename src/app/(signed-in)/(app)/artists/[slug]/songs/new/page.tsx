@@ -34,7 +34,7 @@ function Form() {
     const r = await call("songs.create", {
       title: title.trim(), status: writing ? "writing" : "active", ...(key.trim() ? { key: key.trim() } : {}), ...(lengthSec !== undefined ? { lengthSec } : {}), files: picks,
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/songs/${r.id}`); }
+    if (r?.id) { await draft.clear(); router.replace(`/songs/${r.id}`); }
   }
 
   return (

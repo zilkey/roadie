@@ -71,7 +71,11 @@ function Songs() {
     <div className="grid gap-5" data-testid="songs-page">
       <PageTitle title="Songs" center
         actions={admin ? <Link href={seg === "writing" ? "/songs/new?status=writing" : "/songs/new"} className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined} />
-      <Tabs<SegKey> testid="songs-seg" value={seg} onChange={setSeg}
+      <Tabs<SegKey> testid="songs-seg" value={seg} onChange={(k) => {
+        setSeg(k);
+        // Keep the segment in the URL (replacing this entry) so Back from a song returns to the same segment.
+        try { window.history.replaceState(window.history.state, "", k === "active" ? window.location.pathname : `?seg=${k}`); } catch { /* the state alone is fine */ }
+      }}
         options={SEGS.map(([k, label]) => [k, <>{label} <span className="chip a ml-1">{count(k)}</span></>])} />
       <input className="input" placeholder="Search songs…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="songs-filter" aria-label="Filter songs" />
       {!m.loading && songs.length === 0

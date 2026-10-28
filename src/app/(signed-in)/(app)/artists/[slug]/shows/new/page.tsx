@@ -90,7 +90,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       r ??= made;
     }
     if (r && pitch) celebrateBooking(pitch.target.name, dates.map(fmtPitchDate));
-    if (r) { await draft.clear(); router.push(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
+    if (r) { await draft.clear(); router.replace(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
   }
 
   return (

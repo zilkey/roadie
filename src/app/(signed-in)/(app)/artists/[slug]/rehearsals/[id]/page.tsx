@@ -151,7 +151,7 @@ function NewRehearsal({ m }: { m: Music }) {
       date: v.date, ...(v.location ? { location: v.location } : {}), ...(v.notes.trim() ? { notes: v.notes.trim() } : {}),
       personnel: v.personnel, songs: songList(v.ran), files: picks,
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/rehearsals/${r.id}`); }
+    if (r?.id) { await draft.clear(); router.replace(`/rehearsals/${r.id}`); }
   }
 
   return (

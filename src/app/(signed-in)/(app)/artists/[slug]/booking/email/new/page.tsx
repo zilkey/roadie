@@ -198,7 +198,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   async function send() {
     await draft.settle();
     const r = await call<{ id: string }>("email.send", { ...payload(), ...(canMark ? { markPitched } : {}) }, { clientMutationId: sendId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/booking/email/${r.id}`); }
+    if (r?.id) { await draft.clear(); router.replace(`/booking/email/${r.id}`); }
   }
   async function saveDraft() {
     setDrafted(false);

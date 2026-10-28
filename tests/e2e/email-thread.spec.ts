@@ -76,7 +76,7 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   await card.getByTestId(`thread-${linked.id}`).click();
   await expect(page.getByTestId("thread-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText(subject);
-  await expect(page.getByTestId("back")).toContainText("Pitch · Lost Lake Lounge");
+  await expect(page.getByTestId("back")).toHaveAttribute("href", /\/booking\/pitches\//);
   await expect(page.getByTestId("thread-page")).toContainText("2 messages · Haylee Jackson");
   await expect(page.getByTestId("thread-private")).toContainText("sent and received from jeff@example.com");
   await expect(page.getByTestId("open-in-gmail")).toHaveAttribute("href", new RegExp(`#all/${first.threadId}$`));
