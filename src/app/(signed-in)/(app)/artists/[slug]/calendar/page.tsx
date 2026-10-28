@@ -51,9 +51,9 @@ function Calendar() {
       <div className={s.bar}>
         <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
         <div className={s.controls}>
-          <button type="button" className={`btn ghost ${s.nav}`} aria-label="Previous month" onClick={() => go(shiftMonth(ym, -1))}>‹</button>
+          <button type="button" className={s.nav} aria-label="Previous month" onClick={() => go(shiftMonth(ym, -1))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 6l-6 6 6 6" /></svg></button>
           <span className={s.month} data-testid="calendar-month" aria-live="polite">{monthTitle(ym)}</span>
-          <button type="button" className={`btn ghost ${s.nav}`} aria-label="Next month" onClick={() => go(shiftMonth(ym, 1))}>›</button>
+          <button type="button" className={s.nav} aria-label="Next month" onClick={() => go(shiftMonth(ym, 1))}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M9 6l6 6-6 6" /></svg></button>
           <button type="button" className="btn ghost" style={{ minHeight: 44 }} onClick={() => go(today.slice(0, 7))}>Today</button>
         </div>
       </div>
