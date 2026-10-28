@@ -616,4 +616,5 @@ dialog.dlg > div { position: relative; }
   .page-head { margin-bottom: 14px; gap: 8px 16px; }
   .cols > .col-main, .cols > .col-side { gap: 12px; }
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]), textarea, select, .input, .select { font-size: max(16px, 1em); }
+  .toasts { bottom: auto; top: calc(env(safe-area-inset-top) + 8px); }
 }
