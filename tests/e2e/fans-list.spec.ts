@@ -160,3 +160,16 @@ test("the page loads no sign-in code", async ({ page }) => {
   await expect(page.getByTestId("fans-join")).toBeVisible();
   expect(urls.filter((u) => /identitytoolkit|securetoken|\/api\/session/.test(u))).toEqual([]);
 });
+
+test("the upcoming-shows widget: public JSON with open CORS, the iframe page and the script, no login", async ({ page }) => {
+  const res = await page.request.get(`/api/public/${ARTIST_SLUG}/shows`);
+  expect(res.status()).toBe(200);
+  expect(res.headers()["access-control-allow-origin"]).toBe("*");
+  const body = (await res.json()) as { artist: { slug: string }; shows: { venue: string }[] };
+  expect(body.artist.slug).toBe(ARTIST_SLUG);
+  expect((await page.request.get("/api/public/no-such-band/shows")).status()).toBe(404);
+  expect(await (await page.request.get(`/embed/${ARTIST_SLUG}/shows.js`)).text()).toContain("/shows");
+  await page.goto(`/embed/${ARTIST_SLUG}/shows?theme=dark&accent=ff6600`);
+  await expect(page.getByTestId("embed-shows")).toBeVisible();
+  await expect(page.getByTestId("embed-show").first().or(page.getByText("No shows booked right now."))).toBeVisible();
+});

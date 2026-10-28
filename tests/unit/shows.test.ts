@@ -12,6 +12,7 @@ import { calendarClient, bandsintownClient, gmailClient } from "@/server/integra
 import { answerByToken, viewByToken } from "@/server/availability";
 import { planHome, addDays, retargetAskMessage, fmtTime, showFilter, showTabFor, showName, publicShowName, showCity } from "@/lib/shows";
 import { firestore } from "@/server/admin";
+import { publicShows } from "@/server/publicShows";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -388,6 +389,33 @@ test("Archiving a rehearsal or show deletes its band calendar event; an event al
   const kept = (await db.get("rehearsals", keep.id))!;
   assert.ok(!kept.deletedAt);
   assert.ok(kept.calendarEventId);
+});
+
+test("Upcoming shows widget: only published, confirmed, upcoming shows, with public fields only", async () => {
+  const now = new Date("2027-01-10T18:00:00Z");
+  await create({ date: "2027-01-16", publishToBandsintown: true, billedAs: "trio", ticketUrl: "https://tix.example/1", times: { loadIn: "18:00", showStart: "20:00", set: "20:30", setLengthSec: 2400 } });
+  await create({ date: "2027-01-09", publishToBandsintown: true });
+  await create({ date: "2027-01-20", publishToBandsintown: true, billedAs: "duo", ticketUrl: "javascript:alert(1)", times: { doors: "19:00" } });
+  await create({ date: "2027-01-22", publishToBandsintown: false });
+  await create({ date: "2027-01-23", status: "hold", publishToBandsintown: true });
+  const gone = await create({ date: "2027-01-24", publishToBandsintown: true });
+  await cmd("shows.remove", { id: gone.id });
+  const canceled = await create({ date: "2027-01-25", publishToBandsintown: true });
+  await cmd("shows.cancel", { id: canceled.id });
+
+  const r = await publicShows("ingrid-avison-band", { now });
+  assert.deepEqual(r.shows.map((s) => [s.date, s.time, s.venue, s.city, s.billedAs, s.ticketUrl]), [
+    ["2027-01-16", "20:00", "Hi-Dive", "Denver", "Ingrid Avison Trio", "https://tix.example/1"],
+    ["2027-01-20", "19:00", "Hi-Dive", "Denver", "Ingrid Avison Duo", null],
+  ]);
+  assert.equal(r.shows[0].timeZone, "America/Denver");
+  assert.deepEqual(Object.keys(r.shows[0]).sort(), ["billedAs", "city", "date", "id", "ticketUrl", "time", "timeZone", "venue"]);
+  assert.deepEqual((await publicShows("ingrid-avison-band", { now, config: "duo" })).shows.map((s) => s.date), ["2027-01-20"]);
+  assert.equal(r.joinUrl, null);
+  await db.update(ctx, "artists", artistId, { features: { fans: true } });
+  assert.equal((await publicShows("ingrid-avison-band", { now })).joinUrl, "/f/ingrid-avison-band");
+  assert.deepEqual((await publicShows("ingrid-avison-band", { now: new Date("2027-01-21T18:00:00Z") })).shows, []);
+  await assert.rejects(publicShows("nope"), /Not found/);
 });
 
 test("Settings > Google: choose the band calendar from your own list; check your access", async () => {
