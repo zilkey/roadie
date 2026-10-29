@@ -17,6 +17,7 @@ import { StagePlotCard } from "@/components/shows/page/StagePlotCard";
 import { SetlistTab } from "@/components/shows/page/SetlistTab";
 import { CustomFieldsCard } from "@/components/shows/page/CustomFieldsCard";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
+import { PostersCard } from "@/components/shows/page/PostersCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import { Comments } from "@/components/shows/page/Comments";
 import { IncomeCard } from "@/components/shows/page/IncomeCard";
@@ -27,8 +28,8 @@ import { NetCard } from "@/components/shows/page/NetCard";
 import { ShowFansBanner } from "@/components/fans/ShowFansBanner";
 import type { Show } from "@/schema";
 
-type Tab = "details" | "setlist" | "finances";
-const TABS: Tab[] = ["details", "setlist", "finances"];
+type Tab = "details" | "setlist" | "promotion" | "finances";
+const TABS: Tab[] = ["details", "setlist", "promotion", "finances"];
 
 export default function ShowPage() { return <Suspense><Page /></Suspense>; }
 
@@ -41,8 +42,8 @@ function Page() {
 }
 
 /**
- * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Finances. The checklists are a 360px column on the right from lg up
- * (on all three tabs, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
+ * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Promotion / Finances. The checklists are a 360px column on the right from lg up
+ * (on every tab, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
  * Comments and Archive stay in the main column. There is no page-level Edit: values edit where they sit, and only real forms flip.
  */
 function ShowView({ show }: { show: ShowRow }) {
@@ -66,7 +67,7 @@ function ShowView({ show }: { show: ShowRow }) {
         </div>
       </header>
 
-      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["finances", "Finances"]]} />
+      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["promotion", "Promotion"], ["finances", "Finances"]]} />
 
       <div className="show-cols">
         <div className="show-main">
@@ -75,10 +76,13 @@ function ShowView({ show }: { show: ShowRow }) {
               <WhosPlayingCard show={show} admin={admin} />
               <SoundCard show={show} admin={admin} />
               <StagePlotCard show={show} admin={admin} />
-              <PromotionCard show={show} admin={admin} />
               {admin && <CustomFieldsCard show={show} />}
             </>}
             {tab === "setlist" && <SetlistTab show={show} admin={admin} />}
+            {tab === "promotion" && <>
+              <PostersCard show={show} admin={admin} />
+              <PromotionCard show={show} admin={admin} />
+            </>}
             {tab === "finances" && <>
               {admin && <ProjectCard show={show} />}
               {admin && <IncomeCard show={show} />}

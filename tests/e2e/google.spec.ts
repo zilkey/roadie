@@ -93,6 +93,22 @@ test("Settings > Google shows the Demos folder, for audio uploaded to songs", as
   await expect(card.getByTestId("demos-folder-hit-Demos").getByTestId("demos-folder-choose")).toHaveText("Current");
 });
 
+// The seed's Shows folder is the fake Drive's "Shows" (inside the band folder). A show's posters go there, in a folder per show.
+test("Settings > Google shows the Shows folder, for posters uploaded to shows", async ({ page }) => {
+  await signInAs(page, "jeff");
+  await page.getByTestId("band-menu").click();
+  await page.getByTestId("band-menu-settings").click();
+  await page.getByTestId("settings-nav-google").click();
+  const card = page.getByTestId("google-shows-folder");
+  await expect(card.getByRole("heading")).toHaveText("Shows folder");
+  await expect(card.getByTestId("shows-folder-link")).toContainText("Shows");
+  await expect(card.getByTestId("shows-folder-status")).toContainText("Posters uploaded on a show go here");
+  await card.getByTestId("shows-folder-change").click();
+  await card.getByTestId("shows-folder-q").fill("Shows");
+  await card.getByTestId("shows-folder-search").click();
+  await expect(card.getByTestId("shows-folder-hit-Shows").getByTestId("shows-folder-choose")).toHaveText("Current");
+});
+
 // The seed's Songwriting folder is the fake Drive's "Songwriting". Audio uploaded to a Writing song goes there.
 test("Settings > Google shows the Songwriting folder, for audio uploaded to Writing songs", async ({ page }) => {
   await signInAs(page, "jeff");

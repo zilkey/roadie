@@ -62,6 +62,9 @@ export const Show = entity({
   })).optional(),
   gear: z.array(z.strictObject({ id, label: z.string(), musicianId: id.optional(), packed: z.boolean() })).optional(),
   docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })),
+  /** The show's Drive folder ("{date} {venue}" inside the Shows folder from Settings > Google), made by the first poster upload, and its name then. */
+  driveFolderId: z.string().optional(),
+  driveFolderName: z.string().optional(),
   /** The event on the band calendar, set only when an admin sends it (shows.calendar). */
   calendarEventId: z.string().optional(),
   /** A hash of the event as last sent, so the preview can say whether anything changed since. */

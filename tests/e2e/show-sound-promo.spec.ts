@@ -30,6 +30,17 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("sound-notes-view")).toBeVisible();
 
+  // Promotion is its own tab: Posters (anyone uploads; the first upload makes "{date} {venue}" in the Shows folder) and the Promotion card.
+  await page.getByTestId("show-tab-promotion").click();
+  await expect(page.getByTestId("posters-none")).toHaveText("No posters yet.");
+  await expect(page.getByTestId("show-folder-link")).toHaveCount(0);
+  await page.getByTestId("poster-upload-input").setInputFiles({ name: "Lost Lake poster.png", mimeType: "image/png", buffer: Buffer.from("not really a png") });
+  await expect(page.getByTestId("poster-upload-done")).toHaveText("Uploaded to 2027-01-16 Lost Lake Lounge.");
+  await expect(page.getByTestId("poster-title")).toHaveText("Lost Lake poster.png");
+  await expect(page.getByTestId("show-folder-link")).toContainText("2027-01-16 Lost Lake Lounge");
+  await page.reload();
+  await expect(page.getByTestId("poster-title")).toHaveText("Lost Lake poster.png");
+
   // Promotion: no Edit. The ticket link is a value; docs add through the plus and leave through their ×.
   await expect(page.getByTestId("promotion-edit")).toHaveCount(0);
   await expect(page.getByTestId("docs-none")).toHaveText("Stage plot, poster, etc.");
@@ -64,6 +75,10 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await page.getByTestId("doc-remove").click();
   await expect(page.getByTestId("doc-link")).toHaveCount(0);
   await expect(page.getByTestId("docs-none")).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("poster-remove").click();
+  await expect(page.getByTestId("posters-none")).toBeVisible();
+  await page.getByTestId("show-tab-details").click();
   await page.getByTestId("sound-venueProvided").click();
   await expect(page.getByTestId("sound-venueProvided")).toBeChecked();
   await page.getByTestId("sound-notes-view").click();

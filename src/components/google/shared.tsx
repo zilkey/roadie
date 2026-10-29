@@ -20,6 +20,8 @@ export interface Status {
   demosFolder: FolderStatus;
   /** The chosen Songwriting folder (audio uploaded to songs in the Writing phase), the same way. */
   songwritingFolder: FolderStatus;
+  /** The chosen Shows folder (a show's posters, in a folder per show), the same way. */
+  showsFolder: FolderStatus;
   /** The caller can use Calendar: the local fake, or their own Google account has Calendar connected. */
   calendarReady: boolean;
   /** The band's shared calendar, as named when it was chosen. */

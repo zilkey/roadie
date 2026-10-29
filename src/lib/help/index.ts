@@ -18,7 +18,7 @@ export const helpTopic = (id: string) => HELP_TOPICS.find((t) => t.id === id);
 const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   shows: (tab) => ({ played: "playedShows", canceled: "canceledShows", dropped: "droppedShows" })[tab ?? ""] ?? "upcomingShows",
   showsPlayed: "playedShows", showsCanceled: "canceledShows", showsDropped: "droppedShows",
-  show: (tab) => (tab === "setlist" ? "setlists" : tab === "finances" ? "income" : "showPage"),
+  show: (tab) => (tab === "setlist" ? "setlists" : tab === "finances" ? "income" : "showPage"),  // promotion reads showPage too
   showSetlist: "setlists", showFinances: "income", showAfter: "showPage", newShow: "showPage",
   booking: "pitch", bookingVenues: "booking", bookingFestivals: "booking", bookingPromoters: "booking", bookingContacts: "booking",
   promoter: "booking", festival: "booking", edition: "booking", contact: "booking",

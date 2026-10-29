@@ -35,11 +35,17 @@ const FOLDERS = {
     is: "Recordings uploaded on a song at a rehearsal go here, in a folder for the rehearsal's date.",
     unset: "Not chosen yet. Uploading a recording at a rehearsal stays off until you choose where they go.",
   },
+  shows: {
+    title: "Shows folder", command: "google.setShowsFolder", tid: "shows-folder", card: "google-shows-folder",
+    saved: "Shows folder saved. Upload a poster on a show puts it here now.",
+    is: "Posters uploaded on a show go here, in a folder for the show (its date and venue), shared with the band.",
+    unset: "Not chosen yet. This is where a show's posters go; Upload a poster on a show stays off until you choose it.",
+  },
 } as const;
 
 /**
  * A Drive folder setting: the band folder (song files are checked against it), the Charts folder (lyrics and chord
- * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase) or the rehearsal recordings folder (uploads from a rehearsal go into it). Chosen by searching the band account's Drive for folders by
+ * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase), the rehearsal recordings folder (uploads from a rehearsal go into it) or the Shows folder (a show's posters go into it, in a folder per show). Chosen by searching the band account's Drive for folders by
  * name, or by pasting a folder link. Until it's set, what depends on it is off everywhere.
  */
 export function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; status: Status; onChange(s: Status): void }) {
@@ -49,7 +55,7 @@ export function FolderCard({ which, status, onChange }: { which: keyof typeof FO
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Folder[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const f = { band: status.bandFolder, charts: status.chartsFolder, demos: status.demosFolder, songwriting: status.songwritingFolder, rehearsal: status.rehearsalFolder }[which];
+  const f = { band: status.bandFolder, charts: status.chartsFolder, demos: status.demosFolder, songwriting: status.songwritingFolder, rehearsal: status.rehearsalFolder, shows: status.showsFolder }[which];
   const isLink = /drive\.google\.com|\/folders\//.test(q);
 
   async function choose(folder: string) {

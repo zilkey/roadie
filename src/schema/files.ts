@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { entity, serverMask, id, ts } from "./common";
 
-/** What a file is. The release kinds (mix, master, session, artwork, liner, promo) only appear on files with an releaseId. */
-export const fileKind = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other", "mix", "master", "session", "artwork", "liner", "promo"]);
+/** What a file is. The release kinds (mix, master, session, artwork, liner, promo) only appear on files with an releaseId; poster only on files with a showId. */
+export const fileKind = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other", "mix", "master", "session", "artwork", "liner", "promo", "poster"]);
 export type FileKindValue = z.infer<typeof fileKind>;
 
 /** A note someone left on a mix ("Guitar solo a touch quieter."). */
@@ -17,6 +17,8 @@ export const FileDoc = entity({
   /** Release-only files (mixes, masters, artwork...): the release, and the track when it is a track's. They carry no songId. */
   releaseId: id.optional(),
   releaseTrackId: id.optional(),
+  /** A show's posters (kind poster): the show. They carry no songId. */
+  showId: id.optional(),
   /** Mixes and masters: v1, v2... (the number). */
   version: z.number().int().positive().optional(),
   /** The band signed off on this mix or master. */

@@ -30,6 +30,7 @@ function initial(): DriveState {
   add("fake-folder-demos", "Demos", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
   add("fake-folder-songwriting", "Songwriting", MIME.folder, "ingrid@example.com", [BAND_FOLDER_ID], all);
   add("fake-folder-rehearsals", "Rehearsal recordings", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
+  add("fake-folder-shows", "Shows", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
   // The two ids the seed script already references.
   add("fake-drive-demo-1", "Glass Coast demo v3.m4a", MIME.audio, "jeff@example.com", [BAND_FOLDER_ID], all);
   add("fake-drive-chart-1", "Glass Coast chart F#m.docx", MIME.word, "ingrid@example.com", ["root-ingrid"], all.filter((e) => !/eric|emma/.test(e)));
