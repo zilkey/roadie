@@ -107,7 +107,7 @@ function Spent({ album }: { album: AlbumRow }) {
   const payouts = useCollection<Payout>("payouts");
   // The album's project is never the default one, so records without a projectId never count here.
   const t = projectTotals({ projectId: album.projectId, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
-  const spent = t.expenses + t.paidOut;
+  const spent = t.outPaid + t.outOwed;
   return <span data-testid="album-spent">Spent <b>{formatCents(spent)}</b>{album.budget != null ? ` of ${formatCents(album.budget)}` : ""}</span>;
 }
 

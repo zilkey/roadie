@@ -28,7 +28,7 @@ export default function AlbumsPage() {
     return albums.map((a) => {
       const mine = tracks.filter((t) => t.albumId === a.id);
       const t = admin ? projectTotals({ projectId: a.projectId, defaultProjectId: def, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] }) : null;
-      return { a, count: mine.length, len: totalLength(mine), spent: t ? t.expenses + t.paidOut : 0, earned: t?.income ?? 0 };
+      return { a, count: mine.length, len: totalLength(mine), spent: t ? t.outPaid + t.outOwed : 0, earned: t ? t.inReceived + t.inOwed : 0 };
     }).sort((x, y) => {
       // Unreleased first, by release date (no date last), then title.
       const rx = x.a.status === "released" ? 1 : 0, ry = y.a.status === "released" ? 1 : 0;

@@ -275,6 +275,9 @@ async function main() {
   // The album's spend: studio time on the project, and one mix's revisions pinned to its track.
   await create("expenses", { userId: uid.jeff, date: "2026-09-14", amount: 180000, category: "recording", what: "3 days tracking", projectId: albumProject, payBack: false });
   await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 30000, category: "mixing", what: "Mix v2 revisions", projectId: albumProject, albumTrackId: trackIds[2], payBack: false });
+  // A vendor paid by an admin from her own account (nothing to pay back), and a bill nobody has paid yet.
+  await create("expenses", { userId: uid.ingrid, date: "2026-10-03", amount: 6000, category: "space", what: "Room rental", to: { name: "Doghouse Studio" }, payBack: false, projectId: bandProject });
+  await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 23000, category: "space", what: "Video studio day", to: { name: "Video Studio Space" }, owed: true, payBack: false, projectId: bandProject });
 
   // --- income (#39): what came in and what is still owed to the band (no receivedAt) ---
   const income = (input: Record<string, unknown>) => create("income", { artistId: artist, projectId: bandProject, ...input });
@@ -286,7 +289,7 @@ async function main() {
 
   // --- payouts (#39): what the band paid or still owes people ---
   await create("payouts", { artistId: artist, projectId: bandProject, to: { userId: uid.david, name: person("david") }, kind: "pay", amount: 7500, what: "Dairy Arts Center show",
-    showId: playedShow, paidAt: "2026-10-12", method: "venmo" });
+    showId: playedShow, paidAt: "2026-10-12", method: "venmo", paidBy: uid.jeff });
   await create("payouts", { artistId: artist, projectId: bandProject, to: { name: "The Moonlighters" }, kind: "split", amount: 15000, what: "Their cut of the Hi-Dive bill",
     showId: hiShow, dueDate: "2026-11-15" });
   await create("payouts", { artistId: artist, projectId: bandProject, to: { musicianId: mid.eric, name: person("eric") }, kind: "pay", amount: 6000, what: "Hi-Dive show",
@@ -294,7 +297,7 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 1 album with 10 tracks, 4 income, 3 payouts.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 1 album with 10 tracks, 6 expenses, 4 income, 3 payouts.");
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */

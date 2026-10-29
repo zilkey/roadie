@@ -76,19 +76,25 @@ test("admin pays everything owed to one person in one go", async ({ page, browse
   for (const what of items) await expect(owe).not.toContainText(what);
 });
 
-test("Overview lists what is owed to us and what we owe; Received marks the Lost Lake guarantee", async ({ page }) => {
+test("Overview keeps a future show's guarantee in Expected only, keeps paid and owed apart, and lists what we owe (a vendor bill too)", async ({ page }) => {
   await signInAs(page, "jeff");
   await openTab(page, "money");
+  // The Lost Lake show hasn't happened: its $300 is in the Expected box and nowhere else.
+  const expected = page.getByTestId("expected-income");
+  await expect(expected.locator('[data-testid^="expected-income-"]', { hasText: "Lost Lake Lounge" })).toContainText("$300.00");
   const owedIn = page.getByTestId("owed-to-us");
-  await expect(owedIn).toContainText("Lost Lake Lounge");
-  await expect(owedIn).toContainText("$300.00");
+  await expect(owedIn).not.toContainText("Lost Lake Lounge");
+  await expect(owedIn).toContainText("Bandcamp");
+  await expect(page.getByTestId("total-owed-in")).toContainText("$"); // other specs add owed income in parallel, so no exact figure
   const owe = page.getByTestId("we-owe");
   await expect(owe).toContainText("The Moonlighters");
   await expect(owe).toContainText("Eric");
+  await expect(owe).toContainText("Video Studio Space");
   await expect(page.getByTestId("recent")).toBeVisible();
   await expect(page.getByTestId("open-projects")).toBeVisible();
-  await owedIn.locator("div.items-center", { hasText: "Lost Lake Lounge" }).getByRole("button", { name: "Received" }).click();
-  await expect(owedIn).not.toContainText("Lost Lake Lounge");
+  // Paid and owed are kept apart: In is what arrived, Net is money that moved, "once everything settles" counts the rest.
+  await expect(page.getByTestId("total-in")).toContainText("$");
+  await expect(page.getByTestId("total-settled")).toBeVisible();
 });
 
 test("Projects tab lists the seeded projects; New project adds Fall run and Cancel discards", async ({ page }) => {
@@ -122,17 +128,19 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   await expect(page).toHaveURL(/\/money\/projects\/[^/]+$/);
   await expect(page.getByTestId("project-page")).toContainText("Wild Hearts LP");
   const totals = page.getByTestId("project-totals");
-  // The album's spend (three days tracking, the mix revisions) sits on its project; the Bandcamp sale is still owed.
+  // The album's spend (three days tracking, the mix revisions) is paid; the backer pledges arrived, the Bandcamp sale is still owed.
   await expect(page.getByTestId("project-spent")).toHaveText("$2,100.00");
+  await expect(page.getByTestId("project-in")).toContainText("$"); // the album spec adds income in parallel, so no exact figure
   await expect(totals).toContainText("$184.00");
   // The Bandcamp money hasn't arrived: owed on the In tile, and listed under Money in as "Owed to us" (received income is green).
   await expect(page.getByTestId("tile-in")).toContainText("$184.00 owed to us");
+  await expect(page.getByTestId("project-net-settled")).toContainText("once everything settles");
   const records = page.getByTestId("project-records");
-  await expect(records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" })).toContainText("Owed to us");
-  await expect(records.locator(".chip.g").first()).toHaveText("Received");
+  await expect(records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator(".chip.a")).toHaveText("Owed to us");
   await page.getByTestId("project-flow-out").click();
   await expect(records).not.toContainText("Bandcamp");
-  await expect(records.locator(".chip.y").first()).toHaveText(/Paid/);
+  await expect(records.locator("[data-testid^=project-record-expense-]", { hasText: "3 days tracking" })).toContainText("paid by Jeff");
+  await expect(page.getByTestId("project-by-payer")).toBeVisible();
   // Each record's project edits in place; the Bandcamp sale moves to the tour and back.
   await page.getByTestId("project-flow-in").click();
   const sel = records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]");

@@ -120,9 +120,14 @@ test("payouts: to resolves and copies the name; paidAt missing = owed; markPaid;
   assert.deepEqual(((await db.get("payouts", n.id)) as any).to, { name: "Other Band" });
   await code(cmd("payouts.add", { to: { musicianId: "ghost" }, kind: "pay", amount: 100 }), "not_found");
   await code(cmd("payouts.add", { to: { contactId: "ghost" }, kind: "pay", amount: 100 }), "not_found");
-  await cmd("payouts.markPaid", { id: p.id, paidAt: "2026-11-12", method: "venmo" });
+  // only an admin can be the payer: the money left their own account
+  await code(cmd("payouts.markPaid", { id: p.id, paidAt: "2026-11-12", method: "venmo", paidBy: memberUid }), "invalid_input");
+  await code(cmd("payouts.add", { to: { name: "x" }, kind: "pay", amount: 1, paidAt: "2026-11-12", paidBy: "ghost" }), "not_found");
+  await cmd("payouts.markPaid", { id: p.id, paidAt: "2026-11-12", method: "venmo", paidBy: ctx.uid });
   doc = await db.get("payouts", p.id) as any;
-  assert.deepEqual([doc.paidAt, doc.method], ["2026-11-12", "venmo"]);
+  assert.deepEqual([doc.paidAt, doc.method, doc.paidBy], ["2026-11-12", "venmo", ctx.uid]);
+  await cmd("payouts.update", { id: p.id, patch: { paidBy: null } });
+  assert.equal(((await db.get("payouts", p.id)) as any).paidBy, undefined);
   await cmd("payouts.update", { id: p.id, patch: { paidAt: null, amount: 7000 } });
   assert.equal(((await db.get("payouts", p.id)) as any).paidAt, undefined);
   assert.equal((await dealTotals(s)).paidOut, 7000);
@@ -152,20 +157,50 @@ test("expenses: default project, the show's project, admin on behalf, member ref
   assert.equal(lines[0].projectId, duo);
 });
 
+test("expenses: a vendor (to) is resolved and named; an owed bill has no payer until markPaid names an admin", async () => {
+  const s = await mkShow();
+  const contact = (await db.create(ctx, "contacts", { name: "Doghouse Studio", emails: [], phones: [], matchKey: "doghouse" })).id;
+  const paid = await cmd("expenses.add", { amount: 6000, what: "Room rental", category: "space", to: { contactId: contact }, payBack: false, date: "2026-10-03" });
+  let doc = await db.get("expenses", paid.id) as any;
+  assert.deepEqual([doc.to, doc.owed, doc.userId, doc.date], [{ contactId: contact, name: "Doghouse Studio" }, undefined, ctx.uid, "2026-10-03"]);
+  await code(cmd("expenses.add", { amount: 1, what: "x", category: "space", to: { contactId: "ghost" } }), "not_found");
+  // a bill nobody has paid yet: no pay-back, counted as owed on the show until it is marked paid
+  const bill = await cmd("expenses.add", { amount: 23000, what: "Video studio day", category: "space", to: { name: "Video Studio Space" }, owed: true, showId: s });
+  doc = await db.get("expenses", bill.id) as any;
+  assert.deepEqual([doc.owed, doc.payBack, doc.to], [true, false, { name: "Video Studio Space" }]);
+  await code(cmd("expenses.add", { amount: 1, what: "x", category: "space", owed: true }, mctx), "forbidden");
+  await code(cmd("expenses.markPaid", { id: bill.id, userId: memberUid }), "invalid_input");
+  await code(cmd("expenses.markPaid", { id: paid.id, userId: ctx.uid }), "invalid_state");
+  await cmd("expenses.markPaid", { id: bill.id, userId: ctx.uid, paidAt: "2026-11-01" });
+  doc = await db.get("expenses", bill.id) as any;
+  assert.deepEqual([doc.owed, doc.userId, doc.date], [undefined, ctx.uid, "2026-11-01"]);
+  assert.equal((await dealTotals(s)).expenses, 23000);
+  // the vendor can be fixed or cleared; a member can't move an expense to another payer
+  await cmd("expenses.update", { id: paid.id, patch: { to: { name: "The Doghouse" } } });
+  assert.deepEqual(((await db.get("expenses", paid.id)) as any).to, { name: "The Doghouse" });
+  await cmd("expenses.update", { id: paid.id, patch: { to: null, userId: memberUid } });
+  doc = await db.get("expenses", paid.id) as any;
+  assert.deepEqual([doc.to, doc.userId], [undefined, memberUid]);
+  await code(cmd("expenses.update", { id: paid.id, patch: { userId: ctx.uid } }, mctx), "forbidden");
+});
+
 test("expenses.payPerson writes one reimbursement payout and reimbursedBy", async () => {
   const s = await mkShow({ projectId: duo });
   const e1 = (await cmd("expenses.add", { amount: 4200, what: "gas", category: "travel", userId: memberUid, showId: s })).id;
   const e2 = (await cmd("expenses.add", { amount: 800, what: "food", category: "food", userId: memberUid, showId: s })).id;
-  const r = await cmd("expenses.payPerson", { userId: memberUid, method: "venmo", paidAt: "2026-11-12" });
+  const ingrid = await makeUser("ingrid@example.com", "admin", { name: "Ingrid" });
+  await code(cmd("expenses.payPerson", { userId: memberUid, method: "venmo", paidAt: "2026-11-12", paidBy: memberUid }), "invalid_input");
+  const r = await cmd("expenses.payPerson", { userId: memberUid, method: "venmo", paidAt: "2026-11-12", paidBy: ingrid.uid });
   assert.equal(r.total, 5000);
   assert.deepEqual(r.paid.sort(), [e1, e2].sort());
   const p = await db.get("payouts", r.payoutId) as any;
   assert.deepEqual(p.to, { userId: memberUid, name: "David" });
-  assert.deepEqual([p.kind, p.amount, p.paidAt, p.method, p.projectId, p.showId], ["reimbursement", 5000, "2026-11-12", "venmo", duo, s]);
+  assert.deepEqual([p.kind, p.amount, p.paidAt, p.method, p.paidBy, p.projectId, p.showId], ["reimbursement", 5000, "2026-11-12", "venmo", ingrid.uid, duo, s]);
   assert.deepEqual([...p.expenseIds].sort(), [e1, e2].sort());
+  // the payer who paid the member back is stamped on each expense (the feed says "Ingrid paid David back")
   for (const id of [e1, e2]) {
     const x = await db.get("expenses", id) as any;
-    assert.deepEqual([x.reimbursedBy, x.paidBackAt, x.paidBackBy], [r.payoutId, "2026-11-12", ctx.uid]);
+    assert.deepEqual([x.reimbursedBy, x.paidBackAt, x.paidBackBy], [r.payoutId, "2026-11-12", ingrid.uid]);
   }
   // a reimbursement repays expenses already counted as spent, so it is not paid out (the show's net would be understated)
   assert.equal((await dealTotals(s)).paidOut, 0);

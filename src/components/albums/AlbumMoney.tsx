@@ -41,8 +41,9 @@ function View({ data }: { data: AlbumData }) {
   const mine = <T extends { projectId?: string }>(xs: readonly T[] | null) => (xs ?? []).filter((x) => projectOf(x, def) === album.projectId);
   const inc = mine(income.rows), exp = mine(expenses.rows), pay = mine(payouts.rows);
   const t = projectTotals({ projectId: album.projectId, defaultProjectId: def, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
-  const spent = t.expenses + t.paidOut;
-  const earned = t.income;
+  // The album page keeps the whole picture: spent is everything out (paid or still owed), earned everything in (received or owed).
+  const spent = t.outPaid + t.outOwed;
+  const earned = t.inReceived + t.inOwed;
   const net = earned - spent;
   const budget = album.budget;
   const pct = budget ? Math.round((spent / budget) * 100) : 0;
@@ -93,7 +94,7 @@ function View({ data }: { data: AlbumData }) {
           <div className="grid gap-1" data-testid="tile-earned">
             <span className="lbl">Earned</span>
             <b className="font-mono text-xl" data-testid="album-earned-amount">{formatCents(earned)}</b>
-            {t.owedToUs > 0 && <span className="s">{formatCents(t.owedToUs)} still owed</span>}
+            {t.inOwed > 0 && <span className="s">{formatCents(t.inOwed)} still owed</span>}
           </div>
           <div className="grid gap-1" data-testid="tile-net">
             <span className="lbl">Net so far</span>

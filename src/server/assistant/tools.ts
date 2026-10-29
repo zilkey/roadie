@@ -253,7 +253,10 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   },
   "shows.addChecklistItem": async (i, _r, _s, l) => `Added ${quote(i.label)} to ${await l.show(i.id)}`,
   "shows.afterShow": async (i, _r, _s, l) => `Saved how it went for ${await l.show(i.id)}${i.show ? `, show ${i.show}/5` : ""}${i.venue ? `, venue ${i.venue}/5` : ""}`,
-  "expenses.add": async (i, _r, s, l) => (i.userId && i.payBack === true ? `We owe ${await l.person(i.userId)} ${dollars(i.amount)} for ${i.what}` : `Logged ${dollars(i.amount)} ${i.what}, paid by ${i.userId ? await l.person(i.userId) : s.name}`),
+  "expenses.add": async (i, _r, s, l) => (i.owed ? `We owe ${i.to ? await payoutTo(i.to, l) : "someone"} ${dollars(i.amount)} for ${i.what}`
+    : i.userId && i.payBack === true ? `We owe ${await l.person(i.userId)} ${dollars(i.amount)} for ${i.what}`
+    : `Logged ${dollars(i.amount)} ${i.what}${i.to ? ` to ${await payoutTo(i.to, l)}` : ""}, paid by ${i.userId ? await l.person(i.userId) : s.name}`),
+  "expenses.markPaid": async (i, _r, _s, l) => { const x = await l.get("expenses", i.id); return `${await l.person(i.userId)} paid ${x?.to?.name ?? x?.what ?? "the bill"}${x?.amount ? ` ${dollars(x.amount)}` : ""}`; },
   "income.add": (i) => (i.receivedAt ? `${i.from} paid us ${dollars(i.amount)} (${i.category})` : `${i.from} owes us ${dollars(i.amount)} (${i.category}, owed)`),
   "income.update": async (i, _r, _s, l) => `Updated the ${(await l.get("income", i.id))?.from ?? ""} income: ${list(Object.keys(i.patch ?? {}))}`,
   "income.setReceived": async (i, _r, _s, l) => `Marked the ${(await l.get("income", i.id))?.from ?? ""} income as received`,
@@ -377,18 +380,21 @@ async function fillPayPerson(s: Session, input: unknown): Promise<{ input: unkno
  * Money cards read like the sentence: names for the person, project and show, and for a record named by id (setReceived,
  * markPaid, update, remove) the record's own amount and who. Best effort: a miss leaves the card plainer, never blocks it.
  */
-const MONEY_CARDS = /^(expenses\.add|income\.|payouts\.|projects\.)/;
+const MONEY_CARDS = /^(expenses\.add|expenses\.markPaid|income\.|payouts\.|projects\.)/;
 async function fillMoney(s: Session, name: string, input: unknown): Promise<{ input: unknown; before?: Row }> {
   if (!MONEY_CARDS.test(name)) return { input };
   const i = (input ?? {}) as Row, l = lookups(s);
   const kind = name.split(".")[0];
   try {
-    const rec: Row | undefined = typeof i.id === "string" && kind !== "expenses" ? await l.get(kind, i.id) : undefined;
+    const rec: Row | undefined = typeof i.id === "string" && name !== "expenses.add" ? await l.get(kind, i.id) : undefined;
     const before: Row = {};
     if (kind === "projects") { if (rec) before.name = rec.name; return { input, before }; }
     if (rec) Object.assign(before, { amount: rec.amount, from: rec.from, what: rec.what, paidAt: rec.paidAt, ...(rec.to ? { person: await payoutTo(rec.to, l) } : {}) });
     if (name === "payouts.add" || (name === "payouts.update" && i.patch?.to)) before.person = await payoutTo(name === "payouts.add" ? i.to : i.patch.to, l);
     if (name === "expenses.add" && i.userId) before.person = await l.person(i.userId);
+    if (name === "expenses.add" && i.to) before.vendor = await payoutTo(i.to, l);
+    if (name === "expenses.markPaid" && i.userId) before.person = await l.person(i.userId);
+    if ((name === "payouts.add" || name === "payouts.markPaid" || name === "expenses.payPerson") && i.paidBy) before.payer = await l.person(i.paidBy);
     const showId = i.showId ?? i.patch?.showId ?? rec?.showId;
     if (showId) { const sh = await l.get("shows", showId); before.show = sh ? showName(sh as ShowPlaceLike) : "the show"; }
     const projectId = i.projectId ?? i.patch?.projectId ?? rec?.projectId;

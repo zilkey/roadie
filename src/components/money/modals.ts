@@ -1,7 +1,8 @@
 /**
  * The two money modals (MoneyOutModal.tsx, MoneyInModal.tsx) and what opens them. Any page may open one with the
  * context it has: a show passes its showId and projectId, the We owe card passes the person (userId or musicianId)
- * and their open items, a project page its projectId. Everything else the admin picks in the modal.
+ * and their open items, a project page its projectId, a ledger line the record to mark paid. Everything else the admin
+ * picks in the modal.
  */
 export interface MoneyDefaults {
   projectId?: string;
@@ -14,6 +15,8 @@ export interface MoneyDefaults {
   expenseIds?: string[];
   /** Money out only: open "We paid" instead of "We owe". */
   paid?: boolean;
+  /** Money out only: settle one thing we owe (an open bill or an unpaid payout): asks who paid and when, nothing else. */
+  markPaid?: { kind: "expense" | "payout"; id: string };
 }
 export interface MoneyModalProps {
   open: boolean;

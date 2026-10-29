@@ -106,7 +106,7 @@ const EXPECTED = [
   "albums.files.attach", "albums.files.approve", "albums.files.note", "albums.files.copyToFolder",
   // money, stats
   "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
-  "expenses.setPaidBack", "expenses.payPerson", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
+  "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // geo (address typeahead, read-only)
   "geo.autocomplete",
   // read tools and undo

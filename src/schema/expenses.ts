@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { entity, serverMask, id, dateStr, cents, expenseCategory, ledgerCategory, driveRef } from "./common";
 import { fuelGrade } from "./driving";
+import { payoutTo } from "./payouts";
 
 /**
  * The frozen gas estimate on an expense: miles, MPG, price, source and week are saved so a later price update or
@@ -33,12 +34,17 @@ export const expenseGas = expenseGasBase.refine((g) => g.fromKind === "typed" ||
 export type ExpenseGas = z.infer<typeof expenseGas>;
 
 export const Expense = entity({
+  /** Who paid, from their own account (the band has none). On an open bill (`owed`) it is whoever entered it. */
   userId: id,
   date: dateStr,
   amount: cents.positive(),
   /** New writes use expenseCategory; the legacy ledger values (guarantee, door, merch, tips, venmo) survive on old docs until `npm run migrate:money` rewrites them. */
   category: z.union([expenseCategory, ledgerCategory]),
   what: z.string().min(1),
+  /** Who was paid (or is owed): a vendor from contacts, a band member, a player, or just a name. Missing on expenses logged before vendors were tracked. */
+  to: payoutTo.optional(),
+  /** "We owe": a bill nobody has paid yet. expenses.markPaid clears it with the payer and the date. Missing = paid. */
+  owed: z.boolean().optional(),
   /** The project this belongs to. Optional only until `npm run migrate:money` has stamped every expense; readers treat missing as the default (Band) project. */
   projectId: id.optional(),
   showId: id.optional(),

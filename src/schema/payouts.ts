@@ -35,6 +35,8 @@ export const Payout = entity({
   /** When it was paid (YYYY-MM-DD). Missing = we still owe it. */
   paidAt: dateStr.optional(),
   method: paymentMethod.optional(),
+  /** Which admin paid it, from their own account (users/{uid}). Missing on payouts logged before payers were tracked. */
+  paidBy: id.optional(),
   /** kind "reimbursement": the expenses this paid back (each gets reimbursedBy = this payout's id). */
   expenseIds: z.array(id).optional(),
 });

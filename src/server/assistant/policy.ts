@@ -41,7 +41,7 @@ export function refusal(name: string, input: unknown): string | undefined {
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "email.send", "availability.ask", "availability.remind",                      // sends
-  "expenses.setPaidBack", "expenses.payPerson",                                                              // money
+  "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid",                                         // money
   "income.add", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
   "projects.create", "projects.update", "projects.close", "projects.reopen",                                 // what the money is for
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
@@ -123,6 +123,7 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,
   "expenses.setPaidBack": (i) => (i.paid === false ? "Mark an expense as not paid back" : "Mark an expense as paid back"),
   "expenses.payPerson": (i, before) => `Pay ${before?.person ?? "them"}${before?.total ? ` ${formatCents(before.total)}` : " back"}${i.method ? ` (${METHOD_LABEL[i.method] ?? i.method})` : ""}`,
+  "expenses.markPaid": (i, b) => `Mark the ${b?.what ?? "bill"}${b?.amount ? ` ${formatCents(Number(b.amount))}` : ""} paid${b?.person ? ` by ${b.person}` : ""}${i.paidAt ? ` on ${i.paidAt}` : ""}`,
   // Money: the card reads like the sentence the person said. `before` carries the names the tool looked up (person, project, show) and, for a record named by id, its fields.
   "expenses.add": (i, b) => {
     const proj = b?.project ?? "the project", amt = formatCents(Number(i.amount) || 0);

@@ -8,9 +8,9 @@ import { getDriving, updateDriving } from "../driving";
 import { gasCents, tripMiles } from "../gas/math";
 import { routeMiles } from "../gas/route";
 import { areaFor, priceFor } from "../gas/price";
-import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, type FuelAreaKind } from "@/schema";
+import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
-import { owesBack } from "@/lib/money";
+import { isOwedBill, owesBack } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 import { requireTrackOnProject } from "./albums";
 import type { Ctx } from "../ctx";
@@ -35,16 +35,19 @@ const id1 = z.string().min(1);
 // income.update    admin  { id, patch: { amount?, category?, from?, date?, projectId?, showId? (null clears), method? (null clears), receivedAt? (null clears), notes? (null clears) } }
 // income.remove    admin  { id }
 // income.setReceived admin { id, receivedAt?: date (default today), method? }   received:false is income.update { receivedAt: null }.
-// payouts.add      admin  { to: { musicianId } | { userId } | { contactId } | { name }, kind: payoutKind, amount, what?, projectId?, showId?, dueDate?, paidAt?, method?, expenseIds? }
+// payouts.add      admin  { to: { musicianId } | { userId } | { contactId } | { name }, kind: payoutKind, amount, what?, projectId?, showId?, dueDate?, paidAt?, method?, paidBy?, expenseIds? }
 //                         `to` must resolve (musician, user or contact found, or a plain name); the server copies the name onto to.name. No paidAt = we owe.
-// payouts.update   admin  { id, patch: { to?, kind?, amount?, what? (null clears), projectId?, showId? (null clears), dueDate? (null clears), paidAt? (null clears), method? (null clears) } }
+//                         paidBy is the admin whose account it left (the band has none); only admins can be payers.
+// payouts.update   admin  { id, patch: { to?, kind?, amount?, what? (null clears), projectId?, showId? (null clears), dueDate? (null clears), paidAt? (null clears), method? (null clears), paidBy? (null clears) } }
 // payouts.remove   admin  { id }
-// payouts.markPaid admin  { id, paidAt?: date (default today), method }
+// payouts.markPaid admin  { id, paidAt?: date (default today), method, paidBy? }
 // expenses.add     admin|member  as today plus projectId? (default: the show's project, else the rehearsal's, else the default project);
 //                         category is expenseCategory; admins may pass userId to log one in a bandmate's name ("we owe Eric $42 for gas" = payBack true).
-// expenses.update  admin|member  as today plus projectId?, category: expenseCategory.
-// expenses.payPerson admin { userId, ids?, method?: paymentMethod, paidAt?: date }
-//                         marks the expenses paid back (as today) AND writes one payouts doc { kind: "reimbursement", to: { userId }, expenseIds, paidAt, method,
+//                         to (same shapes as a payout's) is who was paid: the vendor. owed:true (admins) is a bill nobody has paid yet; expenses.markPaid clears it.
+// expenses.update  admin|member  as today plus projectId?, category: expenseCategory, to (null clears), date, userId (admins: the payer).
+// expenses.markPaid admin { id, userId: the payer, paidAt?: date (default today) }   clears owed, sets the payer and the date.
+// expenses.payPerson admin { userId, ids?, method?: paymentMethod, paidAt?: date, paidBy?: admin uid (default the caller) }
+//                         marks the expenses paid back (as today) AND writes one payouts doc { kind: "reimbursement", to: { userId }, expenseIds, paidAt, method, paidBy,
 //                         projectId: the first expense's project } and sets reimbursedBy on each expense. Returns { paid, total, payoutId }.
 // showDeals.setIncome (shows.ts) is removed: Roadie and the UI use income.add / income.setReceived instead.
 // Every write refreshes showDeals.totals for the show(s) involved (src/server/dealTotals.ts).
@@ -58,6 +61,29 @@ async function requireExpense(w: Writer, id: string) {
 function assertCanChange(w: Writer, x: Doc) {
   if (w.ctx.role === "member" && x.userId !== w.ctx.uid) throw new AppError("forbidden", "You can only change your own expenses", 403);
   if (x.paidBackAt) throw new AppError("paid_back", "That expense was already paid back", 409);
+}
+const PayoutTo = z.union([
+  z.strictObject({ musicianId: id1 }), z.strictObject({ userId: id1 }), z.strictObject({ contactId: id1 }), z.strictObject({ name: z.string().trim().min(1) }),
+]);
+/** Who money went to, resolved: the doc must exist, and its name is copied onto `to.name` so lists render without a lookup. */
+async function resolveTo(w: Writer, to: z.infer<typeof PayoutTo>) {
+  const named = async (coll: string, key: string, id: string, label: string) => {
+    const d = await w.get(coll, id);
+    if (!d || d.deletedAt) throw new AppError("not_found", `${label} not found`, 404);
+    return { [key]: id, name: d.name as string };
+  };
+  if ("musicianId" in to) return named("musicians", "musicianId", to.musicianId, "Musician");
+  if ("userId" in to) return named("users", "userId", to.userId, "User");
+  if ("contactId" in to) return named("contacts", "contactId", to.contactId, "Contact");
+  return { name: to.name };
+}
+/** The admin whose account money left: a live user who is an admin of this artist. */
+async function requirePayer(w: Writer, uid: string) {
+  const u = await w.get("users", uid);
+  if (!u || u.deletedAt) throw new AppError("not_found", "Payer not found", 404);
+  const artist = await artistFor(w);
+  if (roleIn(u, artist.id) !== "admin") throw new AppError("invalid_input", "Only an admin can be the payer", 400);
+  return u;
 }
 const refresh = (w: Writer, ...showIds: unknown[]) => Promise.all([...new Set(showIds.filter((s): s is string => typeof s === "string"))].map((s) => refreshDealTotals(w, s)));
 
@@ -99,7 +125,8 @@ const GasIn = expenseGasBase.omit({ overridden: true });
 export const expensesAdd = defineCommand({
   name: "expenses.add", roles: ["admin", "member"],
   description: "Add an expense: amount in cents, what it was for, category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
-    "userId is who paid (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
+    "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
+    "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Doghouse $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other. projectId (from context.now projects) defaults to the show's project, else the default project. " +
     "A gas expense (category travel) carries the frozen estimate in `gas`. saveMpg / saveAsHome write the CALLER's own settings only; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the album's project (records.get albums: projectId); albumTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\").",
@@ -107,6 +134,7 @@ export const expensesAdd = defineCommand({
     amount: z.number().int().positive(), what: z.string().trim().min(1), category: expenseCategory, date: dateStr.optional(),
     showId: z.string().min(1).optional(), projectId: id1.optional(), rehearsalId: z.string().min(1).optional(), albumTrackId: id1.optional(), gas: GasIn.optional(),
     receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
+    to: PayoutTo.optional(), owed: z.boolean().optional(),
     /** Save gas.mpg to the caller's own driving settings. */
     saveMpg: z.boolean().optional(),
     /** Save this typed From (with coordinates) as the caller's own home address. */
@@ -118,6 +146,7 @@ export const expensesAdd = defineCommand({
    const r = await run(ctx, async (w) => {
     if (i.userId && i.userId !== ctx.uid && ctx.role === "member") throw new AppError("forbidden", "You can only add your own expenses", 403);
     if (i.setAsRehearsalLocation && ctx.role === "member") throw new AppError("forbidden", "Only admins can set the rehearsal's location", 403);
+    if (i.owed && ctx.role === "member") throw new AppError("forbidden", "Only admins can log a bill the band owes", 403);
     const userId = i.userId ?? ctx.uid;
     const u = await w.get("users", userId);
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
@@ -125,9 +154,12 @@ export const expensesAdd = defineCommand({
     if (i.rehearsalId && !(await w.get("rehearsals", i.rehearsalId))) throw new AppError("not_found", "Rehearsal not found", 404);
     const projectId = await projectFor(w, { projectId: i.projectId, show });
     if (i.albumTrackId) await requireTrackOnProject(w, projectId, i.albumTrackId);
-    const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, ...rest } = i;
+    const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, to, owed, ...rest } = i;
     const r = await w.create("expenses", {
       ...rest, userId, date: i.date ?? todayServer(), ...(projectId ? { projectId } : {}),
+      ...(to ? { to: await resolveTo(w, to) } : {}),
+      // An open bill has no payer yet, so there is nothing to pay anyone back for.
+      ...(owed ? { owed: true, payBack: false } : {}),
       ...(gas ? { gas: { ...gas, overridden: i.amount !== gas.estimateCents } } : {}),
     });
     if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
@@ -212,21 +244,25 @@ export const expensesEstimateGas = defineCommand({
 
 export const expensesUpdate = defineCommand({
   name: "expenses.update", roles: ["admin", "member"],
-  description: "Fix an expense until it's paid back: what, amount, payBack, category (gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), receipt (null clears), showId (null clears), projectId (an open project). Members only their own.",
+  description: "Fix an expense until it's paid back: what, amount, payBack, category (gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project). Admins may also move it to another payer (userId). Members only their own.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
-    what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(),
+    what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
     receipt: driveRef.nullable().optional(), showId: z.string().min(1).nullable().optional(), category: expenseCategory.optional(), projectId: id1.optional(),
     albumTrackId: id1.nullable().optional(),
+    to: PayoutTo.nullable().optional(), userId: id1.optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const x = await requireExpense(w, id);
     assertCanChange(w, x);
+    if (patch.userId && ctx.role === "member") throw new AppError("forbidden", "Only admins can change who paid", 403);
+    if (patch.userId && !(await w.get("users", patch.userId))) throw new AppError("not_found", "User not found", 404);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
     if (patch.albumTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.albumTrackId);
     // A new amount on a gas expense keeps the estimate but marks it overridden, so the frozen numbers stay honest.
     const gas = patch.amount !== undefined && patch.amount !== x.amount && x.gas && !x.gas.overridden ? { gas: { ...x.gas, overridden: true } } : {};
-    const r = await w.update("expenses", id, { ...patch, ...gas } as Record<string, unknown>);
+    const { to, ...rest } = patch;
+    const r = await w.update("expenses", id, { ...rest, ...gas, ...(to === undefined ? {} : { to: to === null ? null : await resolveTo(w, to) }) } as Record<string, unknown>);
     await refreshMoved(w, "expenses", id, x.showId);
     return r;
   }),
@@ -253,12 +289,26 @@ export const expensesSetPaidBack = defineCommand({
   }),
 });
 
+export const expensesMarkPaid = defineCommand({
+  name: "expenses.markPaid", roles: ["admin", "mcp"],
+  description: "A bill we owed got paid: clears owed on the expense (ids from context.now weOwe items of kind bill), sets the payer (userId: an admin, from their own account) and the date paid (paidAt, YYYY-MM-DD, default today). Ask who paid if unsure.",
+  input: z.strictObject({ id: id1, userId: id1, paidAt: dateStr.optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const x = await requireExpense(w, i.id);
+    if (!isOwedBill(x as never)) throw new AppError("invalid_state", "That expense was already paid", 409);
+    await requirePayer(w, i.userId);
+    const r = await w.update("expenses", i.id, { owed: null, userId: i.userId, date: i.paidAt ?? todayServer() });
+    await refresh(w, x.showId);
+    return r;
+  }),
+});
+
 export const expensesPayPerson = defineCommand({
   name: "expenses.payPerson", roles: ["admin", "mcp"],
   description: "Pay someone back for everything the band owes them in one go: marks their unpaid pay-back expenses paid back and records ONE reimbursement payout to them for the total. " +
     "userId is whose (context.now band[].userId); ids (from context.now openExpenses) limits it to those, else all of theirs; paidAt (YYYY-MM-DD, default today); method: cash|venmo|check|square|card|bank|other (ask how if unsure). " +
-    "Use this, not expenses.setPaidBack one at a time, to settle up with a person. Returns { paid: expense ids, total, payoutId }.",
-  input: z.strictObject({ userId: id1, ids: z.array(id1).min(1).optional(), method: paymentMethod.optional(), paidAt: dateStr.optional() }),
+    "paidBy is the admin whose account the money left (default: the speaker). Use this, not expenses.setPaidBack one at a time, to settle up with a person. Returns { paid: expense ids, total, payoutId }.",
+  input: z.strictObject({ userId: id1, ids: z.array(id1).min(1).optional(), method: paymentMethod.optional(), paidAt: dateStr.optional(), paidBy: id1.optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const theirs = (await w.query("expenses", (q) => q.where("userId", "==", i.userId))).filter((x) => owesBack(x as never));
     const byId = new Map(theirs.map((x) => [x.id, x]));
@@ -268,15 +318,17 @@ export const expensesPayPerson = defineCommand({
     const u = await w.get("users", i.userId);
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
     const paidAt = i.paidAt ?? todayServer(), total = pay.reduce((n, x) => n + (x.amount as number), 0);
+    const paidBy = i.paidBy ?? ctx.uid;
+    if (i.paidBy) await requirePayer(w, i.paidBy);
     const first = pay[0];
     const projectId = (first.projectId as string | undefined) ?? await projectFor(w, { strict: true });
     const showIds = new Set(pay.map((x) => x.showId as string | undefined));
     const showId = showIds.size === 1 ? [...showIds][0] : undefined;
     const payout = await w.create("payouts", {
       artistId: (await artistFor(w)).id, kind: "reimbursement", to: { userId: i.userId, name: u.name as string }, expenseIds: pay.map((x) => x.id),
-      amount: total, paidAt, projectId, ...(i.method ? { method: i.method } : {}), ...(showId ? { showId } : {}),
+      amount: total, paidAt, paidBy, projectId, ...(i.method ? { method: i.method } : {}), ...(showId ? { showId } : {}),
     });
-    for (const x of pay) await w.update("expenses", x.id, { paidBackAt: paidAt, paidBackBy: ctx.uid, reimbursedBy: payout.id });
+    for (const x of pay) await w.update("expenses", x.id, { paidBackAt: paidAt, paidBackBy: paidBy, reimbursedBy: payout.id });
     if (showId) await refreshDealTotals(w, showId, { payouts: [(await w.get("payouts", payout.id))!] });
     return { paid: pay.map((x) => x.id), total, payoutId: payout.id };
   }),
@@ -431,21 +483,6 @@ export const incomeSetReceived = defineCommand({
 
 // ---------- payouts (admin-only; we owe until paidAt) ----------
 
-const PayoutTo = z.union([
-  z.strictObject({ musicianId: id1 }), z.strictObject({ userId: id1 }), z.strictObject({ contactId: id1 }), z.strictObject({ name: z.string().trim().min(1) }),
-]);
-/** Who a payout goes to, resolved: the doc must exist, and its name is copied onto `to.name` so lists render without a lookup. */
-async function resolveTo(w: Writer, to: z.infer<typeof PayoutTo>) {
-  const named = async (coll: string, key: string, id: string, label: string) => {
-    const d = await w.get(coll, id);
-    if (!d || d.deletedAt) throw new AppError("not_found", `${label} not found`, 404);
-    return { [key]: id, name: d.name as string };
-  };
-  if ("musicianId" in to) return named("musicians", "musicianId", to.musicianId, "Musician");
-  if ("userId" in to) return named("users", "userId", to.userId, "User");
-  if ("contactId" in to) return named("contacts", "contactId", to.contactId, "Contact");
-  return { name: to.name };
-}
 async function requirePayout(w: Writer, id: string) {
   const x = await w.get("payouts", id);
   if (!x || x.deletedAt) throw new AppError("not_found", "Payout not found", 404);
@@ -456,21 +493,23 @@ export const payoutsAdd = defineCommand({
   name: "payouts.add", roles: ["admin", "mcp"],
   description: "Record money the band pays (or owes) someone: to is exactly one of { musicianId } (a band player, from context.now band), { userId }, { contactId } or { name } for anyone else; the server copies their name. " +
     "kind: pay (their pay for playing), split (another band's cut), reimbursement (paying back expenses; expenseIds marks those expenses reimbursed), other. amount in cents, what (\"the Lost Lake show\"), showId, " +
-    "projectId (defaults to the show's project, else the default project), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. Returns { id }.",
+    "projectId (defaults to the show's project, else the default project), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. " +
+    "paidBy is the admin whose own account the money left (the band has none; ask which admin paid if unsure). Returns { id }.",
   input: z.strictObject({
     to: PayoutTo, kind: payoutKind, amount: z.number().int().positive(), what: z.string().trim().min(1).optional(), projectId: id1.optional(), showId: id1.optional(),
-    dueDate: dateStr.optional(), paidAt: dateStr.optional(), method: paymentMethod.optional(), expenseIds: z.array(id1).min(1).optional(),
+    dueDate: dateStr.optional(), paidAt: dateStr.optional(), method: paymentMethod.optional(), paidBy: id1.optional(), expenseIds: z.array(id1).min(1).optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = i.showId ? await liveShow(w, i.showId) : null;
     const projectId = (await projectFor(w, { projectId: i.projectId, show, strict: true }))!;
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
     const to = await resolveTo(w, i.to);
+    if (i.paidBy) await requirePayer(w, i.paidBy);
     const exps: Doc[] = [];
     for (const id of i.expenseIds ?? []) exps.push(await requireExpense(w, id));
     const r = await w.create("payouts", { ...i, to, artistId, projectId });
     // A paid reimbursement settles its expenses the way payPerson does; an owed one only links them until it is marked paid.
-    for (const x of exps) await w.update("expenses", x.id, { reimbursedBy: r.id, ...(i.paidAt ? { paidBackAt: i.paidAt, paidBackBy: ctx.uid } : {}) });
+    for (const x of exps) await w.update("expenses", x.id, { reimbursedBy: r.id, ...(i.paidAt ? { paidBackAt: i.paidAt, paidBackBy: i.paidBy ?? ctx.uid } : {}) });
     if (i.showId) await refreshDealTotals(w, i.showId, { payouts: [(await w.get("payouts", r.id))!] });
     return r;
   }),
@@ -478,13 +517,14 @@ export const payoutsAdd = defineCommand({
 
 export const payoutsUpdate = defineCommand({
   name: "payouts.update", roles: ["admin", "mcp"],
-  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / dueDate / paidAt / method (null clears). paidAt:null = not paid after all.",
+  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / dueDate / paidAt / method / paidBy (null clears). paidAt:null = not paid after all.",
   input: z.strictObject({ id: id1, patch: z.strictObject({
     to: PayoutTo.optional(), kind: payoutKind.optional(), amount: z.number().int().positive().optional(), what: z.string().trim().min(1).nullable().optional(), projectId: id1.optional(),
-    showId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(),
+    showId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(), paidBy: id1.nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const x = await requirePayout(w, id);
+    if (patch.paidBy) await requirePayer(w, patch.paidBy);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
     const { to, ...rest } = patch;
@@ -512,14 +552,15 @@ export const payoutsRemove = defineCommand({
 
 export const payoutsMarkPaid = defineCommand({
   name: "payouts.markPaid", roles: ["admin", "mcp"],
-  description: "We paid it: marks a payout paid on paidAt (YYYY-MM-DD, default today) and how (method: cash|venmo|check|square|card|bank|other; ask if unsure). To un-pay it use payouts.update with paidAt:null.",
-  input: z.strictObject({ id: id1, paidAt: dateStr.optional(), method: paymentMethod }),
+  description: "We paid it: marks a payout paid on paidAt (YYYY-MM-DD, default today), how (method: cash|venmo|check|square|card|bank|other; ask if unsure) and by which admin (paidBy: from their own account; ask if unsure). To un-pay it use payouts.update with paidAt:null.",
+  input: z.strictObject({ id: id1, paidAt: dateStr.optional(), method: paymentMethod, paidBy: id1.optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const x = await requirePayout(w, i.id);
-    const r = await w.update("payouts", i.id, { paidAt: i.paidAt ?? todayServer(), method: i.method });
+    if (i.paidBy) await requirePayer(w, i.paidBy);
+    const r = await w.update("payouts", i.id, { paidAt: i.paidAt ?? todayServer(), method: i.method, ...(i.paidBy ? { paidBy: i.paidBy } : {}) });
     await refresh(w, x.showId);
     return r;
   }),
 });
 
-export const moneyCommands = [incomeAdd, incomeUpdate, incomeRemove, incomeSetReceived, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
+export const moneyCommands = [incomeAdd, incomeUpdate, incomeRemove, incomeSetReceived, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];

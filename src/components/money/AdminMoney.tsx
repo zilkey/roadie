@@ -4,12 +4,13 @@ import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCategory, byMonth, byShow, defaultProject, formatCents, moneyRows, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
+import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCategory, byMonth, byShow, defaultProject, formatCents, incomeExpected, incomeSoFar, moneyRows, moneyTotals, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
+import { todayStr } from "@/lib/booking";
 import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
 import { Projects } from "./Projects";
 import { InlineValue } from "@/components/InlineValue";
-import { UPDATE_COMMAND, ledger, projectOptions, statusClass } from "./Project";
+import { StatusChip, UPDATE_COMMAND, ledger, projectOptions } from "./Project";
 import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
@@ -38,15 +39,20 @@ function Admin() {
   const showName = (id: string) => ((x) => (x ? nameOfShow(x) : "Show"))(showById.get(id));
   const personName = (userId: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.userId === userId)?.name ?? "Someone";
-  const inc = income.rows ?? [], exp = expenses.rows ?? [], pay = payouts.rows ?? [];
+  // A show that hasn't happened yet is nowhere in Money but the Expected box: its guarantee is dated on the show.
+  const today = todayStr();
+  const inc = useMemo(() => incomeSoFar(income.rows ?? [], today), [income.rows, today]), exp = expenses.rows ?? [], pay = payouts.rows ?? [];
+  const expected = useMemo(() => incomeExpected(income.rows ?? [], today), [income.rows, today]);
   const rows = useMemo(() => moneyRows({ income: inc, expenses: exp, payouts: pay }), [inc, exp, pay]);
   const t = totals(rows);
+  const all = moneyTotals({ income: inc, expenses: exp, payouts: pay });
   const def = defaultProject(projects.rows ?? []);
   const projectName = (id?: string) => (projects.rows ?? []).find((p) => p.id === projectOf({ projectId: id }, def?.id))?.name ?? "";
 
   const owedIn = owedToUs({ income: inc });
   const owe = weOwe({ payouts: pay, expenses: exp, musicianUserId: (mid) => musicians.rows?.find((m) => m.id === mid)?.userId, personName });
-  const recent = ledger({ income: inc, expenses: exp, payouts: pay }).filter((l) => l.date).slice(0, 10);
+  const recent = ledger({ income: inc, expenses: exp, payouts: pay, personName }).filter((l) => l.date).slice(0, 10);
+  const markPaid = (target: NonNullable<MoneyDefaults["markPaid"]>) => setModal({ kind: "out", defaults: { markPaid: target } });
   const openProjects = (projects.rows ?? []).filter((p) => p.status !== "closed");
 
   const loaded = income.rows !== null && expenses.rows !== null && payouts.rows !== null;
@@ -95,8 +101,22 @@ function Admin() {
               <div className="card" data-testid="money-totals">
                 <div className="sum flex justify-between"><span>In</span><span className="font-mono" data-testid="total-in">{formatCents(t.in)}</span></div>
                 <div className="sum flex justify-between"><span>Out</span><span className="font-mono" data-testid="total-out">{formatCents(t.out)}</span></div>
-                <div className="sum flex justify-between border-t border-line pt-2"><b>Left</b><b className="font-mono" data-testid="total-left">{formatCents(t.left)}</b></div>
+                <div className="sum flex justify-between border-t border-line pt-2"><b>Net</b><b className="font-mono" data-testid="total-left">{formatCents(t.left)}</b></div>
+                <div className="sum mt-2 flex justify-between border-t border-line pt-2 text-muted"><span>Owed to us</span><span className="font-mono" data-testid="total-owed-in">{formatCents(all.inOwed)}</span></div>
+                <div className="sum flex justify-between text-muted"><span>We owe</span><span className="font-mono" data-testid="total-owed-out">{formatCents(all.weOwe)}</span></div>
+                <div className="sum flex justify-between border-t border-line pt-2"><b>Net once everything settles</b><b className="font-mono" data-testid="total-settled">{formatCents(all.netIfSettled)}</b></div>
               </div>
+              {expected.items.length > 0 && (
+                <div className="card grid gap-1" data-testid="expected-income">
+                  <div className="flex justify-between"><span className="lbl">Expected</span><b className="font-mono" data-testid="expected-income-total">{formatCents(expected.total)}</b></div>
+                  <span className="s">Booked for {expected.items.length === 1 ? "a show" : `${expected.items.length} shows`} not played yet. Counted nowhere else until the date passes.</span>
+                  {expected.items.map((x) => (
+                    <div key={x.id} className="s flex justify-between gap-2" data-testid={`expected-income-${x.id}`}>
+                      <span className="min-w-0">{x.from} · {shortDate(x.date)}</span><span className="font-mono">{formatCents(x.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <MonthBars data={byMonth(rows)} testid="chart-months" />
             </div>
 
@@ -127,16 +147,23 @@ function Admin() {
                       <b className="min-w-0">{g.name}</b>
                       <span className="flex items-center gap-3">
                         <b className="font-mono">{formatCents(g.total)}</b>
-                        <button className="btn sm" disabled={busy} data-testid={`pay-${g.key}`}
-                          onClick={() => setModal({ kind: "out", defaults: { userId: g.userId, musicianId: g.userId ? undefined : g.musicianId, expenseIds: g.items.filter((i) => i.kind === "expense").map((i) => i.id), paid: true } })}>
-                          Pay {g.name.split(" ")[0]}
-                        </button>
+                        {g.items.some((i) => i.kind === "expense") && (
+                          <button className="btn sm" disabled={busy} data-testid={`pay-${g.key}`}
+                            onClick={() => setModal({ kind: "out", defaults: { userId: g.userId, musicianId: g.userId ? undefined : g.musicianId, expenseIds: g.items.filter((i) => i.kind === "expense").map((i) => i.id), paid: true } })}>
+                            Pay {g.name.split(" ")[0]}
+                          </button>
+                        )}
                       </span>
                     </div>
                     {g.items.map((i) => (
-                      <div key={`${i.kind}-${i.id}`} className="s flex justify-between gap-2">
-                        <span className="min-w-0">{[i.what, i.kind === "expense" ? "pay back" : i.date && `due ${shortDate(i.date)}`, projectName(i.projectId)].filter(Boolean).join(" · ")}</span>
-                        <span className="font-mono">{formatCents(i.amount)}</span>
+                      <div key={`${i.kind}-${i.id}`} className="s flex items-center justify-between gap-2">
+                        <span className="min-w-0">{[i.what, i.kind === "expense" ? "pay back" : i.kind === "bill" ? "bill" : i.date && `due ${shortDate(i.date)}`, projectName(i.projectId)].filter(Boolean).join(" · ")}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="font-mono">{formatCents(i.amount)}</span>
+                          {i.kind !== "expense" && (
+                            <button className="btn ghost sm" disabled={busy} data-testid={`mark-paid-${i.kind}-${i.id}`} onClick={() => markPaid({ kind: i.kind === "bill" ? "expense" : "payout", id: i.id })}>Mark paid</button>
+                          )}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -160,7 +187,7 @@ function Admin() {
                           canEdit={l.editable} error={error} onSave={async (v) => !!(await call(UPDATE_COMMAND[l.kind], { id: l.id, patch: { projectId: v } }))} />
                       </td>
                       <td className="nw text-right font-mono">{l.sign > 0 ? "+" : "−"}{formatCents(l.amount)}</td>
-                      <td><span className={statusClass(l.status)}>{l.status}</span></td>
+                      <td><StatusChip line={l} canEdit onMarkPaid={markPaid} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -177,7 +204,7 @@ function Admin() {
                   <Link key={p.id} href={`/money/projects/${p.id}`} className="card" data-testid={`open-project-${p.id}`}>
                     <span className="s">{PROJECT_KIND_LABEL[p.kind] ?? p.kind}</span>
                     <b>{p.name}</b>
-                    <span className="s font-mono">net {pt.net < 0 ? "" : "+"}{formatCents(pt.net)}</span>
+                    <span className="s font-mono">net {pt.net < 0 ? "" : "+"}{formatCents(pt.net)}{pt.netIfSettled !== pt.net && ` · ${pt.netIfSettled < 0 ? "" : "+"}${formatCents(pt.netIfSettled)} settled`}</span>
                   </Link>
                 );
               })}

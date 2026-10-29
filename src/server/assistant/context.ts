@@ -1,7 +1,7 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { addDays, isOff, isPlayed, SHOW_FILTERS, showCity, showFilter, showName, type ShowFilter, type ShowPlaceLike } from "@/lib/shows";
-import { owedToUs, owesBack, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
+import { incomeSoFar, owedToUs, owesBack, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
 import { RECORD_ROUTES } from "@/lib/routes";
 import type { PageContext } from "@/schema/assistant";
 import type { Ctx } from "../ctx";
@@ -33,7 +33,8 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   const team = musicians.filter((m) => !m.archivedAt);
   const nameOf = (uid: string) => team.find((m) => m.userId === uid)?.name ?? (uid === s.uid ? s.name : "someone");
   const owe = admin ? weOwe({ payouts: payouts as PayoutLike[], expenses: expenses as ExpenseLike[], musicianUserId: (id) => musicians.find((m) => m.id === id)?.userId ?? undefined, personName: nameOf }) : [];
-  const owed = admin ? owedToUs({ income: income as IncomeLike[] }) : { items: [], total: 0 };
+  // A show that hasn't happened yet is not owed to us yet: its guarantee is dated on the show.
+  const owed = admin ? owedToUs({ income: incomeSoFar(income as IncomeLike[], today) }) : { items: [], total: 0 };
   const tonight = tonightDate(now);
   return {
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
@@ -45,7 +46,7 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
     unsettledShows: live.filter((x) => isPlayed(x as never, today) && !settled.has(x.id)).map(showLine),
     // Where a record goes ("put it on Lighthouse video"): the open projects. The default one (Band) takes anything with no project named.
     projects: projects.filter((p) => !p.deletedAt && p.status === "open").map((p) => ({ id: p.id, name: p.name, kind: p.kind, isDefault: !!p.isDefault })),
-    // What we owe, by person: userId/musicianId/contactId say who; items carry the ids for payouts.markPaid (kind payout) and expenses.payPerson { userId } (kind expense).
+    // What we owe, by person: userId/musicianId/contactId say who; items carry the ids for payouts.markPaid (kind payout), expenses.markPaid (kind bill: a vendor nobody has paid) and expenses.payPerson { userId } (kind expense: pay a member back).
     weOwe: owe.map((g) => ({ name: g.name, userId: g.userId ?? null, musicianId: g.musicianId ?? null, contactId: g.contactId ?? null, totalCents: g.total,
       items: g.items.map((x) => ({ kind: x.kind, id: x.id, what: x.what, amountCents: x.amount, date: x.date || null, projectId: x.projectId ?? null, showId: x.showId ?? null })) })),
     // What's still coming to us: income with no receivedAt, for income.setReceived.

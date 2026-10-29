@@ -135,8 +135,9 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
         <div className="flex flex-col">
           {sorted.map((x) => (
             <div key={x.id} className="money-row" data-testid="expense-row">
-              <span>{x.what} <span className="s">· {[projectName(x), nameOfUser(x.userId), CATEGORY_LABEL[x.category], gasDetail(x)].filter(Boolean).join(" · ")}</span>{" "}
-                {x.payBack === false ? <span className="chip" data-testid="expense-status">no pay back</span>
+              <span>{x.what} <span className="s">· {[x.to?.name, projectName(x), x.owed ? "nobody has paid yet" : nameOfUser(x.userId), CATEGORY_LABEL[x.category], gasDetail(x)].filter(Boolean).join(" · ")}</span>{" "}
+                {x.owed ? <span className="chip a" data-testid="expense-status">we owe</span>
+                  : x.payBack === false ? <span className="chip" data-testid="expense-status">no pay back</span>
                   : x.paidBackAt ? <span className="chip g" data-testid="expense-status">paid back {shortDate(x.paidBackAt)}</span>
                   : owesBack(x) ? <span className="chip owed" data-testid="expense-status">waiting</span> : null}</span>
               <span>{formatCents(x.amount)}</span>

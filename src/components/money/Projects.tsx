@@ -3,7 +3,8 @@ import { useState } from "react";
 import Link, { useArtistRouter } from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
-import { PROJECT_KIND_LABEL, defaultProject, formatCents, projectTotals } from "@/lib/money";
+import { PROJECT_KIND_LABEL, defaultProject, formatCents, incomeSoFar, projectTotals } from "@/lib/money";
+import { todayStr } from "@/lib/booking";
 import type { Album, Expense, Income, Payout, Project } from "@/schema";
 
 const KINDS = Object.entries(PROJECT_KIND_LABEL) as [Project["kind"], string][];
@@ -32,20 +33,21 @@ export function Projects({ admin }: { admin: boolean }) {
   const sorted = [...all].sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || (a.start ?? "9999") .localeCompare(b.start ?? "9999") || a.name.localeCompare(b.name));
   const open = sorted.filter((p) => p.status !== "closed");
   const closed = sorted.filter((p) => p.status === "closed");
+  // A show that hasn't happened yet stays out: its guarantee is dated on the show.
+  const inc = incomeSoFar(income.rows ?? [], todayStr());
 
   const table = (rows: typeof all, testid?: string) => (
     <div className="book-tw" data-testid={testid}>
-      <table className="book-table" style={{ minWidth: admin ? 760 : 420 }}>
+      <table className="book-table" style={{ minWidth: admin ? 900 : 420 }}>
         <thead>
           <tr>
             <th>Project</th><th>Kind</th><th>When</th>
-            {admin && <><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Net</th></>}
+            {admin && <><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Net</th><th className="text-right">Owed to us</th><th className="text-right">We owe</th></>}
           </tr>
         </thead>
         <tbody>
           {rows.map((p) => {
-            const t = projectTotals({ projectId: p.id, defaultProjectId: def?.id, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
-            const out = t.paidOut + t.expenses;
+            const t = projectTotals({ projectId: p.id, defaultProjectId: def?.id, income: inc, expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
             const album = albums.rows?.find((a) => a.projectId === p.id);
             return (
               <tr key={p.id} className="cursor-pointer" data-testid={`project-row-${p.id}`} onClick={() => router.push(`/money/projects/${p.id}`)}>
@@ -54,9 +56,11 @@ export function Projects({ admin }: { admin: boolean }) {
                 <td className="nw">{projectWhen(p) || "—"}</td>
                 {admin && (
                   <>
-                    <td className="nw text-right font-mono">{formatCents(t.income)}</td>
-                    <td className="nw text-right font-mono">{formatCents(out)}</td>
+                    <td className="nw text-right font-mono">{formatCents(t.inReceived)}</td>
+                    <td className="nw text-right font-mono">{formatCents(t.outPaid)}</td>
                     <td className="nw text-right font-mono">{formatCents(t.net)}</td>
+                    <td className="nw text-right font-mono">{t.inOwed ? formatCents(t.inOwed) : "—"}</td>
+                    <td className="nw text-right font-mono">{t.weOwe ? formatCents(t.weOwe) : "—"}</td>
                   </>
                 )}
               </tr>
