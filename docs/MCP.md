@@ -28,7 +28,7 @@ There is also a stdio entry for Claude Code on your own machine (`npm run mcp:st
 HTTP (one shared server, many clients):
 
 ```
-claude mcp add --transport http band-tracker https://app.myroadie.online/mcp \
+claude mcp add --transport http roadie https://app.myroadie.online/mcp \
   --header "Authorization: Bearer btk_YOUR_KEY"
 ```
 
@@ -37,7 +37,7 @@ claude mcp add --transport http band-tracker https://app.myroadie.online/mcp \
 stdio (Claude Code starts the server itself; the key goes in the environment):
 
 ```
-claude mcp add band-tracker --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /Users/jeff/workspace/band-tracker run --silent mcp:stdio
+claude mcp add roadie --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /Users/jeff/workspace/roadie run --silent mcp:stdio
 ```
 
 Equivalent `.mcp.json`:
@@ -45,14 +45,14 @@ Equivalent `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "band-tracker": {
+    "roadie": {
       "type": "http",
       "url": "https://app.myroadie.online/mcp",
       "headers": { "Authorization": "Bearer btk_YOUR_KEY" }
     },
-    "band-tracker-stdio": {
+    "roadie-stdio": {
       "command": "npm",
-      "args": ["--prefix", "/Users/jeff/workspace/band-tracker", "run", "--silent", "mcp:stdio"],
+      "args": ["--prefix", "/Users/jeff/workspace/roadie", "run", "--silent", "mcp:stdio"],
       "env": { "MCP_TOKEN": "btk_YOUR_KEY" }
     }
   }

@@ -11,7 +11,7 @@ The production config points at `roadie-prod-iab` (Part 3 is done). Local work a
 You already have everything this needs: Node 26, Java 21 and the Firebase CLI 15.34 (installed in the repo, run as `npx firebase`). There's no Firebase account or network involved; everything runs against emulators and local fakes.
 
 ```sh
-cd ~/workspace/band-tracker
+cd ~/workspace/roadie
 npm ci
 npx playwright install chromium     # first time only, for the e2e tests
 npm run dev:all                     # emulators + fakes + Next, one terminal; Ctrl-C stops all

@@ -55,7 +55,7 @@ export async function callTool(name: string, args: unknown, authorize: () => Pro
 
 /** One MCP server per session. `authorize` re-checks the token on every call, so a revoked key stops working at once. */
 export function createMcpServer(authorize: () => Promise<Ctx>) {
-  const server = new Server({ name: "band-tracker", version: "0.1.0" }, {
+  const server = new Server({ name: "roadie", version: "0.1.0" }, {
     capabilities: { tools: {} },
     instructions:
       "Roadie for the Ingrid Avison Band. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). " +

@@ -15,7 +15,7 @@ overrides the usual "don't run tests" rule. Never run them on the default ports,
 ## 1. Set up
 
 Pick a short kebab-case slug from the story (e.g. `whos-free`). From the main checkout
-(`/Users/jeff/workspace/band-tracker`), which must be on `main`:
+(`/Users/jeff/workspace/roadie`), which must be on `main`:
 
 ```sh
 git worktree add ../roadie-<slug> -b <slug> main
@@ -114,9 +114,9 @@ including gitignored folders like `.secrets/`.
 ## 6. Merge for human testing
 
 ```sh
-git -C /Users/jeff/workspace/band-tracker status --short    # must be clean
-git -C /Users/jeff/workspace/band-tracker merge --ff-only <slug>
-ls -la /Users/jeff/workspace/band-tracker/.secrets /Users/jeff/workspace/band-tracker/src/lib/band.ts   # still real files, not links
+git -C /Users/jeff/workspace/roadie status --short    # must be clean
+git -C /Users/jeff/workspace/roadie merge --ff-only <slug>
+ls -la /Users/jeff/workspace/roadie/.secrets /Users/jeff/workspace/roadie/src/lib/band.ts   # still real files, not links
 ```
 
 - If main has uncommitted changes, stop and ask Jeff; don't stash or commit them.
@@ -128,7 +128,7 @@ ls -la /Users/jeff/workspace/band-tracker/.secrets /Users/jeff/workspace/band-tr
 
 ```sh
 npm run worktree:ports -- release
-cd /Users/jeff/workspace/band-tracker
+cd /Users/jeff/workspace/roadie
 git worktree remove ../roadie-<slug>     # it holds no unmerged work now
 git branch -d <slug>
 ```

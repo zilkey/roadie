@@ -138,9 +138,9 @@ export function DevelopersGuide() {
       <div className="card grid gap-3">
         <H>3. Connect Claude Code</H>
         <p className="s">HTTP (one shared server):</p>
-        <Code>{`claude mcp add --transport http band-tracker http://127.0.0.1:3100/mcp \\\n  --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
+        <Code>{`claude mcp add --transport http roadie http://127.0.0.1:3100/mcp \\\n  --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
         <p className="s">Or stdio (Claude Code starts the server itself; the key goes in <Inline>MCP_TOKEN</Inline>):</p>
-        <Code>{"claude mcp add band-tracker --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /path/to/band-tracker run --silent mcp:stdio"}</Code>
+        <Code>{"claude mcp add roadie --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /path/to/roadie run --silent mcp:stdio"}</Code>
         <p className="s">Use one or the other, not both. Run <Inline>/mcp</Inline> inside Claude Code to check it connected.</p>
       </div>
 
