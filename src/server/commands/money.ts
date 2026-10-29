@@ -187,13 +187,13 @@ export const expensesAdd = defineCommand({
  * No write: works out a gas estimate for the form (and Roadie). From = the typed `from`, else the target person's
  * saved home. To = the typed `to`, else the rehearsal's location. MPG = the typed `mpg`, else the target's settings.
  * The target is `forId` (admins only), else the caller. Missing info comes back in `missing` (one entry per gap,
- * never a throw); the reply NEVER contains an address — an admin estimating for a bandmate sees miles only.
+ * never a throw); when From is the person's saved home the reply carries it as homeAddress, so the form can show it (admins may see a bandmate's address).
  */
 export const expensesEstimateGas = defineCommand({
   name: "expenses.estimateGas", roles: ["admin", "member", "mcp"],
   description: "Estimate gas money for a trip, no write: miles (via driving directions), the person's MPG, and the local EIA weekly gas price. " +
     "From defaults to the person's saved home address, To to the rehearsal's location (rehearsalId); pass from/to (with coordinates) to override. " +
-    "forId (admins only) estimates for a bandmate using their saved home and MPG — the reply shows miles, never their address. " +
+    "forId (admins only) estimates for a bandmate using their saved home and MPG — the reply includes their saved home as homeAddress. " +
     "Returns estimateCents plus the frozen numbers for expenses.add, or `missing` (mpg|home|destination|price) naming what to ask for; it never throws for missing info.",
   input: z.strictObject({
     forId: z.string().min(1).optional(),
@@ -206,6 +206,8 @@ export const expensesEstimateGas = defineCommand({
   async run(ctx, i): Promise<{
     missing: ("mpg" | "home" | "destination" | "price")[];
     fromKind: "home" | "typed"; roundTrip: boolean;
+    /** The person's saved home address, when From is their home. */
+    homeAddress?: string;
     oneWayMiles?: number; miles?: number; mpg?: number; grade?: z.infer<typeof fuelGrade>;
     priceMilli?: number; priceArea?: string; priceWeek?: string; seriesId?: string; areaKind?: FuelAreaKind;
     /** "Denver-area average · EIA weekly, Oct 19" */
@@ -244,6 +246,7 @@ export const expensesEstimateGas = defineCommand({
     const missing = (["mpg", "home", "destination", "price"] as const).filter((g) => gaps.has(g));
     return {
       missing, fromKind, roundTrip: i.roundTrip,
+      ...(fromKind === "home" && settings?.home?.address ? { homeAddress: settings.home.address } : {}),
       ...(oneWayMiles !== undefined ? { oneWayMiles, miles } : {}),
       ...(mpg ? { mpg } : {}), grade,
       ...(price ? { priceMilli: price.priceMilli, priceArea: price.area, priceWeek: price.week, seriesId: price.seriesId, areaKind: price.areaKind, source: price.source } : {}),

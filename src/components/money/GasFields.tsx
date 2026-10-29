@@ -8,10 +8,12 @@ import { useDoc, type Row } from "@/lib/firestore-hooks";
 import { formatCents } from "@/lib/money";
 import type { Rehearsal, User } from "@/schema";
 
-/** What expenses.estimateGas replies with (numbers, or `missing`; never an address). */
+/** What expenses.estimateGas replies with (numbers, or `missing`; the saved home as homeAddress). */
 interface Estimate {
   missing: ("mpg" | "home" | "destination" | "price")[];
   fromKind: "home" | "typed"; roundTrip: boolean;
+  /** The driver's saved home, when From is it. */
+  homeAddress?: string;
   oneWayMiles?: number; miles?: number; mpg?: number; grade?: "regular" | "midgrade" | "premium" | "diesel";
   priceMilli?: number; priceArea?: string; priceWeek?: string; seriesId?: string; source?: string; estimateCents?: number;
 }
@@ -21,8 +23,8 @@ const warnStyle = { background: "var(--unfinished)", color: "var(--unfinished-te
 const firstName = (n: string) => n.split(" ")[0] || n;
 
 /**
- * The gas form's state, shared so the member expense page can use it later: who drove, From (their saved home, never shown
- * as an address, or a typed address), To (the rehearsal's location, or an address; a show's venue text is looked up and the
+ * The gas form's state, shared so the member expense page can use it later: who drove, From (their saved home, shown with its address,
+ * or a typed address), To (the rehearsal's location, or an address; a show's venue text is looked up and the
  * first suggestion picked), MPG, round trip, and the estimate (expenses.estimateGas, re-run 300 ms after the inputs settle).
  * `good` is the estimate once nothing is missing; `payload()` is what expenses.add takes on top of amount/what/projectId.
  */
@@ -162,7 +164,7 @@ export function GasFields({ g, testid, you, hideDriver, hideSetRehearsal }: {
       ) : (
         <div className="grid gap-1">
           <span className="lbl">From</span>
-          <span data-testid={`${testid}-from-home`}>{poss.charAt(0).toUpperCase() + poss.slice(1)} home</span>
+          <span data-testid={`${testid}-from-home`}>{poss.charAt(0).toUpperCase() + poss.slice(1)} home</span>{g.cur?.homeAddress && <span className="s" data-testid={`${testid}-home-address`}>{g.cur.homeAddress}</span>}
         </div>
       ))}
       {g.showToBox ? (

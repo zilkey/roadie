@@ -35,6 +35,13 @@ export interface MoneyDefaults {
   paid?: boolean;
   /** Money out only: settle one thing we owe (an open bill or an unpaid payout): asks who paid and when, nothing else. */
   markPaid?: { kind: "expense" | "payout"; id: string };
+  /**
+   * Edit one existing record (a line on the Money in / Money out cards) instead of adding: the modal opens on that record's
+   * live doc, every field autosaves through income.update / expenses.update / payouts.update with only the changed field,
+   * and the footer has one Done button. A paid-back expense opens read-only. Money in takes kind "income"; Money out
+   * takes "expense" (including open bills) or "payout".
+   */
+  edit?: { kind: "income" | "expense" | "payout"; id: string };
 }
 export interface MoneyModalProps {
   open: boolean;

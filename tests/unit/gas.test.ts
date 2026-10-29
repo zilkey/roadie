@@ -1,6 +1,6 @@
 /**
  * Acceptance tests for the gas estimate: the math, the EIA price-area ladder, estimateGas's missing-info answers
- * (never a throw, never an address), the save flags writing only the caller's settings, and the fuelPrices cache
+ * (never a throw; the saved home comes back as homeAddress), the save flags writing only the caller's settings, and the fuelPrices cache
  * (stale → fetch; failed fetch → the stored price).
  */
 import { test, before, after, beforeEach } from "node:test";
@@ -99,7 +99,7 @@ test("estimateGas: full info gives the frozen numbers; home never leaves the ser
   assert.ok(r.seriesId);
   assert.equal(r.estimateCents, 498);
   assert.match(r.source, /EIA/);
-  assert.ok(!JSON.stringify(r).includes("Evergreen"), "the home address never appears in the reply");
+  assert.equal(r.homeAddress, HOME.address, "the saved home comes back so the form can show it");
   const oneWay = await cmd("expenses.estimateGas", { rehearsalId, roundTrip: false }, mctx);
   assert.equal(oneWay.estimateCents, 249);
 });
@@ -133,14 +133,14 @@ test("estimateGas: missing info comes back named, one gap at a time, and never t
   assert.deepEqual(noDest2.missing, ["destination"]);
 });
 
-test("estimateGas for a bandmate: admins only, uses their settings, returns miles and never an address", async () => {
+test("estimateGas for a bandmate: admins only, uses their settings, returns miles and their home address", async () => {
   await updateDriving(memberUid, { home: HOME, mpg: 28 });
   const r = await cmd("expenses.estimateGas", { forId: memberUid, rehearsalId }, ctx);
   assert.deepEqual(r.missing, []);
   assert.equal(r.fromKind, "home");
   assert.equal(r.mpg, 28);
   assert.equal(r.estimateCents, 498);
-  assert.ok(!JSON.stringify(r).includes("Evergreen"), "David's address never reaches the admin");
+  assert.equal(r.homeAddress, HOME.address, "admins see the bandmate's home");
   await assert.rejects(cmd("expenses.estimateGas", { forId: ctx.uid, rehearsalId }, mctx), (e: AppError) => e.code === "forbidden");
   // the bandmate's gaps are asked for the same way (admin enters them for this expense only)
   await updateDriving(memberUid, { mpg: null });

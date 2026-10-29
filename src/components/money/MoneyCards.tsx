@@ -22,6 +22,7 @@ import type { MoneyCardProps, MoneyContext, MoneyDefaults } from "./modals";
  * owed back or paid back, open bills as "We owe" with Mark paid), and payouts (paid, or "We owe" with Mark paid).
  * Mark paid opens the modal's mark-paid form. A rehearsal's + Money out starts on Gas. On a show, Split evenly
  * proposes one "pay" payout per player without pay (nothing about the rule is stored).
+ * Clicking a line opens its modal in edit mode (defaults.edit): fields autosave, one Done; a paid-back expense is read-only.
  * Every line has Remove (income, payouts, and expenses nobody has paid back yet).
  * Reimbursement payouts are not listed: the expense they paid shows "paid back".
  */
@@ -61,6 +62,16 @@ function useTrackLabel(c: MoneyContext) {
   };
 }
 
+/** Props that make a money line open its edit modal: a hover style, reachable by keyboard, and ignoring clicks on the buttons and selects inside it. */
+function lineProps(testid: string, onOpen: () => void) {
+  const inner = (t: EventTarget) => !!(t as HTMLElement).closest?.("button, select, input, a");
+  return {
+    "data-testid": testid, role: "button" as const, tabIndex: 0, className: "money-row cursor-pointer hover:bg-soft", "aria-label": "Edit",
+    onClick: (e: React.MouseEvent) => { if (!inner(e.target)) onOpen(); },
+    onKeyDown: (e: React.KeyboardEvent) => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); onOpen(); } },
+  };
+}
+
 /** A small Remove button; asks first. */
 function RemoveButton({ testid, onClick, busy }: { testid: string; onClick(): void; busy: boolean }) {
   return <button type="button" className="btn ghost sm" aria-label="Remove" disabled={busy} onClick={() => { if (window.confirm("Remove this?")) onClick(); }} data-testid={testid}>×</button>;
@@ -76,10 +87,10 @@ export function MoneyInCard({ context }: MoneyCardProps) {
   const rows = useCollection<Income>("income", { where: [whereOf(context)] }).rows;
   const trackLabel = useTrackLabel(context);
   const income = [...(rows ?? [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const [open, setOpen] = useState(false);
+  const [modal, setModal] = useState<MoneyDefaults | null>(null);
   const [how, setHow] = useState<Record<string, string>>({});
   const { call, busy, error } = useCommand();
-  const add = <button type="button" className="btn ghost" onClick={() => setOpen(true)} data-testid="money-in-open">+ Money in</button>;
+  const add = <button type="button" className="btn ghost" onClick={() => setModal({ context })} data-testid="money-in-open">+ Money in</button>;
 
   return (
     <ShowCard title="Money in" testid="income" badge={<AdminOnlyBadge />} aside={add}>
@@ -91,7 +102,7 @@ export function MoneyInCard({ context }: MoneyCardProps) {
           {income.map((x) => {
             const tag = trackLabel(x.releaseTrackId);
             return (
-              <div key={x.id} className="money-row" data-testid={`income-row-${x.id}`}>
+              <div key={x.id} {...lineProps(`income-row-${x.id}`, () => setModal({ context, edit: { kind: "income", id: x.id } }))}>
                 <span>
                   {[INCOME_LABEL[x.category] ?? x.category, x.method ? METHOD_LABEL[x.method] ?? x.method : null].filter(Boolean).join(" · ")}
                   {(x.from || tag) && <span className="s"> · {[x.from, tag].filter(Boolean).join(" · ")}</span>}
@@ -118,7 +129,7 @@ export function MoneyInCard({ context }: MoneyCardProps) {
         </div>
       )}
       <ErrorBox error={error} />
-      <MoneyInModal open={open} onClose={() => setOpen(false)} defaults={{ context }} />
+      <MoneyInModal open={!!modal} onClose={() => setModal(null)} defaults={modal ?? undefined} />
     </ShowCard>
   );
 }
@@ -192,7 +203,7 @@ export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps 
               const tag = trackLabel(e.releaseTrackId);
               const bill = e.owed === true;
               return (
-                <div key={key} className="money-row" data-testid={`expense-row-${e.id}`}>
+                <div key={key} {...lineProps(`expense-row-${e.id}`, () => setModal({ context, edit: { kind: "expense", id: e.id } }))}>
                   <span>
                     {bill ? <>We owe <b>{e.to?.name ?? "someone"}</b> {e.what}</> : <>{e.what}</>}
                     <span className="s"> · {[bill ? null : `${nameOfUser(e.userId)} paid`, CATEGORY_LABEL[e.category] ?? e.category, tag].filter(Boolean).join(" · ")}</span>{" "}
@@ -213,7 +224,7 @@ export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps 
             const pay = p!;
             const tag = trackLabel(pay.releaseTrackId);
             return (
-              <div key={key} className="money-row" data-testid={`payout-row-${pay.id}`}>
+              <div key={key} {...lineProps(`payout-row-${pay.id}`, () => setModal({ context, edit: { kind: "payout", id: pay.id } }))}>
                 <span>
                   {pay.paidAt ? "We paid" : "We owe"} <b>{pay.to.name}</b> {pay.what ?? (pay.kind === "pay" && context.kind === "show" ? "for the show" : "")}
                   <span className="s"> · {[PAYOUT_KIND_LABEL[pay.kind] ?? pay.kind, pay.paidAt ? [pay.method ? METHOD_LABEL[pay.method] ?? pay.method : null, shortDate(pay.paidAt)].filter(Boolean).join(" · ") : null, tag].filter(Boolean).join(" · ")}</span>

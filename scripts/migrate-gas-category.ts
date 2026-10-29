@@ -1,11 +1,12 @@
 /**
  * Gas used to be a travel expense. It is now its own category ("gas"); travel is flights, tolls and parking:
  *   npm run migrate:gas -- [--write] [--yes]   (--yes is required to write to real Firestore, i.e. without FIRESTORE_EMULATOR_HOST)
- * Finds every live expense with category "travel" that carries a `gas` estimate and sets its category to "gas". Nothing else
+ * Finds every live expense with category "travel" that carries a `gas` estimate, or whose What for starts with "Gas" (the sheet
+ * import, scripts/import-gas.ts, logged "Gas: rehearsal at David's (...)" as travel with no estimate), and sets its category to "gas". Nothing else
  * changes: amount, payBack and the estimate stay as they were. Dry run by default: it prints how many and a few examples and
  * writes nothing. --write does the rewrite through the normal writer (history + rev under one run id, so Admin -> History can
- * undo it). Soft-deleted expenses are skipped (the writer refuses deleted docs). Safe to run again: only travel expenses with a
- * gas estimate are touched.
+ * undo it). Soft-deleted expenses are skipped (the writer refuses deleted docs). Safe to run again: only travel expenses that are
+ * gas are touched.
  */
 import type { Firestore } from "firebase-admin/firestore";
 import { firestore } from "@/server/admin";
@@ -16,9 +17,9 @@ import { formatCents } from "@/lib/money";
 export interface MigrateGasCategoryResult {
   runId: string;
   dryRun: boolean;
-  /** Live travel expenses with a gas estimate: the ones that move to "gas". */
+  /** Live travel expenses that are gas (an estimate, or What for starting "Gas"): the ones that move to "gas". */
   found: { id: string; date: string; what: string; amount: number }[];
-  /** Soft-deleted travel expenses with a gas estimate: left alone. */
+  /** Soft-deleted travel gas expenses: left alone. */
   archived: number;
 }
 
@@ -30,7 +31,8 @@ export async function migrateGasCategory(fs: Firestore, opts: { dryRun?: boolean
   const travel = (await fs.collection("expenses").where("category", "==", "travel").get()).docs;
   for (const d of travel) {
     const data = d.data();
-    if (data.gas === undefined || data.gas === null) continue;
+    const isGas = (data.gas !== undefined && data.gas !== null) || /^gas\b/i.test(String(data.what ?? "").trim());
+    if (!isGas) continue;
     if (data.deletedAt) {
       out.archived++;
       continue;

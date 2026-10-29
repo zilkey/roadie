@@ -134,3 +134,33 @@ test("Finances tab: a member sees Expenses only", async ({ page }) => {
   await expect(page.getByTestId("expenses")).toBeVisible();
   for (const t of ["show-project", "income", "paid-out", "net-card"]) await expect(page.getByTestId(t)).toHaveCount(0);
 });
+
+test("Finances tab: an admin opens a Money out line, the amount autosaves, Done closes and the card shows it", async ({ page }) => {
+  await page.goto("/signin");
+  await page.getByTestId("dev-jeff").click();
+  await expect(page).toHaveURL(/\/calendar$/);
+  await page.goto(A("/shows#played"));
+  await page.getByTestId("shows-table-played").getByTestId("shows-row").filter({ hasText: "Dairy Arts Center" }).first().locator("td.date a").click();
+  await page.getByTestId("show-tab-finances").click();
+
+  const out = page.getByTestId("paid-out");
+  const row = out.locator('[data-testid^="expense-row-"]').filter({ hasText: "Bass strings" });
+  await row.click();
+  const modal = page.getByTestId("money-out-modal");
+  await expect(modal.getByTestId("money-out-edit")).toBeVisible();
+  await expect(modal.getByTestId("mo-what")).toHaveValue(/^Bass strings/);
+  await modal.getByTestId("mo-amount").fill("77.25");
+  await modal.getByTestId("mo-what").focus(); // leaving the box saves it
+  await expect(modal.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await modal.getByTestId("mo-done").click();
+  await expect(modal).not.toBeVisible();
+  await expect(row).toContainText("$77.25");
+  // The Mark paid back button on the line still works without opening the modal
+  await row.locator('[data-testid^="expense-paid-back-"]').click();
+  await expect(modal).not.toBeVisible();
+  await expect(row.locator('[data-testid^="expense-status-"]')).toContainText("paid back");
+  // A paid-back expense opens read-only
+  await row.click();
+  await expect(modal.getByTestId("mo-locked")).toContainText("so it can't be changed");
+  await expect(modal.getByTestId("mo-amount")).toBeDisabled();
+});

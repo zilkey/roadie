@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useArtist } from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
-import { useCollection, useDocs, type Row } from "@/lib/firestore-hooks";
+import { useCollection, useDoc, useDocs, type Row } from "@/lib/firestore-hooks";
+import { PanelStatus, useInstantSave } from "@/components/shows/saved";
 import { useProfile } from "@/lib/auth";
 import { EXPENSE_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { dateInBandZone } from "@/lib/timezone";
@@ -267,11 +268,16 @@ export function PayerField({ admins, value, onChange, testid, label = "Who paid"
  * or a payout. Opened with no props but open/onClose, or with defaults from the page. A `context` (modals.ts) hides what its
  * record decides and writes its ids (rehearsalId too, on expenses and payouts). Category is an autocomplete; Gas turns the
  * form into the gas form (GasFields.tsx): an expense the driver paid, always paid back, with the miles estimate.
+ * With `defaults.edit` it edits one existing expense (bill or paid) or payout instead: ExpenseEdit / PayoutEdit below. Every
+ * field autosaves on change or blur (only the changed field is sent) and the footer has one Done; a paid-back expense is read-only.
  */
 export function MoneyOutModal({ open, onClose, defaults }: MoneyOutModalProps) {
   return (
     <MoneyDialog open={open} onClose={onClose} testid="money-out-modal" title={defaults?.markPaid ? "Mark paid" : "Money out"}>
-      {defaults?.markPaid ? <MarkPaidForm onClose={onClose} target={defaults.markPaid} /> : <OutForm onClose={onClose} defaults={defaults} />}
+      {defaults?.markPaid ? <MarkPaidForm onClose={onClose} target={defaults.markPaid} />
+        : defaults?.edit?.kind === "expense" ? <ExpenseEdit id={defaults.edit.id} context={defaults.context} onClose={onClose} />
+        : defaults?.edit?.kind === "payout" ? <PayoutEdit id={defaults.edit.id} context={defaults.context} onClose={onClose} />
+        : <OutForm onClose={onClose} defaults={defaults} />}
     </MoneyDialog>
   );
 }
@@ -528,5 +534,195 @@ function MarkPaidForm({ onClose, target }: { onClose(): void; target: { kind: "e
       <ModalFoot sentence={`${payerName || "Someone"} paid ${toName || "them"} ${rec ? formatCents(rec.amount) : ""}`} saves={`Marked paid on ${shortDate(when)}${target.kind === "payout" && method ? ` by ${METHOD_LABEL[method]}` : ""}`}
         error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mp" />
     </form>
+  );
+}
+
+
+// ---- Editing an existing line (defaults.edit): autosave per field, one Done ----
+
+/** Autosaving updates for one record: save({ field }) sends `{ id, patch }` to the update command; status and error feed the footer. */
+export function useEditSave(command: string, id: string) {
+  const s = useInstantSave();
+  const [bad, setBad] = useState<string | null>(null);
+  return { status: s.status, error: s.error, bad, setBad, save: (patch: Record<string, unknown>, what: string) => s.save(command, { id, patch }, what) };
+}
+
+/** A text/date/amount box that saves when you leave it (or press Enter). `onCommit` returns false to put the old value back. */
+export function EditInput({ label, value, onCommit, testid, type = "text", inputMode, placeholder }: {
+  label: React.ReactNode; value: string; onCommit(v: string): boolean | Promise<boolean>; testid: string; type?: "text" | "date"; inputMode?: "decimal"; placeholder?: string;
+}) {
+  const [v, setV] = useState(value);
+  useEffect(() => setV(value), [value]);
+  async function commit() { if (v.trim() === value.trim()) return; if (!(await onCommit(v))) setV(value); }
+  return (
+    <label className="grid gap-1">
+      <span className="lbl">{label}</span>
+      <input className="input" type={type} inputMode={inputMode} placeholder={placeholder} value={v} onChange={(e) => setV(e.target.value)} onBlur={() => void commit()}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }} data-testid={testid} />
+    </label>
+  );
+}
+
+/** The amount box of an edit: dollars shown, cents saved. */
+export function EditAmount({ cents, onSave, setBad, testid }: { cents: number; onSave(c: number): void; setBad(m: string | null): void; testid: string }) {
+  return (
+    <EditInput label="Amount" value={(cents / 100).toFixed(2)} inputMode="decimal" testid={testid}
+      onCommit={(v) => { const c = parseDollars(v); if (!c || c <= 0) { setBad("Enter an amount like 12.50."); return false; } setBad(null); onSave(c); return true; }} />
+  );
+}
+
+/** Project, Show and Track pickers whose changes save straight to the record (a new project also drops the old project's track). */
+export function useEditPickers(doc: { projectId?: string; showId?: string; releaseTrackId?: string }, save: (patch: Record<string, unknown>, what: string) => unknown) {
+  const ps = useProjectsAndShows({ projectId: doc.projectId, showId: doc.showId });
+  const tr = useReleaseTracks(ps.projectId, { releaseTrackId: doc.releaseTrackId });
+  const s = { ...ps, setProjectPick: (v: string) => { ps.setProjectPick(v); void save({ projectId: v, ...(doc.releaseTrackId ? { releaseTrackId: null } : {}) }, "the project"); }, setShowId: (v: string) => { ps.setShowId(v); void save({ showId: v || null }, "the show"); } } as typeof ps;
+  const t = { ...tr, setTrackId: (v: string) => { tr.setTrackId(v); void save({ releaseTrackId: v || null }, "the track"); } } as typeof tr;
+  return { s, t };
+}
+
+/** The footer of an edit: save state, a validation message, and the one Done button. */
+export function EditFoot({ prefix, status, error, bad, onClose }: { prefix: string; status: Parameters<typeof PanelStatus>[0]["status"]; error: string | null; bad: string | null; onClose(): void }) {
+  return (
+    <>
+      <div style={{ padding: "0 22px" }}><ErrorBox error={bad} /></div>
+      <div className="flex flex-wrap items-center justify-end gap-[10px] border-t border-divider" style={{ padding: "14px 22px 20px" }}>
+        <PanelStatus status={status} error={error} />
+        <button type="button" className="btn acc" onClick={onClose} data-testid={`${prefix}-done`}>Done</button>
+      </div>
+    </>
+  );
+}
+
+const toOption = (to: NonNullable<Expense["to"]>): WhoOption =>
+  "userId" in to ? { key: `u:${to.userId}`, name: to.name, to: { userId: to.userId } }
+  : "musicianId" in to ? { key: `m:${to.musicianId}`, name: to.name, to: { musicianId: to.musicianId } }
+  : "contactId" in to ? { key: `c:${to.contactId}`, name: to.name, to: { contactId: to.contactId } }
+  : { key: `n:${to.name}`, name: to.name, to: { name: to.name } };
+
+/** The To options and the name list the edit forms share. */
+function useEditWho() {
+  const users = useCollection<User>("users");
+  const musicians = useCollection<Musician>("musicians");
+  const expensesAll = useCollection<Expense>("expenses");
+  const payoutsAll = useCollection<Payout>("payouts");
+  const priorNames = useMemo(() => [...new Set([...(expensesAll.rows ?? []).map((x) => x.to?.name), ...(payoutsAll.rows ?? []).map((p) => p.to.name)].filter((n): n is string => !!n))], [expensesAll.rows, payoutsAll.rows]);
+  const options = useWhoOptions({ users: users.rows ?? [], musicians: musicians.rows ?? [], contacts: [], priorNames });
+  return { users: users.rows ?? [], options };
+}
+
+function ExpenseEdit({ id, context, onClose }: { id: string; context?: MoneyDefaults["context"]; onClose(): void }) {
+  const { doc } = useDoc<Expense>("expenses", id);
+  return doc ? <ExpenseEditBody x={doc} context={context} onClose={onClose} /> : <div style={{ padding: 22 }} data-testid="mo-edit-loading">Loading…</div>;
+}
+
+function ExpenseEditBody({ x, context, onClose }: { x: Row<Expense>; context?: MoneyDefaults["context"]; onClose(): void }) {
+  const { save, status, error, bad, setBad } = useEditSave("expenses.update", x.id);
+  const { users, options } = useEditWho();
+  const bandUsers = useBandUsers(users);
+  const { s, t } = useEditPickers(x, save);
+  const [who, setWho] = useState<WhoOption | null>(x.to ? toOption(x.to) : null);
+  const bill = x.owed === true;
+  const gas = x.category === "gas" || !!x.gas;
+  const locked = !!x.paidBackAt;
+  const payer = users.find((u) => u.id === x.userId)?.name ?? "the payer";
+  return (
+    <div data-testid="money-out-edit">
+      <ModalHead title="Money out" sub={locked ? undefined : "Changes save as you go"} onClose={onClose} testid="mo-close" />
+      <fieldset disabled={locked} className="grid gap-[16px] border-0 p-0 m-0 min-w-0" style={{ padding: "18px 22px" }}>
+        {locked && <p className="m-0 font-bold" data-testid="mo-locked">Paid back on {shortDate(x.paidBackAt!)}, so it can&apos;t be changed.</p>}
+        <div className="grid gap-[14px] sm:grid-cols-2">
+          <EditAmount cents={x.amount} setBad={setBad} testid="mo-amount" onSave={(amount) => void save({ amount }, "the amount")} />
+          <EditInput label="What for" value={x.what} testid="mo-what" onCommit={(v) => { if (!v.trim()) { setBad("What for can't be empty."); return false; } setBad(null); void save({ what: v.trim() }, "what for"); return true; }} />
+        </div>
+        {!gas && (
+          <div className="grid gap-[14px] sm:grid-cols-2">
+            <CategoryField value={x.category} options={CATEGORIES} onChange={(category) => void save({ category }, "the category")} testid="mo-cat" />
+            <div className="grid gap-1">
+              <span className="lbl">To</span>
+              <WhoPicker options={options} value={who} onChange={(v) => { setWho(v); if (v) void save({ to: v.to }, "who was paid"); }} testid="mo-who" placeholder="The vendor or a bandmate" />
+            </div>
+          </div>
+        )}
+        {!bill && (
+          <div className="grid gap-[14px] sm:grid-cols-2">
+            {gas ? <span /> : (
+              <label className="grid gap-1">
+                <span className="lbl">Who paid</span>
+                <select className="select" value={x.userId} onChange={(e) => void save({ userId: e.target.value }, "who paid")} data-testid="mo-member">
+                  {bandUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select>
+              </label>
+            )}
+            <EditInput label="When" type="date" value={x.date} testid="mo-when" onCommit={(v) => { if (!v) return false; void save({ date: v }, "the date"); return true; }} />
+          </div>
+        )}
+        {!gas && !bill && (
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={x.payBack !== false} onChange={(e) => void save({ payBack: e.target.checked }, "pay back")} data-testid="mo-payback" />
+            <span>The band owes {payer} this back</span>
+          </label>
+        )}
+        {!gas && <ProjectShowFields s={s} prefix="mo" context={context} />}
+        {!gas && <TrackField t={t} prefix="mo" context={context} />}
+        <EditInput label={<>Receipt <span className="font-normal">(Drive link)</span></>} value={x.receipt?.url ?? ""} testid="mo-receipt" placeholder="Paste a Drive link"
+          onCommit={(v) => { const link = v.trim(); if (link) void save({ receipt: { driveFileId: fileIdOf(link), url: link } }, "the receipt"); else void save({ receipt: null }, "the receipt"); return true; }} />
+      </fieldset>
+      <EditFoot prefix="mo" status={status} error={error} bad={bad} onClose={onClose} />
+    </div>
+  );
+}
+
+const PAY_KINDS: [string, string][] = [["pay", PAYOUT_KIND_LABEL.pay], ["split", PAYOUT_KIND_LABEL.split], ["other", PAYOUT_KIND_LABEL.other]];
+
+function PayoutEdit({ id, context, onClose }: { id: string; context?: MoneyDefaults["context"]; onClose(): void }) {
+  const { doc } = useDoc<Payout>("payouts", id);
+  return doc ? <PayoutEditBody x={doc} context={context} onClose={onClose} /> : <div style={{ padding: 22 }} data-testid="mo-edit-loading">Loading…</div>;
+}
+
+function PayoutEditBody({ x, context, onClose }: { x: Row<Payout>; context?: MoneyDefaults["context"]; onClose(): void }) {
+  const { save, status, error, bad, setBad } = useEditSave("payouts.update", x.id);
+  const { users, options } = useEditWho();
+  const admins = useAdmins(users);
+  const { s, t } = useEditPickers(x, save);
+  const [who, setWho] = useState<WhoOption | null>(toOption(x.to));
+  const kinds = PAY_KINDS.some(([k]) => k === x.kind) ? PAY_KINDS : [...PAY_KINDS, [x.kind, PAYOUT_KIND_LABEL[x.kind] ?? x.kind] as [string, string]];
+  return (
+    <div data-testid="money-out-edit">
+      <ModalHead title="Money out" sub="Changes save as you go" onClose={onClose} testid="mo-close" />
+      <div className="grid gap-[16px]" style={{ padding: "18px 22px" }}>
+        <div className="grid gap-[14px] sm:grid-cols-2">
+          <label className="grid gap-1">
+            <span className="lbl">What kind</span>
+            <Select value={x.kind} options={kinds} onChange={(kind) => void save({ kind }, "the kind")} testid="mo-kind" />
+          </label>
+          <div className="grid gap-1">
+            <span className="lbl">To</span>
+            <WhoPicker options={options} value={who} onChange={(v) => { setWho(v); if (v) void save({ to: v.to }, "who it went to"); }} testid="mo-who" placeholder="A bandmate or a player" />
+          </div>
+        </div>
+        <div className="grid gap-[14px] sm:grid-cols-2">
+          <EditAmount cents={x.amount} setBad={setBad} testid="mo-amount" onSave={(amount) => void save({ amount }, "the amount")} />
+          <EditInput label={<>For <span className="font-normal">(optional)</span></>} value={x.what ?? ""} testid="mo-what" onCommit={(v) => { void save({ what: v.trim() || null }, "what for"); return true; }} />
+        </div>
+        <ProjectShowFields s={s} prefix="mo" context={context} />
+        <TrackField t={t} prefix="mo" context={context} />
+        {x.paidAt && (
+          <>
+            <div className="grid gap-[14px] sm:grid-cols-2">
+              <PayerField admins={admins} value={x.paidBy ?? ""} onChange={(v) => { if (v) void save({ paidBy: v }, "who paid"); }} testid="mo-payer" />
+              <EditInput label="When" type="date" value={x.paidAt} testid="mo-when" onCommit={(v) => { if (!v) return false; void save({ paidAt: v }, "the date"); return true; }} />
+            </div>
+            <label className="grid gap-1">
+              <span className="lbl">How</span>
+              <select className="select" value={x.method ?? ""} onChange={(e) => { if (e.target.value) void save({ method: e.target.value }, "how"); }} data-testid="mo-method">
+                <option value="">Pick one</option>
+                {Object.entries(METHOD_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+          </>
+        )}
+      </div>
+      <EditFoot prefix="mo" status={status} error={error} bad={bad} onClose={onClose} />
+    </div>
   );
 }
