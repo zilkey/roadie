@@ -354,7 +354,7 @@ test("Email templates: create one and edit it", async ({ page }) => {
   const card = page.getByTestId(`template-Tpl ${stamp}`);
   await expect(card).toContainText("Hello");
   await card.getByTestId("template-edit").click();
-  await page.getByTestId("template-subject").fill("Hello again");
+  await page.getByTestId("template-list").getByTestId("template-subject").fill("Hello again"); // scoped: the add form may still be closing
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
   await expect(page.getByTestId(`template-Tpl ${stamp}`)).toContainText("Hello again");
