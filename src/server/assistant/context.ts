@@ -23,8 +23,9 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   const now = ctx.now ?? new Date();
   const today = dateInBandZone(now);
   const admin = s.role === "admin"; // income and payouts are admin-only
-  const [shows, income, expenses, payouts, projects, artists, musicians] = await Promise.all([
+  const [shows, income, expenses, payouts, projects, artists, musicians, tours] = await Promise.all([
     list(ctx, "shows"), admin ? list(ctx, "income") : [], list(ctx, "expenses"), admin ? list(ctx, "payouts") : [], list(ctx, "projects"), list(ctx, "artists"), list(ctx, "musicians"),
+    runAs(ctx, "tours.list", {}).then((r) => (r.result as { tours: Row[] }).tours, () => [] as Row[]),
   ]);
   const a = artists.find((x) => x.id === ctx.artistId) ?? artists[0]; // records.list is already limited to the current artist
   const live = shows.filter((x) => !isOff(x));
@@ -46,6 +47,8 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
     unsettledShows: live.filter((x) => isPlayed(x as never, today) && !settled.has(x.id)).map(showLine),
     // Where a record goes ("put it on Lighthouse video"): the open projects. The default one (Band) takes anything with no project named.
     projects: projects.filter((p) => !p.deletedAt && p.status === "open").map((p) => ({ id: p.id, name: p.name, kind: p.kind, isDefault: !!p.isDefault })),
+    // Tours not done yet ("the tour", "Mountain West"): ids for tours.summary, tours.addShow, tours.addPitch, tours.entries.add.
+    tours: tours.filter((t) => t.status !== "done").map((t) => ({ id: t.id, name: t.name, status: t.status, startDate: t.startDate, endDate: t.endDate })),
     // What we owe, by person: userId/musicianId/contactId say who; items carry the ids for payouts.markPaid (kind payout), expenses.markPaid (kind bill: a vendor nobody has paid) and expenses.payPerson { userId } (kind expense: pay a member back).
     weOwe: owe.map((g) => ({ name: g.name, userId: g.userId ?? null, musicianId: g.musicianId ?? null, contactId: g.contactId ?? null, totalCents: g.total,
       items: g.items.map((x) => ({ kind: x.kind, id: x.id, what: x.what, amountCents: x.amount, date: x.date || null, projectId: x.projectId ?? null, showId: x.showId ?? null })) })),

@@ -104,6 +104,9 @@ const EXPECTED = [
   // releases: the record, its tracks and its files
   "releases.create", "releases.update", "releases.folder", "releases.connectFolder", "releases.tracks.add", "releases.tracks.update", "releases.tracks.remove", "releases.tracks.reorder", "releases.tracks.sideBreak",
   "releases.files.attach", "releases.files.approve", "releases.files.note", "releases.files.copyToFolder",
+  // tours: the tour, putting shows and pitches on it, its entries, booking an option
+  "tours.list", "tours.get", "tours.summary", "tours.create", "tours.update", "tours.remove", "tours.addShow", "tours.addPitch", "tours.removeItem",
+  "tours.entries.add", "tours.entries.update", "tours.entries.move", "tours.entries.remove", "tours.book",
   // money, stats
   "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
   "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",

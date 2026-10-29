@@ -52,6 +52,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "artists.removeSongField", "artists.removeShowField",                                  // deletes every value
   "fans.markSynced",                                                                     // marks addresses as done in Bandzoogle for good (fans.remove asks too: *.remove)
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
+  "tours.book", "tours.removeItem",                                                      // books a show (and can drop other options); takes a show or pitch off a tour (tours.remove asks too: *.remove)
 ];
 /** venues.update fields that are the SHARED room (every band sees them); the rest (loadInNotes, notes, contactIds, promoterIds) are the band's own. */
 const PRIVATE_VENUE_FIELDS = ["loadInNotes", "notes", "contactIds", "promoterIds"];
@@ -64,10 +65,10 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -149,6 +150,9 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "projects.remove": (_i, b) => `Remove ${b?.name ? `the project ${b.name}` : "the project"} (it has nothing on it)`,
   "projects.reopen": (_i, b) => `Reopen ${b?.name ? `the project ${b.name}` : "the project"}`,
   "releases.create": (i) => `Start the ${RELEASE_KIND_LABEL[i.kind as keyof typeof RELEASE_KIND_LABEL]?.toLowerCase() ?? "release"} ${i.title}, with its own money project${i.setlistId || i.songIds?.length ? " and a tracklist" : ""}`,
+  "tours.book": (i) => `Book the option${i.label ? ` ${i.label}` : ""} on ${i.date} and put the show on the tour${i.others === "drop" ? "; drop the other options that day" : i.others === "tellBooked" ? "; drop the other options that day and note to tell them we're booked" : ""}${i.addStay ? "; add a stay that night" : ""}`,
+  "tours.removeItem": (i) => `Take the ${i.showId ? "show" : "pitch"} off the tour${i.showId ? " (its money keeps its project)" : ""}`,
+  "tours.remove": (i) => `Archive the tour${i.label ? ` ${i.label}` : ""}: its shows, pitches and money lose the tour tag and its plan goes`,
   "releases.remove": (i) => `Archive the release${i.label ? ` ${i.label}` : ""} with its tracks and files; its project is closed`,
   "releases.tracks.add": (i, b) => `Put ${i.setlistId ? "a setlist's songs" : `${Array.isArray(i.songIds) ? i.songIds.length : "some"} song${Array.isArray(i.songIds) && i.songIds.length === 1 ? "" : "s"}`} on the release${b?.title ? ` ${b.title}` : ""}`,
   "releases.files.approve": (i, b) => (i.approved ? `Sign off ${b?.title ?? "the mix"}: the track moves on` : `Take back the sign-off on ${b?.title ?? "the mix"}`),

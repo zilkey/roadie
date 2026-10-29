@@ -3,6 +3,7 @@ import { defineCommand } from "./types";
 import { patchInput, idInput } from "./util";
 import { db, run, type Writer, type Doc } from "../db";
 import { AppError } from "../errors";
+import type { Ctx } from "../ctx";
 import { checkPitchReplies, draftMail, placeOfPitch, requirePitchDoc, sendMail } from "./email";
 import { isActive, sortedDates } from "@/lib/booking";
 import { archiveNote, artistIdOf, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
@@ -390,31 +391,35 @@ async function requireUser(w: Writer, uid: string) {
   if (!u || u.deletedAt) throw new AppError("not_found", "Assignee must be a signed-in person", 404);
 }
 
+const FlagIn = target.extend({
+  pitchedAs: z.string().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().optional(),
+  nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
+});
 export const pitchesFlag = defineCommand({
   name: "pitches.flag", roles: [...ROLES], description: "Add a venue, promoter or edition to the Pitch List. If it is already there, returns that pitch ({existing: true}). " +
     "dates: possible dates for the gig [YYYY-MM-DD, ...], any number; they are stored sorted and unique. pitchedAs is a configuration id (context.now artist.configurations or records.get artists); assigneeId a user id (context.now band[].userId).",
-  input: target.extend({
-    pitchedAs: z.string().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().optional(),
-    nextStep: nextStep.optional(), notes: z.string().optional(), dates: pitchDates.optional(),
-  }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    const artist = await artistOf(w);
-    // Another band's pitch on the same target is theirs: only this band's own active pitch counts as "already there".
-    const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.artistId === artist.id && p.target.kind === i.kind && isActive(p.status));
-    if (open) return { id: open.id, existing: true };
-    const name = await targetName(w, i.kind, i.id);
-    const assigneeId = i.assigneeId ?? ctx.uid;
-    await requireUser(w, assigneeId);
-    const r = await w.create("pitches", {
-      target: { kind: i.kind, id: i.id, name }, status: "toPitch", artistId: artist.id,
-      pitchedAs: i.pitchedAs, personnel: i.personnel ?? personnelFor(artist, i.pitchedAs) ?? [], assigneeId,
-      nextStep: i.nextStep, notes: i.notes, dates: sortedDates(i.dates), showIds: [],
-    });
-    await w.create(`pitches/${r.id}/activity`, { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
-    if (i.kind === "venue") await ensureNote(w, (await w.get("venues", i.id))!, artist.id); // the band now cares about this room
-    return { id: r.id, existing: false };
-  }),
+  input: FlagIn,
+  run: (ctx, i) => run(ctx, (w) => flagPitch(w, ctx, i)),
 });
+
+/** pitches.flag in a writer the caller already has (tours.addPitch flags a venue and puts it on the tour in one transaction). */
+export async function flagPitch(w: Writer, ctx: Ctx, i: z.input<typeof FlagIn>): Promise<{ id: string; existing: boolean }> {
+  const artist = await artistOf(w);
+  // Another band's pitch on the same target is theirs: only this band's own active pitch counts as "already there".
+  const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.artistId === artist.id && p.target.kind === i.kind && isActive(p.status));
+  if (open) return { id: open.id, existing: true };
+  const name = await targetName(w, i.kind, i.id);
+  const assigneeId = i.assigneeId ?? ctx.uid;
+  await requireUser(w, assigneeId);
+  const r = await w.create("pitches", {
+    target: { kind: i.kind, id: i.id, name }, status: "toPitch", artistId: artist.id,
+    pitchedAs: i.pitchedAs, personnel: i.personnel ?? personnelFor(artist, i.pitchedAs) ?? [], assigneeId,
+    nextStep: i.nextStep, notes: i.notes, dates: sortedDates(i.dates), showIds: [],
+  });
+  await w.create(`pitches/${r.id}/activity`, { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
+  if (i.kind === "venue") await ensureNote(w, (await w.get("venues", i.id))!, artist.id); // the band now cares about this room
+  return { id: r.id, existing: false };
+}
 
 const pitchPatch = z.strictObject({
   pitchedAs: z.string().nullable().optional(), personnel: z.array(z.string()).optional(), assigneeId: z.string().nullable().optional(),

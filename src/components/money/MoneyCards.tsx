@@ -39,13 +39,14 @@ function dealLine(d: ShowDeal | null): string | null {
   return parts.join(" · ");
 }
 
-/** The Firestore filter that picks the records of a context (a release: its project, so its tracks' lines come too). */
+/** The Firestore filter that picks the records of a context (a release: its project, so its tracks' lines come too; a tour: its tag, whatever the project). */
 function whereOf(c: MoneyContext): [string, "==", string] {
   switch (c.kind) {
     case "show": return ["showId", "==", c.showId];
     case "rehearsal": return ["rehearsalId", "==", c.rehearsalId];
     case "release": return ["projectId", "==", c.projectId];
     case "track": return ["releaseTrackId", "==", c.releaseTrackId];
+    case "tour": return ["tourId", "==", c.tourId];
   }
 }
 const releaseIdOf = (c: MoneyContext) => (c.kind === "release" || c.kind === "track" ? c.releaseId : null);

@@ -51,6 +51,10 @@ export const Expense = entity({
   rehearsalId: id.optional(),
   /** The release track this was for (releases/{release}/tracks/{id}; the release is the project's), when it was one track's: "mix v4 revisions". */
   releaseTrackId: id.optional(),
+  /** The tour this is on (tours/{id}): a tag next to the project, never instead of it. Copied from the show when there is one. */
+  tourId: id.optional(),
+  /** One entry of that tour (tours/{tourId}/entries/{id}: a drive, stay or show) for the per-day breakdown. Missing = the whole tour. */
+  tourEntryId: id.optional(),
   /** Present only when the amount came from a gas estimate (category "gas"; older ones are "travel" until scripts/migrate-gas-category.ts moves them). */
   gas: expenseGas.optional(),
   receipt: driveRef.optional(),

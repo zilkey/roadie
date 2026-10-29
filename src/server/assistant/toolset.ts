@@ -10,12 +10,16 @@ import type { ToolDef } from "./tools";
 export interface ToolGroup { key: string; title: string; match: (name: string) => boolean; words: RegExp; routes?: RegExp }
 const prefixes = (...ps: string[]) => (name: string) => ps.some((p) => (p.endsWith(".") ? name.startsWith(p) : name === p));
 
+/** Tour tools every message gets: "put the Kilby show on Mountain West" names no tour word, and shows are core. */
+const TOUR_CORE = ["tours.list", "tours.summary", "tours.addShow"];
+
 export const GROUPS: ToolGroup[] = [
   { key: "stagePlots", title: "stage plots (inputs, monitors, the stage, engineer link)", match: prefixes("stagePlots.", "shows.setStagePlot"), words: /stage ?plot|\bplot\b|input list|monitor|engineer|backline/i, routes: /stagePlot/ },
   { key: "checklists", title: "show checklists and checklist templates", match: (n) => /^shows\..*[Cc]hecklist|^shows\.checkItem$|^checklistTemplates\./.test(n), words: /check ?list|to-?dos?\b|check (?:it |that |this )?off|tick(?:ed)? off|\bdone\b.*\bitem|^(?:did|have) we\b/i },
   { key: "setlists", title: "setlists and setlist templates, printing", match: prefixes("setlists.", "setlistTemplates."), words: /set ?lists?|\bset\b|print|encore|running order/i, routes: /setlist/ },
   { key: "releases", title: "releases (albums, EPs and singles): tracklists, mixes, masters, artwork, the record's Drive folder", match: prefixes("releases."), words: /\breleases?\b|\balbums?\b|\bep\b|\bsingle\b|\blp\b|\brecord\b|track ?list|\btracks?\b|\bmix(?:es|ing)?\b|\bmaster(?:s|ing|ed)?\b|\bstems\b|\bisrc\b|\bartwork\b|\bcover art\b|\brelease\b|\bvinyl\b/i, routes: /release/ },
   { key: "songs", title: "songs, charts, lyrics, demos, Drive files and rehearsal recordings", match: prefixes("songs.", "files.", "drive.", "rehearsals.folder", "rehearsals.newRecordings", "rehearsals.adoptRecording"), words: /\bsongs?\b|\btunes?\b|chart|lyric|demo|recording|\bfiles?\b|drive|folder|\bkey of\b|\bbpm\b|tempo/i, routes: /song/ },
+  { key: "tours", title: "tours: the plan by day (shows, options, drives, stays, notes), booking an option, how a tour is doing", match: (n) => n.startsWith("tours.") && !TOUR_CORE.includes(n), words: /\btours?\b|\bon the road\b|\b(?:a|the) drive\b(?! folder)|\bdrives\b|\bcamping\b|\bcamp\b|\bstay(?:ing)?\b|\bairbnb\b|\bmotel\b|\bhotel\b|\bleave by\b|\boptions?\b|\bthe \d{1,2}(?:st|nd|rd|th)\b/i, routes: /tour/ },
   { key: "rehearsals", title: "rehearsals", match: (n) => n.startsWith("rehearsals.") && !/folder|Recording|calendar/.test(n), words: /rehears|practice/i, routes: /rehearsal/ },
   { key: "email", title: "email: send or draft from Gmail, email templates", match: prefixes("pitches.sendEmail", "pitches.draftEmail", "email.", "emailTemplates."), words: /e-?mail|\bmail\b|draft|template|reply|\bsend\b|follow[- ]?up|pitch (?:them|it|him|her)/i, routes: /template|pitch/ },
   { key: "availability", title: "who can play: asking the band and their answers", match: prefixes("availability."), words: /availab|who.?s (?:free|in|out)|can (?:you |they |everyone )?(?:play|make it)|can't (?:play|make)|ask the band|poll/i },

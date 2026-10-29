@@ -19,6 +19,8 @@ export const Pitch = entity({
   /** Possible dates for the gig: plain days, kept sorted and unique by the commands. */
   dates: z.array(dateStr).default([]),
   notes: z.string().optional(),
+  /** The tour this pitch is an option on (tours/{id}), set by tours.addPitch. Each of its dates is an option entry there. */
+  tourId: id.optional(),
   ...sourcesShape,
 });
 export const PitchInput = Pitch.omit(serverMask);

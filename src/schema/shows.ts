@@ -49,6 +49,8 @@ export const Show = entity({
   billedAs: id.optional(),
   /** The project (projects/{id}) this show's money belongs to: its configuration's defaultProjectId at creation, changed by an admin. Missing (pre `npm run migrate:money`) = the default project. */
   projectId: id.optional(),
+  /** The tour this show is on (tours/{id}): a tag, set by tours.addShow / tours.book. The show keeps its own project. */
+  tourId: id.optional(),
   /** The stage plot this show uses, picked by hand (shows.setStagePlot). No lineup default. */
   stagePlotId: id.optional(),
   personnel: z.array(id),

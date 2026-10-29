@@ -52,7 +52,7 @@ export const search = defineCommand({
 /** What an AI may read. Not users, AI keys or history. Musicians are whole for admins (contact details, userId); mcp gets names and ids only. */
 const READABLE = [
   "venues", "venueTypes", "promoters", "festivals", "editions", "contacts", "pitches", "emailTemplates", "shows", "showDeals", "availability",
-  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "stagePlots", "rehearsals", "expenses", "statSnapshots", "artists", "musicians", "projects", "income", "payouts", "releases",
+  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "stagePlots", "rehearsals", "expenses", "statSnapshots", "artists", "musicians", "projects", "income", "payouts", "releases", "tours",
 ] as const;
 const kindEnum = z.enum(READABLE);
 
@@ -82,7 +82,7 @@ function withLength(d: Doc, show?: Doc | null): Doc {
 function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, unknown>) {
   if (!ctx.artistId) return true;
   if (kind === "artists") return d.id === ctx.artistId;
-  if (kind === "shows" || kind === "pitches") return !d.artistId || d.artistId === ctx.artistId;
+  if (kind === "shows" || kind === "pitches" || kind === "tours") return !d.artistId || d.artistId === ctx.artistId;
   return true;
 }
 

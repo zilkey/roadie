@@ -25,6 +25,7 @@ import { RehearsalInput } from "./rehearsals";
 import { ExpenseInput } from "./expenses";
 import { ProjectInput } from "./projects";
 import { ReleaseInput, ReleaseTrackInput } from "./releases";
+import { TourInput, TourEntryInput } from "./tours";
 import { IncomeInput } from "./income";
 import { PayoutInput } from "./payouts";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -63,6 +64,7 @@ export * from "./stagePlots";
 export * from "./expenses";
 export * from "./projects";
 export * from "./releases";
+export * from "./tours";
 export * from "./income";
 export * from "./payouts";
 export * from "./driving";
@@ -118,6 +120,8 @@ export const collections: Record<string, CollectionDef> = {
   projects: { input: ProjectInput },
   releases: { input: ReleaseInput },
   tracks: { input: ReleaseTrackInput },
+  tours: { input: TourInput },
+  entries: { input: TourEntryInput },
   income: { input: IncomeInput },
   payouts: { input: PayoutInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },

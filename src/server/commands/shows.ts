@@ -122,6 +122,17 @@ const DealIn = z.strictObject({
   promoterId: z.string().min(1).optional(), editionId: z.string().min(1).optional(), contactIds: z.array(z.string()).optional(),
 });
 
+/** shows.create's input: also what tours.book parses to book an option through the same path. */
+export const ShowCreateIn = z.strictObject({
+    pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
+    kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
+    editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
+    billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
+    sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
+    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
+    copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
+  });
+
 export const showsCreate = defineCommand({
   name: "shows.create", roles: ["admin", "mcp"],
   description:
@@ -133,82 +144,81 @@ export const showsCreate = defineCommand({
     "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
     "It never touches Google Calendar (that is shows.calendar, on purpose). sendInvites decides who the calendar event will invite when it is sent: true only the configuration's members on the team with an email, false nobody; omitted everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed. " +
     "dayOfContact {name, phone?, contactId?} defaults to the venue's first day-of contact (contacts.setRoles); a contactId at a venue also makes them a day-of contact there.",
-  input: z.strictObject({
-    pitchId: z.string().min(1).optional(), date: dateStr, status: z.enum(["hold", "confirmed"]).default("confirmed"),
-    kind: showKind.optional(), venueId: z.string().min(1).optional(), place: place.optional(), hostContactIds: z.array(z.string().min(1)).optional(),
-    editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
-    billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
-    sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
-    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
-    copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
-  }),
+  input: ShowCreateIn,
   async run(ctx, i) {
-    const id = await run(ctx, async (w) => {
-      const venue = i.venueId ? await requireVenue(w, i.venueId) : null;
-      const hosts = i.hostContactIds?.length ? await hostsOf(w, i.hostContactIds) : null;
-      const pitch = i.pitchId ? await w.get("pitches", i.pitchId) : null;
-      if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
-      if (pitch && ctx.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
-      const artist = await artistFor(w, pitch?.artistId);
-      const billedAs = i.billedAs === null ? undefined : i.billedAs ?? pitch?.pitchedAs ?? undefined;
-      const cfg = configOf(artist, billedAs);
-      const personnel = i.personnel ?? (i.billedAs !== undefined ? cfg?.musicianIds : pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds) ?? [];
-      const calendarInviteeIds = i.sendInvites === undefined ? undefined
-        : i.sendInvites ? calendarInvitees(cfg?.musicianIds ?? [], await w.query("musicians"), await w.query("users"), artist.id) : [];
-      const pitchEdition = (pitch?.target as { kind: string; id: string } | undefined)?.kind === "edition" ? (pitch!.target as { id: string }).id : undefined;
-      const editionId = i.editionId ?? i.deal.editionId ?? pitchEdition;
-      const edition = editionId ? await requireEdition(w, editionId) : null;
-      // A festival show can be booked before the festival says which stage or venue: venue TBD.
-      if (!venue && !i.place && !edition) throw new AppError("invalid_input", NO_PLACE, 400);
-      const kind = i.kind ?? (hosts && !venue ? "house" : edition ? "festival" : venue ? "venue" : "other");
-      // Most house concerts run on the band's own PA.
-      const snd = i.sound ?? venue?.sound ?? { provider: kind === "house" ? "bandProvided" as const : "venueProvided" as const };
-      const dayOf = i.dayOfContact ?? (venue ? await venueDayOf(w, venue, artist.id) : undefined);
-      const r = await w.create("shows", {
-        date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
-        editionId: edition?.id, editionName: edition ? editionLabel(edition) : i.editionName, times: i.times, artistId: artist.id,
-        billedAs, projectId: await defaultProjectIdFor(w, artist.id, billedAs), personnel, calendarInviteeIds, sound: snd, needs: i.needs,
-        checklists: [],
-        docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: dayOf,
-        statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
-      });
-      const d = i.deal;
-      const target = pitch?.target as { kind: string; id: string } | undefined;
-      await w.create("showDeals", {
-        pitchId: i.pitchId, promoterId: d.promoterId ?? (target?.kind === "promoter" ? target.id : undefined),
-        editionId: edition?.id ?? (target?.kind === "edition" ? target.id : undefined),
-        contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal,
-        doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice,
-      }, { id: r.id });
-      const projectId = (await w.get("shows", r.id))!.projectId as string | undefined;
-      if (d.guarantee) {
-        if (!projectId) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) before booking with a guarantee", 409);
-        const inc = await w.create("income", {
-          artistId: artist.id, category: "guarantee", amount: d.guarantee, from: venue?.name as string ?? hosts?.hostName ?? i.place?.city ?? edition?.festivalName as string ?? "Guarantee",
-          projectId, showId: r.id, date: i.date,
-        });
-        await refreshDealTotals(w, r.id, { income: [(await w.get("income", inc.id))!] });
-      }
-      if (venue && i.dayOfContact?.contactId) await tickDayOf(w, venue, artist.id, i.dayOfContact.contactId);
-      if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
-      if (pitch && i.pitchId) {
-        if (i.copyPitchComments) {
-          const found = await w.query(`pitches/${i.pitchId}/comments`, (q) => q);
-          for (const c of found.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())) {
-            await w.create(`shows/${r.id}/comments`, { authorId: c.authorId, body: c.body }, { keep: { createdAt: c.createdAt, createdBy: c.createdBy } });
-          }
-        }
-        await w.update("pitches", i.pitchId, { showIds: [...(pitch.showIds as string[]), r.id], ...(pitch.status === "booked" ? {} : { status: "booked" }) });
-        if (pitch.status !== "booked") await w.create(`pitches/${i.pitchId}/activity`, { type: "status", fromStatus: pitch.status, toStatus: "booked", text: "Booked it" });
-        for (const av of await w.query("availability", (q) => q.where("pitchId", "==", i.pitchId))) {
-          if (!av.showId && av.date === i.date) await w.update("availability", av.id, { showId: r.id });
-        }
-      }
-      return r.id;
-    });
+    const id = await run(ctx, (w) => createShow(w, ctx, i));
     return done(id, await syncShow(ctx, id));
   },
 });
+
+/**
+ * The booking path: the show, its deal, the guarantee as income, and, with a pitchId, the pitch booked ("Booked it").
+ * One writer, so tours.book can book an option in the same transaction as its tour changes. Bandsintown (syncShow) is the
+ * caller's to run after the transaction. Returns the show id.
+ */
+export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCreateIn>): Promise<string> {
+  const venue = i.venueId ? await requireVenue(w, i.venueId) : null;
+  const hosts = i.hostContactIds?.length ? await hostsOf(w, i.hostContactIds) : null;
+  const pitch = i.pitchId ? await w.get("pitches", i.pitchId) : null;
+  if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
+  if (pitch && ctx.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
+  const artist = await artistFor(w, pitch?.artistId);
+  const billedAs = i.billedAs === null ? undefined : i.billedAs ?? pitch?.pitchedAs ?? undefined;
+  const cfg = configOf(artist, billedAs);
+  const personnel = i.personnel ?? (i.billedAs !== undefined ? cfg?.musicianIds : pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds) ?? [];
+  const calendarInviteeIds = i.sendInvites === undefined ? undefined
+    : i.sendInvites ? calendarInvitees(cfg?.musicianIds ?? [], await w.query("musicians"), await w.query("users"), artist.id) : [];
+  const pitchEdition = (pitch?.target as { kind: string; id: string } | undefined)?.kind === "edition" ? (pitch!.target as { id: string }).id : undefined;
+  const editionId = i.editionId ?? i.deal.editionId ?? pitchEdition;
+  const edition = editionId ? await requireEdition(w, editionId) : null;
+  // A festival show can be booked before the festival says which stage or venue: venue TBD.
+  if (!venue && !i.place && !edition) throw new AppError("invalid_input", NO_PLACE, 400);
+  const kind = i.kind ?? (hosts && !venue ? "house" : edition ? "festival" : venue ? "venue" : "other");
+  // Most house concerts run on the band's own PA.
+  const snd = i.sound ?? venue?.sound ?? { provider: kind === "house" ? "bandProvided" as const : "venueProvided" as const };
+  const dayOf = i.dayOfContact ?? (venue ? await venueDayOf(w, venue, artist.id) : undefined);
+  const r = await w.create("shows", {
+    date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
+    editionId: edition?.id, editionName: edition ? editionLabel(edition) : i.editionName, times: i.times, artistId: artist.id,
+    billedAs, projectId: await defaultProjectIdFor(w, artist.id, billedAs), personnel, calendarInviteeIds, sound: snd, needs: i.needs,
+    checklists: [],
+    docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: dayOf,
+    statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
+  });
+  const d = i.deal;
+  const target = pitch?.target as { kind: string; id: string } | undefined;
+  await w.create("showDeals", {
+    pitchId: i.pitchId, promoterId: d.promoterId ?? (target?.kind === "promoter" ? target.id : undefined),
+    editionId: edition?.id ?? (target?.kind === "edition" ? target.id : undefined),
+    contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal,
+    doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice,
+  }, { id: r.id });
+  const projectId = (await w.get("shows", r.id))!.projectId as string | undefined;
+  if (d.guarantee) {
+    if (!projectId) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) before booking with a guarantee", 409);
+    const inc = await w.create("income", {
+      artistId: artist.id, category: "guarantee", amount: d.guarantee, from: venue?.name as string ?? hosts?.hostName ?? i.place?.city ?? edition?.festivalName as string ?? "Guarantee",
+      projectId, showId: r.id, date: i.date,
+    });
+    await refreshDealTotals(w, r.id, { income: [(await w.get("income", inc.id))!] });
+  }
+  if (venue && i.dayOfContact?.contactId) await tickDayOf(w, venue, artist.id, i.dayOfContact.contactId);
+  if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
+  if (pitch && i.pitchId) {
+    if (i.copyPitchComments) {
+      const found = await w.query(`pitches/${i.pitchId}/comments`, (q) => q);
+      for (const c of found.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())) {
+        await w.create(`shows/${r.id}/comments`, { authorId: c.authorId, body: c.body }, { keep: { createdAt: c.createdAt, createdBy: c.createdBy } });
+      }
+    }
+    await w.update("pitches", i.pitchId, { showIds: [...(pitch.showIds as string[]), r.id], ...(pitch.status === "booked" ? {} : { status: "booked" }) });
+    if (pitch.status !== "booked") await w.create(`pitches/${i.pitchId}/activity`, { type: "status", fromStatus: pitch.status, toStatus: "booked", text: "Booked it" });
+    for (const av of await w.query("availability", (q) => q.where("pitchId", "==", i.pitchId))) {
+      if (!av.showId && av.date === i.date) await w.update("availability", av.id, { showId: r.id });
+    }
+  }
+  return r.id;
+}
 
 /** The venue's first day-of contact (this band's notes) as a show's dayOfContact, if it has one that still exists. */
 async function venueDayOf(w: Writer, venue: Doc, artistId: string) {
@@ -277,6 +287,13 @@ export const showsUpdate = defineCommand({
       if (patch.publishToBandsintown !== undefined && before.public !== undefined) p.public = null;
       const r = await w.update("shows", id, p);
       const after = (await w.get("shows", id))!;
+      // A show on a tour keeps its entry on its date (at the end of the new day).
+      if (patch.date && patch.date !== before.date && before.tourId) {
+        const path = `tours/${before.tourId as string}/entries`;
+        const all = await w.query(path);
+        const last = Math.max(0, ...all.filter((e) => e.date === patch.date).map((e) => e.position as number));
+        for (const e of all.filter((e) => e.kind === "show" && e.showId === id)) await w.update(path, e.id, { date: patch.date, position: last + 1 });
+      }
       if (patch.dayOfContact?.contactId && after.venue?.id) {
         const venue = await w.get("venues", after.venue.id);
         if (venue && !venue.deletedAt) await tickDayOf(w, venue, artist.id, patch.dayOfContact.contactId);

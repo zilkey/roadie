@@ -35,6 +35,10 @@ export const Payout = entity({
   rehearsalId: id.optional(),
   /** The release track this was for (releases/{release}/tracks/{id}; the release is the project's), when it was one track's: a session player's pay for one song. */
   releaseTrackId: id.optional(),
+  /** The tour this is on (tours/{id}): a tag next to the project, never instead of it. Copied from the show when there is one. */
+  tourId: id.optional(),
+  /** One entry of that tour (tours/{tourId}/entries/{id}: a drive, stay or show) for the per-day breakdown. Missing = the whole tour. */
+  tourEntryId: id.optional(),
   dueDate: dateStr.optional(),
   /** When it was paid (YYYY-MM-DD). Missing = we still owe it. */
   paidAt: dateStr.optional(),

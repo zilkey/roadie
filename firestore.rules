@@ -57,6 +57,12 @@ service cloud.firestore {
     match /setlistTemplates/{id} { allow read: if band(); }
     match /setlists/{id}         { allow read: if band(); }
     match /rehearsals/{id}       { allow read: if band(); }
+    // Tours: the whole band reads the tour; admins write (through the server). Its entries (tours/{id}/entries) are read by admins,
+    // and by members only when visibility == "band" (options, the pitches, are always "admins"). Member queries must filter on it.
+    match /tours/{id} {
+      allow read: if band();
+      match /entries/{eid}       { allow read: if isAdmin() || (isMember() && live() && resource.data.get('visibility', '') == 'band'); }
+    }
     // Stage plots: the band reads; the server writes. The engineer link is a server route, not a rule.
     match /stagePlots/{id}       { allow read: if band(); }
 

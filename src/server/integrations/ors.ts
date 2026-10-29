@@ -22,8 +22,8 @@ export interface OrsService {
   /** The best match for a place name ("Boise, ID"), or null when ORS knows none. Used for fans' cities and venue towns. */
   geocode(text: string): Promise<{ lat: number; lng: number } | null>;
   reverse(lat: number, lng: number): Promise<{ county?: string; state?: string } | null>;
-  /** One-way driving distance in miles (driving-car). */
-  directions(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<{ oneWayMiles: number }>;
+  /** One-way driving distance in miles and time in minutes (driving-car). */
+  directions(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<{ oneWayMiles: number; minutes: number }>;
 }
 
 interface PeliasFeature {
@@ -59,10 +59,10 @@ export function orsClient(baseUrl = process.env.ORS_BASE_URL ?? "http://127.0.0.
       return f ? { ...(f.properties.county ? { county: f.properties.county } : {}), ...(f.properties.region_a ? { state: f.properties.region_a } : {}) } : null;
     },
     async directions(from, to) {
-      const r = await call<{ routes: { summary: { distance: number } }[] }>("POST", "/v2/directions/driving-car", {
+      const r = await call<{ routes: { summary: { distance: number; duration?: number } }[] }>("POST", "/v2/directions/driving-car", {
         body: { coordinates: [[from.lng, from.lat], [to.lng, to.lat]] },
       });
-      return { oneWayMiles: r.routes[0].summary.distance / METERS_PER_MILE };
+      return { oneWayMiles: r.routes[0].summary.distance / METERS_PER_MILE, minutes: (r.routes[0].summary.duration ?? 0) / 60 };
     },
   };
 }

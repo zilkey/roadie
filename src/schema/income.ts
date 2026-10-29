@@ -17,6 +17,10 @@ export const Income = entity({
   showId: id.optional(),
   /** The release track this came from (a sync licence of one song), when it was one track's. */
   releaseTrackId: id.optional(),
+  /** The tour this is on (tours/{id}): a tag next to the project, never instead of it. Copied from the show when there is one. */
+  tourId: id.optional(),
+  /** One entry of that tour (tours/{tourId}/entries/{id}: a drive, stay or show) for the per-day breakdown. Missing = the whole tour. */
+  tourEntryId: id.optional(),
   /** When the money arrived (YYYY-MM-DD). Missing = still owed to us. */
   receivedAt: dateStr.optional(),
   notes: z.string().optional(),

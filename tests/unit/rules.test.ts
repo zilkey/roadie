@@ -451,3 +451,25 @@ test("emailThreads: only that artist's admins read them, lists must filter by ar
   await assertFails(updateDoc(doc(admin(), "emailThreads/x__t1"), { subject: "hacked" }));
   await assertFails(deleteDoc(doc(admin(), "emailThreads/x__t1")));
 });
+
+test("tours: the band reads the tour; members read only band entries and must filter on visibility; no client writes", async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const d = ctx.firestore();
+    await setDoc(doc(d, "tours/t1"), { deletedAt: null, artistId: "x", name: "Mountain West", status: "planning", projectId: "band", personnel: [] });
+    await setDoc(doc(d, "tours/t1/entries/drive"), { deletedAt: null, tourId: "t1", kind: "drive", date: "2026-11-05", position: 1, visibility: "band", tz: "America/Denver" });
+    await setDoc(doc(d, "tours/t1/entries/option"), { deletedAt: null, tourId: "t1", kind: "option", date: "2026-11-09", position: 1, visibility: "admins", tz: "America/Denver", pitchId: "x" });
+    await setDoc(doc(d, "tours/t1/entries/gone"), { deletedAt: new Date(), tourId: "t1", kind: "note", date: "2026-11-05", position: 2, visibility: "band", tz: "America/Denver", text: "x" });
+  });
+  await assertSucceeds(getDoc(doc(admin(), "tours/t1")));
+  await assertSucceeds(getDoc(doc(david(), "tours/t1")));
+  await assertSucceeds(getDoc(doc(admin(), "tours/t1/entries/option")));
+  await assertSucceeds(getDocs(collection(admin(), "tours/t1/entries")));
+  await assertSucceeds(getDoc(doc(david(), "tours/t1/entries/drive")));
+  await assertFails(getDoc(doc(david(), "tours/t1/entries/option")));
+  await assertFails(getDoc(doc(david(), "tours/t1/entries/gone")));
+  await assertFails(getDocs(collection(david(), "tours/t1/entries")));
+  await assertSucceeds(getDocs(query(collection(david(), "tours/t1/entries"), where("visibility", "==", "band"), where("deletedAt", "==", null))));
+  for (const c of [anon(), noRole(), aiLogin()]) await assertFails(getDoc(doc(c, "tours/t1")));
+  await assertFails(setDoc(doc(admin(), "tours/t2"), { name: "x" }));
+  await assertFails(updateDoc(doc(admin(), "tours/t1/entries/drive"), { position: 2 }));
+});

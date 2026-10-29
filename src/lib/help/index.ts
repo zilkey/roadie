@@ -8,9 +8,10 @@ import { SHOW_TOPICS } from "./shows";
 import { FAN_TOPICS } from "./fans";
 import { STAGE_PLOT_TOPICS } from "./stagePlots";
 import { RELEASE_TOPICS } from "./releases";
+import { TOUR_TOPICS } from "./tours";
 
 export type { HelpTopic } from "./types";
-export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS, ...STAGE_PLOT_TOPICS, ...RELEASE_TOPICS];
+export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS, ...STAGE_PLOT_TOPICS, ...RELEASE_TOPICS, ...TOUR_TOPICS];
 export const HELP_TOPIC_IDS = HELP_TOPICS.map((t) => t.id) as [string, ...string[]];
 export const helpTopic = (id: string) => HELP_TOPICS.find((t) => t.id === id);
 
@@ -46,6 +47,7 @@ const WORDS: [RegExp, string][] = [
   [/\bupcoming\b|\bholds?\b/, "upcomingShows"], [/\bplayed\b/, "playedShows"], [/\bcancel(?:l?ed)?\b/, "canceledShows"], [/\bdropped\b/, "droppedShows"],
   [/\bstage ?plots?\b|\binput list\b/, "stagePlots"],
   [/\bmix(?:es)?\b|\bmaster(?:s|ing)?\b|\bisrc\b|\bstems\b/, "releaseTrack"], [/\brelease money\b/, "releaseMoney"], [/\breleases?\b|\balbums?\b|\btracklist\b|\b(?:an |the )?ep\b|\bvinyl\b/, "releasePage"],
+  [/\btours?\b/, "tours"],
   [/\bsetlists?\b|\bset ?list\b/, "setlists"], [/\bsongs?\b/, "songs"], [/\brehearsals?\b/, "rehearsals"],
   [/\bprojects?\b/, "projects"], [/\bpayouts?\b|\bwe owe\b|\bsplit evenly\b/, "payouts"], [/\bincome\b|\bdeal\b|\bguarantee\b|\bowed to us\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b|\bgas\b|\bfuel\b/, "expenses"], [/\bmoney\b/, "money"],
 ];

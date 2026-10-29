@@ -48,6 +48,6 @@ export const FuelPrice = z.strictObject({
 });
 export type FuelPrice = z.infer<typeof FuelPrice>;
 
-/** routeCache/{key}: key = hash of start+end coordinates rounded to 3 decimals, never an address. Server-only, 30-day TTL. */
-export const RouteCacheEntry = z.strictObject({ oneWayMiles: z.number(), at: ts });
+/** routeCache/{key}: key = hash of start+end coordinates rounded to 3 decimals, never an address. Server-only, 30-day TTL. minutes is missing on entries cached before tours kept the drive time. */
+export const RouteCacheEntry = z.strictObject({ oneWayMiles: z.number(), minutes: z.number().optional(), at: ts });
 export type RouteCacheEntry = z.infer<typeof RouteCacheEntry>;

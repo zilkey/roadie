@@ -25,11 +25,11 @@ const routes: Route<State>[] = [
   }],
   ["GET", "/geocode/autocomplete", () => ({ features: [CHAMPA, LOFT, HOME] })],
   ["GET", "/geocode/reverse", () => ({ features: [CHAMPA] })],
-  ["POST", "/v2/directions/driving-car", () => ({ routes: [{ summary: { distance: 29611.93 } }] })],
+  ["POST", "/v2/directions/driving-car", () => ({ routes: [{ summary: { distance: 29611.93, duration: 1560 } }] })],
 ];
 
 export const fakeOrs = defineFake<State>({
   name: "fake-ors", defaultPort: 3206, initial: () => ({}), routes,
-  page: () => `<p>Fixed OpenRouteService answers: autocomplete returns 3 Denver places, search returns one deterministic point per text, reverse returns Denver County, CO, directions is always 18.4 mi (29611.93 m).</p>`,
+  page: () => `<p>Fixed OpenRouteService answers: autocomplete returns 3 Denver places, search returns one deterministic point per text, reverse returns Denver County, CO, directions is always 18.4 mi (29611.93 m) and 26 min (1560 s).</p>`,
 });
 runIfMain(import.meta, fakeOrs);

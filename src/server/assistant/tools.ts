@@ -242,6 +242,11 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
     }));
     return `Updated ${await l.show(i.id)}: ${list(parts)}`;
   },
+  "tours.create": (i) => `Started the tour ${quote(i.name)}`,
+  "tours.addShow": async (i, _r, _s, l) => `Put ${await l.show(i.showId)} on ${(await l.get("tours", i.tourId))?.name ?? "the tour"}`,
+  "tours.addPitch": async (i, r, _s, l) => `Put ${i.venueId ? await l.venue(i.venueId) : await l.pitch(i.pitchId ?? r?.pitchId)} on ${(await l.get("tours", i.tourId))?.name ?? "the tour"} as ${plural(r?.entryIds?.length ?? 1, "option")}${i.dates?.length ? ` (${list(i.dates)})` : ""}`,
+  "tours.entries.add": (i, r) => `Added ${i.kind === "drive" ? `a drive${i.to?.name ? ` to ${i.to.name}` : ""}` : i.kind === "stay" ? (i.name ? quote(i.name) : "a stay") : "a note"} on ${i.date}${i.leaveBy ? `, leaving at ${i.leaveBy}` : ""}${r?.minutes ? ` (${Math.round(r.minutes)} min)` : ""}`,
+  "tours.book": async (i, r, _s, l) => `Booked ${await l.show(r?.showId)} on the tour${r?.dropped?.length ? ` and dropped ${plural(r.dropped.length, "other option")} that day` : ""}`,
   "shows.cancel": () => "Canceled the show",
   "shows.drop": () => "Dropped the show",
   "shows.setStatus": async (i, _r, _s, l) => `Set ${await l.show(i.id)} to ${i.status}`,

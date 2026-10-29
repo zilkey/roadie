@@ -8,13 +8,16 @@
  * The record a money modal or card belongs to. When a modal gets one, it hides the pickers the record decides and
  * writes the record's ids: a show hides Project and Show (the show's project), a rehearsal hides Rehearsal and starts
  * Project on the rehearsal's (still changeable), a release hides Project and Track (whole release), a track hides
- * Project and Track (pinned to the track). Everything is stored the same way it is from the Money page.
+ * Project and Track (pinned to the track), a tour starts Project on its "Money goes to" (still changeable) and writes tourId.
+ * Everything is stored the same way it is from the Money page.
  */
 export type MoneyContext =
   | { kind: "show"; showId: string; projectId?: string }
   | { kind: "rehearsal"; rehearsalId: string; projectId?: string }
   | { kind: "release"; releaseId: string; projectId: string }
-  | { kind: "track"; releaseId: string; projectId: string; releaseTrackId: string };
+  | { kind: "track"; releaseId: string; projectId: string; releaseTrackId: string }
+  /** A tour's money: the records tagged tourId, whatever their project. projectId is the tour's "Money goes to", where the Project field starts; tourEntryId pins to one entry. */
+  | { kind: "tour"; tourId: string; projectId: string; tourEntryId?: string };
 
 export interface MoneyDefaults {
   /** The record the modal was opened from; see MoneyContext. */

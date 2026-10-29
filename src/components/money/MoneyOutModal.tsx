@@ -66,6 +66,8 @@ export function withContext(d: MoneyDefaults | undefined): MoneyDefaults | undef
   if (c.kind === "show") return { ...d, showId: c.showId, projectId: c.projectId ?? d.projectId };
   if (c.kind === "rehearsal") return { ...d, projectId: c.projectId ?? d.projectId };
   if (c.kind === "release") return { ...d, projectId: c.projectId, releaseTrackId: undefined };
+  // Tour money (the tag and the "On" field) is wired into the modals with the tour's Money tab (#44); until then it starts on the tour's project.
+  if (c.kind === "tour") return { ...d, projectId: c.projectId };
   return { ...d, projectId: c.projectId, releaseTrackId: c.releaseTrackId };
 }
 

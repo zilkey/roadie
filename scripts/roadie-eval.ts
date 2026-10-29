@@ -51,6 +51,13 @@ const SCENARIOS: Scenario[] = [
   { name: "money-we-paid-eric", turns: [{ say: "we paid Eric $100 for Friday's show", calls: [/payouts\.add/], noCalls: [/expenses\.add/], noText: REFUSES }] },
   { name: "money-venue-owes", turns: [{ say: "Lost Lake still owes us the $400 guarantee", calls: [/income\.add/], noCalls: [/setReceived/], cards: 1, noText: REFUSES }] },
   { name: "money-on-project", turns: [{ say: "put the $750 video shoot on the Lighthouse video project", calls: [/expenses\.add/], noAsk: true, noText: REFUSES }] },
+  // Tours (#41). The eval band has the Mountain West tour (the 5th to the 11th of next month: one Saturday, one Sunday; money to Band), Velour in Provo (no pitch yet)
+  // and a show at Kilby Court on the 7th that isn't on the tour (see seedTour).
+  { name: "tour-velour", turns: [{ say: "add Velour for the 9th or 10th", calls: [/tours\.addPitch/], noText: REFUSES }] },
+  { name: "tour-drive", turns: [{ say: "add a drive Saturday at 11", calls: [/tours\.entries\.add/], noText: REFUSES }] },
+  { name: "tour-camping", turns: [{ say: "we're camping Sunday", calls: [/tours\.entries\.add/], noText: REFUSES }] },
+  { name: "tour-how", turns: [{ say: "how's the tour doing?", calls: [/tours\.summary/], noText: REFUSES }] },
+  { name: "tour-kilby", turns: [{ say: "put the Kilby show on Mountain West", calls: [/tours\.addShow/], noText: REFUSES }] },
   { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
 ];
 
@@ -69,6 +76,18 @@ async function seedMoney(artistId: string, slug: string) {
   await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: friday, venueId: v.id, status: "confirmed", times: { loadIn: "19:00", set: "21:00" } }));
 }
 
+/** What the tour scenarios talk about: the Mountain West tour next month, Velour (a venue, no pitch) and a Kilby Court show on the 7th not yet on the tour. */
+async function seedTour(artistId: string) {
+  const sys = importCtx("import", newRunId(), artistId);
+  const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
+  const month = addDays(dateInBandZone().slice(0, 8) + "01", 40).slice(0, 8);
+  const band = (await db.list("projects", (q) => q.where("artistId", "==", artistId))).find((p) => p.isDefault)!;
+  await call("venues.create", { name: "Velour", type: "listening", address: { city: "Provo", state: "UT" }, region: "out" });
+  const kilby = await call("venues.create", { name: "Kilby Court", type: "bar", address: { city: "Salt Lake City", state: "UT" }, region: "out" });
+  await call("shows.create", { date: `${month}07`, venueId: kilby.id, status: "confirmed", times: { loadIn: "18:00", set: "20:30" } });
+  await call("tours.create", { name: "Mountain West", projectId: band.id, startDate: `${month}05`, endDate: `${month}11` });
+}
+
 async function band() {
   const slug = `eval-${Date.now().toString(36)}`;
   const sys = importCtx();
@@ -78,6 +97,7 @@ async function band() {
   await db.create(sys, "users", { email, name: "Eval admin", artists: [{ artistId: artist.id, role: "admin" }], mcpAccess: false }, { id: u.uid });
   await syncClaims(u.uid);
   await seedMoney(artist.id, slug);
+  await seedTour(artist.id);
   return { uid: u.uid, artistId: artist.id };
 }
 
