@@ -38,7 +38,7 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
     money: { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
     fans: { key: "fans", href: "/fans", label: "Fans", icon: I.fans },
   };
-  // Booking and its email templates are admin-only.
-  const adminOnly = new Set<SectionId>(["booking", "templates"]);
+  // Booking, its email templates and Albums (for now) are admin-only.
+  const adminOnly = new Set<SectionId>(["booking", "templates", "albums"]);
   return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans)).map((k) => all[k])];
 }

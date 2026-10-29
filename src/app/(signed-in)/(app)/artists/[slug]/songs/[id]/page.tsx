@@ -202,7 +202,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </dl>
       </section>
 
-      <OnAlbums songId={song.id} />
+      {admin && <OnAlbums songId={song.id} />}
 
       <section className="sg-sec" aria-labelledby="song-files-h">
         <div className="sg-sech">
@@ -259,7 +259,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   );
 }
 
-/** The albums this song is on: one link per track, to the track page. */
+/** The albums this song is on: one link per track, to the track page. Admins only, like Albums itself. */
 function OnAlbums({ songId }: { songId: string }) {
   const tracks = useCollection<AlbumTrack>("tracks", { group: true, where: [["songId", "==", songId]] });
   const albums = useCollection<Album>("albums");

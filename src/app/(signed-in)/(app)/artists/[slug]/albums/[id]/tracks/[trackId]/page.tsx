@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link, { useArtist } from "@/lib/artist";
 import { BackLink } from "@/components/BackLink";
+import { AdminOnly } from "@/components/Guard";
 import { InlineValue } from "@/components/InlineValue";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { FileIcon } from "@/components/music/common";
@@ -28,7 +29,9 @@ function fileDate(f: FileRow) {
   return ms ? fmtInstant(ms, { month: "short", day: "numeric" }) : null;
 }
 
-export default function TrackPage() {
+export default function TrackPage() { return <AdminOnly><Track /></AdminOnly>; }
+
+function Track() {
   const { id, trackId } = useParams<{ id: string; trackId: string }>();
   const d = useAlbum(id);
   if (d.loading) return null;

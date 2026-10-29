@@ -85,11 +85,11 @@ test("pure helpers: sides, progress, versions, kinds, the latest mix", () => {
   assert.equal(mixLabel(undefined), "—");
 });
 
-test("nav and routes: Albums sits after Songs for both roles and starts in More; the album routes resolve", () => {
+test("nav and routes: Albums sits after Songs for admins only and starts in More; the album routes resolve", () => {
   const on = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true }).map((n) => n.key);
   assert.equal(on[on.indexOf("songs") + 1], "albums");
-  assert.ok(navFor("member", [...DEFAULT_SECTION_ORDER]).some((n) => n.key === "albums"));
-  assert.ok(defaultHidden("admin").includes("albums") && defaultHidden("member").includes("albums"));
+  assert.ok(!navFor("member", [...DEFAULT_SECTION_ORDER]).some((n) => n.key === "albums"));
+  assert.ok(defaultHidden("admin").includes("albums"));
   assert.equal(resolveRoute("album", { id: "a1" }, "band")?.href, "/artists/band/albums/a1");
   assert.equal(resolveRoute("albumTrack", { id: "a1", trackId: "t1" })?.href, "/albums/a1/tracks/t1");
   assert.equal(resolveRoute("albumMoney", { id: "a1" })?.href, "/albums/a1?tab=money");

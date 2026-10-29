@@ -25,7 +25,7 @@ export function Projects({ admin }: { admin: boolean }) {
   const income = useCollection<Income>("income", { skip: !admin });
   const expenses = useCollection<Expense>("expenses", { skip: !admin });
   const payouts = useCollection<Payout>("payouts", { skip: !admin });
-  const albums = useCollection<Album>("albums");
+  const albums = useCollection<Album>("albums", { skip: !admin }); // albums are admins-only
   const router = useArtistRouter();
   const [adding, setAdding] = useState(false);
   const all = projects.rows ?? [];

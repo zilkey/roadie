@@ -3,6 +3,7 @@ import Link from "@/lib/artist";
 import { useMemo } from "react";
 import { PageTitle } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
+import { AdminOnly } from "@/components/Guard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { fmtLen } from "@/lib/music";
 import { ALBUM_KIND_LONG, totalLength } from "@/lib/albums";
@@ -14,7 +15,10 @@ import type { Expense, Income, Payout, Project } from "@/schema";
 /** "Mar 6, 2027". */
 const fmtRelease = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-export default function AlbumsPage() {
+/** Albums is admins-only for now: members are sent back to the Calendar. */
+export default function AlbumsPage() { return <AdminOnly><Albums /></AdminOnly>; }
+
+function Albums() {
   const admin = useProfile().role === "admin";
   const { albums, tracks, loading } = useAlbums();
   // Money is admins-only: members never read it.

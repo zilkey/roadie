@@ -1,5 +1,6 @@
 "use client";
 import { BackLink } from "@/components/BackLink";
+import { AdminOnly } from "@/components/Guard";
 import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -22,7 +23,7 @@ const fmtDate = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-
 type Tab = "tracks" | "money" | "files";
 
 export default function AlbumPage() {
-  return <Suspense fallback={null}><Page /></Suspense>;
+  return <AdminOnly><Suspense fallback={null}><Page /></Suspense></AdminOnly>;
 }
 
 function Page() {

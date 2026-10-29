@@ -215,27 +215,13 @@ test("the Money tab: budget, spent, earned and net, lines with their track, inco
   await expect(page.getByTestId("track-files-list")).toContainText("3 · Low Light");
 });
 
-test("a member sees the album without money: no Spent column, no Money tab, no edit controls", async ({ page }) => {
+test("a member is sent to the Calendar from every album page", async ({ page }) => {
   await signInAs(page, "david");
-  await page.goto(A("/albums"));
-  await expect(page.getByTestId("albums-list")).toContainText("Wild Hearts LP");
-  await expect(page.getByTestId("albums-list")).not.toContainText("Spent");
-  await expect(page.getByTestId("add-album-btn")).toHaveCount(0);
-  await page.locator('[data-testid^="album-row-"]', { hasText: "Wild Hearts LP" }).getByTestId("album-title").click();
-  await expect(page.getByTestId("album-page")).toBeVisible();
-  await expect(page.getByTestId("album-status")).toHaveText("Mixing");
-  await expect(page.getByTestId("album-tab-money")).toHaveCount(0);
-  await expect(page.getByTestId("album-spent")).toHaveCount(0);
-  await expect(page.getByTestId("add-tracks-btn")).toHaveCount(0);
-  await expect(page.getByTestId("side-break-btn")).toHaveCount(0);
-  // the Money tab doesn't open by URL either
-  await page.goto(page.url() + "?tab=money");
-  await expect(page.getByTestId("album-money")).toHaveCount(0);
-  await expect(page.getByTestId("tracklist")).toBeVisible();
-  // the track page is read-only
-  await page.locator('[data-testid^="track-row-"]', { hasText: "Low Light" }).getByTestId("track-title").click();
-  await expect(page.getByTestId("track-page")).toBeVisible();
-  await expect(page.getByTestId("add-mix-from-drive")).toHaveCount(0);
-  await expect(page.getByTestId("track-costs")).toHaveCount(0);
-  await expect(page.getByTestId("mixes")).toContainText("v2");
+  for (const path of ["/albums", "/albums/new"]) {
+    await page.goto(A(path));
+    await expect(page).toHaveURL(/\/calendar$/);
+  }
+  await page.getByTestId("more-toggle").click();
+  await expect(page.getByTestId("more-albums")).toHaveCount(0);
+  await expect(page.getByTestId("tab-albums")).toHaveCount(0);
 });

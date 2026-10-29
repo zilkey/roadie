@@ -19,7 +19,7 @@ export const SectionSetInput = z.strictObject({ section: SectionIdSchema, hidden
  */
 export const DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "albums", "setlists", "rehearsals", "stagePlots"];
 /** A member's defaults: Rehearsals stays in the main nav and My money starts in More. */
-export const MEMBER_DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "albums", "setlists", "stagePlots", "money"];
+export const MEMBER_DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "setlists", "stagePlots", "money"];
 export const defaultHidden = (role: string): SectionId[] => [...(role === "member" ? MEMBER_DEFAULT_HIDDEN : DEFAULT_HIDDEN)];
 
 /** The default left-to-right order of the sections (also the order of SECTION_IDS). */
