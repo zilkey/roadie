@@ -55,6 +55,25 @@ test("the missing-fields note says what's blank, politely, and nothing when the 
   assert.equal(missingVenueNote({ name: "X", address: { street: "1 Main", city: "Denver", state: "CO" }, capacity: 100, instagram: "x" }), undefined);
 });
 
+test("every tool schema Vertex sees has a type on each property and only required names that exist (gemini-3.5-flash rejects the whole request otherwise)", () => {
+  const bad: string[] = [];
+  const walk = (tool: string, path: string, s: Record<string, unknown> | undefined) => {
+    if (!s) return;
+    const props = s.properties as Record<string, Record<string, unknown>> | undefined;
+    if (props) {
+      for (const r of (s.required as string[] | undefined) ?? []) if (!(r in props)) bad.push(`${tool}${path}: required '${r}' is not a property`);
+      for (const [k, v] of Object.entries(props)) {
+        if (!v.type && !v.anyOf && !v.oneOf && !v.$ref) bad.push(`${tool}${path}.${k}: no type`);
+        walk(tool, `${path}.${k}`, v);
+      }
+    }
+    walk(tool, `${path}[]`, s.items as Record<string, unknown> | undefined);
+    for (const alt of [...((s.anyOf as Record<string, unknown>[] | undefined) ?? []), ...((s.oneOf as Record<string, unknown>[] | undefined) ?? [])]) walk(tool, `${path}|`, alt);
+  };
+  for (const t of toolDefs("admin")) walk(t.name, "", t.inputJsonSchema);
+  assert.deepEqual(bad, []);
+});
+
 test("tool groups: a venue request gets the core and no stage plot tools; the words, the page or the last turns pull a group in", () => {
   const defs = toolDefs("admin");
   const core = selectTools(defs, groupsFor("Add SoFar as a venue in Fort Collins", [], { route: "bookingVenues" })).map((d) => d.name);

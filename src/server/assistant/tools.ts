@@ -49,7 +49,7 @@ const SPECIAL: ToolDef[] = [
   {
     name: "search",
     description: "Find a venue, show, band member, song, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate. Needs a name to look for: to count or list records by what they have or lack, use records.list.",
-    inputJsonSchema: obj({ q: { type: "string", minLength: 1 }, kinds: { type: "array", items: { enum: [...SEARCH_KINDS] } }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["q"]),
+    inputJsonSchema: obj({ q: { type: "string", minLength: 1 }, kinds: { type: "array", items: { type: "string", enum: [...SEARCH_KINDS] } }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["q"]),
   },
   {
     name: "web.search",
@@ -71,7 +71,7 @@ const SPECIAL: ToolDef[] = [
     name: "tools.load",
     description: `Get more tools. You start with the band's places, pitches, shows, money and the web; the rest come in groups: ${GROUPS.map((g) => `${g.key} (${g.title})`).join("; ")}. ` +
       `Call this with the groups you need and they're available from your next step. If a request is about one of these and you don't see its tools, load the group instead of saying you can't.`,
-    inputJsonSchema: obj({ groups: { type: "array", items: { enum: groupKeys }, minItems: 1, maxItems: 4 } }, ["groups"]),
+    inputJsonSchema: obj({ groups: { type: "array", items: { type: "string", enum: groupKeys }, minItems: 1, maxItems: 4 } }, ["groups"]),
   },
   {
     name: "web.read",
@@ -91,7 +91,7 @@ const SPECIAL: ToolDef[] = [
   {
     name: "ui.navigate",
     description: `Open a page in the app by route name. For one record, use the record's route (show, venue, pitch, song...) with {id} from search. Routes: ${routeNames.map((n) => `${n} (${ROUTES[n].title})`).join(", ")}.`,
-    inputJsonSchema: obj({ route: { enum: routeNames }, params: { type: "object", additionalProperties: { type: "string" } } }, ["route"]),
+    inputJsonSchema: obj({ route: { type: "string", enum: routeNames }, params: { type: "object", additionalProperties: { type: "string" } } }, ["route"]),
   },
 ];
 
