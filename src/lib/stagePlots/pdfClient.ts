@@ -2,9 +2,10 @@
 import { clientAuth } from "@/lib/firebase-client";
 import { artistHeaders } from "@/lib/commands";
 import type { Paper } from "./sheet";
+import { readPlotPaper } from "./paperPref";
 
-/** The signed-in member's PDF of a plot (GET /api/stage-plots/{id}/pdf needs the ID token, so a bare link will not do). */
-export async function fetchPlotPdf(plotId: string, paper: Paper = "letter"): Promise<{ blob: Blob; filename: string }> {
+/** The signed-in member's PDF of a plot, Letter or A4 (default: the size they last picked) (GET /api/stage-plots/{id}/pdf needs the ID token, so a bare link will not do). */
+export async function fetchPlotPdf(plotId: string, paper: Paper = readPlotPaper()): Promise<{ blob: Blob; filename: string }> {
   const user = clientAuth().currentUser;
   if (!user) throw new Error("Not signed in");
   const res = await fetch(`/api/stage-plots/${encodeURIComponent(plotId)}/pdf?paper=${paper}`, { headers: { authorization: `Bearer ${await user.getIdToken()}`, ...artistHeaders() } });
@@ -21,13 +22,13 @@ function saveBlob(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-export async function downloadPlotPdf(plotId: string, paper: Paper = "letter") {
+export async function downloadPlotPdf(plotId: string, paper: Paper = readPlotPaper()) {
   const { blob, filename } = await fetchPlotPdf(plotId, paper);
   saveBlob(blob, filename);
 }
 
 /** The phone's share sheet with the PDF attached; where files cannot be shared (most desktops) it downloads the PDF instead. */
-export async function sharePlotPdf(plotId: string, paper: Paper = "letter"): Promise<"shared" | "downloaded"> {
+export async function sharePlotPdf(plotId: string, paper: Paper = readPlotPaper()): Promise<"shared" | "downloaded"> {
   const { blob, filename } = await fetchPlotPdf(plotId, paper);
   const file = new File([blob], filename, { type: "application/pdf" });
   if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {

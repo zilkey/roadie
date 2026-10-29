@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import type { Musician, StagePlot } from "@/schema";
 import type { PlotShape } from "@/schema/stagePlots";
-import { ErrorBox, PageTitle, Select } from "@/components/ui";
+import { Dialog, ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
+import { Menu } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { MAX_INPUTS, MAX_MIXES, STAGE_PRESETS, dropsWork, unplaced, type Move } from "@/lib/stagePlots/plot";
 import { downloadPlotPdf } from "@/lib/stagePlots/pdfClient";
+import { PAPER_OPTIONS, usePlotPaper } from "@/lib/stagePlots/paperPref";
+import type { Paper } from "@/lib/stagePlots/sheet";
 import { StageBoard } from "./StageBoard";
 import { ChannelList, MixList, type Who } from "./ChannelPanels";
 import { useStagePlotSaver } from "./useStagePlotSaver";
@@ -37,6 +40,46 @@ function Counter({ label, value, max, busy, onSet, testid }: { label: string; va
   );
 }
 
+/** "Duplicate": a copy under a new name, optionally without some musicians' inputs, mixes and gear (stagePlots.copy with dropMusicianIds). */
+function DuplicateDialog({ plot, who, open, onClose }: { plot: Row<StagePlot>; who: Who; open: boolean; onClose(): void }) {
+  const router = useRouter();
+  const { call, error, busy } = useCommand();
+  const [name, setName] = useState(`${plot.name} copy`);
+  const [drop, setDrop] = useState<string[]>([]);
+  useEffect(() => { if (open) { setName(`${plot.name} copy`); setDrop([]); } }, [open, plot.name]);
+  async function go(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const r = await call("stagePlots.copy", { id: plot.id, name: name.trim(), ...(drop.length ? { dropMusicianIds: drop } : {}) });
+    if (r?.id) { onClose(); router.push(`/stage-plots/${r.id}`); }
+  }
+  return (
+    <Dialog open={open} onClose={onClose} title="Duplicate this plot" testid="plot-duplicate">
+      <form className="grid gap-3" onSubmit={go}>
+        <label className="grid gap-1"><span className="s">Name</span>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} data-testid="dup-name" aria-label="Name of the copy" /></label>
+        {who.length > 0 && (
+          <fieldset className="grid gap-1">
+            <legend className="s">Leave out…</legend>
+            <p className="s m-0">Their inputs, mixes and gear are left off the copy and the channels renumber.</p>
+            {who.map(([id, label]) => (
+              <label key={id} className="flex items-center gap-2">
+                <input type="checkbox" checked={drop.includes(id)} data-testid={`dup-drop-${id}`} onChange={(e) => setDrop(e.target.checked ? [...drop, id] : drop.filter((x) => x !== id))} />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+        <div className="flex gap-2">
+          <button className="btn acc" disabled={busy || !name.trim()} data-testid="dup-go">Duplicate</button>
+          <button type="button" className="btn ghost" onClick={onClose} data-testid="dup-cancel">Cancel</button>
+        </div>
+        <ErrorBox error={error} />
+      </form>
+    </Dialog>
+  );
+}
+
 function Editor({ plot }: { plot: Row<StagePlot> }) {
   const admin = useProfile().role === "admin";
   const router = useRouter();
@@ -52,6 +95,9 @@ function Editor({ plot }: { plot: Row<StagePlot> }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [armedRaw, setArmed] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
+  const [paper, setPaper] = usePlotPaper();
+  const [duplicating, setDuplicating] = useState(false);
+  const more = useCommand();
   const waiting = unplaced(view);
   const armed = armedRaw && [...waiting.inputs.map((r) => r.input.id), ...waiting.mixes.map((r) => r.monitor.id)].includes(armedRaw) ? armedRaw : null;
   const highlight = [hover, selected, armed].filter((x): x is string => !!x);
@@ -85,7 +131,13 @@ function Editor({ plot }: { plot: Row<StagePlot> }) {
   const onMove = (moves: Move[]) => { void saver.commitMoves(moves); };
 
   async function done() { rows.flush(); await saver.settle(); router.push("/stage-plots"); }
-  async function pdf() { setPdfError(null); try { await downloadPlotPdf(plot.id); } catch (e) { setPdfError((e as Error).message); } }
+  async function pdf() { setPdfError(null); try { await downloadPlotPdf(plot.id, paper); } catch (e) { setPdfError((e as Error).message); } }
+  async function duplicate() { rows.flush(); await saver.settle(); setDuplicating(true); }
+  async function archive() {
+    if (!confirm(`Archive "${plot.name}"? Shows that picked it lose it and its engineer link stops working. You can undo this from History.`)) return;
+    rows.flush(); await saver.settle();
+    if (await more.call("stagePlots.remove", { id: plot.id })) router.push("/stage-plots");
+  }
 
   // The page title follows the saved name.
   const name = rows.edits.t.name ?? plot.name;
@@ -98,10 +150,17 @@ function Editor({ plot }: { plot: Row<StagePlot> }) {
         title={plot.name}
         sub={`${lineup?.name ?? "Any lineup"} · v${plot.version}`}
         actions={<>
+          <Select<Paper> value={paper} options={PAPER_OPTIONS} onChange={setPaper} testid="plot-paper" label="Paper size" className="print-paper" />
           <button type="button" className="btn outline" onClick={pdf} data-testid="plot-pdf">Download PDF</button>
+          {admin && <Menu label="More actions" testid="plot" trigger={<span className="px-1 font-semibold">More ▾</span>} items={[
+            { key: "duplicate", label: "Duplicate…", onSelect: () => void duplicate() },
+            { key: "archive", label: "Archive plot", danger: true, divider: true, disabled: more.busy, onSelect: () => void archive() },
+          ]} />}
           {admin ? <button type="button" className="btn acc" onClick={done} data-testid="plot-done">Done</button> : <Link href="/stage-plots" className="btn acc" data-testid="plot-done">Done</Link>}
         </>} />
       {pdfError && <div className="err" role="alert">{pdfError}</div>}
+      <ErrorBox error={more.error} />
+      {admin && <DuplicateDialog plot={plot} who={who} open={duplicating} onClose={() => setDuplicating(false)} />}
 
       {admin && (
         <div className="card">

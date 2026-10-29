@@ -64,9 +64,11 @@ test("pick a plot on a show, download the PDF, engineer link on, open it logged 
   await page.reload();
   await expect(page.getByTestId("plot-name")).toHaveText("Sharing test plot");
 
-  // The PDF: the button downloads application/pdf; the route answers with the same.
-  const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("plot-download").click()]);
+  // The PDF: the button downloads application/pdf on the picked paper; the route answers with the same.
+  await card.getByTestId("plot-paper").selectOption("a4");
+  const [download, req] = await Promise.all([page.waitForEvent("download"), page.waitForRequest(/\/pdf\?paper=a4$/), page.getByTestId("plot-download").click()]);
   expect(download.suggestedFilename()).toMatch(/\.pdf$/);
+  expect(req.url()).toContain("paper=a4");
   const pdf = await api.get(`${APP}/api/stage-plots/${plotId}/pdf`, { headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toContain("application/pdf");
@@ -121,4 +123,54 @@ test("members see the card only once a plot is picked, and can download but not 
   await cmd("shows.setStagePlot", { showId, stagePlotId: null });
   await page.reload();
   await expect(page.getByTestId("stage-plot")).toHaveCount(0);
+});
+
+test("editor: the paper pick is remembered, Duplicate leaves a musician out, Archive sends it to the list", async ({ page }) => {
+  const people = await cmd<{ people: { musicianId: string | null; name: string }[] }>("people.list", {});
+  const [drummer, other] = people.people.filter((p) => p.musicianId);
+  expect(drummer && other).toBeTruthy();
+  const srcId = (await cmd<{ id: string }>("stagePlots.create", { name: "Dup test plot", inputs: 3 })).id;
+  await cmd("stagePlots.updateInputs", { id: srcId, inputs: [
+    { n: 1, source: "Kick", musicianId: drummer.musicianId }, { n: 2, source: "Snare", musicianId: drummer.musicianId }, { n: 3, source: "Vox", musicianId: other.musicianId },
+  ] });
+  try {
+    await page.goto("/signin");
+    await page.getByTestId("dev-jeff").click();
+    await expect(page).toHaveURL(/\/calendar$/);
+    await page.goto(A(`/stage-plots/${srcId}`));
+    await expect(page.getByTestId("ch-row")).toHaveCount(3);
+
+    // Paper: A4 goes to the route and survives a reload.
+    await expect(page.getByTestId("plot-paper")).toHaveValue("letter");
+    await page.getByTestId("plot-paper").selectOption("a4");
+    await Promise.all([page.waitForEvent("download"), page.waitForRequest(/\/pdf\?paper=a4$/), page.getByTestId("plot-pdf").click()]);
+    await page.reload();
+    await expect(page.getByTestId("plot-paper")).toHaveValue("a4");
+
+    // Duplicate without the drummer: the copy has one input and a fresh name.
+    await page.getByTestId("plot-actions").click();
+    await page.getByTestId("plot-menu-duplicate").click();
+    await expect(page.getByTestId("dup-name")).toHaveValue("Dup test plot copy");
+    await page.getByTestId("dup-name").fill("Dup test plot no drums");
+    await page.getByTestId(`dup-drop-${drummer.musicianId}`).check();
+    await page.getByTestId("dup-go").click();
+    await expect(page).toHaveURL(new RegExp(`/stage-plots/(?!${srcId}$)[^/]+$`));
+    await expect(page.getByTestId("page-title")).toHaveText("Dup test plot no drums");
+    await expect(page.getByTestId("ch-row")).toHaveCount(1);
+    await expect(page.locator('[data-testid="ch-row"][data-ch="1"]').getByTestId("ch-source")).toHaveValue("Vox");
+    const copyId = page.url().split("/").pop()!;
+    expect((await cmd<{ inputs: unknown[] }>("stagePlots.get", { id: srcId })).inputs).toHaveLength(3);
+
+    // Archive the copy (confirm first): back to the list, and it is gone.
+    page.once("dialog", (d) => void d.accept());
+    await page.getByTestId("plot-actions").click();
+    await page.getByTestId("plot-menu-archive").click();
+    await expect(page).toHaveURL(/\/stage-plots$/);
+    await expect(page.getByTestId("stage-plots-list")).toBeVisible();
+    await expect(page.getByTestId(`plot-${copyId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`plot-${srcId}`)).toBeVisible();
+    expect((await api.post(`${APP}/api/commands/stagePlots.get`, { data: { id: copyId }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } })).ok()).toBeFalsy();
+  } finally {
+    await cmd("stagePlots.remove", { id: srcId });
+  }
 });

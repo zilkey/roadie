@@ -1,10 +1,12 @@
 "use client";
 import { useState } from "react";
-import { ErrorBox, useCommand } from "@/components/ui";
+import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { StagePlotSvg } from "@/components/stagePlots/StagePlotSvg";
 import { useArtist } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { downloadPlotPdf, sharePlotPdf } from "@/lib/stagePlots/pdfClient";
+import { PAPER_OPTIONS, usePlotPaper } from "@/lib/stagePlots/paperPref";
+import type { Paper } from "@/lib/stagePlots/sheet";
 import { runCommand } from "@/lib/commands";
 import type { StagePlot } from "@/schema";
 import type { ShowRow } from "../common";
@@ -20,6 +22,7 @@ export function StagePlotCard({ show, admin }: { show: ShowRow; admin: boolean }
   const { call, error, busy, setError } = useCommand();
   const [changing, setChanging] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [paper, setPaper] = usePlotPaper();
   const plot = show.stagePlotId ? rows?.find((p) => p.id === show.stagePlotId) : undefined;
 
   if (rows === null) return null;
@@ -70,8 +73,9 @@ export function StagePlotCard({ show, admin }: { show: ShowRow; admin: boolean }
         <div className="grid min-w-0 flex-1 content-start gap-2">
           <div className="flex flex-wrap items-baseline gap-2"><strong data-testid="plot-name">{plot.name}</strong><span className="s" data-testid="plot-version">v{plot.version}</span></div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn outline" disabled={busy} data-testid="plot-download" onClick={() => void guard(() => downloadPlotPdf(plot.id))}>Download PDF</button>
-            <button type="button" className="btn outline" disabled={busy} data-testid="plot-share" onClick={() => void guard(async () => { if ((await sharePlotPdf(plot.id)) === "downloaded") setNote("Downloaded the PDF"); })}>Share PDF</button>
+            <button type="button" className="btn outline" disabled={busy} data-testid="plot-download" onClick={() => void guard(() => downloadPlotPdf(plot.id, paper))}>Download PDF</button>
+            <button type="button" className="btn outline" disabled={busy} data-testid="plot-share" onClick={() => void guard(async () => { if ((await sharePlotPdf(plot.id, paper)) === "downloaded") setNote("Downloaded the PDF"); })}>Share PDF</button>
+            <Select<Paper> value={paper} options={PAPER_OPTIONS} onChange={setPaper} testid="plot-paper" label="Paper size" className="print-paper" />
             {on && <button type="button" className="btn outline" data-testid="plot-copy-link" onClick={() => void guard(copyLink)}>Copy engineer link</button>}
             {admin && !on && <button type="button" className="btn outline" disabled={busy} data-testid="plot-link-on" onClick={() => void call("stagePlots.shareLink", { id: plot.id })}>Turn on engineer link</button>}
             {admin && on && <button type="button" className="btn ghost" disabled={busy} data-testid="plot-link-off" onClick={() => void call("stagePlots.shareOff", { id: plot.id })}>Turn off</button>}
