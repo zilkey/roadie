@@ -53,6 +53,7 @@
     "backup": "tsx scripts/backup.ts",
     "wipe": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/wipe.ts",
     "restore": "tsx scripts/restore.ts",
+    "align-auth": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/align-auth.ts",
     "migrate:history": "tsx scripts/migrate-history.ts",
     "migrate:artists": "tsx scripts/migrate-artists.ts",
     "migrate:strip-gear": "tsx scripts/migrate-strip-gear.ts",
