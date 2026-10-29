@@ -77,10 +77,12 @@ export const projectsUpdate = defineCommand({
   description: "Edit a project (id from context.now projects): name, kind, start / end / budget (null clears), isDefault (true only: it becomes THE default and the old default stops being it).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     name: z.string().trim().min(1).optional(), kind: projectKind.optional(), start: dateStr.nullable().optional(), end: dateStr.nullable().optional(),
-    budget: cents.nonnegative().nullable().optional(), isDefault: z.literal(true).optional(),
+    budget: cents.nonnegative().nullable().optional(), isDefault: z.boolean().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const p = await requireProject(w, id);
+    // A plain boolean, not z.literal(true): Gemini only takes string enums, and a literal becomes enum [true] (prod refused every tool, 2026-10-29).
+    if (patch.isDefault === false) throw new AppError("invalid_input", "Make another project the default instead", 400);
     if (patch.isDefault) await clearOtherDefaults(w, p.artistId as string, id);
     return w.update("projects", id, patch as Record<string, unknown>);
   }),

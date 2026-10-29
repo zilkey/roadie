@@ -114,6 +114,14 @@ test("the money commands are tools, showDeals.setIncome is gone, and every schem
     assert.equal(t.inputJsonSchema.type, "object", n);
     assert.ok(!JSON.stringify(t.inputJsonSchema).includes('"$ref"'), `${n} has no $ref`);
     assert.ok(!JSON.stringify(t.inputJsonSchema).includes('"const"'), `${n} has no const`);
+    // Gemini takes string (and, in practice, number) enum values only: a boolean literal becomes enum [true] and Vertex refuses the whole tool list.
+    const walk = (s: unknown, path: string) => {
+      if (!s || typeof s !== "object") return;
+      const e = (s as { enum?: unknown[] }).enum;
+      if (Array.isArray(e)) for (const v of e) assert.ok(typeof v === "string" || typeof v === "number", `${n}${path}.enum holds ${JSON.stringify(v)}`);
+      for (const [k, v] of Object.entries(s)) if (typeof v === "object") walk(v, `${path}.${k}`);
+    };
+    walk(t.inputJsonSchema, "");
   }
   const pay = defs.find((t) => t.name === "payouts.add")!;
   assert.ok((pay.inputJsonSchema.properties as Record<string, unknown>).to);
