@@ -125,8 +125,10 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   const totals = page.getByTestId("project-totals");
   await expect(totals).toContainText("$6,000.00");
   await expect(totals).toContainText("$184.00");
-  await expect(page.getByTestId("project-records")).toContainText("Bandcamp");
-  await expect(page.getByTestId("project-records")).toContainText("Owed to us");
+  // The Bandcamp money hasn't arrived, so it stays off the feed and shows as owed on the In tile.
+  await expect(page.getByTestId("tile-in")).toContainText("$184.00 owed to us");
+  await expect(page.getByTestId("project-records")).not.toContainText("Bandcamp");
+  await expect(page.getByTestId("project-records")).toContainText("still owed to us");
   await expect(page.getByTestId("project-by-category")).toBeVisible();
   await page.getByTestId("back").click();
   await expect(page).toHaveURL(/\/money\/projects$/);

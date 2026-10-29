@@ -76,7 +76,8 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
   const spent = t.expenses + t.paidOut;
   const personName = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? musicians.rows?.find((m) => m.userId === uid)?.name ?? "Someone";
   const owe = weOwe({ payouts: pay, expenses: exp, musicianUserId: (mid) => musicians.rows?.find((m) => m.id === mid)?.userId, personName });
-  const lines = ledger({ income: inc, expenses: exp, payouts: pay });
+  // The feed is money that actually moved: income only once it was received (what is still owed sits on the In tile and the overview's Owed to us card).
+  const lines = ledger({ income: inc.filter((x) => x.receivedAt), expenses: exp, payouts: pay });
   const cats = byCategory(moneyRows({ income: [], expenses: exp, payouts: pay }));
   const closed = project.status === "closed";
 
@@ -139,7 +140,7 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
       <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
         <div className="card grid content-start gap-1" data-testid="project-records">
           <span className="lbl">Everything on this project</span>
-          {lines.length === 0 && <span className="s">Nothing yet. Add money in or out.</span>}
+          {lines.length === 0 && <span className="s">{t.owedToUs > 0 ? `Nothing has come in or gone out yet. ${formatCents(t.owedToUs)} is still owed to us.` : "Nothing yet. Add money in or out."}</span>}
           {lines.map((l) => (
             <div key={l.key} className="flex items-center justify-between gap-3 border-t border-line py-2 first:border-t-0" data-testid={`project-record-${l.key}`}>
               <div className="min-w-0"><div className="truncate font-bold">{l.title}</div><div className="s">{l.meta}</div></div>

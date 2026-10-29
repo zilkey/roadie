@@ -567,7 +567,7 @@ mark { background: var(--quiet); color: inherit; }
 .to-row .to-input { flex: 1; min-width: 160px; border: 0; outline: none; background: transparent; color: var(--ink); font: inherit; min-height: 32px; }
 
 /* ---------- click to edit: the value is the control ---------- */
-.val { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; margin: 0 -10px; border-radius: 8px; border: 0; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; max-width: 100%; }
+.val { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px; margin: 0 -10px; border-radius: 8px; border: 0; background: none; font: inherit; color: var(--ink); text-align: left; cursor: pointer; /* Border box may be 20px wider than the container: the -10px side margins pull it back flush. 100% alone squeezed the text under the pencil or wrapped it. */ max-width: calc(100% + 20px); }
 .val:hover { background: var(--divider); }
 .val:focus-visible { outline: 2px solid var(--accent); }
 .val .pen { color: var(--muted); opacity: 0; flex: none; }

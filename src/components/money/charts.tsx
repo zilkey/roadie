@@ -55,7 +55,7 @@ export function MonthBars({ data, testid }: { data: { key: string; in: number; o
 export function HBars({ title, rows, testid, spent }: { title: string; rows: { key: string; label: string; in: number; out: number; sub?: string }[]; testid: string; /** Spending only: one pink bar and the amount spent, not the net. */ spent?: boolean }) {
   const max = Math.max(...rows.flatMap((r) => (spent ? [r.out] : [r.in, r.out])), 1);
   return (
-    <div className="card" data-testid={testid}>
+    <div className="card content-start" data-testid={testid}>
       <span className="lbl">{title}</span>
       {rows.length === 0 && <span className="s">No entries yet.</span>}
       {rows.map((r) => (
