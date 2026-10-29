@@ -127,7 +127,7 @@ test("records.get on a venue says archived when the band hid it", async () => {
 
 test("context.now carries the open projects, what we owe by person and what is owed to us, with ids", async () => {
   // the shows made in setup already needed a home for their money, so the Band default exists (made on first need); seed one only if not
-  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true });
+  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? { ...await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true }), name: "Band" };
   const video = await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "video", name: "Lighthouse video", status: "open" });
   await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "release", name: "Old release", status: "closed" });
   const owed = await db.create(sys, "income", { artistId: TEST_ARTIST, date: "2026-11-14", amount: 40000, category: "guarantee", from: "Lost Lake", projectId: band.id, showId: showA });
