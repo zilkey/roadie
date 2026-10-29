@@ -33,7 +33,51 @@ export interface ToolDef { name: string; description: string; inputJsonSchema: {
 export function toJsonSchema(schema: z.ZodType): ToolDef["inputJsonSchema"] {
   const js = z.toJSONSchema(schema, { io: "input", unrepresentable: "any", target: "draft-7" }) as Record<string, unknown>;
   delete js.$schema;
-  return { type: "object", ...js };
+  return { type: "object", ...(forGemini(js) as object) };
+}
+
+type Js = Record<string, unknown>;
+const isObj = (v: unknown): v is Js => !!v && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * Gemini's OpenAPI subset, not draft-7. The endpoint silently DROPS a property it can't read and then rejects the whole
+ * request because `required` names it ("required fields ['route'] are not defined": every Roadie message in prod failed
+ * on 2026-10-29). What it can't read: a `{type: "null"}` branch (it wants `nullable`), `oneOf`, `const`, and an `anyOf`
+ * of objects (merged into one object: all the properties, only the shared required ones). The zod schema still checks
+ * the real input, so the model's copy only has to be readable. `npm run check:roadie` sends the result to the real model.
+ */
+export function forGemini(s: unknown): unknown {
+  if (Array.isArray(s)) return s.map(forGemini);
+  if (!isObj(s)) return s;
+  let out: Js = { ...s };
+  if (out.oneOf && !out.anyOf) { out.anyOf = out.oneOf; delete out.oneOf; }
+  if ("const" in out) { out.enum = [out.const]; delete out.const; if (!out.type) out.type = typeof out.const === "number" ? "number" : "string"; }
+  if (Array.isArray(out.anyOf)) {
+    const branches = (out.anyOf as unknown[]).map(forGemini).filter(isObj);
+    const rest = branches.filter((b) => b.type !== "null");
+    const nullable = rest.length < branches.length;
+    delete out.anyOf;
+    if (rest.length === 1) out = { ...rest[0], ...out };
+    else if (rest.length > 1 && rest.every((b) => b.type === "object")) out = { ...mergeObjects(rest), ...out };
+    else out.anyOf = rest;
+    if (nullable) out.nullable = true;
+  }
+  for (const k of ["properties", "items", "additionalProperties"]) if (k in out) out[k] = k === "properties" ? mapValues(out[k] as Js, forGemini) : forGemini(out[k]);
+  if (isObj(out.properties) && Array.isArray(out.required)) out.required = (out.required as string[]).filter((r) => r in (out.properties as Js));
+  return out;
+}
+
+const mapValues = (o: Js, f: (v: unknown) => unknown): Js => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+
+function mergeObjects(objs: Js[]): Js {
+  const properties: Js = {};
+  for (const o of objs) for (const [k, v] of Object.entries((o.properties as Js | undefined) ?? {})) {
+    const have = properties[k];
+    // The same field in two branches: keep the first, but let it take every branch's enum values (kind: template | show).
+    properties[k] = isObj(have) && isObj(v) && Array.isArray(have.enum) && Array.isArray(v.enum) ? { ...have, enum: [...new Set([...have.enum, ...v.enum])] } : have ?? v;
+  }
+  const required = objs.map((o) => new Set((o.required as string[] | undefined) ?? [])).reduce((a, b) => new Set([...a].filter((x) => b.has(x))));
+  return { type: "object", properties, required: [...required] };
 }
 
 // Commands Roadie replaces with its own version (same name, scoped differently).

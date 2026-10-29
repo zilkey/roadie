@@ -40,6 +40,8 @@
     "import:venue-book:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-venue-book-sheet.ts",
     "import:demos:prod": "GCLOUD_PROJECT=roadie-prod-iab tsx scripts/import-demos.ts",
     "stats:pull": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/stats-pull.ts",
+    "check:roadie": "GEMINI_API_KEY=$(cat .secrets/gemini-key.txt) ROADIE_MODEL=gemini ROADIE_GEMINI_MODEL=gemini-3.5-flash tsx scripts/roadie-check.ts",
+    "check:roadie:vertex": "GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-.secrets/roadie-prod-iab-firebase-adminsdk-fbsvc-ec7be59afd.json} ROADIE_MODEL=vertex ROADIE_VERTEX_PROJECT=roadie-prod-iab tsx scripts/roadie-check.ts",
     "eval:roadie": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-vertex} ROADIE_VERTEX_PROJECT=roadie-prod-iab tsx scripts/roadie-eval.ts",
     "genkit:ui": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker ROADIE_MODEL=${ROADIE_MODEL:-fake} genkit start -- tsx src/server/assistant/dev.ts",
     "typecheck": "tsc --noEmit",

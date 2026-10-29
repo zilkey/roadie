@@ -55,18 +55,28 @@ test("the missing-fields note says what's blank, politely, and nothing when the 
   assert.equal(missingVenueNote({ name: "X", address: { street: "1 Main", city: "Denver", state: "CO" }, capacity: 100, instagram: "x" }), undefined);
 });
 
-test("every tool schema Vertex sees has a type on each property and only required names that exist (gemini-3.5-flash rejects the whole request otherwise)", () => {
+test("every tool schema the model sees is in Gemini's subset: typed properties, required names that exist, no oneOf/const/null branches (the endpoint drops the field, then rejects the whole request)", () => {
+  // The nullable id survives as a plain string with nullable; the setlist source union becomes one merged object.
+  const by = Object.fromEntries(toolDefs("admin").map((t) => [t.name, t.inputJsonSchema.properties as Record<string, Js>]));
+  assert.deepEqual(by["shows.setStagePlot"].stagePlotId, { type: "string", minLength: 1, nullable: true });
+  assert.deepEqual(by["setlists.seed"].from, { type: "object", properties: { kind: { type: "string", enum: ["template", "show"] }, id: { type: "string", minLength: 1 } }, required: ["kind", "id"] });
   const bad: string[] = [];
-  const walk = (tool: string, path: string, s: Record<string, unknown> | undefined) => {
+  type Js = Record<string, unknown>;
+  const walk = (tool: string, path: string, s: Js | undefined) => {
     if (!s) return;
     const props = s.properties as Record<string, Record<string, unknown>> | undefined;
     if (props) {
       for (const r of (s.required as string[] | undefined) ?? []) if (!(r in props)) bad.push(`${tool}${path}: required '${r}' is not a property`);
       for (const [k, v] of Object.entries(props)) {
-        if (!v.type && !v.anyOf && !v.oneOf && !v.$ref) bad.push(`${tool}${path}.${k}: no type`);
+        if (!v.type && !v.anyOf) bad.push(`${tool}${path}.${k}: no type`);
         walk(tool, `${path}.${k}`, v);
       }
     }
+    // Shapes the Gemini API drops on the floor (seen 2026-10-29): oneOf, const, a null branch, an anyOf of objects.
+    if (s.oneOf) bad.push(`${tool}${path}: oneOf`);
+    if ("const" in s) bad.push(`${tool}${path}: const`);
+    if (s.type === "null") bad.push(`${tool}${path}: type null`);
+    if (Array.isArray(s.anyOf) && (s.anyOf as Js[]).every((b) => b.type === "object")) bad.push(`${tool}${path}: anyOf of objects`);
     walk(tool, `${path}[]`, s.items as Record<string, unknown> | undefined);
     for (const alt of [...((s.anyOf as Record<string, unknown>[] | undefined) ?? []), ...((s.oneOf as Record<string, unknown>[] | undefined) ?? [])]) walk(tool, `${path}|`, alt);
   };

@@ -71,6 +71,20 @@ npm run eval:roadie                      # every scenario; or: npm run eval:road
 
 It prints each turn's tool calls and reply, then a pass/fail list. Billed to the production project like `dev:vertex`.
 
+The cheap half of that is `npm run check:roadie:vertex`: one tiny call that hands the real model every tool Roadie offers
+an admin, as the flow sends them, and fails if the endpoint refuses the schemas (2026-10-29: every Roadie message in prod
+died with "required fields ['route'] are not defined" because one enum field had no `type`; the canned model can't see
+that). Run it before any push of `main`, since App Hosting deploys every push. It uses the service-account key in
+`.secrets` so nobody has to log in, which needs that account to hold the Vertex AI User role once:
+
+```sh
+gcloud projects add-iam-policy-binding roadie-prod-iab \
+  --member=serviceAccount:firebase-adminsdk-fbsvc@roadie-prod-iab.iam.gserviceaccount.com --role=roles/aiplatform.user
+```
+
+`npm run check:roadie` is the same call through the Gemini API key in `.secrets` (its validation is stricter, which is
+useful, but that key's prepaid credit was empty on 2026-10-29).
+
 ---
 
 ## Part 2 · Create `roadie-prod-iab`
