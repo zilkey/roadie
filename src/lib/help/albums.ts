@@ -6,7 +6,7 @@ export const ALBUM_TOPICS: HelpTopic[] = [
     id: "albums",
     title: "Albums",
     text: [
-      "Albums sits next to Songs once the band has made its first album (before that the page still opens by link). An album is a record the band is making or has made: a full-length album, an EP or a single.",
+      "Albums sits next to Songs in the menu (it starts in More; the Edit menu dialog moves it up). An album is a record the band is making or has made: a full-length album, an EP or a single.",
       "The Albums page is a table: Album (the cover and title, with the kind under it), Status (Planning, Recording, Mixing, Mastering or Released), Tracks (how many and how long), Release (the target date, or \"Not set\") and, for admins only, Spent and Earned. Members see the same table without the money.",
       "Admins get \"+ Add\", which opens the New album card: title, kind, status, a target release date, a budget, how to start the tracklist (from a setlist template, pick songs after saving, or empty) and whether to make an album folder in the band's Drive folder. \"Create album\" makes the album and its money project together; Cancel throws the draft away.",
     ].join("\n\n"),

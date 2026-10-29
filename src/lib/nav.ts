@@ -23,9 +23,9 @@ export type NavItem = { key: "calendar" | SectionId; href: string; label: string
 
 /**
  * Every section this role can open, Calendar first, the rest in the person's own order. Fans is there only when the artist has
- * turned `features.fans` on; Albums only once the band has made its first album (`albums`).
+ * turned `features.fans` on.
  */
-export function navFor(role: "admin" | "member", order: SectionId[], opts: { fans?: boolean; albums?: boolean } = {}): NavItem[] {
+export function navFor(role: "admin" | "member", order: SectionId[], opts: { fans?: boolean } = {}): NavItem[] {
   const all: Record<SectionId, NavItem> = {
     shows: { key: "shows", href: "/shows", label: "Shows", icon: I.shows },
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
@@ -40,5 +40,5 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
   };
   // Booking and its email templates are admin-only.
   const adminOnly = new Set<SectionId>(["booking", "templates"]);
-  return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans) && (k !== "albums" || opts.albums)).map((k) => all[k])];
+  return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans)).map((k) => all[k])];
 }

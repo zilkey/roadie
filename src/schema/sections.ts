@@ -17,9 +17,9 @@ export const SectionSetInput = z.strictObject({ section: SectionIdSchema, hidden
  * Sections that start life in "More": what a person gets until they first change their menu. Once `hiddenSections` is stored (even as an empty list)
  * it is theirs as saved, so switching one of these on stores an explicit pref.
  */
-export const DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "setlists", "rehearsals", "stagePlots"];
+export const DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "albums", "setlists", "rehearsals", "stagePlots"];
 /** A member's defaults: Rehearsals stays in the main nav and My money starts in More. */
-export const MEMBER_DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "setlists", "stagePlots", "money"];
+export const MEMBER_DEFAULT_HIDDEN: readonly SectionId[] = ["templates", "albums", "setlists", "stagePlots", "money"];
 export const defaultHidden = (role: string): SectionId[] => [...(role === "member" ? MEMBER_DEFAULT_HIDDEN : DEFAULT_HIDDEN)];
 
 /** The default left-to-right order of the sections (also the order of SECTION_IDS). */

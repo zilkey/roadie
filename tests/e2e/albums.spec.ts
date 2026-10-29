@@ -13,9 +13,7 @@ test.beforeEach(async ({ request }) => { await request.post(`${DRIVE}/__reset`);
 // The seed has one album, Wild Hearts LP, on the album project of the same name: ten tracks in two sides, a couple of mixes on Low Light, a cover, and money.
 test("Albums sits next to Songs; the index shows the seeded album with its tracks, release and money", async ({ page }) => {
   await signInAs(page, "jeff");
-  // Albums shows in the nav once the band has an album (the seed has one); it arrives with the albums, a beat after sign-in
-  await expect(page.getByTestId("tab-albums")).toBeVisible();
-  await page.getByTestId("tab-albums").click();
+  await openTab(page, "albums");
   await expect(page.getByTestId("albums-page")).toBeVisible();
   const row = page.locator('[data-testid^="album-row-"]', { hasText: "Wild Hearts LP" });
   await expect(row).toContainText("Mixing");

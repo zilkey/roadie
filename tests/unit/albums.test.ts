@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { navFor } from "@/lib/nav";
-import { DEFAULT_SECTION_ORDER } from "@/schema/sections";
+import { DEFAULT_SECTION_ORDER, defaultHidden } from "@/schema/sections";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import { guessAlbumKind, guessVersion, latestMix, mixLabel, sidesFor, sidesOf, trackProgress } from "@/lib/albums";
 import { needsConfirm, summarize } from "@/server/assistant/policy";
@@ -85,12 +85,11 @@ test("pure helpers: sides, progress, versions, kinds, the latest mix", () => {
   assert.equal(mixLabel(undefined), "—");
 });
 
-test("nav and routes: Albums sits after Songs once the band has an album; the album routes resolve", () => {
-  const keys = (o: { albums?: boolean }) => navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true, ...o }).map((n) => n.key);
-  assert.ok(!keys({}).includes("albums"));
-  const on = keys({ albums: true });
+test("nav and routes: Albums sits after Songs for both roles and starts in More; the album routes resolve", () => {
+  const on = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true }).map((n) => n.key);
   assert.equal(on[on.indexOf("songs") + 1], "albums");
-  assert.ok(navFor("member", [...DEFAULT_SECTION_ORDER], { albums: true }).some((n) => n.key === "albums"));
+  assert.ok(navFor("member", [...DEFAULT_SECTION_ORDER]).some((n) => n.key === "albums"));
+  assert.ok(defaultHidden("admin").includes("albums") && defaultHidden("member").includes("albums"));
   assert.equal(resolveRoute("album", { id: "a1" }, "band")?.href, "/artists/band/albums/a1");
   assert.equal(resolveRoute("albumTrack", { id: "a1", trackId: "t1" })?.href, "/albums/a1/tracks/t1");
   assert.equal(resolveRoute("albumMoney", { id: "a1" })?.href, "/albums/a1?tab=money");
