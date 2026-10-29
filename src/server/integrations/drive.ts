@@ -14,6 +14,12 @@ export interface DriveFile {
   anyoneWithLink?: boolean;
   /** Real Drive only: everyone at these domains can open it (Workspace domain sharing). */
   domains?: string[];
+  /**
+   * Real Drive only: Drive left the permissions out, so `permissions`, `anyoneWithLink` and `domains` say nothing. files.get and
+   * files.list never carry them for shared-drive items, nor for a file the band account can't share; get() asks permissions.list
+   * instead, and clears this when it answers.
+   */
+  permissionsUnknown?: boolean;
 }
 
 export interface DriveService {
@@ -66,6 +72,7 @@ export function fakeDriveClient(baseUrl: string): DriveService {
 
 interface GPermission { type: "user" | "group" | "domain" | "anyone"; role: string; emailAddress?: string; domain?: string }
 interface GFile { id: string; name: string; mimeType: string; owners?: { emailAddress?: string }[]; parents?: string[]; permissions?: GPermission[]; createdTime?: string; webViewLink?: string }
+type Sharing = Pick<DriveFile, "permissions" | "anyoneWithLink" | "domains">;
 
 const PERM_FIELDS = "emailAddress,role,type,domain";
 const FILE_FIELDS = `id,name,mimeType,owners(emailAddress),parents,permissions(${PERM_FIELDS}),createdTime,webViewLink`;
@@ -74,17 +81,25 @@ const ALL_DRIVES = { supportsAllDrives: "true" };
 const lit = (v: string) => `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 
 const roleOf = (r: string): DrivePermission["role"] => (r === "owner" ? "owner" : r === "writer" || r === "organizer" || r === "fileOrganizer" ? "writer" : "reader");
-/** People and groups by address. A file the band account can only read comes back without permissions; then only the owner is known. */
+/** People and groups by address. */
 const people = (ps: GPermission[] = []): DrivePermission[] =>
   ps.filter((p) => (p.type === "user" || p.type === "group") && p.emailAddress).map((p) => ({ email: p.emailAddress!.toLowerCase(), role: roleOf(p.role) }));
 
-function toFile(f: GFile): DriveFile {
-  const ps = f.permissions ?? [];
+/** Who can open a file, from its permission list: people and groups, anyone with the link, whole domains. */
+function sharing(ps: GPermission[]): Sharing {
   const domains = ps.filter((p) => p.type === "domain" && p.domain).map((p) => p.domain!.toLowerCase());
+  return { permissions: people(ps), ...(ps.some((p) => p.type === "anyone") ? { anyoneWithLink: true } : {}), ...(domains.length ? { domains } : {}) };
+}
+
+/**
+ * Drive sends `permissions` only when the caller can share the file, and never for an item in a shared drive (the band folder
+ * is one): then the file says permissionsUnknown rather than "shared with nobody". Shared-drive items have no owners either.
+ */
+function toFile(f: GFile): DriveFile {
   return {
     id: f.id, name: f.name, mimeType: f.mimeType, ownerEmail: f.owners?.[0]?.emailAddress?.toLowerCase() ?? "", parents: f.parents ?? [],
-    permissions: people(ps), createdAt: f.createdTime ?? "", webViewLink: f.webViewLink ?? `https://drive.google.com/open?id=${f.id}`,
-    ...(ps.some((p) => p.type === "anyone") ? { anyoneWithLink: true } : {}), ...(domains.length ? { domains } : {}),
+    createdAt: f.createdTime ?? "", webViewLink: f.webViewLink ?? `https://drive.google.com/open?id=${f.id}`,
+    ...sharing(f.permissions ?? []), ...(f.permissions ? {} : { permissionsUnknown: true }),
   };
 }
 
@@ -93,7 +108,18 @@ const RANK = { reader: 1, writer: 2, owner: 3 } as const;
 export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapis.com/drive/v3", uploadUrl = "https://www.googleapis.com/upload/drive/v3"): DriveService {
   const call = googleJson("drive", baseUrl, token);
   const f = (id: string) => `/files/${encodeURIComponent(id)}`;
-  const get = async (id: string) => toFile(await call<GFile>("GET", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES } }));
+  const listPermissions = (id: string) => call<{ permissions?: GPermission[] }>("GET", `${f(id)}/permissions`, { query: { fields: `permissions(${PERM_FIELDS})`, ...ALL_DRIVES } });
+  // A file without permissions (see toFile) gets them from permissions.list, which answers for shared-drive items too, inherited
+  // folder permissions included. If that is refused as well, the file stays permissionsUnknown.
+  const get = async (id: string) => {
+    const file = toFile(await call<GFile>("GET", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES } }));
+    if (!file.permissionsUnknown) return file;
+    let ps: GPermission[] | undefined;
+    try { ps = (await listPermissions(id)).permissions; } catch (e) { if (!(e instanceof IntegrationError)) throw e; }
+    if (!ps?.length) return file;
+    const { permissionsUnknown: _, ...known } = file;
+    return { ...known, ...sharing(ps) };
+  };
   return {
     async search(o) {
       const q = ["trashed = false", o.q && `name contains ${lit(o.q)}`, o.parent && `${lit(o.parent)} in parents`, o.mimeType && `mimeType = ${lit(o.mimeType)}`].filter(Boolean).join(" and ");
@@ -145,8 +171,7 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
       return toFile(await call<GFile>("PATCH", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES }, body: { name } }));
     },
     async permissions(id) {
-      const r = await call<{ permissions?: GPermission[] }>("GET", `${f(id)}/permissions`, { query: { fields: `permissions(${PERM_FIELDS})`, ...ALL_DRIVES } });
-      return people(r.permissions);
+      return people((await listPermissions(id)).permissions);
     },
     async download(id, range) {
       const qs = new URLSearchParams({ alt: "media", ...ALL_DRIVES });

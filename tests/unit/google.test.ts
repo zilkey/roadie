@@ -9,7 +9,7 @@ import { googleCalendar } from "@/server/integrations/calendar";
 import { IntegrationError } from "@/server/integrations";
 import { signState, verifyState, featuresOf, FEATURE_SCOPES, TOKEN_URL, REVOKE_URL } from "@/server/google/oauth";
 import { seal, unseal, accessTokenForEmail, saveGrant } from "@/server/google/grants";
-import { missingFor } from "@/server/music";
+import { inspect, missingFor } from "@/server/music";
 import { resetEmulators, makeUser, makeArtist, TEST_ARTIST } from "./helpers";
 
 // ---------- a stub for Google's HTTP APIs; everything else (the emulators) passes through ----------
@@ -224,6 +224,30 @@ test("drive: share skips people who already have access and asks Drive to notify
   });
   await googleDrive(token).share("f1", ["jeff@example.com", "Ingrid@example.com", "david@example.com", "nogoogle@example.com"]);
   assert.deepEqual(created, ["david@example.com:false", "nogoogle@example.com:true"]);
+});
+
+test("drive: a shared-drive file has no permissions on files.get, so get asks permissions.list (inherited folder sharing included)", async () => {
+  stubGoogle((s) => {
+    if (s.url.pathname.endsWith("/permissions")) return { json: { permissions: [{ type: "user", role: "organizer", emailAddress: "Jeff@Example.com" }, { type: "user", role: "fileOrganizer", emailAddress: "david@example.com" }, { type: "anyone", role: "reader" }] } };
+    if (s.url.pathname.endsWith("/f1")) return { json: { id: "f1", name: "chart", mimeType: "application/vnd.google-apps.document", parents: ["p"] } };
+    if (s.url.pathname.endsWith("/f2")) return { json: { id: "f2", name: "private", mimeType: "m", parents: ["p"] } };
+  });
+  const d = googleDrive(token);
+  const f = await d.get("f1");
+  assert.equal(seen[1].url.pathname, "/drive/v3/files/f1/permissions");
+  assert.equal(seen[1].url.searchParams.get("supportsAllDrives"), "true");
+  assert.equal(f.ownerEmail, "");
+  assert.deepEqual(f.permissions, [{ email: "jeff@example.com", role: "writer" }, { email: "david@example.com", role: "writer" }]);
+  assert.equal(f.anyoneWithLink, true);
+  assert.equal(f.permissionsUnknown, undefined);
+  // A search hit from a shared drive says so; inspect looks it up to learn who can open it.
+  const [hit] = await (async () => { stubGoogle((s) => s.url.pathname.endsWith("/files") ? { json: { files: [{ id: "f1", name: "chart", mimeType: "m", parents: [] }] } } : s.url.pathname.endsWith("/permissions") ? { json: { permissions: [{ type: "user", role: "reader", emailAddress: "david@example.com" }] } } : { json: { id: "f1", name: "chart", mimeType: "m", parents: [] } }); return d.search({ q: "chart" }); })();
+  assert.equal(hit.permissionsUnknown, true);
+  const mates = [{ id: "m1", name: "David", email: "david@example.com" }, { id: "m2", name: "Emma", email: "emma@example.com" }];
+  assert.deepEqual((await inspect(hit, mates, null, d)).missing, ["m2"]);
+  // When permissions.list is refused too, the file stays unknown rather than claiming nobody can open it.
+  stubGoogle((s) => s.url.pathname.endsWith("/permissions") ? { status: 403, json: { error: { message: "no" } } } : { json: { id: "f2", name: "private", mimeType: "m", parents: ["p"] } });
+  assert.equal((await d.get("f2")).permissionsUnknown, true);
 });
 
 test("missingFor: link and domain sharing count", () => {

@@ -84,8 +84,12 @@ export function missingFor(file: DriveFile, mates: Bandmate[]): string[] {
   return mates.filter((m) => !can.has(m.email) && !domains.some((d) => m.email.endsWith(`@${d}`))).map((m) => m.id);
 }
 
-/** `folder` is the band folder, or the band's folders (band and Charts): a file under any of them is in the band folder. */
+/**
+ * `folder` is the band folder, or the band's folders (band and Charts): a file under any of them is in the band folder.
+ * A search hit from a shared drive comes without permissions (see DriveFile.permissionsUnknown); it is looked up again, which asks Drive for them.
+ */
 export async function inspect(file: DriveFile, mates: Bandmate[], folder: string | null | string[], drive: DriveService = driveClient()): Promise<Inspection> {
+  if (file.permissionsUnknown) { try { file = await drive.get(file.id); } catch { /* checked with what we have */ } }
   const folders = (Array.isArray(folder) ? folder : [folder]).filter((f): f is string => !!f);
   let inBandFolder = false;
   for (const f of folders) {
