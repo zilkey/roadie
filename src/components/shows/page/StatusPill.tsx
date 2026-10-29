@@ -11,9 +11,11 @@ const OPTIONS: [Choice, string][] = [
   ["canceled", "the venue called it off"],
   ["dropped", "we called it off"],
 ];
+/** A played show can only be called off after the fact: no going back to Hold or Confirmed. */
+const PLAYED_OPTIONS = OPTIONS.filter(([v]) => v === "canceled" || v === "dropped");
 const pillClass = (status: string) => `pill${status === "confirmed" ? " ok" : status === "hold" || status === "canceled" || status === "dropped" ? ` ${status}` : ""}`;
 
-/** The status pill beside the title. Admins press it to open "Change status"; members see it plain. */
+/** The status pill beside the title. Admins press it to open "Change status"; members see it plain. A played show offers only Canceled and Dropped. */
 export function StatusPill({ show, admin }: { show: ShowRow; admin: boolean }) {
   const status = show.status;
   const label = LABEL[status] ?? status;
@@ -33,7 +35,7 @@ export function StatusPill({ show, admin }: { show: ShowRow; admin: boolean }) {
   function close() { setOpen(false); setError(null); trigger.current?.focus(); }
   function toggle() {
     if (open) return close();
-    setPick((status === "hold" || status === "confirmed" || status === "canceled" || status === "dropped" ? status : "hold") as Choice);
+    setPick((status === "hold" || status === "confirmed" || status === "canceled" || status === "dropped" ? status : status === "played" ? "dropped" : "hold") as Choice);
     setReason("");
     setOpen(true);
   }
@@ -52,7 +54,7 @@ export function StatusPill({ show, admin }: { show: ShowRow; admin: boolean }) {
     if (r !== undefined) { setOpen(false); trigger.current?.focus(); }
   }
 
-  if (!admin || status === "played") {
+  if (!admin) {
     return <span className="inline-flex items-center gap-2"><span className={pillClass(status)} data-testid="show-status">{label}</span>{reasonNote}</span>;
   }
 
@@ -76,7 +78,7 @@ export function StatusPill({ show, admin }: { show: ShowRow; admin: boolean }) {
         >
           <span className="lbl" style={{ padding: "4px 14px 6px" }}>Change status</span>
           <div role="radiogroup" aria-label="Status" className="grid gap-1">
-            {OPTIONS.map(([v, hint]) => (
+            {(status === "played" ? PLAYED_OPTIONS : OPTIONS).map(([v, hint]) => (
               <label key={v} className="flex items-center gap-2.5 cursor-pointer rounded-[10px] px-3.5" style={{ minHeight: 48, background: pick === v ? "var(--divider)" : undefined }}>
                 <input type="radio" name="show-status-choice" value={v} checked={pick === v} onChange={() => setPick(v)} data-testid={`status-opt-${v}`} style={{ width: 18, height: 18, accentColor: "var(--accent)" }} />
                 <span className={pillClass(v)} style={{ padding: 0, background: "none", minHeight: 0, gap: 0 }} aria-hidden="true" />
