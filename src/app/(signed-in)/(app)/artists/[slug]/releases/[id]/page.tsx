@@ -61,26 +61,25 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
             } }]} />
         ) : undefined} />
 
-      <section className="card flex flex-wrap items-start gap-5">
-        {release.cover?.url
-          // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
-          : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
-        <div className="grid min-w-0 flex-1 content-start gap-2">
-          <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
-          <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
-            <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
-            {admin && <Spent release={release} />}
-          </div>
-        </div>
-      </section>
-      <ErrorBox error={error} />
-
       <Tabs<Tab> testid="release-tab" value={tab} onChange={setTab}
         options={[["tracks", "Tracks"], ...(admin ? [["money", "Money"] as [Tab, string]] : []), ["files", "Files"]]} />
+      <ErrorBox error={error} />
 
       {tab === "tracks" && <>
+        <section className="card flex flex-wrap items-start gap-5">
+          {release.cover?.url
+            // eslint-disable-next-line @next/next/no-img-element
+            ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
+            : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
+          <div className="grid min-w-0 flex-1 content-start gap-2">
+            <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
+            <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
+              <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
+              {admin && <Spent release={release} />}
+            </div>
+          </div>
+        </section>
         <Tracklist d={d} release={release} />
         <ReleaseDetails release={release} admin={admin} />
       </>}

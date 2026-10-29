@@ -5,7 +5,7 @@ import { INCOME_LABEL, METHOD_LABEL, formatCents, parseDollars } from "@/lib/mon
 import { dateInBandZone } from "@/lib/timezone";
 import { showName } from "@/lib/shows";
 import type { MoneyInModalProps } from "./modals";
-import { MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, shortDate, useProjectsAndShows } from "./MoneyOutModal";
+import { MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useProjectsAndShows, useReleaseTracks } from "./MoneyOutModal";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
@@ -21,6 +21,7 @@ export function MoneyInModal({ open, onClose, defaults }: MoneyInModalProps) {
 function InForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyInModalProps["defaults"] }) {
   const { call, error, busy } = useCommand();
   const ps = useProjectsAndShows(defaults);
+  const tr = useReleaseTracks(ps.projectId, defaults);
   const [got, setGot] = useState(false);
   const [category, setCategory] = useState("guarantee");
   const [from, setFrom] = useState("");
@@ -41,7 +42,7 @@ function InForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyInModa
     e.preventDefault(); e.stopPropagation();
     if (!canSave || !cents) return;
     const r = await call("income.add", {
-      amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}),
+      amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}),
       date: got ? when : dateInBandZone(), ...(got ? { method, receivedAt: when } : {}),
     });
     if (r) onClose();
@@ -67,6 +68,7 @@ function InForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyInModa
           <input className="input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="mi-amount" />
         </label>
         <ProjectShowFields s={ps} prefix="mi" />
+        <TrackField t={tr} prefix="mi" />
         {got && <MethodWhenFields method={method} setMethod={setMethod} when={when} setWhen={setWhen} prefix="mi" />}
       </div>
       <ModalFoot saves={saves} error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mi" />

@@ -31,6 +31,8 @@ export const Payout = entity({
   what: z.string().optional(),
   projectId: id,
   showId: id.optional(),
+  /** The release track this was for (releases/{release}/tracks/{id}; the release is the project's), when it was one track's: a session player's pay for one song. */
+  releaseTrackId: id.optional(),
   dueDate: dateStr.optional(),
   /** When it was paid (YYYY-MM-DD). Missing = we still owe it. */
   paidAt: dateStr.optional(),

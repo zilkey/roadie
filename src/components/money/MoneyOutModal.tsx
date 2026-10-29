@@ -7,7 +7,8 @@ import { useProfile } from "@/lib/auth";
 import { EXPENSE_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { dateInBandZone } from "@/lib/timezone";
 import { fmtLong, showName } from "@/lib/shows";
-import { roleIn, type Contact, type Expense, type Musician, type Payout, type Project, type Show, type User } from "@/schema";
+import { roleIn, type Contact, type Expense, type Musician, type Payout, type Project, type Release, type ReleaseTrack, type Show, type User } from "@/schema";
+import { sortTracks } from "@/lib/releases";
 import type { MoneyOutModalProps } from "./modals";
 
 
@@ -86,6 +87,37 @@ export function ProjectShowFields({ s, prefix }: { s: ReturnType<typeof useProje
         </select>
       </label>
     </div>
+  );
+}
+
+/**
+ * The release behind the picked project (a release's project is its own) and its tracks, so money can be pinned to one
+ * track. Nothing when the project is not a release's. The pick is kept only while that release's project stays picked.
+ */
+export function useReleaseTracks(projectId: string, defaults: { releaseTrackId?: string } | undefined) {
+  const releases = useCollection<Release>("releases");
+  const release = useMemo(() => (releases.rows ?? []).find((r) => r.projectId === projectId) ?? null, [releases.rows, projectId]);
+  const tracks = useCollection<ReleaseTrack>(release ? `releases/${release.id}/tracks` : "releases/none/tracks", { skip: !release });
+  const [pick, setPick] = useState(defaults?.releaseTrackId ?? "");
+  // Another project picked: the track goes with the old one.
+  const first = useRef(true);
+  useEffect(() => { if (first.current) first.current = false; else setPick(""); }, [projectId]);
+  const sorted = useMemo(() => sortTracks(tracks.rows ?? []), [tracks.rows]);
+  const trackId = release && sorted.some((t) => t.id === pick) ? pick : "";
+  return { release, tracks: sorted, trackId, setTrackId: setPick };
+}
+
+/** "Track (optional)": only when the picked project is a release's. */
+export function TrackField({ t, prefix }: { t: ReturnType<typeof useReleaseTracks>; prefix: string }) {
+  if (!t.release) return null;
+  return (
+    <label className="grid gap-1">
+      <span className="lbl">Track <span className="font-normal">(optional)</span></span>
+      <select className="select" value={t.trackId} onChange={(e) => t.setTrackId(e.target.value)} data-testid={`${prefix}-track`}>
+        <option value="">Whole release</option>
+        {t.tracks.map((x) => <option key={x.id} value={x.id}>{x.position} · {x.title}</option>)}
+      </select>
+    </label>
   );
 }
 
@@ -234,6 +266,8 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   const expensesAll = useCollection<Expense>("expenses");
   const payoutsAll = useCollection<Payout>("payouts");
   const ps = useProjectsAndShows(defaults);
+  const tr = useReleaseTracks(ps.projectId, defaults);
+  const track = tr.trackId ? { releaseTrackId: tr.trackId } : {};
   const reimburse = !!defaults?.expenseIds?.length;
   const owed = useDocs<Expense>("expenses", defaults?.expenseIds ?? [], { skip: !reimburse });
 
@@ -295,18 +329,18 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
       // The same record a member logs for themselves: they paid, pay-back on. We paid also settles it right away.
       const r = await call("expenses.add", {
         amount: cents, what: whatText, category, projectId: ps.projectId, userId: member, payBack: true, date: when,
-        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}),
+        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...track,
       });
       if (!r?.id) return;
       if (paid && !(await call("expenses.payPerson", { userId: member, ids: [r.id], method, paidAt: when, paidBy: payer }))) return;
     } else if (expense) {
       if (!(await call("expenses.add", {
-        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}),
+        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}), ...track,
         ...(paid ? { userId: payer, date: when, payBack } : { owed: true }),
       }))) return;
     } else {
       if (!(await call("payouts.add", {
-        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}),
+        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...track,
         ...(paid ? { method, paidAt: when, paidBy: payer } : {}),
       }))) return;
     }
@@ -368,6 +402,7 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
           </>
         )}
         <ProjectShowFields s={ps} prefix="mo" />
+        {!reimburse && <TrackField t={tr} prefix="mo" />}
         {(needsPayer || reimb) && (
           <div className="grid gap-[14px] sm:grid-cols-2">
             {needsPayer ? <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" label={reimb ? "Paid back by" : undefined} /> : <span />}

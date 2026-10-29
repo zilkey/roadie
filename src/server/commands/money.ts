@@ -35,10 +35,10 @@ const id1 = z.string().min(1);
 // income.update    admin  { id, patch: { amount?, category?, from?, date?, projectId?, showId? (null clears), method? (null clears), receivedAt? (null clears), notes? (null clears) } }
 // income.remove    admin  { id }
 // income.setReceived admin { id, receivedAt?: date (default today), method? }   received:false is income.update { receivedAt: null }.
-// payouts.add      admin  { to: { musicianId } | { userId } | { contactId } | { name }, kind: payoutKind, amount, what?, projectId?, showId?, dueDate?, paidAt?, method?, paidBy?, expenseIds? }
+// payouts.add      admin  { to: { musicianId } | { userId } | { contactId } | { name }, kind: payoutKind, amount, what?, projectId?, showId?, releaseTrackId?, dueDate?, paidAt?, method?, paidBy?, expenseIds? }
 //                         `to` must resolve (musician, user or contact found, or a plain name); the server copies the name onto to.name. No paidAt = we owe.
 //                         paidBy is the admin whose account it left (the band has none); only admins can be payers.
-// payouts.update   admin  { id, patch: { to?, kind?, amount?, what? (null clears), projectId?, showId? (null clears), dueDate? (null clears), paidAt? (null clears), method? (null clears), paidBy? (null clears) } }
+// payouts.update   admin  { id, patch: { to?, kind?, amount?, what? (null clears), projectId?, showId? (null clears), releaseTrackId? (null clears), dueDate? (null clears), paidAt? (null clears), method? (null clears), paidBy? (null clears) } }
 // payouts.remove   admin  { id }
 // payouts.markPaid admin  { id, paidAt?: date (default today), method, paidBy? }
 // expenses.add     admin|member  as today plus projectId? (default: the show's project, else the rehearsal's, else the default project);
@@ -493,11 +493,11 @@ export const payoutsAdd = defineCommand({
   name: "payouts.add", roles: ["admin", "mcp"],
   description: "Record money the band pays (or owes) someone: to is exactly one of { musicianId } (a band player, from context.now band), { userId }, { contactId } or { name } for anyone else; the server copies their name. " +
     "kind: pay (their pay for playing), split (another band's cut), reimbursement (paying back expenses; expenseIds marks those expenses reimbursed), other. amount in cents, what (\"the Lost Lake show\"), showId, " +
-    "projectId (defaults to the show's project, else the default project), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. " +
+    "projectId (defaults to the show's project, else the default project), releaseTrackId (one of the release's tracks, when the project is a release's and the pay was for one track), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. " +
     "paidBy is the admin whose own account the money left (the band has none; ask which admin paid if unsure). Returns { id }.",
   input: z.strictObject({
     to: PayoutTo, kind: payoutKind, amount: z.number().int().positive(), what: z.string().trim().min(1).optional(), projectId: id1.optional(), showId: id1.optional(),
-    dueDate: dateStr.optional(), paidAt: dateStr.optional(), method: paymentMethod.optional(), paidBy: id1.optional(), expenseIds: z.array(id1).min(1).optional(),
+    releaseTrackId: id1.optional(), dueDate: dateStr.optional(), paidAt: dateStr.optional(), method: paymentMethod.optional(), paidBy: id1.optional(), expenseIds: z.array(id1).min(1).optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = i.showId ? await liveShow(w, i.showId) : null;
@@ -505,6 +505,7 @@ export const payoutsAdd = defineCommand({
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
     const to = await resolveTo(w, i.to);
     if (i.paidBy) await requirePayer(w, i.paidBy);
+    if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const exps: Doc[] = [];
     for (const id of i.expenseIds ?? []) exps.push(await requireExpense(w, id));
     const r = await w.create("payouts", { ...i, to, artistId, projectId });
@@ -517,14 +518,15 @@ export const payoutsAdd = defineCommand({
 
 export const payoutsUpdate = defineCommand({
   name: "payouts.update", roles: ["admin", "mcp"],
-  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / dueDate / paidAt / method / paidBy (null clears). paidAt:null = not paid after all.",
+  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / releaseTrackId / dueDate / paidAt / method / paidBy (null clears). paidAt:null = not paid after all.",
   input: z.strictObject({ id: id1, patch: z.strictObject({
     to: PayoutTo.optional(), kind: payoutKind.optional(), amount: z.number().int().positive().optional(), what: z.string().trim().min(1).nullable().optional(), projectId: id1.optional(),
-    showId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(), paidBy: id1.nullable().optional(),
+    showId: id1.nullable().optional(), releaseTrackId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(), paidBy: id1.nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const x = await requirePayout(w, id);
     if (patch.paidBy) await requirePayer(w, patch.paidBy);
+    if (patch.releaseTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.releaseTrackId);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
     const { to, ...rest } = patch;

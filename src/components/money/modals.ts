@@ -7,6 +7,8 @@
 export interface MoneyDefaults {
   projectId?: string;
   showId?: string;
+  /** A release track to pin the money to (the project must be that release's); a release's Money tab or a track page passes it. */
+  releaseTrackId?: string;
   /** Money out only: who, as a band user. */
   userId?: string;
   /** Money out only: who, as a player (when they have no user). */

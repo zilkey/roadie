@@ -13,10 +13,10 @@ import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 import { ReleaseMissing, releaseHref, trackHref, useRelease, type ReleaseData, type FileRow, type TrackRow } from "@/components/releases/common";
 import { useCollection } from "@/lib/firestore-hooks";
 import { TRACK_FILE_KINDS, TRACK_STATUS_LABEL, fmtVersion, trackReached } from "@/lib/releases";
-import { CATEGORY_LABEL, formatCents } from "@/lib/money";
+import { CATEGORY_LABEL, PAYOUT_KIND_LABEL, formatCents } from "@/lib/money";
 import { fmtLen, playsInline, providerFor, type FileKind } from "@/lib/music";
 import { fmtInstant } from "@/lib/timezone";
-import type { Expense, FileDoc, TrackStatus } from "@/schema";
+import type { Expense, FileDoc, Payout, TrackStatus } from "@/schema";
 
 /** The steps the stepper shows; "mixing" reads as the current label on the Mixed step. */
 const STEPS: TrackStatus[] = ["tracking", "overdubs", "mixed", "mastered"];
@@ -312,9 +312,14 @@ function Credits({ d, track }: { d: ReleaseData; track: TrackRow }) {
   );
 }
 
+/** Money out pinned to this track: expenses and payouts (a session player's pay), newest first. */
 function TrackCosts({ releaseId, trackId }: { releaseId: string; trackId: string }) {
   const expenses = useCollection<Expense>("expenses");
-  const mine = (expenses.rows ?? []).filter((x) => x.releaseTrackId === trackId).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const payouts = useCollection<Payout>("payouts");
+  const mine = [
+    ...(expenses.rows ?? []).filter((x) => x.releaseTrackId === trackId).map((x) => ({ id: x.id, date: x.date, label: `${CATEGORY_LABEL[x.category] ?? x.category} · ${x.what}`, amount: x.amount })),
+    ...(payouts.rows ?? []).filter((p) => p.releaseTrackId === trackId).map((p) => ({ id: p.id, date: p.paidAt ?? p.dueDate ?? "", label: `${PAYOUT_KIND_LABEL[p.kind] ?? p.kind} · ${p.to.name}${p.what ? ` · ${p.what}` : ""}`, amount: p.amount })),
+  ].sort((a, b) => (a.date < b.date ? 1 : -1));
   const total = mine.reduce((n, x) => n + x.amount, 0);
   return (
     <section className="grid content-start gap-2.5" aria-labelledby="costs-h">
@@ -323,7 +328,7 @@ function TrackCosts({ releaseId, trackId }: { releaseId: string; trackId: string
         {mine.length === 0 && <span className="s">Nothing spent on this track yet.</span>}
         {mine.map((x) => (
           <div key={x.id} className="flex justify-between gap-3 text-sm" data-testid={`cost-${x.id}`}>
-            <span>{CATEGORY_LABEL[x.category] ?? x.category} · {x.what}</span><span className="font-mono">{formatCents(x.amount)}</span>
+            <span>{x.label}</span><span className="font-mono">{formatCents(x.amount)}</span>
           </div>
         ))}
         <div className="flex justify-between gap-3 border-t border-line pt-2 font-bold">

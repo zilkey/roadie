@@ -1,12 +1,10 @@
 "use client";
 import { useState } from "react";
-import Link from "@/lib/artist";
-import { ErrorBox, useCommand } from "@/components/ui";
-import { InlineValue } from "@/components/InlineValue";
 import { HBars } from "@/components/money/charts";
 import { MoneyInModal } from "@/components/money/MoneyInModal";
+import { MoneyOutModal } from "@/components/money/MoneyOutModal";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, PAYOUT_KIND_LABEL, byCategory, defaultProject, formatCents, moneyRows, owesBack, parseDollars, projectOf, projectTotals } from "@/lib/money";
+import { CATEGORY_LABEL, INCOME_LABEL, PAYOUT_KIND_LABEL, byCategory, defaultProject, formatCents, moneyRows, owesBack, projectOf, projectTotals } from "@/lib/money";
 import type { Expense, Income, Musician, Payout, Project, User } from "@/schema";
 import type { ReleaseData } from "./common";
 
@@ -33,8 +31,7 @@ function View({ data }: { data: ReleaseData }) {
   const payouts = useCollection<Payout>("payouts");
   const users = useCollection<User>("users");
   const musicians = useCollection<Musician>("musicians");
-  const { call, error } = useCommand();
-  const [modal, setModal] = useState(false);
+  const [modal, setModal] = useState<"in" | "out" | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
   const def = defaultProject(projects.rows ?? [])?.id;
@@ -56,7 +53,7 @@ function View({ data }: { data: ReleaseData }) {
   const lines: Line[] = [
     ...inc.map((x): Line => ({ key: `income-${x.id}`, kind: "income", id: x.id, date: x.date, cat: INCOME_LABEL[x.category] ?? x.category, trackId: x.releaseTrackId, details: x.from, notes: x.notes, who: "Band", amount: x.amount, sign: 1, owed: false })),
     ...exp.map((x): Line => ({ key: `expense-${x.id}`, kind: "expense", id: x.id, date: x.date, cat: CATEGORY_LABEL[x.category] ?? x.category, trackId: x.releaseTrackId, details: x.what, who: `${personName(x.userId)}${owesBack(x) ? " · owed back" : ""}`, amount: x.amount, sign: -1, owed: owesBack(x) })),
-    ...pay.map((p): Line => ({ key: `payout-${p.id}`, kind: "payout", id: p.id, date: p.paidAt ?? p.dueDate ?? "", cat: PAYOUT_KIND_LABEL[p.kind] ?? p.kind, details: p.what ?? (p.paidAt ? "Paid out" : "We owe"), who: p.to.name, amount: p.amount, sign: -1, owed: false })),
+    ...pay.map((p): Line => ({ key: `payout-${p.id}`, kind: "payout", id: p.id, date: p.paidAt ?? p.dueDate ?? "", cat: PAYOUT_KIND_LABEL[p.kind] ?? p.kind, trackId: p.releaseTrackId, details: p.what ?? (p.paidAt ? "Paid out" : "We owe"), who: p.to.name, amount: p.amount, sign: -1, owed: false })),
   ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.key.localeCompare(b.key)));
   const shown = lines.filter((l) => filter === "all" || (filter === "income" ? l.kind === "income" : filter === "expenses" ? l.kind !== "income" : l.kind === "expense" && l.owed));
 
@@ -69,8 +66,8 @@ function View({ data }: { data: ReleaseData }) {
         <div className="sg-sech">
           <h2 id="release-money-h" className="card-h">Where it stands</h2>
           <div className="flex flex-wrap gap-2">
-            <Link href={`/money/expense?project=${encodeURIComponent(release.projectId)}`} className="btn outline sm" data-testid="add-expense-link">+ Add expense</Link>
-            <button type="button" className="btn outline sm" onClick={() => setModal(true)} data-testid="add-income-btn">+ Add income</button>
+            <button type="button" className="btn acc sm" onClick={() => setModal("in")} data-testid="money-in-open">+ Money in</button>
+            <button type="button" className="btn acc sm" onClick={() => setModal("out")} data-testid="money-out-open">+ Money out</button>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -88,7 +85,6 @@ function View({ data }: { data: ReleaseData }) {
             <b className="font-mono text-xl" data-testid="release-net-amount">{signed(net)}</b>
           </div>
         </div>
-        <ErrorBox error={error} />
       </section>
 
       <div className="grid gap-5 sm:grid-cols-2">
@@ -132,7 +128,8 @@ function View({ data }: { data: ReleaseData }) {
         <span className="s">These are the band&apos;s ledger and expenses, tagged with this release. They also show in Money.</span>
       </section>
 
-      <MoneyInModal open={modal} onClose={() => setModal(false)} defaults={{ projectId: release.projectId }} />
+      <MoneyInModal open={modal === "in"} onClose={() => setModal(null)} defaults={{ projectId: release.projectId }} />
+      <MoneyOutModal open={modal === "out"} onClose={() => setModal(null)} defaults={{ projectId: release.projectId }} />
     </div>
   );
 }

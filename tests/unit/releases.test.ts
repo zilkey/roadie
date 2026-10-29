@@ -233,6 +233,12 @@ test("files: mixes by version on a track, approving one makes it mixed, a master
   await code(cmd("expenses.add", { amount: 100, what: "x", category: "mixing", projectId: release.projectId, releaseTrackId: "nope" }), "not_found");
   const inc = await cmd("income.add", { amount: 50000, category: "preorders", from: "Bandcamp", projectId: release.projectId });
   assert.equal((await db.get("income", inc.id))!.category, "preorders");
+  // a payout pins to a track the same way (a session player's pay for one song), and can be moved off it
+  const pay = await cmd("payouts.add", { to: { name: "Ava Strings" }, kind: "pay", amount: 20000, what: "cello on Low Light", projectId: release.projectId, releaseTrackId: track.id });
+  assert.equal((await db.get("payouts", pay.id))!.releaseTrackId, track.id);
+  await code(cmd("payouts.add", { to: { name: "Ava Strings" }, kind: "pay", amount: 100, projectId: release.projectId, releaseTrackId: "nope" }), "not_found");
+  await cmd("payouts.update", { id: pay.id, patch: { releaseTrackId: null } });
+  assert.equal((await db.get("payouts", pay.id))!.releaseTrackId, undefined);
 
   // the song's own files are untouched by the release; removing the release archives its tracks and files and closes the project
   await db.create(ctx, "files", { kind: "demo", title: "Low Light demo", songId: songs[2], url: "https://x.test/demo", provider: "web", checkedAt: new Date() });
