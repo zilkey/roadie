@@ -1,10 +1,12 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { Menu } from "@/components/Menu";
 import { useEffect, useRef, useState } from "react";
 import { SaveStatus } from "@/components/SaveStatus";
+import { InlineValue } from "@/components/InlineValue";
 import { celebrateSong } from "@/components/Celebrate";
 import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -96,7 +98,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const { call, error, busy } = useCommand();
   // Existing record = autosave: each field is a patch through songs.update, "Saved" + Undo toast after.
   const as = useAutosave({ command: "songs.update", id: song.id, rev: song.rev, title: song.title });
-  const [len, setLen] = useState<string | null>(null);
   // The picked status shows at once; once the saved song catches up, it shows the song's again.
   const [status, setStatus] = useState<SongStatus | null>(null);
   useEffect(() => setStatus(null), [song.status]);
@@ -107,19 +108,25 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
     was.current = { id: song.id, status: song.status };
     if (prev.id === song.id && prev.status === "writing" && song.status !== "writing" && song.status !== "retired") celebrateSong(song.title, STATUS_LABEL[song.status]);
   }, [song.id, song.status, song.title]);
-  // The artist's custom fields, in the artist's order. Typed values live here until saved (the patch is the whole list).
+  // The artist's custom fields, in the artist's order. Each value edits in place; the patch is the whole list.
   const artistDoc = useArtist().doc;
   const defs = artistDoc?.songFields ?? [];
-  const [vals, setVals] = useState<Record<string, string> | null>(null);
   const saved = Object.fromEntries((song.fields ?? []).map((v) => [v.fieldId, v.value]));
-  const valueOf = (fid: string) => (vals ?? saved)[fid] ?? "";
-  const setField = (fid: string, v: string) => {
-    const next = { ...(vals ?? saved), [fid]: v };
-    setVals(next);
-    // A blank value is no value: no entry rather than an empty string.
-    as.patch({ fields: defs.filter((d) => next[d.id]?.trim()).map((d) => ({ fieldId: d.id, value: next[d.id]!.trim() })) });
+  // A saved value shows at once; once the saved song catches up (a new rev), the song's own shows again.
+  const [mine, setMine] = useState<Record<string, string>>({});
+  useEffect(() => setMine({}), [song.rev]);
+  const text = (k: string, v: string | number | null | undefined) => mine[k] ?? (v == null ? "" : String(v));
+  const save = (k: string, shown: string, patch: Record<string, unknown>) => {
+    setMine((x) => ({ ...x, [k]: shown }));
+    as.patch(patch, { now: true });
+    return true;
   };
-  const [edit, setEdit] = useState(false);
+  const saveField = (fid: string, v: string) => {
+    const next = { ...saved, ...Object.fromEntries(Object.entries(mine).filter(([k]) => k.startsWith("f:")).map(([k, x]) => [k.slice(2), x])), [fid]: v };
+    // A blank value is no value: no entry rather than an empty string.
+    return save(`f:${fid}`, v, { fields: defs.filter((d) => next[d.id]?.trim()).map((d) => ({ fieldId: d.id, value: next[d.id]!.trim() })) });
+  };
+  const fieldVal = (fid: string) => mine[`f:${fid}`] ?? saved[fid] ?? "";
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
   const [checkMsg, setCheckMsg] = useState("");
@@ -141,68 +148,56 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   return (
     <div className="sg-page" data-testid="song-page">
       <PageTitle
-        back={<Link href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>}
+        back={<BackLink mode="back" href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} label="All songs" />}
         title={song.title}
-        pill={admin ? undefined : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
-          {edit && <SaveStatus {...as.statusProps} />}
-          {/* Admins change the status here, outside Edit: it saves at once, with the usual Saved + Undo toast. */}
-          <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
-            onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
-            {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-          </select>
-          <button className="btn ghost" onClick={() => { void as.flush(); setLen(null); setVals(null); setEdit(!edit); }} data-testid="song-edit">{edit ? "Done" : "Edit"}</button>
+          {/* Conflicts and failed saves still surface here; the plain Saved tick sits beside each value. */}
+          <SaveStatus {...as.statusProps} />
           <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
             items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
         </> : undefined} />
-      {edit && admin && (
-        <div className="card" data-testid="song-form">
-          <label className="grid gap-1"><span className="lbl">Title</span><input className="input" required data-testid="edit-title" {...as.bind("title", song.title, { toPatch: (t) => t.trim() })} /></label>
-          <label className="grid gap-1"><span className="lbl">Short title</span><input className="input" data-testid="edit-short-title" {...as.bind("shortTitle", song.shortTitle ?? "", { toPatch: (t) => t.trim() || null })} /></label>
-          <div className="grid grid-cols-3 gap-2">
-            <label className="grid gap-1"><span className="lbl">Key</span><input className="input" data-testid="edit-key" {...as.bind("key", song.key ?? "", { toPatch: (t) => t.trim() || null })} /></label>
-            <label className="grid gap-1"><span className="lbl">BPM</span><input className="input" inputMode="numeric" data-testid="edit-bpm" {...as.bind("bpm", song.bpm != null ? String(song.bpm) : "", { toPatch: (t) => (t.trim() === "" ? null : Number.isFinite(Number(t)) ? Number(t) : t) })} /></label>
-            <label className="grid gap-1"><span className="lbl">Length</span>
-              <input className="input" placeholder="3:52" data-testid="edit-length" value={len ?? fmtLen(song.lengthSec)}
-                onChange={(e) => {
-                  const t = e.target.value; setLen(t);
-                  const sec = parseLen(t);
-                  if (!t.trim()) as.patch({ lengthSec: null });
-                  else if (sec === undefined) as.hold("Length looks like 3:52");
-                  else as.patch({ lengthSec: sec });
-                }}
-                onBlur={() => { void as.flush(); if (!len?.trim() || parseLen(len) !== undefined) setLen(null); }} /></label>
+      <section className="sg-sec" aria-labelledby="song-details-h">
+        <h2 id="song-details-h" className="sg-lbl">Details</h2>
+        {/* No page-wide Edit: each value is its own control for admins (saved on blur or Enter, Escape reverts); members see plain text. */}
+        <dl className="card sg-dl" data-testid="song-fields">
+          {/* Status lives with the other facts. Admins pick it here and it saves at once, with the usual Saved + Undo toast. */}
+          <div><dt className="lbl">Status</dt><dd>{admin
+            ? <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
+                onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
+                {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+              </select>
+            : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}</dd></div>
+          {admin && <div><dt className="lbl">Title</dt><dd><InlineValue testid="field-title" label="Title" kind="text" value={text("title", song.title)} canEdit
+            validate={(v) => (v ? null : "A song needs a title")} onSave={(v) => save("title", v, { title: v })} error={as.error} /></dd></div>}
+          {admin && <div><dt className="lbl">Short title</dt><dd><InlineValue testid="field-short-title" label="Short title" kind="text" value={text("shortTitle", song.shortTitle)} canEdit
+            onSave={(v) => save("shortTitle", v, { shortTitle: v || null })} error={as.error} /></dd></div>}
+          <div><dt className="lbl">Key</dt><dd><InlineValue testid="field-key" label="Key" kind="text" value={text("key", song.key)} canEdit={admin}
+            onSave={(v) => save("key", v, { key: v || null })} error={as.error} /></dd></div>
+          <div><dt className="lbl">BPM</dt><dd><InlineValue testid="field-bpm" label="BPM" kind="text" inputMode="numeric" value={text("bpm", song.bpm)} canEdit={admin}
+            validate={(v) => (v === "" || Number.isFinite(Number(v)) ? null : "BPM is a number")}
+            onSave={(v) => save("bpm", v, { bpm: v === "" ? null : Number(v) })} error={as.error} /></dd></div>
+          <div><dt className="lbl">Length</dt><dd><InlineValue testid="field-length" label="Length" kind="text" placeholder="3:52" value={mine.length ?? fmtLen(song.lengthSec)} canEdit={admin}
+            validate={(v) => (v === "" || parseLen(v) !== undefined ? null : "Length looks like 3:52")}
+            onSave={(v) => save("length", v, { lengthSec: v === "" ? null : parseLen(v) })} error={as.error} /></dd></div>
+          <div><dt className="lbl">Written by</dt><dd><InlineValue testid="field-writers" label="Written by" kind="text" value={text("writers", song.writers)} canEdit={admin}
+            onSave={(v) => save("writers", v, { writers: v || null })} error={as.error} /></dd></div>
+          <div data-testid="last-rehearsed">
+            <dt className="lbl">Last rehearsed</dt>
+            <dd>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</dd>
           </div>
-          <label className="grid gap-1"><span className="lbl">Written by</span><input className="input" data-testid="edit-writers" {...as.bind("writers", song.writers ?? "", { toPatch: (t) => t.trim() || null })} /></label>
-          <label className="grid gap-1"><span className="lbl">Notes</span><textarea className="input" rows={2} data-testid="edit-notes" {...as.bind("notes", song.notes ?? "", { toPatch: (t) => t.trim() || null })} /></label>
+          {/* The artist's own per-song facts ("Ingrid plays", "Capo"), in the artist's order; an unfilled one still holds its place. */}
           {defs.map((d) => (
-            <label key={d.id} className="grid gap-1"><span className="lbl">{d.label}</span>
-              <input className="input" data-testid={`edit-field-${d.id}`} value={valueOf(d.id)} onChange={(e) => setField(d.id, e.target.value)} onBlur={() => void as.flush()} /></label>
-          ))}
-        </div>
-      )}
-
-      {!edit && (
-        <section className="sg-sec" aria-labelledby="song-details-h">
-          <h2 id="song-details-h" className="sg-lbl">Details</h2>
-          <dl className="card sg-dl" data-testid="song-fields">
-            <div><dt className="lbl">Written by</dt><dd data-testid="field-writers">{song.writers || <span className="d-muted">—</span>}</dd></div>
-            <div data-testid="last-rehearsed">
-              <dt className="lbl">Last rehearsed</dt>
-              <dd>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</dd>
+            <div key={d.id}>
+              <dt className="lbl">{d.label}</dt>
+              <dd><InlineValue testid={`field-${d.id}`} label={d.label} kind="text" value={fieldVal(d.id)} canEdit={admin}
+                onSave={(v) => saveField(d.id, v)} error={as.error} /></dd>
             </div>
-            {/* The artist's own per-song facts ("Ingrid plays", "Capo"), in the artist's order; an unfilled one still holds its place. */}
-            {defs.map((d) => (
-              <div key={d.id}>
-                <dt className="lbl">{d.label}</dt>
-                <dd data-testid={`field-${d.id}`}>{saved[d.id]?.trim() || <span className="d-muted">—</span>}</dd>
-              </div>
-            ))}
-            {song.notes && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><p className="sg-note">{song.notes}</p></dd></div>}
-          </dl>
-        </section>
-      )}
+          ))}
+          {(admin || song.notes) && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}
+            className="sg-note" onSave={(v) => save("notes", v, { notes: v || null })} error={as.error} /></dd></div>}
+        </dl>
+      </section>
 
       <section className="sg-sec" aria-labelledby="song-files-h">
         <div className="sg-sech">

@@ -11,7 +11,7 @@ import {
   BackLink, ContactsPanel, EntityForm, hrefFor, promoterForm, useBooking, useNotFound, type PromoterRow,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { PitchSummaryCard, usePlaceThreads } from "@/components/booking/PitchSummaryCard";
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { PickDialog, RowX } from "@/components/booking/PickDialog";
@@ -33,6 +33,7 @@ function PromoterPage() {
   const { artistId } = useArtist();
   const { doc: shared, loading } = useDoc<Promoter>("promoters", id);
   const b = useBooking();
+  const threads = usePlaceThreads("promoter", id);
   const { call, error, busy, setError } = useCommand();
   const edit = useSingleEdit<"about">();
   const [addingContact, setAddingContact] = useState(false);
@@ -74,14 +75,14 @@ function PromoterPage() {
   );
 
   return (
-    <DetailPage testid="promoter-page" back={<BackLink href="/booking/promoters" label="All promoters" />} title={p.name}
+    <DetailPage testid="promoter-page" back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} title={p.name}
       pill={active ? <PitchedPill /> : undefined}
       meta={`${KIND_LABEL[p.kind]}${venues.length ? ` · ${venues.length} venues` : ""}`}
       more={<div>
         <Menu label="More actions" testid="promoter" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive promoter", danger: true, onSelect: archive }]} />
       </div>}>
       <ErrorBox error={error} />
-      <PitchSummaryCard kind="promoter" id={id} mine={mine} testid="promoter-pitch" />
+      <PitchSummaryCard kind="promoter" id={id} mine={mine} threads={threads} testid="promoter-pitch" />
       <CardGroup kind="shared">
         <DetailCard title="About" edit={edit} editKey="about" warn={SHARED_WARN} editTestid="edit-toggle"
           children={<KV rows={[["Website", website], ["Kind", KIND_LABEL[p.kind]]]} />}

@@ -8,7 +8,7 @@ import { Menu } from "@/components/Menu";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { BackLink, EntityForm, editionForm, hrefFor, useBooking, useNotFound, type Field } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { PitchSummaryCard, usePlaceThreads } from "@/components/booking/PitchSummaryCard";
 import { InlineValue } from "@/components/InlineValue";
 import { fmtDate, isActive } from "@/lib/booking";
 import { fmtLong, showName } from "@/lib/shows";
@@ -26,6 +26,7 @@ function EditionPage() {
   const { artistId } = useArtist();
   const { doc: shared, loading } = useDoc<Edition>("editions", id);
   const b = useBooking();
+  const threads = usePlaceThreads("festival", shared?.festivalId);
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId], ["editionId", "==", id]] });
   const { call, error } = useCommand();
   const edit = useSingleEdit<"about">();
@@ -46,12 +47,12 @@ function EditionPage() {
   const saveNote = async (key: "payNotes" | "notes", next: string) => !!(await call("editions.update", { id, patch: { [key]: next || null } }));
 
   return (
-    <DetailPage testid="edition-page" back={<BackLink href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={name}
+    <DetailPage testid="edition-page" back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={name}
       pill={active ? <PitchedPill /> : undefined}
       meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
       more={<Menu label="More actions" testid="edition" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
-      <PitchSummaryCard kind="edition" id={id} mine={mine} testid="edition-pitch" />
+      <PitchSummaryCard kind="edition" id={id} mine={mine} threads={threads} testid="edition-pitch" />
       <CardGroup kind="shared">
         <DetailCard title="About this year" editKey="about" edit={edit} warn={SHARED_WARN} testid="edition-facts" editTestid="edit-toggle"
           editChildren={<div><EntityForm testid="edition-edit" fields={aboutFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>

@@ -39,3 +39,17 @@ test("pastPitches drops active statuses and sorts newest first", () => {
   ];
   assert.deepEqual(pastPitches(rows).map((p) => p.id), ["new", "mid", "old"]);
 });
+
+test("threadsText: none is empty, one is singular, many plural", async () => {
+  const { threadsText } = await import("@/lib/pitchSummary");
+  assert.equal(threadsText(0), "");
+  assert.equal(threadsText(1), "1 email thread");
+  assert.equal(threadsText(3), "3 email threads");
+});
+test("pitchLineParts: threads follow past pitches with a separator, or stand alone", async () => {
+  const { pitchLineParts } = await import("@/lib/pitchSummary");
+  assert.deepEqual(pitchLineParts(true, 3), { past: true, threads: "3 email threads", sep: true });
+  assert.deepEqual(pitchLineParts(true, 0), { past: true, threads: "", sep: false });
+  assert.deepEqual(pitchLineParts(false, 1), { past: false, threads: "1 email thread", sep: false });
+  assert.deepEqual(pitchLineParts(false, 0), { past: false, threads: "", sep: false });
+});

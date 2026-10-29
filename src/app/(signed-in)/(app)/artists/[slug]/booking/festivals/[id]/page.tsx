@@ -14,7 +14,7 @@ import {
   BackLink, ContactsPanel, EntityForm, Flagged, FormFields, editionForm, festivalForm, hrefFor, useBooking, useNotFound, type Field, type Values,
 } from "@/components/booking/common";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { FestivalPitchCard } from "@/components/booking/PitchSummaryCard";
+import { FestivalPitchCard, usePlaceThreads } from "@/components/booking/PitchSummaryCard";
 import { AddContactDialog, DialogClose, DialogFoot } from "@/components/booking/AddContactDialog";
 import { RowX } from "@/components/booking/PickDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
@@ -39,6 +39,7 @@ function FestivalPage() {
   const { artistId } = useArtist();
   const { doc: shared, loading } = useDoc<Festival>("festivals", id);
   const b = useBooking();
+  const threads = usePlaceThreads("festival", id);
   const showRows = useCollection<Show>("shows", { where: [["artistId", "==", artistId]] });
   const { call, error } = useCommand();
   const edit = useSingleEdit<"about">();
@@ -73,11 +74,11 @@ function FestivalPage() {
   const contacts = <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds} contacts={b.contacts} />;
 
   return (
-    <DetailPage testid="festival-page" back={<BackLink href="/booking/festivals" label="All festivals" />} title={f.name}
+    <DetailPage testid="festival-page" back={<BackLink mode="back" href="/booking/festivals" label="All festivals" />} title={f.name}
       pill={active ? <PitchedPill /> : undefined} meta={meta}
       more={<Menu label="More actions" testid="festival" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive festival", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
-      <FestivalPitchCard editions={editions} mine={mine} upcoming={pitchCardFlag} />
+      <FestivalPitchCard editions={editions} mine={mine} upcoming={pitchCardFlag} threads={threads} />
       <CardGroup kind="shared">
         <DetailCard title="About the festival" editKey="about" edit={edit} warn={SHARED_WARN} testid="festival-about" editTestid="edit-toggle"
           editChildren={

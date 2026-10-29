@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -90,12 +91,12 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       r ??= made;
     }
     if (r && pitch) celebrateBooking(pitch.target.name, dates.map(fmtPitchDate));
-    if (r) { await draft.clear(); router.push(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
+    if (r) { await draft.clear(); router.replace(dates.length > 1 ? `/booking/pitches/${pitchId}` : `/shows/${r.id}`); }
   }
 
   return (
     <div className="grid gap-5" data-testid="new-show">
-      <PageTitle back={<Link href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} className="back-link" data-testid="back">{pitchId ? "← Pitch" : "← All shows"}</Link>} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
+      <PageTitle back={<BackLink href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} label={pitchId ? "Pitch" : "All shows"} />} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
       {!draft.ready ? null : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
         <ShowForm value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}

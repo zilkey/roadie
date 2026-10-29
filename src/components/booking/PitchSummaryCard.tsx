@@ -4,8 +4,8 @@ import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useCollection } from "@/lib/firestore-hooks";
 import { Flagged, FlagIcon, PitchDates, StatusPill, type PitchRow } from "@/components/booking/common";
 import { fmtDate, isActive, todayStr } from "@/lib/booking";
-import { ms, pastPitches, pitchOutcome, pitchWhen } from "@/lib/pitchSummary";
-import type { Edition, User } from "@/schema";
+import { ms, pastPitches, pitchLineParts, pitchOutcome, pitchWhen } from "@/lib/pitchSummary";
+import type { Edition, EmailThread, User } from "@/schema";
 
 const monDay = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
 const monYear = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: BAND_TIME_ZONE });
@@ -49,21 +49,37 @@ function ActiveRow({ p, label }: { p: PitchRow; label?: string }) {
   );
 }
 
-/** "Pitched before: Duo, Mar 2026 · Became a show · see it", the most recent, then "and N more". Nothing when there are none. */
-function PastLine({ past }: { past: PitchRow[] }) {
+/** The place's threads, newest first (an edition's threads are on its festival). */
+export type ThreadSummary = Pick<EmailThread, "id" | "lastDate">;
+
+/** The place's email threads (summaries) for the pitch card. An edition's threads are on its festival: pass the festival's id with kind "festival". */
+export function usePlaceThreads(kind: "venue" | "promoter" | "festival", placeId: string | undefined): ThreadSummary[] {
+  const { artistId } = useArtist();
+  const { rows } = useCollection<EmailThread>("emailThreads", { where: [["artistId", "==", artistId], ["target.id", "==", placeId ?? ""]], skip: !placeId });
+  return (rows ?? []).filter((t) => t.target.kind === kind);
+}
+
+/** "Pitched before: Duo, Mar 2026 · Became a show · see it", the most recent, then "and N more", then " · 3 email threads" linked to the newest thread. Nothing when there are neither. */
+function PastLine({ past, threads = [] }: { past: PitchRow[]; threads?: ThreadSummary[] }) {
   const { doc: artist } = useArtist();
-  if (!past.length) return null;
+  const parts = pitchLineParts(past.length > 0, threads.length);
+  if (!parts.past && !parts.threads) return null;
   const name = (p: PitchRow) => artist?.configurations.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet";
   const when = (p: PitchRow) => (pitchWhen(p) ? `, ${monYear(pitchWhen(p))}` : "");
   const [first, ...more] = past;
+  const newest = [...threads].sort((a, b) => b.lastDate.localeCompare(a.lastDate))[0];
   return (
     <>
       <div className="d-sep" />
       <p className="d-muted m-0 text-[0.875rem]" data-testid="past-pitches">
-        Pitched before: {name(first)}{when(first)} · {pitchOutcome(first)} · <Link href={`/booking/pitches/${first.id}`} className="underline" data-testid={`pitch-link-${first.id}`}>see it</Link>
-        {more.length > 0 && <> and {more.length} more: {more.map((p, i) => (
-          <span key={p.id}>{i > 0 && ", "}<Link href={`/booking/pitches/${p.id}`} className="underline" data-testid={`pitch-link-${p.id}`}>{name(p)}{when(p)}</Link></span>
-        ))}</>}
+        {parts.past && <>
+          Pitched before: {name(first)}{when(first)} · {pitchOutcome(first)} · <Link href={`/booking/pitches/${first.id}`} className="underline" data-testid={`pitch-link-${first.id}`}>see it</Link>
+          {more.length > 0 && <> and {more.length} more: {more.map((p, i) => (
+            <span key={p.id}>{i > 0 && ", "}<Link href={`/booking/pitches/${p.id}`} className="underline" data-testid={`pitch-link-${p.id}`}>{name(p)}{when(p)}</Link></span>
+          ))}</>}
+        </>}
+        {parts.sep && " · "}
+        {parts.threads && <Link href={`/booking/email/${newest.id}`} className="underline" data-testid="place-threads">{parts.threads}</Link>}
       </p>
     </>
   );
@@ -74,7 +90,7 @@ function PastLine({ past }: { past: PitchRow[] }) {
  * status, configuration, dates and next step and a View pitch button, or "Not on the Pitch List" with Add to Pitch List. Editing happens on the pitch page.
  * `mine` is this band's pitches for the target (any status).
  */
-export function PitchSummaryCard({ kind, id, mine, testid = "pitch-summary" }: { kind: "venue" | "promoter" | "edition"; id: string; mine: PitchRow[]; testid?: string }) {
+export function PitchSummaryCard({ kind, id, mine, threads, testid = "pitch-summary" }: { kind: "venue" | "promoter" | "edition"; id: string; mine: PitchRow[]; threads?: ThreadSummary[]; testid?: string }) {
   const active = mine.find((p) => isActive(p.status));
   const past = pastPitches(mine);
   if (active) {
@@ -95,7 +111,7 @@ export function PitchSummaryCard({ kind, id, mine, testid = "pitch-summary" }: {
         </div>
         {form}
       </>)}</Flagged>
-      <PastLine past={past} />
+      <PastLine past={past} threads={threads} />
     </section>
   );
 }
@@ -104,7 +120,7 @@ export function PitchSummaryCard({ kind, id, mine, testid = "pitch-summary" }: {
  * The festival version: one row per year with an active pitch, or (none active) the upcoming year's Add to Pitch List.
  * `mine` is this band's pitches across the festival's years.
  */
-export function FestivalPitchCard({ editions, mine, upcoming }: { editions: (Edition & { id: string })[]; mine: PitchRow[]; upcoming?: Edition & { id: string } }) {
+export function FestivalPitchCard({ editions, mine, upcoming, threads }: { editions: (Edition & { id: string })[]; mine: PitchRow[]; upcoming?: Edition & { id: string }; threads?: ThreadSummary[] }) {
   const actives = mine.filter((p) => isActive(p.status));
   const past = pastPitches(mine);
   const label = (p: PitchRow) => editions.find((e) => e.id === p.target.id)?.label ?? p.target.name;
@@ -130,7 +146,7 @@ export function FestivalPitchCard({ editions, mine, upcoming }: { editions: (Edi
           {form}
         </>)}</Flagged>
       )}
-      <PastLine past={past} />
+      <PastLine past={past} threads={threads} />
     </section>
   );
 }

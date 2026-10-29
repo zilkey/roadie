@@ -218,7 +218,7 @@ test("a member opens a song and sees its files, with no edit controls", async ({
   await expect(open).toHaveAttribute("href", /fake-drive-demo-1/);
   await expect(open).toHaveAttribute("target", "_blank");
   await expect(page.getByTestId("last-rehearsed")).toContainText("Oct 18");
-  for (const t of ["song-edit", "add-from-drive", "song-upload-demo", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
+  for (const t of ["field-key-input", "add-from-drive", "song-upload-demo", "run-sharing-check", "fix-share", "fix-copy", "file-remove", "file-gap"]) await expect(page.getByTestId(t)).toHaveCount(0);
 
   // setlists and rehearsals are readable, read-only
   await page.goto(A("/setlists"));
@@ -333,18 +333,22 @@ test("a new song is a draft; an existing song autosaves with Undo", async ({ pag
   await expect(page.getByTestId("song-title")).toHaveValue(""); // creating cleared the draft
 
   await page.goBack();
-  await page.getByTestId("song-edit").click();
   await expect(page.getByTestId("song-save")).toHaveCount(0);
-  await page.getByTestId("edit-key").fill("C#m");
-  await page.getByTestId("edit-length").fill("3:30");
+  await page.getByTestId("field-key").click();
+  await page.getByTestId("field-key-input").fill("C#m");
+  await page.getByTestId("field-key-input").press("Enter");
+  await page.getByTestId("field-length").click();
+  await page.getByTestId("field-length-input").fill("3:30");
+  await page.getByTestId("field-length-input").press("Enter");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.reload();
   await expect(page.getByTestId("page-title")).toHaveText("Draft Song");
-  await page.getByTestId("song-edit").click();
-  await expect(page.getByTestId("edit-key")).toHaveValue("C#m");
-  await expect(page.getByTestId("edit-length")).toHaveValue("3:30");
-  await page.getByTestId("edit-length").fill("4:00");
+  await expect(page.getByTestId("field-key")).toHaveText("C#m");
+  await expect(page.getByTestId("field-length")).toHaveText("3:30");
+  await page.getByTestId("field-length").click();
+  await page.getByTestId("field-length-input").fill("4:00");
+  await page.getByTestId("field-length-input").press("Enter");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
   await page.getByTestId("undo-button").last().click(); // saves by the same person within 2 minutes fold into one history entry
-  await expect(page.getByTestId("edit-length")).not.toHaveValue("4:00");
+  await expect(page.getByTestId("field-length")).not.toHaveText("4:00");
 });

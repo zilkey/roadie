@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -162,7 +163,7 @@ function AddExpense() {
   const fromShowDoc = fromShow ? shows.rows?.find((s) => s.id === fromShow) : undefined;
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<Link href={returnTo} className="back-link" data-testid="back">{rehearsalId ? "← Rehearsal" : fromShow ? "← Show" : "← My money"}</Link>} title="Add an expense"
+      <PageTitle back={<BackLink href={returnTo} label={rehearsalId ? "Rehearsal" : fromShow ? "Show" : "My money"} />} title="Add an expense"
         sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : fromShowDoc ? showName(fromShowDoc) : undefined} />
       {!draft.ready ? null : <div className="card">
         <div className="grid gap-2">

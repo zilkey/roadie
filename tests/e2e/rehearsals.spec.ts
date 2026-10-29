@@ -201,3 +201,43 @@ test("rehearsal notes edit in place for an admin and read as plain text for a me
   await expect(david.page.getByTestId("reh-notes-card").getByRole("button")).toHaveCount(0);
   await david.close();
 });
+
+/** A song opened from a rehearsal shows its chart and lyrics; its note shows on the rehearsal list; a typed trailing space stays. */
+test("the rehearsal song page lists the song's chart, shows its note on the rehearsal, and keeps a trailing space while typing", async ({ browser }) => {
+  const { page, close } = await as(browser, "jeff");
+  await openRehearsal(page, "Oct 18");
+  const row = page.getByTestId("reh-song-row-Glass Coast");
+  await expect(row.getByTestId("reh-song-note")).toContainText("Tighten the bridge");
+  await row.getByTestId("reh-song-open").click();
+  await expect(page.getByTestId("rehearsal-song-page")).toBeVisible();
+  await expect(page.getByTestId("reh-song-docs-chart")).toContainText("Glass Coast chart F#m.docx");
+  await expect(page.getByTestId("reh-song-docs-chart").getByTestId("file-open")).toHaveAttribute("href", /fake-drive-chart-1/);
+
+  const notes = page.getByTestId("reh-song-notes");
+  await notes.click();
+  await notes.press("Control+End");
+  await notes.pressSequentially(" hello ");
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(notes).toBeFocused();
+  expect(await notes.inputValue()).toMatch(/hello $/);
+  await notes.blur();
+  expect(await notes.inputValue()).toMatch(/hello$/);
+  await page.getByTestId("back").click();
+  await expect(page.getByTestId("reh-song-row-Glass Coast").getByTestId("reh-song-note")).toContainText("Tighten the bridge");
+  await close();
+});
+
+/** Back goes where you came from: rehearsal -> its song -> the song page, Back lands on the rehearsal's song, not "All songs". */
+test("Back on the song page returns to the rehearsal song it was opened from", async ({ browser }) => {
+  const { page, close } = await as(browser, "jeff");
+  await openRehearsal(page, "Oct 18");
+  await page.getByTestId("reh-song-row-Glass Coast").getByTestId("reh-song-open").click();
+  await expect(page.getByTestId("rehearsal-song-page")).toBeVisible();
+  await page.getByTestId("open-song").click();
+  await expect(page.getByTestId("song-page")).toBeVisible();
+  await expect(page.getByTestId("back")).toHaveText("← Back");
+  await page.getByTestId("back").click();
+  await expect(page.getByTestId("rehearsal-song-page")).toBeVisible();
+  await expect(page).toHaveURL(/\/rehearsals\/[^/]+\/songs\/[^/]+$/);
+  await close();
+});

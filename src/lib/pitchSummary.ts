@@ -14,3 +14,10 @@ export const pitchOutcome = (p: Ended) =>
 export const pitchWhen = (p: Stamped) => ms(p.lastContactAt) || ms(p.createdAt);
 /** Pitches that ended, newest first. */
 export const pastPitches = <P extends Ended & Stamped>(mine: P[]): P[] => mine.filter((p) => !isActive(p.status)).sort((a, b) => pitchWhen(b) - pitchWhen(a));
+
+/** "1 email thread" / "3 email threads"; empty for none. */
+export const threadsText = (n: number) => (n > 0 ? `${n} email thread${n === 1 ? "" : "s"}` : "");
+/** The empty-state line's pieces: the past-pitch part is kept as is, the threads part is added after " · " (or stands alone). */
+export const pitchLineParts = (hasPast: boolean, threadCount: number): { past: boolean; threads: string; sep: boolean } => ({
+  past: hasPast, threads: threadsText(threadCount), sep: hasPast && threadCount > 0,
+});

@@ -68,7 +68,7 @@ function ThreadPage() {
 
   return (
     <div className="show-page" data-testid="thread-page">
-      <PageTitle back={<BackLink href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} title={t.subject || "(no subject)"}
+      <PageTitle back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} title={t.subject || "(no subject)"}
         sub={<>
           {t.messageCount} message{t.messageCount === 1 ? "" : "s"}{names.length > 0 && <> · {names.join(", ")}</>}
           {pitch && cell && <Link href={`/booking/pitches/${pitch.id}`} className="s block font-semibold underline" data-testid="thread-pitch">Pitch: {cell.config}, {cell.dates}</Link>}

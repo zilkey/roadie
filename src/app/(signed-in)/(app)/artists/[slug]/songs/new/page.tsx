@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -34,12 +35,12 @@ function Form() {
     const r = await call("songs.create", {
       title: title.trim(), status: writing ? "writing" : "active", ...(key.trim() ? { key: key.trim() } : {}), ...(lengthSec !== undefined ? { lengthSec } : {}), files: picks,
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/songs/${r.id}`); }
+    if (r?.id) { await draft.clear(); router.replace(`/songs/${r.id}`); }
   }
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="add-song">
-      <PageTitle back={<Link href={writing ? "/songs?seg=writing" : "/songs"} className="back-link" data-testid="back">← All songs</Link>} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
+      <PageTitle back={<BackLink href={writing ? "/songs?seg=writing" : "/songs"} label="All songs" />} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
       <div className="card">
       <label className="grid gap-1"><span className="lbl">Title</span>
         <input className="input" value={title} onChange={(e) => set({ title: e.target.value })} required disabled={!draft.ready} data-testid="song-title" />

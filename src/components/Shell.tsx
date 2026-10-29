@@ -12,6 +12,7 @@ import { isSectionId, SECTION_IDS, type SectionId } from "@/schema/sections";
 import { I, navFor, type NavItem } from "@/lib/nav";
 import { Dialog } from "@/components/ui";
 import { toast } from "@/components/Toasts";
+import { recordPath } from "@/lib/navHistory";
 import { useFansBadge, useFansOn } from "@/lib/fans-client";
 
 function Icon({ d, size = 22 }: { d: string; size?: number }) {
@@ -156,6 +157,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const artist = useArtist();
   const router = useRouter();
   const path = usePathname();
+  useEffect(() => { recordPath(path); }, [path]); // feeds BackLink's "is there anywhere in the app to go back to"
   const full = useHref();
   const { hidden, order } = useHiddenSections();
   const on = useOn();

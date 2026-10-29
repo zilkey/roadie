@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
@@ -155,7 +156,7 @@ function NewRehearsal({ m }: { m: Music }) {
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="rehearsal-page">
-      <PageTitle back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>} title="Create Rehearsal" sub="When, where, who and which songs. The songs power 'last rehearsed'." />
+      <PageTitle back={<BackLink href="/rehearsals" label="All rehearsals" />} title="Create Rehearsal" sub="When, where, who and which songs. The songs power 'last rehearsed'." />
       {!draft.ready ? null : <div className="cols">
         <div className="col-main">
           <div className="card">
@@ -260,7 +261,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const archive = async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); };
 
   return (
-    <DetailPage testid="rehearsal-page" back={<Link href="/rehearsals" className="back-link" data-testid="back">← All rehearsals</Link>}
+    <DetailPage testid="rehearsal-page" back={<BackLink href="/rehearsals" label="All rehearsals" />}
       title={`Rehearsal · ${fmtLong(form.date)}`}
       meta={<span data-testid="reh-times">{[timeLine, loc?.name ?? loc?.address ?? "", fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
       more={<div className="flex flex-wrap items-center gap-2">
@@ -323,7 +324,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
                     <span className="w-5 shrink-0 text-sm d-muted">{i + 1}</span>
                     <span className="grid min-w-0 flex-1">
                       <span className="truncate font-semibold">{titleOf(m, sid)}</span>
-                      {form.ran[sid] && <span className="truncate text-sm d-muted">{form.ran[sid]}</span>}
+                      {form.ran[sid] && <span className="whitespace-pre-wrap text-sm d-muted" data-testid="reh-song-note">{form.ran[sid]}</span>}
                     </span>
                     <span aria-hidden className="shrink-0 text-xl d-muted">›</span>
                   </Link>

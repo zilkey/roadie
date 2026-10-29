@@ -84,7 +84,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     title: "Songs",
     text: [
       "The Songs page lists every song in tabs with counts: Playing, Learning, Retired, Unlinked (no Drive file yet) and, last, Writing: songs still being written. \"Add a song\" on the Writing tab starts the song in the Writing phase. Use \"Search songs…\" to filter by title or writer. Columns: Title, Key, Time and Lyrics. A ♪ means the song has a recording. Admins get \"Add a song\", which searches Drive for audio, video and docs as you type the title.",
-      "A song's page shows its status, key, BPM and length, plus Details (written by, last rehearsed, notes and any custom fields). Admins press \"Edit\" to change them; it saves as they type, and \"Done\" closes it. \"More\" has \"Archive song\".",
+      "A song's page shows its status, key, BPM and length, plus Details (written by, last rehearsed, notes and any custom fields). Admins tap a value to change it; it saves when they leave it. \"More\" has \"Archive song\".",
       "\"Charts & recordings\" lists the song's files and links, grouped as Charts, Demos, Recordings, Rehearsal takes, Lyrics, Stems and Other. Audio and video have a Play button. Admins use \"+ Add from Drive\", \"Upload a demo\" (it goes in the Demos folder chosen on Settings › Google, shared with the band, and shows under Demos), (on a Writing song it is \"Upload audio\" and goes in the Songwriting folder instead), and \"Run sharing check\" to flag files the band can't open or that sit outside the band folder. \"Copy to band folder\" puts a shared copy in the Charts folder (lyrics, chord sheets), chosen on Settings › Google.",
     ].join("\n\n"),
     related: ["setlists", "customFields", "rehearsals"],
@@ -159,7 +159,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "Custom fields are the band's own extra facts, each a label with a text value: Capo or Tuning on songs, Parking or Hotel on shows.",
       "Admins define them in Artist settings, \"Custom fields\": a \"Show fields\" card and a \"Song fields\" card. Use \"New field\" to add one, the pencil to rename, the bin to delete, and drag to reorder. The table counts how many records have a value for each.",
-      "Values are filled in on the record. For songs, an admin presses \"Edit\" on the song page. For shows, it's the admin-only \"Custom fields\" card on Show Details: tap a value, type, and it saves in place when you leave it. A blank value isn't stored.",
+      "Values are filled in on the record. For songs, an admin taps the value under Details on the song page. For shows, it's the admin-only \"Custom fields\" card on Show Details: tap a value, type, and it saves in place when you leave it. A blank value isn't stored.",
       "Deleting a field asks first, and removes its values from every show or song that has one.",
     ].join("\n\n"),
     related: ["songs", "showPage"],

@@ -18,7 +18,6 @@ async function openSongEdit(page: Page, title: string) {
   await page.getByTestId("songs-filter").fill(title);
   await page.getByTestId("songs-list").getByRole("link", { name: title, exact: true }).first().click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  await page.getByTestId("song-edit").click();
   return page.url().split("/songs/")[1].split(/[/?]/)[0];
 }
 
@@ -28,20 +27,20 @@ test("an edit that never reached the server survives a closed tab: it comes back
   // The autosave request never gets through (the tab is going away); the draft copy still lands.
   await a.page.route("**/api/commands/songs.update", (r) => r.abort());
   const saved = a.page.waitForResponse(isDraftCall("drafts.save"));
-  await a.page.getByTestId("edit-notes").fill("Capo 2 on the bridge");
+  await a.page.getByTestId("field-notes").click();
+  await a.page.getByTestId("field-notes-input").fill("Capo 2 on the bridge");
+  await a.page.getByTestId("field-notes-input").blur();
   await saved;
   await a.close();
 
   const b = await as(browser, "jeff");
   const cleared = b.page.waitForResponse(isDraftCall("drafts.clear"));
   await b.page.goto(A(`/songs/${id}`));
-  await b.page.getByTestId("song-edit").click();
-  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Capo 2 on the bridge");
+  await expect(b.page.getByTestId("field-notes")).toHaveText("Capo 2 on the bridge");
   await expect(b.page.getByTestId("save-status")).toHaveText("Saved");
   await cleared; // every patch saved: the draft is gone
   await b.page.reload();
-  await b.page.getByTestId("song-edit").click();
-  await expect(b.page.getByTestId("edit-notes")).toHaveValue("Capo 2 on the bridge");
+  await expect(b.page.getByTestId("field-notes")).toHaveText("Capo 2 on the bridge");
   await b.close();
 });
 

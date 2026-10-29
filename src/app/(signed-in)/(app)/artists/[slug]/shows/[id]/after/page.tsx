@@ -1,4 +1,5 @@
 "use client";
+import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import Link from "@/lib/artist";
 import { useParams } from "next/navigation";
@@ -67,7 +68,7 @@ function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<
   const anything = !!v.show || !!v.venue || !!v.crowd || !!v.paid || !!v.notes.trim();
   return (
     <div className="grid gap-5" data-testid="after-page">
-      <PageTitle back={<Link href={`/shows/${id}`} className="back-link" data-testid="back">← {showName(show)}</Link>} title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
+      <PageTitle back={<BackLink href={`/shows/${id}`} label={showName(show)} />} title="How'd it go?" sub={`${showName(show)} · ${fmtLong(show.date)}`} />
       <ErrorBox error={error} />
       {!draft.ready ? null : (
         <div className="card">

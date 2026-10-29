@@ -71,7 +71,7 @@ function ContactPage() {
   ];
 
   return (
-    <DetailPage testid="contact-page" back={<BackLink href="/booking/contacts" label="All contacts" />} title={c.name} meta={c.title}
+    <DetailPage testid="contact-page" back={<BackLink mode="back" href="/booking/contacts" label="All contacts" />} title={c.name} meta={c.title}
       more={<Menu label="More actions" testid="contact" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive contact", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />
       <CardGroup kind="shared">

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
 import { CardGroup, DetailCard, DetailPage, KV, PitchedPill, VENUE_SHARED_WARN, useSingleEdit } from "@/components/booking/DetailCards";
-import { PitchSummaryCard } from "@/components/booking/PitchSummaryCard";
+import { PitchSummaryCard, usePlaceThreads } from "@/components/booking/PitchSummaryCard";
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
@@ -32,6 +32,7 @@ export default function VenuePage() {
   const admin = role === "admin";
   const { doc: v, loading } = useDoc<Venue>("venues", id, { includeDeleted: true });
   const b = useBooking();
+  const threads = usePlaceThreads("venue", id);
   const types = useVenueTypes();
   const shows = useCollection<Show>("shows", { where: [["venue.id", "==", id], ["artistId", "==", artistId]] });
   const { call, error } = useCommand();
@@ -65,7 +66,7 @@ export default function VenuePage() {
 
   return (
     <DetailPage testid="venue-page"
-      back={<BackLink href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />}
+      back={<BackLink mode="back" href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />}
       title={v.name}
       pill={admin && pitched ? <PitchedPill /> : undefined}
       meta={[typeLabel, v.address.city].filter(Boolean).join(" · ")}
@@ -83,7 +84,7 @@ export default function VenuePage() {
             onClick={() => call("venues.create", { name: v.name, type: v.type, address: v.address, region: v.region })}>Bring it back to our lists</button></div>
         </div>
       )}
-      {admin && <PitchSummaryCard kind="venue" id={id} mine={pitches.filter((p) => p.artistId === artistId)} testid="venue-pitch-card" />}
+      {admin && <PitchSummaryCard kind="venue" id={id} mine={pitches.filter((p) => p.artistId === artistId)} threads={threads} testid="venue-pitch-card" />}
       <CardGroup kind="shared">
         <DetailCard title="About the room" editKey="about" edit={edit} warn={VENUE_SHARED_WARN} testid="room-card" editTestid="room-edit" doneTestid="room-save"
           editChildren={

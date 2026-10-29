@@ -105,8 +105,10 @@ test("Custom fields: a field ticked In table is a column in the Shows and Songs 
   await page.getByTestId("song-title").fill(title);
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  await page.getByTestId("song-edit").click();
-  await page.getByTestId("song-form").getByLabel(songLabel).fill("2");
+  const songField = page.getByTestId("song-fields").getByRole("button", { name: new RegExp(`^(Add…|Edit) ${songLabel}$`) });
+  await songField.click();
+  await page.getByLabel(songLabel).fill("2");
+  await page.getByLabel(songLabel).press("Enter");
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
 
   // Tick both; each saves on its own.
