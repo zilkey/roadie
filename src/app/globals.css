@@ -632,8 +632,8 @@ dialog.dlg > div { position: relative; }
   .loadbar { transition: none; }
 }
 
-/* Roadie thinking: one dot, two, three, again. Each dot shows from its step on; the whole thing holds "…" without motion. */
-.roadie-dots { display: inline-flex; gap: .15em; font-size: 1.25em; line-height: 1; letter-spacing: .05em; }
+/* Roadie thinking: the stage-talk line's ellipsis, as one dot, two, three, again. Holds "..." without motion. */
+.roadie-dots { display: inline-flex; letter-spacing: .05em; }
 .roadie-dots span { animation: roadie-dot 1.2s steps(1, end) infinite; }
 .roadie-dots span:nth-child(2) { animation-name: roadie-dot-2; }
 .roadie-dots span:nth-child(3) { animation-name: roadie-dot-3; }

@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRoadie, type ChatMsg, type Pending } from "./useRoadie";
+import { useVamp } from "./vamp";
 import type { AssistantAction } from "@/schema/assistant";
 import { linkify } from "@/lib/linkify";
 
@@ -140,6 +141,7 @@ function Chat({ messages, pending, busy, send, on, notice, autoFocus = false }: 
   const at = pending?.doneId ? messages.findIndex((m) => m.id === pending.doneId) : -1;
   const shown = at >= 0 ? messages.slice(0, Math.max(0, at - 1)) : messages;
   const end = useRef<HTMLDivElement>(null);
+  const vamp = useVamp(busy && !pending?.reply && !pending?.actions.length);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [messages, pending]);
   // Grow with the text up to about five lines, then scroll.
   useEffect(() => { const el = field.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 120)}px`; }, [text]);
@@ -154,7 +156,7 @@ function Chat({ messages, pending, busy, send, on, notice, autoFocus = false }: 
             <>
               <Bubble role="user" text={pending.text} on={on} />
               <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} live={!busy} />
-              {busy && !pending.reply && !pending.actions.length && <div className="roadie-dots s" role="status" aria-label="Roadie is thinking" data-testid="roadie-thinking"><span>.</span><span>.</span><span>.</span></div>}
+              {busy && !pending.reply && !pending.actions.length && <div className="s italic" role="status" data-testid="roadie-vamp">{vamp.replace(/(…|\.{3})\s*$/, "")}<span className="roadie-dots" aria-hidden><span>.</span><span>.</span><span>.</span></span></div>}
               {pending.error && <div className="text-sm text-warn" data-testid="roadie-error">{pending.error}</div>}
             </>
           )}
