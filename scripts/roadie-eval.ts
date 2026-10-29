@@ -1,6 +1,7 @@
 /**
- * `npm run eval:roadie [-- name...]`: run real conversations through Roadie's flow against the REAL model (Vertex, billed to
- * roadie-prod-iab; `gcloud auth application-default login` first) and the real web, with the data in your local emulators,
+ * `npm run eval:roadie` (or `ROADIE_EVAL="sofar-three atrium" npm run eval:roadie`): run real conversations through Roadie's
+ * flow against the REAL model (Vertex through the service-account key in .secrets, billed to roadie-prod-iab; no login)
+ * and the real web, with a throwaway band in its own emulator run (nothing of yours needs to be up),
  * and check what it did: which tools it called, whether it made cards, whether it asked instead of acting. The unit tests
  * use the canned model and prove the plumbing; this proves the model behaves. Each run makes a throwaway band, so your
  * emulator data is untouched (the eval band stays; wipe it with `npm run wipe` whenever).
@@ -26,7 +27,8 @@ const SOFAR =
   "use this website for the one in fort collins: https://www.instagram.com/sofarfortcollins/\n\n" +
   "use this website for the one in denver: https://www.instagram.com/sofardenver/\n\n" +
   "and this one for Colorado Springs:\n\nhttps://www.instagram.com/sofarcoloradosprings/";
-const REFUSES = /\b(can't|cannot|unable|I need|need a|required|street address)\b/i;
+// A refusal, not the polite note about blanks ("I couldn't find a street address … Yes adds it as is").
+const REFUSES = /\b(can't (?:add|do|help)|cannot (?:add|do)|unable to|I need (?:a|an|the|more)|required|without (?:a|the) (?:street )?address)\b/i;
 
 const SCENARIOS: Scenario[] = [
   { name: "sofar-three", turns: [{ say: SOFAR, calls: [/venues\.draft/, /venues\.draft/, /venues\.draft/, /venues\.create/, /venues\.create/, /venues\.create/], cards: 3, noAsk: true, noText: REFUSES }] },

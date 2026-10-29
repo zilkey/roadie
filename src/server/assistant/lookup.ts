@@ -10,7 +10,7 @@ import { z as gz } from "genkit";
 import { z } from "zod";
 import { AppError } from "../errors";
 import { regionForCity } from "@/lib/regions";
-import { getAi, modelMode } from "./ai";
+import { getAi, modelMode, withModelRetry } from "./ai";
 import { venueTypes, type Option } from "./card";
 import { searchAll } from "./context";
 import { makeCtx, type Session } from "./run";
@@ -85,7 +85,7 @@ const EXTRACT_SYSTEM =
 async function extractFacts(name: string, where: string, answer: string, pages: { url: string; text: string }[]): Promise<Facts> {
   const { ai, model } = await getAi();
   const prompt = [`Venue: ${name}${where ? ` (${where})` : ""}.`, `<search_answer>${answer}</search_answer>`, ...pages.map((p) => `<page url="${p.url}">${p.text.slice(0, MAX_PAGE_CHARS)}</page>`)].join("\n\n");
-  const res = await ai.generate({ model: model as never, system: EXTRACT_SYSTEM, prompt, output: { schema: FactsOut } });
+  const res = await withModelRetry(() => ai.generate({ model: model as never, system: EXTRACT_SYSTEM, prompt, output: { schema: FactsOut } }));
   const o = res.output;
   if (!o) return { emails: [] };
   const str = (v: string | null | undefined) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
@@ -186,7 +186,7 @@ export async function draftVenue(s: Session, raw: unknown, w: WebTurn): Promise<
     ? `A venue by this name is already in the band's data (${existing.map((e) => `${e.name} ${e.id}`).join("; ")}). Don't add it again: say so, and offer to update it (venues.update) or open it.`
     : !city
       ? `No city turned up. Ask the person which city it's in (one short question), then call venues.draft again with it. Don't call venues.create yet.`
-      : `Call venues.create with \`draft\` exactly as it is${type ? "" : `, adding \`type\`: nothing on the band's list clearly fits, so send your best guess from typeOptions (the card lets the person pick another)`}. ` +
+      : `Call venues.create with \`draft\` exactly as it is${type ? "" : `, adding \`type\`: nothing on the band's list clearly fits, so send your best guess from typeOptions (the card lets the person pick another, or add a new one)`}. Never call venueTypes.add yourself while adding a venue. ` +
         `Don't ask about the missing fields first: they're optional, and the card says what's blank.${emails.length ? " The emails are booking contacts you may offer to add (contacts.create) after the venue; don't add them unasked." : ""}`;
   return { draft, missing: missing.filter((k) => k !== "city"), ...(type ? {} : { typeOptions: types }), emails, existing, sources: sources.slice(0, 5), ...(facts.summary ? { summary: facts.summary } : {}), next };
 }

@@ -17,6 +17,11 @@ test("claimsChange: questions and plain facts are not", () => {
   }
 });
 
+test("cleanMessages drops the system message Genkit folds into the previous step's messages (the prompt is passed separately each call)", () => {
+  const out = cleanMessages([{ role: "system", content: [{ text: "You are Roadie." }] }, { role: "user", content: [{ text: "hi" }] }, { role: "model", content: [{ text: "hello" }] }]);
+  assert.deepEqual(out.map((m) => m.role), ["user", "model"]);
+});
+
 test("cleanMessages drops empty text and empty thoughts, and messages left empty; keeps calls, results and signed thoughts", () => {
   const messages: MessageData[] = [
     { role: "user", content: [{ text: "hi" }, { text: "  " }] },

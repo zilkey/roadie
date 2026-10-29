@@ -29,9 +29,15 @@ const keep = (p: Part) => {
   return false;
 };
 
-/** The conversation without parts the Interactions API rejects, and without messages left empty. */
+/**
+ * The conversation without parts the Interactions API rejects, and without messages left empty. System messages go too:
+ * the flow passes the system prompt on every call, and Genkit hands back the previous step's messages with it folded
+ * in, so the second step would carry two ("system role is only supported for a single message in the first position":
+ * every multi-step reply failed against the real model on 2026-10-29).
+ */
 export function cleanMessages(messages: MessageData[]): MessageData[] {
   return messages.flatMap((m) => {
+    if (m.role === "system") return [];
     const content = m.content.filter(keep);
     return content.length ? [{ ...m, content }] : [];
   });

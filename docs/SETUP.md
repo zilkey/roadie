@@ -62,11 +62,12 @@ The unit tests drive Roadie with a canned model, which proves the plumbing, not 
 real conversations ("Add SoFar as a venue in Fort Collins and Denver…", "log $12 for gas", "who still needs the new stage
 plot?") through the real model and the real web, with a throwaway band in your local emulators, and checks what it did:
 which tools it called, how many confirm cards it made, whether it asked instead of acting, whether it said "I can't".
-Run it after any change to the prompt, the tools or the model, with the emulators up:
+Run it after any change to the prompt, the tools or the model. It starts its own emulators and uses the service-account
+key in `.secrets`, so nothing needs to be up and nobody logs in:
 
 ```sh
-gcloud auth application-default login   # if it has been a while
-npm run eval:roadie                      # every scenario; or: npm run eval:roadie -- sofar-three atrium
+npm run eval:roadie                                  # every scenario
+ROADIE_EVAL="sofar-three atrium" npm run eval:roadie  # some
 ```
 
 It prints each turn's tool calls and reply, then a pass/fail list. Billed to the production project like `dev:vertex`.

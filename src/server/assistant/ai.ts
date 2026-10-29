@@ -90,3 +90,18 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
   })();
   return cached;
 }
+
+/**
+ * Vertex answers 429 RESOURCE_EXHAUSTED (and the odd 503) under load with no fixed quota to raise: the right answer is a
+ * short wait and another go. Seen 2026-10-29 in the eval: one 429 inside a venue lookup failed the whole tool.
+ */
+export async function withModelRetry<T>(call: () => Promise<T>, waits = [1500, 4000]): Promise<T> {
+  for (let i = 0; ; i++) {
+    try { return await call(); } catch (e) {
+      const status = (e as { status?: string }).status;
+      if (i >= waits.length || (status !== "RESOURCE_EXHAUSTED" && status !== "UNAVAILABLE")) throw e;
+      console.warn(JSON.stringify({ roadieModelRetry: status, wait: waits[i] }));
+      await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
+}

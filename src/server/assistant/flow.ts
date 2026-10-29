@@ -1,6 +1,6 @@
 import { z, type MessageData } from "genkit";
 import type { AssistantAction, AssistantEvent, PageContext, ToolTrace } from "@/schema/assistant";
-import { getAi, modelLabel } from "./ai";
+import { getAi, modelLabel, withModelRetry } from "./ai";
 import { contextNow, pageList, pageRecord } from "./context";
 import { claimsChange, cleanMessages, requestShape, withoutThoughts } from "./guard";
 import { makeCtx, type Session } from "./run";
@@ -48,7 +48,7 @@ const system = (ctx: PageContext) =>
   `Questions across many records ("how many venues have no city?", "which pitches are declined?") are records.list with its filters, not search; its count is the total. ` +
   `You can't invite people, change access, AI keys or feature switches, delete the band or read email: say so in one line and call nothing. ` +
   `Answer from the band's data when it's enough. ` +
-  `Adding a place that isn't in the band's data: call venues.draft (the name, the city, any link they gave, the type they said), one call per venue, then venues.create with its draft; the person confirms on a card. ` +
+  `Adding a place that isn't in the band's data: call venues.draft (the name, the city, any link they gave, the type they said), one call per venue, then venues.create with its draft; the person confirms on a card. No city given? Still call venues.draft first: it searches the web and usually finds the city; ask only if it comes back without one. A type that isn't on the list is not your problem: send your best guess and the card offers the list plus "add as a new type"; never call venueTypes.add while adding a venue. ` +
   `Add what was found even when fields are blank: only a name, city, state and type are required; street, zip, capacity, website and ages are optional and never worth a question. If the type isn't clear, send your best guess: the card lets them pick or add one. ` +
   `An Instagram or Facebook link is the venue's instagram field, not a page to read. Several venues in one message: draft them all in one step, then create them all in one step; each gets its own card. ` +
   `For a venue fact the band's data doesn't have, call web.search (it checks the band's data too), then web.read on a source if you need the details. ` +
@@ -132,10 +132,10 @@ export function getChatFlow() {
         const acted = () => actions.some((a) => a.kind !== "action" || !/^(Couldn't|No page|No \w+ with)/.test(a.label));
         const generate = async () => {
           let words = "";
-          const ask = (msgs: MessageData[]) => ai.generate({
+          const ask = (msgs: MessageData[]) => withModelRetry(() => ai.generate({
             model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true,
             onChunk: (c) => { if (c.text) words += c.text; },
-          });
+          }));
           try {
             return { res: await ask(cleanMessages(messages)), words };
           } catch (e) {
