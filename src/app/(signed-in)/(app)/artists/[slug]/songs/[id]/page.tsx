@@ -17,6 +17,9 @@ import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from 
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
 import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
+import { useCollection } from "@/lib/firestore-hooks";
+import { trackHref } from "@/components/albums/common";
+import type { Album, AlbumTrack } from "@/schema";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -199,6 +202,8 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </dl>
       </section>
 
+      <OnAlbums songId={song.id} />
+
       <section className="sg-sec" aria-labelledby="song-files-h">
         <div className="sg-sech">
           <h2 id="song-files-h" className="sg-lbl">Charts &amp; recordings</h2>
@@ -251,5 +256,27 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       </section>
       <ErrorBox error={error} />
     </div>
+  );
+}
+
+/** The albums this song is on: one link per track, to the track page. */
+function OnAlbums({ songId }: { songId: string }) {
+  const tracks = useCollection<AlbumTrack>("tracks", { group: true, where: [["songId", "==", songId]] });
+  const albums = useCollection<Album>("albums");
+  const rows = (tracks.rows ?? []).flatMap((t) => {
+    const a = albums.rows?.find((x) => x.id === t.albumId);
+    return a ? [{ t, a }] : [];
+  }).sort((x, y) => (y.a.releaseDate ?? "").localeCompare(x.a.releaseDate ?? "") || x.a.title.localeCompare(y.a.title));
+  return (
+    <section className="sg-sec" aria-labelledby="song-albums-h" data-testid="on-albums">
+      <h2 id="song-albums-h" className="sg-lbl">On albums</h2>
+      <div className="card">
+        {rows.length === 0
+          ? <span className="s">Not on an album yet.</span>
+          : rows.map(({ t, a }) => (
+            <Link key={t.id} href={trackHref(a.id, t.id)} className="font-semibold" data-testid={`on-album-${a.id}`}>{a.title} · Track {t.position}</Link>
+          ))}
+      </div>
+    </section>
   );
 }

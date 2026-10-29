@@ -50,6 +50,10 @@ service cloud.firestore {
     }
     match /songs/{id}            { allow read: if band(); }
     match /files/{id}            { allow read: if band(); }
+    // Albums and their tracks (albums/{id}/tracks): the whole band reads them, admins write. The album's money is its project's.
+    match /albums/{id}           { allow read: if band(); }
+    // Tracks are read under their album and across albums (the song page's "On albums" is a collection-group query on songId).
+    match /{path=**}/tracks/{tid} { allow read: if band(); }
     match /setlistTemplates/{id} { allow read: if band(); }
     match /setlists/{id}         { allow read: if band(); }
     match /rehearsals/{id}       { allow read: if band(); }

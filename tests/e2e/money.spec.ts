@@ -122,8 +122,8 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   await expect(page).toHaveURL(/\/money\/projects\/[^/]+$/);
   await expect(page.getByTestId("project-page")).toContainText("Wild Hearts LP");
   const totals = page.getByTestId("project-totals");
-  // Nothing has been spent on the album; the Bandcamp sale is its only money.
-  await expect(page.getByTestId("project-spent")).toHaveText("$0.00");
+  // The album's spend (three days tracking, the mix revisions) sits on its project; the Bandcamp sale is still owed.
+  await expect(page.getByTestId("project-spent")).toHaveText("$2,100.00");
   await expect(totals).toContainText("$184.00");
   // The Bandcamp money hasn't arrived: owed on the In tile, and listed under Money in as "Owed to us" (received income is green).
   await expect(page.getByTestId("tile-in")).toContainText("$184.00 owed to us");

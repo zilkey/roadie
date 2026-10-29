@@ -26,7 +26,7 @@ export const source = z.strictObject({ url: z.string().url(), checkedAt: z.strin
 
 export const region = z.enum(["boulder", "denver", "north", "south", "mountains", "southwest", "out"]);
 /** Where money in came from (income.category). */
-export const incomeCategory = z.enum(["guarantee", "door", "tips", "merch", "streaming", "sync", "grant", "gearSale", "other"]);
+export const incomeCategory = z.enum(["guarantee", "door", "tips", "merch", "streaming", "digitalSales", "physical", "preorders", "crowdfunding", "sync", "grant", "gearSale", "other"]);
 export type IncomeCategory = z.infer<typeof incomeCategory>;
 /** What money out was for (expenses.category). */
 export const expenseCategory = z.enum([

@@ -6,11 +6,12 @@ async function signInAs(page: Page, key: string) {
   await page.getByTestId(`dev-${key}`).click();
 }
 
-test("admin signs in and sees 5 tabs", async ({ page }) => {
+test("admin signs in and sees 6 tabs", async ({ page }) => {
   await signInAs(page, "jeff");
   await expect(page).toHaveURL(new RegExp(`/artists/${ARTIST_SLUG}/calendar$`)); // sign-in lands on your artist's calendar
   await expect(page.getByTestId("current-artist")).toHaveText("Ingrid Avison Band");
-  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5);
+  // Calendar, Shows, Booking, Songs, Albums (the band has one) and Money fit the bar at 1280px
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(6);
   await expect(page.getByTestId("tab-booking")).toBeVisible();
   await expect(page.getByTestId("tab-money")).toHaveText("Money");
   // Email templates starts hidden, so it is tucked into More
@@ -75,10 +76,10 @@ test("settings: General edits the artist name", async ({ page }) => {
   await expect(page.locator('input[value="E2E Soundcheck"]')).toHaveCount(0);
 });
 
-test("member sees 4 tabs with Rehearsals, 'My money' in More, and cannot open /booking or admin pages", async ({ page }) => {
+test("member sees 5 tabs with Rehearsals, 'My money' in More, and cannot open /booking or admin pages", async ({ page }) => {
   await signInAs(page, "david");
   await expect(page).toHaveURL(/\/calendar$/);
-  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(4);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5); // Calendar, Shows, Songs, Albums, Rehearsals
   await expect(page.getByTestId("tab-booking")).toHaveCount(0);
   await expect(page.getByTestId("tab-rehearsals")).toBeVisible();
   await expect(page.getByTestId("tab-money")).toHaveCount(0);

@@ -30,8 +30,10 @@ export const A = (path: string) => `/artists/${ARTIST_SLUG}${path}`;
  * At the 1280px test viewport the admin bar fits Shows, Booking, Songs and Money. The helper falls back to More for sections that are hidden or overflow.
  */
 export async function openTab(page: Page, key: string) {
-  const tab = page.getByTestId(`tab-${key}`);
-  if (await tab.isVisible()) { await tab.click(); return; }
-  await page.getByTestId("more-toggle").click();
-  await page.getByTestId(`more-${key}`).click();
+  // The bar settles a beat after sign-in (Albums joins it once the albums load and can push Money into More), so More is opened first
+  // and the click goes to wherever the section is by then: its tab in the bar (which closes More) or its row in the menu.
+  const toggle = page.getByTestId("more-toggle");
+  await toggle.waitFor();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await page.getByTestId(`tab-${key}`).or(page.getByTestId(`more-${key}`)).first().click();
 }

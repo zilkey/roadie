@@ -35,10 +35,12 @@ export const STATUS_LABEL: Record<SongStatus, string> = { active: "Playing", lea
 /** The order the song page's status dropdown lists them in. */
 export const STATUS_ORDER: SongStatus[] = ["active", "learning", "writing", "retired"];
 
-export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other";
+export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other" | "mix" | "master" | "session" | "artwork" | "liner" | "promo";
+/** The kinds a song's files come in (the album kinds live on albums and their tracks, see lib/albums). */
 export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
 export const KIND_LABEL: Record<FileKind, string> = {
   chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
+  mix: "Mixes", master: "Masters", session: "Session files", artwork: "Artwork", liner: "Liner notes and credits", promo: "Promo",
 };
 
 /**
@@ -49,7 +51,7 @@ export function fileGroup(f: { mimeType?: string; kind?: FileKind }): MimeGroup 
   const g = mimeGroup(f.mimeType);
   if (g !== "other") return g;
   if (f.kind === "chart" || f.kind === "lyrics") return "doc";
-  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "stems") return "audio";
+  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "stems" || f.kind === "mix" || f.kind === "master") return "audio";
   return "other";
 }
 

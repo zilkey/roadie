@@ -7,9 +7,10 @@ import { BOOKING_TOPICS } from "./booking";
 import { SHOW_TOPICS } from "./shows";
 import { FAN_TOPICS } from "./fans";
 import { STAGE_PLOT_TOPICS } from "./stagePlots";
+import { ALBUM_TOPICS } from "./albums";
 
 export type { HelpTopic } from "./types";
-export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS, ...STAGE_PLOT_TOPICS];
+export const HELP_TOPICS: readonly HelpTopic[] = [...SHOW_TOPICS, ...BOOKING_TOPICS, ...FAN_TOPICS, ...STAGE_PLOT_TOPICS, ...ALBUM_TOPICS];
 export const HELP_TOPIC_IDS = HELP_TOPICS.map((t) => t.id) as [string, ...string[]];
 export const helpTopic = (id: string) => HELP_TOPICS.find((t) => t.id === id);
 
@@ -22,6 +23,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   booking: "pitch", bookingVenues: "booking", bookingFestivals: "booking", bookingPromoters: "booking", bookingContacts: "booking",
   promoter: "booking", festival: "booking", edition: "booking", contact: "booking",
   bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
+  albums: "albums", newAlbum: "albums", album: (tab) => (tab === "money" ? "albumMoney" : tab === "files" ? "albumFiles" : "albumPage"), albumMoney: "albumMoney", albumFiles: "albumFiles", albumTrack: "albumTrack",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",
   rehearsals: "rehearsals", rehearsal: "rehearsals", stagePlots: "stagePlots", stagePlot: "stagePlots", money: "money", fans: "fans", expense: "expenses", projects: "projects", project: "projects", fields: "customFields",
 };
@@ -43,6 +45,7 @@ const WORDS: [RegExp, string][] = [
   [/\bflag\b|\bbooking\b/, "booking"],
   [/\bupcoming\b|\bholds?\b/, "upcomingShows"], [/\bplayed\b/, "playedShows"], [/\bcancel(?:l?ed)?\b/, "canceledShows"], [/\bdropped\b/, "droppedShows"],
   [/\bstage ?plots?\b|\binput list\b/, "stagePlots"],
+  [/\bmix(?:es)?\b|\bmaster(?:s|ing)?\b|\bisrc\b|\bstems\b/, "albumTrack"], [/\balbum money\b|\balbum budget\b/, "albumMoney"], [/\balbums?\b|\btracklist\b|\b(?:an |the )?ep\b|\bvinyl\b/, "albumPage"],
   [/\bsetlists?\b|\bset ?list\b/, "setlists"], [/\bsongs?\b/, "songs"], [/\brehearsals?\b/, "rehearsals"],
   [/\bprojects?\b/, "projects"], [/\bpayouts?\b|\bwe owe\b|\bsplit evenly\b/, "payouts"], [/\bincome\b|\bdeal\b|\bguarantee\b|\bowed to us\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b/, "expenses"], [/\bmoney\b/, "money"],
 ];

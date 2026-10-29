@@ -16,8 +16,14 @@ interface Mate { id: string; name: string; email: string }
  * Search Drive, tick files, set kind and key, and fix sharing gaps before attaching.
  * `syncWith` follows another field (the song title). The parent reads picks through onChange.
  */
-export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, testid = "picker" }: {
-  syncWith?: string; exclude?: string[]; defaultKind?: FileKind; onChange(picks: Pick[]): void; testid?: string;
+export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, placeholder = "Search Drive by song title…", onChange, testid = "picker" }: {
+  syncWith?: string; exclude?: string[]; defaultKind?: FileKind;
+  /** The kinds the picked file can be (an album's or a track's kinds instead of a song's). */
+  kinds?: readonly FileKind[];
+  /** Offer any kind of file (images, PDFs), not just audio, video and docs. */
+  all?: boolean;
+  placeholder?: string;
+  onChange(picks: Pick[]): void; testid?: string;
 }) {
   const { call, error, busy } = useCommand();
   // No band folder chosen yet: nothing can be "in" it, so its chips and Copy to band folder are off (Settings > Google sets it).
@@ -34,7 +40,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
   async function search(text: string) {
     if (!text.trim()) { setHits(null); return; }
     const n = ++searchSeq.current;
-    const r = await call<{ files: Hit[]; bandmates: Mate[] }>("drive.search", { q: text.trim() });
+    const r = await call<{ files: Hit[]; bandmates: Mate[] }>("drive.search", { q: text.trim(), ...(all ? { all: true } : {}) });
     if (!r || n !== searchSeq.current) return;
     setHits(r.files.filter((f) => !exclude.includes(f.driveFileId)));
     setMates(r.bandmates);
@@ -57,7 +63,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
 
   const toggle = (h: Hit) => setSel((s) => {
     const { [h.driveFileId]: on, ...rest } = s;
-    return on ? rest : { ...s, [h.driveFileId]: { kind: defaultKind ?? h.kind, key: h.key ?? "" } };
+    return on ? rest : { ...s, [h.driveFileId]: { kind: defaultKind ?? (kinds.includes(h.kind) ? h.kind : kinds[0]), key: h.key ?? "" } };
   });
   const setPick = (id: string, p: Partial<{ kind: FileKind; key: string }>) => setSel((s) => ({ ...s, [id]: { ...s[id], ...p } }));
 
@@ -82,11 +88,11 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
     <div className="grid gap-2" data-testid={testid}>
       <span className="lbl">Found in Drive</span>
       <div className="flex gap-2">
-        <input className="input" placeholder="Search Drive by song title…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="drive-q" aria-label="Search Drive"
+        <input className="input" placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} data-testid="drive-q" aria-label="Search Drive"
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(q); } }} />
         <button className="btn ghost" type="button" disabled={busy} onClick={() => search(q)} data-testid="drive-search">Search</button>
       </div>
-      {hits && hits.length === 0 && <span className="s" data-testid="drive-empty">No audio, video, Docs or Word files match.</span>}
+      {hits && hits.length === 0 && <span className="s" data-testid="drive-empty">{all ? "No files match." : "No audio, video, Docs or Word files match."}</span>}
       {(hits ?? []).map((h) => {
         const on = sel[h.driveFileId];
         return (
@@ -101,9 +107,9 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, onChange, tes
             {on && (
               <div className="flex flex-wrap gap-2">
                 <select className="select !w-auto" value={on.kind} onChange={(e) => setPick(h.driveFileId, { kind: e.target.value as FileKind })} aria-label="Kind" data-testid="hit-kind">
-                  {KIND_ORDER.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+                  {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
                 </select>
-                <input className="input !w-28" placeholder="Key" value={on.key} onChange={(e) => setPick(h.driveFileId, { key: e.target.value })} aria-label="Key" data-testid="hit-key" />
+                {kinds.includes("chart") && <input className="input !w-28" placeholder="Key" value={on.key} onChange={(e) => setPick(h.driveFileId, { key: e.target.value })} aria-label="Key" data-testid="hit-key" />}
               </div>
             )}
           </div>

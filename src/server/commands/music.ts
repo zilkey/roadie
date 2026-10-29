@@ -4,6 +4,7 @@ import { idInput, patchInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
+import { FOLDER_MIME } from "../integrations/drive";
 import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
@@ -64,13 +65,13 @@ async function writeFiles(w: Writer, docs: Record<string, unknown>[]) {
 export const driveSearch = defineCommand({
   name: "drive.search",
   roles: ["admin", "mcp"],
-  description: "Search Drive for audio, video, Docs and Word files matching a song title. Each hit says which band members can't open it and whether it is in the band folder.",
-  input: z.strictObject({ q: z.string().min(1) }),
-  async run(ctx, { q }) {
+  description: "Search Drive for audio, video, Docs and Word files matching a song title (all:true: any kind of file but folders, for album artwork, PDFs and the like). Each hit says which band members can't open it and whether it is in the band folder.",
+  input: z.strictObject({ q: z.string().min(1), all: z.boolean().optional() }),
+  async run(ctx, { q, all }) {
     const drive = driveClient({ artistId: ctx.artistId });
     const [hits, mates, { all: folder }] = await Promise.all([drive.search({ q }), bandmates(), bandFolders(ctx.artistId)]);
     const out = [];
-    for (const f of hits.filter((h) => isAttachable(h.mimeType))) {
+    for (const f of hits.filter((h) => (all ? h.mimeType !== FOLDER_MIME : isAttachable(h.mimeType)))) {
       const ins = await inspect(f, mates, folder, drive);
       const kind = guessKind(f.name, f.mimeType);
       out.push({

@@ -13,7 +13,7 @@ import { newMutationId } from "@/lib/commands";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { defaultProject, dollarsToCents, EXPENSE_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
-import { roleIn, type ExpenseCategory, type Project, type Rehearsal, type Show, type User } from "@/schema";
+import { roleIn, type Album, type ExpenseCategory, type Project, type Rehearsal, type Show, type User } from "@/schema";
 
 /** The chips on the form: the ledger's expense categories, the common ones first. */
 const FIRST = ["travel", "food", "gear", "lodging"];
@@ -49,16 +49,21 @@ function AddExpense() {
   // A new expense is a draft with an explicit Save button (you can still fix it until it's paid back).
   const fromShow = sp.get("show") ?? "";
   const rehearsalId = sp.get("rehearsalId") ?? "";
+  // Opened from an album's Money tab (or any project): that project is picked, and Save/Cancel go back to the album.
+  const fromProject = sp.get("project") ?? "";
+  const projectAlbums = useCollection<Album>("albums", { where: [["projectId", "==", fromProject]], skip: !fromProject });
+  const fromAlbum = projectAlbums.rows?.[0];
   const reh = useDoc<Rehearsal>("rehearsals", rehearsalId || "none");
   const rehearsal = rehearsalId ? reh.doc : null;
   const rehLoc = rehearsal?.location;
   const rehHasLoc = !!(rehLoc && (rehLoc.address || rehLoc.lat !== undefined));
   // Opened from a rehearsal or show page: Save, Cancel and Back go back there.
-  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}?tab=money` : fromShow ? `/shows/${fromShow}?tab=finances` : "/money";
+  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}?tab=money` : fromShow ? `/shows/${fromShow}?tab=finances` : fromAlbum ? `/albums/${fromAlbum.id}?tab=money` : "/money";
   const draft = useDraft(
-    fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
+    fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses")
+      : fromProject ? draftPath.newUnder("projects", fromProject, "expenses") : draftPath.newIn("expenses"),
     {
-      amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "travel" : "gear") as ExpenseCategory, showId: fromShow, projectId: "", link: "", payBack: true,
+      amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "travel" : "gear") as ExpenseCategory, showId: fromShow, projectId: fromProject, link: "", payBack: true,
       forId: "", fromPick: null as Place | null, toPick: null as Place | null, roundTrip: true, mpgText: "",
       saveMpg: true, saveHome: true, setRehearsal: true,
     },
@@ -163,7 +168,7 @@ function AddExpense() {
   const fromShowDoc = fromShow ? shows.rows?.find((s) => s.id === fromShow) : undefined;
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<BackLink href={returnTo} label={rehearsalId ? "Rehearsal" : fromShow ? "Show" : "My money"} />} title="Add an expense"
+      <PageTitle back={<BackLink href={returnTo} label={rehearsalId ? "Rehearsal" : fromShow ? "Show" : fromAlbum ? fromAlbum.title : "My money"} />} title="Add an expense"
         sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : fromShowDoc ? showName(fromShowDoc) : undefined} />
       {!draft.ready ? null : <div className="card">
         <div className="grid gap-2">

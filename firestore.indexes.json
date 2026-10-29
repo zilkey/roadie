@@ -12,6 +12,8 @@
     { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] }
   ],
   "fieldOverrides": [
+    { "collectionGroup": "tracks", "fieldPath": "deletedAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "tracks", "fieldPath": "songId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "unsubmittedDrafts", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "history", "fieldPath": "runId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },

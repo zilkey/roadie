@@ -183,6 +183,26 @@ async function main() {
   await create("rehearsals", { date: "2026-10-29", startTime: "19:00", endTime: "22:00", location: { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 },
     personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[8], title: "Kerosene" }, { songId: songIds[9], title: "Gold Hour", note: "Check the key change" }] });
 
+  const person = (key: string) => DEV_PEOPLE.find((p) => p.key === key)!.name;
+  // --- the album (#12): Wild Hearts LP, on the album project above; ten tracks from the songs, a couple of mixes and the cover ---
+  const albumId = await create("albums", {
+    artistId: artist, title: "Wild Hearts LP", kind: "album", status: "mixing", projectId: albumProject, releaseDate: "2027-03-06", budget: 600000,
+    formats: "Digital, CD, Vinyl", driveFolderId: "fake-folder-album-wild-hearts",
+  });
+  const trackStatus = ["mixed", "mixed", "mixed", "mixing", "mixed", "mixed", "mixed", "mixing", "overdubs", "overdubs"];
+  const trackIds: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    trackIds.push(await create(`albums/${albumId}/tracks`, {
+      albumId, position: i + 1, side: i < 5 ? "A" : "B", songId: songIds[i], title: songSpecs[i][0], status: trackStatus[i], lengthSec: songSpecs[i][2],
+      credits: i === 2 ? [{ who: "Ingrid Avison", role: "Lead vocals, acoustic guitar" }, { who: "Jeff Dean", role: "Electric guitar" }] : [],
+    }));
+  }
+  const albumFile = (input: Record<string, unknown>) => create("files", { albumId, ownerEmail: "jeff@example.com", inBandFolder: true, sharing: "ok", checkedAt: new Date(), ...input });
+  await albumFile({ kind: "mix", title: "Low Light v1 rough.wav", albumTrackId: trackIds[2], version: 1, driveFileId: "fake-album-mix-1", url: "http://localhost:3202/files/fake-album-mix-1", mimeType: "audio/wav",
+    notes: [{ id: "n1", authorId: uid.jeff, name: person("jeff"), body: "Guitar solo a touch quieter.", at: "2026-10-14T18:00:00.000Z" }] });
+  await albumFile({ kind: "mix", title: "Low Light v2.wav", albumTrackId: trackIds[2], version: 2, approved: true, driveFileId: "fake-album-mix-2", url: "http://localhost:3202/files/fake-album-mix-2", mimeType: "audio/wav" });
+  await albumFile({ kind: "artwork", title: "Wild Hearts cover 3000px.png", driveFileId: "fake-album-cover", url: "http://localhost:3202/files/fake-album-cover", mimeType: "image/png", ownerEmail: "ingrid@example.com" });
+
   // --- shows ---
   const cfg = (artistCfg: string) => ({
     full: ["ingrid", "jeff", "david", "eric", "emma"], trio: ["ingrid", "jeff", "david"],
@@ -252,6 +272,9 @@ async function main() {
   await create("expenses", { userId: uid.david, date: "2026-10-10", amount: 2850, category: "gear", what: "Bass strings and cables", showId: playedShow, projectId: bandProject });
   // A pay-back expense in a member's name, on the tour: the band owes David until an admin pays it back.
   await create("expenses", { userId: uid.david, date: "2026-10-24", amount: 14000, category: "lodging", what: "Motel deposit for the tour", projectId: tourProject });
+  // The album's spend: studio time on the project, and one mix's revisions pinned to its track.
+  await create("expenses", { userId: uid.jeff, date: "2026-09-14", amount: 180000, category: "recording", what: "3 days tracking", projectId: albumProject, payBack: false });
+  await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 30000, category: "mixing", what: "Mix v2 revisions", projectId: albumProject, albumTrackId: trackIds[2], payBack: false });
 
   // --- income (#39): what came in and what is still owed to the band (no receivedAt) ---
   const income = (input: Record<string, unknown>) => create("income", { artistId: artist, projectId: bandProject, ...input });
@@ -259,9 +282,9 @@ async function main() {
   await income({ date: "2026-10-10", amount: 45000, category: "guarantee", method: "check", from: "Dairy Arts Center", showId: playedShow, receivedAt: "2026-10-10", sourceKey: `${playedShow}:i1` });
   await income({ date: "2027-01-16", amount: 30000, category: "guarantee", from: "Lost Lake Lounge", showId: lakeShow });
   await income({ date: "2026-10-15", amount: 18400, category: "streaming", from: "Bandcamp", projectId: albumProject, notes: "October sales, not yet transferred" });
+  await income({ date: "2026-10-05", amount: 40000, category: "crowdfunding", from: "Backer pledges", projectId: albumProject, receivedAt: "2026-10-05", method: "bank" });
 
   // --- payouts (#39): what the band paid or still owes people ---
-  const person = (key: string) => DEV_PEOPLE.find((p) => p.key === key)!.name;
   await create("payouts", { artistId: artist, projectId: bandProject, to: { userId: uid.david, name: person("david") }, kind: "pay", amount: 7500, what: "Dairy Arts Center show",
     showId: playedShow, paidAt: "2026-10-12", method: "venmo" });
   await create("payouts", { artistId: artist, projectId: bandProject, to: { name: "The Moonlighters" }, kind: "split", amount: 15000, what: "Their cut of the Hi-Dive bill",
@@ -271,7 +294,7 @@ async function main() {
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 3 income, 3 payouts.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 1 album with 10 tracks, 4 income, 3 payouts.");
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */

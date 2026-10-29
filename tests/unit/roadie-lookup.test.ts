@@ -90,7 +90,8 @@ test("tool groups: a venue request gets the core and no stage plot tools; the wo
   for (const n of ["venues.draft", "venues.create", "venueTypes.add", "web.search", "tools.load", "pitches.flag", "expenses.add", "records.list", "ui.ask"]) assert.ok(core.includes(n), n);
   for (const n of ["stagePlots.create", "shows.addChecklistItem", "fans.add", "stats.pull", "songs.update"]) assert.ok(!core.includes(n), n);
   assert.ok(core.length < defs.length / 2, `${core.length} of ${defs.length}`);
-  assert.deepEqual(groupsFor("add a second monitor mix to the stage plot", [], undefined), ["stagePlots"]);
+  // "mix" also pulls albums in (a monitor mix and a record's mix share the word); the stage plot group is still there
+  assert.deepEqual(groupsFor("add a second monitor mix to the stage plot", [], undefined), ["stagePlots", "albums"]);
   assert.deepEqual(groupsFor("add a second one", [], { route: "stagePlot", recordKind: "stagePlot", recordId: "x" }), ["stagePlots"]);
   assert.ok(groupsFor("make it 12", [{ role: "user", text: "how many inputs does the trio plot have?" }], undefined).includes("stagePlots"));
   const all = selectTools(defs, ["stagePlots", "checklists"]).map((d) => d.name);

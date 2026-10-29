@@ -15,6 +15,8 @@ export const Income = entity({
   from: z.string().min(1),
   projectId: id,
   showId: id.optional(),
+  /** The album track this came from (a sync licence of one song), when it was one track's. */
+  albumTrackId: id.optional(),
   /** When the money arrived (YYYY-MM-DD). Missing = still owed to us. */
   receivedAt: dateStr.optional(),
   notes: z.string().optional(),

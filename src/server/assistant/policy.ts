@@ -5,6 +5,7 @@
 import { registry } from "../commands/registry";
 import type { Role } from "../ctx";
 import { formatCents, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL } from "@/lib/money";
+import { ALBUM_KIND_LABEL } from "@/lib/albums";
 
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
@@ -44,7 +45,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "income.add", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
   "projects.create", "projects.update", "projects.close", "projects.reopen",                                 // what the money is for
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
-  "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
+  "files.shareWithBand", "files.copyToBand", "drive.fix", "albums.files.copyToFolder",   // changes Drive sharing
   "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
   "stats.pull",                                                                          // calls out
   "musicians.archive", "musicians.removeFromBand",                                      // someone leaves the band
@@ -63,7 +64,7 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "albums.create", "albums.tracks.add", "albums.tracks.update", "albums.tracks.reorder", "albums.files.attach", "albums.files.copyToFolder", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
 const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview"]);
@@ -145,6 +146,10 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "projects.update": (i, b) => `Change ${b?.name ? `the project ${b.name}` : "the project"}: ${Object.keys(i.patch ?? {}).join(", ")}`,
   "projects.close": (_i, b) => `Close ${b?.name ? `the project ${b.name}` : "the project"}: nothing new can be put on it`,
   "projects.reopen": (_i, b) => `Reopen ${b?.name ? `the project ${b.name}` : "the project"}`,
+  "albums.create": (i) => `Start the ${ALBUM_KIND_LABEL[i.kind as keyof typeof ALBUM_KIND_LABEL]?.toLowerCase() ?? "album"} ${i.title}${i.budget ? ` (budget ${formatCents(i.budget)})` : ""}, with its own money project${i.setlistId || i.songIds?.length ? " and a tracklist" : ""}`,
+  "albums.remove": (i) => `Archive the album${i.label ? ` ${i.label}` : ""} with its tracks and files; its project is closed`,
+  "albums.tracks.add": (i, b) => `Put ${i.setlistId ? "a setlist's songs" : `${Array.isArray(i.songIds) ? i.songIds.length : "some"} song${Array.isArray(i.songIds) && i.songIds.length === 1 ? "" : "s"}`} on the album${b?.title ? ` ${b.title}` : ""}`,
+  "albums.files.approve": (i, b) => (i.approved ? `Sign off ${b?.title ?? "the mix"}: the track moves on` : `Take back the sign-off on ${b?.title ?? "the mix"}`),
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "email.send": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",

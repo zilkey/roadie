@@ -101,6 +101,9 @@ const EXPECTED = [
   "stagePlots.create", "stagePlots.copy", "stagePlots.rename", "stagePlots.setInputCount", "stagePlots.setMixCount", "stagePlots.updateInputs", "stagePlots.reorderInputs",
   "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",
   "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.shareLink", "stagePlots.shareOff", "stagePlots.engineerLink",
+  // albums: the record, its tracks and its files
+  "albums.create", "albums.update", "albums.folder", "albums.tracks.add", "albums.tracks.update", "albums.tracks.remove", "albums.tracks.reorder", "albums.tracks.sideBreak",
+  "albums.files.attach", "albums.files.approve", "albums.files.note", "albums.files.copyToFolder",
   // money, stats
   "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
   "expenses.setPaidBack", "expenses.payPerson", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",

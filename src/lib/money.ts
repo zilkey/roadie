@@ -38,7 +38,8 @@ export const projectOf = (x: { projectId?: string }, defaultProjectId: string | 
 export const defaultProject = <P extends ProjectLike>(projects: readonly P[]) => projects.find((p) => p.isDefault && !p.deletedAt);
 
 export const INCOME_LABEL: Record<string, string> = {
-  guarantee: "Guarantee", door: "Door", tips: "Tips", merch: "Merch", streaming: "Streaming", sync: "Sync", grant: "Grant", gearSale: "Gear sale", other: "Other",
+  guarantee: "Guarantee", door: "Door", tips: "Tips", merch: "Merch", streaming: "Streaming", digitalSales: "Digital sales", physical: "CDs and vinyl", preorders: "Pre-orders", crowdfunding: "Crowdfunding",
+  sync: "Sync", grant: "Grant", gearSale: "Gear sale", other: "Other",
 };
 export const EXPENSE_LABEL: Record<string, string> = {
   gear: "Gear", travel: "Travel", lodging: "Lodging", food: "Food", recording: "Recording", mixing: "Mixing", mastering: "Mastering", pressing: "Pressing",
