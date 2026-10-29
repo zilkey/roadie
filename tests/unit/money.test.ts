@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
-import { CATEGORY_LABEL, byCategory, byMonth, byProject, byShow, moneyRows, owedExpenses, owedToUs, parseDollars, projectTotals, showTotals, splitEvenly, totals, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
+import { CATEGORY_LABEL, byCategory, byMonth, byProject, byShow, incomeSoFar, moneyRows, owedExpenses, owedToUs, parseDollars, projectTotals, showTotals, splitEvenly, totals, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
 import { undoRun } from "@/server/undo";
 import { parseSpotifyCsv, parseStatDate, statsCurrent, statsTemplateFields } from "@/lib/stats";
 import { buildTemplateContext, fillTemplate } from "@/lib/booking";
@@ -107,6 +107,11 @@ test("pure: a paid reimbursement clears exactly the expenses it lists", () => {
   // the same reimbursement still unpaid: the expenses it hasn't cleared are what's owed; the reimbursement itself repays them, so it adds nothing
   const open = owe([{ ...reimb, paidAt: undefined }], es);
   assert.equal(open[0].total, 700 + 300);
+});
+
+test("pure: incomeSoFar drops unreceived income dated after today (an upcoming show's guarantee)", () => {
+  const rows = [inc({ id: "future", date: "2026-12-01" }), inc({ id: "future-paid", date: "2026-12-01", receivedAt: "2026-10-01" }), inc({ id: "today", date: "2026-10-29" }), inc({ id: "past", date: "2026-09-01" })];
+  assert.deepEqual(incomeSoFar(rows, "2026-10-29").map((x) => x.id), ["future-paid", "today", "past"]);
 });
 
 test("pure: owedToUs lists unreceived live income, oldest first", () => {

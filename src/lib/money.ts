@@ -90,6 +90,14 @@ export function weOwe(i: {
   return [...groups.values()].sort((a, b) => b.total - a.total);
 }
 
+/**
+ * Income that has landed or is due: everything received, plus unreceived income dated on or before `today`. A booked
+ * show's guarantee is created on the show's date, so a show that hasn't happened yet is dropped until it does.
+ */
+export function incomeSoFar<T extends { date: string; receivedAt?: string }>(income: readonly T[], today: string): T[] {
+  return income.filter((x) => !!x.receivedAt || x.date <= today);
+}
+
 /** Money still coming to the band: live income with no receivedAt, oldest first, and the total. */
 export function owedToUs(i: { income: readonly IncomeLike[] }): { items: IncomeLike[]; total: number } {
   const items = live(i.income).filter((x) => !x.receivedAt).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

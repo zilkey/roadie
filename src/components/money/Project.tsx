@@ -5,8 +5,9 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { InlineValue } from "@/components/InlineValue";
 import { Menu } from "@/components/Menu";
 import { Tabs } from "@/components/booking/common";
+import { todayStr } from "@/lib/booking";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, PROJECT_KIND_LABEL, byCategory, defaultProject, formatCents, moneyRows, owesBack, parseDollars, projectOf, projectTotals, weOwe } from "@/lib/money";
+import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, PROJECT_KIND_LABEL, byCategory, defaultProject, formatCents, incomeSoFar, moneyRows, owesBack, parseDollars, projectOf, projectTotals, weOwe } from "@/lib/money";
 import { HBars } from "./charts";
 import { projectWhen } from "./Projects";
 import { MoneyInModal } from "./MoneyInModal";
@@ -19,17 +20,18 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * One line of the money feed: any income, expense or payout, newest first. `name` is the editable title (who paid us / what
  * was bought); a payout's title is composed, so it has none. `editable` is false once an expense was paid back (the server
- * refuses changes to it).
+ * refuses changes to it). A line with a `showId` came from a show (a booked guarantee, a show's expense): its title links
+ * there instead of editing in place, since the show page owns it.
  */
 export interface LedgerLine {
-  key: string; id: string; kind: "income" | "expense" | "payout"; date: string; title: string; name?: string; meta: string; amount: number; sign: 1 | -1; status: string; projectId?: string; editable: boolean;
+  key: string; id: string; kind: "income" | "expense" | "payout"; date: string; title: string; name?: string; meta: string; amount: number; sign: 1 | -1; status: string; projectId?: string; showId?: string; editable: boolean;
 }
 
 export function ledger(i: { income: readonly Income[]; expenses: readonly Expense[]; payouts: readonly Payout[] }): LedgerLine[] {
   const out: LedgerLine[] = [];
   for (const x of i.income) {
     out.push({
-      key: `income-${x.id}`, id: x.id, kind: "income", date: x.date, projectId: x.projectId, amount: x.amount, sign: 1, editable: true,
+      key: `income-${x.id}`, id: x.id, kind: "income", date: x.date, projectId: x.projectId, showId: x.showId, amount: x.amount, sign: 1, editable: true,
       title: x.from, name: x.from, meta: [INCOME_LABEL[x.category] ?? x.category, x.method && METHOD_LABEL[x.method], shortDate(x.date)].filter(Boolean).join(" · "),
       status: x.receivedAt ? "Received" : "Owed to us",
     });
@@ -37,14 +39,14 @@ export function ledger(i: { income: readonly Income[]; expenses: readonly Expens
   for (const x of i.expenses) {
     const owed = owesBack(x);
     out.push({
-      key: `expense-${x.id}`, id: x.id, kind: "expense", date: x.date, projectId: x.projectId, amount: x.amount, sign: -1, editable: !x.paidBackAt,
+      key: `expense-${x.id}`, id: x.id, kind: "expense", date: x.date, projectId: x.projectId, showId: x.showId, amount: x.amount, sign: -1, editable: !x.paidBackAt,
       title: x.what, name: x.what, meta: [EXP(x.category), shortDate(x.date)].join(" · "), status: owed ? "We owe" : x.paidBackAt ? "Paid back" : "Paid",
     });
   }
   for (const p of i.payouts) {
     const date = p.paidAt ?? p.dueDate ?? "";
     out.push({
-      key: `payout-${p.id}`, id: p.id, kind: "payout", date, projectId: p.projectId, amount: p.amount, sign: -1, editable: true,
+      key: `payout-${p.id}`, id: p.id, kind: "payout", date, projectId: p.projectId, showId: p.showId, amount: p.amount, sign: -1, editable: true,
       title: `We ${p.paidAt ? "paid" : "owe"} ${p.to.name}${p.what ? ` for ${p.what}` : ""}`,
       meta: [PAYOUT_KIND_LABEL[p.kind] ?? p.kind, p.method && METHOD_LABEL[p.method], p.paidAt ? shortDate(p.paidAt) : p.dueDate ? `due ${shortDate(p.dueDate)}` : ""].filter(Boolean).join(" · "),
       status: p.paidAt ? "Paid" : "We owe",
@@ -92,8 +94,9 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
 
   const def = defaultProject(projects.rows ?? []);
   const mine = <T extends { projectId?: string }>(xs: readonly T[] | null) => (xs ?? []).filter((x) => projectOf(x, def?.id) === project.id);
-  const inc = mine(income.rows), exp = mine(expenses.rows), pay = mine(payouts.rows);
-  const t = projectTotals({ projectId: project.id, defaultProjectId: def?.id, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
+  // A show that hasn't happened yet stays out of Money in and the tiles: its guarantee is dated on the show.
+  const inc = incomeSoFar(mine(income.rows), todayStr()), exp = mine(expenses.rows), pay = mine(payouts.rows);
+  const t = projectTotals({ projectId: project.id, defaultProjectId: def?.id, income: inc, expenses: exp, payouts: pay });
   const spent = t.expenses + t.paidOut;
   const personName = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? musicians.rows?.find((m) => m.userId === uid)?.name ?? "Someone";
   const owe = weOwe({ payouts: pay, expenses: exp, musicianUserId: (mid) => musicians.rows?.find((m) => m.id === mid)?.userId, personName });
@@ -167,7 +170,9 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
               <div key={l.key} className="flex items-center justify-between gap-3 border-t border-line py-2 first:border-t-0" data-testid={`project-record-${l.key}`}>
                 <div className="min-w-0">
                   <div className="font-bold">
-                    {l.name !== undefined
+                    {l.showId
+                      ? <Link href={`/shows/${l.showId}`} data-testid={`${l.key}-show`} title="Open the show">{l.title} ›</Link>
+                      : l.name !== undefined
                       ? <InlineValue testid={`${l.key}-name`} label={l.kind === "income" ? "From" : "What"} kind="text" value={l.name} canEdit={canEdit} error={error}
                           validate={(v) => (v.trim() ? null : "Needs a name.")} onSave={(v) => fix(l, { [NAME_FIELD[l.kind]]: v.trim() })} />
                       : l.title}

@@ -30,8 +30,10 @@ export function MyMoney() {
   const defaultId = defaultProject(projects.rows ?? [])?.id;
   const projectName = (x: Expense) => projects.rows?.find((pr) => pr.id === projectOf(x, defaultId))?.name;
   const showName = (id?: string) => ((x) => x && nameOfShow(x))(shows.rows?.find((s) => s.id === id));
+  // Nothing to show until their expenses and payouts are in: the owed count must never read 0 while loading.
+  if (expenses.rows === null || toUser.rows === null) return null;
   // Nothing of theirs yet: a welcome card with no hide button, since Money is how they get paid back.
-  if (expenses.rows !== null && mine.length === 0 && paid.length === 0 && toUser.rows !== null) {
+  if (mine.length === 0 && paid.length === 0) {
     return (
       <WelcomeEmpty section="money" variant={0} hideable={false} title="Welcome to your money page!"
         body="Anything you spend for the band, like gas, strings or a rental, goes here so you get paid back."

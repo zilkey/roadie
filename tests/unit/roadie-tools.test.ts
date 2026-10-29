@@ -341,7 +341,9 @@ test("search finds shows, venues and songs; context.now says who, when and what'
   assert.deepEqual(hits.map((h) => h.kind).sort(), ["show", "venue"]);
   const song = ((await execTool(s, "search", { q: "glass" }, noop)).output as { untrustedContent: { results: { kind: string }[] } }).untrustedContent.results;
   assert.deepEqual(song.map((h) => h.kind), ["song"]);
-  assert.equal((await execTool(s, "search", {}, noop)).action?.kind, "action");
+  const empty = await execTool(s, "search", {}, noop); // the model's own bad input: an error for it to fix, never a line in the chat
+  assert.match((empty.output as { error: { message: string } }).error.message, /Give me a name/);
+  assert.equal(empty.action, undefined);
 
   const day = new Date("2026-11-14T20:00:00-07:00");
   await db.create(sys, "expenses", { userId: admin.uid, date: "2026-11-14", amount: 2000, category: "travel", what: "parking" });
