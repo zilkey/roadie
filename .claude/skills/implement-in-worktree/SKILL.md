@@ -35,7 +35,10 @@ replace it: `rm node_modules && rm -rf .next-test && npm ci`. If an install is e
 node_modules && npm ci` again; don't fall back to the symlink, even for a quick typecheck.
 
 Copy any gitignored files the work needs from the main checkout (e.g. `src/lib/band.ts`, `.secrets/`) only if the
-task actually needs them. Do all further work, edits included, inside the worktree path.
+task actually needs them, and **copy them: `cp -R`, never `ln -s`**. A symlink inside the worktree is a file git
+will happily commit (2026-10-29: a `.secrets -> ../band-tracker/.secrets` link slipped into a squash because the
+ignore rule was `.secrets/`, directories only; the fast-forward then replaced the main checkout's real `.secrets`
+folder with the link and both keys were lost). Do all further work, edits included, inside the worktree path.
 
 ## 2. Claim test ports
 
@@ -97,11 +100,23 @@ git commit                              # one commit: a short title like the rec
 
 End the commit message with the attribution trailer from the system reminder.
 
+Then, before touching main, **prove the commit carries no stray files**. Both checks must print nothing:
+
+```sh
+git diff --name-only --diff-filter=A main HEAD | git check-ignore --no-index --stdin   # added paths main would ignore
+git diff-tree -r --no-commit-id HEAD main | awk '$2 == "120000" || $1 == ":120000" {print}'                                # symlinks in the diff
+```
+
+If either prints a path, `git rm --cached` it, amend, and rerun the checks. Never merge a commit that adds a
+symlink or an ignored path: the fast-forward checks it out in the main checkout and overwrites whatever is there,
+including gitignored folders like `.secrets/`.
+
 ## 6. Merge for human testing
 
 ```sh
 git -C /Users/jeff/workspace/band-tracker status --short    # must be clean
 git -C /Users/jeff/workspace/band-tracker merge --ff-only <slug>
+ls -la /Users/jeff/workspace/band-tracker/.secrets /Users/jeff/workspace/band-tracker/src/lib/band.ts   # still real files, not links
 ```
 
 - If main has uncommitted changes, stop and ask Jeff; don't stash or commit them.
