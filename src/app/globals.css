@@ -641,3 +641,6 @@ dialog.dlg > div { position: relative; }
 @keyframes roadie-dot-2 { 0% { opacity: 0; } 33.4%, 100% { opacity: 1; } }
 @keyframes roadie-dot-3 { 0% { opacity: 0; } 66.7%, 100% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .roadie-dots span { animation: none; opacity: 1; } }
+
+/* The wordmark follows the ink colour (near-black in light, near-white in dark): the SVG is a mask, the colour comes from the token. */
+.wordmark { display: block; background: var(--ink); mask: url("/logo-wordmark.svg") center / contain no-repeat; -webkit-mask: url("/logo-wordmark.svg") center / contain no-repeat; }

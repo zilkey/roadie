@@ -227,7 +227,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
         {/* Desktop top bar */}
         <header className="@container hidden h-[68px] shrink-0 items-center gap-4 border-b border-border bg-surface px-5 min-[900px]:flex" data-testid="topbar">
           {/* Logo, the nav, then the band and you on the right. The logo only when the bar has room to spare (with Roadie's panel open there often isn't) */}
-          <NextLink href={ARTISTS_PATH} className="hidden shrink-0 @min-[1000px]:block" data-testid="topbar-logo"><img src="/logo-wordmark.svg" alt="Roadie" width={81} height={21} /></NextLink>
+          <NextLink href={ARTISTS_PATH} className="hidden shrink-0 @min-[1000px]:block" data-testid="topbar-logo"><span role="img" aria-label="Roadie" className="wordmark h-[21px] w-[81px]" /></NextLink>
           <nav ref={navBox} className="relative min-w-0 flex-1" aria-label="Main">
             <div className="flex items-center gap-1">
               {inBar.map((n) => barLink(n, n.key === "fans" ? "nav-fans" : `tab-${n.key}`))}

@@ -25,7 +25,7 @@ export function SignedIn({ children }: { children: React.ReactNode }) {
 /** While we find out who you are: a faded logo in the middle of the screen, and the top loading bar. */
 export function AuthLoading() {
   useBusyWhile(true);
-  return <div className="grid min-h-dvh place-items-center" data-testid="auth-loading"><img src="/logo-wordmark.svg" alt="Roadie" width={81} height={21} className="opacity-40" /></div>;
+  return <div className="grid min-h-dvh place-items-center" data-testid="auth-loading"><span role="img" aria-label="Roadie" className="wordmark h-[21px] w-[81px] opacity-40" /></div>;
 }
 
 /** Page-level role gate: admins of the current artist only. Everyone else goes back to the artist's Calendar. */
