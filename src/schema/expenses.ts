@@ -51,7 +51,7 @@ export const Expense = entity({
   rehearsalId: id.optional(),
   /** The release track this was for (releases/{release}/tracks/{id}; the release is the project's), when it was one track's: "mix v4 revisions". */
   releaseTrackId: id.optional(),
-  /** Present only when the amount came from a gas estimate (category "travel"). */
+  /** Present only when the amount came from a gas estimate (category "gas"; older ones are "travel" until scripts/migrate-gas-category.ts moves them). */
   gas: expenseGas.optional(),
   receipt: driveRef.optional(),
   /** The band should pay this back (unticked: the band's own money, nothing owed). Missing = true. */

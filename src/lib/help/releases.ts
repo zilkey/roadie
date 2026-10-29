@@ -19,7 +19,7 @@ export const RELEASE_TOPICS: HelpTopic[] = [
       "A release's page has the title (tap it to rename; the money project is renamed with it) and, right under it, three tabs: Tracks (the default), Money and Files.",
       "Tracks starts with a card: the cover, the kind, how many tracks and how long, the target release, and how far along the record is: Tracked, Mixed and Mastered out of the total (a release has no status of its own: each track has one). Admins also see Spent.",
       "Under the card is the running order: # and title (opens the track), Status, Latest mix (its version and whether it was approved or has notes), Files (how many) and Length. Admins drag the grip to reorder, and get \"+ Add tracks\" (pick songs, or a whole setlist template whose order becomes the tracklist; \"Add to\" puts them at the end of the release or of a side) and \"+ Side break\" (vinyl: the tracks from the picked one on become Side B). Each track points at a song; the title and length start from the song and can differ on the release.",
-      "Release details sit under the tracklist: Distributor, UPC, Formats (tap to change) and the release's Drive folder (Band folder / Releases / the release's title), made on request.",
+      "Release details sit under the tracklist: Distributor, UPC, Formats (tap to change) and the release's Drive folder. Without one, admins press \"Connect Drive folder\": search the band's Drive by name or paste a folder link to use an existing folder, or type a name (it starts as the release's title) and Create to make a new folder inside the Releases folder chosen on Settings > Google (Create is off, with a link to Settings, until that folder is chosen). \"Change\" on a connected folder does the same.",
       "Archiving a release is in its More menu: its tracks and release-only files go with it and its project is closed, so the money stays readable.",
     ].join("\n\n"),
     related: ["releaseTrack", "releaseMoney", "releaseFiles", "releases", "setlistTemplates"],
@@ -39,7 +39,7 @@ export const RELEASE_TOPICS: HelpTopic[] = [
     title: "A release's Files tab",
     text: [
       "Files is for what belongs to the record itself, in four groups: Artwork (cover, back, inserts, labels), Release masters (the full-release masters and the CD image), Liner notes and credits, and Promo (one-sheet, press photos, bio, video). Admins add to each with \"+ Add from Drive\" or an upload into the release's Drive folder.",
-      "A file the band can't open is flagged, like a song's charts: \"Share with band\" fixes the sharing, and \"Copy into release folder\" puts a shared copy in Band folder / Releases / the release's title and points the file at it.",
+      "A file the band can't open is flagged, like a song's charts: \"Share with band\" fixes the sharing, and \"Copy into release folder\" puts a shared copy in the release's Drive folder and points the file at it.",
       "Track files (mixes, masters, stems and session files) live on each track: the tab ends with a list of the tracks and how many files each has.",
     ].join("\n\n"),
     related: ["releaseTrack", "releasePage", "songs"],

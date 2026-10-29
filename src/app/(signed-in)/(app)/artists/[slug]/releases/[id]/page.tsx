@@ -3,18 +3,20 @@ import { BackLink } from "@/components/BackLink";
 import { AdminOnly } from "@/components/Guard";
 import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import { SongSearch } from "@/components/music/SongSearch";
 import { Menu } from "@/components/Menu";
 import { InlineValue } from "@/components/InlineValue";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useDragReorder } from "@/lib/drag-reorder";
-import { fmtLen, STATUS_LABEL } from "@/lib/music";
+import { fmtLen } from "@/lib/music";
 import { formatCents, projectTotals } from "@/lib/money";
 import { RELEASE_KIND_LONG, releaseMeta, latestMix, mixLabel, sidesOf, totalLength, trackProgress } from "@/lib/releases";
 import { ReleaseMissing, StatusPill, releaseHref, trackHref, useRelease, type ReleaseData, type ReleaseRow, type TrackRow } from "@/components/releases/common";
 import { ReleaseMoney } from "@/components/releases/ReleaseMoney";
+import { ReleaseFolder } from "@/components/releases/ReleaseFolder";
 import { ReleaseFiles } from "@/components/releases/ReleaseFiles";
 import type { Expense, Income, Payout, SetlistTemplate } from "@/schema";
 
@@ -129,7 +131,6 @@ function Tracklist({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const groups = sidesOf(shown);
   const hasSides = groups.some((g) => g.side);
   const [panel, setPanel] = useState(false);
-  const [adding, setAdding] = useState(false);
   const cols = admin ? 7 : 6;
   let idx = 0;
 
@@ -140,13 +141,12 @@ function Tracklist({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
         {admin && (
           <div className="flex flex-wrap gap-2">
             <button type="button" className="btn outline" onClick={() => setPanel(!panel)} aria-expanded={panel} disabled={tracks.length < 2} data-testid="side-break-btn">+ Side break</button>
-            <button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="add-tracks-btn">+ Add tracks</button>
           </div>
         )}
       </div>
       {admin && panel && <SideBreakPanel release={release} tracks={tracks} hasSides={hasSides} onDone={() => setPanel(false)} />}
       {tracks.length === 0
-        ? <div className="empty" data-testid="tracklist"><span>No tracks yet. Add songs or a whole setlist.</span></div>
+        ? <div className="empty" data-testid="tracklist"><span>No tracks yet. Search for a song below, or add a setlist.</span></div>
         : (
           <div className="song-tw" data-testid="tracklist">
             <table className="song-table" style={{ minWidth: 640 }}>
@@ -192,7 +192,7 @@ function Tracklist({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
       <p className="s">Side breaks are optional (for vinyl). Each track points at a song; titles and lengths start from the song and can differ on the release.</p>
       <ErrorBox error={error} />
       {busy && <span className="sr-only" role="status">Saving the order…</span>}
-      {admin && <AddTracks d={d} release={release} open={adding} onClose={() => setAdding(false)} sides={groups.flatMap((g) => g.side ?? [])} />}
+      {admin && <AddTracks d={d} release={release} sides={groups.flatMap((g) => g.side ?? [])} />}
     </section>
   );
 }
@@ -221,27 +221,50 @@ function SideBreakPanel({ release, tracks, hasSides, onDone }: { release: Releas
   );
 }
 
-type From = "songs" | "setlist";
+/**
+ * The Tracks card's adder: one song search (the same SongSearch the rehearsal and setlist cards use). Picking a song,
+ * by click or Enter, adds it as a track at once (to the end of the release, or of the side picked when there are
+ * sides). "Add a setlist" is the small secondary action: it opens a dialog to pick a setlist whose songs become tracks.
+ */
+function AddTracks({ d, release, sides }: { d: ReleaseData; release: ReleaseRow; sides: string[] }) {
+  const { call, error, busy } = useCommand();
+  const [where, setWhere] = useState("");
+  const [setlist, setSetlist] = useState(false);
+  const onRelease = useMemo(() => d.tracks.map((t) => t.songId), [d.tracks]);
+  const side = sides.includes(where) ? where : "";
+  return (
+    <div className="grid gap-2" data-testid="add-tracks">
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="min-w-[14rem] flex-1">
+          <SongSearch songs={d.songs} exclude={onRelease} testid="track-song-search"
+            onAdd={(songId) => { void call("releases.tracks.add", { releaseId: release.id, songIds: [songId], ...(side ? { side } : {}) }); }} />
+        </div>
+        {sides.length > 0 && (
+          <select className="select !w-auto" aria-label="Add to" value={side} onChange={(e) => setWhere(e.target.value)} data-testid="add-to">
+            <option value="">End of release</option>
+            {sides.map((s) => <option key={s} value={s}>End of Side {s}</option>)}
+          </select>
+        )}
+        <button type="button" className="btn text sm" onClick={() => setSetlist(true)} data-testid="add-setlist-btn">Add a setlist</button>
+      </div>
+      <ErrorBox error={error} />
+      {busy && <span className="sr-only" role="status">Adding…</span>}
+      <AddSetlist d={d} release={release} open={setlist} onClose={() => setSetlist(false)} side={side} />
+    </div>
+  );
+}
 
-function AddTracks({ d, release, open, onClose, sides }: { d: ReleaseData; release: ReleaseRow; open: boolean; onClose(): void; sides: string[] }) {
+function AddSetlist({ d, release, open, onClose, side }: { d: ReleaseData; release: ReleaseRow; open: boolean; onClose(): void; side: string }) {
   const { call, error, busy } = useCommand();
   const templates = (useCollection<SetlistTemplate>("setlistTemplates", { skip: !open }).rows ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
-  const [from, setFrom] = useState<From>("songs");
-  const [q, setQ] = useState("");
-  const [picked, setPicked] = useState<string[]>([]);
   const [setlistId, setSetlistId] = useState("");
   const [slPicked, setSlPicked] = useState<string[] | null>(null);
-  const [where, setWhere] = useState("");
   const onRelease = useMemo(() => new Map(d.tracks.map((t) => [t.songId, t.position])), [d.tracks]);
   const songById = useMemo(() => new Map(d.songs.map((s) => [s.id, s])), [d.songs]);
 
   // Every open starts fresh.
-  useEffect(() => { if (open) { setFrom("songs"); setQ(""); setPicked([]); setSetlistId(""); setSlPicked(null); setWhere(""); } }, [open]);
+  useEffect(() => { if (open) { setSetlistId(""); setSlPicked(null); } }, [open]);
 
-  const songs = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return d.songs.filter((s) => s.status !== "retired" && (!t || s.title.toLowerCase().includes(t))).sort((a, b) => a.title.localeCompare(b.title));
-  }, [d.songs, q]);
   const tpl = templates.find((t) => t.id === setlistId) ?? templates[0];
   const tplSongs = useMemo(() => {
     const seen = new Set<string>();
@@ -249,44 +272,17 @@ function AddTracks({ d, release, open, onClose, sides }: { d: ReleaseData; relea
   }, [tpl, songById]);
   // A setlist's songs start ticked (all but the ones already on the release).
   const slTicked = slPicked ?? tplSongs.filter((s) => !onRelease.has(s.id)).map((s) => s.id);
-  const chosen = from === "songs" ? picked : tplSongs.map((s) => s.id).filter((x) => slTicked.includes(x));
+  const chosen = tplSongs.map((s) => s.id).filter((x) => slTicked.includes(x));
   const toggle = (list: string[], x: string) => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x]);
 
   async function add() {
-    const r = await call("releases.tracks.add", { releaseId: release.id, songIds: chosen, ...(where ? { side: where } : {}) });
+    const r = await call("releases.tracks.add", { releaseId: release.id, songIds: chosen, ...(side ? { side } : {}) });
     if (r) onClose();
   }
 
-  const meta = (songId: string) => {
-    const s = songById.get(songId);
-    const pos = onRelease.get(songId);
-    return [s?.key, s?.lengthSec ? fmtLen(s.lengthSec) : null, pos ? `on release, track ${pos}` : s ? STATUS_LABEL[s.status].toLowerCase() : null].filter(Boolean).join(" · ");
-  };
-  const row = (id: string, title: string, on: boolean, flip: () => void) => {
-    const there = onRelease.has(id);
-    return (
-      <li key={id}>
-        <label className={`hit-row !cursor-pointer${there ? " text-muted" : ""}`}>
-          <span className="flex min-w-0 items-center gap-3">
-            <input type="checkbox" checked={there || on} disabled={there} onChange={flip} data-testid={`pick-song-${id}`} />
-            <span className="truncate font-semibold">{title}</span>
-          </span>
-          <span className="s">{meta(id)}</span>
-        </label>
-      </li>
-    );
-  };
-
   return (
-    <Dialog open={open} onClose={onClose} title="Add tracks" testid="add-tracks-dialog">
-      <Tabs<From> testid="add-from" value={from} onChange={setFrom} options={[["songs", "Songs"], ["setlist", "From a setlist"]]} />
-      {from === "songs" ? <>
-        <input className="input" type="search" placeholder="Search songs…" aria-label="Search songs" value={q} onChange={(e) => setQ(e.target.value)} data-testid="song-search" />
-        <ul className="hit-list">
-          {songs.length === 0 && <li className="s p-3">{q ? "No songs match." : "No songs yet."}</li>}
-          {songs.map((s) => row(s.id, s.title, picked.includes(s.id), () => setPicked(toggle(picked, s.id))))}
-        </ul>
-      </> : templates.length === 0 ? <div className="empty"><span>The band has no setlists yet.</span></div> : <>
+    <Dialog open={open} onClose={onClose} title="Add a setlist" testid="add-tracks-dialog">
+      {templates.length === 0 ? <div className="empty"><span>The band has no setlists yet.</span></div> : <>
         <label className="grid gap-1"><span className="lbl">Setlist</span>
           <select className="select" value={tpl?.id ?? ""} onChange={(e) => { setSetlistId(e.target.value); setSlPicked(null); }} data-testid="pick-setlist">
             {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -294,21 +290,23 @@ function AddTracks({ d, release, open, onClose, sides }: { d: ReleaseData; relea
         </label>
         <ul className="hit-list">
           {tplSongs.length === 0 && <li className="s p-3">No songs in this setlist.</li>}
-          {tplSongs.map((s) => row(s.id, s.title, slTicked.includes(s.id), () => setSlPicked(toggle(slTicked, s.id))))}
+          {tplSongs.map((s) => {
+            const there = onRelease.has(s.id);
+            return (
+              <li key={s.id}>
+                <label className={`hit-row !cursor-pointer${there ? " text-muted" : ""}`}>
+                  <span className="flex min-w-0 items-center gap-3">
+                    <input type="checkbox" checked={there || slTicked.includes(s.id)} disabled={there} onChange={() => setSlPicked(toggle(slTicked, s.id))} data-testid={`pick-song-${s.id}`} />
+                    <span className="truncate font-semibold">{s.title}</span>
+                  </span>
+                  {there && <span className="s">on release, track {onRelease.get(s.id)}</span>}
+                </label>
+              </li>
+            );
+          })}
         </ul>
       </>}
-      {sides.length > 0 && (
-        <fieldset className="grid gap-1">
-          <legend className="lbl mb-1">Add to</legend>
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2"><input type="radio" name="add-to" checked={!where} onChange={() => setWhere("")} data-testid="add-to-end" /> End of release</label>
-            {sides.map((s, i) => (
-              <label key={s} className="flex items-center gap-2"><input type="radio" name="add-to" checked={where === s} onChange={() => setWhere(s)} data-testid={i === 0 ? "add-to-side" : `add-to-side-${s}`} /> End of Side {s}</label>
-            ))}
-          </div>
-        </fieldset>
-      )}
-      <span className="s">From a setlist: pick one, untick songs, and its order becomes the tracklist. Breaks and notes are skipped.</span>
+      <span className="s">Pick a setlist and untick songs; its order becomes the tracklist. Breaks and notes are skipped.</span>
       <ErrorBox error={error} />
       <div className="dlg-foot">
         <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
@@ -320,7 +318,6 @@ function AddTracks({ d, release, open, onClose, sides }: { d: ReleaseData; relea
 
 function ReleaseDetails({ release, admin }: { release: ReleaseRow; admin: boolean }) {
   const { call, error, busy } = useCommand();
-  const hasBandFolder = !!useArtist().doc?.driveFolderId;
   const save = async (patch: Record<string, unknown>) => !!(await call("releases.update", { id: release.id, patch }));
   const field = (k: "distributor" | "upc" | "formats", label: string, empty: string) => (
     <div><dt className="lbl">{label}</dt><dd>
@@ -337,14 +334,7 @@ function ReleaseDetails({ release, admin }: { release: ReleaseRow; admin: boolea
         {field("upc", "UPC", "Not yet")}
         {field("formats", "Formats", "Not set")}
         <div><dt className="lbl">Drive folder</dt><dd>
-          {release.driveFolderId
-            ? <a href={`https://drive.google.com/drive/folders/${release.driveFolderId}`} target="_blank" rel="noreferrer" data-testid="release-folder-link">{release.driveFolderName ?? release.title} ↗</a>
-            : admin
-              ? <span className="grid gap-1 justify-items-start">
-                  <button type="button" className="btn outline sm" disabled={busy || !hasBandFolder} onClick={() => call("releases.folder", { id: release.id })} data-testid="make-folder-btn">Make release folder</button>
-                  {!hasBandFolder && <span className="s font-normal">Choose the band folder in <Link href="/admin/google" className="underline">Settings › Google</Link> first</span>}
-                </span>
-              : <span className="d-muted">None yet</span>}
+          <ReleaseFolder release={release} admin={admin} />
         </dd></div>
       </dl>
       <ErrorBox error={error} />

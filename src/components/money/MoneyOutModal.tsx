@@ -9,7 +9,9 @@ import { dateInBandZone } from "@/lib/timezone";
 import { fmtLong, showName } from "@/lib/shows";
 import { roleIn, type Contact, type Expense, type Musician, type Payout, type Project, type Release, type ReleaseTrack, type Show, type User } from "@/schema";
 import { sortTracks } from "@/lib/releases";
-import type { MoneyOutModalProps } from "./modals";
+import type { MoneyDefaults, MoneyOutModalProps } from "./modals";
+import { CategoryField } from "./CategoryField";
+import { GasFields, gasAmount, useGas } from "./GasFields";
 
 
 /** The native <dialog> both money modals sit in: closed unless `open`, and the form inside is keyed on each open so it resets. */
@@ -56,6 +58,16 @@ export function Toggle({ value, a, b, onChange, name, testidA, testidB }: {
   );
 }
 
+/** The opener's defaults with its `context` folded in: the context's project, show and track become the starting picks. */
+export function withContext(d: MoneyDefaults | undefined): MoneyDefaults | undefined {
+  const c = d?.context;
+  if (!c) return d;
+  if (c.kind === "show") return { ...d, showId: c.showId, projectId: c.projectId ?? d.projectId };
+  if (c.kind === "rehearsal") return { ...d, projectId: c.projectId ?? d.projectId };
+  if (c.kind === "release") return { ...d, projectId: c.projectId, releaseTrackId: undefined };
+  return { ...d, projectId: c.projectId, releaseTrackId: c.releaseTrackId };
+}
+
 /** Shared pickers: open projects and shows (newest first). */
 export function useProjectsAndShows(defaults: { projectId?: string; showId?: string } | undefined) {
   const projects = useCollection<Project>("projects");
@@ -70,22 +82,26 @@ export function useProjectsAndShows(defaults: { projectId?: string; showId?: str
   return { open, shows: sortedShows, show, projectId, setProjectPick, showId, setShowId };
 }
 
-export function ProjectShowFields({ s, prefix }: { s: ReturnType<typeof useProjectsAndShows>; prefix: string }) {
+/** Project and Show pickers; a `context` hides the ones its record decides (show: both; release or track: Project). */
+export function ProjectShowFields({ s, prefix, context }: { s: ReturnType<typeof useProjectsAndShows>; prefix: string; context?: MoneyDefaults["context"] }) {
+  const hideProject = context?.kind === "show" || context?.kind === "release" || context?.kind === "track";
+  const hideShow = context?.kind === "show";
+  if (hideProject && hideShow) return null;
   return (
-    <div className="grid gap-[14px] sm:grid-cols-2">
-      <label className="grid gap-1">
+    <div className={`grid gap-[14px]${hideProject || hideShow ? "" : " sm:grid-cols-2"}`}>
+      {!hideProject && <label className="grid gap-1">
         <span className="lbl">Project</span>
         <select className="select" value={s.projectId} onChange={(e) => s.setProjectPick(e.target.value)} data-testid={`${prefix}-project`}>
           {s.open.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-      </label>
-      <label className="grid gap-1">
+      </label>}
+      {!hideShow && <label className="grid gap-1">
         <span className="lbl">Show <span className="font-normal">(optional)</span></span>
         <select className="select" value={s.showId} onChange={(e) => s.setShowId(e.target.value)} data-testid={`${prefix}-show`}>
           <option value="">None</option>
           {s.shows.map((x) => <option key={x.id} value={x.id}>{showName(x)} · {fmtLong(x.date)}</option>)}
         </select>
-      </label>
+      </label>}
     </div>
   );
 }
@@ -108,8 +124,8 @@ export function useReleaseTracks(projectId: string, defaults: { releaseTrackId?:
 }
 
 /** "Track (optional)": only when the picked project is a release's. */
-export function TrackField({ t, prefix }: { t: ReturnType<typeof useReleaseTracks>; prefix: string }) {
-  if (!t.release) return null;
+export function TrackField({ t, prefix, context }: { t: ReturnType<typeof useReleaseTracks>; prefix: string; context?: MoneyDefaults["context"] }) {
+  if (!t.release || context?.kind === "release" || context?.kind === "track") return null;
   return (
     <label className="grid gap-1">
       <span className="lbl">Track <span className="font-normal">(optional)</span></span>
@@ -166,6 +182,7 @@ export function ModalFoot({ sentence, saves, error, busy, canSave, onCancel, pre
 type Kind = "expense" | "reimb" | "pay" | "split" | "other";
 const KINDS: [Kind, string][] = [["expense", "A bill or purchase"], ["reimb", "Reimbursable expense"], ["pay", PAYOUT_KIND_LABEL.pay], ["split", PAYOUT_KIND_LABEL.split], ["other", PAYOUT_KIND_LABEL.other]];
 const CATEGORIES = Object.entries(EXPENSE_LABEL) as [string, string][];
+const fileIdOf = (url: string) => /\/d\/([\w-]+)/.exec(url)?.[1] ?? /[?&]id=([\w-]+)/.exec(url)?.[1] ?? url.replace(/\W+/g, "").slice(-24);
 
 /** A person or vendor money goes to, as picked: the stored `to` shape plus a key for the list. */
 export interface WhoOption { key: string; name: string; sub?: string; to: { musicianId: string } | { userId: string } | { contactId: string } | { name: string } }
@@ -247,7 +264,9 @@ export function PayerField({ admins, value, onChange, testid, label = "Who paid"
 /**
  * "We owe" / "We paid" someone: a bill or purchase (an expense, with who was paid and who paid), a bandmate's reimbursable
  * expense (the same expense a member logs themselves: they paid, the band owes them back; We paid also pays them back),
- * or a payout. Opened with no props but open/onClose, or with defaults from the page.
+ * or a payout. Opened with no props but open/onClose, or with defaults from the page. A `context` (modals.ts) hides what its
+ * record decides and writes its ids (rehearsalId too, on expenses and payouts). Category is an autocomplete; Gas turns the
+ * form into the gas form (GasFields.tsx): an expense the driver paid, always paid back, with the miles estimate.
  */
 export function MoneyOutModal({ open, onClose, defaults }: MoneyOutModalProps) {
   return (
@@ -257,7 +276,11 @@ export function MoneyOutModal({ open, onClose, defaults }: MoneyOutModalProps) {
   );
 }
 
-function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutModalProps["defaults"] }) {
+function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: MoneyOutModalProps["defaults"] }) {
+  const context = given?.context;
+  const defaults = withContext(given);
+  const rehearsalId = context?.kind === "rehearsal" ? context.rehearsalId : "";
+  const rehearsal = rehearsalId ? { rehearsalId } : {};
   const { call, error, busy } = useCommand();
   const me = useProfile();
   const users = useCollection<User>("users");
@@ -277,7 +300,10 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   const [touchedWho, setTouchedWho] = useState(false);
   const [amount, setAmount] = useState("");
   const [what, setWhat] = useState("");
-  const [category, setCategory] = useState("other");
+  const [category, setCategory] = useState(defaults?.category ?? "other");
+  const [amountEdited, setAmountEdited] = useState(false);
+  const [link, setLink] = useState("");
+  const [showLink, setShowLink] = useState(false);
   const [method, setMethod] = useState("");
   const [when, setWhen] = useState(dateInBandZone());
   const [payer, setPayer] = useState(me.role === "admin" ? me.uid : "");
@@ -288,6 +314,13 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   const userRows = users.rows ?? [];
   const admins = useAdmins(userRows);
   const bandUsers = useBandUsers(userRows);
+  // Gas: a bill or a bandmate's expense in the Gas category becomes the gas form (an expense the driver paid, always paid back).
+  const gasOn = category === "gas" && !reimburse && (kind === "expense" || kind === "reimb");
+  const venue = ps.show?.venue;
+  const venueText = [venue?.name, venue?.address, venue?.city].filter(Boolean).join(", ");
+  const gas = useGas({ active: gasOn, drivers: bandUsers, defaultDriver: defaults?.userId, rehearsalId, venueText: context?.kind === "show" ? venueText : undefined });
+  const gasAmt = gasAmount(gas);
+  useEffect(() => { if (gasOn && gasAmt && !amountEdited) setAmount(gasAmt); }, [gasOn, gasAmt, amountEdited]);
   const priorNames = useMemo(() => [...new Set([...(expensesAll.rows ?? []).map((x) => x.to?.name), ...(payoutsAll.rows ?? []).map((p) => p.to.name)].filter((n): n is string => !!n))], [expensesAll.rows, payoutsAll.rows]);
   // Venue contacts stay out of the To list: the band almost never pays one. (The command still takes a contactId.)
   const options = useWhoOptions({ users: userRows, musicians: musicians.rows ?? [], contacts: [], priorNames });
@@ -304,18 +337,22 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   const personName = reimburse ? nameOfUser(reimbUser) : reimb ? memberName : to?.name ?? "";
   const payerName = nameOfUser(payer);
   const cents = reimburse ? owed.rows.reduce((n, x) => n + x.amount, 0) : parseDollars(amount);
-  const whatText = reimburse ? "" : what.trim();
+  const whatText = reimburse ? "" : what.trim() || (gasOn ? "Gas" : "");
   const forText = whatText || (ps.show ? `the ${showName(ps.show)} show` : "");
 
-  const needsPayer = paid || reimburse;
-  const needsMethod = (paid && !expense) || reimburse;
-  const canSave = (reimburse ? !!reimbUser && owed.rows.length > 0 : reimb ? !!member : !!to) && !!cents && cents > 0 && !!ps.projectId && (!(expense || reimb) || reimburse || !!whatText)
+  const needsPayer = !gasOn && (paid || reimburse);
+  const needsMethod = !gasOn && ((paid && !expense) || reimburse);
+  const driverName = gas.driverName;
+  const canSave = gasOn ? !!gas.driverId && !!cents && cents > 0 && !!ps.projectId && !!whatText && !!when
+    : (reimburse ? !!reimbUser && owed.rows.length > 0 : reimb ? !!member : !!to) && !!cents && cents > 0 && !!ps.projectId && (!(expense || reimb) || reimburse || !!whatText)
     && (!needsPayer || (!!payer && !!when)) && (!needsMethod || !!method) && (!reimb || !!when);
 
-  const sentence = reimb && paid ? `${payerName || "Someone"} paid ${memberName || "a bandmate"} back ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`
+  const sentence = gasOn ? `${driverName || "Someone"} paid ${cents ? formatCents(cents) : "$0.00"} for ${whatText.toLowerCase() === "gas" ? "gas" : whatText}${forText && whatText.toLowerCase() === "gas" ? ` for ${forText}` : ""}`
+    : reimb && paid ? `${payerName || "Someone"} paid ${memberName || "a bandmate"} back ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`
     : `${paid ? "We paid" : "We owe"} ${personName || "someone"} ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`;
   const paidBit = paid ? ` (${payerName || "who?"}${needsMethod ? `, ${METHOD_LABEL[method] ?? "how?"}` : ""}, ${shortDate(when)})` : "";
-  const saves = reimburse ? `Saved as a payout that paid back ${owed.rows.length} expense${owed.rows.length === 1 ? "" : "s"}${paidBit}`
+  const saves = gasOn ? `Saved as gas ${driverName || "the driver"} paid for, which the band owes ${driverName || "them"} back`
+    : reimburse ? `Saved as a payout that paid back ${owed.rows.length} expense${owed.rows.length === 1 ? "" : "s"}${paidBit}`
     : reimb ? (paid ? `Saved as ${memberName || "their"} expense, paid back${paidBit}` : `Saved as ${memberName ? `${memberName}'s` : "their"} expense, which the band owes ${memberName || "them"} back`)
     : expense ? (paid ? `Saved as an expense paid by ${payerName || "an admin"}${payBack ? `, which the band owes ${payerName || "them"} back` : ""}${paidBit}` : "Saved as a bill the band still owes")
     : paid ? `Saved as a paid payout${paidBit}` : "Saved as a payout, still owed";
@@ -323,24 +360,31 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
     if (!canSave || !cents) return;
-    if (reimburse) {
+    const receipt = link.trim() ? { receipt: { driveFileId: fileIdOf(link.trim()), url: link.trim() } } : {};
+    if (gasOn) {
+      // The member page's gas expense, logged for the driver: always paid back.
+      if (!(await call("expenses.add", {
+        amount: cents, what: whatText, category: "gas", projectId: ps.projectId, userId: gas.driverId, payBack: true, date: when,
+        ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt, ...gas.payload(cents),
+      }))) return;
+    } else if (reimburse) {
       if (!(await call("expenses.payPerson", { userId: reimbUser, ids: owed.rows.map((x) => x.id), method, paidAt: when, paidBy: payer }))) return;
     } else if (reimb) {
       // The same record a member logs for themselves: they paid, pay-back on. We paid also settles it right away.
       const r = await call("expenses.add", {
         amount: cents, what: whatText, category, projectId: ps.projectId, userId: member, payBack: true, date: when,
-        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...track,
+        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt,
       });
       if (!r?.id) return;
       if (paid && !(await call("expenses.payPerson", { userId: member, ids: [r.id], method, paidAt: when, paidBy: payer }))) return;
     } else if (expense) {
       if (!(await call("expenses.add", {
-        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}), ...track,
+        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt,
         ...(paid ? { userId: payer, date: when, payBack } : { owed: true }),
       }))) return;
     } else {
       if (!(await call("payouts.add", {
-        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...track,
+        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track,
         ...(paid ? { method, paidAt: when, paidBy: payer } : {}),
       }))) return;
     }
@@ -351,22 +395,18 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
     <form onSubmit={submit} data-testid="money-out-form">
       <ModalHead title="Money out" onClose={onClose} testid="mo-close" />
       <div className="grid gap-[16px]" style={{ padding: "18px 22px" }}>
-        {!reimburse && <Toggle name="mo-status" value={paid ? "b" : "a"} a="We owe" b="We paid" onChange={(v) => setPaid(v === "b")} testidA="mo-owe" testidB="mo-paid" />}
+        {!reimburse && !gasOn && <Toggle name="mo-status" value={paid ? "b" : "a"} a="We owe" b="We paid" onChange={(v) => setPaid(v === "b")} testidA="mo-owe" testidB="mo-paid" />}
         {!reimburse && (
           <div className="grid gap-[14px] sm:grid-cols-2">
-            <label className="grid gap-1">
+            {!gasOn && <label className="grid gap-1">
               <span className="lbl">What kind</span>
               <Select<Kind> value={kind} options={KINDS} onChange={setKind} testid="mo-kind" />
-            </label>
-            {(expense || reimb) && (
-              <label className="grid gap-1">
-                <span className="lbl">Category</span>
-                <Select value={category} options={CATEGORIES} onChange={setCategory} testid="mo-cat" />
-              </label>
-            )}
+            </label>}
+            {(expense || reimb) && <CategoryField value={category} options={CATEGORIES} onChange={setCategory} testid="mo-cat" />}
           </div>
         )}
-        {!reimburse && reimb && (
+        {gasOn && <GasFields g={gas} testid="mo-gas" />}
+        {!reimburse && reimb && !gasOn && (
           <label className="grid gap-1">
             <span className="lbl">Who paid</span>
             <select className="select" value={member} onChange={(e) => setMember(e.target.value)} data-testid="mo-member">
@@ -384,28 +424,28 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
           </div>
         ) : (
           <>
-            <div className="grid gap-1">
+            {!gasOn && <div className="grid gap-1">
               <span className="lbl">{reimb ? <>To <span className="font-normal">(optional)</span></> : "To"}</span>
               <WhoPicker options={options} value={to} onChange={(v) => { setTouchedWho(true); setWho(v); }} testid="mo-who"
                 placeholder={reimb ? "The gas station, the store" : expense ? "The vendor or a bandmate" : "A bandmate or a player"} />
-            </div>
+            </div>}
             <div className="grid gap-[14px] sm:grid-cols-2">
               <label className="grid gap-1">
                 <span className="lbl">Amount</span>
-                <input className="input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="mo-amount" />
+                <input className="input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountEdited(e.target.value.trim() !== ""); }} data-testid="mo-amount" />
               </label>
               <label className="grid gap-1">
-                <span className="lbl">{expense || reimb ? "What for" : <>For <span className="font-normal">(optional)</span></>}</span>
-                <input className="input" type="text" value={what} onChange={(e) => setWhat(e.target.value)} data-testid="mo-what" />
+                <span className="lbl">{expense || reimb || gasOn ? "What for" : <>For <span className="font-normal">(optional)</span></>}</span>
+                <input className="input" type="text" value={what} placeholder={gasOn ? "Gas" : undefined} onChange={(e) => setWhat(e.target.value)} data-testid="mo-what" />
               </label>
             </div>
           </>
         )}
-        <ProjectShowFields s={ps} prefix="mo" />
-        {!reimburse && <TrackField t={tr} prefix="mo" />}
-        {(needsPayer || reimb) && (
+        <ProjectShowFields s={ps} prefix="mo" context={context} />
+        {!reimburse && <TrackField t={tr} prefix="mo" context={context} />}
+        {(needsPayer || reimb || gasOn) && (
           <div className="grid gap-[14px] sm:grid-cols-2">
-            {needsPayer ? <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" label={reimb ? "Paid back by" : undefined} /> : <span />}
+            {gasOn ? <span /> : needsPayer ? <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" label={reimb ? "Paid back by" : undefined} /> : <span />}
             <label className="grid gap-1">
               <span className="lbl">When</span>
               <input className="input" type="date" value={when} onChange={(e) => setWhen(e.target.value)} data-testid="mo-when" />
@@ -421,12 +461,20 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
             </select>
           </label>
         )}
-        {paid && expense && !reimburse && (
+        {paid && expense && !reimburse && !gasOn && (
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={payBack} onChange={(e) => setPayBack(e.target.checked)} data-testid="mo-payback" />
             <span>The band owes {payerName || "the payer"} this back</span>
           </label>
         )}
+        {!reimburse && (expense || reimb) && (showLink ? (
+          <label className="grid gap-1">
+            <span className="lbl">Receipt <span className="font-normal">(Drive link)</span></span>
+            <input className="input" placeholder="Paste a Drive link" value={link} onChange={(e) => setLink(e.target.value)} data-testid="mo-receipt" />
+          </label>
+        ) : (
+          <button type="button" className="s justify-self-start border-0 bg-transparent p-0 underline" onClick={() => setShowLink(true)} data-testid="mo-add-receipt">Add receipt</button>
+        ))}
       </div>
       <ModalFoot sentence={sentence} saves={saves} error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mo" />
     </form>

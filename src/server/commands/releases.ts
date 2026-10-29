@@ -22,6 +22,7 @@ const id1 = z.string().min(1);
 export const tracksPath = (releaseId: string) => `releases/${releaseId}/tracks`;
 export const RELEASES_FOLDER_NAME = "Releases";
 export const NO_BAND_FOLDER = "Choose the band folder on Settings > Google first: the release folder goes inside it";
+export const NO_RELEASES_FOLDER = "Choose the Releases folder on Settings > Google first: a new release folder goes inside it";
 
 async function requireRelease(w: Writer, id: string): Promise<Doc> {
   const a = await w.get("releases", id);
@@ -374,20 +375,47 @@ export async function ensureReleaseFolder(ctx: Ctx, releaseId: string): Promise<
   if (release.driveFolderId) {
     try { return info(await drive.get(release.driveFolderId as string)); } catch { /* gone from Drive: make it again */ }
   }
-  const { band } = await bandFolders(ctx.artistId);
-  if (!band) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
   const mates = await bandmates();
-  const releases = await findOrMakeFolder(drive, band, RELEASES_FOLDER_NAME, mates);
-  const own = await findOrMakeFolder(drive, releases.folder.id, release.title as string, mates);
+  // The Releases folder from Settings > Google; before one was chosen, "Band folder / Releases".
+  let parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
+  if (!parent) {
+    const { band } = await bandFolders(ctx.artistId);
+    if (!band) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
+    parent = (await findOrMakeFolder(drive, band, RELEASES_FOLDER_NAME, mates)).folder.id;
+  }
+  const own = await findOrMakeFolder(drive, parent, release.title as string, mates);
   await db.update(ctx, "releases", releaseId, { driveFolderId: own.folder.id, driveFolderName: own.folder.name });
   return info(own.folder);
 }
 
 export const releasesFolder = defineCommand({
   name: "releases.folder", roles: ["admin", "mcp"],
-  description: "The release's Drive folder (Band folder / Releases / {title}), made and shared with the band if it isn't there yet. Returns { id, name, url }. Needs the band folder from Settings > Google.",
-  input: z.strictObject({ id: id1 }),
-  run: (ctx, { id }) => ensureReleaseFolder(ctx, id),
+  description: "The release's Drive folder, made and shared with the band if it isn't there yet. With name: make a new folder by that name inside the Releases folder (Settings > Google; refuses until it is chosen) and connect it. " +
+    "Without name: the connected folder, else one named after the release in the Releases folder. Returns { id, name, url }. To connect a folder that already exists use releases.connectFolder.",
+  input: z.strictObject({ id: id1, name: z.string().trim().min(1).optional() }),
+  async run(ctx, { id, name }) {
+    if (!name) return ensureReleaseFolder(ctx, id);
+    const release = await db.get("releases", id);
+    if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
+    const parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
+    if (!parent) throw new AppError("no_releases_folder", NO_RELEASES_FOLDER, 400);
+    const own = await findOrMakeFolder(driveClient({ artistId: artistIdOf(ctx) }), parent, name, await bandmates());
+    await db.update(ctx, "releases", id, { driveFolderId: own.folder.id, driveFolderName: own.folder.name });
+    return info(own.folder);
+  },
+});
+
+export const releasesConnectFolder = defineCommand({
+  name: "releases.connectFolder", roles: ["admin", "mcp"],
+  description: "Connect a Drive folder that already exists to a release (folder: an id or a Drive folder link, e.g. from google.findFolders): uploads then land in it. Returns { id, name, url }.",
+  input: z.strictObject({ id: id1, folder: z.string().trim().min(1) }),
+  async run(ctx, { id, folder }) {
+    const release = await db.get("releases", id);
+    if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
+    const f = await chosenFolder(artistIdOf(ctx), folder);
+    await db.update(ctx, "releases", id, { driveFolderId: f.id, driveFolderName: f.name });
+    return info(f);
+  },
 });
 
 export const releaseFilesCopyToFolder = defineCommand({
@@ -420,7 +448,7 @@ export const releaseFilesCopyToFolder = defineCommand({
 });
 
 export const releaseCommands = [
-  releasesCreate, releasesUpdate, releasesRemove, releasesFolder,
+  releasesCreate, releasesUpdate, releasesRemove, releasesFolder, releasesConnectFolder,
   releaseTracksAdd, releaseTracksUpdate, releaseTracksRemove, releaseTracksReorder, releaseTracksSideBreak,
   releaseFilesAttach, releaseFilesApprove, releaseFilesNote, releaseFilesCopyToFolder,
 ];

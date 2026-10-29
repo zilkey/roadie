@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { A } from "./env";
 
-test("Finances tab: seeded income, project select and Net; an expense edited in place", async ({ page }) => {
+test("Finances tab: seeded income, project select and Net; the seeded expense is a Money out line", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-jeff").click();
   await expect(page).toHaveURL(/\/calendar$/);
@@ -31,25 +31,20 @@ test("Finances tab: seeded income, project select and Net; an expense edited in 
   await page.getByTestId("show-project").selectOption({ label: "Duo" });
   await expect(page.getByTestId("net-card")).toContainText("Net to Duo");
 
-  // Expenses: the seeded one, edited in place to fix its amount; adding goes to the full form (no inline add)
-  const card = page.getByTestId("expenses");
-  await expect(card.getByText("Bass strings and cables")).toBeVisible();
-
-  await page.getByTestId("expenses-edit").click();
-  await expect(card.getByTestId("expenses-add-line")).toHaveCount(0);
-  const line = page.getByTestId("expense-line-0");
-  await line.getByTestId("expense-what").fill("Bass strings, cables and gas");
-  await line.getByTestId("expense-amount").fill("60.90");
-  await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
-  await page.getByTestId("expenses-save").click();
-  await expect(card.getByText("Bass strings, cables and gas")).toBeVisible();
-  await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
+  // Admins have no Expenses card: the seeded expense is a line in Money out, still owed back, and can't be edited here
+  await expect(page.getByTestId("expenses")).toHaveCount(0);
+  const out = page.getByTestId("paid-out");
+  const row = out.locator('[data-testid^="expense-row-"]').filter({ hasText: "Bass strings and cables" });
+  await expect(row).toBeVisible();
+  await expect(row.locator('[data-testid^="expense-status-"]')).toContainText("owed back");
+  await expect(row.locator('[data-testid^="expense-paid-back-"]')).toBeVisible();
+  await expect(row.getByTestId("expense-what")).toHaveCount(0);
   await expect(page.getByTestId("net-card")).toBeVisible();
 });
 
-test("Finances tab: the full expense form opens for the show and returns to it on Save", async ({ page }) => {
+test("Finances tab: a member edits their own expense in place; the full form opens for the show and returns to it on Save", async ({ page }) => {
   await page.goto("/signin");
-  await page.getByTestId("dev-jeff").click();
+  await page.getByTestId("dev-david").click();
   await expect(page).toHaveURL(/\/calendar$/);
 
   await page.goto(A("/shows#played"));
@@ -57,9 +52,21 @@ test("Finances tab: the full expense form opens for the show and returns to it o
   await expect(page).toHaveURL(/\/shows\/[^/?]+/);
   await page.getByTestId("show-tab-finances").click();
 
-  await page.getByTestId("expenses").getByTestId("expenses-full-form").click();
+  // David's seeded expense, edited in place to fix its amount
+  const card = page.getByTestId("expenses");
+  await expect(card.getByText("Bass strings and cables")).toBeVisible();
+  await page.getByTestId("expenses-edit").click();
+  await expect(card.getByTestId("expenses-add-line")).toHaveCount(0);
+  const line = page.getByTestId("expense-line-0");
+  await line.getByTestId("expense-what").fill("Bass strings, cables and gas");
+  await line.getByTestId("expense-amount").fill("60.90");
+  await page.getByTestId("expenses-save").click();
+  await expect(card.getByText("Bass strings, cables and gas")).toBeVisible();
+  await expect(page.getByTestId("expenses-total")).toHaveText("$60.90");
+
+  await card.getByTestId("expenses-full-form").click();
   await expect(page).toHaveURL(/\/money\/expense\?show=/);
-  await expect(page.getByTestId("exp-cat-travel")).toBeVisible(); // gas is one of the choices
+  await expect(page.getByTestId("exp-cat")).toHaveValue("Gas"); // from a show, gas is the default
   await page.getByTestId("exp-amount").fill("18");
   await page.getByTestId("expense-what").fill("Parking garage");
   await page.getByTestId("exp-save").click();
@@ -83,6 +90,11 @@ test("Finances tab: mark an owed payout paid", async ({ page }) => {
   const owed = page.getByTestId("paid-out").locator('[data-testid^="payout-row-"]').filter({ hasText: "The Moonlighters" });
   await expect(owed).toContainText("We owe");
   await owed.locator('[data-testid^="payout-mark-paid-"]').click();
+  // Mark paid opens the Money out modal's mark-paid form (who paid, when, how)
+  await expect(page.getByTestId("mark-paid-form")).toBeVisible();
+  await page.getByTestId("mp-method").selectOption("venmo");
+  await page.getByTestId("mp-save").click();
+  await expect(page.getByTestId("mark-paid-form")).toBeHidden();
   await expect(owed).toContainText("We paid");
   await expect(owed).toContainText("Paid");
   await expect(owed.locator('[data-testid^="payout-mark-paid-"]')).toHaveCount(0);

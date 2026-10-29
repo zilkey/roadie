@@ -30,7 +30,7 @@ export const incomeCategory = z.enum(["guarantee", "door", "tips", "merch", "str
 export type IncomeCategory = z.infer<typeof incomeCategory>;
 /** What money out was for (expenses.category). */
 export const expenseCategory = z.enum([
-  "gear", "travel", "lodging", "food", "recording", "mixing", "mastering", "pressing", "artwork", "photo", "video", "space", "marketing", "fees", "other",
+  "gear", "gas", "travel", "lodging", "food", "recording", "mixing", "mastering", "pressing", "artwork", "photo", "video", "space", "marketing", "fees", "other",
 ]);
 export type ExpenseCategory = z.infer<typeof expenseCategory>;
 /** How money moved (income.method, payouts.method): no accounts, just the way it was paid. */

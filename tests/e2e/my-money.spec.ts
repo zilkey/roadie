@@ -20,7 +20,8 @@ test("member logs a food expense on the tour project and sees what the band owes
   const n = Number(/for (\d+)/.exec(before)![1]);
 
   await page.getByTestId("add-expense-link").click();
-  await page.getByTestId("exp-cat-food").click();
+  await page.getByTestId("exp-cat").click();
+  await page.getByTestId("exp-cat-opt-food").click();
   await page.getByTestId("exp-amount").fill("36");
   await page.getByTestId("expense-what").fill(WHAT);
   await page.getByTestId("exp-project").selectOption({ label: "Spring West Tour" });

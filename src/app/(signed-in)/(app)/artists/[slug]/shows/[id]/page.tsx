@@ -20,10 +20,9 @@ import { PromotionCard } from "@/components/shows/page/PromotionCard";
 import { PostersCard } from "@/components/shows/page/PostersCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import { Comments } from "@/components/shows/page/Comments";
-import { IncomeCard } from "@/components/shows/page/IncomeCard";
+import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
 import { ProjectCard } from "@/components/shows/page/ProjectCard";
-import { PaidOutCard } from "@/components/shows/page/PaidOutCard";
 import { NetCard } from "@/components/shows/page/NetCard";
 import { ShowFansBanner } from "@/components/fans/ShowFansBanner";
 import type { Show } from "@/schema";
@@ -85,9 +84,9 @@ function ShowView({ show }: { show: ShowRow }) {
             </>}
             {tab === "finances" && <>
               {admin && <ProjectCard show={show} />}
-              {admin && <IncomeCard show={show} />}
-              {admin && <PaidOutCard show={show} />}
-              <ExpensesCard show={show} admin={admin} />
+              {admin && <MoneyInCard context={{ kind: "show", showId: show.id, projectId: show.projectId }} />}
+              {admin && <MoneyOutCard context={{ kind: "show", showId: show.id, projectId: show.projectId }} splitEvenly />}
+              {!admin && <ExpensesCard show={show} admin={admin} />}
             </>}
         </div>
 

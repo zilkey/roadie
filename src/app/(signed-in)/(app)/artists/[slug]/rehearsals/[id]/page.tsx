@@ -4,6 +4,7 @@ import { draftPath } from "@/schema/drafts";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
+import { RehearsalLocationField, placeOf, type Place } from "@/components/rehearsals/RehearsalLocationField";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
@@ -18,10 +19,11 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
-import { useDoc } from "@/lib/firestore-hooks";
-import type { Rehearsal, RehearsalLocation, SetlistTemplate } from "@/schema";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
+import type { Project, Rehearsal, RehearsalLocation, SetlistTemplate } from "@/schema";
 import ImportSetlistDialog from "./ImportSetlistDialog";
 import { ExpensesCardFor } from "@/components/money/ExpensesCard";
+import { MoneyOutCard } from "@/components/money/MoneyCards";
 import { Tabs } from "@/components/booking/common";
 import { DetailCard, DetailPage, KV, useSingleEdit } from "@/components/booking/DetailCards";
 import { SongSearch } from "@/components/music/SongSearch";
@@ -71,64 +73,6 @@ const titleOf = (m: Music, sid: string) => m.songs.find((s) => s.id === sid)?.ti
 
 // ---------- location ----------
 
-interface Place { name?: string; address: string; lat: number; lng: number }
-/** The shape rehearsals.setLocation and rehearsals.create take (name optional, the rest from the autocomplete). */
-const placeOf = (p: Place): RehearsalLocation => ({ ...(p.name ? { name: p.name } : {}), address: p.address, lat: p.lat, lng: p.lng });
-
-/**
- * Address / place typeahead: geo.autocomplete through the server, debounced 300 ms. Each suggestion row gets
- * reh-location-suggestion. onType fires on every keystroke, onPick when a suggestion is chosen.
- */
-function LocationSearch({ initial, onType, onPick, testid = "reh-location-input" }: {
-  initial: string; onType?(text: string): void; onPick(p: Place): void; testid?: string;
-}) {
-  const { call, error } = useCommand();
-  const [text, setText] = useState(initial);
-  const [hits, setHits] = useState<Place[]>([]);
-  const [open, setOpen] = useState(false);
-  const seq = useRef(0);
-  const skip = useRef(false); // after a pick, the label we just wrote doesn't search again
-  useEffect(() => {
-    if (skip.current) { skip.current = false; return; }
-    const q = text.trim();
-    const my = ++seq.current;
-    if (q.length < 3) { setHits([]); return; }
-    const t = setTimeout(async () => {
-      const r = await call<{ suggestions: Place[] }>("geo.autocomplete", { q });
-      if (my === seq.current) { setHits(r?.suggestions ?? []); setOpen(true); }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function pick(p: Place) {
-    skip.current = true; seq.current++;
-    setText(p.name && !p.address.startsWith(p.name) ? `${p.name}, ${p.address}` : p.address);
-    setHits([]); setOpen(false);
-    onPick(p);
-  }
-  return (
-    <div className="grid gap-1">
-      <input className="input" value={text} placeholder="Start typing an address or place…" autoComplete="off" aria-label="Rehearsal address" data-testid={testid}
-        onChange={(e) => { setText(e.target.value); setOpen(true); onType?.(e.target.value); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)} />
-      {open && hits.length > 0 && (
-        <ul role="listbox" className="grid gap-1 rounded-[10px] border p-1" style={{ background: "var(--surface)", borderColor: "var(--input-border)" }}>
-          {hits.map((h, i) => (
-            <li key={`${h.lat},${h.lng},${i}`} role="option" aria-selected={false} data-testid="reh-location-suggestion">
-              <button type="button" className="w-full cursor-pointer rounded-md border-0 bg-transparent px-3 py-2 text-left" style={{ color: "var(--ink)", font: "inherit" }}
-                onMouseDown={(e) => e.preventDefault()} onClick={() => pick(h)}>
-                {h.name && <b>{h.name}</b>}{h.name ? " " : ""}<span className="s">{h.address}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <ErrorBox error={error} />
-    </div>
-  );
-}
-
 // ---------- new rehearsal ----------
 
 interface NewForm { date: string; location: RehearsalLocation | null; notes: string; personnel: string[]; ran: Record<string, string> }
@@ -163,7 +107,7 @@ function NewRehearsal({ m }: { m: Music }) {
             <div className="grid grid-cols-2 gap-2">
               <label className="grid gap-1"><span className="lbl">When</span><input type="date" className="input" value={v.date} onChange={(e) => draft.setValue({ ...v, date: e.target.value })} required data-testid="reh-date" /></label>
               <div className="grid gap-1"><span className="lbl">Where</span>
-                <LocationSearch initial={v.location?.name ?? v.location?.address ?? ""}
+                <RehearsalLocationField initial={v.location?.name ?? v.location?.address ?? ""} rehearsals={m.rehearsals}
                   onType={(t) => draft.setValue({ ...v, location: t.trim() ? { name: t.trim() } : null })}
                   onPick={(p) => draft.setValue({ ...v, location: placeOf(p) })} />
               </div>
@@ -211,7 +155,11 @@ type CardKey = "when";
 
 /**
  * One column of cards, like the booking detail pages, with Info and Money tabs like a show. Info: When & where, Band members,
- * Songs, Notes, Recordings; Money: the expenses card. Everything autosaves; When & where's pencil opens it and Done closes it; Notes
+ * Songs, Notes, Recordings; Money: admins get the Money out card (MoneyOutCard, the same modals as the Money page, starting on this
+ * rehearsal), members the expenses card and a "+ Add an expense" link to the member expense page. When & where shows the rehearsal's
+ * project (its projectId, else the default project); admins click it to pick another open project, which moves the rehearsal's money
+ * (rehearsals.update). The location field lists places from earlier rehearsals before address suggestions
+ * (RehearsalLocationField; a new address gets a Name). Everything autosaves; When & where's pencil opens it and Done closes it; Notes
  * edits in place (tap the text, leave it, saved). Songs has no
  * Edit: admins add from the search box and remove with ×; each song's chevron opens its notes and recordings for this rehearsal.
  */
@@ -247,6 +195,21 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
   const timeLine = form.startTime && form.endTime ? `${fmtTime(form.startTime)} – ${fmtTime(form.endTime)}` : form.startTime ? fmtTime(form.startTime) : "";
   const ranIds = Object.keys(form.ran);
 
+  const projects = useCollection<Project>("projects");
+  const openProjects = (projects.rows ?? []).filter((p) => p.status !== "closed" || p.id === existing.projectId);
+  const projectId = existing.projectId ?? (projects.rows ?? []).find((p) => p.isDefault)?.id;
+  const projectName = (projects.rows ?? []).find((p) => p.id === projectId)?.name ?? "";
+  const [projectErr, setProjectErr] = useState<string | null>(null);
+  const [projectChanged, setProjectChanged] = useState(false);
+  const setProject = async (next: string) => {
+    setProjectErr(null);
+    if (!next || next === projectId) return true;
+    const r = await call("rehearsals.update", { id: existing.id, patch: { projectId: next } });
+    if (!r) { setProjectErr("Couldn't change the project."); return false; }
+    setProjectChanged(true);
+    return true;
+  };
+
   const loc = existing.location;
   const hasLoc = !!(loc?.name || loc?.address);
   const mapsQuery = loc?.address ?? (loc?.lat !== undefined && loc?.lng !== undefined ? `${loc.lat},${loc.lng}` : loc?.name);
@@ -266,7 +229,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
       meta={<span data-testid="reh-times">{[timeLine, loc?.name ?? loc?.address ?? "", fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
       more={<div className="flex flex-wrap items-center gap-2">
         {admin && <SaveStatus {...as.statusProps} />}
-        <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>
+        {!admin && <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>}
         {admin && <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
           items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: archive }]} />}
       </div>}>
@@ -289,11 +252,16 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
               <div className="grid gap-1"><span className="lbl">Where</span>
                 {hasLoc && <div className="text-sm s">Now: {loc?.name ? `${loc.name}, ` : ""}{loc?.address}</div>}
                 {/* Picking a suggestion saves it at once (rehearsals.setLocation). */}
-                <LocationSearch initial="" onPick={setLocation} />
+                <RehearsalLocationField initial="" rehearsals={m.rehearsals} onPick={setLocation} />
               </div>
             </div>
           }>
           <KV rows={[["Date", fmtLong(form.date)], ["Time", timeLine, "reh-time"], ["Location", where],
+            ["Project", <span key="proj" className="grid gap-0.5">
+              <InlineValue testid="reh-project" label="Project" kind="select" value={projectId ?? ""} display={projectName || "Default project"} canEdit={admin && !!projectId}
+                options={openProjects.map((p) => [p.id, p.name] as const)} onSave={setProject} error={projectErr} />
+              {admin && projectChanged && <span className="text-xs d-muted" data-testid="reh-project-hint">Its money moves too.</span>}
+            </span>],
             ["Calendar", <CalendarSend key="cal" kind="rehearsals" id={existing.id} eventId={existing.calendarEventId} admin={admin} beforeOpen={() => as.flush()} testid="reh-calendar" />]]} />
         </DetailCard>
 
@@ -367,7 +335,9 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
         </DetailCard>
       </>}
 
-      {tab === "money" && <ExpensesCardFor target={{ kind: "rehearsal", id: existing.id }} admin={admin} />}
+      {tab === "money" && (admin
+        ? <MoneyOutCard context={{ kind: "rehearsal", rehearsalId: existing.id, projectId }} />
+        : <ExpensesCardFor target={{ kind: "rehearsal", id: existing.id }} admin={admin} />)}
     </DetailPage>
   );
 }

@@ -5,11 +5,14 @@ import { INCOME_LABEL, METHOD_LABEL, formatCents, parseDollars } from "@/lib/mon
 import { dateInBandZone } from "@/lib/timezone";
 import { showName } from "@/lib/shows";
 import type { MoneyInModalProps } from "./modals";
-import { MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useProjectsAndShows, useReleaseTracks } from "./MoneyOutModal";
+import { MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useProjectsAndShows, useReleaseTracks, withContext } from "./MoneyOutModal";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
-/** "Owed to us" / "We got it": one income record (admins only). */
+/**
+ * "Owed to us" / "We got it": one income record (admins only). Opened with a `context` (modals.ts) it hides what the record
+ * decides: a show hides Project and Show, a release or track hides Project and Track (a track pins the income to it).
+ */
 export function MoneyInModal({ open, onClose, defaults }: MoneyInModalProps) {
   return (
     <MoneyDialog open={open} onClose={onClose} testid="money-in-modal" title="Money in">
@@ -18,8 +21,10 @@ export function MoneyInModal({ open, onClose, defaults }: MoneyInModalProps) {
   );
 }
 
-function InForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyInModalProps["defaults"] }) {
+function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: MoneyInModalProps["defaults"] }) {
   const { call, error, busy } = useCommand();
+  const context = given?.context;
+  const defaults = withContext(given);
   const ps = useProjectsAndShows(defaults);
   const tr = useReleaseTracks(ps.projectId, defaults);
   const [got, setGot] = useState(false);
@@ -67,8 +72,8 @@ function InForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyInModa
           <span className="lbl">Amount</span>
           <input className="input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="mi-amount" />
         </label>
-        <ProjectShowFields s={ps} prefix="mi" />
-        <TrackField t={tr} prefix="mi" />
+        <ProjectShowFields s={ps} prefix="mi" context={context} />
+        <TrackField t={tr} prefix="mi" context={context} />
         {got && <MethodWhenFields method={method} setMethod={setMethod} when={when} setWhen={setWhen} prefix="mi" />}
       </div>
       <ModalFoot saves={saves} error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mi" />

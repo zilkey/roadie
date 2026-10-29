@@ -40,7 +40,7 @@ export const MONEY_GUIDE =
   `Money: every record sits on one project (the default is Band; "put it on the Lighthouse video project" means projectId from context.now projects, matched by name; none named means leave projectId off). ` +
   `Income is money coming to us (income.add: amount, category, from; no receivedAt means it is still owed, so "Lost Lake still owes us the $400 guarantee" is income.add with no receivedAt, and "they paid" is receivedAt today or income.setReceived on an id from context.now owedToUs). ` +
   `A payout is money from us to a person (payouts.add): no paidAt means we owe them, so "we owe Dana $200 for the show" is a payout with no paidAt, and "we paid Eric $100 for Friday's show" is kind pay with paidAt today; payouts.markPaid settles one from context.now weOwe (needs a method: ask once if they didn't say). ` +
-  `"We owe Eric $42 for gas" is an expense in Eric's name (expenses.add userId = Eric's from context.now band, payBack true, category travel), not a payout; paying Eric back for expenses is expenses.payPerson. ` +
+  `"We owe Eric $42 for gas" is an expense in Eric's name (expenses.add userId = Eric's from context.now band, payBack true, category gas), not a payout; paying Eric back for expenses is expenses.payPerson. Gas (fuel) is category gas and is always paid back; travel is flights, tolls and parking. ` +
   `Amounts are cents. Attach a show (showId) when they name one. A closed project takes nothing new. Projects are closed, never removed. ` +
   `Add what you found even when optional fields are blank; ask once, with a list, only for what is required (an amount, who). Never refuse over an optional field.`;
 export const CALENDAR_OPTIONS = ["A pitch's next step", "A possible date on a pitch", "A hold show"];
@@ -80,7 +80,7 @@ const hhmm = (h: number, m: number, ap?: string) => {
   return `${String(hour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 const category = (what: string) =>
-  /\b(gas|fuel|parking|van|hotel|motel|toll|tolls|flight|uber)\b/.test(what) ? "travel" : /\b(strings?|cables?|gear|pedal|drum ?heads?|amp)\b/.test(what) ? "gear" : "other";
+  /\b(gas|fuel)\b/.test(what) ? "gas" : /\b(parking|van|hotel|motel|toll|tolls|flight|uber)\b/.test(what) ? "travel" : /\b(strings?|cables?|gear|pedal|drum ?heads?|amp)\b/.test(what) ? "gear" : "other";
 
 type Page = { kind?: string; id?: string; route?: string; tab?: string };
 

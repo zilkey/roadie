@@ -50,7 +50,7 @@ export const INCOME_LABEL: Record<string, string> = {
   sync: "Sync", grant: "Grant", gearSale: "Gear sale", other: "Other",
 };
 export const EXPENSE_LABEL: Record<string, string> = {
-  gear: "Gear", travel: "Travel", lodging: "Lodging", food: "Food", recording: "Recording", mixing: "Mixing", mastering: "Mastering", pressing: "Pressing",
+  gear: "Gear", gas: "Gas", travel: "Travel", lodging: "Lodging", food: "Food", recording: "Recording", mixing: "Mixing", mastering: "Mastering", pressing: "Pressing",
   artwork: "Artwork", photo: "Photo", video: "Video", space: "Room rental", marketing: "Marketing", fees: "Fees", other: "Other",
 };
 export const PAYOUT_KIND_LABEL: Record<string, string> = { pay: "Pay for playing", split: "Another band's cut", reimbursement: "Paid back", other: "Other" };

@@ -21,8 +21,10 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await openTab(p, "money");
   await p.getByTestId("add-expense-link").click();
   await p.getByTestId("exp-amount").fill("64");
-  await p.getByTestId("exp-cat-gear").click();
+  await p.getByTestId("exp-cat").click();
+  await p.getByTestId("exp-cat-opt-gear").click();
   await p.getByTestId("expense-what").fill(WHAT);
+  await p.getByTestId("expense-add-receipt").click(); // the receipt hides behind "Add receipt"
   await p.getByTestId("receipt-search").fill("Glass");
   await p.getByTestId("receipt-search-go").click();
   await p.locator('[data-testid^="receipt-hit-"]').first().click();
@@ -60,7 +62,8 @@ test("admin pays everything owed to one person in one go", async ({ page, browse
     await openTab(p, "money");
     await p.getByTestId("add-expense-link").click();
     await p.getByTestId("exp-amount").fill("20");
-    await p.getByTestId("exp-cat-gear").click();
+    await p.getByTestId("exp-cat").click();
+  await p.getByTestId("exp-cat-opt-gear").click();
     await p.getByTestId("expense-what").fill(what);
     await p.getByTestId("exp-save").click();
     await expect(p).toHaveURL(/\/money$/);

@@ -10,6 +10,7 @@ import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../mu
 import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
+import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 
 const kindEnum = z.enum(["chart", "demo", "rehearsal", "recording", "lyrics", "stems", "other"]);
 // Exactly one of driveFileId (looked up in Drive) or url (a Spotify/YouTube/web link, no lookup; provider is guessed from the url unless given).
@@ -448,12 +449,13 @@ const LocationIn = z.strictObject({ name: z.string().optional(), address: z.stri
 export const rehearsalsCreate = defineCommand({
   name: "rehearsals.create",
   roles: ["admin", "mcp"],
-  description: "Create a rehearsal: date, place, who's coming, the songs (with notes). Recordings attach through files.attach with rehearsalId.",
-  input: z.strictObject({ ...RehFields, files: z.array(AttachFile).default([]) }),
-  async run(ctx, { songs, files, ...r }) {
+  description: "Create a rehearsal: date, place, who's coming, the songs (with notes), projectId (the project its money goes on; an open one from context.now projects, default the default project). Recordings attach through files.attach with rehearsalId.",
+  input: z.strictObject({ ...RehFields, projectId: z.string().min(1).optional(), files: z.array(AttachFile).default([]) }),
+  async run(ctx, { songs, files, projectId: pid, ...r }) {
     const docs = await buildFileDocs(ctx.artistId, files, {}, "rehearsal");
     return run(ctx, async (w) => {
-      const { id } = await w.create("rehearsals", { ...r, songs: await resolveSongs(w, songs) });
+      const projectId = pid ? (await requireOpenProject(w, pid)).id : await defaultProjectIdFor(w, (await artistFor(w)).id);
+      const { id } = await w.create("rehearsals", { ...r, ...(projectId ? { projectId } : {}), songs: await resolveSongs(w, songs) });
       const res = await writeFiles(w, docs.map((d) => ({ ...d, rehearsalId: id })));
       return { id, fileIds: res.ids };
     });
@@ -462,14 +464,23 @@ export const rehearsalsCreate = defineCommand({
 export const rehearsalsUpdate = defineCommand({
   name: "rehearsals.update",
   roles: ["admin", "mcp"],
-  description: "Edit a rehearsal (date, start/end time, location, personnel, songs run, notes).",
+  description: "Edit a rehearsal (date, start/end time, location, personnel, songs run, notes, projectId). Changing projectId (an open project) moves the rehearsal's expenses and payouts to that project too.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     date: dateStr.optional(), location: rehearsalLocation.nullable().optional(), venueId: z.string().min(1).nullable().optional(),
     startTime: timeStr.nullable().optional(), endTime: timeStr.nullable().optional(), personnel: z.array(z.string().min(1)).optional(),
-    songs: z.array(RehSong).optional(), notes: z.string().nullable().optional(),
+    songs: z.array(RehSong).optional(), notes: z.string().nullable().optional(), projectId: z.string().min(1).optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const { songs, ...rest } = patch;
+    if (patch.projectId) {
+      await requireOpenProject(w, patch.projectId);
+      // The rehearsal and its money never disagree about the project.
+      for (const coll of ["expenses", "payouts"] as const) {
+        for (const d of await w.query(coll, (q) => q.where("rehearsalId", "==", id))) {
+          if (!d.deletedAt && d.projectId !== patch.projectId) await w.update(coll, d.id, { projectId: patch.projectId });
+        }
+      }
+    }
     return w.update("rehearsals", id, { ...rest, ...(songs ? { songs: await resolveSongs(w, songs) } : {}) });
   }),
 });

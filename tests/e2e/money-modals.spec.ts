@@ -24,7 +24,8 @@ test("admin logs a bill we owe a vendor; it shows under We owe; Mark paid asks w
   await expect(modal).toBeVisible();
   await modal.getByTestId("mo-owe").check();
   await modal.getByTestId("mo-kind").selectOption("expense");
-  await modal.getByTestId("mo-cat").selectOption("gear");
+  await modal.getByTestId("mo-cat").fill("gear");
+  await modal.getByTestId("mo-cat-opt-gear").click();
   // a vendor nobody has named before: keep what was typed
   await modal.getByTestId("mo-who-input").fill(VENDOR);
   await modal.getByTestId("mo-who-other").click();
@@ -86,7 +87,8 @@ test("a paid purchase names the vendor and the payer; 'the band owes them back' 
   const modal = page.getByTestId("money-out-modal");
   await modal.getByTestId("mo-paid").check();
   await modal.getByTestId("mo-kind").selectOption("expense");
-  await modal.getByTestId("mo-cat").selectOption("gear");
+  await modal.getByTestId("mo-cat").fill("gear");
+  await modal.getByTestId("mo-cat-opt-gear").click();
   await modal.getByTestId("mo-who-input").fill("Guitar Center");
   await modal.getByTestId("mo-who-other").click();
   await modal.getByTestId("mo-amount").fill("18");
@@ -143,7 +145,8 @@ test("admin logs Eric's gas as a reimbursable expense; it sits under We owe for 
   const modal = page.getByTestId("money-out-modal");
   await modal.getByTestId("mo-owe").check();
   await modal.getByTestId("mo-kind").selectOption("reimb");
-  await modal.getByTestId("mo-cat").selectOption("travel");
+  await modal.getByTestId("mo-cat").fill("travel");
+  await modal.getByTestId("mo-cat-opt-travel").click();
   await modal.getByTestId("mo-member").selectOption({ label: "Eric" });
   await modal.getByTestId("mo-amount").fill("23.50");
   await modal.getByTestId("mo-what").fill(GAS);

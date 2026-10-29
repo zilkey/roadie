@@ -104,14 +104,15 @@ export const projectsReopen = defineCommand({
   run: (ctx, { id }) => run(ctx, async (w) => { await requireProject(w, id); return w.update("projects", id, { status: "open" }); }),
 });
 
-/** What still points at a project: live money, shows billed to it and releases made with it. Any of these keeps it from being removed. */
+/** What still points at a project: live money, shows billed to it, releases made with it and rehearsals on it. Any of these keeps it from being removed. */
 export async function projectInUse(w: Writer, id: string): Promise<string[]> {
   const live = async (coll: string) => (await w.query(coll, (q) => q.where("projectId", "==", id))).filter((d) => !d.deletedAt).length;
-  const [inc, exp, pay, shows, rels] = await Promise.all(["income", "expenses", "payouts", "shows", "releases"].map(live));
+  const [inc, exp, pay, shows, rels, rehs] = await Promise.all(["income", "expenses", "payouts", "shows", "releases", "rehearsals"].map(live));
   const reasons: string[] = [];
   if (inc + exp + pay) reasons.push(`${inc + exp + pay} money record${inc + exp + pay === 1 ? "" : "s"}`);
   if (shows) reasons.push(`${shows} show${shows === 1 ? "" : "s"}`);
   if (rels) reasons.push(`${rels} release${rels === 1 ? "" : "s"}`);
+  if (rehs) reasons.push(`${rehs} rehearsal${rehs === 1 ? "" : "s"}`);
   return reasons;
 }
 

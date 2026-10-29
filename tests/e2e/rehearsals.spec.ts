@@ -15,31 +15,36 @@ async function openRehearsal(page: Page, label: string) {
   await page.goto(A("/rehearsals"));
   await page.getByTestId("rehearsals-list").getByText(label).first().click();
   await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/);
-  await expect(page.getByTestId("reh-add-expense")).toBeVisible();
+  await expect(page.getByTestId("rehearsal-page")).toBeVisible();
 }
 
 
 /** The seeded Oct 29 rehearsal at The Loft. The seeded admin has home, 28 MPG and regular gas. */
-test("admin logs gas from the rehearsal: round trip estimate, toggle one way, save shows in the expenses card", async ({ browser }) => {
+test("admin logs gas from the rehearsal's Money tab: round trip estimate, toggle one way, the line shows in Money out", async ({ browser }) => {
   const { page, close } = await as(browser, "jeff");
   await openRehearsal(page, "Oct 29");
+  await page.getByTestId("reh-tab-money").click();
+  await page.getByTestId("money-out-open").click();
+  const modal = page.getByTestId("money-out-modal");
+  await expect(modal.getByTestId("mo-cat")).toHaveValue("Gas"); // from a rehearsal, gas is preselected
 
-  await page.getByTestId("reh-add-expense").click();
-  await expect(page.getByText(/^Rehearsal · /)).toContainText("Oct 29"); // the rehearsal is preselected
-  await page.getByTestId("exp-cat-travel").click();
-  await expect(page.getByTestId("exp-estimate")).toContainText("Denver-area average");
-  await expect(page.getByTestId("exp-estimate-cost")).toHaveText("$4.98"); // 36.8 mi at 28 MPG and $3.79/gal
-  await expect(page.getByTestId("exp-mpg-inline")).toHaveCount(0); // settings are saved, so no questions
-  await expect(page.getByTestId("exp-from-suggestion")).toHaveCount(0);
+  await modal.getByTestId("mo-gas-driver").selectOption({ label: "Jeff" });
+  await expect(modal.getByTestId("mo-gas-from-home")).toContainText("home"); // never the address
+  await expect(modal.getByTestId("mo-gas-to-rehearsal")).toContainText("The Loft");
+  await expect(modal.getByTestId("mo-gas-mpg")).toHaveCount(0); // settings are saved, so no questions
+  await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$3.79/gal Denver");
+  await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$4.98"); // 36.8 mi at 28 MPG and $3.79/gal
 
-  await page.getByTestId("exp-roundtrip").click(); // one way
-  await expect(page.getByTestId("exp-estimate-cost")).toHaveText("$2.49");
-  await page.getByTestId("exp-roundtrip").click(); // back to round trip, what gets saved
-  await expect(page.getByTestId("exp-estimate-cost")).toHaveText("$4.98");
-  await page.getByTestId("exp-save").click();
+  await modal.getByTestId("mo-gas-roundtrip").click(); // one way
+  await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$2.49");
+  await modal.getByTestId("mo-gas-roundtrip").click(); // back to round trip, what gets saved
+  await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$4.98");
+  await modal.getByTestId("mo-save").click();
+  await expect(modal).toBeHidden();
 
-  await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/);
-  await expect(page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "36.8 mi round trip" }).first()).toBeVisible();
+  const row = page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]').filter({ hasText: "$4.98" });
+  await expect(row.first()).toBeVisible();
+  await expect(row.first()).toContainText("Gas");
   await close();
 });
 
@@ -63,7 +68,8 @@ test("a member adds an expense on a rehearsal and an admin sees it", async ({ br
   await david.page.getByTestId("reh-tab-money").click();
   const card = david.page.getByTestId("expenses");
   await card.getByTestId("expenses-full-form").click();
-  await david.page.getByTestId("exp-cat-space").click();
+  await david.page.getByTestId("exp-cat").click();
+  await david.page.getByTestId("exp-cat-opt-space").click();
   await david.page.getByTestId("exp-amount").fill("25");
   await david.page.getByTestId("expense-what").fill("Room rental split");
   await david.page.getByTestId("exp-save").click();
@@ -74,7 +80,9 @@ test("a member adds an expense on a rehearsal and an admin sees it", async ({ br
   const jeff = await as(browser, "jeff");
   await openRehearsal(jeff.page, "Oct 29");
   await jeff.page.getByTestId("reh-tab-money").click();
-  await expect(jeff.page.getByTestId("expenses").getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
+  // admins have no Expenses card: the member's expense is a line in Money out
+  await expect(jeff.page.getByTestId("expenses")).toHaveCount(0);
+  await expect(jeff.page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]').filter({ hasText: "Room rental split" })).toBeVisible();
   await jeff.close();
 });
 

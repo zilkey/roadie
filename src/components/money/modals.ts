@@ -4,7 +4,23 @@
  * and their open items, a project page its projectId, a ledger line the record to mark paid. Everything else the admin
  * picks in the modal.
  */
+/**
+ * The record a money modal or card belongs to. When a modal gets one, it hides the pickers the record decides and
+ * writes the record's ids: a show hides Project and Show (the show's project), a rehearsal hides Rehearsal and starts
+ * Project on the rehearsal's (still changeable), a release hides Project and Track (whole release), a track hides
+ * Project and Track (pinned to the track). Everything is stored the same way it is from the Money page.
+ */
+export type MoneyContext =
+  | { kind: "show"; showId: string; projectId?: string }
+  | { kind: "rehearsal"; rehearsalId: string; projectId?: string }
+  | { kind: "release"; releaseId: string; projectId: string }
+  | { kind: "track"; releaseId: string; projectId: string; releaseTrackId: string };
+
 export interface MoneyDefaults {
+  /** The record the modal was opened from; see MoneyContext. */
+  context?: MoneyContext;
+  /** Money out only: start on this category ("gas" opens the gas form). */
+  category?: string;
   projectId?: string;
   showId?: string;
   /** A release track to pin the money to (the project must be that release's); a release's Money tab or a track page passes it. */
@@ -27,3 +43,8 @@ export interface MoneyModalProps {
 }
 export type MoneyOutModalProps = MoneyModalProps;
 export type MoneyInModalProps = MoneyModalProps;
+
+/** The admin's two money cards (MoneyCards.tsx), the same on a show, rehearsal, release and track. */
+export interface MoneyCardProps {
+  context: MoneyContext;
+}

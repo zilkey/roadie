@@ -1,23 +1,15 @@
 "use client";
-import { useState } from "react";
 import { HBars } from "@/components/money/charts";
-import { MoneyInModal } from "@/components/money/MoneyInModal";
-import { MoneyOutModal } from "@/components/money/MoneyOutModal";
+import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, PAYOUT_KIND_LABEL, byCategory, defaultProject, formatCents, moneyRows, owesBack, projectOf, projectTotals } from "@/lib/money";
-import type { Expense, Income, Musician, Payout, Project, User } from "@/schema";
+import { CATEGORY_LABEL, INCOME_LABEL, byCategory, defaultProject, formatCents, moneyRows, projectOf, projectTotals } from "@/lib/money";
+import type { Expense, Income, Payout, Project } from "@/schema";
 import type { ReleaseData } from "./common";
 
-type Filter = "all" | "expenses" | "income" | "owed";
-const FILTERS: [Filter, string][] = [["all", "Everything"], ["expenses", "Expenses"], ["income", "Income"], ["owed", "Owed back"]];
-
-const shortDate = (s: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—");
 /** "+$1,180.00", "−$3,032.00", "$0.00". */
 export const signed = (c: number) => `${c < 0 ? "−" : c > 0 ? "+" : ""}${formatCents(Math.abs(c))}`;
 
-interface Line { key: string; kind: "income" | "expense" | "payout"; id: string; date: string; cat: string; trackId?: string; details: string; notes?: string; who: string; amount: number; sign: 1 | -1; owed: boolean }
-
-/** The release's money: its project's income, expenses and payouts. Admins only. */
+/** The release's money: where it stands (spent, earned, net, by category), then the shared Money in and Money out cards on the release (tracks' lines included, tagged). Admins only. */
 export function ReleaseMoney({ data }: { data: ReleaseData }) {
   if (!data.admin || !data.release) return null;
   return <View data={data} />;
@@ -29,10 +21,7 @@ function View({ data }: { data: ReleaseData }) {
   const income = useCollection<Income>("income");
   const expenses = useCollection<Expense>("expenses");
   const payouts = useCollection<Payout>("payouts");
-  const users = useCollection<User>("users");
-  const musicians = useCollection<Musician>("musicians");
-  const [modal, setModal] = useState<"in" | "out" | null>(null);
-  const [filter, setFilter] = useState<Filter>("all");
+  const context = { kind: "release" as const, releaseId: release.id, projectId: release.projectId };
 
   const def = defaultProject(projects.rows ?? [])?.id;
   const mine = <T extends { projectId?: string }>(xs: readonly T[] | null) => (xs ?? []).filter((x) => projectOf(x, def) === release.projectId);
@@ -43,20 +32,6 @@ function View({ data }: { data: ReleaseData }) {
   const earned = t.inReceived + t.inOwed;
   const net = earned - spent;
 
-  const personName = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? musicians.rows?.find((m) => m.userId === uid)?.name ?? "Someone";
-  const trackLabel = (id?: string) => {
-    if (!id) return "—";
-    const tr = data.tracks.find((x) => x.id === id);
-    return tr ? `${tr.position} · ${tr.title}` : "—";
-  };
-
-  const lines: Line[] = [
-    ...inc.map((x): Line => ({ key: `income-${x.id}`, kind: "income", id: x.id, date: x.date, cat: INCOME_LABEL[x.category] ?? x.category, trackId: x.releaseTrackId, details: x.from, notes: x.notes, who: "Band", amount: x.amount, sign: 1, owed: false })),
-    ...exp.map((x): Line => ({ key: `expense-${x.id}`, kind: "expense", id: x.id, date: x.date, cat: CATEGORY_LABEL[x.category] ?? x.category, trackId: x.releaseTrackId, details: x.what, who: `${personName(x.userId)}${owesBack(x) ? " · owed back" : ""}`, amount: x.amount, sign: -1, owed: owesBack(x) })),
-    ...pay.map((p): Line => ({ key: `payout-${p.id}`, kind: "payout", id: p.id, date: p.paidAt ?? p.dueDate ?? "", cat: PAYOUT_KIND_LABEL[p.kind] ?? p.kind, trackId: p.releaseTrackId, details: p.what ?? (p.paidAt ? "Paid out" : "We owe"), who: p.to.name, amount: p.amount, sign: -1, owed: false })),
-  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.key.localeCompare(b.key)));
-  const shown = lines.filter((l) => filter === "all" || (filter === "income" ? l.kind === "income" : filter === "expenses" ? l.kind !== "income" : l.kind === "expense" && l.owed));
-
   const spentCats = byCategory(moneyRows({ income: [], expenses: exp, payouts: pay })).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }));
   const earnedCats = byCategory(moneyRows({ income: inc, expenses: [], payouts: [] })).map((r) => ({ ...r, label: INCOME_LABEL[r.key] ?? r.key }));
 
@@ -65,10 +40,6 @@ function View({ data }: { data: ReleaseData }) {
       <section className="card" aria-labelledby="release-money-h">
         <div className="sg-sech">
           <h2 id="release-money-h" className="card-h">Where it stands</h2>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn acc sm" onClick={() => setModal("in")} data-testid="money-in-open">+ Money in</button>
-            <button type="button" className="btn acc sm" onClick={() => setModal("out")} data-testid="money-out-open">+ Money out</button>
-          </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div className="grid gap-1" data-testid="tile-spent">
@@ -95,41 +66,8 @@ function View({ data }: { data: ReleaseData }) {
         </div>
       </div>
 
-      <section className="card" data-testid="release-lines" aria-labelledby="release-lines-h">
-        <div className="sg-sech">
-          <h2 id="release-lines-h" className="card-h">All lines</h2>
-          <label className="flex items-center gap-2"><span className="lbl">Show</span>
-            <select className="select !w-auto" value={filter} onChange={(e) => setFilter(e.target.value as Filter)} data-testid="lines-filter" aria-label="Show">
-              {FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </label>
-        </div>
-        {shown.length === 0
-          ? <span className="s" data-testid="lines-empty">{lines.length ? "Nothing matches." : "No money on this release yet."}</span>
-          : (
-            <div className="book-tw">
-              <table className="book-table" style={{ minWidth: 720 }}>
-                <thead><tr><th>Date</th><th>Category</th><th>Track</th><th>Details</th><th>Who</th><th className="text-right">Amount</th></tr></thead>
-                <tbody>
-                  {shown.map((l) => (
-                    <tr key={l.key} data-testid={`line-${l.kind}-${l.id}`}>
-                      <td className="nw">{shortDate(l.date)}</td>
-                      <td className="nw">{l.cat}</td>
-                      <td className="nw">{trackLabel(l.trackId)}</td>
-                      <td>{l.details}{l.notes && <span className="s"> · {l.notes}</span>}</td>
-                      <td className="nw">{l.who}</td>
-                      <td className={`nw text-right font-mono font-bold${l.sign > 0 ? " text-ok" : ""}`}>{l.sign > 0 ? "+" : "−"}{formatCents(l.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        <span className="s">These are the band&apos;s ledger and expenses, tagged with this release. They also show in Money.</span>
-      </section>
-
-      <MoneyInModal open={modal === "in"} onClose={() => setModal(null)} defaults={{ projectId: release.projectId }} />
-      <MoneyOutModal open={modal === "out"} onClose={() => setModal(null)} defaults={{ projectId: release.projectId }} />
+      <MoneyInCard context={context} />
+      <MoneyOutCard context={context} />
     </div>
   );
 }

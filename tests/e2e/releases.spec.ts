@@ -74,9 +74,8 @@ test("a new release from a setlist template gets its own project; tracks are add
 
   // the tracklist comes after creating: from the setlist, in its order
   const rows = page.locator('[data-testid^="track-row-"]');
-  await page.getByTestId("add-tracks-btn").click();
+  await page.getByTestId("add-setlist-btn").click();
   await expect(page.getByTestId("add-tracks-dialog")).toBeVisible();
-  await page.getByTestId("add-from-setlist").click();
   await page.getByTestId("pick-setlist").selectOption({ label: "Release set" });
   await page.getByTestId("add-tracks-submit").click();
   await expect(rows).toHaveCount(2);
@@ -84,13 +83,11 @@ test("a new release from a setlist template gets its own project; tracks are add
   await expect(rows.nth(1)).toContainText("Gold Hour");
 
   // add two more songs; Glass Coast is on the other release too (a release is per record, so it's offered)
-  await page.getByTestId("add-tracks-btn").click();
-  await expect(page.getByTestId("add-tracks-dialog")).toBeVisible();
-  await page.getByTestId("song-search").fill("coast");
-  await page.locator('[data-testid^="pick-song-"]:visible').first().check();
-  await page.getByTestId("song-search").fill("cotton");
-  await page.locator('[data-testid^="pick-song-"]:visible').first().check();
-  await page.getByTestId("add-tracks-submit").click();
+  await page.getByTestId("track-song-search").fill("coast");
+  await page.getByTestId("song-search-option").filter({ hasText: "Glass Coast" }).click();
+  await expect(rows).toHaveCount(3);
+  await page.getByTestId("track-song-search").fill("cotton");
+  await page.getByTestId("track-song-search").press("Enter");
   await expect(rows).toHaveCount(4);
   await expect(rows.nth(2)).toContainText("Glass Coast");
   await expect(rows.nth(3)).toContainText("Cottonwood");
@@ -136,8 +133,8 @@ test("a track's page: status steps, a mix added from Drive becomes v3, approving
   await expect(mixes.nth(0).locator('[data-testid^="approved-"]')).toBeVisible();
   await expect(mixes.nth(1)).toContainText("Guitar solo a touch quieter.");
   // the costs pinned to this track
-  await expect(page.getByTestId("track-costs")).toContainText("Mix v2 revisions");
-  await expect(page.getByTestId("track-costs")).toContainText("$300.00");
+  await expect(page.getByTestId("track-costs").getByTestId("paid-out")).toContainText("Mix v2 revisions");
+  await expect(page.getByTestId("track-costs").getByTestId("paid-out")).toContainText("$300.00");
 
   // a new mix from the release folder in Drive: v3 from its name, then approve it
   await page.getByTestId("add-mix-from-drive").click();
@@ -182,7 +179,7 @@ test("a track's page: status steps, a mix added from Drive becomes v3, approving
   await expect(page.getByTestId("release-progress")).toHaveText(/Mastered 1\/10/);
 });
 
-test("the Money tab: spent, earned and net, lines with their track, Money in and Money out pinned to a track; Files: artwork and an upload", async ({ page }) => {
+test("the Money tab: spent, earned and net, the Money in and Money out cards (lines tagged with their track), adding to the whole release; Files: artwork and an upload", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/releases"));
   await page.locator('[data-testid^="release-row-"]', { hasText: "Wild Hearts LP" }).getByTestId("release-title").click();
@@ -196,46 +193,38 @@ test("the Money tab: spent, earned and net, lines with their track, Money in and
   await expect(page.getByTestId("release-spent-amount")).toHaveText("$2,100.00");
   await expect(page.getByTestId("tile-earned")).toContainText("$584.00");
   await expect(page.getByTestId("tile-net")).toContainText("−$1,516.00");
-  const lines = page.getByTestId("release-lines");
-  await expect(lines.locator('[data-testid^="line-expense-"]', { hasText: "Mix v2 revisions" })).toContainText("3 · Low Light");
-  await page.getByTestId("lines-filter").selectOption("income");
-  await expect(lines.locator('[data-testid^="line-expense-"]')).toHaveCount(0);
-  await expect(lines.locator('[data-testid^="line-income-"]')).toHaveCount(2);
-  // + Money in is the Money page's form on the release's project, with the record kinds and a Track field
-  await page.getByTestId("money-in-open").click();
+  const moneyIn = page.getByTestId("income");
+  const moneyOut = page.getByTestId("paid-out");
+  await expect(moneyOut.locator('[data-testid^="expense-row-"]', { hasText: "Mix v2 revisions" })).toContainText("3 · Low Light");
+  await expect(moneyIn.locator('[data-testid^="income-row-"]')).toHaveCount(2);
+  // + Money in is the Money page's form on the release's project
+  await moneyIn.getByTestId("money-in-open").click();
   await expect(page.getByTestId("money-in-modal")).toBeVisible();
-  await expect(page.getByTestId("mi-project")).toHaveValue(/./);
-  await expect(page.getByTestId("mi-project").locator("option:checked")).toHaveText("Wild Hearts LP");
   await page.getByTestId("mi-got").check();
   await page.getByTestId("mi-cat").selectOption("sync");
   await page.getByTestId("mi-from").fill("Netflix sync");
   await page.getByTestId("mi-amount").fill("780");
-  await page.getByTestId("mi-track").selectOption({ label: "3 · Low Light" });
+  await expect(page.getByTestId("mi-project")).toHaveCount(0); // the release decides project and track
+  await expect(page.getByTestId("mi-track")).toHaveCount(0);
   await page.getByTestId("mi-method").selectOption("bank");
   await page.getByTestId("mi-save").click();
   await expect(page.getByTestId("money-in-modal")).toBeHidden();
-  await expect(lines.locator('[data-testid^="line-income-"]', { hasText: "Netflix sync" })).toContainText("3 · Low Light");
+  await expect(moneyIn.locator('[data-testid^="income-row-"]', { hasText: "Netflix sync" })).toBeVisible();
   await expect(page.getByTestId("tile-earned")).toContainText("$1,364.00");
-  // + Money out: a session player's pay pinned to the same track; the Track field goes when another project is picked
-  await page.getByTestId("lines-filter").selectOption("all");
-  await page.getByTestId("money-out-open").click();
+  // + Money out: a session player's pay on the whole release
+  await moneyOut.getByTestId("money-out-open").click();
   const out = page.getByTestId("money-out-modal");
   await expect(out).toBeVisible();
-  await expect(out.getByTestId("mo-project").locator("option:checked")).toHaveText("Wild Hearts LP");
   await out.getByTestId("mo-kind").selectOption("pay");
   await out.getByTestId("mo-who-input").fill("Ava Strings");
   await out.getByTestId("mo-who-other").click();
   await out.getByTestId("mo-amount").fill("200");
   await out.getByTestId("mo-what").fill("cello on Low Light");
-  await out.getByTestId("mo-track").selectOption({ label: "3 · Low Light" });
-  await out.getByTestId("mo-project").selectOption({ label: "General" });
+  await expect(out.getByTestId("mo-project")).toHaveCount(0); // whole release: no Project or Track pickers
   await expect(out.getByTestId("mo-track")).toHaveCount(0);
-  await out.getByTestId("mo-project").selectOption({ label: "Wild Hearts LP" });
-  await expect(out.getByTestId("mo-track")).toHaveValue("");
-  await out.getByTestId("mo-track").selectOption({ label: "3 · Low Light" });
   await out.getByTestId("mo-save").click();
   await expect(out).toBeHidden();
-  await expect(lines.locator('[data-testid^="line-payout-"]', { hasText: "Ava Strings" })).toContainText("3 · Low Light");
+  await expect(moneyOut.locator('[data-testid^="payout-row-"]', { hasText: "Ava Strings" })).toBeVisible();
   await expect(page.getByTestId("release-spent-amount")).toHaveText("$2,300.00");
 
   // Files: the cover sits under Artwork; an upload lands in the release folder

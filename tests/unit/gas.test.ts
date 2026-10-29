@@ -174,14 +174,15 @@ test("a gas expense from a home trip stores miles and fromKind home, never an ad
   assert.equal(y.amount, 600);
 });
 
-test("the save flags write the caller's own settings, never the For person's", async () => {
-  await updateDriving(memberUid, { home: HOME, mpg: 31 });
-  const est = await cmd("expenses.estimateGas", { forId: memberUid, rehearsalId }, ctx);
-  await cmd("expenses.add", { amount: est.estimateCents, what: "Gas", category: "travel", userId: memberUid, rehearsalId, gas: gasFrom(est), saveMpg: true }, ctx);
-  assert.equal((await getDriving(ctx.uid))?.mpg, 31, "the caller's settings took the MPG");
+test("the save flags write the payer's settings: the driver an admin logs for, else the caller", async () => {
+  await updateDriving(ctx.uid, { mpg: 22 });
+  await updateDriving(memberUid, { home: HOME, mpg: null });
+  const est = await cmd("expenses.estimateGas", { forId: memberUid, rehearsalId, mpg: 31 }, ctx);
+  await cmd("expenses.add", { amount: est.estimateCents, what: "Gas", category: "gas", userId: memberUid, rehearsalId, gas: gasFrom(est), saveMpg: true }, ctx);
+  assert.equal((await getDriving(ctx.uid))?.mpg, 22, "the admin's own MPG is untouched");
   const d = await getDriving(memberUid);
-  assert.equal(d?.mpg, 31);
-  assert.deepEqual(d?.home, HOME, "the For person's settings are untouched");
+  assert.equal(d?.mpg, 31, "the driver's settings took the MPG");
+  assert.deepEqual(d?.home, HOME);
   // saveAsHome writes the member's own home when they typed their From
   await updateDriving(memberUid, { home: null });
   const typed = await cmd("expenses.estimateGas", { rehearsalId, from: { address: HOME.address, lat: HOME.lat, lng: HOME.lng } }, mctx);

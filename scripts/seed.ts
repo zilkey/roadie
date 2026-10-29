@@ -179,9 +179,9 @@ async function main() {
   await create("files", { kind: "recording", title: "Weathervane on Spotify", songId: songIds[1], provider: "spotify", url: "https://open.spotify.com/track/0000000000000000000000", checkedAt: new Date() });
   await create("files", { kind: "demo", title: "Low Light demo (voice memo)", songId: songIds[2], provider: "web", url: "https://example.com/demos/low-light-memo", checkedAt: new Date() });
   await create("files", { kind: "demo", title: "Low Light demo (YouTube)", songId: songIds[2], provider: "youtube", url: "https://www.youtube.com/watch?v=00000000000", checkedAt: new Date() });
-  await create("rehearsals", { date: "2026-10-18", location: { name: "Jeff's basement" }, personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[0], title: "Glass Coast", note: "Tighten the bridge" }, { songId: songIds[3], title: "Ruby Hill" }], notes: "Good energy. Eric to bring the click." });
+  await create("rehearsals", { date: "2026-10-18", projectId: bandProject, location: { name: "Jeff's basement" }, personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[0], title: "Glass Coast", note: "Tighten the bridge" }, { songId: songIds[3], title: "Ruby Hill" }], notes: "Good energy. Eric to bring the click." });
   // A rehearsal with a full location (the autocomplete's shape) and times: the gas estimate's "To" and the drive both come from it.
-  await create("rehearsals", { date: "2026-10-29", startTime: "19:00", endTime: "22:00", location: { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 },
+  await create("rehearsals", { date: "2026-10-29", projectId: bandProject, startTime: "19:00", endTime: "22:00", location: { name: "The Loft", address: "2363 Champa St, Denver, CO, USA", lat: 39.7526, lng: -104.9868 },
     personnel: ["ingrid", "jeff", "david", "eric"].map((k) => mid[k]), songs: [{ songId: songIds[8], title: "Kerosene" }, { songId: songIds[9], title: "Gold Hour", note: "Check the key change" }] });
 
   const person = (key: string) => DEV_PEOPLE.find((p) => p.key === key)!.name;

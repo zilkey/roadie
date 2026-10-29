@@ -70,6 +70,7 @@
     "migrate:band-notes": "tsx scripts/migrate-band-notes.ts",
     "migrate:money": "tsx scripts/migrate-money.ts",
     "migrate:releases": "tsx scripts/migrate-releases.ts",
+    "migrate:gas": "tsx scripts/migrate-gas-category.ts",
     "test:all": "tsx scripts/test-all.ts"
   },
   "dependencies": {

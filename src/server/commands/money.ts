@@ -92,14 +92,20 @@ const refresh = (w: Writer, ...showIds: unknown[]) => Promise.all([...new Set(sh
  * the show's artist and billedAs. `strict` (income, payouts: projectId is required) throws when there is nowhere to put it;
  * otherwise (expenses: optional until the migration) it returns undefined and the record goes unstamped.
  */
-async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null; strict?: boolean }): Promise<string | undefined> {
+async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null; rehearsal?: Doc | null; strict?: boolean }): Promise<string | undefined> {
   if (o.projectId) return (await requireOpenProject(w, o.projectId)).id;
   if (o.show?.projectId) return (await requireOpenProject(w, o.show.projectId as string)).id;
+  if (o.rehearsal?.projectId) return (await requireOpenProject(w, o.rehearsal.projectId as string)).id;
   let id: string | undefined;
   try { id = await defaultProjectIdFor(w, (await artistFor(w, o.show?.artistId as string | undefined)).id, o.show?.billedAs as string | undefined); }
   catch (e) { if (o.strict) throw e; }
   if (!id && o.strict) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) or pass projectId", 409);
   return id;
+}
+async function liveRehearsal(w: Writer, id: string) {
+  const r = await w.get("rehearsals", id);
+  if (!r || r.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404);
+  return r;
 }
 async function liveShow(w: Writer, id: string) {
   const s = await w.get("shows", id);
@@ -127,17 +133,17 @@ export const expensesAdd = defineCommand({
   description: "Add an expense: amount in cents, what it was for, category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Doghouse $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
-    "category: gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other. projectId (from context.now projects) defaults to the show's project, else the default project. " +
-    "A gas expense (category travel) carries the frozen estimate in `gas`. saveMpg / saveAsHome write the CALLER's own settings only; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
+    "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
+    "A gas expense (category gas) carries the frozen estimate in `gas` and is always paid back. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\").",
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), category: expenseCategory, date: dateStr.optional(),
     showId: z.string().min(1).optional(), projectId: id1.optional(), rehearsalId: z.string().min(1).optional(), releaseTrackId: id1.optional(), gas: GasIn.optional(),
     receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
     to: PayoutTo.optional(), owed: z.boolean().optional(),
-    /** Save gas.mpg to the caller's own driving settings. */
+    /** Save gas.mpg to the payer's driving settings (userId, else the caller). */
     saveMpg: z.boolean().optional(),
-    /** Save this typed From (with coordinates) as the caller's own home address. */
+    /** Save this typed From (with coordinates) as the payer's home address (userId, else the caller). */
     saveAsHome: geoPoint.optional(),
     /** Admins only: set this typed To as the rehearsal's location (needs rehearsalId). */
     setAsRehearsalLocation: geoPoint.optional(),
@@ -151,8 +157,9 @@ export const expensesAdd = defineCommand({
     const u = await w.get("users", userId);
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
     const show = i.showId ? await liveShow(w, i.showId) : null;
-    if (i.rehearsalId && !(await w.get("rehearsals", i.rehearsalId))) throw new AppError("not_found", "Rehearsal not found", 404);
-    const projectId = await projectFor(w, { projectId: i.projectId, show });
+    const rehearsal = i.rehearsalId ? await liveRehearsal(w, i.rehearsalId) : null;
+    if (i.gas && i.category !== "gas" && i.category !== "travel") throw new AppError("invalid_input", "A gas estimate goes on a gas expense", 400);
+    const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, to, owed, ...rest } = i;
     const r = await w.create("expenses", {
@@ -160,14 +167,17 @@ export const expensesAdd = defineCommand({
       ...(to ? { to: await resolveTo(w, to) } : {}),
       // An open bill has no payer yet, so there is nothing to pay anyone back for.
       ...(owed ? { owed: true, payBack: false } : {}),
+      // Gas is always paid back to whoever drove.
+      ...(!owed && i.category === "gas" ? { payBack: true } : {}),
       ...(gas ? { gas: { ...gas, overridden: i.amount !== gas.estimateCents } } : {}),
     });
     if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
     return r;
    });
     // Side writes after the transaction (run() can retry; updateDriving is a direct write).
-    if (i.saveMpg && i.gas) await updateDriving(ctx.uid, { mpg: i.gas.mpg });
-    if (i.saveAsHome) await updateDriving(ctx.uid, { home: i.saveAsHome });
+    const payer = i.userId ?? ctx.uid;
+    if (i.saveMpg && i.gas) await updateDriving(payer, { mpg: i.gas.mpg });
+    if (i.saveAsHome) await updateDriving(payer, { home: i.saveAsHome });
     if (i.setAsRehearsalLocation && i.rehearsalId) await db.update(ctx, "rehearsals", i.rehearsalId, { location: i.setAsRehearsalLocation });
     return r;
   },
@@ -244,7 +254,7 @@ export const expensesEstimateGas = defineCommand({
 
 export const expensesUpdate = defineCommand({
   name: "expenses.update", roles: ["admin", "member"],
-  description: "Fix an expense until it's paid back: what, amount, payBack, category (gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project). Admins may also move it to another payer (userId). Members only their own.",
+  description: "Fix an expense until it's paid back: what, amount, payBack, category (gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project). Admins may also move it to another payer (userId). Members only their own.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
     receipt: driveRef.nullable().optional(), showId: z.string().min(1).nullable().optional(), category: expenseCategory.optional(), projectId: id1.optional(),
@@ -492,16 +502,17 @@ async function requirePayout(w: Writer, id: string) {
 export const payoutsAdd = defineCommand({
   name: "payouts.add", roles: ["admin", "mcp"],
   description: "Record money the band pays (or owes) someone: to is exactly one of { musicianId } (a band player, from context.now band), { userId }, { contactId } or { name } for anyone else; the server copies their name. " +
-    "kind: pay (their pay for playing), split (another band's cut), reimbursement (paying back expenses; expenseIds marks those expenses reimbursed), other. amount in cents, what (\"the Lost Lake show\"), showId, " +
-    "projectId (defaults to the show's project, else the default project), releaseTrackId (one of the release's tracks, when the project is a release's and the pay was for one track), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. " +
+    "kind: pay (their pay for playing), split (another band's cut), reimbursement (paying back expenses; expenseIds marks those expenses reimbursed), other. amount in cents, what (\"the Lost Lake show\"), showId, rehearsalId, " +
+    "projectId (defaults to the show's project, else the rehearsal's, else the default project), releaseTrackId (one of the release's tracks, when the project is a release's and the pay was for one track), dueDate. paidAt (YYYY-MM-DD) is when it was paid: leave it OUT while we still owe it; payouts.markPaid fills it in later. method: cash|venmo|check|square|card|bank|other. " +
     "paidBy is the admin whose own account the money left (the band has none; ask which admin paid if unsure). Returns { id }.",
   input: z.strictObject({
-    to: PayoutTo, kind: payoutKind, amount: z.number().int().positive(), what: z.string().trim().min(1).optional(), projectId: id1.optional(), showId: id1.optional(),
+    to: PayoutTo, kind: payoutKind, amount: z.number().int().positive(), what: z.string().trim().min(1).optional(), projectId: id1.optional(), showId: id1.optional(), rehearsalId: id1.optional(),
     releaseTrackId: id1.optional(), dueDate: dateStr.optional(), paidAt: dateStr.optional(), method: paymentMethod.optional(), paidBy: id1.optional(), expenseIds: z.array(id1).min(1).optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = i.showId ? await liveShow(w, i.showId) : null;
-    const projectId = (await projectFor(w, { projectId: i.projectId, show, strict: true }))!;
+    const rehearsal = i.rehearsalId ? await liveRehearsal(w, i.rehearsalId) : null;
+    const projectId = (await projectFor(w, { projectId: i.projectId, show, rehearsal, strict: true }))!;
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
     const to = await resolveTo(w, i.to);
     if (i.paidBy) await requirePayer(w, i.paidBy);
@@ -518,16 +529,17 @@ export const payoutsAdd = defineCommand({
 
 export const payoutsUpdate = defineCommand({
   name: "payouts.update", roles: ["admin", "mcp"],
-  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / releaseTrackId / dueDate / paidAt / method / paidBy (null clears). paidAt:null = not paid after all.",
+  description: "Fix a payout (id from records.list payouts or context.now): to (same shapes as payouts.add), kind, amount, projectId (an open project), what / showId / rehearsalId / releaseTrackId / dueDate / paidAt / method / paidBy (null clears). paidAt:null = not paid after all.",
   input: z.strictObject({ id: id1, patch: z.strictObject({
     to: PayoutTo.optional(), kind: payoutKind.optional(), amount: z.number().int().positive().optional(), what: z.string().trim().min(1).nullable().optional(), projectId: id1.optional(),
-    showId: id1.nullable().optional(), releaseTrackId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(), paidBy: id1.nullable().optional(),
+    showId: id1.nullable().optional(), rehearsalId: id1.nullable().optional(), releaseTrackId: id1.nullable().optional(), dueDate: dateStr.nullable().optional(), paidAt: dateStr.nullable().optional(), method: paymentMethod.nullable().optional(), paidBy: id1.nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const x = await requirePayout(w, id);
     if (patch.paidBy) await requirePayer(w, patch.paidBy);
     if (patch.releaseTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.releaseTrackId);
     if (patch.showId) await liveShow(w, patch.showId);
+    if (patch.rehearsalId) await liveRehearsal(w, patch.rehearsalId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
     const { to, ...rest } = patch;
     const r = await w.update("payouts", id, { ...rest, ...(to ? { to: await resolveTo(w, to) } : {}) } as Record<string, unknown>);

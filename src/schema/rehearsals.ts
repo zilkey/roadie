@@ -18,6 +18,8 @@ export const Rehearsal = entity({
   date: dateStr,
   location: rehearsalLocation.optional(),
   venueId: id.optional(),
+  /** The project its money belongs to (projects/{id}). Missing = the default project; rehearsals.update moves its money along when this changes. */
+  projectId: id.optional(),
   startTime: timeStr.optional(),
   endTime: timeStr.optional(),
   /** Set by rehearsals.importSetlist: where the songs card says the list came from. Later edits don't touch the setlist. */

@@ -292,7 +292,7 @@ test("canned model: add $50 gas, move load-in, show me, pay everyone, cancel, in
   const add = await chat("add $50 gas");
   assert.match(add.text, /Logged it/);
   assert.ok(add.events.some((e) => e.type === "readback" && e.label === "Logged $50 gas, paid by Jeff"));
-  assert.equal((await expenses())[0].category, "travel");
+  assert.equal((await expenses())[0].category, "gas");
 
   const mv = await chat("move load-in at Hi-Dive to 4:30");
   const show = (await db.get("shows", showId))!;

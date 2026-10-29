@@ -13,10 +13,10 @@ import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 import { ReleaseMissing, releaseHref, trackHref, useRelease, type ReleaseData, type FileRow, type TrackRow } from "@/components/releases/common";
 import { useCollection } from "@/lib/firestore-hooks";
 import { TRACK_FILE_KINDS, TRACK_STATUS_LABEL, fmtVersion, trackReached } from "@/lib/releases";
-import { CATEGORY_LABEL, PAYOUT_KIND_LABEL, formatCents } from "@/lib/money";
+import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { fmtLen, playsInline, providerFor, type FileKind } from "@/lib/music";
 import { fmtInstant } from "@/lib/timezone";
-import type { Expense, FileDoc, Payout, TrackStatus } from "@/schema";
+import type { FileDoc, TrackStatus } from "@/schema";
 
 /** The steps the stepper shows; "mixing" reads as the current label on the Mixed step. */
 const STEPS: TrackStatus[] = ["tracking", "overdubs", "mixed", "mastered"];
@@ -151,7 +151,7 @@ function TrackView({ d, track }: { d: ReleaseData; track: TrackRow }) {
             </dd></div>
           </dl>
         </section>
-        {admin && <TrackCosts releaseId={release.id} trackId={track.id} />}
+        {admin && <TrackCosts releaseId={release.id} projectId={release.projectId} trackId={track.id} />}
       </div>
 
       <FromSong songId={track.songId} />
@@ -312,30 +312,15 @@ function Credits({ d, track }: { d: ReleaseData; track: TrackRow }) {
   );
 }
 
-/** Money out pinned to this track: expenses and payouts (a session player's pay), newest first. */
-function TrackCosts({ releaseId, trackId }: { releaseId: string; trackId: string }) {
-  const expenses = useCollection<Expense>("expenses");
-  const payouts = useCollection<Payout>("payouts");
-  const mine = [
-    ...(expenses.rows ?? []).filter((x) => x.releaseTrackId === trackId).map((x) => ({ id: x.id, date: x.date, label: `${CATEGORY_LABEL[x.category] ?? x.category} · ${x.what}`, amount: x.amount })),
-    ...(payouts.rows ?? []).filter((p) => p.releaseTrackId === trackId).map((p) => ({ id: p.id, date: p.paidAt ?? p.dueDate ?? "", label: `${PAYOUT_KIND_LABEL[p.kind] ?? p.kind} · ${p.to.name}${p.what ? ` · ${p.what}` : ""}`, amount: p.amount })),
-  ].sort((a, b) => (a.date < b.date ? 1 : -1));
-  const total = mine.reduce((n, x) => n + x.amount, 0);
+/** The track's money: the shared Money in and Money out cards on the track (lines pinned to it), with a link to the release's Money tab. */
+function TrackCosts({ releaseId, projectId, trackId }: { releaseId: string; projectId: string; trackId: string }) {
+  const context = { kind: "track" as const, releaseId, projectId, releaseTrackId: trackId };
   return (
-    <section className="grid content-start gap-2.5" aria-labelledby="costs-h">
-      <h2 id="costs-h" className="sg-lbl">Costs on this track</h2>
-      <div className="card" data-testid="track-costs">
-        {mine.length === 0 && <span className="s">Nothing spent on this track yet.</span>}
-        {mine.map((x) => (
-          <div key={x.id} className="flex justify-between gap-3 text-sm" data-testid={`cost-${x.id}`}>
-            <span>{x.label}</span><span className="font-mono">{formatCents(x.amount)}</span>
-          </div>
-        ))}
-        <div className="flex justify-between gap-3 border-t border-line pt-2 font-bold">
-          <span>Total</span><span className="font-mono" data-testid="track-costs-total">{formatCents(total)}</span>
-        </div>
-        <Link href={releaseHref(releaseId, "money")} className="text-sm font-semibold" data-testid="release-money-link">All release money →</Link>
-      </div>
+    <section className="grid content-start gap-2.5" aria-labelledby="costs-h" data-testid="track-costs">
+      <h2 id="costs-h" className="sg-lbl">Money on this track</h2>
+      <MoneyInCard context={context} />
+      <MoneyOutCard context={context} />
+      <Link href={releaseHref(releaseId, "money")} className="text-sm font-semibold" data-testid="release-money-link">All release money →</Link>
     </section>
   );
 }
