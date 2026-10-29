@@ -13,7 +13,7 @@ backup-out
 backup-repo
 
 # Service-account keys and other secrets: never committed (public repo)
-.secrets/
+.secrets
 *firebase-adminsdk*.json
 
 # Real booking data pulled from the claude.ai trackers (contacts: never committed, public repo)
