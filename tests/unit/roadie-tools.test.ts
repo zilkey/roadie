@@ -90,7 +90,7 @@ test("tool list comes from the registry and leaves out what Roadie must not do",
 });
 
 test("confirm rules: sends, money, deletes, cancels and more than 5 records", () => {
-  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "expenses.payPerson", "showDeals.setIncome", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "expenses.payPerson", "income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 5000, what: "gas", category: "travel" }), false);
   // a shared venue edit reaches every band: it asks. The band's own notes and links do not. Merging always asks.
   assert.equal(needsConfirm("venues.update", { id: "v", patch: { capacity: 300 } }), true);
@@ -101,6 +101,23 @@ test("confirm rules: sends, money, deletes, cancels and more than 5 records", ()
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { personnel: ["a", "b", "c", "d", "e", "f"] } }), true);
   assert.equal(needsConfirm("shows.setChecklists", { id: "x", checklists: [{ name: "Gear", items: Array.from({ length: 9 }, (_, i) => ({ label: String(i) })) }] }), false);
   assert.equal(needsConfirm("availability.check", { dates: Array.from({ length: 9 }, () => "2026-01-01") }), false);
+});
+
+test("the money commands are tools, showDeals.setIncome is gone, and every schema normalises for Gemini", () => {
+  const defs = toolDefs("admin");
+  const names = defs.map((t) => t.name);
+  for (const must of ["projects.create", "projects.update", "projects.close", "projects.reopen", "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid", "expenses.payPerson"]) assert.ok(names.includes(must), must);
+  assert.equal(names.includes("showDeals.setIncome"), false);
+  assert.equal(names.includes("projects.remove"), false);
+  for (const n of names.filter((x) => /^(projects|income|payouts)\./.test(x))) {
+    const t = defs.find((d) => d.name === n)!;
+    assert.equal(t.inputJsonSchema.type, "object", n);
+    assert.ok(!JSON.stringify(t.inputJsonSchema).includes('"$ref"'), `${n} has no $ref`);
+    assert.ok(!JSON.stringify(t.inputJsonSchema).includes('"const"'), `${n} has no const`);
+  }
+  const pay = defs.find((t) => t.name === "payouts.add")!;
+  assert.ok((pay.inputJsonSchema.properties as Record<string, unknown>).to);
+  assert.ok((defs.find((t) => t.name === "expenses.add")!.inputJsonSchema.properties as Record<string, unknown>).projectId);
 });
 
 test("a tool call goes through the command gate signed as Roadie, with the thread and the message's run id", async () => {
@@ -326,6 +343,8 @@ test("search finds shows, venues and songs; context.now says who, when and what'
   assert.equal(c.timeZone, "America/Denver");
   assert.deepEqual(c.todaysShows.map((x) => x.id), [showId]);
   assert.deepEqual(c.openExpenses.map((e) => e.what), ["parking"]);
+  assert.deepEqual(c.weOwe.map((g) => [g.name, g.totalCents]), [["Jeff", 2000]]); // a pay-back expense nobody has paid back
+  assert.deepEqual(c.owedToUs, { totalCents: 0, items: [] });
   assert.equal(tonightDate(new Date("2026-11-15T05:00:00-07:00")), "2026-11-14"); // before 6am, tonight is still last night
   assert.equal(tonightDate(new Date("2026-11-15T07:00:00-07:00")), "2026-11-15");
   const wrapped = (await execTool(s, "context.now", {}, noop)).output as { notice: string; untrustedContent: unknown };
@@ -370,6 +389,7 @@ test("text planted in a record doesn't trigger tools in the canned model", async
 test("paying someone back is one card with their name and total; yes pays exactly what it showed", async () => {
   const eric = await makeUser("eric@example.com", "member", { name: "Eric Garcia" });
   await db.create(sys, "musicians", { name: "Eric Garcia", instruments: [], active: true, userId: eric.uid });
+  await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true }); // paying back writes a payout, which needs a project
   const add = (amount: number, what: string, payBack = true) =>
     registry["expenses.add"].run(sys, registry["expenses.add"].input.parse({ amount, what, category: "gear", userId: eric.uid, payBack })) as Promise<{ id: string }>;
   const owed = [await add(10000, "Strings"), await add(4234, "Gas"), await add(1000, "Food")];
@@ -386,6 +406,32 @@ test("paying someone back is one card with their name and total; yes pays exactl
   for (const x of owed) assert.ok((await db.get("expenses", x.id))!.paidBackAt, x.id);
   assert.equal((await db.get("expenses", later.id))!.paidBackAt, undefined);
   await assert.rejects(registry["expenses.payPerson"].run(sys, { userId: eric.uid, ids: [owed[0].id] }), (e: { code?: string }) => e.code === "not_found");
+});
+
+test("money cards name the person, project and show; income.add asks and yes lands it owed", async () => {
+  const eric = await makeUser("eric@example.com", "member", { name: "Eric Garcia" });
+  await db.create(sys, "musicians", { name: "Eric Garcia", instruments: [], active: true, userId: eric.uid });
+  // Creating the show already made the Band default project (ensureDefaultProject): reuse it rather than add a second default.
+  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true });
+  const s = await sess();
+  const card = async (name: string, input: Record<string, unknown>) => {
+    const events: AssistantEvent[] = [];
+    const out = await execTool(s, name, input, (e) => events.push(e));
+    return { out, summary: (events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }> | undefined)?.summary };
+  };
+  const owed = await card("income.add", { amount: 40000, category: "guarantee", from: "Lost Lake", showId });
+  assert.equal(owed.summary, "Lost Lake owes us $400.00 (guarantee, owed)");
+  const paid = await card("payouts.add", { to: { userId: eric.uid }, kind: "pay", amount: 10000, showId, paidAt: "2026-10-29", method: "venmo" });
+  assert.equal(paid.summary, "We paid Eric Garcia $100.00 for the Hi-Dive show (Venmo)");
+  const ans = await answerPending(who, { threadId: s.threadId, pendingId: (owed.out.output as { pendingId: string }).pendingId, decision: "yes" });
+  assert.equal(ans.status, "done");
+  const [inc] = await db.list("income");
+  assert.equal(inc.receivedAt, undefined);
+  assert.equal(inc.projectId, band.id);
+  assert.equal(inc.showId, showId);
+  // gas in a bandmate's name is "we owe": no card, a read-back
+  const gas = await execTool(s, "expenses.add", { amount: 4200, what: "gas", category: "travel", userId: eric.uid, payBack: true }, noop);
+  assert.equal(gas.action?.label, "We owe Eric Garcia $42 for gas");
 });
 
 test("context: on the Shows page Roadie gets the rows of the tab in view", async () => {

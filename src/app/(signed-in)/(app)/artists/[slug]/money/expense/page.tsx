@@ -10,19 +10,13 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
-import { dollarsToCents, formatCents, parseDollars } from "@/lib/money";
+import { defaultProject, dollarsToCents, EXPENSE_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
-import { roleIn, type Rehearsal, type Show, type User } from "@/schema";
+import { roleIn, type ExpenseCategory, type Project, type Rehearsal, type Show, type User } from "@/schema";
 
-/** The chips on the form and the ledger category each one files under (no new ledger category). */
-const CHIPS = [
-  ["gas", "Gas", "travel", "Gas"],
-  ["space", "Room rental", "space", "Room rental"],
-  ["gear", "Gear", "gear", ""],
-  ["food", "Food", "other", "Food"],
-  ["other", "Other", "other", ""],
-] as const;
-type Chip = (typeof CHIPS)[number][0];
+/** The chips on the form: the ledger's expense categories, the common ones first. */
+const FIRST = ["travel", "food", "gear", "lodging"];
+const CATS = [...FIRST, ...Object.keys(EXPENSE_LABEL).filter((k) => !FIRST.includes(k))] as ExpenseCategory[];
 
 interface Hit { driveFileId: string; name: string; url: string }
 /** What expenses.estimateGas replies with (numbers, or `missing`). */
@@ -46,6 +40,7 @@ function AddExpense() {
   const { artistId } = useArtist();
   const isAdmin = me.role === "admin";
   const shows = useCollection<Show>("shows");
+  const projects = useCollection<Project>("projects");
   const users = useCollection<User>("users", { skip: !isAdmin });
   const { call, error, busy } = useCommand();
   const est = useCommand();
@@ -62,13 +57,13 @@ function AddExpense() {
   const draft = useDraft(
     fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses") : draftPath.newIn("expenses"),
     {
-      amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "gas" : "gear") as Chip, showId: fromShow, link: "", payBack: true,
+      amount: "", amountEdited: false, what: "", cat: (rehearsalId ? "travel" : "gear") as ExpenseCategory, showId: fromShow, projectId: "", link: "", payBack: true,
       forId: "", fromPick: null as Place | null, toPick: null as Place | null, roundTrip: true, mpgText: "",
       saveMpg: true, saveHome: true, setRehearsal: true,
     },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
-  const { amount, what, cat, showId, link, forId, fromPick, toPick, roundTrip, mpgText } = draft.value;
+  const { amount, what, cat, showId, projectId: pickedProject, link, forId, fromPick, toPick, roundTrip, mpgText } = draft.value;
   const payBack = draft.value.payBack !== false;
   const patch = (p: Partial<typeof draft.value>) => draft.setValue((d) => ({ ...d, ...p }));
   const [q, setQ] = useState("");
@@ -77,7 +72,6 @@ function AddExpense() {
   const [need, setNeed] = useState({ mpg: false, home: false, dest: false });
   const [last, setLast] = useState<{ key: string; r: Estimate } | null>(null);
 
-  const chip = CHIPS.find((c) => c[0] === cat) ?? CHIPS[2];
   const forOther = isAdmin && !!forId && forId !== me.uid;
   const mpgNum = Number(mpgText);
   const mpgTyped = mpgText.trim() !== "" && mpgNum > 0;
@@ -94,7 +88,7 @@ function AddExpense() {
   };
   const key = JSON.stringify(estInput);
   useEffect(() => {
-    if (cat !== "gas" || !draft.ready) return;
+    if (cat !== "travel" || !draft.ready) return;
     let live = true;
     const t = setTimeout(async () => {
       const r = await estCall.current<Estimate>("expenses.estimateGas", JSON.parse(key));
@@ -104,7 +98,7 @@ function AddExpense() {
     }, 300);
     return () => { live = false; clearTimeout(t); };
   }, [key, cat, draft.ready]);
-  const cur = cat === "gas" && last?.key === key ? last.r : null;
+  const cur = cat === "travel" && last?.key === key ? last.r : null;
   const good = cur && cur.missing.length === 0 && cur.estimateCents && cur.miles && cur.oneWayMiles && cur.mpg && cur.priceMilli && cur.priceArea && cur.priceWeek && cur.seriesId && cur.grade ? cur : null;
   const missing = cur?.missing ?? [];
 
@@ -117,14 +111,19 @@ function AddExpense() {
 
   const typedAmount = amount.trim() ? parseDollars(amount) : null;
   const cents = typedAmount ?? (amount.trim() && !isNaN(Number(amount)) ? dollarsToCents(amount) : 0);
-  const base = chip[3];
   const note = what.trim();
-  const whatOut = base ? (note ? `${base} · ${note}` : base) : note;
+  // A gas estimate with nothing typed files as plain "Gas".
+  const whatOut = note || (cat === "travel" && good ? "Gas" : "");
+  // Project: what was picked, else the show's, else the default (rehearsals have no project of their own).
+  const openProjects = (projects.rows ?? []).filter((p) => p.status === "open").sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
+  const showProject = shows.rows?.find((s) => s.id === showId)?.projectId;
+  const defaultId = defaultProject(projects.rows ?? [])?.id;
+  const projectId = [pickedProject, showProject, defaultId].find((id) => id && openProjects.some((p) => p.id === id)) ?? "";
   const sorted = [...(shows.rows ?? [])].filter((s) => !isOff(s)).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
 
-  const showMpgBox = cat === "gas" && (need.mpg || missing.includes("mpg") || mpgTyped);
-  const showHomeBox = cat === "gas" && (need.home || missing.includes("home"));
-  const showToBox = cat === "gas" && (need.dest || missing.includes("destination") || (!rehHasLoc && !!toPick));
+  const showMpgBox = cat === "travel" && (need.mpg || missing.includes("mpg") || mpgTyped);
+  const showHomeBox = cat === "travel" && (need.home || missing.includes("home"));
+  const showToBox = cat === "travel" && (need.dest || missing.includes("destination") || (!rehHasLoc && !!toPick));
   const toLabel = placeLabel(rehLoc);
 
   async function find() {
@@ -142,7 +141,7 @@ function AddExpense() {
     } : undefined;
     const own = !forOther;
     const r = await call("expenses.add", {
-      amount: cents, what: whatOut, category: chip[2], payBack,
+      amount: cents, what: whatOut, category: cat, payBack, ...(projectId ? { projectId } : {}),
       ...(showId && !rehearsalId ? { showId } : {}), ...(rehearsalId ? { rehearsalId } : {}),
       ...(forOther ? { userId: forId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
@@ -169,8 +168,8 @@ function AddExpense() {
         <div className="grid gap-2">
           <span className="lbl">Category</span>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Category">
-            {CHIPS.map(([k, label]) => (
-              <PickChip key={k} on={cat === k} onToggle={() => patch({ cat: k })} testid={`exp-cat-${k}`}>{label}</PickChip>
+            {CATS.map((k) => (
+              <PickChip key={k} on={cat === k} onToggle={() => patch({ cat: k })} testid={`exp-cat-${k}`}>{EXPENSE_LABEL[k]}</PickChip>
             ))}
           </div>
         </div>
@@ -182,7 +181,7 @@ function AddExpense() {
           <span className="s">Pick a bandmate to log it for them. It shows in their expenses and they get paid back. Gas uses their home address and MPG.</span>
         </label>}
 
-        {cat === "gas" && <>
+        {cat === "travel" && <>
           {showHomeBox ? (
             <div className={warnBox} style={warnStyle}>
               <span className="lbl" style={{ color: "inherit" }}>From — where did you start?</span>
@@ -251,14 +250,16 @@ function AddExpense() {
           <ErrorBox error={est.error} />
         </>}
 
-        <label className="grid gap-1"><span className="lbl">{cat === "gas" ? "Amount" : "How much"}</span>
-          <input className="input font-mono" inputMode="decimal" placeholder={cat === "gas" ? "Or type the amount yourself" : "$0.00"} value={amount}
+        <label className="grid gap-1"><span className="lbl">{cat === "travel" ? "Amount" : "How much"}</span>
+          <input className="input font-mono" inputMode="decimal" placeholder={cat === "travel" ? "Or type the amount yourself" : "$0.00"} value={amount}
             onChange={(e) => patch({ amount: e.target.value, amountEdited: e.target.value.trim() !== "" })} data-testid="exp-amount" />
           {good && <span className="s">Pre-filled from the estimate. Change it if you paid something different.</span>}
         </label>
-        <label className="grid gap-1"><span className="lbl">{base ? "Note (optional)" : "What for"}</span>
-          <input className="input" placeholder={base ? "e.g. picked up Eric on the way" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
+        <label className="grid gap-1"><span className="lbl">What for</span>
+          <input className="input" placeholder={cat === "travel" ? "Gas to Fort Collins" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
 
+        <label className="grid gap-1"><span className="lbl">Project</span>
+          <Select testid="exp-project" value={projectId} onChange={(v) => patch({ projectId: v })} options={openProjects.map((p) => [p.id, p.name] as [string, string])} /></label>
         {!rehearsalId && <label className="grid gap-1"><span className="lbl">For a show?</span>
           <select className="select" value={showId} onChange={(e) => patch({ showId: e.target.value })} data-testid="expense-show">
             <option value="">Pick a show (optional)</option>

@@ -7,7 +7,7 @@ import { needsConfirm, isEligible } from "@/server/assistant/policy";
 import { routeNames } from "@/lib/routes";
 import type { Ctx } from "@/server/ctx";
 
-const ASKED = ["upcomingShows", "playedShows", "canceledShows", "droppedShows", "booking", "pitch", "pitchStatuses", "venueSharing", "songs", "setlists", "income", "expenses", "checklists", "customFields", "setlistTemplates", "rehearsals"];
+const ASKED = ["upcomingShows", "playedShows", "canceledShows", "droppedShows", "booking", "pitch", "pitchStatuses", "venueSharing", "songs", "setlists", "income", "expenses", "payouts", "projects", "checklists", "customFields", "setlistTemplates", "rehearsals"];
 
 test("help: every asked-for topic exists, has text, and links only to real topics", () => {
   const ids = new Set(HELP_TOPICS.map((t) => t.id));
@@ -49,6 +49,9 @@ test("help: topics named in words", () => {
   assert.equal(w("tell me about setlist templates"), "setlistTemplates");
   assert.equal(w("how do custom fields work"), "customFields");
   assert.equal(w("what does dropped mean"), "droppedShows");
+  assert.equal(w("what is a project"), "projects");
+  assert.equal(w("how do payouts work"), "payouts");
+  assert.equal(w("what does owed to us mean"), "income");
 });
 
 const ctx: Ctx = { uid: "u1", role: "admin", via: "app", runId: "r1" };

@@ -16,6 +16,8 @@ export const Configuration = z.strictObject({
   name: z.string().min(1),
   billingName: z.string().min(1),
   musicianIds: z.array(id),
+  /** The project (projects/{id}) a new show billed as this configuration belongs to (Full band -> Band, Duo -> Duo). Missing = the default project. */
+  defaultProjectId: id.optional(),
 });
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({

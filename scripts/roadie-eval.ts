@@ -14,6 +14,9 @@ import { ensureThread, newMessageId, newThreadId } from "../src/server/assistant
 import { modelLabel, modelMode } from "../src/server/assistant/ai";
 import { newRunId, importCtx } from "../src/server/ctx";
 import { db } from "../src/server/db";
+import { registry } from "../src/server/commands/registry";
+import { dateInBandZone } from "../src/lib/timezone";
+import { addDays } from "../src/lib/shows";
 import { adminAuth } from "../src/server/admin";
 import { syncClaims } from "../src/server/session";
 import type { AssistantAction, AssistantEvent, ToolTrace } from "../src/schema/assistant";
@@ -43,8 +46,28 @@ const SCENARIOS: Scenario[] = [
   { name: "new-type", turns: [{ say: 'add a new venue type option called "supper club"', calls: [/venueTypes\.add/], noText: REFUSES }] },
   { name: "expense", turns: [{ say: "log $12 for gas", calls: [/expenses\.add/], noText: REFUSES }] },
   { name: "stage-plot-group", turns: [{ say: "who still needs the new stage plot?", calls: [/tools\.load/, /stagePlots\.staleShows/], noText: REFUSES }] },
+  // Money (#39). The eval band has Eric (a bandmate with a sign-in), the Band and Lighthouse video projects, and Friday's show at Lost Lake (see seedMoney).
+  { name: "money-we-owe-gas", turns: [{ say: "we owe Eric $42 for gas", calls: [/expenses\.add/], noCalls: [/payouts\./], noText: REFUSES }] },
+  { name: "money-we-paid-eric", turns: [{ say: "we paid Eric $100 for Friday's show", calls: [/payouts\.add/], noCalls: [/expenses\.add/], noText: REFUSES }] },
+  { name: "money-venue-owes", turns: [{ say: "Lost Lake still owes us the $400 guarantee", calls: [/income\.add/], noCalls: [/setReceived/], cards: 1, noText: REFUSES }] },
+  { name: "money-on-project", turns: [{ say: "put the $750 video shoot on the Lighthouse video project", calls: [/expenses\.add/], noAsk: true, noText: REFUSES }] },
   { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
 ];
+
+/** What the money scenarios talk about: Eric (a bandmate with a sign-in), the Band and Lighthouse video projects, Friday's show at Lost Lake. */
+async function seedMoney(artistId: string, slug: string) {
+  const sys = importCtx("import", newRunId(), artistId);
+  const email = `eric-${slug}@example.com`;
+  const e = await adminAuth().createUser({ email, emailVerified: true, displayName: "Eric Garcia" });
+  await db.create(sys, "users", { email, name: "Eric Garcia", artists: [{ artistId, role: "member" }], mcpAccess: false }, { id: e.uid });
+  await db.create(sys, "musicians", { name: "Eric Garcia", instruments: ["drums"], active: true, userId: e.uid });
+  await db.create(sys, "projects", { artistId, kind: "band", name: "Band", status: "open", isDefault: true });
+  await db.create(sys, "projects", { artistId, kind: "video", name: "Lighthouse video", status: "open" });
+  const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse({ name: "Lost Lake", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" }))) as { id: string };
+  let friday = dateInBandZone();
+  while (new Date(`${friday}T12:00:00Z`).getUTCDay() !== 5) friday = addDays(friday, 1);
+  await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: friday, venueId: v.id, status: "confirmed", times: { loadIn: "19:00", set: "21:00" } }));
+}
 
 async function band() {
   const slug = `eval-${Date.now().toString(36)}`;
@@ -54,6 +77,7 @@ async function band() {
   const u = await adminAuth().createUser({ email, emailVerified: true, displayName: "Eval admin" });
   await db.create(sys, "users", { email, name: "Eval admin", artists: [{ artistId: artist.id, role: "admin" }], mcpAccess: false }, { id: u.uid });
   await syncClaims(u.uid);
+  await seedMoney(artist.id, slug);
   return { uid: u.uid, artistId: artist.id };
 }
 

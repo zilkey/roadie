@@ -4,7 +4,7 @@
  */
 import { registry } from "../commands/registry";
 import type { Role } from "../ctx";
-import { formatCents } from "@/lib/money";
+import { formatCents, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL } from "@/lib/money";
 
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
@@ -40,7 +40,9 @@ export function refusal(name: string, input: unknown): string | undefined {
 /** Commands that always ask first: they send, pay or move money, leave the app, or delete, archive or cancel. */
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "email.send", "availability.ask", "availability.remind",                      // sends
-  "expenses.setPaidBack", "expenses.payPerson", "showDeals.setIncome",                                          // money
+  "expenses.setPaidBack", "expenses.payPerson",                                                              // money
+  "income.add", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
+  "projects.create", "projects.update", "projects.close", "projects.reopen",                                 // what the money is for
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix",                              // changes Drive sharing
   "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
@@ -61,7 +63,7 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "showDeals.setIncome", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
 const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview"]);
@@ -92,7 +94,6 @@ export const isEligible = (name: string, role: Role) => !!registry[name] && !isE
 
 // ---------- one-line summaries ----------
 
-const dollars = (cents: unknown) => (typeof cents === "number" ? `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}` : "");
 type Before = Record<string, any> | undefined; // eslint-disable-line @typescript-eslint/no-explicit-any
 /** A venue field as readable text for old → new. */
 export function fmtField(k: string, v: unknown): string {
@@ -120,8 +121,30 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,
   "expenses.setPaidBack": (i) => (i.paid === false ? "Mark an expense as not paid back" : "Mark an expense as paid back"),
-  "expenses.payPerson": (_i, before) => `Pay ${before?.person ?? "them"}${before?.total ? ` ${formatCents(before.total)}` : " back"}`,
-  "showDeals.setIncome": (i) => `Set the show's income${Array.isArray(i.income) ? ` (${dollars((i.income as { amount: number }[]).reduce((n, l) => n + l.amount, 0))} in all)` : ""}`,
+  "expenses.payPerson": (i, before) => `Pay ${before?.person ?? "them"}${before?.total ? ` ${formatCents(before.total)}` : " back"}${i.method ? ` (${METHOD_LABEL[i.method] ?? i.method})` : ""}`,
+  // Money: the card reads like the sentence the person said. `before` carries the names the tool looked up (person, project, show) and, for a record named by id, its fields.
+  "expenses.add": (i, b) => {
+    const proj = b?.project ?? "the project", amt = formatCents(Number(i.amount) || 0);
+    return i.userId && i.payBack !== false && b?.person ? `We owe ${b.person} ${amt} for ${i.what} (pay back, ${proj})` : `Put ${amt} ${i.what} on ${proj}`;
+  },
+  "income.add": (i, b) => {
+    const amt = formatCents(Number(i.amount) || 0), cat = INCOME_LABEL[i.category]?.toLowerCase() ?? i.category;
+    return i.receivedAt ? `${i.from} paid us ${amt} (${cat}${i.method ? `, ${METHOD_LABEL[i.method] ?? i.method}` : ""}, ${b?.project ?? "the project"})` : `${i.from} owes us ${amt} (${cat}, owed)`;
+  },
+  "income.update": (i, b) => `Change the ${b?.from ? `${b.from} ` : ""}income${b?.amount ? ` of ${formatCents(b.amount)}` : ""}: ${Object.keys(i.patch ?? {}).join(", ")}`,
+  "income.setReceived": (i, b) => `Mark ${b?.from ?? "the"} income${b?.amount ? ` of ${formatCents(b.amount)}` : ""} as received${i.receivedAt ? ` on ${i.receivedAt}` : ""}${i.method ? ` (${METHOD_LABEL[i.method] ?? i.method})` : ""}`,
+  "income.remove": (_i, b) => `Remove the ${b?.from ? `${b.from} ` : ""}income${b?.amount ? ` of ${formatCents(b.amount)}` : ""}`,
+  "payouts.add": (i, b) => {
+    const amt = formatCents(Number(i.amount) || 0), who = b?.person ?? "them", why = b?.show ? `the ${b.show} show` : i.what ?? "the band";
+    return i.paidAt ? `We paid ${who} ${amt} for ${why}${i.method ? ` (${METHOD_LABEL[i.method] ?? i.method})` : ""}` : `We owe ${who} ${amt} for ${why}`;
+  },
+  "payouts.update": (i, b) => `Change what we ${b?.paidAt ? "paid" : "owe"} ${b?.person ?? "them"}${b?.amount ? ` (${formatCents(b.amount)})` : ""}: ${Object.keys(i.patch ?? {}).join(", ")}`,
+  "payouts.markPaid": (i, b) => `We paid ${b?.person ?? "them"}${b?.amount ? ` ${formatCents(b.amount)}` : ""}${b?.what ? ` for ${b.what}` : ""} (${METHOD_LABEL[i.method] ?? i.method})${i.paidAt ? ` on ${i.paidAt}` : ""}`,
+  "payouts.remove": (_i, b) => `Remove what we ${b?.paidAt ? "paid" : "owe"} ${b?.person ?? "them"}${b?.amount ? ` (${formatCents(b.amount)})` : ""}`,
+  "projects.create": (i) => `Start the ${PROJECT_KIND_LABEL[i.kind]?.toLowerCase() ?? i.kind} project ${i.name}${i.budget ? ` (budget ${formatCents(i.budget)})` : ""}${i.isDefault ? ", as the default" : ""}`,
+  "projects.update": (i, b) => `Change ${b?.name ? `the project ${b.name}` : "the project"}: ${Object.keys(i.patch ?? {}).join(", ")}`,
+  "projects.close": (_i, b) => `Close ${b?.name ? `the project ${b.name}` : "the project"}: nothing new can be put on it`,
+  "projects.reopen": (_i, b) => `Reopen ${b?.name ? `the project ${b.name}` : "the project"}`,
   "pitches.sendEmail": () => "Send an email from your Gmail",
   "email.send": () => "Send an email from your Gmail",
   "availability.ask": () => "Ask musicians if they can play (sends an email)",

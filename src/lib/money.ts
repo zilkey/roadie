@@ -13,17 +13,116 @@ export function parseDollars(text: string): number | null {
   return dollarsToCents(s);
 }
 
-// ---------- show money: income lines (on the deal) and expenses (pure; used by the server and the UI) ----------
-// There is no ledger: a show's income is the lines on its deal, what was spent is the expenses on it.
+// ---------- money: income, expenses and payouts, each on exactly one project (pure; used by the server and the UI) ----------
+// Nothing is stored but the records: every balance below is computed when read. The one cache is showDeals.totals
+// (src/server/dealTotals.ts), which showTotals() feeds.
 
-export interface IncomeLineLike { id: string; category: string; amount: number; method?: string; received: boolean }
 export interface ExpenseLike {
-  id: string; userId: string; date: string; amount: number; category: string; what: string; showId?: string;
-  payBack?: boolean; paidBackAt?: string; deletedAt?: unknown;
+  id: string; userId: string; date: string; amount: number; category: string; what: string; showId?: string; projectId?: string;
+  payBack?: boolean; paidBackAt?: string; reimbursedBy?: string; deletedAt?: unknown;
+}
+/** An income doc (src/schema/income.ts). No receivedAt = owed to us. */
+export interface IncomeLike {
+  id: string; date: string; amount: number; category: string; method?: string; from: string; projectId: string; showId?: string;
+  receivedAt?: string; deletedAt?: unknown;
+}
+/** A payout doc (src/schema/payouts.ts). No paidAt = we owe. */
+export interface PayoutLike {
+  id: string; to: { musicianId?: string; userId?: string; contactId?: string; name: string }; kind: string; amount: number; what?: string;
+  projectId: string; showId?: string; dueDate?: string; paidAt?: string; method?: string; expenseIds?: string[]; deletedAt?: unknown;
+}
+export interface ProjectLike { id: string; kind: string; name: string; status: string; budget?: number; isDefault?: boolean; deletedAt?: unknown }
+
+/** The project a record belongs to: its projectId, else the default project (records written before `npm run migrate:money`). */
+export const projectOf = (x: { projectId?: string }, defaultProjectId: string | undefined) => x.projectId ?? defaultProjectId;
+export const defaultProject = <P extends ProjectLike>(projects: readonly P[]) => projects.find((p) => p.isDefault && !p.deletedAt);
+
+export const INCOME_LABEL: Record<string, string> = {
+  guarantee: "Guarantee", door: "Door", tips: "Tips", merch: "Merch", streaming: "Streaming", sync: "Sync", grant: "Grant", gearSale: "Gear sale", other: "Other",
+};
+export const EXPENSE_LABEL: Record<string, string> = {
+  gear: "Gear", travel: "Travel", lodging: "Lodging", food: "Food", recording: "Recording", mixing: "Mixing", mastering: "Mastering", pressing: "Pressing",
+  artwork: "Artwork", photo: "Photo", video: "Video", space: "Room rental", marketing: "Marketing", fees: "Fees", other: "Other",
+};
+export const PAYOUT_KIND_LABEL: Record<string, string> = { pay: "Pay for playing", split: "Another band's cut", reimbursement: "Paid back", other: "Other" };
+export const PROJECT_KIND_LABEL: Record<string, string> = { band: "Band", duo: "Duo", album: "Album", tour: "Tour", video: "Video", other: "Other" };
+export const METHOD_LABEL: Record<string, string> = { cash: "Cash", venmo: "Venmo", check: "Check", square: "Square", card: "Card", bank: "Bank", other: "Other" };
+
+// ---------- the four computed views (W2 implements; signatures are the contract) ----------
+
+/** One thing the band still owes someone: an unpaid payout, or a pay-back expense nobody has paid back. */
+export interface OwedItem {
+  kind: "payout" | "expense"; id: string; amount: number; what: string; date: string; projectId?: string; showId?: string; payoutKind?: string;
+}
+/**
+ * Who the band owes, grouped by person, biggest first. A person is keyed "user:<uid>", "musician:<id>", "contact:<id>"
+ * or "name:<name>"; a payout to a musician who has a user id (`musicianUserId`) and that user's expenses land in the
+ * same group. `personName(key)` names users and musicians (expenses only carry a userId); payouts carry their own name.
+ */
+export interface OwedGroup { key: string; name: string; userId?: string; musicianId?: string; contactId?: string; total: number; items: OwedItem[] }
+export function weOwe(i: {
+  payouts: readonly PayoutLike[]; expenses: readonly ExpenseLike[];
+  musicianUserId?(musicianId: string): string | undefined; personName(userId: string): string;
+}): OwedGroup[] {
+  const groups = new Map<string, OwedGroup>();
+  const at = (key: string, name: string, ids: Pick<OwedGroup, "userId" | "musicianId" | "contactId">) => {
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { key, name, ...ids, total: 0, items: [] }));
+    return g;
+  };
+  for (const p of live(i.payouts)) {
+    if (p.paidAt || !countsAsPaidOut(p)) continue;
+    const uid = p.to.userId ?? (p.to.musicianId ? i.musicianUserId?.(p.to.musicianId) : undefined);
+    const g = uid ? at(`user:${uid}`, p.to.name, { userId: uid, musicianId: p.to.musicianId })
+      : p.to.musicianId ? at(`musician:${p.to.musicianId}`, p.to.name, { musicianId: p.to.musicianId })
+      : p.to.contactId ? at(`contact:${p.to.contactId}`, p.to.name, { contactId: p.to.contactId })
+      : at(`name:${p.to.name}`, p.to.name, {});
+    // payouts carry no date of their own: dueDate stands in ("" sorts first)
+    g.items.push({ kind: "payout", id: p.id, amount: p.amount, what: p.what || PAYOUT_KIND_LABEL[p.kind] || p.kind, date: p.dueDate ?? "", projectId: p.projectId, showId: p.showId, payoutKind: p.kind });
+    g.total += p.amount;
+  }
+  for (const x of owedExpenses(i.expenses)) {
+    const g = at(`user:${x.userId}`, i.personName(x.userId), { userId: x.userId });
+    g.items.push({ kind: "expense", id: x.id, amount: x.amount, what: x.what, date: x.date, projectId: x.projectId, showId: x.showId });
+    g.total += x.amount;
+  }
+  for (const g of groups.values()) g.items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return [...groups.values()].sort((a, b) => b.total - a.total);
 }
 
-export const INCOME_LABEL: Record<string, string> = { guarantee: "Guarantee", door: "Door split", tips: "Tips", merch: "Merch", other: "Other" };
-export const METHOD_LABEL: Record<string, string> = { cash: "Cash", venmo: "Venmo", check: "Check", square: "Square", card: "Card", bank: "Bank", other: "Other" };
+/** Money still coming to the band: live income with no receivedAt, oldest first, and the total. */
+export function owedToUs(i: { income: readonly IncomeLike[] }): { items: IncomeLike[]; total: number } {
+  const items = live(i.income).filter((x) => !x.receivedAt).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return { items, total: items.reduce((n, x) => n + x.amount, 0) };
+}
+
+/** A project's money: in (all income, owed included), paid out (all payouts), expenses (all, whoever paid), net = in − paidOut − expenses, and what's still open each way. */
+export interface MoneyTotals { income: number; paidOut: number; expenses: number; net: number; owedToUs: number; weOwe: number }
+export function projectTotals(i: {
+  projectId: string; defaultProjectId?: string;
+  income: readonly IncomeLike[]; expenses: readonly ExpenseLike[]; payouts: readonly PayoutLike[];
+}): MoneyTotals {
+  const mine = <T extends { projectId?: string }>(xs: readonly T[]) => xs.filter((x) => projectOf(x, i.defaultProjectId) === i.projectId);
+  const income = mine(i.income), payouts = mine(i.payouts).filter(countsAsPaidOut), expenses = mine(i.expenses);
+  const inn = sumExpenses(income), paidOut = sumExpenses(payouts), spent = sumExpenses(expenses);
+  return {
+    income: inn, paidOut, expenses: spent, net: inn - paidOut - spent,
+    owedToUs: owedToUs({ income }).total,
+    weOwe: sumExpenses(live(payouts).filter((p) => !p.paidAt)) + sumExpenses(owedExpenses(expenses)),
+  };
+}
+
+/**
+ * A show's money, the same sums over showId. Pass only the records on the show (the caller filters); live ones count,
+ * owed amounts included; reimbursement payouts are dropped here (their expenses already count). Feeds showDeals.totals.
+ */
+export function showTotals(i: {
+  income?: readonly { amount: number; deletedAt?: unknown }[]; payouts?: readonly { amount: number; kind?: string; deletedAt?: unknown }[];
+  expenses: readonly { amount: number; deletedAt?: unknown }[];
+}): { income: number; paidOut: number; expenses: number; net: number } {
+  const income = sumExpenses(i.income ?? []), paidOut = sumExpenses((i.payouts ?? []).filter((p) => countsAsPaidOut({ kind: p.kind ?? "" }))), expenses = sumExpenses(i.expenses);
+  return { income, paidOut, expenses, net: income - paidOut - expenses };
+}
 
 export const sumIncome = (lines: readonly { amount: number }[] = []) => lines.reduce((n, l) => n + l.amount, 0);
 const live = <T extends { deletedAt?: unknown }>(xs: readonly T[]) => xs.filter((x) => !x.deletedAt);
@@ -32,48 +131,23 @@ export const sumExpenses = (xs: readonly { amount: number; deletedAt?: unknown }
 /** The band owes this back: it's a pay-back expense (the default) not yet marked paid back. */
 export const owesBack = (x: Pick<ExpenseLike, "payBack" | "paidBackAt">) => x.payBack !== false && !x.paidBackAt;
 
-/** A show's totals (showDeals.totals, the Played table, Net): every income line, and every live expense on the show. */
-export function showTotals(i: { income?: readonly { amount: number }[]; expenses: readonly { amount: number; deletedAt?: unknown }[] }): { income: number; expenses: number } {
-  return { income: sumIncome(i.income), expenses: sumExpenses(i.expenses) };
-}
-
 /** What the band owes people: live pay-back expenses not yet paid back. */
 export const owedExpenses = <T extends ExpenseLike>(xs: readonly T[]) => live(xs).filter(owesBack);
+/** A reimbursement pays back an expense that is already counted as spent, so it never counts as paid out (or as owed) on top of it. */
+export const countsAsPaidOut = (p: { kind: string }) => p.kind !== "reimbursement";
 
-/**
- * Money the band is still waiting on: income lines not marked received, on shows dated today or earlier
- * (a later show's guarantee isn't due yet) that weren't canceled or dropped. Oldest show first.
- * Merch is left out: unverified merch orders are their own thing (story 31), not a show waiting to pay.
- */
-export function unreceivedIncome<L extends IncomeLineLike>(i: {
-  deals: readonly { id: string; income?: readonly L[]; deletedAt?: unknown }[];
-  show(id: string): { date: string; status: string; deletedAt?: unknown } | undefined;
-  today: string;
-}): { showId: string; date: string; lines: L[]; total: number }[] {
-  const out: { showId: string; date: string; lines: L[]; total: number }[] = [];
-  for (const d of live(i.deals)) {
-    const s = i.show(d.id);
-    if (!s || s.deletedAt || s.status === "canceled" || s.status === "dropped" || s.date > i.today) continue;
-    const lines = (d.income ?? []).filter((l) => !l.received && l.amount > 0 && l.category !== "merch");
-    if (lines.length) out.push({ showId: d.id, date: s.date, lines, total: sumIncome(lines) });
-  }
-  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-}
 
 /** One amount in or out, for the Money page's totals and charts. */
-export interface MoneyRow { date: string; showId?: string; category: string; in: number; out: number }
-export function moneyRows(i: {
-  deals: readonly { id: string; income?: readonly IncomeLineLike[]; deletedAt?: unknown }[];
-  expenses: readonly ExpenseLike[];
-  showDate(id: string): string | undefined;
-}): MoneyRow[] {
+export interface MoneyRow { date: string; kind: "income" | "expense" | "payout"; showId?: string; projectId?: string; category: string; in: number; out: number }
+/** Live income (by its own date), expenses and payouts (by paidAt, else dueDate; one with neither has no date and is left out). */
+export function moneyRows(i: { income: readonly IncomeLike[]; expenses: readonly ExpenseLike[]; payouts: readonly PayoutLike[] }): MoneyRow[] {
   const out: MoneyRow[] = [];
-  for (const d of live(i.deals)) {
-    const date = i.showDate(d.id);
-    if (!date) continue;
-    for (const l of d.income ?? []) out.push({ date, showId: d.id, category: l.category, in: l.amount, out: 0 });
+  for (const x of live(i.income)) out.push({ date: x.date, kind: "income", showId: x.showId, projectId: x.projectId, category: x.category, in: x.amount, out: 0 });
+  for (const x of live(i.expenses)) out.push({ date: x.date, kind: "expense", showId: x.showId, projectId: x.projectId, category: x.category, in: 0, out: x.amount });
+  for (const p of live(i.payouts).filter(countsAsPaidOut)) {
+    const date = p.paidAt ?? p.dueDate;
+    if (date) out.push({ date, kind: "payout", showId: p.showId, projectId: p.projectId, category: "payout", in: 0, out: p.amount });
   }
-  for (const x of live(i.expenses)) out.push({ date: x.date, showId: x.showId, category: x.category, in: 0, out: x.amount });
   return out;
 }
 export function totals(rows: readonly MoneyRow[]) {
@@ -91,6 +165,7 @@ function group(rows: readonly MoneyRow[], key: (r: MoneyRow) => string | undefin
 }
 export const byMonth = (rows: readonly MoneyRow[]) => group(rows, (r) => r.date.slice(0, 7)).sort((a, b) => (a.key < b.key ? -1 : 1));
 export const byShow = (rows: readonly MoneyRow[]) => group(rows, (r) => r.showId).sort((a, b) => b.net - a.net);
+export const byProject = (rows: readonly MoneyRow[]) => group(rows, (r) => r.projectId).sort((a, b) => b.net - a.net);
 export const byCategory = (rows: readonly MoneyRow[]) => group(rows, (r) => r.category).sort((a, b) => b.in + b.out - (a.in + a.out));
 
 /** Split `total` cents evenly over n people; the first people get the leftover cents. */
@@ -99,7 +174,5 @@ export function splitEvenly(total: number, n: number): number[] {
   const base = Math.floor(total / n), extra = total - base * n;
   return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
 }
-export const CATEGORY_LABEL: Record<string, string> = {
-  guarantee: "Guarantee", door: "Door split", merch: "Merch", tips: "Tips", venmo: "Venmo", photo: "Photo shoot", video: "Video",
-  space: "Room rental", gear: "Gear", marketing: "Marketing", travel: "Travel", fees: "Fees", other: "Other",
-};
+/** Every category label in one map (income and expense, plus the legacy ledger values still on old expenses). */
+export const CATEGORY_LABEL: Record<string, string> = { ...INCOME_LABEL, ...EXPENSE_LABEL, venmo: "Venmo", door: "Door split", payout: "Paid out" };

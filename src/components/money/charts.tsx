@@ -52,18 +52,19 @@ export function MonthBars({ data, testid }: { data: { key: string; in: number; o
 }
 
 /** Horizontal bars (by show / by category): income in green, spending in pink. */
-export function HBars({ title, rows, testid }: { title: string; rows: { key: string; label: string; in: number; out: number; sub?: string }[]; testid: string }) {
-  const max = Math.max(...rows.flatMap((r) => [r.in, r.out]), 1);
+export function HBars({ title, rows, testid, spent }: { title: string; rows: { key: string; label: string; in: number; out: number; sub?: string }[]; testid: string; /** Spending only: one pink bar and the amount spent, not the net. */ spent?: boolean }) {
+  const max = Math.max(...rows.flatMap((r) => (spent ? [r.out] : [r.in, r.out])), 1);
   return (
     <div className="card" data-testid={testid}>
       <span className="lbl">{title}</span>
       {rows.length === 0 && <span className="s">No entries yet.</span>}
       {rows.map((r) => (
         <div key={r.key} className="grid gap-0.5" data-testid={`${testid}-${r.key}`}>
-          <div className="flex justify-between gap-2 text-sm"><span>{r.label}{r.sub && <span className="s"> · {r.sub}</span>}</span><span className="font-mono">{formatCents(r.in - r.out)}</span></div>
+          <div className="flex justify-between gap-2 text-sm"><span>{r.label}{r.sub && <span className="s"> · {r.sub}</span>}</span><span className="font-mono">{formatCents(spent ? r.out : r.in - r.out)}</span></div>
           <svg viewBox="0 0 100 7" preserveAspectRatio="none" className="h-2 w-full" role="img" aria-label={`${r.label}: in ${formatCents(r.in)}, out ${formatCents(r.out)}`}>
-            <rect x="0" y="0" width={(r.in / max) * 100} height="3" fill="var(--ok)" rx="1" />
-            <rect x="0" y="4" width={(r.out / max) * 100} height="3" fill="var(--accent)" rx="1" />
+            {spent
+              ? <rect x="0" y="2" width={(r.out / max) * 100} height="3" fill="var(--accent)" rx="1" />
+              : <><rect x="0" y="0" width={(r.in / max) * 100} height="3" fill="var(--ok)" rx="1" /><rect x="0" y="4" width={(r.out / max) * 100} height="3" fill="var(--accent)" rx="1" /></>}
           </svg>
         </div>
       ))}

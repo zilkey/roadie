@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { entity, serverMask, id, dateStr, cents, ledgerCategory, driveRef } from "./common";
+import { entity, serverMask, id, dateStr, cents, expenseCategory, ledgerCategory, driveRef } from "./common";
 import { fuelGrade } from "./driving";
 
 /**
@@ -36,8 +36,11 @@ export const Expense = entity({
   userId: id,
   date: dateStr,
   amount: cents.positive(),
-  category: ledgerCategory,
+  /** New writes use expenseCategory; the legacy ledger values (guarantee, door, merch, tips, venmo) survive on old docs until `npm run migrate:money` rewrites them. */
+  category: z.union([expenseCategory, ledgerCategory]),
   what: z.string().min(1),
+  /** The project this belongs to. Optional only until `npm run migrate:money` has stamped every expense; readers treat missing as the default (Band) project. */
+  projectId: id.optional(),
   showId: id.optional(),
   rehearsalId: id.optional(),
   /** Present only when the amount came from a gas estimate (category "travel"). */
@@ -48,6 +51,8 @@ export const Expense = entity({
   /** Set when an admin marks it paid back (YYYY-MM-DD) and by whom (uid). A paid-back expense can't be changed. */
   paidBackAt: dateStr.optional(),
   paidBackBy: id.optional(),
+  /** The reimbursement payout (payouts/{id}, kind "reimbursement") that paid this back, when expenses.payPerson did it. */
+  reimbursedBy: id.optional(),
 });
 export const ExpenseInput = Expense.omit(serverMask);
 export type Expense = z.infer<typeof Expense>;

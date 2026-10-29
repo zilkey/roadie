@@ -23,6 +23,9 @@ import { SetlistInput, SetlistTemplateInput } from "./setlists";
 import { StagePlotDocInput } from "./stagePlots";
 import { RehearsalInput } from "./rehearsals";
 import { ExpenseInput } from "./expenses";
+import { ProjectInput } from "./projects";
+import { IncomeInput } from "./income";
+import { PayoutInput } from "./payouts";
 import { StatSnapshotInput } from "./statSnapshots";
 import { HistoryInput } from "./history";
 import { McpTokenInput } from "./mcpTokens";
@@ -57,6 +60,9 @@ export * from "./setlists";
 export * from "./rehearsals";
 export * from "./stagePlots";
 export * from "./expenses";
+export * from "./projects";
+export * from "./income";
+export * from "./payouts";
 export * from "./driving";
 export * from "./statSnapshots";
 export * from "./history";
@@ -107,6 +113,9 @@ export const collections: Record<string, CollectionDef> = {
   stagePlots: { input: StagePlotDocInput },
   rehearsals: { input: RehearsalInput },
   expenses: { input: ExpenseInput },
+  projects: { input: ProjectInput },
+  income: { input: IncomeInput },
+  payouts: { input: PayoutInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },
   history: { input: HistoryInput, immutable: true },
   mcpTokens: { input: McpTokenInput },

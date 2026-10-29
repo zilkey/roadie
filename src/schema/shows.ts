@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { entity, serverMask, id, dateStr, timeStr, sound, cents, ts } from "./common";
+import { entity, serverMask, id, dateStr, timeStr, sound, cents, ts, paymentMethod } from "./common";
 
 export const showKind = z.enum(["venue", "house", "festival", "radio", "other"]);
 export type ShowKind = z.infer<typeof showKind>;
@@ -47,6 +47,8 @@ export const Show = entity({
   /** Values for the artist's custom show fields (Artist.showFields), keyed by field id. No entry = no value, never an empty string. Set by shows.setFields. */
   fields: z.array(z.strictObject({ fieldId: id, value: z.string() })).default([]),
   billedAs: id.optional(),
+  /** The project (projects/{id}) this show's money belongs to: its configuration's defaultProjectId at creation, changed by an admin. Missing (pre `npm run migrate:money`) = the default project. */
+  projectId: id.optional(),
   /** The stage plot this show uses, picked by hand (shows.setStagePlot). No lineup default. */
   stagePlotId: id.optional(),
   personnel: z.array(id),
@@ -83,10 +85,12 @@ export const Show = entity({
 export const ShowInput = Show.omit(serverMask);
 export type Show = z.infer<typeof Show>;
 
-export const incomeCategory = z.enum(["guarantee", "door", "tips", "merch", "other"]);
-export const payMethod = z.enum(["cash", "venmo", "check", "square", "card", "bank", "other"]);
-/** One line of a show's income (admin-only, on the show's deal). received = the money is in hand. */
-export const incomeLine = z.strictObject({ id, category: incomeCategory, amount: cents.nonnegative(), method: payMethod.optional(), received: z.boolean() });
+/** LEGACY: the categories of a deal's income[] lines (a subset of incomeCategory). Kept so old deals still parse. */
+export const legacyIncomeCategory = z.enum(["guarantee", "door", "tips", "merch", "other"]);
+/** @deprecated use paymentMethod from ./common. */
+export const payMethod = paymentMethod;
+/** LEGACY one line of a show's income, from when income lived on the deal. `npm run migrate:money` turns each into an income doc. Never written since. */
+export const incomeLine = z.strictObject({ id, category: legacyIncomeCategory, amount: cents.nonnegative(), method: paymentMethod.optional(), received: z.boolean() });
 export type IncomeLine = z.infer<typeof incomeLine>;
 
 /** showDeals/{showId}: same id as the show. */
@@ -114,14 +118,21 @@ export const ShowDeal = entity({
     crowd: z.number().int().optional(),
     notes: z.string().optional(),
   }).optional(),
-  /** The show's income, line by line (Finances tab). Missing = none yet. */
+  /**
+   * LEGACY income lines and notes, until `npm run migrate:money` has copied each line into the income collection (keyed
+   * by showId + line id). Left in place as data so the migration can rerun; never read or written since.
+   */
   income: z.array(incomeLine).optional(),
   incomeNotes: z.string().optional(),
   /** LEGACY from the ledger era (money entered with shows.settle; payouts owed). Kept as data, no longer written or read. */
   settled: z.boolean().optional(),
   owedPayouts: z.array(z.strictObject({ musicianId: id, amount: cents.positive() })).optional(),
-  /** Server-kept (written only by refreshDealTotals): the show's income and expenses for the Played table. */
-  totals: z.strictObject({ income: cents, expenses: cents, updatedAt: ts }).optional(),
+  /**
+   * Server-kept (written only by refreshDealTotals): the show's money for the Played table and the Net card, summed
+   * over income, payouts and expenses with this showId (owed amounts included). paidOut is missing on deals refreshed
+   * before payouts existed: read as 0.
+   */
+  totals: z.strictObject({ income: cents, paidOut: cents.optional(), expenses: cents, updatedAt: ts }).optional(),
 });
 export const ShowDealInput = ShowDeal.omit(serverMask);
 export type ShowDeal = z.infer<typeof ShowDeal>;

@@ -11,7 +11,8 @@ import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../
 import { noteOf, setContactRoles } from "../venues";
 import { dayOfContactOf } from "@/lib/venues";
 import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
-import { dateStr, timeStr, sound as soundSchema, cents, showKind, incomeCategory, payMethod } from "@/schema";
+import { dateStr, timeStr, sound as soundSchema, cents, showKind } from "@/schema";
+import { defaultProjectIdFor, requireOpenProject } from "./projects";
 import { refreshDealTotals } from "../dealTotals";
 
 const newId = () => randomUUID().slice(0, 8);
@@ -80,7 +81,7 @@ export const showsList = defineCommand({
   description:
     "List shows by filter: upcoming, played (or confirmed with the date passed), canceled (they called it off), or dropped (we pulled out, or a hold whose date passed unconfirmed). " +
     "Optional narrowing: venueId, from / to (YYYY-MM-DD, inclusive, on the show date), city (case-insensitive exact match). " +
-    "Rows carry reason (why it was canceled or dropped) when one was given, and totals {income, expenses, net} in cents when the show has a deal with money entered. " +
+    "Rows carry reason (why it was canceled or dropped) when one was given, and totals {income, paidOut, expenses, net} in cents when the show has a deal with money entered (net = income - paidOut - expenses; owed amounts count). " +
     "'What did we make this year?' = filter played + from/to, then sum totals.net. " +
     "counts has every filter's number under the venueId/from/to/city narrowing but ignores filter, so 'how many shows were canceled?' is one call. Without a filter, rows are every show. Upcoming soonest first, the rest newest first.",
   input: z.strictObject({
@@ -100,8 +101,8 @@ export const showsList = defineCommand({
     const page = rows.slice(0, i.limit);
     // One list for every deal; a show's deal shares its id. Only the money totals leave here.
     const totalsOf = new Map((page.length ? await db.list("showDeals") : []).flatMap((d) => {
-      const t = d.totals as { income: number; expenses: number } | undefined;
-      return t ? [[d.id, { income: t.income, expenses: t.expenses, net: t.income - t.expenses }] as const] : [];
+      const t = d.totals as { income: number; paidOut?: number; expenses: number } | undefined;
+      return t ? [[d.id, { income: t.income, paidOut: t.paidOut ?? 0, expenses: t.expenses, net: t.income - (t.paidOut ?? 0) - t.expenses }] as const] : [];
     }));
     return {
       today, filter: i.filter ?? null, counts, count: rows.length,
@@ -128,7 +129,7 @@ export const showsCreate = defineCommand({
     "The pitch does not supply the place: still give venueId, or for a house concert hostContactIds (contacts) + place {city, address?}. billedAs and personnel fall back to the pitch's. " +
     "status hold|confirmed (default confirmed); kind: venue|house|festival|radio|other (default from the rest). editionId links a festival year (editionName is then always the festival name and year label). " +
     "billedAs is a configuration id (context.now artist.configurations; null = none, no personnel) and fills personnel; sound defaults from the venue; needs (poster/backline/merch). " +
-    "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes the deal's first income line (not received). " +
+    "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes an income record (guarantee, from the venue, not yet received: income.setReceived when it arrives). The show's project is billedAs's configuration project, else the default project. " +
     "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
     "It never touches Google Calendar (that is shows.calendar, on purpose). sendInvites decides who the calendar event will invite when it is sent: true only the configuration's members on the team with an email, false nobody; omitted everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed. " +
     "dayOfContact {name, phone?, contactId?} defaults to the venue's first day-of contact (contacts.setRoles); a contactId at a venue also makes them a day-of contact there.",
@@ -166,7 +167,7 @@ export const showsCreate = defineCommand({
       const r = await w.create("shows", {
         date: i.date, status: i.status, kind, venue: venue ? venueCopy(venue) : undefined, place: venue ? undefined : i.place, ...hosts,
         editionId: edition?.id, editionName: edition ? editionLabel(edition) : i.editionName, times: i.times, artistId: artist.id,
-        billedAs, personnel, calendarInviteeIds, sound: snd, needs: i.needs,
+        billedAs, projectId: await defaultProjectIdFor(w, artist.id, billedAs), personnel, calendarInviteeIds, sound: snd, needs: i.needs,
         checklists: [],
         docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: dayOf,
         statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
@@ -178,9 +179,16 @@ export const showsCreate = defineCommand({
         editionId: edition?.id ?? (target?.kind === "edition" ? target.id : undefined),
         contactIds: d.contactIds ?? (venue ? (await noteOf(w, venue, artist.id)).fields.contactIds : undefined) ?? hosts?.hostContactIds ?? [], deal: d.deal,
         doorSplitPct: d.doorSplitPct, ticketPrice: d.ticketPrice,
-        income: d.guarantee ? [{ id: newId(), category: "guarantee", amount: d.guarantee, received: false }] : [],
       }, { id: r.id });
-      if (d.guarantee) await refreshDealTotals(w, r.id);
+      const projectId = (await w.get("shows", r.id))!.projectId as string | undefined;
+      if (d.guarantee) {
+        if (!projectId) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) before booking with a guarantee", 409);
+        const inc = await w.create("income", {
+          artistId: artist.id, category: "guarantee", amount: d.guarantee, from: venue?.name as string ?? hosts?.hostName ?? i.place?.city ?? edition?.festivalName as string ?? "Guarantee",
+          projectId, showId: r.id, date: i.date,
+        });
+        await refreshDealTotals(w, r.id, { income: [(await w.get("income", inc.id))!] });
+      }
       if (venue && i.dayOfContact?.contactId) await tickDayOf(w, venue, artist.id, i.dayOfContact.contactId);
       if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
       if (pitch && i.pitchId) {
@@ -227,6 +235,7 @@ const showPatch = z.strictObject({
   docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
   publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
   transitionSec: z.union([z.literal(15), z.literal(30), z.literal(60), z.literal(90)]).optional(),
+  projectId: z.string().min(1).optional(),
 });
 
 export const showsUpdate = defineCommand({
@@ -235,7 +244,7 @@ export const showsUpdate = defineCommand({
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; to cancel or drop use shows.setStatus / shows.cancel / shows.drop, which ask first; 'played' is set here or by shows.afterShow), reason (why it was canceled or dropped; null clears), kind, " +
     "venueId (from a venue search; null = no venue: needs place), place {city, address?} (null clears), hostContactIds ([] clears), editionId (null unlinks; sets editionName), " +
     "times {loadIn, soundcheck, doors, showStart, set, setLengthSec (seconds)} and sound REPLACE the whole object: send every key you want to keep. personnel and docs REPLACE the lists: read the show first and resend them all. " +
-    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30). A status change is added to statusHistory. " +
+    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30), projectId (the project its money belongs to, an open one from context.now projects; money already recorded stays where it is). A status change is added to statusHistory. " +
     "Checklists are not touched (use the shows.*Checklist* commands). " +
     "Changing date, time, venue, people, status or publishToBandsintown re-syncs Bandsintown (canceled or dropped takes it off). Google Calendar is never touched: resend the event with shows.calendar.",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
@@ -247,6 +256,7 @@ export const showsUpdate = defineCommand({
       const p: Record<string, unknown> = { ...rest };
       if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
       const artist = await artistFor(w, before.artistId);
+      if (patch.projectId) await requireOpenProject(w, patch.projectId);
       if (venueId) p.venue = venueCopy(await requireVenue(w, venueId));
       if (venueId === null) p.venue = null;
       if (hostContactIds) {
@@ -563,26 +573,8 @@ const dealPatch = z.strictObject({
 });
 export const showDealsUpdate = defineCommand({
   name: "showDeals.update", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), patch: dealPatch }),
-  description: "Edit the admin-only deal for a show (id is the show id): deal type, door split, ticket price, contacts. Money in is showDeals.setIncome.",
+  description: "Edit the admin-only deal for a show (id is the show id): deal type, door split, ticket price, contacts. Money in is income.add (income.setReceived when it arrives).",
   run: (ctx, { id, patch }) => db.update(ctx, "showDeals", id, patch as Record<string, unknown>),
-});
-
-export const showDealsSetIncome = defineCommand({
-  name: "showDeals.setIncome", roles: ["admin", "mcp"],
-  description: "Replaces the whole list of a show's income lines (admin-only; id is the show id): read records.get showDeals first and resend every line you keep (with its id), or they are lost. Lines: [{id?, category: guarantee|door|tips|merch|other, amount (cents), method?: cash|venmo|check|square|card|bank|other, received}], and incomeNotes (null clears). Lines without an id get one.",
-  input: z.strictObject({
-    id: z.string().min(1),
-    income: z.array(z.strictObject({ id: z.string().min(1).optional(), category: incomeCategory, amount: cents.nonnegative(), method: payMethod.optional(), received: z.boolean() })),
-    incomeNotes: z.string().nullable().optional(),
-  }),
-  run: (ctx, i) => run(ctx, async (w) => {
-    await requireShow(w, i.id);
-    if (!(await w.get("showDeals", i.id))) throw new AppError("not_found", "Show deal not found", 404);
-    const notes = i.incomeNotes === undefined ? {} : { incomeNotes: i.incomeNotes?.trim() || null };
-    const r = await w.update("showDeals", i.id, { income: i.income.map((l) => ({ ...l, id: l.id ?? newId() })), ...notes });
-    await refreshDealTotals(w, i.id);
-    return r;
-  }),
 });
 
 // ---------- after the show ----------
@@ -593,7 +585,7 @@ export const showsAfter = defineCommand({
     "How'd it go? Rate the show and venue (1-5, both optional), notes, the crowd estimate (how many were in the room) " +
     "and paid attendance (the ticketed count). Something has to be filled in. A score left out keeps the one already " +
     "stored. Marks the show played. " +
-    "A bare 'mark it played' with no rating or notes is shows.update {status:\"played\"} instead. Does NOT enter money: income lines are showDeals.setIncome, expenses shows.setExpenses.",
+    "A bare 'mark it played' with no rating or notes is shows.update {status:\"played\"} instead. Does NOT enter money: income is income.add, payouts payouts.add, expenses shows.setExpenses.",
   input: z.strictObject({
     id: z.string().min(1), show: z.number().int().min(1).max(5).optional(), venue: z.number().int().min(1).max(5).optional(),
     crowd: z.number().int().min(0).optional(), notes: z.string().optional(), paidAttendance: z.number().int().min(0).optional(),
@@ -701,6 +693,6 @@ export const showCommands = [
   showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync,
   showsSetChecklists, showsAddChecklist, showsRenameChecklist, showsRemoveChecklist, showsReorderChecklists,
   showsAddChecklistItem, showsEditChecklistItem, showsRemoveChecklistItem, showsCheckItem, showsSaveChecklistAsTemplate, showsUpdateTemplateFromChecklist,
-  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showsCalendarLink, showDealsUpdate, showDealsSetIncome, showsAfter,
+  showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showsCalendarLink, showDealsUpdate, showsAfter,
   checklistTemplatesList, checklistTemplatesCreate, checklistTemplatesUpdate, checklistTemplatesReorder, checklistTemplatesRemove,
 ];

@@ -46,6 +46,8 @@ export const ROUTES = {
   money: { title: "Money", path: "/money" },
   fans: { title: "Fans", path: "/fans" },
   expense: { title: "New expense", path: "/money/expense" },
+  projects: { title: "Projects", path: "/money/projects" },
+  project: { title: "Project", path: "/money/projects/:id", params: ["id"] },
   artist: { title: "General", path: "/admin/artist" },
   lineups: { title: "Lineups", path: "/admin/lineups" },
   fields: { title: "Custom fields", path: "/admin/fields" },
@@ -59,7 +61,7 @@ export const ROUTES = {
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
   pitch: "pitches", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
-  showSetlist: "shows", showFinances: "shows",
+  showSetlist: "shows", showFinances: "shows", project: "projects",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */
 export const routeForRecord = (kind: string): keyof typeof RECORD_ROUTES | null =>

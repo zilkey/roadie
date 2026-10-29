@@ -1,7 +1,7 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
 import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { addDays, isOff, isPlayed, SHOW_FILTERS, showCity, showFilter, showName, type ShowFilter, type ShowPlaceLike } from "@/lib/shows";
-import { owesBack } from "@/lib/money";
+import { owedToUs, owesBack, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
 import { RECORD_ROUTES } from "@/lib/routes";
 import type { PageContext } from "@/schema/assistant";
 import type { Ctx } from "../ctx";
@@ -22,20 +22,34 @@ export function tonightDate(now: Date): string {
 export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "role" | "musicianId">) {
   const now = ctx.now ?? new Date();
   const today = dateInBandZone(now);
-  const [shows, deals, expenses, artists, musicians] = await Promise.all([list(ctx, "shows"), list(ctx, "showDeals"), list(ctx, "expenses"), list(ctx, "artists"), list(ctx, "musicians")]);
+  const admin = s.role === "admin"; // income and payouts are admin-only
+  const [shows, income, expenses, payouts, projects, artists, musicians] = await Promise.all([
+    list(ctx, "shows"), admin ? list(ctx, "income") : [], list(ctx, "expenses"), admin ? list(ctx, "payouts") : [], list(ctx, "projects"), list(ctx, "artists"), list(ctx, "musicians"),
+  ]);
   const a = artists.find((x) => x.id === ctx.artistId) ?? artists[0]; // records.list is already limited to the current artist
   const live = shows.filter((x) => !isOff(x));
-  // Money is entered once the deal has income lines.
-  const settled = new Set(deals.filter((d) => ((d.income as unknown[] | undefined) ?? []).length > 0).map((d) => d.id));
+  // Money is entered once the show has an income record.
+  const settled = new Set(income.filter((x) => !x.deletedAt && x.showId).map((x) => x.showId as string));
+  const team = musicians.filter((m) => !m.archivedAt);
+  const nameOf = (uid: string) => team.find((m) => m.userId === uid)?.name ?? (uid === s.uid ? s.name : "someone");
+  const owe = admin ? weOwe({ payouts: payouts as PayoutLike[], expenses: expenses as ExpenseLike[], musicianUserId: (id) => musicians.find((m) => m.id === id)?.userId ?? undefined, personName: nameOf }) : [];
+  const owed = admin ? owedToUs({ income: income as IncomeLike[] }) : { items: [], total: 0 };
   const tonight = tonightDate(now);
   return {
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
     now: now.toISOString(), localTime: fmtInstant(now, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: BAND_TIME_ZONE,
     today, tonight,
     artist: a ? { id: a.id, name: a.name, slug: a.slug, configurations: ((a.configurations ?? []) as Row[]).map((c) => ({ id: c.id, name: c.name })) } : null,
-    band: musicians.filter((m) => !m.archivedAt).map((m) => ({ musicianId: m.id, name: m.name, userId: m.userId ?? null, instruments: m.instruments ?? [] })),
+    band: team.map((m) => ({ musicianId: m.id, name: m.name, userId: m.userId ?? null, instruments: m.instruments ?? [] })),
     todaysShows: live.filter((x) => x.date === today || x.date === tonight).map(showLine),
     unsettledShows: live.filter((x) => isPlayed(x as never, today) && !settled.has(x.id)).map(showLine),
+    // Where a record goes ("put it on Lighthouse video"): the open projects. The default one (Band) takes anything with no project named.
+    projects: projects.filter((p) => !p.deletedAt && p.status === "open").map((p) => ({ id: p.id, name: p.name, kind: p.kind, isDefault: !!p.isDefault })),
+    // What we owe, by person: userId/musicianId/contactId say who; items carry the ids for payouts.markPaid (kind payout) and expenses.payPerson { userId } (kind expense).
+    weOwe: owe.map((g) => ({ name: g.name, userId: g.userId ?? null, musicianId: g.musicianId ?? null, contactId: g.contactId ?? null, totalCents: g.total,
+      items: g.items.map((x) => ({ kind: x.kind, id: x.id, what: x.what, amountCents: x.amount, date: x.date || null, projectId: x.projectId ?? null, showId: x.showId ?? null })) })),
+    // What's still coming to us: income with no receivedAt, for income.setReceived.
+    owedToUs: { totalCents: owed.total, items: owed.items.map((x) => ({ id: x.id, from: x.from, category: x.category, amountCents: x.amount, date: x.date, projectId: x.projectId, showId: x.showId ?? null })) },
     openExpenses: expenses.filter((e) => !e.deletedAt && owesBack(e as never))
       .map((e) => ({ id: e.id, what: e.what, amountCents: e.amount, userId: e.userId, date: e.date, showId: e.showId ?? null })),
   };

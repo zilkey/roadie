@@ -86,7 +86,7 @@ const EXPECTED = [
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows
   "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendarPreview", "shows.calendar", "shows.calendarLink", "showDeals.update",
-  "showDeals.setIncome", "shows.comment", "shows.editComment", "shows.removeComment",
+  "shows.comment", "shows.editComment", "shows.removeComment",
   "shows.afterShow", "checklistTemplates.list", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "checklistTemplates.remove",
   // availability: ask and read, not mark
   "availability.ask", "availability.remind", "availability.close", "availability.reopen",
@@ -102,6 +102,7 @@ const EXPECTED = [
   "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors", "stagePlots.setStage", "stagePlots.setBringNeed", "shows.setStagePlot",
   "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.shareLink", "stagePlots.shareOff", "stagePlots.engineerLink",
   // money, stats
+  "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
   "expenses.setPaidBack", "expenses.payPerson", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // geo (address typeahead, read-only)
   "geo.autocomplete",

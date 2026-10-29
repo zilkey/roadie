@@ -91,8 +91,10 @@ test("Booked it: show + showDeal in one go, pitch linked and booked, no checklis
   const show = (await db.get("shows", r.id))!;
   const deal = (await db.get("showDeals", r.id))!;
   assert.equal(deal.pitchId, pitchId);
-  assert.equal(deal.guarantee, undefined, "the guarantee is an income line now");
-  assert.deepEqual(deal.income.map((l: any) => [l.category, l.amount, l.received]), [["guarantee", 30000, false]]);
+  assert.equal(deal.guarantee, undefined, "the guarantee is an income doc now");
+  assert.equal(deal.income, undefined, "nothing writes the deal's income[] any more");
+  const inc = (await db.list("income")).filter((i) => i.showId === r.id);
+  assert.deepEqual(inc.map((i) => [i.category, i.amount, i.receivedAt]), [["guarantee", 30000, undefined]], "expected, not received");
   assert.equal(deal.totals.income, 30000);
   assert.deepEqual(show.dayOfContact, { name: "Sam", phone: "(303) 555-0117" });
   assert.deepEqual(show.statusHistory.map((h: any) => [h.status, h.by]), [["confirmed", ctx.uid]]);
@@ -376,7 +378,8 @@ test("After the show: ratings, paid attendance, played; no money entered; future
   assert.deepEqual(deal.rating, { show: 4, venue: 5, notes: "Great room" });
   assert.equal(deal.crowd, 60);
   assert.equal(deal.paidAttendance, 58);
-  assert.deepEqual(deal.income, []);
+  assert.equal(deal.income, undefined);
+  assert.equal((await db.list("income")).filter((i) => i.showId === past.id).length, 0);
   const future = await create({ date: "2030-01-01" });
   await assert.rejects(cmd("shows.afterShow", { id: future.id, show: 3, venue: 3 }), /hasn't happened/);
   await assert.rejects(cmd("shows.afterShow", { id: past.id, show: 6, venue: 3 }));

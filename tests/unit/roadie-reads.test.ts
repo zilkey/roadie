@@ -9,6 +9,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { venueNoteId } from "@/schema";
 import { firestore } from "@/server/admin";
+import { contextNow } from "@/server/assistant/context";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -122,4 +123,27 @@ test("records.get on a venue says archived when the band hid it", async () => {
   assert.equal((await get(sys, "venues", venueA)).archived, true);
   assert.equal((await get(sys, "venues", venueB)).archived, undefined);
   assert.ok(!(await list(sys, { kind: "venues" })).rows.some((r) => r.id === venueA));
+});
+
+test("context.now carries the open projects, what we owe by person and what is owed to us, with ids", async () => {
+  // the shows made in setup already needed a home for their money, so the Band default exists (made on first need); seed one only if not
+  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true });
+  const video = await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "video", name: "Lighthouse video", status: "open" });
+  await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "album", name: "Old album", status: "closed" });
+  const owed = await db.create(sys, "income", { artistId: TEST_ARTIST, date: "2026-11-14", amount: 40000, category: "guarantee", from: "Lost Lake", projectId: band.id, showId: showA });
+  await db.create(sys, "income", { artistId: TEST_ARTIST, date: "2026-11-14", amount: 9000, category: "door", from: "Door", projectId: band.id, showId: showA, receivedAt: "2026-11-14" });
+  const pay = await db.create(sys, "payouts", { artistId: TEST_ARTIST, to: { musicianId: musId, name: "Ingrid" }, kind: "pay", amount: 10000, projectId: band.id, showId: showA });
+  await db.create(sys, "payouts", { artistId: TEST_ARTIST, to: { name: "Dana" }, kind: "pay", amount: 5000, projectId: band.id, paidAt: "2026-11-15" });
+  const gas = await db.create(sys, "expenses", { userId: sys.uid, date: "2026-11-14", amount: 4200, category: "travel", what: "gas", payBack: true, projectId: video.id });
+  const c = await contextNow({ ...sys, now: new Date("2026-11-16T12:00:00-07:00") }, { uid: sys.uid, name: "Ingrid", role: "admin", musicianId: musId });
+  assert.deepEqual(c.projects.map((p) => [p.name, p.kind, p.isDefault]).sort(), [["Band", "band", true], ["Lighthouse video", "video", false]]);
+  assert.equal(c.projects.find((p) => p.name === "Lighthouse video")!.id, video.id);
+  assert.equal(c.weOwe.length, 1); // the payout and the expense land in one group; the paid one is gone
+  assert.equal(c.weOwe[0].name, "Ingrid");
+  assert.equal(c.weOwe[0].userId, sys.uid);
+  assert.equal(c.weOwe[0].totalCents, 14200);
+  assert.deepEqual(c.weOwe[0].items.map((x) => [x.kind, x.id, x.amountCents]).sort(), [["expense", gas.id, 4200], ["payout", pay.id, 10000]]);
+  assert.equal(c.owedToUs.totalCents, 40000);
+  assert.deepEqual(c.owedToUs.items.map((x) => [x.id, x.from, x.showId]), [[owed.id, "Lost Lake", showA]]);
+  assert.deepEqual(c.unsettledShows.map((x) => x.id), []); // showA has income; showB is a hold, not played
 });

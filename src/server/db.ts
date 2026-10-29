@@ -511,7 +511,7 @@ export class Writer {
     for (const h of denormalizers) {
       if (h.source !== kind) continue;
       if (h.watch.every((f) => same(before[f], after[f]))) continue;
-      await h.refresh(this, before.id, after);
+      await h.refresh(this, before.id, after, before);
     }
   }
 }

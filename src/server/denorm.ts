@@ -10,7 +10,8 @@ import { refreshDealTotals } from "./dealTotals";
 export interface Denormalizer {
   source: string;
   watch: string[];
-  refresh(w: Writer, sourceId: string, after: Record<string, unknown>): Promise<void>;
+  /** `before` is the doc as it was; db.ts afterChange must pass it as the 4th argument (hooks that only need `after` ignore it). */
+  refresh(w: Writer, sourceId: string, after: Record<string, unknown>, before?: Record<string, unknown>): Promise<void>;
 }
 
 const retarget = (kind: "venue" | "promoter" | "edition") => async (w: Writer, id: string, name: string) => {
@@ -21,8 +22,14 @@ const retarget = (kind: "venue" | "promoter" | "edition") => async (w: Writer, i
 };
 
 export const denormalizers: Denormalizer[] = [
-  // Undoing (or redoing) an expense on a show: its deal's totals follow.
-  { source: "expenses", watch: ["deletedAt"], refresh: async (w, _id, after) => { if (after.showId) await refreshDealTotals(w, String(after.showId)); } },
+  // Money on a show (expenses, income, payouts): its deal's totals follow an undo/redo, an amount change or a move to another show.
+  ...["expenses", "income", "payouts"].map((source): Denormalizer => ({
+    source, watch: ["deletedAt", "amount", "showId"],
+    refresh: async (w, _id, after, before) => {
+      if (after.showId) await refreshDealTotals(w, String(after.showId));
+      if (before?.showId && before.showId !== after.showId) await refreshDealTotals(w, String(before.showId));
+    },
+  })),
   {
     source: "venues", watch: ["name", "address"],
     async refresh(w, id, after) {

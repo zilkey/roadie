@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { useCommand } from "@/components/ui";
-import { formatCents, owesBack, parseDollars, sumExpenses } from "@/lib/money";
-import { roleIn, type Expense, type User } from "@/schema";
+import { CATEGORY_LABEL, defaultProject, formatCents, owesBack, parseDollars, projectOf, sumExpenses } from "@/lib/money";
+import { roleIn, type Expense, type Project, type User } from "@/schema";
 import Link, { useArtist } from "@/lib/artist";
 import { EditableCard, UnfinishedPlaceholder, useCardEdit } from "@/components/shows/page/kit";
 
@@ -35,6 +35,9 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
   // Members can only read their own expenses (rules), so their query must say so.
   const rows = useCollection<Expense>("expenses", { where: [[field, "==", target.id], ...(admin ? [] : [["userId", "==", me.uid] as ["userId", "==", string]])] }).rows ?? [];
   const users = useCollection<User>("users", { skip: !admin }).rows ?? [];
+  const projects = useCollection<Project>("projects").rows ?? [];
+  const defaultId = defaultProject(projects)?.id;
+  const projectName = (x: Expense) => projects.find((p) => p.id === projectOf(x, defaultId))?.name;
   const bandUsers = users.filter((u) => ["admin", "member"].includes(roleIn(u, artist?.id)));
   const nameOfUser = (uid: string) => (!admin ? "You" : users.find((u) => u.id === uid)?.name ?? (uid === me.uid ? "You" : "Someone"));
   const sorted = [...rows].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -110,8 +113,8 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
                   <label className="flex min-h-[44px] items-center gap-2">
                     <input type="checkbox" checked={l.payBack} disabled={locked} onChange={(ev) => set(l.key, { payBack: ev.target.checked })} data-testid="expense-payback" />Pay back
                   </label>
-                  {locked && <span className="pill ok" data-testid="expense-status">Paid back {shortDate(at!)}</span>}
-                  {owed && <span className="chip owed" data-testid="expense-status">Owed</span>}
+                  {locked && <span className="pill ok" data-testid="expense-status">paid back {shortDate(at!)}</span>}
+                  {owed && <span className="chip owed" data-testid="expense-status">waiting</span>}
                   {admin && owed && <button type="button" className="btn outline sm" disabled={busy} onClick={() => void markPaid(l)} data-testid="expense-markpaid">Mark paid back</button>}
                   {l.receipt && !l.showLink ? <a href={l.receipt.url} target="_blank" rel="noreferrer" data-testid="expense-receipt">Receipt ↗</a>
                     : locked ? null
@@ -132,7 +135,10 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
         <div className="flex flex-col">
           {sorted.map((x) => (
             <div key={x.id} className="money-row" data-testid="expense-row">
-              <span>{x.what} <span className="s">· {nameOfUser(x.userId)}{x.payBack !== false && x.paidBackAt ? " · paid back" : ""}{gasDetail(x) ? ` · ${gasDetail(x)}` : ""}</span>{owesBack(x) && <> <span className="chip owed">Owed</span></>}</span>
+              <span>{x.what} <span className="s">· {[projectName(x), nameOfUser(x.userId), CATEGORY_LABEL[x.category], gasDetail(x)].filter(Boolean).join(" · ")}</span>{" "}
+                {x.payBack === false ? <span className="chip" data-testid="expense-status">no pay back</span>
+                  : x.paidBackAt ? <span className="chip g" data-testid="expense-status">paid back {shortDate(x.paidBackAt)}</span>
+                  : owesBack(x) ? <span className="chip owed" data-testid="expense-status">waiting</span> : null}</span>
               <span>{formatCents(x.amount)}</span>
             </div>
           ))}

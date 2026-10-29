@@ -20,6 +20,8 @@ import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar
 import { Comments } from "@/components/shows/page/Comments";
 import { IncomeCard } from "@/components/shows/page/IncomeCard";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
+import { ProjectCard } from "@/components/shows/page/ProjectCard";
+import { PaidOutCard } from "@/components/shows/page/PaidOutCard";
 import { NetCard } from "@/components/shows/page/NetCard";
 import { ShowFansBanner } from "@/components/fans/ShowFansBanner";
 import type { Show } from "@/schema";
@@ -77,13 +79,17 @@ function ShowView({ show }: { show: ShowRow }) {
             </>}
             {tab === "setlist" && <SetlistTab show={show} admin={admin} />}
             {tab === "finances" && <>
+              {admin && <ProjectCard show={show} />}
               {admin && <IncomeCard show={show} />}
+              {admin && <PaidOutCard show={show} />}
               <ExpensesCard show={show} admin={admin} />
-              {admin && <NetCard show={show} />}
             </>}
         </div>
 
-        <aside className="show-side" aria-label="Checklists"><ChecklistSidebar show={show} admin={admin} /></aside>
+        <aside className="show-side" aria-label="Checklists">
+          {tab === "finances" && admin && <div className="mb-3"><NetCard show={show} /></div>}
+          <ChecklistSidebar show={show} admin={admin} />
+        </aside>
 
         <div className="show-main show-after">
           <ShowFansBanner showId={show.id} />

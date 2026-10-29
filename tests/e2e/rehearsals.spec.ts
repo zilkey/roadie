@@ -26,7 +26,7 @@ test("admin logs gas from the rehearsal: round trip estimate, toggle one way, sa
 
   await page.getByTestId("reh-add-expense").click();
   await expect(page.getByText(/^Rehearsal · /)).toContainText("Oct 29"); // the rehearsal is preselected
-  await page.getByTestId("exp-cat-gas").click();
+  await page.getByTestId("exp-cat-travel").click();
   await expect(page.getByTestId("exp-estimate")).toContainText("Denver-area average");
   await expect(page.getByTestId("exp-estimate-cost")).toHaveText("$4.98"); // 36.8 mi at 28 MPG and $3.79/gal
   await expect(page.getByTestId("exp-mpg-inline")).toHaveCount(0); // settings are saved, so no questions

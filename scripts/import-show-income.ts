@@ -6,10 +6,13 @@
  * day is taken as a date-only match and reported). Nothing is created: rows with no show are reported, with the venue when one
  * matches, so the show can be added by hand and the import run again.
  * For a matched show:
- *   - the money columns become income lines on its deal, all received (ids acct-*, so a re-run replaces them, never doubles them);
- *     the guarantee line booking wrote (id "g", received or not, as booking marks every past show's pay received) or any other
- *     not-received guarantee line is replaced by the sheet's, and the amounts are compared; any other income already on the deal is left
- *     alone and the row is reported instead
+ *   - the money columns become income docs (the income collection), all received on the show's date, on the show's project
+ *     (else the artist's default, Band); sourceKey "acct:<showId>:<column>", so a re-run replaces them, never doubles them.
+ *     Run `npm run migrate:money` first: income used to live on the deal, and that migration makes the projects too.
+ *     The booked guarantee (the income doc copied from the deal's line "g", received or not, as booking marks every past show's
+ *     pay received) or any other not-received guarantee doc is replaced by the sheet's, and the amounts are compared; any other
+ *     income already on the show is left alone and the row is reported instead, as are deal income[] lines the migration has
+ *     not copied yet (nothing is written for that row)
  *   - Gig Length fills times.setLengthSec when the show has none (a different booked length is reported, not overwritten)
  *   - Notes and the Ingie Award go to the deal's rating notes, Audience Count to the deal's `crowd`, once the rating no
  *     longer requires the 1-5 stars; until then they are reported as waiting. Neither overwrites one the show already has
@@ -153,6 +156,16 @@ export function parseShows(values: string[][]): { rows: GigRow[]; skipped: { lin
 
 // ---------- the import ----------
 
+const sumDocs = (ds: Doc[]) => sumIncome(ds as unknown as { amount: number }[]);
+
+/** What a row's money columns would do to the show's income docs: remove the booked/stale ones, fix changed ones, add the rest. */
+interface IncomePlan {
+  projectId: string;
+  update: { id: string; x: { sourceKey: string; category: string; amount: number; method?: string } }[];
+  create: { sourceKey: string; category: string; amount: number; method?: string }[];
+  remove: string[];
+}
+
 export interface IncomeReport {
   project: string; dryRun: boolean; runId: string; artist?: { id: string; name: string }; source: string;
   ratingsSupported: boolean;
@@ -160,7 +173,7 @@ export interface IncomeReport {
     line: number; date: string; gig: string; canceled: boolean; sheetTotal: number; income: number;
     match: "name" | "date-only" | "ambiguous" | "none"; showId?: string; showLabel?: string; showStatus?: string;
     candidates: string[]; nearby: string[]; venueHits: string[];
-    incomeAction?: "added" | "replaced" | "unchanged" | "conflict" | "no deal" | "none";
+    incomeAction?: "added" | "replaced" | "unchanged" | "conflict" | "no project" | "none";
     existingIncome?: number; setLength?: "filled" | "same" | "differs" | "none"; bookedMinutes?: number; minutes?: number;
     rating?: "written" | "waiting" | "none"; issues: string[];
   }[];
@@ -188,6 +201,7 @@ export async function importShowIncome(opts: { dryRun?: boolean; artist?: string
   const ctx = importCtx("import-show-income", runId, artist.id);
   const shows = await db.list("shows", (q) => q.where("artistId", "==", artist.id));
   const venues = await db.list("venues");
+  const defaultProjectId = new Map((await db.list("projects")).filter((p) => p.isDefault).map((p) => [p.artistId as string, p.id]));
   const matches = matchRows(rows, shows);
   const used = new Set(matches.map((m) => m.show?.id).filter(Boolean));
 
@@ -211,27 +225,48 @@ export async function importShowIncome(opts: { dryRun?: boolean; artist?: string
 
     const deal = await db.get("showDeals", s.id);
     const patch: Record<string, unknown> = {};
-    if (!deal || deal.deletedAt) out.incomeAction = r.income.length ? "no deal" : "none";
-    else {
-      const have = (deal.income ?? []) as { id: string; category: string; amount: number; method?: string; received: boolean }[];
-      const ours = have.filter((l) => l.id.startsWith("acct-"));
-      const booked = have.filter((l) => (l.id === BOOKED_ID || (!l.id.startsWith("acct-") && l.category === "guarantee" && !l.received)) && r.income.some((x) => x.category === "guarantee"));
-      const other = have.filter((l) => !ours.includes(l) && !booked.includes(l));
-      out.existingIncome = sumIncome(have);
+    let plan: IncomePlan | undefined;
+    {
+      const have = await db.list("income", (q) => q.where("showId", "==", s.id));
+      const ours = have.filter((d) => typeof d.sourceKey === "string" && d.sourceKey.startsWith(`acct:${s.id}:`));
+      const booked = have.filter((d) => !ours.includes(d) && r.income.some((x) => x.category === "guarantee")
+        && (d.sourceKey === `${s.id}:${BOOKED_ID}` || (d.category === "guarantee" && !d.receivedAt)));
+      const copied = new Set(have.map((d) => d.sourceKey));
+      // Deal lines the migration has not copied yet are income we cannot see as docs: treat them like hand-entered income.
+      const legacy = (deal && !deal.deletedAt ? ((deal.income ?? []) as { id: string; amount: number }[]) : [])
+        .filter((l) => l.amount > 0 && !copied.has(`${s.id}:${l.id}`) && !l.id.startsWith("acct-"));
+      const other = have.filter((d) => !ours.includes(d) && !booked.includes(d));
+      out.existingIncome = sumDocs(have);
       if (!r.income.length) out.incomeAction = "none";
-      else if (other.length) {
+      else if (other.length || legacy.length) {
         out.incomeAction = "conflict";
-        out.issues.push(`the deal already has ${other.length} other income line(s) (${formatCents(sumIncome(other))}): left as is`);
+        if (other.length) out.issues.push(`the show already has ${other.length} other income line(s) (${formatCents(sumDocs(other))}): left as is`);
+        if (legacy.length) out.issues.push(`the deal still has ${legacy.length} legacy income line(s) (${formatCents(sumIncome(legacy))}): run npm run migrate:money first`);
       } else {
-        const next = [...have.filter((l) => !ours.includes(l) && !booked.includes(l)), ...r.income];
-        if (JSON.stringify(next) === JSON.stringify(have)) out.incomeAction = "unchanged";
-        else {
-          patch.income = next;
+        const projectId = (s.projectId as string | undefined) ?? defaultProjectId.get(s.artistId as string);
+        const want = r.income.map((l) => ({
+          sourceKey: `acct:${s.id}:${l.id.replace(/^acct-/, "")}`, category: l.category, amount: l.amount, ...(l.method ? { method: l.method } : {}),
+        }));
+        const same = (d: Doc, x: (typeof want)[number]) => d.amount === x.amount && d.category === x.category && d.method === x.method && d.receivedAt === s.date;
+        const unchanged = want.length === ours.length && !booked.length && want.every((x) => ours.some((d) => d.sourceKey === x.sourceKey && same(d, x)));
+        if (unchanged) out.incomeAction = "unchanged";
+        else if (!projectId) {
+          out.incomeAction = "no project";
+          out.issues.push("the show has no project and the artist has no default project: run npm run migrate:money first");
+        } else {
           out.incomeAction = ours.length || booked.length ? "replaced" : "added";
-          const bookedSum = sumIncome(booked), gotGuarantee = sumIncome(r.income.filter((l) => l.category === "guarantee"));
+          const bookedSum = sumDocs(booked), gotGuarantee = sumIncome(r.income.filter((l) => l.category === "guarantee"));
           if (booked.length && bookedSum !== gotGuarantee) out.issues.push(`booked guarantee was ${formatCents(bookedSum)}, the sheet says ${formatCents(gotGuarantee)} came in`);
+          plan = {
+            projectId,
+            update: want.flatMap((x) => { const d = ours.find((o) => o.sourceKey === x.sourceKey); return d && !same(d, x) ? [{ id: d.id, x }] : []; }),
+            create: want.filter((x) => !ours.some((o) => o.sourceKey === x.sourceKey)),
+            remove: [...ours.filter((d) => !want.some((x) => x.sourceKey === d.sourceKey)), ...booked].map((d) => d.id),
+          };
         }
       }
+    }
+    if (deal && !deal.deletedAt) {
       if (r.notes || r.audience || r.award) {
         if (!report.ratingsSupported) out.rating = "waiting";
         else {
@@ -258,11 +293,22 @@ export async function importShowIncome(opts: { dryRun?: boolean; artist?: string
     else if (booked === r.minutes * 60) out.setLength = "same";
     else { out.setLength = "differs"; out.bookedMinutes = Math.round(booked / 60); }
 
-    if (opts.dryRun || (!Object.keys(patch).length && !showPatch)) continue;
+    if (opts.dryRun || (!Object.keys(patch).length && !showPatch && !plan)) continue;
     await run(ctx, async (w) => {
       if (Object.keys(patch).length) await w.update("showDeals", s.id, patch);
       if (showPatch) await w.update("shows", s.id, showPatch);
-      if (patch.income) await refreshDealTotals(w, s.id);
+      if (plan) {
+        const made: Doc[] = [];
+        const venue = s.venue as { name?: string } | undefined;
+        const from = venue?.name ?? (s.hostName as string | undefined) ?? (s.editionName as string | undefined) ?? "Show";
+        for (const id of plan.remove) await w.softDelete("income", id);
+        for (const { id, x } of plan.update) await w.update("income", id, { ...x, method: x.method ?? null, receivedAt: s.date });
+        for (const x of plan.create) {
+          const c = await w.create("income", { ...x, artistId: s.artistId, date: s.date, from, projectId: plan.projectId, showId: s.id, receivedAt: s.date });
+          made.push((await w.get("income", c.id))!);
+        }
+        await refreshDealTotals(w, s.id, { income: made });
+      }
     });
   }
   const cutoff = rows.reduce((a, r) => (r.date < a ? r.date : a), "9999");
@@ -293,14 +339,14 @@ export function incomeSurvey(r: IncomeReport): Survey {
     }
     if (x.match === "ambiguous") notes.push(note("decide", "several shows that day fit the name equally well", where, x.candidates.join(", ")));
     if (x.match === "date-only") notes.push(note("decide", "matched by date alone: the name did not match, but it was the only show that day", where, x.showLabel));
-    if (x.incomeAction === "conflict") notes.push(note("decide", "the deal already carries other income, so the sheet's money was left out", where, formatCents(x.existingIncome ?? 0)));
-    if (x.incomeAction === "no deal") notes.push(note("unclean", "the show has no deal to put income on", where));
-    if (x.incomeAction === "replaced") notes.push(note("overwrite", "income from an earlier run or from booking would be replaced", where, formatCents(x.existingIncome ?? 0)));
+    if (x.incomeAction === "conflict") notes.push(note("decide", "the show already carries other income, so the sheet's money was left out", where, formatCents(x.existingIncome ?? 0)));
+    if (x.incomeAction === "no project") notes.push(note("unclean", "neither the show nor the artist has a project to put income on (run migrate:money)", where));
+    if (x.incomeAction === "replaced") notes.push(note("overwrite", "income docs from an earlier run or from booking would be replaced", where, formatCents(x.existingIncome ?? 0)));
     if (x.setLength === "differs") notes.push(note("decide", "the booked set length disagrees with the sheet's Gig Length, and is kept", where, `booked ${x.bookedMinutes} min, sheet ${x.minutes} min`));
     if (x.rating === "waiting") notes.push(note("unclean", "Notes / Audience / Ingie columns are waiting on the ratings change (story 03)", where));
     for (const issue of x.issues) {
       // The conflict and set-length issues are already said above, in their own words: don't say them twice.
-      if (/other income line|booked guarantee was/.test(issue)) continue;
+      if (/other income line|legacy income line|booked guarantee was/.test(issue)) continue;
       // Numbers and amounts are row-specific, so they go in the detail: the reason has to group.
       const reason = issue.replace(/\s*\([^)]*\)/g, "").replace(/-?\$[\d,.]+/g, "an amount").replace(/\b\d+(\.\d+)?\b/g, "N").trim();
       notes.push(note("decide", reason, where, issue));
@@ -312,8 +358,8 @@ export function incomeSurvey(r: IncomeReport): Survey {
     title: "Show income", project: r.project, dryRun: r.dryRun, runId: r.runId,
     source: `${r.rows.length} gig rows from ${r.source}`,
     clean: tally([
-      ...r.rows.filter((x) => x.incomeAction && x.incomeAction !== "conflict" && x.incomeAction !== "no deal")
-        .map((x) => ({ collection: "showDeals income", action: x.incomeAction! })),
+      ...r.rows.filter((x) => x.incomeAction && x.incomeAction !== "conflict" && x.incomeAction !== "no project")
+        .map((x) => ({ collection: "income", action: x.incomeAction! })),
       ...r.rows.filter((x) => x.setLength === "filled").map(() => ({ collection: "shows set length", action: "filled" })),
       ...r.rows.filter((x) => x.rating === "written").map(() => ({ collection: "showDeals rating", action: "written" })),
     ]),

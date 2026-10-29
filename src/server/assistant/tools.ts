@@ -223,10 +223,14 @@ function lookups(s: Session) {
   };
 }
 type L = ReturnType<typeof lookups>;
+/** Who a payout's `to` names (a musician, a user, a contact, or a plain name). */
+async function payoutTo(to: Row | undefined, l: L): Promise<string> {
+  if (!to) return "them";
+  return to.musicianId ? l.musician(to.musicianId) : to.userId ? l.person(to.userId) : to.contactId ? l.contact(to.contactId) : String(to.name ?? "them");
+}
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<string> | string> = { // eslint-disable-line @typescript-eslint/no-explicit-any
   "expenses.payPerson": async (i, r, _s, l) => `Paid ${await l.person(i.userId)} back ${dollars(r?.total ?? 0)} (${plural(r?.paid?.length ?? 0, "expense")})`,
-  "expenses.add": async (i, _r, s, l) => `Logged ${dollars(i.amount)} ${i.what}, paid by ${i.userId ? await l.person(i.userId) : s.name}`,
   "shows.update": async (i, _r, _s, l) => {
     const p = (i.patch ?? {}) as Row;
     const parts = await Promise.all(Object.keys(p).map(async (k) => {
@@ -249,7 +253,19 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   },
   "shows.addChecklistItem": async (i, _r, _s, l) => `Added ${quote(i.label)} to ${await l.show(i.id)}`,
   "shows.afterShow": async (i, _r, _s, l) => `Saved how it went for ${await l.show(i.id)}${i.show ? `, show ${i.show}/5` : ""}${i.venue ? `, venue ${i.venue}/5` : ""}`,
-  "showDeals.setIncome": async (i, _r, _s, l) => `Set the income for ${await l.show(i.id)} to ${dollars(((i.income ?? []) as { amount: number }[]).reduce((n, x) => n + x.amount, 0))}`,
+  "expenses.add": async (i, _r, s, l) => (i.userId && i.payBack === true ? `We owe ${await l.person(i.userId)} ${dollars(i.amount)} for ${i.what}` : `Logged ${dollars(i.amount)} ${i.what}, paid by ${i.userId ? await l.person(i.userId) : s.name}`),
+  "income.add": (i) => (i.receivedAt ? `${i.from} paid us ${dollars(i.amount)} (${i.category})` : `${i.from} owes us ${dollars(i.amount)} (${i.category}, owed)`),
+  "income.update": async (i, _r, _s, l) => `Updated the ${(await l.get("income", i.id))?.from ?? ""} income: ${list(Object.keys(i.patch ?? {}))}`,
+  "income.setReceived": async (i, _r, _s, l) => `Marked the ${(await l.get("income", i.id))?.from ?? ""} income as received`,
+  "income.remove": () => "Removed the income",
+  "payouts.add": async (i, _r, _s, l) => `${i.paidAt ? "We paid" : "We owe"} ${await payoutTo(i.to, l)} ${dollars(i.amount)}`,
+  "payouts.update": async (i, _r, _s, l) => `Updated what we ${(await l.get("payouts", i.id))?.paidAt ? "paid" : "owe"} ${(await l.get("payouts", i.id))?.to?.name ?? "them"}: ${list(Object.keys(i.patch ?? {}))}`,
+  "payouts.markPaid": async (i, _r, _s, l) => { const p = await l.get("payouts", i.id); return `We paid ${p?.to?.name ?? "them"}${p?.amount ? ` ${dollars(p.amount)}` : ""} (${i.method})`; },
+  "payouts.remove": () => "Removed the payout",
+  "projects.create": (i) => `Started the project ${i.name}`,
+  "projects.update": async (i, _r, _s, l) => `Updated the project ${(await l.get("projects", i.id))?.name ?? ""}: ${list(Object.keys(i.patch ?? {}))}`,
+  "projects.close": async (i, _r, _s, l) => `Closed the project ${(await l.get("projects", i.id))?.name ?? ""}`,
+  "projects.reopen": async (i, _r, _s, l) => `Reopened the project ${(await l.get("projects", i.id))?.name ?? ""}`,
   "setlists.setItems": async (i, _r, _s, l) => `Set the setlist for ${await l.show(i.showId)}: ${plural(((i.items ?? []) as Row[]).filter((x) => x.type !== "break").length, "song")}`,
   "pitches.flag": async (i, r, _s, l) => `${r?.existing ? "Already on the Pitch List:" : "Added to the Pitch List:"} ${await l.pitch(r?.id)}`,
   "pitches.move": async (i, _r, _s, l) => `Moved ${await l.pitch(i.id)} to ${i.status}`,
@@ -355,6 +371,31 @@ async function fillPayPerson(s: Session, input: unknown): Promise<{ input: unkno
   const pay = Array.isArray(i.ids) ? owed.filter((x) => (i.ids as string[]).includes(x.id)) : owed;
   const before = { person: await lookups(s).person(i.userId), total: pay.reduce((n, x) => n + (x.amount as number), 0) };
   return { input: pay.length && !Array.isArray(i.ids) ? { ...i, ids: pay.map((x) => x.id) } : i, before };
+}
+
+/**
+ * Money cards read like the sentence: names for the person, project and show, and for a record named by id (setReceived,
+ * markPaid, update, remove) the record's own amount and who. Best effort: a miss leaves the card plainer, never blocks it.
+ */
+const MONEY_CARDS = /^(expenses\.add|income\.|payouts\.|projects\.)/;
+async function fillMoney(s: Session, name: string, input: unknown): Promise<{ input: unknown; before?: Row }> {
+  if (!MONEY_CARDS.test(name)) return { input };
+  const i = (input ?? {}) as Row, l = lookups(s);
+  const kind = name.split(".")[0];
+  try {
+    const rec: Row | undefined = typeof i.id === "string" && kind !== "expenses" ? await l.get(kind, i.id) : undefined;
+    const before: Row = {};
+    if (kind === "projects") { if (rec) before.name = rec.name; return { input, before }; }
+    if (rec) Object.assign(before, { amount: rec.amount, from: rec.from, what: rec.what, paidAt: rec.paidAt, ...(rec.to ? { person: await payoutTo(rec.to, l) } : {}) });
+    if (name === "payouts.add" || (name === "payouts.update" && i.patch?.to)) before.person = await payoutTo(name === "payouts.add" ? i.to : i.patch.to, l);
+    if (name === "expenses.add" && i.userId) before.person = await l.person(i.userId);
+    const showId = i.showId ?? i.patch?.showId ?? rec?.showId;
+    if (showId) { const sh = await l.get("shows", showId); before.show = sh ? showName(sh as ShowPlaceLike) : "the show"; }
+    const projectId = i.projectId ?? i.patch?.projectId ?? rec?.projectId;
+    before.project = projectId ? ((await l.get("projects", projectId))?.name ?? "the project")
+      : ((await runAs(makeCtx(s), "records.list", { kind: "projects", limit: 200 })).result as { rows: Row[] }).rows.find((p) => p.isDefault)?.name ?? "the project";
+    return { input, before };
+  } catch { return { input }; }
 }
 
 /** "Explain this page": help.explain with no topic or page explains the one the person is on. */
@@ -507,7 +548,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const no = refusal(name, input);
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
-    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : await fillNested(s, name, input ?? {});
+    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : MONEY_CARDS.test(name) ? await fillMoney(s, name, input) : await fillNested(s, name, input ?? {});
     let parsed = cmd.input.safeParse(filled.input);
     // A value that isn't on its list (a venue type the band doesn't have, a region the schema doesn't know) becomes a dropdown on the card.
     const choice = isReadOnly(name) ? null : await picksFor(s, name, filled.input, parsed.success ? [] : parsed.error.issues, filled.before);

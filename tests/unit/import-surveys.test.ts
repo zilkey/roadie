@@ -277,7 +277,7 @@ test("the income survey puts an unmatched row in the unclean list with its reaso
   assert.equal(unclean[0].rows.length, 1);
   assert.match(unclean[0].rows[0].where!, /line 3 2026-09-14 Nowhere At All/);
   // The row that did match is counted as clean.
-  assert.match(formatSurvey(s), /showDeals income: 1 \(added 1\)/, formatSurvey(s));
+  assert.match(formatSurvey(s), /income: 1 \(added 1\)/, formatSurvey(s));
 });
 
 test("the income survey flags a date-only match as a human decision", async () => {

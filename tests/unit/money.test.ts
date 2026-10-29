@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
-import { byCategory, byMonth, moneyRows, owedExpenses, parseDollars, showTotals, splitEvenly, totals, type ExpenseLike } from "@/lib/money";
+import { CATEGORY_LABEL, byCategory, byMonth, byProject, byShow, moneyRows, owedExpenses, owedToUs, parseDollars, projectTotals, showTotals, splitEvenly, totals, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
 import { undoRun } from "@/server/undo";
 import { parseSpotifyCsv, parseStatDate, statsCurrent, statsTemplateFields } from "@/lib/stats";
 import { buildTemplateContext, fillTemplate } from "@/lib/booking";
@@ -55,31 +55,80 @@ beforeEach(async () => {
 const totalsNow = async () => { const t = ((await db.get("showDeals", showId)) as any).totals; return t && { income: t.income, expenses: t.expenses }; };
 const x = (o: Partial<ExpenseLike>): ExpenseLike => ({ id: "x", userId: "u", date: "2026-10-10", amount: 100, category: "other", what: "x", ...o });
 
+const inc = (o: Partial<IncomeLike>): IncomeLike => ({ id: "i", date: "2026-10-10", amount: 1000, category: "guarantee", from: "Hi-Dive", projectId: "band", ...o });
+const pay = (o: Partial<PayoutLike>): PayoutLike => ({ id: "p", to: { name: "Sam" }, kind: "pay", amount: 500, projectId: "band", ...o });
+const owe = (payouts: PayoutLike[], expenses: ExpenseLike[]) =>
+  weOwe({ payouts, expenses, musicianUserId: (m) => (m === "m1" ? "u1" : undefined), personName: (u) => `User ${u}` });
+
 test("pure: totals, owed, charts, split, dollars", () => {
   const rows = moneyRows({
-    deals: [{ id: "s1", income: [{ id: "a", category: "guarantee", amount: 30000, received: true }, { id: "b", category: "tips", amount: 4000, received: false }] }, { id: "gone", income: [{ id: "c", category: "tips", amount: 1, received: true }], deletedAt: new Date() }],
+    income: [inc({ id: "a", amount: 30000, showId: "s1" }), inc({ id: "b", amount: 4000, category: "tips", receivedAt: undefined, projectId: "tour" }), inc({ id: "c", amount: 1, deletedAt: new Date() })],
     expenses: [x({ id: "e1", amount: 2500, showId: "s1", date: "2026-11-02", category: "travel" }), x({ id: "e2", amount: 900, deletedAt: new Date() })],
-    showDate: (id) => (id === "s1" ? "2026-10-10" : undefined),
+    payouts: [pay({ id: "p1", amount: 8000, showId: "s1", paidAt: "2026-10-11" }), pay({ id: "p2", amount: 700, dueDate: "2026-12-01" }), pay({ id: "p3", amount: 1 })],
   });
-  assert.deepEqual(totals(rows), { in: 34000, out: 2500, left: 31500 });
-  assert.deepEqual(byMonth(rows).map((r) => [r.key, r.net]), [["2026-10", 34000], ["2026-11", -2500]]);
+  assert.deepEqual(totals(rows), { in: 34000, out: 11200, left: 22800 });
+  assert.deepEqual(rows.map((r) => r.kind), ["income", "income", "expense", "payout", "payout"]); // the undated payout has no row
+  assert.deepEqual(byMonth(rows).map((r) => [r.key, r.net]), [["2026-10", 26000], ["2026-11", -2500], ["2026-12", -700]]);
   assert.equal(byCategory(rows)[0].key, "guarantee");
+  assert.equal(byCategory(rows).find((r) => r.key === "payout")?.out, 8700); assert.equal(CATEGORY_LABEL.payout, "Paid out");
+  assert.deepEqual(byShow(rows).map((r) => [r.key, r.net]), [["s1", 19500]]);
+  assert.deepEqual(byProject(rows).map((r) => [r.key, r.net]), [["band", 21300], ["tour", 4000]]); // the expense has no projectId, so it is not grouped
   assert.deepEqual(owedExpenses([x({ id: "o" }), x({ id: "p", paidBackAt: "2026-10-11" }), x({ id: "q", payBack: false }), x({ id: "r", deletedAt: new Date() })]).map((e) => e.id), ["o"]);
-  assert.deepEqual(showTotals({ income: [{ amount: 30000 }, { amount: 500 }], expenses: [{ amount: 6400 }, { amount: 100, deletedAt: new Date() }] }), { income: 30500, expenses: 6400 });
+  assert.deepEqual(showTotals({ income: [{ amount: 30000 }, { amount: 500 }], payouts: [{ amount: 8000 }], expenses: [{ amount: 6400 }, { amount: 100, deletedAt: new Date() }] }), { income: 30500, paidOut: 8000, expenses: 6400, net: 16100 });
   assert.deepEqual(splitEvenly(1000, 3), [334, 333, 333]);
   assert.equal(parseDollars("$1,234.50"), 123450); assert.equal(parseDollars("12"), 1200); assert.equal(parseDollars("1.2.3"), null); assert.equal(parseDollars("-4"), null);
 });
 
-test("income lines: admins set them, totals follow; members can't", async () => {
-  assert.equal(registry["showDeals.setIncome"].roles.includes("member"), false);
-  await cmd("showDeals.setIncome", { id: showId, income: [{ category: "guarantee", amount: 30000, method: "check", received: true }, { category: "merch", amount: 6000, method: "square", received: false }], incomeNotes: "Deposit Monday" });
-  const d = (await db.get("showDeals", showId)) as any;
-  assert.equal(d.income.length, 2); assert.ok(d.income.every((l: any) => l.id)); assert.equal(d.incomeNotes, "Deposit Monday");
-  assert.deepEqual(await totalsNow(), { income: 36000, expenses: 0 });
-  await cmd("showDeals.setIncome", { id: showId, income: [d.income[0]], incomeNotes: null });
-  const d2 = (await db.get("showDeals", showId)) as any;
-  assert.equal(d2.income.length, 1); assert.equal(d2.income[0].id, d.income[0].id); assert.equal(d2.incomeNotes, undefined);
-  assert.deepEqual(await totalsNow(), { income: 30000, expenses: 0 });
+test("pure: weOwe groups by person; paid payouts, payBack false and paid-back expenses owe nothing", () => {
+  const g = owe(
+    [
+      pay({ id: "p1", to: { musicianId: "m1", name: "Maya" }, amount: 3000, dueDate: "2026-10-05", what: "Lost Lake pay" }),
+      pay({ id: "p2", to: { musicianId: "m1", name: "Maya" }, amount: 999, paidAt: "2026-10-06" }),
+      pay({ id: "p3", to: { musicianId: "m2", name: "Noel" }, amount: 1000 }),
+      pay({ id: "p4", to: { contactId: "c1", name: "Venue Guy" }, amount: 200, kind: "split" }),
+      pay({ id: "p5", to: { name: "Other Band" }, amount: 300, kind: "split", deletedAt: new Date() }),
+      pay({ id: "p6", to: { name: "Other Band" }, amount: 400, kind: "split" }),
+    ],
+    [x({ id: "e1", userId: "u1", amount: 2000, date: "2026-10-01" }), x({ id: "e2", userId: "u1", amount: 50, payBack: false }), x({ id: "e3", userId: "u1", amount: 60, paidBackAt: "2026-10-02" }), x({ id: "e4", userId: "u3", amount: 100 })],
+  );
+  assert.deepEqual(g.map((r) => [r.key, r.total]), [["user:u1", 5000], ["musician:m2", 1000], ["name:Other Band", 400], ["contact:c1", 200], ["user:u3", 100]]);
+  assert.deepEqual(g[0].items.map((i) => [i.kind, i.id]), [["expense", "e1"], ["payout", "p1"]]); // oldest first
+  assert.equal(g[0].items[0].date, "2026-10-01");
+  assert.equal(g[0].name, "Maya"); assert.equal(g[0].userId, "u1"); assert.equal(g[4].name, "User u3");
+  assert.equal(g[1].items[0].what, "Pay for playing"); assert.equal(g[3].items[0].payoutKind, "split");
+});
+
+test("pure: a paid reimbursement clears exactly the expenses it lists", () => {
+  const es = [x({ id: "e1", userId: "u1", amount: 700 }), x({ id: "e2", userId: "u1", amount: 300 })];
+  const reimb = pay({ id: "r", to: { userId: "u1", name: "Jeff" }, kind: "reimbursement", amount: 700, expenseIds: ["e1"], paidAt: "2026-10-12" });
+  // what the command does when the reimbursement is paid: each listed expense gets paidBackAt + reimbursedBy
+  const after = es.map((e) => (reimb.expenseIds!.includes(e.id) ? { ...e, paidBackAt: reimb.paidAt, reimbursedBy: reimb.id } : e));
+  assert.deepEqual(owe([reimb], after).map((r) => [r.key, r.total, r.items.map((i) => i.id)]), [["user:u1", 300, ["e2"]]]);
+  // the same reimbursement still unpaid: the expenses it hasn't cleared are what's owed; the reimbursement itself repays them, so it adds nothing
+  const open = owe([{ ...reimb, paidAt: undefined }], es);
+  assert.equal(open[0].total, 700 + 300);
+});
+
+test("pure: owedToUs lists unreceived live income, oldest first", () => {
+  const r = owedToUs({ income: [inc({ id: "a", date: "2026-10-20", amount: 500 }), inc({ id: "b", date: "2026-09-01", amount: 700 }), inc({ id: "c", receivedAt: "2026-10-11" }), inc({ id: "d", deletedAt: new Date() })] });
+  assert.deepEqual(r.items.map((i) => i.id), ["b", "a"]); assert.equal(r.total, 1200);
+});
+
+test("pure: projectTotals counts owed amounts, a payBack:false expense and the default project's unmarked records", () => {
+  const i = {
+    income: [inc({ id: "a", amount: 30000, showId: "s1", receivedAt: "2026-10-10" }), inc({ id: "b", amount: 4000 }), inc({ id: "c", amount: 999, projectId: "tour" }), inc({ id: "d", amount: 5, deletedAt: new Date() })],
+    payouts: [pay({ id: "p1", amount: 8000, paidAt: "2026-10-11" }), pay({ id: "p2", amount: 1000 }), pay({ id: "p3", amount: 77, projectId: "tour" })],
+    expenses: [x({ id: "e1", amount: 2000 }), x({ id: "e2", amount: 500, payBack: false }), x({ id: "e3", amount: 300, paidBackAt: "2026-10-12" }), x({ id: "e4", amount: 40, projectId: "tour" }), x({ id: "e5", amount: 9, deletedAt: new Date() })],
+  };
+  // income 34000 (the 4000 still owed counts), paidOut 9000 (paid or not), expenses 2800 (whoever paid, payBack false too)
+  assert.deepEqual(projectTotals({ projectId: "band", defaultProjectId: "band", ...i }), { income: 34000, paidOut: 9000, expenses: 2800, net: 34000 - 9000 - 2800, owedToUs: 4000, weOwe: 1000 + 2000 });
+  // records with no projectId belong to the default project
+  const loose = { income: [{ ...inc({ amount: 100 }), projectId: undefined } as unknown as IncomeLike], payouts: [], expenses: [x({ amount: 40 })] };
+  assert.equal(projectTotals({ projectId: "band", defaultProjectId: "band", ...loose }).net, 100 - 40);
+  assert.equal(projectTotals({ projectId: "tour", defaultProjectId: "band", ...loose }).net, 0);
+  // a show's records, through showTotals
+  const onShow = { income: i.income.filter((r) => r.showId === "s1"), payouts: [], expenses: [] };
+  assert.deepEqual(showTotals(onShow), { income: 30000, paidOut: 0, expenses: 0, net: 30000 });
 });
 
 test("expenses: members add, fix and remove their own until paid back; admins mark paid back", async () => {
@@ -225,7 +274,7 @@ test("stats: daily pull is idempotent, CSV import writes snapshots, current + te
 });
 
 test("members cannot run admin money or stats commands", async () => {
-  for (const n of ["showDeals.setIncome", "expenses.setPaidBack", "expenses.payPerson", "stats.pull", "stats.importCsv", "stats.current"]) {
+  for (const n of ["expenses.setPaidBack", "expenses.payPerson", "stats.pull", "stats.importCsv", "stats.current"]) {
     assert.equal(registry[n].roles.includes("member"), false, n);
   }
   for (const n of ["ledger.record", "ledger.correct", "shows.settle", "payouts.pay", "expenses.reimburse"]) assert.equal(registry[n], undefined, n);

@@ -1,135 +1,194 @@
 "use client";
-"use client";
 import Link from "@/lib/artist";
 import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, byCategory, byMonth, byShow, formatCents, moneyRows, owedExpenses, totals, unreceivedIncome } from "@/lib/money";
-import { dateInBandZone } from "@/lib/timezone";
+import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCategory, byMonth, byShow, defaultProject, formatCents, moneyRows, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
 import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
+import { Projects } from "./Projects";
+import { ledger, statusClass } from "./Project";
+import { MoneyInModal } from "./MoneyInModal";
+import { MoneyOutModal } from "./MoneyOutModal";
+import type { MoneyDefaults } from "./modals";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
-import type { Expense, Musician, Show, ShowDeal, User } from "@/schema";
+import type { Expense, Income, Musician, Payout, Project, Show, User } from "@/schema";
 
-type Tab = "overview" | "shows" | "categories";
+type Tab = "overview" | "projects" | "shows" | "categories";
+
+const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 export function AdminMoney() { return <Suspense><Admin /></Suspense>; }
 
 function Admin() {
+  const income = useCollection<Income>("income");
   const expenses = useCollection<Expense>("expenses");
-  const deals = useCollection<ShowDeal>("showDeals");
+  const payouts = useCollection<Payout>("payouts");
+  const projects = useCollection<Project>("projects");
   const shows = useCollection<Show>("shows");
   const musicians = useCollection<Musician>("musicians");
   const users = useCollection<User>("users");
   const [tab, setTab] = useState<Tab>("overview");
+  const [modal, setModal] = useState<{ kind: "in" | "out"; defaults?: MoneyDefaults } | null>(null);
   const { call, error, busy } = useCommand();
 
   const showById = useMemo(() => new Map((shows.rows ?? []).map((s) => [s.id, s])), [shows.rows]);
   const showName = (id: string) => ((x) => (x ? nameOfShow(x) : "Show"))(showById.get(id));
-  const person = (userId?: string) =>
+  const personName = (userId: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.userId === userId)?.name ?? "Someone";
-  const rows = useMemo(
-    () => moneyRows({ deals: deals.rows ?? [], expenses: expenses.rows ?? [], showDate: (id) => showById.get(id)?.date }),
-    [deals.rows, expenses.rows, showById],
-  );
+  const inc = income.rows ?? [], exp = expenses.rows ?? [], pay = payouts.rows ?? [];
+  const rows = useMemo(() => moneyRows({ income: inc, expenses: exp, payouts: pay }), [inc, exp, pay]);
   const t = totals(rows);
-  const owed = owedExpenses(expenses.rows ?? []);
-  const owedBy = new Map<string, { name: string; total: number; lines: typeof owed }>();
-  for (const x of owed) {
-    const o = owedBy.get(x.userId) ?? { name: person(x.userId), total: 0, lines: [] };
-    o.total += x.amount; o.lines.push(x); owedBy.set(x.userId, o);
-  }
-  const owedTotal = owed.reduce((n, x) => n + x.amount, 0);
-  // One setPaidBack per line, in turn; a line that fails stays in the list with the error above.
-  const markAllPaid = async (lines: typeof owed) => {
-    for (const x of lines) await call("expenses.setPaidBack", { id: x.id, paid: true });
-  };
-  const waiting = unreceivedIncome({ deals: deals.rows ?? [], show: (id) => showById.get(id), today: dateInBandZone() });
-  const waitingTotal = waiting.reduce((n, w) => n + w.total, 0);
-  // setIncome replaces the whole list, so resend every line with just this one flipped.
-  const markReceived = (showId: string, lineId: string) => {
-    const income = deals.rows?.find((d) => d.id === showId)?.income ?? [];
-    return call("showDeals.setIncome", { id: showId, income: income.map((l) => (l.id === lineId ? { ...l, received: true } : l)) });
-  };
+  const def = defaultProject(projects.rows ?? []);
+  const projectName = (id?: string) => (projects.rows ?? []).find((p) => p.id === projectOf({ projectId: id }, def?.id))?.name ?? "";
 
-  // No income lines and no expenses yet: only the welcome card, none of the tabs or totals.
-  const nothingYet = expenses.rows !== null && deals.rows !== null && rows.length === 0 && (expenses.rows ?? []).length === 0;
-  if (nothingYet) {
+  const owedIn = owedToUs({ income: inc });
+  const owe = weOwe({ payouts: pay, expenses: exp, musicianUserId: (mid) => musicians.rows?.find((m) => m.id === mid)?.userId, personName });
+  const recent = ledger({ income: inc, expenses: exp, payouts: pay }).filter((l) => l.date).slice(0, 10);
+  const openProjects = (projects.rows ?? []).filter((p) => p.status !== "closed");
+
+  const loaded = income.rows !== null && expenses.rows !== null && payouts.rows !== null;
+  const actions = (
+    <>
+      <button className="btn acc" data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
+      <button className="btn acc" data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
+      <Link href="/money/expense" className="btn outline" data-testid="add-expense-link">Add an expense</Link>
+    </>
+  );
+  const modals = (
+    <>
+      <MoneyInModal open={modal?.kind === "in"} onClose={() => setModal(null)} defaults={modal?.defaults} />
+      <MoneyOutModal open={modal?.kind === "out"} onClose={() => setModal(null)} defaults={modal?.defaults} />
+    </>
+  );
+
+  // Nothing in, out or owed yet: only the welcome card, none of the tabs or totals.
+  if (loaded && rows.length === 0 && inc.length + exp.length + pay.length === 0) {
     return (
-      <WelcomeEmpty section="money" variant={0} title="Welcome to Money!"
-        body="Everything that comes in and goes out: show income, gear and rentals, who's owed what, and the totals broken down by show and category. Add the first expense or enter show income on a show's deal and the numbers start to fill in."
-        actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>}>
-        <ErrorBox error={error} />
-      </WelcomeEmpty>
+      <>
+        <WelcomeEmpty section="money" variant={0} title="Welcome to Money!"
+          body="Everything that comes in and goes out: show income, gear and rentals, who's owed what, and the totals broken down by project, show and category. Add money in or out, or an expense, and the numbers start to fill in."
+          actions={<>
+            <button className="btn acc" data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
+            <button className="btn acc" data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
+            <Link href="/money/expense" className="btn outline" data-testid="add-expense-link">Add an expense</Link>
+          </>}>
+          <ErrorBox error={error} />
+        </WelcomeEmpty>
+        {modals}
+      </>
     );
   }
 
   return (
     <div className="grid gap-5" data-testid="admin-money">
-      <PageTitle title="Money" actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>} />
-      <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["shows", "By show"], ["categories", "By category"]]} />
+      <PageTitle title="Money" actions={actions} />
+      <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["projects", "Projects"], ["shows", "By show"], ["categories", "By category"]]} />
       <ErrorBox error={error} />
 
       {tab === "overview" && (
         <>
-        <div className="grid gap-5 md:grid-cols-2">
-          <div className="grid content-start gap-5">
-            <div className="card" data-testid="money-totals">
-              <div className="sum flex justify-between"><span>In</span><span className="font-mono" data-testid="total-in">{formatCents(t.in)}</span></div>
-              <div className="sum flex justify-between"><span>Out</span><span className="font-mono" data-testid="total-out">{formatCents(t.out)}</span></div>
-              <div className="sum flex justify-between border-t border-line pt-2"><b>Left</b><b className="font-mono" data-testid="total-left">{formatCents(t.left)}</b></div>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid min-w-0 content-start gap-5">
+              <div className="card" data-testid="money-totals">
+                <div className="sum flex justify-between"><span>In</span><span className="font-mono" data-testid="total-in">{formatCents(t.in)}</span></div>
+                <div className="sum flex justify-between"><span>Out</span><span className="font-mono" data-testid="total-out">{formatCents(t.out)}</span></div>
+                <div className="sum flex justify-between border-t border-line pt-2"><b>Left</b><b className="font-mono" data-testid="total-left">{formatCents(t.left)}</b></div>
+              </div>
+              <MonthBars data={byMonth(rows)} testid="chart-months" />
             </div>
-            <MonthBars data={byMonth(rows)} testid="chart-months" />
-          </div>
-          <div className="grid content-start gap-2" data-testid="unreceived">
-            <div className="flex justify-between"><span className="lbl">Not received yet</span>{waiting.length > 0 && <b className="font-mono" data-testid="unreceived-total">{formatCents(waitingTotal)}</b>}</div>
-            {waiting.length === 0 && <div className="empty"><span>Every show so far has paid up.</span></div>}
-            {waiting.map((w) => (
-              <div key={w.showId} className="card" data-testid={`unreceived-${w.showId}`}>
-                <div className="flex justify-between gap-2">
-                  <Link href={`/shows/${w.showId}`}><b>{showName(w.showId)}</b> <span className="s">{fmtLong(w.date)}</span></Link>
-                  <b className="font-mono">{formatCents(w.total)}</b>
-                </div>
-                {w.lines.map((l) => (
-                  <div key={l.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span>{INCOME_LABEL[l.category] ?? l.category} <span className="s">{formatCents(l.amount)}{l.method ? ` · ${METHOD_LABEL[l.method] ?? l.method}` : ""}</span></span>
-                    <button className="btn sm" disabled={busy} data-testid={`received-${l.id}`} onClick={() => markReceived(w.showId, l.id)}>Mark received</button>
+
+            <div className="grid min-w-0 content-start gap-5">
+              <div className="card grid gap-2" data-testid="owed-to-us">
+                <div className="flex justify-between"><span className="lbl">Owed to us</span>{owedIn.items.length > 0 && <b className="font-mono" data-testid="owed-to-us-total">{formatCents(owedIn.total)}</b>}</div>
+                {owedIn.items.length === 0 && <span className="s">Everyone has paid up.</span>}
+                {owedIn.items.map((x) => (
+                  <div key={x.id} className="flex items-center justify-between gap-2 border-t border-line pt-2" data-testid={`owed-income-${x.id}`}>
+                    <div className="min-w-0">
+                      <div><b>{x.from}</b> owes the {(INCOME_LABEL[x.category] ?? x.category).toLowerCase()}</div>
+                      <div className="s">{[x.showId ? `${shortDate(x.date)} show` : shortDate(x.date), projectName(x.projectId), x.method && METHOD_LABEL[x.method]].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    <span className="flex shrink-0 items-center gap-2">
+                      <b className="font-mono">{formatCents(x.amount)}</b>
+                      <button className="btn sm" disabled={busy} data-testid={`owed-received-${x.id}`} onClick={() => call("income.setReceived", { id: x.id })}>Received</button>
+                    </span>
                   </div>
                 ))}
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="card grid gap-4" data-testid="owed">
-          <div className="flex justify-between"><span className="lbl">Owed to people</span>{owed.length > 0 && <b className="font-mono" data-testid="owed-total">{formatCents(owedTotal)}</b>}</div>
-          {owed.length === 0 && <div className="empty"><span>Nobody is owed anything.</span></div>}
-          {[...owedBy.entries()].map(([key, o]) => (
-            <div key={key} className="grid gap-1 border-t border-line pt-3" data-testid={`owed-${key}`}>
-              <div className="flex items-center justify-between gap-2">
-                <b>{o.name}</b>
-                <span className="flex items-center gap-3">
-                  <b className="font-mono">{formatCents(o.total)}</b>
-                  {o.lines.length > 1 && <button className="btn sm" disabled={busy} data-testid={`paid-all-${key}`} onClick={() => markAllPaid(o.lines)}>Mark all paid</button>}
-                </span>
+
+              <div className="card grid gap-3" data-testid="we-owe">
+                <div className="flex justify-between"><span className="lbl">We owe</span>{owe.length > 0 && <b className="font-mono" data-testid="we-owe-total">{formatCents(owe.reduce((n, g) => n + g.total, 0))}</b>}</div>
+                {owe.length === 0 && <span className="s">Nobody is owed anything.</span>}
+                {owe.map((g) => (
+                  <div key={g.key} className="grid gap-1 border-t border-line pt-3" data-testid={`we-owe-${g.key}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                      <b className="min-w-0">{g.name}</b>
+                      <span className="flex items-center gap-3">
+                        <b className="font-mono">{formatCents(g.total)}</b>
+                        <button className="btn sm" disabled={busy} data-testid={`pay-${g.key}`}
+                          onClick={() => setModal({ kind: "out", defaults: { userId: g.userId, musicianId: g.userId ? undefined : g.musicianId, expenseIds: g.items.filter((i) => i.kind === "expense").map((i) => i.id), paid: true } })}>
+                          Pay {g.name.split(" ")[0]}
+                        </button>
+                      </span>
+                    </div>
+                    {g.items.map((i) => (
+                      <div key={`${i.kind}-${i.id}`} className="s flex justify-between gap-2">
+                        <span className="min-w-0">{[i.what, i.kind === "expense" ? "pay back" : i.date && `due ${shortDate(i.date)}`, projectName(i.projectId)].filter(Boolean).join(" · ")}</span>
+                        <span className="font-mono">{formatCents(i.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
-              {o.lines.map((x) => (
-                <div key={x.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span>{x.what} <span className="s">{formatCents(x.amount)} · {fmtLong(x.date)}</span></span>
-                  <button className="btn sm" disabled={busy} data-testid={`paid-back-${x.id}`} onClick={() => call("expenses.setPaidBack", { id: x.id, paid: true })}>Mark paid back</button>
-                </div>
-              ))}
             </div>
-          ))}
-        </div>
+          </div>
+
+          <div className="card grid gap-2">
+            <span className="lbl">Recently</span>
+            <div className="book-tw" style={{ border: 0 }}>
+              <table className="book-table" style={{ minWidth: 560 }} data-testid="recent">
+                <tbody>
+                  {recent.length === 0 && <tr><td className="s">Nothing yet.</td></tr>}
+                  {recent.map((l) => (
+                    <tr key={l.key} data-testid={`recent-${l.key}`}>
+                      <td className="nw">{shortDate(l.date)}</td>
+                      <td><span className="font-bold">{l.title}</span> <span className="s">· {l.meta}</span></td>
+                      <td className="s">{projectName(l.projectId)}</td>
+                      <td className="nw text-right font-mono">{l.sign > 0 ? "+" : "−"}{formatCents(l.amount)}</td>
+                      <td><span className={statusClass(l.status)}>{l.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="grid gap-3" data-testid="open-projects">
+            <div className="flex items-center justify-between"><span className="lbl">Open projects</span><Link href="/money/projects" className="font-bold" data-testid="all-projects">All projects</Link></div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {openProjects.map((p) => {
+                const pt = projectTotals({ projectId: p.id, defaultProjectId: def?.id, income: inc, expenses: exp, payouts: pay });
+                return (
+                  <Link key={p.id} href={`/money/projects/${p.id}`} className="card" data-testid={`open-project-${p.id}`}>
+                    <span className="s">{PROJECT_KIND_LABEL[p.kind] ?? p.kind}</span>
+                    <b>{p.name}</b>
+                    <span className="s font-mono">net {pt.net < 0 ? "" : "+"}{formatCents(pt.net)}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
         </>
       )}
 
+      {tab === "projects" && <Projects admin />}
       {tab === "shows" && (
         <HBars title="Each show's take" testid="chart-shows"
           rows={byShow(rows).map((r) => ({ ...r, label: showName(r.key), sub: showById.get(r.key) ? fmtLong(showById.get(r.key)!.date) : undefined }))} />
       )}
       {tab === "categories" && <HBars title="By category" testid="chart-categories" rows={byCategory(rows).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }))} />}
+      {modals}
     </div>
   );
 }

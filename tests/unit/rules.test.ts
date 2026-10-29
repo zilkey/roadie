@@ -55,6 +55,15 @@ before(async () => {
     await setDoc(doc(d, "ledger/old"), { ...live, kind: "payout", payeeUserId: "david" });
     await setDoc(doc(d, "expenses/mine"), { ...live, userId: "david" });
     await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "eric" });
+    // Money (#39): projects are the band's; income is admin-only; a payout is read by its recipient (as the user or as the player).
+    await setDoc(doc(d, "projects/band"), { ...live, artistId: "x", kind: "band", name: "Band", status: "open", isDefault: true });
+    await setDoc(doc(d, "projects/gone"), { deletedAt: new Date(), artistId: "x", kind: "tour", name: "Old run", status: "closed" });
+    await setDoc(doc(d, "income/g"), { ...live, artistId: "x", amount: 40000, category: "guarantee", from: "Lost Lake", projectId: "band" });
+    await setDoc(doc(d, "payouts/to-david-user"), { ...live, artistId: "x", to: { userId: "david", name: "David" }, kind: "pay", amount: 10000, projectId: "band" });
+    await setDoc(doc(d, "payouts/to-david-player"), { ...live, artistId: "x", to: { musicianId: "m-david", name: "David" }, kind: "pay", amount: 10000, projectId: "band" });
+    await setDoc(doc(d, "payouts/to-eric"), { ...live, artistId: "x", to: { userId: "eric", name: "Eric" }, kind: "pay", amount: 10000, projectId: "band" });
+    await setDoc(doc(d, "payouts/to-band"), { ...live, artistId: "x", to: { name: "The Moonlighters" }, kind: "split", amount: 18000, projectId: "band" });
+    await setDoc(doc(d, "payouts/to-david-gone"), { deletedAt: new Date(), artistId: "x", to: { userId: "david", name: "David" }, kind: "pay", amount: 1, projectId: "band" });
     await setDoc(doc(d, "unsubmittedDrafts/jeff__expenses"), { uid: "jeff", path: "expenses", values: { a: 1 } });
     await setDoc(doc(d, "unsubmittedDrafts/david__shows~x"), { uid: "david", path: "shows/x", values: { a: 2 } });
     // Driving & gas: private per-user settings, the shared weekly price cache, and the server-only route cache.
@@ -125,6 +134,29 @@ test("the old ledger is unreadable from the app, even to admins", async () => {
 test("expenses: members read only their own", async () => {
   await assertSucceeds(getDoc(doc(david(), "expenses/mine")));
   await assertFails(getDoc(doc(david(), "expenses/theirs")));
+});
+
+test("money: members read projects and payouts made to them, never income or anyone else's payouts", async () => {
+  await assertSucceeds(getDoc(doc(david(), "projects/band")));
+  await assertFails(getDoc(doc(david(), "projects/gone")));
+  await assertSucceeds(getDoc(doc(admin(), "projects/gone")));
+  await assertFails(getDoc(doc(david(), "income/g")));
+  await assertSucceeds(getDoc(doc(admin(), "income/g")));
+  await assertSucceeds(getDoc(doc(david(), "payouts/to-david-user")));
+  await assertSucceeds(getDoc(doc(david(), "payouts/to-david-player")));
+  await assertFails(getDoc(doc(david(), "payouts/to-eric")));
+  await assertFails(getDoc(doc(david(), "payouts/to-band")));
+  await assertFails(getDoc(doc(david(), "payouts/to-david-gone")));
+  for (const id of ["to-david-user", "to-david-player", "to-eric", "to-band", "to-david-gone"]) await assertSucceeds(getDoc(doc(admin(), `payouts/${id}`)));
+  // A member's list of their own payouts must filter on the recipient; a bare list is refused.
+  await assertSucceeds(getDocs(query(collection(david(), "payouts"), where("to.userId", "==", "david"))));
+  await assertSucceeds(getDocs(query(collection(david(), "payouts"), where("to.musicianId", "==", "m-david"))));
+  await assertFails(getDocs(collection(david(), "payouts")));
+  await assertFails(getDocs(collection(david(), "income")));
+  // A member whose login has no musicianId claim still can't see a player payout to someone else.
+  const noPlayer = env.authenticatedContext("sam", { artists: { x: "member" } }).firestore();
+  await assertFails(getDoc(doc(noPlayer, "payouts/to-david-player")));
+  for (const c of ["projects", "income", "payouts"]) { await assertFails(getDoc(doc(anon(), c, "band"))); await assertFails(getDoc(doc(noRole(), c, "band"))); }
 });
 
 test("signed-out, role-less and ai (AI-tools-only) logins read nothing", async () => {

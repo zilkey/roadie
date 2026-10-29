@@ -139,6 +139,23 @@ test("summaries: cancel, Bandsintown, calendar send, archive, remove field", () 
   assert.equal(summarize("artists.removeSongField", { id: "a", fieldId: "f" }), "Delete the song field: every song loses its value");
 });
 
+test("money summaries read like the sentence the person said", () => {
+  const eric = { person: "Eric", project: "Band" };
+  assert.equal(summarize("expenses.add", { userId: "u", amount: 4200, what: "gas", category: "travel", payBack: true }, undefined, eric), "We owe Eric $42.00 for gas (pay back, Band)");
+  assert.equal(summarize("expenses.add", { amount: 75000, what: "video shoot", category: "video", projectId: "p" }, undefined, { project: "Lighthouse video" }), "Put $750.00 video shoot on Lighthouse video");
+  assert.equal(summarize("payouts.add", { to: { userId: "u" }, kind: "pay", amount: 10000, paidAt: "2026-10-29", method: "venmo" }, undefined, { person: "Eric", show: "Lost Lake" }), "We paid Eric $100.00 for the Lost Lake show (Venmo)");
+  assert.equal(summarize("payouts.add", { to: { name: "Dana" }, kind: "pay", amount: 20000, what: "the tour" }, undefined, { person: "Dana" }), "We owe Dana $200.00 for the tour");
+  assert.equal(summarize("payouts.markPaid", { id: "p", method: "cash" }, undefined, { person: "Eric", amount: 10000 }), "We paid Eric $100.00 (Cash)");
+  assert.equal(summarize("income.add", { from: "Lost Lake", amount: 40000, category: "guarantee" }), "Lost Lake owes us $400.00 (guarantee, owed)");
+  assert.equal(summarize("income.add", { from: "Lost Lake", amount: 40000, category: "guarantee", receivedAt: "2026-10-29", method: "check" }, undefined, { project: "Band" }), "Lost Lake paid us $400.00 (guarantee, Check, Band)");
+  assert.equal(summarize("income.setReceived", { id: "i", method: "venmo" }, undefined, { from: "Lost Lake", amount: 40000 }), "Mark Lost Lake income of $400.00 as received (Venmo)");
+  assert.equal(summarize("projects.create", { kind: "video", name: "Lighthouse video", budget: 100000 }), "Start the video project Lighthouse video (budget $1,000.00)");
+  assert.equal(summarize("projects.close", { id: "p" }, undefined, { name: "Lighthouse video" }), "Close the project Lighthouse video: nothing new can be put on it");
+  assert.equal(summarize("expenses.payPerson", { userId: "u", method: "venmo" }, undefined, { person: "Eric", total: 4200 }), "Pay Eric $42.00 (Venmo)");
+  for (const c of ["income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "expenses.payPerson"]) assert.ok(needsConfirm(c, {}), c);
+  assert.equal(needsConfirm("expenses.add", { amount: 4200, what: "gas", category: "travel", userId: "u", payBack: true }), false);
+});
+
 test("shows.calendar asks, and names the show on the card; shows.create never sends invites", async () => {
   const s = await sess();
   const out = await execTool(s, "shows.calendar", { id: showId, on: true }, noop);

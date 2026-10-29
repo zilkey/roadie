@@ -89,6 +89,17 @@ async function main() {
     return;
   }
 
+  // --- projects (#39): the buckets every income, expense and payout belongs to ---
+  const addProject = (input: Record<string, unknown>) => create("projects", { artistId: artist, status: "open", ...input });
+  const bandProject = await addProject({ kind: "band", name: "Band", isDefault: true });
+  const duoProject = await addProject({ kind: "duo", name: "Duo" });
+  const albumProject = await addProject({ kind: "album", name: "Wild Hearts LP", start: "2026-09-01", budget: 600000 });
+  const tourProject = await addProject({ kind: "tour", name: "Spring West Tour", start: "2027-03-15", end: "2027-03-29", budget: 250000 });
+  await addProject({ kind: "video", name: "Lighthouse video", budget: 120000 });
+  const defaults: Record<string, string> = { "full-band": bandProject, trio: bandProject, duo: duoProject, "ingrid-solo": bandProject };
+  const stored = (await db.get("artists", artist))!.configurations as { id: string }[];
+  await db.update(ctx, "artists", artist, { configurations: stored.map((c) => ({ ...c, defaultProjectId: defaults[c.id] })) });
+
   // --- booking data ---
   const haylee = await create("contacts", { name: "Haylee Jackson", title: "Talent buyer", emails: ["haylee@lostlake.example"], phones: ["+13035550101"], instagram: "hayleebooks", sources: src("https://lostlake.example/contact") });
   const marcus = await create("contacts", { name: "Marcus Webb", title: "Booking manager", emails: ["marcus@foxtheatre.example"], phones: [], sources: src("https://foxtheatre.example/booking") });
@@ -177,7 +188,7 @@ async function main() {
     full: ["ingrid", "jeff", "david", "eric", "emma"], trio: ["ingrid", "jeff", "david"],
   } as Record<string, string[]>)[artistCfg].map((k) => mid[k]);
   const showBase = {
-    artistId: artist, needs: { poster: true, backline: false, merch: true }, docs: [], publishToBandsintown: true, listings: {},
+    artistId: artist, projectId: bandProject, needs: { poster: true, backline: false, merch: true }, docs: [], publishToBandsintown: true, listings: {},
     checklists: [{ id: "promo", name: "Promo", templateId: promoTemplate, items: [
       { id: "c1", label: "Make show poster", done: true, ownerId: mid.ingrid, doneAt: "2026-10-20T18:00:00.000Z", doneBy: uid.ingrid },
       { id: "c2", label: "Post on social media", done: false, ownerId: mid.jeff },
@@ -227,7 +238,7 @@ async function main() {
     times: { loadIn: "17:00", set: "20:00", setLengthSec: 3000 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
     needs: { poster: false, backline: false, merch: true }, checklists: [], publishToBandsintown: true,
   });
-  await create("showDeals", { contactIds: [dana], deal: "guarantee", paidAttendance: 112, income: [{ id: "i1", category: "guarantee", amount: 45000, method: "check", received: true }] }, playedShow);
+  await create("showDeals", { contactIds: [dana], deal: "guarantee", paidAttendance: 112 }, playedShow);
 
   // --- fans (the email list): one already in Bandzoogle, two not, one with no city ---
   const fan = (email: string, extra: Record<string, unknown>) =>
@@ -238,11 +249,29 @@ async function main() {
   await fan("dee@example.com", {});
 
   // --- money + reach (small) ---
-  await create("expenses", { userId: uid.david, date: "2026-10-10", amount: 2850, category: "gear", what: "Bass strings and cables", showId: playedShow });
+  await create("expenses", { userId: uid.david, date: "2026-10-10", amount: 2850, category: "gear", what: "Bass strings and cables", showId: playedShow, projectId: bandProject });
+  // A pay-back expense in a member's name, on the tour: the band owes David until an admin pays it back.
+  await create("expenses", { userId: uid.david, date: "2026-10-24", amount: 14000, category: "lodging", what: "Motel deposit for the tour", projectId: tourProject });
+
+  // --- income (#39): what came in and what is still owed to the band (no receivedAt) ---
+  const income = (input: Record<string, unknown>) => create("income", { artistId: artist, projectId: bandProject, ...input });
+  // The played show's guarantee: it used to be a line on the deal (id i1), now an income doc, received.
+  await income({ date: "2026-10-10", amount: 45000, category: "guarantee", method: "check", from: "Dairy Arts Center", showId: playedShow, receivedAt: "2026-10-10", sourceKey: `${playedShow}:i1` });
+  await income({ date: "2027-01-16", amount: 30000, category: "guarantee", from: "Lost Lake Lounge", showId: lakeShow });
+  await income({ date: "2026-10-15", amount: 18400, category: "streaming", from: "Bandcamp", projectId: albumProject, notes: "October sales, not yet transferred" });
+
+  // --- payouts (#39): what the band paid or still owes people ---
+  const person = (key: string) => DEV_PEOPLE.find((p) => p.key === key)!.name;
+  await create("payouts", { artistId: artist, projectId: bandProject, to: { userId: uid.david, name: person("david") }, kind: "pay", amount: 7500, what: "Dairy Arts Center show",
+    showId: playedShow, paidAt: "2026-10-12", method: "venmo" });
+  await create("payouts", { artistId: artist, projectId: bandProject, to: { name: "The Moonlighters" }, kind: "split", amount: 15000, what: "Their cut of the Hi-Dive bill",
+    showId: hiShow, dueDate: "2026-11-15" });
+  await create("payouts", { artistId: artist, projectId: bandProject, to: { musicianId: mid.eric, name: person("eric") }, kind: "pay", amount: 6000, what: "Hi-Dive show",
+    showId: hiShow, dueDate: "2026-11-15" });
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
 
-  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist.");
+  console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 3 income, 3 payouts.");
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */

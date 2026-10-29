@@ -60,9 +60,20 @@ service cloud.firestore {
       allow read: if isAdmin()
         || (isMember() && live() && request.auth.token.get('musicianId', '') in resource.data.askedMusicianIds);
     }
-    // Expenses: members see only their own; admins all. A show's income is on its showDeals doc (admins only, below), so income and net never reach members.
+    // Expenses: members see only their own; admins all. Income is its own admin-only collection (below), so income and net never reach members.
     match /expenses/{id} {
       allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);
+    }
+    // Projects (Band, Duo, an album, a tour): the buckets money belongs to. The whole band reads them (names, kinds, dates); admins write.
+    match /projects/{id}         { allow read: if band(); }
+    // Income: admins only. Members never see what came in, so never a net either.
+    match /income/{id}           { allow read: if isAdmin(); }
+    // Payouts (money from the band to a person): admins read all; a member reads only the ones made to them, as the
+    // signed-in user (to.userId) or as the player (to.musicianId, from the musicianId claim). Member lists must filter on one of those.
+    match /payouts/{id} {
+      allow read: if isAdmin() || (isMember() && live()
+        && (resource.data.get('to', {}).get('userId', '') == request.auth.uid
+            || (request.auth.token.get('musicianId', '') != '' && resource.data.get('to', {}).get('musicianId', '') == request.auth.token.get('musicianId', ''))));
     }
 
     // Admin only

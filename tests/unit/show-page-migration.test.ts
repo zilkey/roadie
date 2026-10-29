@@ -69,7 +69,7 @@ test("migrate:show-page moves checklists, set length, band notes and ledger mone
   assert.equal("guarantee" in d, false);
   const spent = (await db.list("expenses")).filter((e) => e.showId === show).sort((a, b) => a.amount - b.amount);
   assert.deepEqual(spent.map((e) => [e.what, e.amount, e.payBack ?? true, e.userId]), [["Gas", 1500, false, "jeff"], ["Strings", 2850, true, "u1"]]);
-  assert.deepEqual([d.totals.income, d.totals.expenses], [34000, 4350]);
+  assert.deepEqual([d.totals.income, d.totals.expenses], [0, 4350], "totals count income docs only; the legacy lines reach them when migrate:money runs");
   const p = (await db.get("showDeals", plain))!;
   assert.deepEqual(p.income.map((l: any) => [l.category, l.amount, l.received]), [["guarantee", 25000, false]], "an unpaid guarantee is an income line, not received");
   assert.deepEqual(p.owedPayouts, [{ musicianId: "m1", amount: 5000 }]);

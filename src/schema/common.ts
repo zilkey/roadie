@@ -25,6 +25,22 @@ export type Via = z.infer<typeof via>;
 export const source = z.strictObject({ url: z.string().url(), checkedAt: z.string(), note: z.string().optional() });
 
 export const region = z.enum(["boulder", "denver", "north", "south", "mountains", "southwest", "out"]);
+/** Where money in came from (income.category). */
+export const incomeCategory = z.enum(["guarantee", "door", "tips", "merch", "streaming", "sync", "grant", "gearSale", "other"]);
+export type IncomeCategory = z.infer<typeof incomeCategory>;
+/** What money out was for (expenses.category). */
+export const expenseCategory = z.enum([
+  "gear", "travel", "lodging", "food", "recording", "mixing", "mastering", "pressing", "artwork", "photo", "video", "space", "marketing", "fees", "other",
+]);
+export type ExpenseCategory = z.infer<typeof expenseCategory>;
+/** How money moved (income.method, payouts.method): no accounts, just the way it was paid. */
+export const paymentMethod = z.enum(["cash", "venmo", "check", "square", "card", "bank", "other"]);
+export type PaymentMethod = z.infer<typeof paymentMethod>;
+/**
+ * @deprecated The old one-list ledger category, from when income lived on the show's deal. Expenses written before
+ * `npm run migrate:money` may still carry one of its income values (guarantee, door, merch, tips, venmo); readers map
+ * those to "other". Use incomeCategory / expenseCategory. Removed once nothing imports it.
+ */
 export const ledgerCategory = z.enum([
   "guarantee", "door", "merch", "tips", "venmo", "photo", "video", "space", "gear", "marketing", "travel", "fees", "other",
 ]);
