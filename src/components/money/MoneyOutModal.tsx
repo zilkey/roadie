@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useArtist } from "@/lib/artist";
-import { ErrorBox, PickChip, useCommand } from "@/components/ui";
+import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection, useDocs, type Row } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { EXPENSE_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, formatCents, parseDollars } from "@/lib/money";
@@ -111,14 +111,15 @@ export function MethodWhenFields({ method, setMethod, when, setWhen, prefix }: {
 
 export const shortDate = (d: string) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
 
+/** The preview above Save: a bold sentence and a muted "Saved as…" line, or (no sentence) just "Saved as…" in bold. */
 export function ModalFoot({ sentence, saves, error, busy, canSave, onCancel, prefix }: {
-  sentence: string; saves: string; error: string | null; busy: boolean; canSave: boolean; onCancel(): void; prefix: string;
+  sentence?: string; saves: string; error: string | null; busy: boolean; canSave: boolean; onCancel(): void; prefix: string;
 }) {
   return (
     <>
       <div className="grid gap-[2px] border-t border-divider" style={{ padding: "14px 22px 0" }}>
-        <span className="font-bold" data-testid={`${prefix}-sentence`}>{sentence}</span>
-        <span className="text-[0.875rem] text-muted" data-testid={`${prefix}-saves`}>{saves}</span>
+        {sentence && <span className="font-bold" data-testid={`${prefix}-sentence`}>{sentence}</span>}
+        <span className={sentence ? "text-[0.875rem] text-muted" : "font-bold"} data-testid={`${prefix}-saves`}>{saves}</span>
       </div>
       <div style={{ padding: "0 22px" }}><ErrorBox error={error} /></div>
       <div className="flex flex-wrap justify-end gap-[10px]" style={{ padding: "14px 22px 20px" }}>
@@ -129,8 +130,10 @@ export function ModalFoot({ sentence, saves, error, busy, canSave, onCancel, pre
   );
 }
 
-type Kind = "expense" | "pay" | "split" | "other";
-const KINDS: [Kind, string][] = [["expense", "A bill or purchase"], ["pay", PAYOUT_KIND_LABEL.pay], ["split", PAYOUT_KIND_LABEL.split], ["other", PAYOUT_KIND_LABEL.other]];
+/** What kind of money out: a vendor bill or purchase, a bandmate's own expense the band owes back, or a payout. */
+type Kind = "expense" | "reimb" | "pay" | "split" | "other";
+const KINDS: [Kind, string][] = [["expense", "A bill or purchase"], ["reimb", "Reimbursable expense"], ["pay", PAYOUT_KIND_LABEL.pay], ["split", PAYOUT_KIND_LABEL.split], ["other", PAYOUT_KIND_LABEL.other]];
+const CATEGORIES = Object.entries(EXPENSE_LABEL) as [string, string][];
 
 /** A person or vendor money goes to, as picked: the stored `to` shape plus a key for the list. */
 export interface WhoOption { key: string; name: string; sub?: string; to: { musicianId: string } | { userId: string } | { contactId: string } | { name: string } }
@@ -191,11 +194,16 @@ export function useAdmins(users: readonly Row<User>[]) {
   const { artistId } = useArtist();
   return useMemo(() => users.filter((u) => roleIn(u, artistId) === "admin").sort((a, b) => a.name.localeCompare(b.name)), [users, artistId]);
 }
+/** Everyone in the band (admins and members), A–Z: anyone can have paid for something out of their own pocket. */
+export function useBandUsers(users: readonly Row<User>[]) {
+  const { artistId } = useArtist();
+  return useMemo(() => users.filter((u) => ["admin", "member"].includes(roleIn(u, artistId))).sort((a, b) => a.name.localeCompare(b.name)), [users, artistId]);
+}
 
-export function PayerField({ admins, value, onChange, testid }: { admins: readonly Row<User>[]; value: string; onChange(v: string): void; testid: string }) {
+export function PayerField({ admins, value, onChange, testid, label = "Who paid" }: { admins: readonly Row<User>[]; value: string; onChange(v: string): void; testid: string; label?: string }) {
   return (
     <label className="grid gap-1">
-      <span className="lbl">Who paid</span>
+      <span className="lbl">{label}</span>
       <select className="select" value={value} onChange={(e) => onChange(e.target.value)} data-testid={testid}>
         <option value="">Pick an admin</option>
         {admins.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -204,7 +212,11 @@ export function PayerField({ admins, value, onChange, testid }: { admins: readon
   );
 }
 
-/** "We owe" / "We paid" someone: a bill or purchase (an expense, with who was paid and who paid), or a payout. Opened with no props but open/onClose, or with defaults from the page. */
+/**
+ * "We owe" / "We paid" someone: a bill or purchase (an expense, with who was paid and who paid), a bandmate's reimbursable
+ * expense (the same expense a member logs themselves: they paid, the band owes them back; We paid also pays them back),
+ * or a payout. Opened with no props but open/onClose, or with defaults from the page.
+ */
 export function MoneyOutModal({ open, onClose, defaults }: MoneyOutModalProps) {
   return (
     <MoneyDialog open={open} onClose={onClose} testid="money-out-modal" title={defaults?.markPaid ? "Mark paid" : "Money out"}>
@@ -236,19 +248,26 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
   const [when, setWhen] = useState(dateInBandZone());
   const [payer, setPayer] = useState(me.role === "admin" ? me.uid : "");
   const [payBack, setPayBack] = useState(false);
+  // Reimbursable: the bandmate who paid out of pocket (the We owe card opens this on a person).
+  const [member, setMember] = useState(defaults?.userId ?? "");
 
   const userRows = users.rows ?? [];
   const admins = useAdmins(userRows);
+  const bandUsers = useBandUsers(userRows);
   const priorNames = useMemo(() => [...new Set([...(expensesAll.rows ?? []).map((x) => x.to?.name), ...(payoutsAll.rows ?? []).map((p) => p.to.name)].filter((n): n is string => !!n))], [expensesAll.rows, payoutsAll.rows]);
-  const options = useWhoOptions({ users: userRows, musicians: musicians.rows ?? [], contacts: contacts.rows ?? [], priorNames });
+  // Venue contacts stay out of the To list: the band almost never pays one. (The command still takes a contactId.)
+  const options = useWhoOptions({ users: userRows, musicians: musicians.rows ?? [], contacts: [], priorNames });
   // The We owe card opens this on a person: they are the To until the admin picks someone else.
   const musicianUser = (mid?: string) => (musicians.rows ?? []).find((m) => m.id === mid)?.userId;
   const defaultKey = defaults?.userId ? `u:${defaults.userId}` : defaults?.musicianId ? (musicianUser(defaults.musicianId) ? `u:${musicianUser(defaults.musicianId)}` : `m:${defaults.musicianId}`) : "";
-  const to = touchedWho ? who : (options.find((o) => o.key === defaultKey) ?? who);
   const expense = kind === "expense";
+  const reimb = kind === "reimb";
+  // Reimbursable: the person the We owe card opened on is the member who paid, not a To.
+  const to = touchedWho ? who : reimb ? null : (options.find((o) => o.key === defaultKey) ?? who);
   const reimbUser = defaults?.userId ?? owed.rows[0]?.userId ?? "";
   const nameOfUser = (uid: string) => userRows.find((u) => u.id === uid)?.name ?? "";
-  const personName = reimburse ? nameOfUser(reimbUser) : to?.name ?? "";
+  const memberName = nameOfUser(member);
+  const personName = reimburse ? nameOfUser(reimbUser) : reimb ? memberName : to?.name ?? "";
   const payerName = nameOfUser(payer);
   const cents = reimburse ? owed.rows.reduce((n, x) => n + x.amount, 0) : parseDollars(amount);
   const whatText = reimburse ? "" : what.trim();
@@ -256,12 +275,14 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
 
   const needsPayer = paid || reimburse;
   const needsMethod = (paid && !expense) || reimburse;
-  const canSave = (reimburse ? !!reimbUser && owed.rows.length > 0 : !!to) && !!cents && cents > 0 && !!ps.projectId && (!expense || reimburse || !!whatText)
-    && (!needsPayer || (!!payer && !!when)) && (!needsMethod || !!method);
+  const canSave = (reimburse ? !!reimbUser && owed.rows.length > 0 : reimb ? !!member : !!to) && !!cents && cents > 0 && !!ps.projectId && (!(expense || reimb) || reimburse || !!whatText)
+    && (!needsPayer || (!!payer && !!when)) && (!needsMethod || !!method) && (!reimb || !!when);
 
-  const sentence = `${paid ? "We paid" : "We owe"} ${personName || "someone"} ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`;
+  const sentence = reimb && paid ? `${payerName || "Someone"} paid ${memberName || "a bandmate"} back ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`
+    : `${paid ? "We paid" : "We owe"} ${personName || "someone"} ${cents ? formatCents(cents) : "$0.00"}${forText ? ` for ${forText}` : ""}`;
   const paidBit = paid ? ` (${payerName || "who?"}${needsMethod ? `, ${METHOD_LABEL[method] ?? "how?"}` : ""}, ${shortDate(when)})` : "";
   const saves = reimburse ? `Saved as a payout that paid back ${owed.rows.length} expense${owed.rows.length === 1 ? "" : "s"}${paidBit}`
+    : reimb ? (paid ? `Saved as ${memberName || "their"} expense, paid back${paidBit}` : `Saved as ${memberName ? `${memberName}'s` : "their"} expense, which the band owes ${memberName || "them"} back`)
     : expense ? (paid ? `Saved as an expense paid by ${payerName || "an admin"}${payBack ? `, which the band owes ${payerName || "them"} back` : ""}${paidBit}` : "Saved as a bill the band still owes")
     : paid ? `Saved as a paid payout${paidBit}` : "Saved as a payout, still owed";
 
@@ -270,6 +291,14 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
     if (!canSave || !cents) return;
     if (reimburse) {
       if (!(await call("expenses.payPerson", { userId: reimbUser, ids: owed.rows.map((x) => x.id), method, paidAt: when, paidBy: payer }))) return;
+    } else if (reimb) {
+      // The same record a member logs for themselves: they paid, pay-back on. We paid also settles it right away.
+      const r = await call("expenses.add", {
+        amount: cents, what: whatText, category, projectId: ps.projectId, userId: member, payBack: true, date: when,
+        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}),
+      });
+      if (!r?.id) return;
+      if (paid && !(await call("expenses.payPerson", { userId: member, ids: [r.id], method, paidAt: when, paidBy: payer }))) return;
     } else if (expense) {
       if (!(await call("expenses.add", {
         amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}),
@@ -290,20 +319,27 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
       <div className="grid gap-[16px]" style={{ padding: "18px 22px" }}>
         {!reimburse && <Toggle name="mo-status" value={paid ? "b" : "a"} a="We owe" b="We paid" onChange={(v) => setPaid(v === "b")} testidA="mo-owe" testidB="mo-paid" />}
         {!reimburse && (
-          <div className="grid gap-1">
-            <span className="lbl">What kind</span>
-            <div className="flex flex-wrap gap-2">
-              {KINDS.map(([k, label]) => <PickChip key={k} on={kind === k} onToggle={() => setKind(k)} testid={`mo-kind-${k}`}>{label}</PickChip>)}
-            </div>
+          <div className="grid gap-[14px] sm:grid-cols-2">
+            <label className="grid gap-1">
+              <span className="lbl">What kind</span>
+              <Select<Kind> value={kind} options={KINDS} onChange={setKind} testid="mo-kind" />
+            </label>
+            {(expense || reimb) && (
+              <label className="grid gap-1">
+                <span className="lbl">Category</span>
+                <Select value={category} options={CATEGORIES} onChange={setCategory} testid="mo-cat" />
+              </label>
+            )}
           </div>
         )}
-        {!reimburse && expense && (
-          <div className="grid gap-1">
-            <span className="lbl">Category</span>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(EXPENSE_LABEL).map(([c, l]) => <PickChip key={c} on={category === c} onToggle={() => setCategory(c)} testid={`mo-cat-${c}`}>{l}</PickChip>)}
-            </div>
-          </div>
+        {!reimburse && reimb && (
+          <label className="grid gap-1">
+            <span className="lbl">Who paid</span>
+            <select className="select" value={member} onChange={(e) => setMember(e.target.value)} data-testid="mo-member">
+              <option value="">Pick a bandmate</option>
+              {bandUsers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </label>
         )}
         {reimburse ? (
           <div className="grid gap-1" data-testid="mo-expenses">
@@ -315,8 +351,9 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
         ) : (
           <>
             <div className="grid gap-1">
-              <span className="lbl">To</span>
-              <WhoPicker options={options} value={to} onChange={(v) => { setTouchedWho(true); setWho(v); }} testid="mo-who" placeholder={expense ? "The vendor, a contact or a bandmate" : "A bandmate, a player or a contact"} />
+              <span className="lbl">{reimb ? <>To <span className="font-normal">(optional)</span></> : "To"}</span>
+              <WhoPicker options={options} value={to} onChange={(v) => { setTouchedWho(true); setWho(v); }} testid="mo-who"
+                placeholder={reimb ? "The gas station, the store" : expense ? "The vendor or a bandmate" : "A bandmate or a player"} />
             </div>
             <div className="grid gap-[14px] sm:grid-cols-2">
               <label className="grid gap-1">
@@ -324,16 +361,16 @@ function OutForm({ onClose, defaults }: { onClose(): void; defaults?: MoneyOutMo
                 <input className="input" inputMode="decimal" placeholder="$0.00" value={amount} onChange={(e) => setAmount(e.target.value)} data-testid="mo-amount" />
               </label>
               <label className="grid gap-1">
-                <span className="lbl">{expense ? "What for" : <>For <span className="font-normal">(optional)</span></>}</span>
+                <span className="lbl">{expense || reimb ? "What for" : <>For <span className="font-normal">(optional)</span></>}</span>
                 <input className="input" type="text" value={what} onChange={(e) => setWhat(e.target.value)} data-testid="mo-what" />
               </label>
             </div>
           </>
         )}
         <ProjectShowFields s={ps} prefix="mo" />
-        {needsPayer && (
+        {(needsPayer || reimb) && (
           <div className="grid gap-[14px] sm:grid-cols-2">
-            <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" />
+            {needsPayer ? <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" label={reimb ? "Paid back by" : undefined} /> : <span />}
             <label className="grid gap-1">
               <span className="lbl">When</span>
               <input className="input" type="date" value={when} onChange={(e) => setWhen(e.target.value)} data-testid="mo-when" />

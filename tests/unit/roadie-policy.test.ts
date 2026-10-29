@@ -152,7 +152,7 @@ test("money summaries read like the sentence the person said", () => {
   assert.equal(summarize("projects.create", { kind: "video", name: "Lighthouse video" }), "Start the video project Lighthouse video");
   assert.equal(summarize("projects.close", { id: "p" }, undefined, { name: "Lighthouse video" }), "Close the project Lighthouse video: nothing new can be put on it");
   assert.equal(summarize("expenses.payPerson", { userId: "u", method: "venmo" }, undefined, { person: "Eric", total: 4200 }), "Pay Eric $42.00 (Venmo)");
-  for (const c of ["income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "expenses.payPerson"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "projects.remove", "expenses.payPerson"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 4200, what: "gas", category: "travel", userId: "u", payBack: true }), false);
 });
 

@@ -90,7 +90,7 @@ test("tool list comes from the registry and leaves out what Roadie must not do",
 });
 
 test("confirm rules: sends, money, deletes, cancels and more than 5 records", () => {
-  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "expenses.payPerson", "income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
+  for (const c of ["pitches.sendEmail", "availability.ask", "availability.remind", "expenses.setPaidBack", "expenses.payPerson", "income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "projects.remove", "shows.cancel", "shows.setStatus", "shows.drop", "shows.remove", "venues.remove", "pitches.remove"]) assert.ok(needsConfirm(c, {}), c);
   assert.equal(needsConfirm("expenses.add", { amount: 5000, what: "gas", category: "travel" }), false);
   // a shared venue edit reaches every band: it asks. The band's own notes and links do not. Merging always asks.
   assert.equal(needsConfirm("venues.update", { id: "v", patch: { capacity: 300 } }), true);
@@ -106,9 +106,8 @@ test("confirm rules: sends, money, deletes, cancels and more than 5 records", ()
 test("the money commands are tools, showDeals.setIncome is gone, and every schema normalises for Gemini", () => {
   const defs = toolDefs("admin");
   const names = defs.map((t) => t.name);
-  for (const must of ["projects.create", "projects.update", "projects.close", "projects.reopen", "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid", "expenses.payPerson"]) assert.ok(names.includes(must), must);
+  for (const must of ["projects.create", "projects.update", "projects.close", "projects.reopen", "projects.remove", "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid", "expenses.payPerson"]) assert.ok(names.includes(must), must);
   assert.equal(names.includes("showDeals.setIncome"), false);
-  assert.equal(names.includes("projects.remove"), false);
   for (const n of names.filter((x) => /^(projects|income|payouts)\./.test(x))) {
     const t = defs.find((d) => d.name === n)!;
     assert.equal(t.inputJsonSchema.type, "object", n);

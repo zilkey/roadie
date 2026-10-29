@@ -197,6 +197,8 @@ test("the templates are seeded once, and no demo data is created", async () => {
   assert.equal(r.templates, 2);
   const checklists = await db.list("checklistTemplates", (q) => q.where("artistId", "==", a.id));
   assert.deepEqual(checklists.map((t) => t.name).sort(), ["Follow Up", "Promo"]);
+  // One General project, the default, whether the artist was made now or before projects existed.
+  assert.deepEqual((await db.list("projects", (q) => q.where("artistId", "==", a.id))).map((p) => [p.name, p.isDefault]), [["General", true]]);
   assert.deepEqual((await db.list("emailTemplates")).map((t) => t.name).sort(), ["First pitch", "Follow up", "Follow up"]);
 
   // Stories 04 and 05 import these: the seed must leave them empty.

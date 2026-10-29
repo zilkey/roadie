@@ -72,6 +72,17 @@ test("projects: admin only, exactly one default, close/reopen, closed refuses ne
   await code(cmd("income.add", { amount: 100, category: "tips", from: "x", projectId: "nope" }), "not_found");
 });
 
+test("projects.remove: only an empty, non-default project goes; one with money on it is closed instead", async () => {
+  const scratch = (await cmd("projects.create", { kind: "other", name: "Scratch" })).id;
+  await code(cmd("projects.remove", { id: band }), "invalid_state"); // the default
+  await cmd("income.add", { amount: 100, category: "tips", from: "x", projectId: scratch });
+  await code(cmd("projects.remove", { id: scratch }), "invalid_state"); // money on it
+  const empty = (await cmd("projects.create", { kind: "other", name: "Empty" })).id;
+  await cmd("projects.remove", { id: empty });
+  assert.ok((await db.get("projects", empty) as any).deletedAt);
+  await code(cmd("projects.remove", { id: empty }), "not_found");
+});
+
 test("roles: members can't use the admin money and project commands", async () => {
   for (const name of ["projects.create", "projects.update", "income.add", "income.update", "payouts.add", "payouts.markPaid", "expenses.payPerson"]) {
     assert.ok(!registry[name].roles.includes("member"), name);

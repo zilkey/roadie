@@ -1,5 +1,5 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useArtistRouter } from "@/lib/artist";
 import { Suspense, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { InlineValue } from "@/components/InlineValue";
@@ -9,14 +9,12 @@ import { todayStr } from "@/lib/booking";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, PROJECT_KIND_LABEL, byCategory, byPayer, countsAsPaidOut, defaultProject, formatCents, incomeSoFar, isOwedBill, moneyRows, owesBack, parseDollars, projectOf, projectTotals, weOwe } from "@/lib/money";
 import { HBars } from "./charts";
-import { projectWhen } from "./Projects";
 import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
 import type { Release, Expense, Income, Musician, Payout, Project as ProjectDoc, User } from "@/schema";
 
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * One line of the money feed: any income, expense or payout, newest first. `name` is the editable title (who paid us / what
@@ -125,6 +123,15 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
   const cats = byCategory(rows);
   const payers = byPayer(rows);
   const closed = project.status === "closed";
+  const router = useArtistRouter();
+  // Delete is only for a project with nothing on it; the default project is deleted by making another the default first.
+  const hasRecords = (income.rows ?? []).some((x) => x.projectId === project.id) || exp.length > 0 || pay.length > 0;
+  const loadedAll = income.rows !== null && expenses.rows !== null && payouts.rows !== null && releases.rows !== null;
+  const cantDelete = !loadedAll ? "Loading…" : project.isDefault ? "This is the default project: make another the default first" : hasRecords ? "It has money on it: close it instead" : release ? "A release is on it" : undefined;
+  async function remove() {
+    if (!window.confirm(`Delete the project ${project.name}? Nothing is on it.`)) return;
+    if (await call("projects.remove", { id: project.id })) router.push("/money/projects");
+  }
 
   const update = async (patch: Record<string, unknown>) => !!(await call("projects.update", { id: project.id, patch }));
   const fix = async (l: LedgerLine, patch: Record<string, unknown>) => !!(await call(UPDATE_COMMAND[l.kind], { id: l.id, patch }));
@@ -136,28 +143,22 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
       <PageTitle
         back={<Link href="/money/projects" className="back-link" data-testid="back">‹ Projects</Link>}
         title={<InlineValue testid="project-name" label="Project name" kind="text" value={project.name} canEdit onSave={(v) => update({ name: v })} error={error} validate={(v) => (v ? null : "A project needs a name.")} />}
-        sub={<>{PROJECT_KIND_LABEL[project.kind] ?? project.kind}{projectWhen(project) && ` · ${projectWhen(project)}`} · <span data-testid="project-status">{closed ? "closed" : "open"}</span>{release && <> · <Link href={`/releases/${release.id}`} className="font-semibold" data-testid="project-release-link">Open release</Link></>}</>}
+        sub={<>{PROJECT_KIND_LABEL[project.kind] ?? project.kind} · <span data-testid="project-status">{closed ? "closed" : "open"}</span>{release && <> · <Link href={`/releases/${release.id}`} className="font-semibold" data-testid="project-release-link">Open release</Link></>}</>}
         actions={
           <>
             <button className="btn acc" disabled={closed} data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
             <button className="btn acc" disabled={closed} data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
             <Menu label="More actions" testid="project" items={[
+              { key: "default", label: project.isDefault ? "This is the default project" : "Make default", testid: "project-make-default", disabled: busy || closed || !!project.isDefault, hint: closed ? "Reopen it first" : undefined, onSelect: () => void update({ isDefault: true }) },
               closed
                 ? { key: "reopen", label: "Reopen project", testid: "project-reopen", disabled: busy, onSelect: () => void call("projects.reopen", { id: project.id }) }
                 : { key: "close", label: "Close project", testid: "project-close", danger: true, disabled: busy, onSelect: () => void call("projects.close", { id: project.id }) },
+              { key: "remove", label: "Delete project", testid: "project-remove", danger: true, disabled: busy || !!cantDelete, hint: cantDelete, onSelect: () => void remove() },
             ]} />
           </>
         }
       />
       <ErrorBox error={error} />
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
-        <span className="flex items-center gap-2"><span className="lbl">Starts</span>
-          <InlineValue testid="project-start" label="Start date" kind="text" value={project.start ?? ""} emptyLabel="Set" placeholder="YYYY-MM-DD" canEdit error={error}
-            validate={(v) => (v && !DATE.test(v) ? "Use YYYY-MM-DD." : null)} onSave={(v) => update({ start: v || null })} /></span>
-        <span className="flex items-center gap-2"><span className="lbl">Ends</span>
-          <InlineValue testid="project-end" label="End date" kind="text" value={project.end ?? ""} emptyLabel="Set" placeholder="YYYY-MM-DD" canEdit error={error}
-            validate={(v) => (v && !DATE.test(v) ? "Use YYYY-MM-DD." : null)} onSave={(v) => update({ end: v || null })} /></span>
-      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="project-totals">
         <div className="card" data-testid="tile-in">

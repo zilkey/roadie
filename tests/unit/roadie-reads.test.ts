@@ -136,7 +136,7 @@ test("context.now carries the open projects, what we owe by person and what is o
   await db.create(sys, "payouts", { artistId: TEST_ARTIST, to: { name: "Dana" }, kind: "pay", amount: 5000, projectId: band.id, paidAt: "2026-11-15" });
   const gas = await db.create(sys, "expenses", { userId: sys.uid, date: "2026-11-14", amount: 4200, category: "travel", what: "gas", payBack: true, projectId: video.id });
   const c = await contextNow({ ...sys, now: new Date("2026-11-16T12:00:00-07:00") }, { uid: sys.uid, name: "Ingrid", role: "admin", musicianId: musId });
-  assert.deepEqual(c.projects.map((p) => [p.name, p.kind, p.isDefault]).sort(), [["Band", "band", true], ["Lighthouse video", "video", false]]);
+  assert.deepEqual(c.projects.map((p) => [p.name, p.kind, p.isDefault]).sort(), [[band.name, "band", true], ["Lighthouse video", "video", false]].sort());
   assert.equal(c.projects.find((p) => p.name === "Lighthouse video")!.id, video.id);
   assert.equal(c.weOwe.length, 1); // the payout and the expense land in one group; the paid one is gone
   assert.equal(c.weOwe[0].name, "Ingrid");

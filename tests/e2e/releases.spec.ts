@@ -203,7 +203,7 @@ test("the Money tab: spent, earned and net, lines with their track, income added
   await expect(page.getByTestId("mi-project")).toHaveValue(/./);
   await expect(page.getByTestId("mi-project").locator("option:checked")).toHaveText("Wild Hearts LP");
   await page.getByTestId("mi-got").check();
-  await page.getByTestId("mi-cat-preorders").click();
+  await page.getByTestId("mi-cat").selectOption("preorders");
   await page.getByTestId("mi-from").fill("Pre-order sales");
   await page.getByTestId("mi-amount").fill("780");
   await page.getByTestId("mi-method").selectOption("bank");

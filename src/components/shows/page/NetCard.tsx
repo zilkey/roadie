@@ -12,7 +12,7 @@ export function NetCard({ show }: { show: ShowRow }) {
   const expenses = useCollection<ExpenseLike>("expenses", { where }).rows ?? [];
   const projects = useCollection<ProjectLike>("projects").rows ?? [];
   const pid = show.projectId ?? defaultProject(projects)?.id;
-  const name = projects.find((p) => p.id === pid)?.name ?? "Band";
+  const name = projects.find((p) => p.id === pid)?.name ?? "General";
   const t = showTotals({ income, payouts, expenses });
   const owed = owedToUs({ income }).total;
   const weOwe = sumExpenses(payouts.filter((p) => !p.paidAt)) + sumExpenses(owedExpenses(expenses));

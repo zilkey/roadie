@@ -8,6 +8,7 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncClaims } from "../session";
 import { seedDefaultTemplates } from "../checklistTemplates";
+import { ensureDefaultProject } from "./projects";
 import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
@@ -324,6 +325,7 @@ export async function createArtistFor(w: Writer, uid: string, input: Record<stri
   const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
   const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null }));
   await seedDefaultTemplates(w, r.id);
+  await ensureDefaultProject(w, r.id); // the "General" project, so Money in / Money out can save before any other project exists
   const me = await w.get("users", uid);
   if (me && !me.deletedAt) await w.update("users", uid, { artists: withRole(memberships(me), r.id, "admin") });
   return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };
@@ -332,7 +334,7 @@ export async function createArtistFor(w: Writer, uid: string, input: Record<stri
 export const artistsCreate = defineCommand({
   name: "artists.create",
   roles: ["admin"],
-  description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin. It starts with the checklist templates Promo and Follow Up.",
+  description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin. It starts with the checklist templates Promo and Follow Up and a default money project, General.",
   input: ArtistIn.extend({
     slug: ArtistInput.shape.slug.optional(),
     links: ArtistInput.shape.links.default({}),

@@ -35,7 +35,7 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
 
   await signInAs(page, "jeff");
   await openTab(page, "money");
-  await expect(page.locator(".page-actions").getByTestId("add-expense-link")).toBeVisible();
+  await expect(page.locator(".page-actions").getByTestId("add-expense-link")).toHaveCount(0); // admins log a bandmate's expense from Money out
   const owe = page.getByTestId("we-owe");
   const group = owe.locator('[data-testid^="we-owe-user:"]', { hasText: WHAT });
   await expect(group).toContainText(WHAT);
@@ -102,8 +102,8 @@ test("Projects tab lists the seeded projects; New project adds Fall run and Canc
   await openTab(page, "money");
   await page.getByTestId("money-tab-projects").click();
   const table = page.getByTestId("projects-table");
-  for (const name of ["Band", "Duo", "Wild Hearts LP", "Spring West Tour", "Lighthouse video"]) await expect(table).toContainText(name);
-  await expect(table.locator("tr", { hasText: "Band" }).first()).toContainText("default");
+  for (const name of ["General", "Duo", "Wild Hearts LP", "Spring West Tour", "Lighthouse video"]) await expect(table).toContainText(name);
+  await expect(table.locator("tr", { hasText: "General" }).first()).toContainText("default");
 
   await page.getByTestId("new-project").click();
   await page.getByTestId("np-name").fill("Discarded");
@@ -167,3 +167,42 @@ async function payInModal(page: Page, group: import("@playwright/test").Locator,
   await dialog.getByTestId("mo-save").click();
   await expect(dialog).toHaveCount(0);
 }
+
+test("a project's ⋯ menu makes it the default and deletes it once nothing is on it; one with money only offers Close", async ({ page }) => {
+  const NAME = `Scratch ${Date.now()}`;
+  await signInAs(page, "jeff");
+  await openTab(page, "money");
+  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("new-project").click();
+  await page.getByTestId("np-name").fill(NAME);
+  await page.getByTestId("np-add").click();
+  const table = page.getByTestId("projects-table");
+  await table.locator("tr", { hasText: NAME }).click();
+  await expect(page.getByTestId("project-page")).toBeVisible();
+
+  // Make it the default, then put the old default back so the rest of the suite still lands on General.
+  await page.getByTestId("project-actions").click();
+  await page.getByTestId("project-make-default").click();
+  await page.getByTestId("project-actions").click();
+  await expect(page.getByTestId("project-remove")).toHaveAttribute("aria-disabled", "true"); // the default can't go
+  await page.keyboard.press("Escape");
+  await page.getByTestId("back").click();
+  await table.locator("tr", { hasText: "General" }).first().click();
+  await page.getByTestId("project-actions").click();
+  await page.getByTestId("project-make-default").click();
+  await page.getByTestId("back").click();
+  await expect(table.locator("tr", { hasText: "General" }).first()).toContainText("default");
+
+  await table.locator("tr", { hasText: NAME }).click();
+  page.once("dialog", (d) => void d.accept());
+  await page.getByTestId("project-actions").click();
+  await page.getByTestId("project-remove").click();
+  await expect(page).toHaveURL(/\/money\/projects$/);
+  await expect(table).not.toContainText(NAME);
+
+  // Wild Hearts LP has records on it: Delete is disabled.
+  await table.locator("tr", { hasText: "Wild Hearts LP" }).click();
+  await page.getByTestId("project-actions").click();
+  await expect(page.getByTestId("project-remove")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("project-close")).toBeVisible();
+});

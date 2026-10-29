@@ -3,7 +3,8 @@ import { openTab } from "./env";
 
 // The Money page has buttons money-out-open and money-in-open, and cards we-owe, recent and owed-to-us; owed income rows
 // have a "Received" button. Money out: We owe / We paid, a kind, To (a typeahead over band people, players, contacts and
-// typed names), and for We paid who paid (an admin: the band has no account) and when.
+// typed names), and for We paid who paid (an admin: the band has no account) and when. A "Reimbursable expense" kind logs
+// a bandmate's own expense (they paid, the band owes them back) from the same dialog.
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
@@ -22,8 +23,8 @@ test("admin logs a bill we owe a vendor; it shows under We owe; Mark paid asks w
   const modal = page.getByTestId("money-out-modal");
   await expect(modal).toBeVisible();
   await modal.getByTestId("mo-owe").check();
-  await modal.getByTestId("mo-kind-expense").click();
-  await modal.getByTestId("mo-cat-gear").click();
+  await modal.getByTestId("mo-kind").selectOption("expense");
+  await modal.getByTestId("mo-cat").selectOption("gear");
   // a vendor nobody has named before: keep what was typed
   await modal.getByTestId("mo-who-input").fill(VENDOR);
   await modal.getByTestId("mo-who-other").click();
@@ -59,7 +60,7 @@ test("admin logs 'we paid David $100 for playing' by Venmo from Jeff's account; 
   await page.getByTestId("money-out-open").click();
   const modal = page.getByTestId("money-out-modal");
   await modal.getByTestId("mo-paid").check();
-  await modal.getByTestId("mo-kind-pay").click();
+  await modal.getByTestId("mo-kind").selectOption("pay");
   await modal.getByTestId("mo-who-input").fill("Dav");
   await modal.getByTestId("mo-who-list").getByRole("option", { name: /David/ }).click();
   await expect(modal.getByTestId("mo-who-input")).toHaveValue("David");
@@ -84,8 +85,8 @@ test("a paid purchase names the vendor and the payer; 'the band owes them back' 
   await page.getByTestId("money-out-open").click();
   const modal = page.getByTestId("money-out-modal");
   await modal.getByTestId("mo-paid").check();
-  await modal.getByTestId("mo-kind-expense").click();
-  await modal.getByTestId("mo-cat-gear").click();
+  await modal.getByTestId("mo-kind").selectOption("expense");
+  await modal.getByTestId("mo-cat").selectOption("gear");
   await modal.getByTestId("mo-who-input").fill("Guitar Center");
   await modal.getByTestId("mo-who-other").click();
   await modal.getByTestId("mo-amount").fill("18");
@@ -121,10 +122,10 @@ test("admin logs income owed to us, then marks it received", async ({ page }) =>
   const modal = page.getByTestId("money-in-modal");
   await expect(modal).toBeVisible();
   await modal.getByTestId("mi-owed").check();
-  await modal.getByTestId("mi-cat-guarantee").click();
+  await modal.getByTestId("mi-cat").selectOption("guarantee");
   await modal.getByTestId("mi-from").fill(VENUE);
   await modal.getByTestId("mi-amount").fill("400");
-  await expect(modal.getByTestId("mi-sentence")).toContainText(`${VENUE} owes us $400.00 (guarantee)`);
+  await expect(modal.getByTestId("mi-saves")).toContainText(`${VENUE} owes us $400.00 (guarantee)`);
   await modal.getByTestId("mi-save").click();
   await expect(modal).toBeHidden();
   const owed = page.getByTestId("owed-to-us");
@@ -132,4 +133,24 @@ test("admin logs income owed to us, then marks it received", async ({ page }) =>
   await expect(row).toContainText("$400.00");
   await row.locator('[data-testid^="owed-received-"]').click();
   await expect(owed).not.toContainText(VENUE);
+});
+
+test("admin logs Eric's gas as a reimbursable expense; it sits under We owe for Eric like one he logged himself", async ({ page }) => {
+  const GAS = `Gas to rehearsal ${Date.now()}`;
+  await signInAs(page, "jeff");
+  await openTab(page, "money");
+  await page.getByTestId("money-out-open").click();
+  const modal = page.getByTestId("money-out-modal");
+  await modal.getByTestId("mo-owe").check();
+  await modal.getByTestId("mo-kind").selectOption("reimb");
+  await modal.getByTestId("mo-cat").selectOption("travel");
+  await modal.getByTestId("mo-member").selectOption({ label: "Eric" });
+  await modal.getByTestId("mo-amount").fill("23.50");
+  await modal.getByTestId("mo-what").fill(GAS);
+  await expect(modal.getByTestId("mo-payer")).toHaveCount(0); // nobody has paid him back
+  await expect(modal.getByTestId("mo-sentence")).toContainText(`We owe Eric $23.50 for ${GAS}`);
+  await expect(modal.getByTestId("mo-saves")).toContainText("owes Eric back");
+  await modal.getByTestId("mo-save").click();
+  await expect(modal).toBeHidden();
+  await expect(page.getByTestId("we-owe").locator('[data-testid^="we-owe-user:"]', { hasText: GAS })).toContainText("Eric");
 });

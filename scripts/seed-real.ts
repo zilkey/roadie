@@ -28,7 +28,8 @@
 import { registry } from "@/server/commands/registry";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { adminAuth } from "@/server/admin";
-import { db, type Doc } from "@/server/db";
+import { db, run, type Doc } from "@/server/db";
+import { ensureDefaultProject } from "@/server/commands/projects";
 import { syncClaims } from "@/server/session";
 import { slugForArtist } from "@/schema/artists";
 import { roleIn, type Membership } from "@/schema";
@@ -131,6 +132,8 @@ export async function seedReal(opts: { dryRun?: boolean; runId?: string } = {}):
   const artist = await ensureArtist(ctx, roster, dryRun);
 
   const bandCtx = importCtx("seed-real", runId, artist.id);
+  // artists.create makes the General project for a fresh artist; one seeded before that existed gets it here.
+  if (!dryRun) await run(bandCtx, (w) => ensureDefaultProject(w, artist.id));
   const people: SeedRealResult["people"] = [];
   for (const p of roster.BAND_PEOPLE) people.push(await ensurePerson(bandCtx, artist.id, p, dryRun));
 

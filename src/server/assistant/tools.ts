@@ -269,6 +269,7 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "projects.update": async (i, _r, _s, l) => `Updated the project ${(await l.get("projects", i.id))?.name ?? ""}: ${list(Object.keys(i.patch ?? {}))}`,
   "projects.close": async (i, _r, _s, l) => `Closed the project ${(await l.get("projects", i.id))?.name ?? ""}`,
   "projects.reopen": async (i, _r, _s, l) => `Reopened the project ${(await l.get("projects", i.id))?.name ?? ""}`,
+  "projects.remove": () => "Removed the project",
   "setlists.setItems": async (i, _r, _s, l) => `Set the setlist for ${await l.show(i.showId)}: ${plural(((i.items ?? []) as Row[]).filter((x) => x.type !== "break").length, "song")}`,
   "pitches.flag": async (i, r, _s, l) => `${r?.existing ? "Already on the Pitch List:" : "Added to the Pitch List:"} ${await l.pitch(r?.id)}`,
   "pitches.move": async (i, _r, _s, l) => `Moved ${await l.pitch(i.id)} to ${i.status}`,

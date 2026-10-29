@@ -35,6 +35,8 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   assert.equal(user.musicianId, undefined);
   assert.equal((await db.list("musicians")).length, 0);
   assert.deepEqual((await db.list("checklistTemplates", (q) => q.where("artistId", "==", artist.id))).map((t) => t.name).sort(), ["Follow Up", "Promo"]);
+  // and the General project, so Money in / Money out can save before any other project exists
+  assert.deepEqual((await db.list("projects", (q) => q.where("artistId", "==", artist.id))).map((t) => [t.name, t.kind, t.isDefault, t.status]), [["General", "band", true, "open"]]);
   assert.deepEqual((await adminAuth().getUser(p.uid)).customClaims, { artists: { [artist.id]: "admin" } });
   // History records it like any other write
   assert.equal((await db.history("artists", artist.id)).length, 1);

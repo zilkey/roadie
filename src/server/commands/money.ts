@@ -25,11 +25,11 @@ const id1 = z.string().min(1);
 // An expense can be changed or removed by its owner (or an admin) until it is paid back.
 //
 // ---------- the command surface (the contract W1 implements; names and input shapes don't move) ----------
-// projects.create  admin  { kind: projectKind, name, start?, end?, isDefault? }      -> { id }. isDefault moves the flag: exactly one default per artist.
-// projects.update  admin  { id, patch: { name?, kind?, start? (null clears), end? (null clears), isDefault? (true only) } }
+// projects.create  admin  { kind: projectKind, name, isDefault? }                    -> { id }. isDefault moves the flag: exactly one default per artist.
+// projects.update  admin  { id, patch: { name?, kind?, isDefault? (true only) } }
 // projects.close   admin  { id }   closed projects stay readable; nothing new lands on them (add/update commands refuse a closed projectId).
 // projects.reopen  admin  { id }
-//                         A project is never removed: one with money on it is closed. (No projects.remove.)
+// projects.remove admin  { id }   only a project with nothing on it (no money, show or release) and not the default; one with money on it is closed.
 // income.add       admin  { amount, category: incomeCategory, from, date?, projectId?, showId?, method?, receivedAt?, notes? }
 //                         projectId defaults to the show's project, else the default project. No receivedAt = owed to us.
 // income.update    admin  { id, patch: { amount?, category?, from?, date?, projectId?, showId? (null clears), method? (null clears), receivedAt? (null clears), notes? (null clears) } }

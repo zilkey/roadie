@@ -60,7 +60,6 @@ function Admin() {
     <>
       <button className="btn acc" data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
       <button className="btn acc" data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
-      <Link href="/money/expense" className="btn outline" data-testid="add-expense-link">Add an expense</Link>
     </>
   );
   const modals = (
@@ -75,11 +74,10 @@ function Admin() {
     return (
       <>
         <WelcomeEmpty section="money" variant={0} title="Welcome to Money!"
-          body="Everything that comes in and goes out: show income, gear and rentals, who's owed what, and the totals broken down by project, show and category. Add money in or out, or an expense, and the numbers start to fill in."
+          body="Everything that comes in and goes out: show income, gear and rentals, who's owed what, and the totals broken down by project, show and category. Add money in or out, and the numbers start to fill in."
           actions={<>
             <button className="btn acc" data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
             <button className="btn acc" data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
-            <Link href="/money/expense" className="btn outline" data-testid="add-expense-link">Add an expense</Link>
           </>}>
           <ErrorBox error={error} />
         </WelcomeEmpty>

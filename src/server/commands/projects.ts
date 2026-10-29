@@ -3,7 +3,7 @@ import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
-import { projectKind, dateStr, cents } from "@/schema";
+import { projectKind, cents } from "@/schema";
 
 /** The artist a call is for: the one given, else the one this call is for (ctx.artistId), else the one artist there is. */
 export async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
@@ -12,22 +12,26 @@ export async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<D
   return a;
 }
 
-/** The artist's default project (Band), if it has one. */
+/** The name every artist's starting project gets: the catch-all bucket money lands on until there is a better one. */
+export const DEFAULT_PROJECT_NAME = "General";
+
+/** The artist's default project (General), if it has one. */
 export async function defaultProjectOf(w: Writer, artistId: string): Promise<Doc | undefined> {
   return (await w.query("projects", (q) => q.where("artistId", "==", artistId), { pending: true })).find((p) => p.isDefault && !p.deletedAt);
 }
 /**
- * The artist's default project, made on first need: a band that predates projects (or a brand-new one) gets "Band"
- * the first time money or a show needs somewhere to land, so nothing refuses to save before `npm run migrate:money`.
+ * The artist's default project. artists.create / artists.signUp make "General" with the artist, so Money in and
+ * Money out can save from the first day; a band that predates projects gets it the first time money or a show needs
+ * somewhere to land, so nothing refuses to save before `npm run migrate:money`.
  */
 export async function ensureDefaultProject(w: Writer, artistId: string): Promise<Doc> {
   const cur = await defaultProjectOf(w, artistId);
   if (cur) return cur;
-  const r = await w.create("projects", { artistId, kind: "band", name: "Band", status: "open", isDefault: true });
+  const r = await w.create("projects", { artistId, kind: "band", name: DEFAULT_PROJECT_NAME, status: "open", isDefault: true });
   return (await w.get("projects", r.id))!;
 }
 
-/** The project new money lands on: the billed-as configuration's defaultProjectId when it names one, else the artist's default project. Makes the Band project when the artist has no default yet. */
+/** The project new money lands on: the billed-as configuration's defaultProjectId when it names one, else the artist's default project. Makes the General project when the artist has no default yet. */
 export async function defaultProjectIdFor(w: Writer, artistId: string, billedAs?: string | null): Promise<string | undefined> {
   if (billedAs) {
     const artist = await w.get("artists", artistId);
@@ -61,9 +65,9 @@ async function clearOtherDefaults(w: Writer, artistId: string, keepId?: string) 
 export const projectsCreate = defineCommand({
   name: "projects.create", roles: ["admin"],
   description: "Create a project, a bucket every income, expense and payout belongs to (Band is the default one; others are a duo, a release, a tour, a music video). " +
-    "kind: band|duo|release|tour|video|other, name, optional start/end (YYYY-MM-DD). isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
+    "kind: band|duo|release|tour|video|other, name. isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
   input: z.strictObject({
-    kind: projectKind, name: z.string().trim().min(1), start: dateStr.optional(), end: dateStr.optional(), isDefault: z.boolean().optional(),
+    kind: projectKind, name: z.string().trim().min(1), isDefault: z.boolean().optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const artist = await artistFor(w);
@@ -74,9 +78,9 @@ export const projectsCreate = defineCommand({
 
 export const projectsUpdate = defineCommand({
   name: "projects.update", roles: ["admin"],
-  description: "Edit a project (id from context.now projects): name, kind, start / end (null clears), isDefault (true only: it becomes THE default and the old default stops being it).",
+  description: "Edit a project (id from context.now projects): name, kind, isDefault (true only: it becomes THE default and the old default stops being it).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
-    name: z.string().trim().min(1).optional(), kind: projectKind.optional(), start: dateStr.nullable().optional(), end: dateStr.nullable().optional(),
+    name: z.string().trim().min(1).optional(), kind: projectKind.optional(),
     isDefault: z.boolean().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
@@ -90,7 +94,7 @@ export const projectsUpdate = defineCommand({
 
 export const projectsClose = defineCommand({
   name: "projects.close", roles: ["admin"], input: idInput,
-  description: "Close a project: it stays readable but nothing new can be added to it. A project is never removed; one with money on it is closed.",
+  description: "Close a project: it stays readable but nothing new can be added to it. A project with money on it is closed, never removed (an empty one can be removed with projects.remove).",
   run: (ctx, { id }) => run(ctx, async (w) => { await requireProject(w, id); return w.update("projects", id, { status: "closed" }); }),
 });
 
@@ -100,4 +104,27 @@ export const projectsReopen = defineCommand({
   run: (ctx, { id }) => run(ctx, async (w) => { await requireProject(w, id); return w.update("projects", id, { status: "open" }); }),
 });
 
-export const projectCommands = [projectsCreate, projectsUpdate, projectsClose, projectsReopen];
+/** What still points at a project: live money, shows billed to it and releases made with it. Any of these keeps it from being removed. */
+export async function projectInUse(w: Writer, id: string): Promise<string[]> {
+  const live = async (coll: string) => (await w.query(coll, (q) => q.where("projectId", "==", id))).filter((d) => !d.deletedAt).length;
+  const [inc, exp, pay, shows, rels] = await Promise.all(["income", "expenses", "payouts", "shows", "releases"].map(live));
+  const reasons: string[] = [];
+  if (inc + exp + pay) reasons.push(`${inc + exp + pay} money record${inc + exp + pay === 1 ? "" : "s"}`);
+  if (shows) reasons.push(`${shows} show${shows === 1 ? "" : "s"}`);
+  if (rels) reasons.push(`${rels} release${rels === 1 ? "" : "s"}`);
+  return reasons;
+}
+
+export const projectsRemove = defineCommand({
+  name: "projects.remove", roles: ["admin"], input: idInput,
+  description: "Remove a project that has nothing on it: no income, expenses or payouts, no show billed to it, no release. One with money on it is closed instead (projects.close). The default project cannot be removed: make another the default first.",
+  run: (ctx, { id }) => run(ctx, async (w) => {
+    const p = await requireProject(w, id);
+    if (p.isDefault) throw new AppError("invalid_state", "That is the default project: make another project the default first", 409);
+    const used = await projectInUse(w, id);
+    if (used.length) throw new AppError("invalid_state", `${p.name} has ${used.join(", ")} on it: close it instead`, 409);
+    return w.softDelete("projects", id);
+  }),
+});
+
+export const projectCommands = [projectsCreate, projectsUpdate, projectsClose, projectsReopen, projectsRemove];

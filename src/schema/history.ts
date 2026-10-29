@@ -34,7 +34,7 @@ export const History = entity({
   autosave: z.boolean().optional(),
   actor: z.strictObject({
     uid: z.string(),
-    via: z.enum(["app", "mcp", "import", "assistant"]),
+    via: z.enum(["app", "mcp", "import", "assistant", "shortcut"]),
     /** Roadie / MCP session this change came from, when there is one. */
     sessionId: z.string().optional(),
     /** The AI client (for example Claude Desktop) and model, when known. */
