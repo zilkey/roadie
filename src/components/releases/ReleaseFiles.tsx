@@ -5,9 +5,9 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { FileIcon } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
-import { ALBUM_FILE_GROUPS, ALBUM_FILE_KINDS } from "@/lib/albums";
+import { RELEASE_FILE_GROUPS, RELEASE_FILE_KINDS } from "@/lib/releases";
 import { MIME_GDOC, PROVIDER_LABEL, providerFor, type FileKind } from "@/lib/music";
-import { trackHref, type AlbumData, type FileRow } from "./common";
+import { trackHref, type ReleaseData, type FileRow } from "./common";
 
 /** What sort of file it is, for the meta line: "Image", "Google Doc", "PDF", "Spotify"... */
 export function fileTypeLabel(f: { mimeType?: string; driveFileId?: string; url: string; provider?: string }): string {
@@ -27,26 +27,26 @@ export function fileTypeLabel(f: { mimeType?: string; driveFileId?: string; url:
   return "File";
 }
 const localPart = (email?: string) => (email ? email.split("@")[0] : "");
-/** A checked Drive file with a sharing gap: someone in the band can't open it, or it sits outside the band and album folders. */
+/** A checked Drive file with a sharing gap: someone in the band can't open it, or it sits outside the band and release folders. */
 export const missingOf = (f: FileRow) => (!f.sharing || f.sharing === "ok" ? [] : f.sharing.missing);
 export const hasGap = (f: FileRow) => !!f.driveFileId && f.inBandFolder !== undefined && (missingOf(f).length > 0 || f.inBandFolder === false);
 
-/** The album's own files (artwork, album masters, liner notes, promo), with sharing fixes, and a way to every track's files. */
-export function AlbumFiles({ data }: { data: AlbumData }) {
+/** The release's own files (artwork, release masters, liner notes, promo), with sharing fixes, and a way to every track's files. */
+export function ReleaseFiles({ data }: { data: ReleaseData }) {
   const { call, error, busy } = useCommand();
-  const album = data.album;
-  if (!album) return null;
-  const files = data.files.filter((f) => !f.albumTrackId);
+  const release = data.release;
+  if (!release) return null;
+  const files = data.files.filter((f) => !f.releaseTrackId);
   const gaps = files.filter(hasGap);
   const outsideOwners = [...new Set(gaps.filter((f) => f.inBandFolder === false).map((f) => localPart(f.ownerEmail)).filter(Boolean))];
 
   return (
-    <div className="grid gap-5" data-testid="album-files">
+    <div className="grid gap-5" data-testid="release-files">
       {data.admin && gaps.length > 0 && (
         <div className="sg-strip" data-testid="files-gap">
           <span className="sg-strip-t">
             <b>{gaps.length} file{gaps.length === 1 ? "" : "s"} band members can&apos;t open</b>
-            {outsideOwners.length > 0 && <span className="s">They&apos;re in {outsideOwners.join(" and ")}&apos;s Drive, outside the album folder.</span>}
+            {outsideOwners.length > 0 && <span className="s">They&apos;re in {outsideOwners.join(" and ")}&apos;s Drive, outside the release folder.</span>}
           </span>
           <span className="flex flex-wrap gap-2">
             {gaps.some((f) => missingOf(f).length > 0) && (
@@ -55,15 +55,15 @@ export function AlbumFiles({ data }: { data: AlbumData }) {
             )}
             {gaps.some((f) => f.inBandFolder === false) && (
               <button type="button" className="btn outline sm" disabled={busy} data-testid="fix-copy"
-                onClick={() => call("albums.files.copyToFolder", { albumId: album.id, ids: gaps.filter((f) => f.inBandFolder === false).map((f) => f.id) })}>Copy into album folder</button>
+                onClick={() => call("releases.files.copyToFolder", { releaseId: release.id, ids: gaps.filter((f) => f.inBandFolder === false).map((f) => f.id) })}>Copy into release folder</button>
             )}
           </span>
         </div>
       )}
       <ErrorBox error={error} />
 
-      {ALBUM_FILE_GROUPS.map((g) => (
-        <FileGroup key={g.kind} albumId={album.id} kind={g.kind} label={g.label} hint={g.hint} admin={data.admin}
+      {RELEASE_FILE_GROUPS.map((g) => (
+        <FileGroup key={g.kind} releaseId={release.id} kind={g.kind} label={g.label} hint={g.hint} admin={data.admin}
           files={files.filter((f) => f.kind === g.kind)} exclude={files.flatMap((f) => f.driveFileId ?? [])} />
       ))}
 
@@ -73,9 +73,9 @@ export function AlbumFiles({ data }: { data: AlbumData }) {
         {data.tracks.length === 0 && <span className="s">No tracks yet.</span>}
         <div className="flex flex-wrap gap-x-5 gap-y-2">
           {data.tracks.map((t) => {
-            const n = data.files.filter((f) => f.albumTrackId === t.id).length;
+            const n = data.files.filter((f) => f.releaseTrackId === t.id).length;
             return (
-              <Link key={t.id} href={trackHref(album.id, t.id)} className="font-semibold" data-testid={`track-files-${t.id}`}>
+              <Link key={t.id} href={trackHref(release.id, t.id)} className="font-semibold" data-testid={`track-files-${t.id}`}>
                 {t.position} · {t.title} <span className="s">· {n} file{n === 1 ? "" : "s"}</span>
               </Link>
             );
@@ -86,8 +86,8 @@ export function AlbumFiles({ data }: { data: AlbumData }) {
   );
 }
 
-function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
-  albumId: string; kind: FileKind; label: string; hint: string; admin: boolean; files: FileRow[]; exclude: string[];
+function FileGroup({ releaseId, kind, label, hint, admin, files, exclude }: {
+  releaseId: string; kind: FileKind; label: string; hint: string; admin: boolean; files: FileRow[]; exclude: string[];
 }) {
   const { call, error, busy } = useCommand();
   const artistDoc = useArtist().doc;
@@ -96,7 +96,7 @@ function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
   const sorted = [...files].sort((a, b) => a.title.localeCompare(b.title));
 
   async function attach() {
-    const r = await call("albums.files.attach", { albumId, files: picks.map((p) => ({ driveFileId: p.driveFileId, kind: p.kind })) });
+    const r = await call("releases.files.attach", { releaseId, files: picks.map((p) => ({ driveFileId: p.driveFileId, kind: p.kind })) });
     if (r) { setAdding(false); setPicks([]); }
   }
 
@@ -109,8 +109,8 @@ function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
         </span>
         {admin && (
           <div className="flex flex-wrap items-start gap-2">
-            <Upload url={`/api/albums/${encodeURIComponent(albumId)}/files`} fields={{ kind }} label="Upload" accept={kind === "artwork" ? "image/*" : "*/*"}
-              testid={`album-upload-${kind}`} disabled={!artistDoc?.driveFolderId} tooBig="Put it in Drive yourself and add it from Drive."
+            <Upload url={`/api/releases/${encodeURIComponent(releaseId)}/files`} fields={{ kind }} label="Upload" accept={kind === "artwork" ? "image/*" : "*/*"}
+              testid={`release-upload-${kind}`} disabled={!artistDoc?.driveFolderId} tooBig="Put it in Drive yourself and add it from Drive."
               needsFolder={<>Choose the band folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
             <button type="button" className="btn acc" onClick={() => setAdding(!adding)} aria-expanded={adding} data-testid={`add-from-drive-${kind}`}>{adding ? "Cancel" : "+ Add from Drive"}</button>
           </div>
@@ -118,7 +118,7 @@ function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
       </div>
       {admin && adding && (
         <div className="grid gap-2 border-t border-line px-5 py-3">
-          <DrivePicker all kinds={ALBUM_FILE_KINDS} defaultKind={kind} placeholder="Search Drive…" exclude={exclude} onChange={setPicks} testid={`picker-${kind}`} />
+          <DrivePicker all kinds={RELEASE_FILE_KINDS} defaultKind={kind} placeholder="Search Drive…" exclude={exclude} onChange={setPicks} testid={`picker-${kind}`} />
           <button type="button" className="btn acc justify-self-start" disabled={busy || picks.length === 0} onClick={attach} data-testid={`attach-${kind}`}>
             Attach {picks.length || ""} file{picks.length === 1 ? "" : "s"}
           </button>
@@ -126,7 +126,7 @@ function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
       )}
       {sorted.length === 0 && <div className="sg-row"><span className="s">Nothing here yet.</span></div>}
       {sorted.map((f) => {
-        const tag = f.inBandFolder ? <span className="chip g">Album folder</span> : missingOf(f).length > 0 ? <span className="chip y">Not shared</span> : null;
+        const tag = f.inBandFolder ? <span className="chip g">Release folder</span> : missingOf(f).length > 0 ? <span className="chip y">Not shared</span> : null;
         return (
           <div key={f.id} className="sg-row" data-testid={`file-${f.id}`}>
             <div className="sg-rowh">
@@ -138,7 +138,7 @@ function FileGroup({ albumId, kind, label, hint, admin, files, exclude }: {
               <span className="sg-rowa items-center">
                 {tag}
                 {admin && <button type="button" className="btn danger sm" disabled={busy} data-testid="file-remove"
-                  onClick={() => confirm(`Remove ${f.title} from this album? ${f.driveFileId ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: f.id })}>Remove</button>}
+                  onClick={() => confirm(`Remove ${f.title} from this release? ${f.driveFileId ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: f.id })}>Remove</button>}
               </span>
             </div>
           </div>

@@ -48,7 +48,7 @@ export const BAND_CONFIGURATIONS: { id: string; name: string; billingName: strin
  * The artist's public links, stored NORMALIZED -- the seed is the one chance to get these clean:
  *   - https, never http;
  *   - no display or tracking parameters (`?lang=en` on a TikTok, `?si=...` on a Spotify share link);
- *   - Spotify must be the artist PAGE (`/artist/{id}`), not an album: ARTIST_LINKS means the artist, and
+ *   - Spotify must be the artist PAGE (`/artist/{id}`), not a release: ARTIST_LINKS means the artist, and
  *     src/server/integrations/spotify.ts is shaped around an artist id (GET /v1/artists/{id}).
  *
  * Only the eleven keys in ARTIST_LINKS (src/schema/artists.ts) exist, and it is a strict object. A platform with no

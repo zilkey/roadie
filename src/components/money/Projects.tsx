@@ -5,7 +5,7 @@ import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
 import { PROJECT_KIND_LABEL, defaultProject, formatCents, incomeSoFar, projectTotals } from "@/lib/money";
 import { todayStr } from "@/lib/booking";
-import type { Album, Expense, Income, Payout, Project } from "@/schema";
+import type { Release, Expense, Income, Payout, Project } from "@/schema";
 
 const KINDS = Object.entries(PROJECT_KIND_LABEL) as [Project["kind"], string][];
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -25,7 +25,7 @@ export function Projects({ admin }: { admin: boolean }) {
   const income = useCollection<Income>("income", { skip: !admin });
   const expenses = useCollection<Expense>("expenses", { skip: !admin });
   const payouts = useCollection<Payout>("payouts", { skip: !admin });
-  const albums = useCollection<Album>("albums", { skip: !admin }); // albums are admins-only
+  const releases = useCollection<Release>("releases", { skip: !admin }); // releases are admins-only
   const router = useArtistRouter();
   const [adding, setAdding] = useState(false);
   const all = projects.rows ?? [];
@@ -48,11 +48,11 @@ export function Projects({ admin }: { admin: boolean }) {
         <tbody>
           {rows.map((p) => {
             const t = projectTotals({ projectId: p.id, defaultProjectId: def?.id, income: inc, expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
-            const album = albums.rows?.find((a) => a.projectId === p.id);
+            const release = releases.rows?.find((a) => a.projectId === p.id);
             return (
               <tr key={p.id} className="cursor-pointer" data-testid={`project-row-${p.id}`} onClick={() => router.push(`/money/projects/${p.id}`)}>
                 <td className="nm">{p.name}{p.isDefault && <> <span className="chip m">default</span></>}</td>
-                <td className="nw">{PROJECT_KIND_LABEL[p.kind] ?? p.kind}{album && <> · <Link href={`/albums/${album.id}`} className="font-semibold" onClick={(e) => e.stopPropagation()} data-testid={`project-album-${p.id}`}>Open album</Link></>}</td>
+                <td className="nw">{PROJECT_KIND_LABEL[p.kind] ?? p.kind}{release && <> · <Link href={`/releases/${release.id}`} className="font-semibold" onClick={(e) => e.stopPropagation()} data-testid={`project-release-${p.id}`}>Open release</Link></>}</td>
                 <td className="nw">{projectWhen(p) || "—"}</td>
                 {admin && (
                   <>

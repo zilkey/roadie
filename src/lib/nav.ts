@@ -7,7 +7,7 @@ export const I = {
   booking: "M6 3v18M6 4h12l-3 4 3 4H6",
   templates: "M4 5h16v14H4zM4 9h16M8 13h8M8 16h5",
   songs: "M9 18V6l10-2v12M9 18a3 3 0 11-3-3 3 3 0 013 3zm10-2a3 3 0 11-3-3 3 3 0 013 3z",
-  albums: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  releases: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 14.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
   setlists: "M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01",
   rehearsals: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4M10 17v-4l4-1v4M10 17a1.5 1.5 0 11-1.5-1.5M14 16a1.5 1.5 0 11-1.5-1.5",
   stagePlots: "M3 6h18v12H3zM3 14h18M8 10h.01M12 10h.01M16 10h.01",
@@ -31,14 +31,14 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
     booking: { key: "booking", href: "/booking", label: "Booking", icon: I.booking },
     templates: { key: "templates", href: "/booking/templates", label: "Email templates", icon: I.templates },
     songs: { key: "songs", href: "/songs", label: "Songs", icon: I.songs },
-    albums: { key: "albums", href: "/albums", label: "Albums", icon: I.albums },
+    releases: { key: "releases", href: "/releases", label: "Releases", icon: I.releases },
     setlists: { key: "setlists", href: "/setlists", label: "Setlist Templates", icon: I.setlists },
     rehearsals: { key: "rehearsals", href: "/rehearsals", label: "Rehearsals", icon: I.rehearsals },
     stagePlots: { key: "stagePlots", href: "/stage-plots", label: "Stage plots", icon: I.stagePlots },
     money: { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
     fans: { key: "fans", href: "/fans", label: "Fans", icon: I.fans },
   };
-  // Booking, its email templates and Albums (for now) are admin-only.
-  const adminOnly = new Set<SectionId>(["booking", "templates", "albums"]);
+  // Booking, its email templates and Releases (for now) are admin-only.
+  const adminOnly = new Set<SectionId>(["booking", "templates", "releases"]);
   return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans)).map((k) => all[k])];
 }

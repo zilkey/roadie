@@ -14,10 +14,10 @@ test("admin gets Calendar then all ten sections in the default order, with Money
   assert.equal(label(nav, "money"), "Money");
 });
 
-test("members don't get booking, email templates or albums, and see My money", () => {
+test("members don't get booking, email templates or releases, and see My money", () => {
   const nav = navFor("member", [...DEFAULT_SECTION_ORDER]);
   assert.deepEqual(keys(nav), ["calendar", "shows", "songs", "setlists", "rehearsals", "stagePlots", "money"]);
-  assert.ok(!keys(nav).includes("booking") && !keys(nav).includes("templates") && !keys(nav).includes("albums"));
+  assert.ok(!keys(nav).includes("booking") && !keys(nav).includes("templates") && !keys(nav).includes("releases"));
   assert.equal(label(nav, "money"), "My money");
 });
 
@@ -28,13 +28,13 @@ test("members see Fans (counts only) when it is on", () => {
 
 test("a custom order is respected; sections it leaves out are appended", () => {
   const order = normalizeOrder(["money", "songs"]);
-  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "albums", "setlists", "rehearsals", "stagePlots", "fans"]);
+  assert.deepEqual(order, ["money", "songs", "shows", "booking", "templates", "releases", "setlists", "rehearsals", "stagePlots", "fans"]);
   assert.deepEqual(keys(navFor("admin", order, { fans: true })), ["calendar", ...order]);
   assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "setlists", "rehearsals", "stagePlots"]);
 });
 
 test("templates, setlists, rehearsals and stage plots start hidden", () => {
-  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "albums", "setlists", "rehearsals", "stagePlots"]);
+  assert.deepEqual([...DEFAULT_HIDDEN], ["templates", "releases", "setlists", "rehearsals", "stagePlots"]);
   assert.deepEqual(defaultHidden("admin"), [...DEFAULT_HIDDEN]);
 });
 

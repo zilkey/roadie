@@ -128,9 +128,9 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   await expect(page).toHaveURL(/\/money\/projects\/[^/]+$/);
   await expect(page.getByTestId("project-page")).toContainText("Wild Hearts LP");
   const totals = page.getByTestId("project-totals");
-  // The album's spend (three days tracking, the mix revisions) is paid; the backer pledges arrived, the Bandcamp sale is still owed.
+  // The release's spend (three days tracking, the mix revisions) is paid; the backer pledges arrived, the Bandcamp sale is still owed.
   await expect(page.getByTestId("project-spent")).toHaveText("$2,100.00");
-  await expect(page.getByTestId("project-in")).toContainText("$"); // the album spec adds income in parallel, so no exact figure
+  await expect(page.getByTestId("project-in")).toContainText("$"); // the release spec adds income in parallel, so no exact figure
   await expect(totals).toContainText("$184.00");
   // The Bandcamp money hasn't arrived: owed on the In tile, and listed under Money in as "Owed to us" (received income is green).
   await expect(page.getByTestId("tile-in")).toContainText("$184.00 owed to us");
@@ -150,6 +150,13 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   await expect(page.getByTestId("project-by-category")).toBeVisible();
   await page.getByTestId("back").click();
   await expect(page).toHaveURL(/\/money\/projects$/);
+  // ...and back, from the tour's page, so the release specs (which run after this file) still find it on the LP.
+  await page.getByTestId("projects-table").locator("tr", { hasText: "Spring West Tour" }).click();
+  await expect(page.getByTestId("project-page")).toContainText("Spring West Tour");
+  await page.getByTestId("project-flow-in").click();
+  await records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]").click();
+  await records.locator("[data-testid$=-project-input]").selectOption({ label: "Wild Hearts LP" });
+  await expect(records).not.toContainText("Bandcamp");
 });
 
 /** Pay one person's group from the We owe card: Money out opens on "We paid"; pick Venmo and save. */

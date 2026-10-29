@@ -54,7 +54,7 @@ export const EXPENSE_LABEL: Record<string, string> = {
   artwork: "Artwork", photo: "Photo", video: "Video", space: "Room rental", marketing: "Marketing", fees: "Fees", other: "Other",
 };
 export const PAYOUT_KIND_LABEL: Record<string, string> = { pay: "Pay for playing", split: "Another band's cut", reimbursement: "Paid back", other: "Other" };
-export const PROJECT_KIND_LABEL: Record<string, string> = { band: "Band", duo: "Duo", album: "Album", tour: "Tour", video: "Video", other: "Other" };
+export const PROJECT_KIND_LABEL: Record<string, string> = { band: "Band", duo: "Duo", release: "Release", tour: "Tour", video: "Video", other: "Other" };
 export const METHOD_LABEL: Record<string, string> = { cash: "Cash", venmo: "Venmo", check: "Check", square: "Square", card: "Card", bank: "Bank", other: "Other" };
 
 /** A bill nobody has paid yet ("We owe"): its userId is whoever entered it, not a payer. */

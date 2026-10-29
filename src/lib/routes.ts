@@ -36,12 +36,12 @@ export const ROUTES = {
   bookingTemplates: { title: "Email templates", path: "/booking/templates" },
   songs: { title: "Songs", path: "/songs" },
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
-  albums: { title: "Albums", path: "/albums" },
-  newAlbum: { title: "New album", path: "/albums/new" },
-  album: { title: "Album", path: "/albums/:id", params: ["id"] },
-  albumMoney: { title: "Album money", path: "/albums/:id?tab=money", params: ["id"] },
-  albumFiles: { title: "Album files", path: "/albums/:id?tab=files", params: ["id"] },
-  albumTrack: { title: "Album track", path: "/albums/:id/tracks/:trackId", params: ["id", "trackId"] },
+  releases: { title: "Releases", path: "/releases" },
+  newRelease: { title: "New release", path: "/releases/new" },
+  release: { title: "Release", path: "/releases/:id", params: ["id"] },
+  releaseMoney: { title: "Release money", path: "/releases/:id?tab=money", params: ["id"] },
+  releaseFiles: { title: "Release files", path: "/releases/:id?tab=files", params: ["id"] },
+  releaseTrack: { title: "Release track", path: "/releases/:id/tracks/:trackId", params: ["id", "trackId"] },
   setlists: { title: "Setlist Templates", path: "/setlists" },
   setlist: { title: "Setlist template", path: "/setlists/:id", params: ["id"] },
   setlistPrint: { title: "Print setlist", path: "/setlists/:id/print", params: ["id"] },
@@ -67,11 +67,11 @@ export const ROUTES = {
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
   pitch: "pitches", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
-  showSetlist: "shows", showFinances: "shows", project: "projects", album: "albums", albumMoney: "albums", albumFiles: "albums",
+  showSetlist: "shows", showFinances: "shows", project: "projects", release: "releases", releaseMoney: "releases", releaseFiles: "releases",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */
 export const routeForRecord = (kind: string): keyof typeof RECORD_ROUTES | null =>
-  (Object.entries(RECORD_ROUTES).find(([n, k]) => k === kind && !["showAfter", "showSetlist", "showFinances", "albumMoney", "albumFiles"].includes(n))?.[0] as keyof typeof RECORD_ROUTES | undefined) ?? null;
+  (Object.entries(RECORD_ROUTES).find(([n, k]) => k === kind && !["showAfter", "showSetlist", "showFinances", "releaseMoney", "releaseFiles"].includes(n))?.[0] as keyof typeof RECORD_ROUTES | undefined) ?? null;
 
 export type RouteName = keyof typeof ROUTES;
 export const routeNames = Object.keys(ROUTES) as RouteName[];
@@ -96,7 +96,7 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
  * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
  * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "albums", "setlists", "rehearsals", "stage-plots", "money", "fans", "admin", "me"] as const;
+export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "songs", "releases", "setlists", "rehearsals", "stage-plots", "money", "fans", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**

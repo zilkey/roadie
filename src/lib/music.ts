@@ -36,7 +36,7 @@ export const STATUS_LABEL: Record<SongStatus, string> = { active: "Playing", lea
 export const STATUS_ORDER: SongStatus[] = ["active", "learning", "writing", "retired"];
 
 export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other" | "mix" | "master" | "session" | "artwork" | "liner" | "promo";
-/** The kinds a song's files come in (the album kinds live on albums and their tracks, see lib/albums). */
+/** The kinds a song's files come in (the release kinds live on releases and their tracks, see lib/releases). */
 export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
 export const KIND_LABEL: Record<FileKind, string> = {
   chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",

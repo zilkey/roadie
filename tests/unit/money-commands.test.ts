@@ -60,8 +60,8 @@ const dealTotals = async (id: string) => (await db.get("showDeals", id) as any).
 
 test("projects: admin only, exactly one default, close/reopen, closed refuses new money", async () => {
   assert.deepEqual(await defaults(), [band]);
-  const album = (await cmd("projects.create", { kind: "album", name: "LP", isDefault: true })).id;
-  assert.deepEqual(await defaults(), [album]);
+  const release = (await cmd("projects.create", { kind: "release", name: "LP", isDefault: true })).id;
+  assert.deepEqual(await defaults(), [release]);
   await cmd("projects.update", { id: band, patch: { isDefault: true } });
   assert.deepEqual(await defaults(), [band]);
   await cmd("projects.close", { id: duo });

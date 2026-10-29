@@ -1,13 +1,13 @@
-/** Pure helpers for albums and their tracks (shared by the server commands, the pages and tests). */
-import type { AlbumKind, AlbumStatus, TrackStatus } from "@/schema/albums";
+/** Pure helpers for releases and their tracks (shared by the server commands, the pages and tests). */
+import type { ReleaseKind, ReleaseStatus, TrackStatus } from "@/schema/releases";
 import type { FileKind } from "./music";
 
-export const ALBUM_KIND_LABEL: Record<AlbumKind, string> = { album: "Album", ep: "EP", single: "Single" };
-/** What the index and header say about a kind ("Full-length album"). */
-export const ALBUM_KIND_LONG: Record<AlbumKind, string> = { album: "Full-length album", ep: "EP", single: "Single" };
-export const ALBUM_KINDS: AlbumKind[] = ["album", "ep", "single"];
-export const ALBUM_STATUS_LABEL: Record<AlbumStatus, string> = { planning: "Planning", recording: "Recording", mixing: "Mixing", mastering: "Mastering", released: "Released" };
-export const ALBUM_STATUSES: AlbumStatus[] = ["planning", "recording", "mixing", "mastering", "released"];
+export const RELEASE_KIND_LABEL: Record<ReleaseKind, string> = { album: "Album", ep: "EP", single: "Single" };
+/** What the index and header say about a kind ("Full-length release"). */
+export const RELEASE_KIND_LONG: Record<ReleaseKind, string> = { album: "Full-length album", ep: "EP", single: "Single" };
+export const RELEASE_KINDS: ReleaseKind[] = ["album", "ep", "single"];
+export const RELEASE_STATUS_LABEL: Record<ReleaseStatus, string> = { planning: "Planning", recording: "Recording", mixing: "Mixing", mastering: "Mastering", released: "Released" };
+export const RELEASE_STATUSES: ReleaseStatus[] = ["planning", "recording", "mixing", "mastering", "released"];
 
 export const TRACK_STATUS_LABEL: Record<TrackStatus, string> = { tracking: "Tracking", overdubs: "Overdubs", mixing: "Mixing", mixed: "Mixed", mastered: "Mastered" };
 /** In the order a track moves through them. */
@@ -16,24 +16,24 @@ const RANK: Record<TrackStatus, number> = { tracking: 0, overdubs: 1, mixing: 2,
 /** Has the track got at least this far? */
 export const trackReached = (status: TrackStatus, step: TrackStatus) => RANK[status] >= RANK[step];
 
-/** The file kinds that live on the album itself, in the order the Files tab shows them, with what each group is for. */
-export const ALBUM_FILE_GROUPS: { kind: FileKind; label: string; hint: string }[] = [
+/** The file kinds that live on the release itself, in the order the Files tab shows them, with what each group is for. */
+export const RELEASE_FILE_GROUPS: { kind: FileKind; label: string; hint: string }[] = [
   { kind: "artwork", label: "Artwork", hint: "Cover, back, inserts, labels" },
-  { kind: "master", label: "Album masters", hint: "The full-album masters and the CD image" },
+  { kind: "master", label: "Release masters", hint: "The full-release masters and the CD image" },
   { kind: "liner", label: "Liner notes and credits", hint: "Lyrics booklet, thank-yous, full credits" },
   { kind: "promo", label: "Promo", hint: "One-sheet, press photos, bio, video" },
 ];
 /** The file kinds a track's files come in, for the kind picker. */
 export const TRACK_FILE_KINDS: FileKind[] = ["mix", "master", "stems", "session", "other"];
-export const ALBUM_FILE_KINDS: FileKind[] = ALBUM_FILE_GROUPS.map((g) => g.kind);
+export const RELEASE_FILE_KINDS: FileKind[] = RELEASE_FILE_GROUPS.map((g) => g.kind);
 
 export interface TrackLike { id: string; position: number; side?: string; songId: string; title: string; status: TrackStatus; lengthSec?: number }
-export interface AlbumFileLike { id: string; kind: string; title: string; albumId?: string; albumTrackId?: string; version?: number; approved?: boolean; notes?: unknown[] }
+export interface ReleaseFileLike { id: string; kind: string; title: string; releaseId?: string; releaseTrackId?: string; version?: number; approved?: boolean; notes?: unknown[] }
 
-/** Tracks in album order (position; ties by id, so a list read back is stable). */
+/** Tracks in release order (position; ties by id, so a list read back is stable). */
 export const sortTracks = <T extends { position: number; id: string }>(tracks: readonly T[]) => [...tracks].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
 
-/** Tracks grouped by side, in order. One group with `side` undefined when the album has no side breaks. */
+/** Tracks grouped by side, in order. One group with `side` undefined when the release has no side breaks. */
 export function sidesOf<T extends { side?: string; lengthSec?: number }>(tracks: readonly T[]): { side?: string; tracks: T[]; lengthSec: number }[] {
   const out: { side?: string; tracks: T[]; lengthSec: number }[] = [];
   for (const t of tracks) {
@@ -68,8 +68,8 @@ export function guessVersion(name: string): number | undefined {
 }
 export const fmtVersion = (v?: number) => (v ? `v${v}` : "");
 
-/** Best guess at what an album file is from its name and type: masters, mixes, stems, session folders, artwork, liner notes, promo. */
-export function guessAlbumKind(name: string, mime?: string, onTrack = false): FileKind {
+/** Best guess at what a release file is from its name and type: masters, mixes, stems, session folders, artwork, liner notes, promo. */
+export function guessReleaseKind(name: string, mime?: string, onTrack = false): FileKind {
   const n = name.toLowerCase();
   const image = !!mime && mime.startsWith("image/");
   if (/\bmaster(?:ed|s)?\b/.test(n)) return "master";
@@ -85,17 +85,17 @@ export function guessAlbumKind(name: string, mime?: string, onTrack = false): Fi
 }
 
 /** The newest mix on a track (highest version, then newest title) and how it reads: "v4 · approved", "v1 · 3 notes", or "—". */
-export function latestMix<F extends AlbumFileLike>(files: readonly F[], trackId: string): F | undefined {
-  return files.filter((f) => f.albumTrackId === trackId && f.kind === "mix").sort((a, b) => (b.version ?? 0) - (a.version ?? 0) || a.title.localeCompare(b.title))[0];
+export function latestMix<F extends ReleaseFileLike>(files: readonly F[], trackId: string): F | undefined {
+  return files.filter((f) => f.releaseTrackId === trackId && f.kind === "mix").sort((a, b) => (b.version ?? 0) - (a.version ?? 0) || a.title.localeCompare(b.title))[0];
 }
-export function mixLabel(f?: AlbumFileLike): string {
+export function mixLabel(f?: ReleaseFileLike): string {
   if (!f) return "—";
   const notes = f.notes?.length ?? 0;
   return [fmtVersion(f.version) || f.title, f.approved ? "approved" : notes ? `${notes} note${notes === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 }
 
 /** What the header says: "10 tracks · 41:20 · Target release Mar 6". */
-export function albumMeta(a: { releaseDate?: string; status: AlbumStatus }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string): string {
+export function releaseMeta(a: { releaseDate?: string; status: ReleaseStatus }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string): string {
   const n = tracks.length;
   const len = totalLength(tracks);
   return [`${n} track${n === 1 ? "" : "s"}`, len ? fmtLen(len) : null, a.releaseDate ? `${a.status === "released" ? "Released" : "Target release"} ${fmtDate(a.releaseDate)}` : null].filter(Boolean).join(" · ");

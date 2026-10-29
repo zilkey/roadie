@@ -101,7 +101,7 @@ export async function pageList(ctx: Ctx, page: PageContext) {
   return { list: "shows", tab, count: rows.length, rows: rows.slice(0, PAGE_LIST_ROWS).map(showLine) };
 }
 
-export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician", "setlistTemplate", "album"] as const;
+export const SEARCH_KINDS = ["venue", "promoter", "festival", "edition", "contact", "pitch", "show", "song", "musician", "setlistTemplate", "release"] as const;
 const BOOKING = new Set(["venue", "promoter", "festival", "edition", "contact", "pitch"]);
 
 /** Venues, promoters, festivals, years, contacts and pitches (the `search` command) plus shows, songs and musicians, by name. */
@@ -123,7 +123,7 @@ export async function searchAll(ctx: Ctx, i: { q: string; kinds?: string[]; limi
   if (want.has("song")) for (const s of await list(ctx, "songs")) if (hit(`${s.title}`)) out.push({ kind: "song", id: s.id, name: s.title, sub: `Song · ${s.status}` });
   if (want.has("musician")) for (const m of await list(ctx, "musicians")) if (hit(`${m.name}`)) out.push({ kind: "musician", id: m.id, name: m.name, sub: "Musician", ...(m.userId ? { userId: m.userId } : {}) });
   if (want.has("setlistTemplate")) for (const t of await list(ctx, "setlistTemplates")) if (hit(`${t.name}`)) out.push({ kind: "setlistTemplate", id: t.id, name: t.name, sub: "Setlist template" });
-  if (want.has("album")) for (const a of await list(ctx, "albums")) if (hit(`${a.title} album ${a.kind}`)) out.push({ kind: "album", id: a.id, name: a.title, sub: `Album · ${a.status}` });
+  if (want.has("release")) for (const a of await list(ctx, "releases")) if (hit(`${a.title} release ${a.kind}`)) out.push({ kind: "release", id: a.id, name: a.title, sub: `Release · ${a.status}` });
   const rows = out.slice(0, i.limit ?? 25);
   return { count: rows.length, results: rows };
 }

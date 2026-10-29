@@ -60,8 +60,8 @@ async function clearOtherDefaults(w: Writer, artistId: string, keepId?: string) 
 
 export const projectsCreate = defineCommand({
   name: "projects.create", roles: ["admin"],
-  description: "Create a project, a bucket every income, expense and payout belongs to (Band is the default one; others are a duo, an album, a tour, a music video). " +
-    "kind: band|duo|album|tour|video|other, name, optional start/end (YYYY-MM-DD). isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
+  description: "Create a project, a bucket every income, expense and payout belongs to (Band is the default one; others are a duo, a release, a tour, a music video). " +
+    "kind: band|duo|release|tour|video|other, name, optional start/end (YYYY-MM-DD). isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
   input: z.strictObject({
     kind: projectKind, name: z.string().trim().min(1), start: dateStr.optional(), end: dateStr.optional(), isDefault: z.boolean().optional(),
   }),

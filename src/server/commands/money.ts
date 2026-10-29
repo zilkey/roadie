@@ -12,7 +12,7 @@ import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, e
 import { refreshDealTotals } from "../dealTotals";
 import { isOwedBill, owesBack } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
-import { requireTrackOnProject } from "./albums";
+import { requireTrackOnProject } from "./releases";
 import type { Ctx } from "../ctx";
 
 const todayServer = () => dateInBandZone();
@@ -129,10 +129,10 @@ export const expensesAdd = defineCommand({
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Doghouse $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other. projectId (from context.now projects) defaults to the show's project, else the default project. " +
     "A gas expense (category travel) carries the frozen estimate in `gas`. saveMpg / saveAsHome write the CALLER's own settings only; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
-    "Money for a record goes on the album's project (records.get albums: projectId); albumTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\").",
+    "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\").",
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), category: expenseCategory, date: dateStr.optional(),
-    showId: z.string().min(1).optional(), projectId: id1.optional(), rehearsalId: z.string().min(1).optional(), albumTrackId: id1.optional(), gas: GasIn.optional(),
+    showId: z.string().min(1).optional(), projectId: id1.optional(), rehearsalId: z.string().min(1).optional(), releaseTrackId: id1.optional(), gas: GasIn.optional(),
     receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
     to: PayoutTo.optional(), owed: z.boolean().optional(),
     /** Save gas.mpg to the caller's own driving settings. */
@@ -153,7 +153,7 @@ export const expensesAdd = defineCommand({
     const show = i.showId ? await liveShow(w, i.showId) : null;
     if (i.rehearsalId && !(await w.get("rehearsals", i.rehearsalId))) throw new AppError("not_found", "Rehearsal not found", 404);
     const projectId = await projectFor(w, { projectId: i.projectId, show });
-    if (i.albumTrackId) await requireTrackOnProject(w, projectId, i.albumTrackId);
+    if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, to, owed, ...rest } = i;
     const r = await w.create("expenses", {
       ...rest, userId, date: i.date ?? todayServer(), ...(projectId ? { projectId } : {}),
@@ -248,7 +248,7 @@ export const expensesUpdate = defineCommand({
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
     receipt: driveRef.nullable().optional(), showId: z.string().min(1).nullable().optional(), category: expenseCategory.optional(), projectId: id1.optional(),
-    albumTrackId: id1.nullable().optional(),
+    releaseTrackId: id1.nullable().optional(),
     to: PayoutTo.nullable().optional(), userId: id1.optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
@@ -258,7 +258,7 @@ export const expensesUpdate = defineCommand({
     if (patch.userId && !(await w.get("users", patch.userId))) throw new AppError("not_found", "User not found", 404);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
-    if (patch.albumTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.albumTrackId);
+    if (patch.releaseTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.releaseTrackId);
     // A new amount on a gas expense keeps the estimate but marks it overridden, so the frozen numbers stay honest.
     const gas = patch.amount !== undefined && patch.amount !== x.amount && x.gas && !x.gas.overridden ? { gas: { ...x.gas, overridden: true } } : {};
     const { to, ...rest } = patch;
@@ -424,15 +424,15 @@ export const incomeAdd = defineCommand({
   description: "Record money coming to the band: amount in cents, category (guarantee|door|tips|merch|streaming|digitalSales|physical|preorders|crowdfunding|sync|grant|gearSale|other), from (who: the venue, \"Bandcamp\", a grant). " +
     "showId (from shows.list) is optional context, not the owner; date (YYYY-MM-DD) defaults to the show's date, else today. projectId (context.now projects) defaults to the show's project, else the default project. " +
     "method: cash|venmo|check|square|card|bank|other. receivedAt (YYYY-MM-DD) is when it arrived: leave it OUT while the money is still owed to us (the venue hasn't paid yet); income.setReceived fills it in later. " +
-    "Album money (sales, pre-orders, crowdfunding, streaming) goes on the album's project (records.get albums: projectId); albumTrackId pins it to one track. Returns { id }.",
+    "Release money (sales, pre-orders, crowdfunding, streaming) goes on the release's project (records.get releases: projectId); releaseTrackId pins it to one track. Returns { id }.",
   input: z.strictObject({
     amount: z.number().int().positive(), category: incomeCategory, from: z.string().trim().min(1), date: dateStr.optional(), projectId: id1.optional(), showId: id1.optional(),
-    albumTrackId: id1.optional(), method: paymentMethod.optional(), receivedAt: dateStr.optional(), notes: z.string().trim().min(1).optional(),
+    releaseTrackId: id1.optional(), method: paymentMethod.optional(), receivedAt: dateStr.optional(), notes: z.string().trim().min(1).optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = i.showId ? await liveShow(w, i.showId) : null;
     const projectId = (await projectFor(w, { projectId: i.projectId, show, strict: true }))!;
-    if (i.albumTrackId) await requireTrackOnProject(w, projectId, i.albumTrackId);
+    if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
     const r = await w.create("income", { ...i, artistId, projectId, date: i.date ?? (show?.date as string | undefined) ?? todayServer() });
     if (i.showId) await refreshDealTotals(w, i.showId, { income: [(await w.get("income", r.id))!] });
@@ -445,13 +445,13 @@ export const incomeUpdate = defineCommand({
   description: "Fix an income record (id from records.list income or context.now): amount, category, from, date, projectId (an open project), showId (null clears), method / receivedAt / notes (null clears). receivedAt:null = not received after all.",
   input: z.strictObject({ id: id1, patch: z.strictObject({
     amount: z.number().int().positive().optional(), category: incomeCategory.optional(), from: z.string().trim().min(1).optional(), date: dateStr.optional(),
-    projectId: id1.optional(), showId: id1.nullable().optional(), albumTrackId: id1.nullable().optional(), method: paymentMethod.nullable().optional(), receivedAt: dateStr.nullable().optional(), notes: z.string().trim().min(1).nullable().optional(),
+    projectId: id1.optional(), showId: id1.nullable().optional(), releaseTrackId: id1.nullable().optional(), method: paymentMethod.nullable().optional(), receivedAt: dateStr.nullable().optional(), notes: z.string().trim().min(1).nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const x = await requireIncome(w, id);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
-    if (patch.albumTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string), patch.albumTrackId);
+    if (patch.releaseTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string), patch.releaseTrackId);
     const r = await w.update("income", id, patch as Record<string, unknown>);
     await refreshMoved(w, "income", id, x.showId);
     return r;

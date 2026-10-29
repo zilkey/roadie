@@ -10,9 +10,9 @@ import { FileIcon } from "@/components/music/common";
 import { DrivePicker, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
 import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
-import { AlbumMissing, albumHref, trackHref, useAlbum, type AlbumData, type FileRow, type TrackRow } from "@/components/albums/common";
+import { ReleaseMissing, releaseHref, trackHref, useRelease, type ReleaseData, type FileRow, type TrackRow } from "@/components/releases/common";
 import { useCollection } from "@/lib/firestore-hooks";
-import { TRACK_FILE_KINDS, TRACK_STATUS_LABEL, fmtVersion, trackReached } from "@/lib/albums";
+import { TRACK_FILE_KINDS, TRACK_STATUS_LABEL, fmtVersion, trackReached } from "@/lib/releases";
 import { CATEGORY_LABEL, formatCents } from "@/lib/money";
 import { fmtLen, playsInline, providerFor, type FileKind } from "@/lib/music";
 import { fmtInstant } from "@/lib/timezone";
@@ -33,38 +33,38 @@ export default function TrackPage() { return <AdminOnly><Track /></AdminOnly>; }
 
 function Track() {
   const { id, trackId } = useParams<{ id: string; trackId: string }>();
-  const d = useAlbum(id);
+  const d = useRelease(id);
   if (d.loading) return null;
   const track = d.tracks.find((t) => t.id === trackId);
-  if (!d.album || !track) return <AlbumMissing />;
+  if (!d.release || !track) return <ReleaseMissing />;
   return <TrackView d={d} track={track} />;
 }
 
-function TrackView({ d, track }: { d: AlbumData; track: TrackRow }) {
-  const album = d.album!;
+function TrackView({ d, track }: { d: ReleaseData; track: TrackRow }) {
+  const release = d.release!;
   const admin = d.admin;
   const { call, error, busy } = useCommand();
   const song = d.songs.find((s) => s.id === track.songId);
   const i = d.tracks.findIndex((t) => t.id === track.id);
   const prev = d.tracks[i - 1], next = d.tracks[i + 1];
-  const files = d.files.filter((f) => f.albumTrackId === track.id);
+  const files = d.files.filter((f) => f.releaseTrackId === track.id);
   const mixes = files.filter((f) => f.kind === "mix").sort(byVersion);
   const masters = files.filter((f) => f.kind === "master").sort(byVersion);
   const extras = files.filter((f) => f.kind === "stems" || f.kind === "session" || f.kind === "other").sort((a, b) => a.title.localeCompare(b.title));
   const approvedMix = mixes.find((f) => f.approved);
-  const update = async (patch: Record<string, unknown>) => !!(await call("albums.tracks.update", { albumId: album.id, id: track.id, patch }));
+  const update = async (patch: Record<string, unknown>) => !!(await call("releases.tracks.update", { releaseId: release.id, id: track.id, patch }));
 
-  const sub = [track.lengthSec ? `${fmtLen(track.lengthSec)} on the album` : null, song?.key, song?.bpm ? `${song.bpm} bpm` : null].filter(Boolean).join(" · ");
+  const sub = [track.lengthSec ? `${fmtLen(track.lengthSec)} on the release` : null, song?.key, song?.bpm ? `${song.bpm} bpm` : null].filter(Boolean).join(" · ");
 
   return (
     <div className="sg-page" data-testid="track-page">
       <PageTitle
         back={
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-            <BackLink mode="parent" href={`/albums/${album.id}`} label={album.title} />
+            <BackLink mode="parent" href={`/releases/${release.id}`} label={release.title} />
             <span className="flex gap-3 text-sm font-semibold">
-              {prev && <Link href={trackHref(album.id, prev.id)} data-testid="track-prev">‹ Track {prev.position}</Link>}
-              {next && <Link href={trackHref(album.id, next.id)} data-testid="track-next">Track {next.position} ›</Link>}
+              {prev && <Link href={trackHref(release.id, prev.id)} data-testid="track-prev">‹ Track {prev.position}</Link>}
+              {next && <Link href={trackHref(release.id, next.id)} data-testid="track-next">Track {next.position} ›</Link>}
             </span>
           </div>
         }
@@ -104,7 +104,7 @@ function TrackView({ d, track }: { d: AlbumData; track: TrackRow }) {
       <section className="sg-files" data-testid="mixes" aria-labelledby="mixes-h">
         <CardHead id="mixes-h" title="Mixes" note="Newest first. Approving one marks the track mixed." />
         {admin && (
-          <AddFiles albumId={album.id} trackId={track.id} name="mix" kind="mix" label="+ Add mix from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])}
+          <AddFiles releaseId={release.id} trackId={track.id} name="mix" kind="mix" label="+ Add mix from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])}
             upload={{ testid: "track-upload-mix", accept: "audio/*" }} />
         )}
         {mixes.length === 0 && <div className="sg-row"><span className="s">No mixes yet.</span></div>}
@@ -115,7 +115,7 @@ function TrackView({ d, track }: { d: AlbumData; track: TrackRow }) {
         <section className="sg-files content-start" data-testid="masters" aria-labelledby="masters-h">
           <CardHead id="masters-h" title="Master" />
           {admin && (
-            <AddFiles albumId={album.id} trackId={track.id} name="master" kind="master" label="+ Add master from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])}
+            <AddFiles releaseId={release.id} trackId={track.id} name="master" kind="master" label="+ Add master from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])}
               upload={{ testid: "track-upload-master", accept: "audio/*" }} />
           )}
           {masters.length === 0 && <div className="sg-row"><span className="s">No master yet. Add one for streaming, and another for vinyl if it differs.</span></div>}
@@ -123,7 +123,7 @@ function TrackView({ d, track }: { d: AlbumData; track: TrackRow }) {
         </section>
         <section className="sg-files content-start" data-testid="stems-session" aria-labelledby="stems-h">
           <CardHead id="stems-h" title="Stems and session" />
-          {admin && <AddFiles albumId={album.id} trackId={track.id} name="stems" kind="stems" label="+ Add from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])} />}
+          {admin && <AddFiles releaseId={release.id} trackId={track.id} name="stems" kind="stems" label="+ Add from Drive" exclude={files.flatMap((f) => f.driveFileId ?? [])} />}
           {extras.length === 0 && <div className="sg-row"><span className="s">Nothing here yet.</span></div>}
           {extras.map((f) => <LinkRow key={f.id} file={f} admin={admin} />)}
         </section>
@@ -151,7 +151,7 @@ function TrackView({ d, track }: { d: AlbumData; track: TrackRow }) {
             </dd></div>
           </dl>
         </section>
-        {admin && <TrackCosts albumId={album.id} trackId={track.id} />}
+        {admin && <TrackCosts releaseId={release.id} trackId={track.id} />}
       </div>
 
       <FromSong songId={track.songId} />
@@ -171,16 +171,16 @@ function CardHead({ id, title, note, children }: { id: string; title: string; no
   );
 }
 
-/** "+ Add … from Drive" (a picker, then Attach) and, for mixes and masters, Upload into the album folder. */
-function AddFiles({ albumId, trackId, name, kind, label, exclude, upload }: {
-  albumId: string; trackId: string; name: string; kind: FileKind; label: string; exclude: string[]; upload?: { testid: string; accept: string };
+/** "+ Add … from Drive" (a picker, then Attach) and, for mixes and masters, Upload into the release folder. */
+function AddFiles({ releaseId, trackId, name, kind, label, exclude, upload }: {
+  releaseId: string; trackId: string; name: string; kind: FileKind; label: string; exclude: string[]; upload?: { testid: string; accept: string };
 }) {
   const { call, error, busy } = useCommand();
   const artistDoc = useArtist().doc;
   const [adding, setAdding] = useState(false);
   const [picks, setPicks] = useState<Pick[]>([]);
   async function attach() {
-    const r = await call("albums.files.attach", { albumId, trackId, files: picks.map((p) => ({ driveFileId: p.driveFileId, kind: p.kind })) });
+    const r = await call("releases.files.attach", { releaseId, trackId, files: picks.map((p) => ({ driveFileId: p.driveFileId, kind: p.kind })) });
     if (r) { setAdding(false); setPicks([]); }
   }
   return (
@@ -188,7 +188,7 @@ function AddFiles({ albumId, trackId, name, kind, label, exclude, upload }: {
       <div className="flex flex-wrap items-start gap-2">
         <button type="button" className="btn acc" onClick={() => setAdding(!adding)} aria-expanded={adding} data-testid={`add-${name}-from-drive`}>{adding ? "Cancel" : label}</button>
         {upload && (
-          <Upload url={`/api/albums/${encodeURIComponent(albumId)}/files`} fields={{ trackId, kind }} label="Upload" accept={upload.accept} testid={upload.testid}
+          <Upload url={`/api/releases/${encodeURIComponent(releaseId)}/files`} fields={{ trackId, kind }} label="Upload" accept={upload.accept} testid={upload.testid}
             disabled={!artistDoc?.driveFolderId} tooBig="Put it in Drive yourself and add it from Drive."
             needsFolder={<>Choose the band folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
         )}
@@ -216,7 +216,7 @@ function VersionRow({ file, what, admin, notes }: { file: FileRow; what: string;
   const when = fileDate(file);
   async function note() {
     if (!body.trim()) return;
-    if (await call("albums.files.note", { id: file.id, body: body.trim() })) setBody("");
+    if (await call("releases.files.note", { id: file.id, body: body.trim() })) setBody("");
   }
   return (
     <div className="sg-row" data-testid={`file-${file.id}`}>
@@ -230,7 +230,7 @@ function VersionRow({ file, what, admin, notes }: { file: FileRow; what: string;
           {audio && <PlayToggle file={file} open={open} onOpen={setOpen} />}
           {file.approved
             ? <span className="chip g" data-testid={`approved-${file.id}`}>Approved</span>
-            : admin && <button type="button" className="btn outline sm" disabled={busy} onClick={() => call("albums.files.approve", { id: file.id, approved: true })} data-testid={`approve-${file.id}`}>Approve</button>}
+            : admin && <button type="button" className="btn outline sm" disabled={busy} onClick={() => call("releases.files.approve", { id: file.id, approved: true })} data-testid={`approve-${file.id}`}>Approve</button>}
           {admin && <button type="button" className="btn danger sm" disabled={busy} data-testid="file-remove"
             onClick={() => confirm(`Remove ${file.title} from this track? ${file.driveFileId ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })}>Remove</button>}
         </span>
@@ -267,12 +267,12 @@ function LinkRow({ file, admin }: { file: FileRow; admin: boolean }) {
   );
 }
 
-function Credits({ d, track }: { d: AlbumData; track: TrackRow }) {
+function Credits({ d, track }: { d: ReleaseData; track: TrackRow }) {
   const { call, error, busy } = useCommand();
   const [who, setWho] = useState("");
   const [role, setRole] = useState("");
   const credits = track.credits ?? [];
-  const save = (next: typeof credits) => call("albums.tracks.update", { albumId: track.albumId, id: track.id, patch: { credits: next } });
+  const save = (next: typeof credits) => call("releases.tracks.update", { releaseId: track.releaseId, id: track.id, patch: { credits: next } });
   async function add() {
     if (!who.trim() || !role.trim()) return;
     if (await save([...credits, { who: who.trim(), role: role.trim() }])) { setWho(""); setRole(""); }
@@ -312,9 +312,9 @@ function Credits({ d, track }: { d: AlbumData; track: TrackRow }) {
   );
 }
 
-function TrackCosts({ albumId, trackId }: { albumId: string; trackId: string }) {
+function TrackCosts({ releaseId, trackId }: { releaseId: string; trackId: string }) {
   const expenses = useCollection<Expense>("expenses");
-  const mine = (expenses.rows ?? []).filter((x) => x.albumTrackId === trackId).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const mine = (expenses.rows ?? []).filter((x) => x.releaseTrackId === trackId).sort((a, b) => (a.date < b.date ? 1 : -1));
   const total = mine.reduce((n, x) => n + x.amount, 0);
   return (
     <section className="grid content-start gap-2.5" aria-labelledby="costs-h">
@@ -329,7 +329,7 @@ function TrackCosts({ albumId, trackId }: { albumId: string; trackId: string }) 
         <div className="flex justify-between gap-3 border-t border-line pt-2 font-bold">
           <span>Total</span><span className="font-mono" data-testid="track-costs-total">{formatCents(total)}</span>
         </div>
-        <Link href={albumHref(albumId, "money")} className="text-sm font-semibold" data-testid="album-money-link">All album money →</Link>
+        <Link href={releaseHref(releaseId, "money")} className="text-sm font-semibold" data-testid="release-money-link">All release money →</Link>
       </div>
     </section>
   );
@@ -344,7 +344,7 @@ function FromSong({ songId }: { songId: string }) {
       <div className="sg-sech">
         <span className="grid gap-0.5">
           <h2 id="from-song-h" className="card-h">From the song</h2>
-          <span className="s">These live on the song and show on every album and setlist that uses it.</span>
+          <span className="s">These live on the song and show on every release and setlist that uses it.</span>
         </span>
         <Link href={`/songs/${songId}`} className="text-sm font-semibold" data-testid="from-song-open">Open song →</Link>
       </div>

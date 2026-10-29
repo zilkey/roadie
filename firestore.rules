@@ -50,9 +50,9 @@ service cloud.firestore {
     }
     match /songs/{id}            { allow read: if band(); }
     match /files/{id}            { allow read: if band(); }
-    // Albums and their tracks (albums/{id}/tracks): admins only for now, reads and writes. The album's money is its project's.
-    match /albums/{id}           { allow read: if isAdmin(); }
-    // Tracks are read under their album and across albums (the song page's "On albums" is a collection-group query on songId).
+    // Releases and their tracks (releases/{id}/tracks): admins only for now, reads and writes. The release's money is its project's.
+    match /releases/{id}           { allow read: if isAdmin(); }
+    // Tracks are read under their release and across releases (the song page's "On releases" is a collection-group query on songId).
     match /{path=**}/tracks/{tid} { allow read: if isAdmin(); }
     match /setlistTemplates/{id} { allow read: if band(); }
     match /setlists/{id}         { allow read: if band(); }
@@ -68,7 +68,7 @@ service cloud.firestore {
     match /expenses/{id} {
       allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);
     }
-    // Projects (Band, Duo, an album, a tour): the buckets money belongs to. The whole band reads them (names, kinds, dates); admins write.
+    // Projects (Band, Duo, a release, a tour): the buckets money belongs to. The whole band reads them (names, kinds, dates); admins write.
     match /projects/{id}         { allow read: if band(); }
     // Income: admins only. Members never see what came in, so never a net either.
     match /income/{id}           { allow read: if isAdmin(); }

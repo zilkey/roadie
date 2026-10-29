@@ -18,7 +18,7 @@ interface Mate { id: string; name: string; email: string }
  */
 export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, placeholder = "Search Drive by song title…", onChange, testid = "picker" }: {
   syncWith?: string; exclude?: string[]; defaultKind?: FileKind;
-  /** The kinds the picked file can be (an album's or a track's kinds instead of a song's). */
+  /** The kinds the picked file can be (a release's or a track's kinds instead of a song's). */
   kinds?: readonly FileKind[];
   /** Offer any kind of file (images, PDFs), not just audio, video and docs. */
   all?: boolean;

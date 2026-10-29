@@ -92,7 +92,7 @@ const SPECIAL: ToolDef[] = [
   },
   {
     name: "search",
-    description: "Find a venue, show, band member, song, album, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate. Needs a name to look for: to count or list records by what they have or lack, use records.list.",
+    description: "Find a venue, show, band member, song, release, promoter, festival, edition (a festival's year), contact (by name or email), pitch or setlist template by name or city in the band's data. Returns {kind, id, name} rows; use the id with records.get or ui.navigate. Needs a name to look for: to count or list records by what they have or lack, use records.list.",
     inputJsonSchema: obj({ q: { type: "string", minLength: 1 }, kinds: { type: "array", items: { type: "string", enum: [...SEARCH_KINDS] } }, limit: { type: "integer", minimum: 1, maximum: 50 } }, ["q"]),
   },
   {

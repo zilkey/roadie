@@ -65,7 +65,7 @@ async function writeFiles(w: Writer, docs: Record<string, unknown>[]) {
 export const driveSearch = defineCommand({
   name: "drive.search",
   roles: ["admin", "mcp"],
-  description: "Search Drive for audio, video, Docs and Word files matching a song title (all:true: any kind of file but folders, for album artwork, PDFs and the like). Each hit says which band members can't open it and whether it is in the band folder.",
+  description: "Search Drive for audio, video, Docs and Word files matching a song title (all:true: any kind of file but folders, for release artwork, PDFs and the like). Each hit says which band members can't open it and whether it is in the band folder.",
   input: z.strictObject({ q: z.string().min(1), all: z.boolean().optional() }),
   async run(ctx, { q, all }) {
     const drive = driveClient({ artistId: ctx.artistId });

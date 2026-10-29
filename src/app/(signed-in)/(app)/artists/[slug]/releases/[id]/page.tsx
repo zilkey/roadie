@@ -12,104 +12,104 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useDragReorder } from "@/lib/drag-reorder";
 import { fmtLen, STATUS_LABEL } from "@/lib/music";
 import { formatCents, projectTotals } from "@/lib/money";
-import { ALBUM_KIND_LONG, ALBUM_STATUSES, ALBUM_STATUS_LABEL, albumMeta, latestMix, mixLabel, sidesOf, totalLength, trackProgress } from "@/lib/albums";
-import { AlbumMissing, StatusPill, albumHref, trackHref, useAlbum, type AlbumData, type AlbumRow, type TrackRow } from "@/components/albums/common";
-import { AlbumMoney } from "@/components/albums/AlbumMoney";
-import { AlbumFiles } from "@/components/albums/AlbumFiles";
-import type { AlbumStatus, Expense, Income, Payout, SetlistTemplate } from "@/schema";
+import { RELEASE_KIND_LONG, RELEASE_STATUSES, RELEASE_STATUS_LABEL, releaseMeta, latestMix, mixLabel, sidesOf, totalLength, trackProgress } from "@/lib/releases";
+import { ReleaseMissing, StatusPill, releaseHref, trackHref, useRelease, type ReleaseData, type ReleaseRow, type TrackRow } from "@/components/releases/common";
+import { ReleaseMoney } from "@/components/releases/ReleaseMoney";
+import { ReleaseFiles } from "@/components/releases/ReleaseFiles";
+import type { ReleaseStatus, Expense, Income, Payout, SetlistTemplate } from "@/schema";
 
 /** "Mar 6, 2027". */
 const fmtDate = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 type Tab = "tracks" | "money" | "files";
 
-export default function AlbumPage() {
+export default function ReleasePage() {
   return <AdminOnly><Suspense fallback={null}><Page /></Suspense></AdminOnly>;
 }
 
 function Page() {
   const { id } = useParams<{ id: string }>();
-  const d = useAlbum(id);
-  if (d.loading && !d.album) return null;
-  if (!d.album) return <AlbumMissing />;
-  return <AlbumView d={d} album={d.album} />;
+  const d = useRelease(id);
+  if (d.loading && !d.release) return null;
+  if (!d.release) return <ReleaseMissing />;
+  return <ReleaseView d={d} release={d.release} />;
 }
 
-function AlbumView({ d, album }: { d: AlbumData; album: AlbumRow }) {
+function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const { admin, tracks } = d;
   const router = useRouter();
   const raw = useSearchParams().get("tab");
   // Money is admins-only, even by URL: a member asking for it gets the tracks.
   const tab: Tab = raw === "files" ? "files" : raw === "money" && admin ? "money" : "tracks";
-  const setTab = (t: Tab) => router.replace(albumHref(album.id, t === "tracks" ? undefined : t), { scroll: false });
+  const setTab = (t: Tab) => router.replace(releaseHref(release.id, t === "tracks" ? undefined : t), { scroll: false });
   const { call, error, busy } = useCommand();
-  const update = async (patch: Record<string, unknown>) => !!(await call("albums.update", { id: album.id, patch }));
-  // The picked status shows at once; once the saved album catches up, it shows the album's again.
-  const [status, setStatus] = useState<AlbumStatus | null>(null);
-  useEffect(() => setStatus(null), [album.status]);
+  const update = async (patch: Record<string, unknown>) => !!(await call("releases.update", { id: release.id, patch }));
+  // The picked status shows at once; once the saved release catches up, it shows the release's again.
+  const [status, setStatus] = useState<ReleaseStatus | null>(null);
+  useEffect(() => setStatus(null), [release.status]);
 
   const p = trackProgress(tracks);
   const n = p.total;
 
   return (
-    <div className="sg-page" data-testid="album-page">
-      <PageTitle back={<BackLink mode="back" href="/albums" label="All albums" />}
+    <div className="sg-page" data-testid="release-page">
+      <PageTitle back={<BackLink mode="back" href="/releases" label="All releases" />}
         title={admin
-          ? <InlineValue testid="field-title" label="Title" kind="text" value={album.title} canEdit validate={(v) => (v.trim() ? null : "An album needs a title")}
+          ? <InlineValue testid="field-title" label="Title" kind="text" value={release.title} canEdit validate={(v) => (v.trim() ? null : "A release needs a title")}
               onSave={(v) => update({ title: v.trim() })} error={error} />
-          : album.title}
+          : release.title}
         actions={admin ? (
-          <Menu label="More actions" testid="album" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
-            items={[{ key: "archive", label: "Archive album", danger: true, disabled: busy, onSelect: async () => {
-              if (confirm(`Archive ${album.title}? Its tracks and album files go with it; its money project is closed, not removed.`) && (await call("albums.remove", { id: album.id }))) router.push("/albums");
+          <Menu label="More actions" testid="release" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
+            items={[{ key: "archive", label: "Archive release", danger: true, disabled: busy, onSelect: async () => {
+              if (confirm(`Archive ${release.title}? Its tracks and release files go with it; its money project is closed, not removed.`) && (await call("releases.remove", { id: release.id }))) router.push("/releases");
             } }]} />
         ) : undefined} />
 
       <section className="card flex flex-wrap items-start gap-5">
-        {album.cover?.url
+        {release.cover?.url
           // eslint-disable-next-line @next/next/no-img-element
-          ? <img src={album.cover.url} alt={`${album.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="album-cover" />
-          : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="album-cover">Cover</div>}
+          ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
+          : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
         <div className="grid min-w-0 flex-1 content-start gap-2">
           <div className="flex flex-wrap items-center gap-3">
             {admin
-              ? <select className="select !w-auto" aria-label="Status" value={status ?? album.status} data-testid="album-status-select"
-                  onChange={async (e) => { const s = e.target.value as AlbumStatus; setStatus(s); if (!(await update({ status: s }))) setStatus(null); }}>
-                  {ALBUM_STATUSES.map((s) => <option key={s} value={s}>{ALBUM_STATUS_LABEL[s]}</option>)}
+              ? <select className="select !w-auto" aria-label="Status" value={status ?? release.status} data-testid="release-status-select"
+                  onChange={async (e) => { const s = e.target.value as ReleaseStatus; setStatus(s); if (!(await update({ status: s }))) setStatus(null); }}>
+                  {RELEASE_STATUSES.map((s) => <option key={s} value={s}>{RELEASE_STATUS_LABEL[s]}</option>)}
                 </select>
-              : <StatusPill status={album.status} testid="album-status" />}
-            <span className="s">{ALBUM_KIND_LONG[album.kind]}</span>
+              : <StatusPill status={release.status} testid="release-status" />}
+            <span className="s">{RELEASE_KIND_LONG[release.kind]}</span>
           </div>
-          <div className="text-[0.9375rem]" data-testid="album-meta">{albumMeta(album, tracks, fmtLen, fmtDate)}</div>
+          <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
-            <span data-testid="album-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
-            {admin && <Spent album={album} />}
+            <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
+            {admin && <Spent release={release} />}
           </div>
         </div>
       </section>
       <ErrorBox error={error} />
 
-      <Tabs<Tab> testid="album-tab" value={tab} onChange={setTab}
+      <Tabs<Tab> testid="release-tab" value={tab} onChange={setTab}
         options={[["tracks", "Tracks"], ...(admin ? [["money", "Money"] as [Tab, string]] : []), ["files", "Files"]]} />
 
       {tab === "tracks" && <>
-        <Tracklist d={d} album={album} />
-        <ReleaseDetails album={album} admin={admin} />
+        <Tracklist d={d} release={release} />
+        <ReleaseDetails release={release} admin={admin} />
       </>}
-      {tab === "money" && admin && <AlbumMoney data={d} />}
-      {tab === "files" && <AlbumFiles data={d} />}
+      {tab === "money" && admin && <ReleaseMoney data={d} />}
+      {tab === "files" && <ReleaseFiles data={d} />}
     </div>
   );
 }
 
-/** "Spent $4,212.00 of $6,000.00": the album project's expenses plus what was paid out on it, against the budget. Admins only. */
-function Spent({ album }: { album: AlbumRow }) {
+/** "Spent $4,212.00 of $6,000.00": the release project's expenses plus what was paid out on it, against the budget. Admins only. */
+function Spent({ release }: { release: ReleaseRow }) {
   const income = useCollection<Income>("income");
   const expenses = useCollection<Expense>("expenses");
   const payouts = useCollection<Payout>("payouts");
-  // The album's project is never the default one, so records without a projectId never count here.
-  const t = projectTotals({ projectId: album.projectId, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
+  // The release's project is never the default one, so records without a projectId never count here.
+  const t = projectTotals({ projectId: release.projectId, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
   const spent = t.outPaid + t.outOwed;
-  return <span data-testid="album-spent">Spent <b>{formatCents(spent)}</b>{album.budget != null ? ` of ${formatCents(album.budget)}` : ""}</span>;
+  return <span data-testid="release-spent">Spent <b>{formatCents(spent)}</b>{release.budget != null ? ` of ${formatCents(release.budget)}` : ""}</span>;
 }
 
 function move<T>(xs: readonly T[], from: number, to: number): T[] {
@@ -119,7 +119,7 @@ function move<T>(xs: readonly T[], from: number, to: number): T[] {
   return out;
 }
 
-function Tracklist({ d, album }: { d: AlbumData; album: AlbumRow }) {
+function Tracklist({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const { admin, tracks, files } = d;
   const { call, error, busy } = useCommand();
   // A dragged order shows at once; once the saved tracks catch up (or the save fails) the tracks' own order shows again.
@@ -136,7 +136,7 @@ function Tracklist({ d, album }: { d: AlbumData; album: AlbumRow }) {
   const dr = useDragReorder(async (from, to) => {
     const ids = move(shown.map((t) => t.id), from, to);
     setOrder(ids);
-    if (!(await call("albums.tracks.reorder", { albumId: album.id, ids }))) setOrder(null);
+    if (!(await call("releases.tracks.reorder", { releaseId: release.id, ids }))) setOrder(null);
   });
   const groups = sidesOf(shown);
   const hasSides = groups.some((g) => g.side);
@@ -156,7 +156,7 @@ function Tracklist({ d, album }: { d: AlbumData; album: AlbumRow }) {
           </div>
         )}
       </div>
-      {admin && panel && <SideBreakPanel album={album} tracks={tracks} hasSides={hasSides} onDone={() => setPanel(false)} />}
+      {admin && panel && <SideBreakPanel release={release} tracks={tracks} hasSides={hasSides} onDone={() => setPanel(false)} />}
       {tracks.length === 0
         ? <div className="empty" data-testid="tracklist"><span>No tracks yet. Add songs or a whole setlist.</span></div>
         : (
@@ -187,10 +187,10 @@ function Tracklist({ d, album }: { d: AlbumData; album: AlbumRow }) {
                         <tr key={t.id} data-testid={`track-row-${t.id}`} {...(admin ? dr.row(i) : {})}>
                           {admin && <td><span className="cursor-grab select-none px-1 text-muted" title="Drag to reorder" aria-label={`Drag ${t.title} to reorder`} data-testid="track-grip" {...dr.handle(i)}>⋮⋮</span></td>}
                           <td className="tabular-nums">{i + 1}</td>
-                          <td><Link href={trackHref(album.id, t.id)} className="nm" data-testid="track-title">{t.title}</Link></td>
+                          <td><Link href={trackHref(release.id, t.id)} className="nm" data-testid="track-title">{t.title}</Link></td>
                           <td><StatusPill status={t.status} kind="track" testid="track-status" /></td>
                           <td className="whitespace-nowrap" data-testid="track-mix">{mixLabel(latestMix(files, t.id))}</td>
-                          <td className="len" data-testid="track-files">{files.filter((f) => f.albumTrackId === t.id).length}</td>
+                          <td className="len" data-testid="track-files">{files.filter((f) => f.releaseTrackId === t.id).length}</td>
                           <td className="len">{t.lengthSec ? fmtLen(t.lengthSec) : <span className="dash">—</span>}</td>
                         </tr>
                       );
@@ -201,20 +201,20 @@ function Tracklist({ d, album }: { d: AlbumData; album: AlbumRow }) {
             </table>
           </div>
         )}
-      <p className="s">Side breaks are optional (for vinyl). Each track points at a song; titles and lengths start from the song and can differ on the album.</p>
+      <p className="s">Side breaks are optional (for vinyl). Each track points at a song; titles and lengths start from the song and can differ on the release.</p>
       <ErrorBox error={error} />
       {busy && <span className="sr-only" role="status">Saving the order…</span>}
-      {admin && <AddTracks d={d} album={album} open={adding} onClose={() => setAdding(false)} sides={groups.flatMap((g) => g.side ?? [])} />}
+      {admin && <AddTracks d={d} release={release} open={adding} onClose={() => setAdding(false)} sides={groups.flatMap((g) => g.side ?? [])} />}
     </section>
   );
 }
 
-function SideBreakPanel({ album, tracks, hasSides, onDone }: { album: AlbumRow; tracks: TrackRow[]; hasSides: boolean; onDone(): void }) {
+function SideBreakPanel({ release, tracks, hasSides, onDone }: { release: ReleaseRow; tracks: TrackRow[]; hasSides: boolean; onDone(): void }) {
   const { call, error, busy } = useCommand();
   const options = tracks.slice(1);
   const [at, setAt] = useState(options[Math.floor(tracks.length / 2) - 1]?.id ?? options[0]?.id ?? "");
   const pick = options.some((t) => t.id === at) ? at : options[0]?.id ?? "";
-  const run = async (atTrackId: string | null) => { if (await call("albums.tracks.sideBreak", { albumId: album.id, atTrackId })) onDone(); };
+  const run = async (atTrackId: string | null) => { if (await call("releases.tracks.sideBreak", { releaseId: release.id, atTrackId })) onDone(); };
   const next = hasSides ? `Side ${String.fromCharCode(65 + new Set(tracks.map((t) => t.side).filter(Boolean)).size)}` : "Side B";
   return (
     <div className="card grid gap-3" data-testid="side-break-panel">
@@ -235,7 +235,7 @@ function SideBreakPanel({ album, tracks, hasSides, onDone }: { album: AlbumRow; 
 
 type From = "songs" | "setlist";
 
-function AddTracks({ d, album, open, onClose, sides }: { d: AlbumData; album: AlbumRow; open: boolean; onClose(): void; sides: string[] }) {
+function AddTracks({ d, release, open, onClose, sides }: { d: ReleaseData; release: ReleaseRow; open: boolean; onClose(): void; sides: string[] }) {
   const { call, error, busy } = useCommand();
   const templates = (useCollection<SetlistTemplate>("setlistTemplates", { skip: !open }).rows ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
   const [from, setFrom] = useState<From>("songs");
@@ -244,7 +244,7 @@ function AddTracks({ d, album, open, onClose, sides }: { d: AlbumData; album: Al
   const [setlistId, setSetlistId] = useState("");
   const [slPicked, setSlPicked] = useState<string[] | null>(null);
   const [where, setWhere] = useState("");
-  const onAlbum = useMemo(() => new Map(d.tracks.map((t) => [t.songId, t.position])), [d.tracks]);
+  const onRelease = useMemo(() => new Map(d.tracks.map((t) => [t.songId, t.position])), [d.tracks]);
   const songById = useMemo(() => new Map(d.songs.map((s) => [s.id, s])), [d.songs]);
 
   // Every open starts fresh.
@@ -259,23 +259,23 @@ function AddTracks({ d, album, open, onClose, sides }: { d: AlbumData; album: Al
     const seen = new Set<string>();
     return (tpl?.items ?? []).flatMap((it) => (it.type === "song" && it.songId && !seen.has(it.songId) ? (seen.add(it.songId), [{ id: it.songId, title: songById.get(it.songId)?.title ?? it.title }]) : []));
   }, [tpl, songById]);
-  // A setlist's songs start ticked (all but the ones already on the album).
-  const slTicked = slPicked ?? tplSongs.filter((s) => !onAlbum.has(s.id)).map((s) => s.id);
+  // A setlist's songs start ticked (all but the ones already on the release).
+  const slTicked = slPicked ?? tplSongs.filter((s) => !onRelease.has(s.id)).map((s) => s.id);
   const chosen = from === "songs" ? picked : tplSongs.map((s) => s.id).filter((x) => slTicked.includes(x));
   const toggle = (list: string[], x: string) => (list.includes(x) ? list.filter((y) => y !== x) : [...list, x]);
 
   async function add() {
-    const r = await call("albums.tracks.add", { albumId: album.id, songIds: chosen, ...(where ? { side: where } : {}) });
+    const r = await call("releases.tracks.add", { releaseId: release.id, songIds: chosen, ...(where ? { side: where } : {}) });
     if (r) onClose();
   }
 
   const meta = (songId: string) => {
     const s = songById.get(songId);
-    const pos = onAlbum.get(songId);
-    return [s?.key, s?.lengthSec ? fmtLen(s.lengthSec) : null, pos ? `on album, track ${pos}` : s ? STATUS_LABEL[s.status].toLowerCase() : null].filter(Boolean).join(" · ");
+    const pos = onRelease.get(songId);
+    return [s?.key, s?.lengthSec ? fmtLen(s.lengthSec) : null, pos ? `on release, track ${pos}` : s ? STATUS_LABEL[s.status].toLowerCase() : null].filter(Boolean).join(" · ");
   };
   const row = (id: string, title: string, on: boolean, flip: () => void) => {
-    const there = onAlbum.has(id);
+    const there = onRelease.has(id);
     return (
       <li key={id}>
         <label className={`hit-row !cursor-pointer${there ? " text-muted" : ""}`}>
@@ -313,7 +313,7 @@ function AddTracks({ d, album, open, onClose, sides }: { d: AlbumData; album: Al
         <fieldset className="grid gap-1">
           <legend className="lbl mb-1">Add to</legend>
           <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2"><input type="radio" name="add-to" checked={!where} onChange={() => setWhere("")} data-testid="add-to-end" /> End of album</label>
+            <label className="flex items-center gap-2"><input type="radio" name="add-to" checked={!where} onChange={() => setWhere("")} data-testid="add-to-end" /> End of release</label>
             {sides.map((s, i) => (
               <label key={s} className="flex items-center gap-2"><input type="radio" name="add-to" checked={where === s} onChange={() => setWhere(s)} data-testid={i === 0 ? "add-to-side" : `add-to-side-${s}`} /> End of Side {s}</label>
             ))}
@@ -330,30 +330,30 @@ function AddTracks({ d, album, open, onClose, sides }: { d: AlbumData; album: Al
   );
 }
 
-function ReleaseDetails({ album, admin }: { album: AlbumRow; admin: boolean }) {
+function ReleaseDetails({ release, admin }: { release: ReleaseRow; admin: boolean }) {
   const { call, error, busy } = useCommand();
   const hasBandFolder = !!useArtist().doc?.driveFolderId;
-  const save = async (patch: Record<string, unknown>) => !!(await call("albums.update", { id: album.id, patch }));
+  const save = async (patch: Record<string, unknown>) => !!(await call("releases.update", { id: release.id, patch }));
   const field = (k: "distributor" | "upc" | "formats", label: string, empty: string) => (
     <div><dt className="lbl">{label}</dt><dd>
       {admin
-        ? <InlineValue testid={`field-${k}`} label={label} kind="text" value={album[k] ?? ""} canEdit emptyLabel={k === "upc" ? "Not yet" : "Add…"} onSave={(v) => save({ [k]: v.trim() || null })} error={error} />
-        : <span className={album[k] ? undefined : "d-muted"} data-testid={`field-${k}`}>{album[k] || empty}</span>}
+        ? <InlineValue testid={`field-${k}`} label={label} kind="text" value={release[k] ?? ""} canEdit emptyLabel={k === "upc" ? "Not yet" : "Add…"} onSave={(v) => save({ [k]: v.trim() || null })} error={error} />
+        : <span className={release[k] ? undefined : "d-muted"} data-testid={`field-${k}`}>{release[k] || empty}</span>}
     </dd></div>
   );
   return (
     <section className="sg-sec" aria-labelledby="release-h">
       <h2 id="release-h" className="sg-lbl">Release details</h2>
-      <dl className="card sg-dl" data-testid="album-details">
+      <dl className="card sg-dl" data-testid="release-details">
         {field("distributor", "Distributor", "Not yet")}
         {field("upc", "UPC", "Not yet")}
         {field("formats", "Formats", "Not set")}
         <div><dt className="lbl">Drive folder</dt><dd>
-          {album.driveFolderId
-            ? <a href={`https://drive.google.com/drive/folders/${album.driveFolderId}`} target="_blank" rel="noreferrer" data-testid="album-folder-link">Band folder / Albums / {album.title}</a>
+          {release.driveFolderId
+            ? <a href={`https://drive.google.com/drive/folders/${release.driveFolderId}`} target="_blank" rel="noreferrer" data-testid="release-folder-link">Band folder / Releases / {release.title}</a>
             : admin
               ? <span className="grid gap-1 justify-items-start">
-                  <button type="button" className="btn outline sm" disabled={busy || !hasBandFolder} onClick={() => call("albums.folder", { id: album.id })} data-testid="make-folder-btn">Make album folder</button>
+                  <button type="button" className="btn outline sm" disabled={busy || !hasBandFolder} onClick={() => call("releases.folder", { id: release.id })} data-testid="make-folder-btn">Make release folder</button>
                   {!hasBandFolder && <span className="s font-normal">Choose the band folder in <Link href="/admin/google" className="underline">Settings › Google</Link> first</span>}
                 </span>
               : <span className="d-muted">None yet</span>}

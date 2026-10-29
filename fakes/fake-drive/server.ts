@@ -44,13 +44,13 @@ function initial(): DriveState {
     add(`fake-chart-${n}-b`, `${t} chart ${k2}.pdf`, MIME.pdf, "ingrid@example.com", i % 3 === 2 ? ["root-ingrid"] : ["fake-folder-charts"], i % 3 === 2 ? ["jeff@example.com"] : all);
     add(`fake-lyrics-${n}`, `${t} lyrics`, MIME.doc, "ingrid@example.com", i % 5 === 4 ? ["root-ingrid"] : [BAND_FOLDER_ID], i % 5 === 4 ? ["jeff@example.com", "emma@example.com"] : all);
   });
-  // The seeded album's folder (Band folder / Albums / Wild Hearts LP) with its mixes and cover, plus a mix not attached yet (to add from Drive).
-  add("fake-folder-albums", "Albums", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
-  add("fake-folder-album-wild-hearts", "Wild Hearts LP", MIME.folder, "jeff@example.com", ["fake-folder-albums"], all);
-  add("fake-album-mix-1", "Low Light v1 rough.wav", MIME.wav, "jeff@example.com", ["fake-folder-album-wild-hearts"], all);
-  add("fake-album-mix-2", "Low Light v2.wav", MIME.wav, "jeff@example.com", ["fake-folder-album-wild-hearts"], all);
-  add("fake-album-mix-3", "Low Light v3 mix.wav", MIME.wav, "jeff@example.com", ["fake-folder-album-wild-hearts"], all);
-  add("fake-album-cover", "Wild Hearts cover 3000px.png", "image/png", "ingrid@example.com", ["fake-folder-album-wild-hearts"], all);
+  // The seeded release's folder (Band folder / Releases / Wild Hearts LP) with its mixes and cover, plus a mix not attached yet (to add from Drive).
+  add("fake-folder-releases", "Releases", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
+  add("fake-folder-release-wild-hearts", "Wild Hearts LP", MIME.folder, "jeff@example.com", ["fake-folder-releases"], all);
+  add("fake-release-mix-1", "Low Light v1 rough.wav", MIME.wav, "jeff@example.com", ["fake-folder-release-wild-hearts"], all);
+  add("fake-release-mix-2", "Low Light v2.wav", MIME.wav, "jeff@example.com", ["fake-folder-release-wild-hearts"], all);
+  add("fake-release-mix-3", "Low Light v3 mix.wav", MIME.wav, "jeff@example.com", ["fake-folder-release-wild-hearts"], all);
+  add("fake-release-cover", "Wild Hearts cover 3000px.png", "image/png", "ingrid@example.com", ["fake-folder-release-wild-hearts"], all);
   add("fake-reh-1", "Rehearsal 2026-10-18 full run.wav", MIME.wav, "jeff@example.com", ["fake-folder-rehearsals"], all.filter((e) => !e.startsWith("emma")));
   add("fake-reh-2", "Rehearsal 2026-10-04 Glass Coast bridge.m4a", MIME.audio, "david@example.com", ["root-david"], ["jeff@example.com"]);
   add("fake-reh-3", "Rehearsal video Ruby Hill ending.mp4", MIME.video, "eric@example.com", ["fake-folder-rehearsals"], all);

@@ -6,21 +6,21 @@ import { useProfile } from "@/lib/auth";
 import { AdminOnly } from "@/components/Guard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { fmtLen } from "@/lib/music";
-import { ALBUM_KIND_LONG, totalLength } from "@/lib/albums";
+import { RELEASE_KIND_LONG, totalLength } from "@/lib/releases";
 import { defaultProject, formatCents, projectTotals } from "@/lib/money";
-import { StatusPill, useAlbums } from "@/components/albums/common";
+import { StatusPill, useReleases } from "@/components/releases/common";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import type { Expense, Income, Payout, Project } from "@/schema";
 
 /** "Mar 6, 2027". */
 const fmtRelease = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-/** Albums is admins-only for now: members are sent back to the Calendar. */
-export default function AlbumsPage() { return <AdminOnly><Albums /></AdminOnly>; }
+/** Releases is admins-only for now: members are sent back to the Calendar. */
+export default function ReleasesPage() { return <AdminOnly><Releases /></AdminOnly>; }
 
-function Albums() {
+function Releases() {
   const admin = useProfile().role === "admin";
-  const { albums, tracks, loading } = useAlbums();
+  const { releases, tracks, loading } = useReleases();
   // Money is admins-only: members never read it.
   const income = useCollection<Income>("income", { skip: !admin });
   const expenses = useCollection<Expense>("expenses", { skip: !admin });
@@ -29,8 +29,8 @@ function Albums() {
 
   const rows = useMemo(() => {
     const def = defaultProject(projects.rows ?? [])?.id;
-    return albums.map((a) => {
-      const mine = tracks.filter((t) => t.albumId === a.id);
+    return releases.map((a) => {
+      const mine = tracks.filter((t) => t.releaseId === a.id);
       const t = admin ? projectTotals({ projectId: a.projectId, defaultProjectId: def, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] }) : null;
       return { a, count: mine.length, len: totalLength(mine), spent: t ? t.outPaid + t.outOwed : 0, earned: t ? t.inReceived + t.inOwed : 0 };
     }).sort((x, y) => {
@@ -40,26 +40,26 @@ function Albums() {
       const dx = x.a.releaseDate ?? "￿", dy = y.a.releaseDate ?? "￿";
       return dx < dy ? -1 : dx > dy ? 1 : x.a.title.localeCompare(y.a.title);
     });
-  }, [albums, tracks, admin, income.rows, expenses.rows, payouts.rows, projects.rows]);
+  }, [releases, tracks, admin, income.rows, expenses.rows, payouts.rows, projects.rows]);
 
-  if (!loading && albums.length === 0) {
+  if (!loading && releases.length === 0) {
     return (
-      <div data-testid="albums-empty">
-        <WelcomeEmpty section="albums" title="No albums yet" hideable={false}
+      <div data-testid="releases-empty">
+        <WelcomeEmpty section="releases" title="No releases yet" hideable={false}
           body="Keep a record's tracks, mixes, artwork, costs and sales in one place. Start from a setlist you already have, or pick songs."
-          actions={admin ? <Link href="/albums/new" className="btn acc" data-testid="start-album-btn">Start an album</Link> : undefined} />
+          actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="start-release-btn">Start a release</Link> : undefined} />
       </div>
     );
   }
 
   return (
-    <div className="grid gap-5" data-testid="albums-page">
-      <PageTitle title="Albums" center actions={admin ? <Link href="/albums/new" className="btn acc" data-testid="add-album-btn">+ Add</Link> : undefined} />
-      <div className="song-tw" data-testid="albums-list">
+    <div className="grid gap-5" data-testid="releases-page">
+      <PageTitle title="Releases" center actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="add-release-btn">+ Add</Link> : undefined} />
+      <div className="song-tw" data-testid="releases-list">
         <table className="song-table">
           <thead>
             <tr>
-              <th scope="col">Album</th>
+              <th scope="col">Release</th>
               <th scope="col">Status</th>
               <th scope="col" className="len">Tracks</th>
               <th scope="col">Release</th>
@@ -69,7 +69,7 @@ function Albums() {
           </thead>
           <tbody>
             {rows.map(({ a, count, len, spent, earned }) => (
-              <tr key={a.id} data-testid={`album-row-${a.id}`}>
+              <tr key={a.id} data-testid={`release-row-${a.id}`}>
                 <td>
                   <div className="flex items-center gap-3 py-2">
                     {a.cover?.url
@@ -77,12 +77,12 @@ function Albums() {
                       ? <img src={a.cover.url} alt="" className="h-10 w-10 shrink-0 rounded-md object-cover" />
                       : <span aria-hidden className="h-10 w-10 shrink-0 rounded-md border border-dashed bg-[var(--empty)]" />}
                     <span className="grid min-w-0">
-                      <Link href={`/albums/${a.id}`} className="nm" data-testid="album-title">{a.title}</Link>
-                      <span className="s">{ALBUM_KIND_LONG[a.kind]}</span>
+                      <Link href={`/releases/${a.id}`} className="nm" data-testid="release-title">{a.title}</Link>
+                      <span className="s">{RELEASE_KIND_LONG[a.kind]}</span>
                     </span>
                   </div>
                 </td>
-                <td><StatusPill status={a.status} testid="album-status" /></td>
+                <td><StatusPill status={a.status} testid="release-status" /></td>
                 <td className="len whitespace-nowrap">{count}{len ? ` · ${fmtLen(len)}` : ""}</td>
                 <td className="whitespace-nowrap">{a.releaseDate ? fmtRelease(a.releaseDate) : <span className="dash">Not set</span>}</td>
                 {admin && <td className="len">{formatCents(spent)}</td>}

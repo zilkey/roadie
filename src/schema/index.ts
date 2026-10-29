@@ -24,7 +24,7 @@ import { StagePlotDocInput } from "./stagePlots";
 import { RehearsalInput } from "./rehearsals";
 import { ExpenseInput } from "./expenses";
 import { ProjectInput } from "./projects";
-import { AlbumInput, AlbumTrackInput } from "./albums";
+import { ReleaseInput, ReleaseTrackInput } from "./releases";
 import { IncomeInput } from "./income";
 import { PayoutInput } from "./payouts";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -62,7 +62,7 @@ export * from "./rehearsals";
 export * from "./stagePlots";
 export * from "./expenses";
 export * from "./projects";
-export * from "./albums";
+export * from "./releases";
 export * from "./income";
 export * from "./payouts";
 export * from "./driving";
@@ -116,8 +116,8 @@ export const collections: Record<string, CollectionDef> = {
   rehearsals: { input: RehearsalInput },
   expenses: { input: ExpenseInput },
   projects: { input: ProjectInput },
-  albums: { input: AlbumInput },
-  tracks: { input: AlbumTrackInput },
+  releases: { input: ReleaseInput },
+  tracks: { input: ReleaseTrackInput },
   income: { input: IncomeInput },
   payouts: { input: PayoutInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },

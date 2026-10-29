@@ -115,10 +115,10 @@ export const SHOW_TOPICS: HelpTopic[] = [
     id: "projects",
     title: "Projects",
     text: [
-      "A project is a bucket money belongs to: Band (the default), Duo, an album, a tour, a music video, or anything else. Every income, expense and payout is on exactly one project; a record with none counts as Band. A show has a project too, set from its configuration, and its money lands there.",
+      "A project is a bucket money belongs to: Band (the default), Duo, a release, a tour, a music video, or anything else. Every income, expense and payout is on exactly one project; a record with none counts as Band. A show has a project too, set from its configuration, and its money lands there.",
       "Admins see the Projects tab on the Money page: a table of Project, Kind, When, In, Out and Net, with closed projects folded away. \"New project\" asks for a name, kind and dates, and saves with \"Add\". A project page shows Spent, In so far, Net (owed amounts included), We owe, Money in and Money out tabs and spent by category; a show that hasn't happened yet stays out of Money in and the tiles until its date; its name and dates edit in place, and each record's name, amount and project edit in place (a record that belongs to a show links to the show instead of editing its name here), and \"Close project\" keeps it readable but takes nothing new. A project is never deleted.",
       "Members see the list too, just names, kinds and dates, so they can pick a project when they add an expense.",
-      "An album has a project of its own, made with it: the album's Money tab is that project's money, measured against the album's budget. Tours aren't attached to projects yet.",
+      "A release has a project of its own, made with it: the release's Money tab is that project's money, measured against the release's budget. Tours aren't attached to projects yet.",
     ].join("\n\n"),
     related: ["money", "income", "expenses", "payouts"],
   },

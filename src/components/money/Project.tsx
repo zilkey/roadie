@@ -13,7 +13,7 @@ import { projectWhen } from "./Projects";
 import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
-import type { Album, Expense, Income, Musician, Payout, Project as ProjectDoc, User } from "@/schema";
+import type { Release, Expense, Income, Musician, Payout, Project as ProjectDoc, User } from "@/schema";
 
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -107,8 +107,8 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
   const payouts = useCollection<Payout>("payouts");
   const users = useCollection<User>("users");
   const musicians = useCollection<Musician>("musicians");
-  const albums = useCollection<Album>("albums", { where: [["projectId", "==", project.id]] });
-  const album = albums.rows?.[0];
+  const releases = useCollection<Release>("releases", { where: [["projectId", "==", project.id]] });
+  const release = releases.rows?.[0];
   const { call, error, busy } = useCommand();
   const [modal, setModal] = useState<{ kind: "in" | "out"; defaults?: MoneyDefaults } | null>(null);
   const [flow, setFlow] = useState<Flow>("in");
@@ -136,7 +136,7 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
       <PageTitle
         back={<Link href="/money/projects" className="back-link" data-testid="back">‹ Projects</Link>}
         title={<InlineValue testid="project-name" label="Project name" kind="text" value={project.name} canEdit onSave={(v) => update({ name: v })} error={error} validate={(v) => (v ? null : "A project needs a name.")} />}
-        sub={<>{PROJECT_KIND_LABEL[project.kind] ?? project.kind}{projectWhen(project) && ` · ${projectWhen(project)}`} · <span data-testid="project-status">{closed ? "closed" : "open"}</span>{album && <> · <Link href={`/albums/${album.id}`} className="font-semibold" data-testid="project-album-link">Open album</Link></>}</>}
+        sub={<>{PROJECT_KIND_LABEL[project.kind] ?? project.kind}{projectWhen(project) && ` · ${projectWhen(project)}`} · <span data-testid="project-status">{closed ? "closed" : "open"}</span>{release && <> · <Link href={`/releases/${release.id}`} className="font-semibold" data-testid="project-release-link">Open release</Link></>}</>}
         actions={
           <>
             <button className="btn acc" disabled={closed} data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>

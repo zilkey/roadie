@@ -68,6 +68,7 @@
     "migrate:email-threads": "tsx scripts/migrate-email-threads.ts",
     "migrate:band-notes": "tsx scripts/migrate-band-notes.ts",
     "migrate:money": "tsx scripts/migrate-money.ts",
+    "migrate:releases": "tsx scripts/migrate-releases.ts",
     "test:all": "tsx scripts/test-all.ts"
   },
   "dependencies": {

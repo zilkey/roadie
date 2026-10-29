@@ -176,7 +176,7 @@ export default async function Home() {
             <p className="lede">I&apos;m building what working musicians ask for. These are coming, not here yet.</p>
           </div>
           <div className="chips">
-            {["Printable setlists", "Scheduled posts to Instagram, Facebook, YouTube and TikTok", "Stage plots for venues", "Fan sign-up QR codes", "Merch links", "Albums"].map((c) => <span key={c}>{c}</span>)}
+            {["Printable setlists", "Scheduled posts to Instagram, Facebook, YouTube and TikTok", "Stage plots for venues", "Fan sign-up QR codes", "Merch links", "Releases"].map((c) => <span key={c}>{c}</span>)}
           </div>
         </div>
       </section>

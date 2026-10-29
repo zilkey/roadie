@@ -134,14 +134,14 @@ test("the artist's links are stored normalized, and unsupported platforms are le
   assert.deepEqual(links, BAND_LINKS);
 
   // ...and the roster itself is normalized: https only, no display or tracking parameters, and Spotify is the
-  // artist PAGE rather than an album (src/server/integrations/spotify.ts wants an artist id).
+  // artist PAGE rather than a release (src/server/integrations/spotify.ts wants an artist id).
   for (const [k, v] of Object.entries(links)) {
     assert.ok(v.startsWith("https://"), `${k} is https, not plain http`);
     assert.ok(!/[?&](si|lang)=/.test(v), `${k} carries no share token or display parameter`);
   }
   if (links.spotify) {
-    assert.match(links.spotify, /open\.spotify\.com\/artist\/[A-Za-z0-9]+$/, "the artist page, not an album");
-    assert.ok(!links.spotify.includes("/album/"), "not an album link");
+    assert.match(links.spotify, /open\.spotify\.com\/artist\/[A-Za-z0-9]+$/, "the artist page, not a release");
+    assert.ok(!links.spotify.includes("/release/"), "not a release link");
   }
 
   // Only the eleven ARTIST_LINKS keys exist (it is a strict object), so a platform with no key is left out rather

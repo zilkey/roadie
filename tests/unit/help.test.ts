@@ -7,7 +7,7 @@ import { needsConfirm, isEligible } from "@/server/assistant/policy";
 import { routeNames } from "@/lib/routes";
 import type { Ctx } from "@/server/ctx";
 
-const ASKED = ["upcomingShows", "playedShows", "canceledShows", "droppedShows", "booking", "pitch", "pitchStatuses", "venueSharing", "songs", "setlists", "income", "expenses", "payouts", "projects", "checklists", "customFields", "setlistTemplates", "rehearsals", "albums", "albumPage", "albumMoney", "albumFiles", "albumTrack"];
+const ASKED = ["upcomingShows", "playedShows", "canceledShows", "droppedShows", "booking", "pitch", "pitchStatuses", "venueSharing", "songs", "setlists", "income", "expenses", "payouts", "projects", "checklists", "customFields", "setlistTemplates", "rehearsals", "releases", "releasePage", "releaseMoney", "releaseFiles", "releaseTrack"];
 
 test("help: every asked-for topic exists, has text, and links only to real topics", () => {
   const ids = new Set(HELP_TOPICS.map((t) => t.id));

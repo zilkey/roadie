@@ -18,8 +18,8 @@ import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/componen
 import { Upload } from "@/components/music/Upload";
 import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 import { useCollection } from "@/lib/firestore-hooks";
-import { trackHref } from "@/components/albums/common";
-import type { Album, AlbumTrack } from "@/schema";
+import { trackHref } from "@/components/releases/common";
+import type { Release, ReleaseTrack } from "@/schema";
 
 export default function SongPage() {
   const { id } = useParams<{ id: string }>();
@@ -202,7 +202,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
         </dl>
       </section>
 
-      {admin && <OnAlbums songId={song.id} />}
+      {admin && <OnReleases songId={song.id} />}
 
       <section className="sg-sec" aria-labelledby="song-files-h">
         <div className="sg-sech">
@@ -259,22 +259,22 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   );
 }
 
-/** The albums this song is on: one link per track, to the track page. Admins only, like Albums itself. */
-function OnAlbums({ songId }: { songId: string }) {
-  const tracks = useCollection<AlbumTrack>("tracks", { group: true, where: [["songId", "==", songId]] });
-  const albums = useCollection<Album>("albums");
+/** The releases this song is on: one link per track, to the track page. Admins only, like Releases itself. */
+function OnReleases({ songId }: { songId: string }) {
+  const tracks = useCollection<ReleaseTrack>("tracks", { group: true, where: [["songId", "==", songId]] });
+  const releases = useCollection<Release>("releases");
   const rows = (tracks.rows ?? []).flatMap((t) => {
-    const a = albums.rows?.find((x) => x.id === t.albumId);
+    const a = releases.rows?.find((x) => x.id === t.releaseId);
     return a ? [{ t, a }] : [];
   }).sort((x, y) => (y.a.releaseDate ?? "").localeCompare(x.a.releaseDate ?? "") || x.a.title.localeCompare(y.a.title));
   return (
-    <section className="sg-sec" aria-labelledby="song-albums-h" data-testid="on-albums">
-      <h2 id="song-albums-h" className="sg-lbl">On albums</h2>
+    <section className="sg-sec" aria-labelledby="song-releases-h" data-testid="on-releases">
+      <h2 id="song-releases-h" className="sg-lbl">On releases</h2>
       <div className="card">
         {rows.length === 0
-          ? <span className="s">Not on an album yet.</span>
+          ? <span className="s">Not on a release yet.</span>
           : rows.map(({ t, a }) => (
-            <Link key={t.id} href={trackHref(a.id, t.id)} className="font-semibold" data-testid={`on-album-${a.id}`}>{a.title} · Track {t.position}</Link>
+            <Link key={t.id} href={trackHref(a.id, t.id)} className="font-semibold" data-testid={`on-release-${a.id}`}>{a.title} · Track {t.position}</Link>
           ))}
       </div>
     </section>
