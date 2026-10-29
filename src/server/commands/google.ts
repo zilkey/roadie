@@ -169,7 +169,7 @@ export const googleFindFolders = defineCommand({
 });
 
 /** The folder an admin pasted or picked, as Drive shows it to the band's Google account; refuses files and folders Drive can't find. */
-async function chosenFolder(artistId: string, folder: string) {
+export async function chosenFolder(artistId: string, folder: string) {
   const id = folderIdFrom(folder);
   if (!id) throw new AppError("invalid_input", "That isn't a Drive folder link", 400);
   if (!(await driveReady(artistId))) throw new AppError("drive_not_connected", "Connect Drive on the band's Google account first", 400);
@@ -181,6 +181,16 @@ async function chosenFolder(artistId: string, folder: string) {
   if (f.mimeType !== FOLDER_MIME) throw new AppError("invalid_input", `${f.name} is a file, not a folder`, 400);
   return f;
 }
+
+export const googleFolder = defineCommand({
+  name: "google.folder", roles: ["admin"],
+  description: "Read-only: a Drive folder by id or link, as the band's Google account sees it ({ id, name, url }), for picking a folder in a form.",
+  input: z.strictObject({ folder: z.string().trim().min(1) }),
+  async run(ctx, { folder }) {
+    const f = await chosenFolder(artistOf(ctx), folder);
+    return { id: f.id, name: f.name, url: f.webViewLink };
+  },
+});
 
 export const googleSetBandFolder = defineCommand({
   name: "google.setBandFolder", roles: ["admin"],
@@ -284,4 +294,4 @@ export const googleSetSongwritingFolder = defineCommand({
   },
 });
 
-export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleSetBandFolder, googleSetChartsFolder, googleSetDemosFolder, googleSetSongwritingFolder, googleSetRehearsalFolder];
+export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleFolder, googleSetBandFolder, googleSetChartsFolder, googleSetDemosFolder, googleSetSongwritingFolder, googleSetRehearsalFolder];

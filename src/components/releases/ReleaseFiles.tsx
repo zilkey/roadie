@@ -63,7 +63,7 @@ export function ReleaseFiles({ data }: { data: ReleaseData }) {
       <ErrorBox error={error} />
 
       {RELEASE_FILE_GROUPS.map((g) => (
-        <FileGroup key={g.kind} releaseId={release.id} kind={g.kind} label={g.label} hint={g.hint} admin={data.admin}
+        <FileGroup key={g.kind} releaseId={release.id} hasFolder={!!release.driveFolderId} kind={g.kind} label={g.label} hint={g.hint} admin={data.admin}
           files={files.filter((f) => f.kind === g.kind)} exclude={files.flatMap((f) => f.driveFileId ?? [])} />
       ))}
 
@@ -86,8 +86,8 @@ export function ReleaseFiles({ data }: { data: ReleaseData }) {
   );
 }
 
-function FileGroup({ releaseId, kind, label, hint, admin, files, exclude }: {
-  releaseId: string; kind: FileKind; label: string; hint: string; admin: boolean; files: FileRow[]; exclude: string[];
+function FileGroup({ releaseId, hasFolder, kind, label, hint, admin, files, exclude }: {
+  releaseId: string; hasFolder: boolean; kind: FileKind; label: string; hint: string; admin: boolean; files: FileRow[]; exclude: string[];
 }) {
   const { call, error, busy } = useCommand();
   const artistDoc = useArtist().doc;
@@ -110,8 +110,8 @@ function FileGroup({ releaseId, kind, label, hint, admin, files, exclude }: {
         {admin && (
           <div className="flex flex-wrap items-start gap-2">
             <Upload url={`/api/releases/${encodeURIComponent(releaseId)}/files`} fields={{ kind }} label="Upload" accept={kind === "artwork" ? "image/*" : "*/*"}
-              testid={`release-upload-${kind}`} disabled={!artistDoc?.driveFolderId} tooBig="Put it in Drive yourself and add it from Drive."
-              needsFolder={<>Choose the band folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
+              testid={`release-upload-${kind}`} disabled={!hasFolder && !artistDoc?.driveFolderId} tooBig="Put it in Drive yourself and add it from Drive."
+              needsFolder={<>Make the release folder (under Tracks) or choose the band folder on <Link href="/admin/google" className="underline">Settings &gt; Google</Link> to upload.</>} />
             <button type="button" className="btn acc" onClick={() => setAdding(!adding)} aria-expanded={adding} data-testid={`add-from-drive-${kind}`}>{adding ? "Cancel" : "+ Add from Drive"}</button>
           </div>
         )}

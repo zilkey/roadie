@@ -16,7 +16,7 @@ test("Releases sits next to Songs; the index shows the seeded release with its t
   await openTab(page, "releases");
   await expect(page.getByTestId("releases-page")).toBeVisible();
   const row = page.locator('[data-testid^="release-row-"]', { hasText: "Wild Hearts LP" });
-  await expect(row).toContainText("Mixing");
+  await expect(row.getByTestId("release-progress")).toHaveText(/Tracked 10\/10 · Mixed \d+\/10 · Mastered 0\/10/);
   await expect(row).toContainText("10 · ");
   await expect(row).toContainText("Mar 6, 2027");
   // Spent = the release project's expenses (3 days tracking + mix revisions); Earned = its income, received or owed
@@ -28,7 +28,6 @@ test("Releases sits next to Songs; the index shows the seeded release with its t
   await expect(page.getByTestId("release-meta")).toContainText("10 tracks");
   await expect(page.getByTestId("release-progress")).toHaveText(/Tracked 10\/10 · Mixed 6\/10 · Mastered 0\/10/);
   await expect(page.getByTestId("release-spent")).toContainText("$2,100.00");
-  await expect(page.getByTestId("release-spent")).toContainText("$6,000.00");
   // the tracklist has two sides and the latest mix per track
   await expect(page.getByTestId("side-A")).toBeVisible();
   await expect(page.getByTestId("side-B")).toBeVisible();
@@ -55,16 +54,31 @@ test("a new release from a setlist template gets its own project; tracks are add
   await expect(page.getByTestId("new-release")).toBeVisible();
   await page.getByTestId("release-title").fill("Night Shift EP");
   await page.getByTestId("release-kind-ep").check();
-  await page.getByTestId("release-status").selectOption("recording");
-  await page.getByTestId("release-budget").fill("1500");
-  await page.getByTestId("start-setlist").check();
-  await page.getByTestId("start-setlist-select").selectOption({ label: "Release set" });
+  // the release folder is picked right here, from anywhere in Drive: by name, with Change / Clear, or by pasting a link
+  await page.getByTestId("release-folder-q").fill("Rehearsal");
+  await page.getByTestId("release-folder-search").click();
+  await page.getByTestId("release-folder-hit-Rehearsal recordings").getByTestId("release-folder-choose").click();
+  await expect(page.getByTestId("release-folder-picked")).toContainText("Rehearsal recordings");
+  await page.getByTestId("release-folder-change").click();
+  await page.getByTestId("release-folder-q").fill("https://drive.google.com/drive/folders/fake-folder-demos?usp=sharing");
+  await page.getByTestId("release-folder-search").click();
+  await expect(page.getByTestId("release-folder-picked")).toContainText("Demos");
   await page.getByTestId("create-release").click();
   await expect(page.getByTestId("release-page")).toBeVisible();
   const releaseId = idFromUrl(page, "releases");
   await expect(page.getByTestId("page-title")).toContainText("Night Shift EP");
-  await expect(page.getByTestId("release-status-select")).toHaveValue("recording");
+  // no status of its own, no tracks yet; the folder is the one picked
+  await expect(page.getByTestId("release-status-select")).toHaveCount(0);
+  await expect(page.getByTestId("tracklist")).toContainText("No tracks yet");
+  await expect(page.getByTestId("release-folder-link")).toContainText("Demos");
+
+  // the tracklist comes after creating: from the setlist, in its order
   const rows = page.locator('[data-testid^="track-row-"]');
+  await page.getByTestId("add-tracks-btn").click();
+  await expect(page.getByTestId("add-tracks-dialog")).toBeVisible();
+  await page.getByTestId("add-from-setlist").click();
+  await page.getByTestId("pick-setlist").selectOption({ label: "Release set" });
+  await page.getByTestId("add-tracks-submit").click();
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText("Kerosene");
   await expect(rows.nth(1)).toContainText("Gold Hour");
@@ -168,17 +182,16 @@ test("a track's page: status steps, a mix added from Drive becomes v3, approving
   await expect(page.getByTestId("release-progress")).toHaveText(/Mastered 1\/10/);
 });
 
-test("the Money tab: budget, spent, earned and net, lines with their track, income added with a record category; Files: artwork and an upload", async ({ page }) => {
+test("the Money tab: spent, earned and net, lines with their track, income added with a record category; Files: artwork and an upload", async ({ page }) => {
   await signInAs(page, "jeff");
   await page.goto(A("/releases"));
   await page.locator('[data-testid^="release-row-"]', { hasText: "Wild Hearts LP" }).getByTestId("release-title").click();
   await page.getByTestId("release-tab-money").click();
   await expect(page.getByTestId("release-money")).toBeVisible();
-  await expect(page.getByTestId("release-budget")).toContainText("$6,000.00");
+  await expect(page.getByTestId("tile-budget")).toHaveCount(0);
   await expect(page.getByTestId("release-spent-amount")).toHaveText("$2,100.00");
   await expect(page.getByTestId("tile-earned")).toContainText("$584.00");
   await expect(page.getByTestId("tile-net")).toContainText("−$1,516.00");
-  await expect(page.getByTestId("budget-left")).toContainText("35% of budget spent");
   const lines = page.getByTestId("release-lines");
   await expect(lines.locator('[data-testid^="line-expense-"]', { hasText: "Mix v2 revisions" })).toContainText("3 · Low Light");
   await page.getByTestId("lines-filter").selectOption("income");
@@ -198,12 +211,6 @@ test("the Money tab: budget, spent, earned and net, lines with their track, inco
   await expect(page.getByTestId("money-in-modal")).toBeHidden();
   await expect(lines.locator('[data-testid^="line-income-"]', { hasText: "Pre-order sales" })).toContainText("Pre-orders");
   await expect(page.getByTestId("tile-earned")).toContainText("$1,364.00");
-  // the budget edits in place
-  await page.getByTestId("release-budget").click();
-  await page.getByTestId("release-budget-input").fill("7000");
-  await page.getByTestId("release-budget-input").press("Enter");
-  await expect(page.getByTestId("release-budget")).toContainText("$7,000.00");
-  await expect(page.getByTestId("budget-left")).toContainText("30% of budget spent");
 
   // Files: the cover sits under Artwork; an upload lands in the release folder
   await page.getByTestId("release-tab-files").click();

@@ -2,8 +2,8 @@
 import Link, { useArtist } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { RELEASE_STATUS_LABEL, TRACK_STATUS_LABEL, sortTracks } from "@/lib/releases";
-import type { Release, ReleaseStatus, ReleaseTrack, FileDoc, Musician, Project, Song, TrackStatus } from "@/schema";
+import { TRACK_STATUS_LABEL, sortTracks } from "@/lib/releases";
+import type { Release, ReleaseTrack, FileDoc, Musician, Project, Song, TrackStatus } from "@/schema";
 
 export type ReleaseRow = Row<Release>;
 export type TrackRow = Row<ReleaseTrack>;
@@ -38,10 +38,10 @@ export function useRelease(id: string) {
 }
 export type ReleaseData = ReturnType<typeof useRelease>;
 
-/** A status pill: the release's or a track's. Released and Mastered read as done (green). */
-export function StatusPill({ status, kind = "release", testid }: { status: ReleaseStatus | TrackStatus; kind?: "release" | "track"; testid?: string }) {
-  const label = kind === "release" ? RELEASE_STATUS_LABEL[status as ReleaseStatus] : TRACK_STATUS_LABEL[status as TrackStatus];
-  const done = status === "released" || status === "mastered" || status === "mixed";
+/** A track's status pill. Mixed and Mastered read as done (green). */
+export function StatusPill({ status, testid }: { status: TrackStatus; testid?: string }) {
+  const label = TRACK_STATUS_LABEL[status];
+  const done = status === "mastered" || status === "mixed";
   return <span className={`pill${done ? " ok" : ""}`} data-testid={testid}>{label}</span>;
 }
 

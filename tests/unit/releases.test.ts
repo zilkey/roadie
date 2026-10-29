@@ -101,10 +101,11 @@ test("nav and routes: Releases sits after Songs for admins only and starts in Mo
 });
 
 test("releases.create: its project, the tracklist from a setlist (breaks skipped) then songs, deduped; the release folder in Drive", async () => {
-  const r = await cmd("releases.create", { title: "Wild Hearts LP", kind: "album", budget: 600000, releaseDate: "2027-03-06", setlistId: templateId, songIds: [songs[0], songs[3]], makeFolder: true });
+  const r = await cmd("releases.create", { title: "Wild Hearts LP", kind: "album", releaseDate: "2027-03-06", setlistId: templateId, songIds: [songs[0], songs[3]], makeFolder: true });
   const release = (await db.get("releases", r.id))!;
   assert.equal(release.projectId, r.projectId);
-  assert.equal(release.budget, 600000);
+  assert.equal(release.status, undefined, "a release has no status of its own");
+  assert.equal(release.budget, undefined, "nor a budget");
   const project = (await db.get("projects", r.projectId))!;
   assert.equal(project.kind, "release");
   assert.equal(project.name, "Wild Hearts LP");
@@ -114,6 +115,7 @@ test("releases.create: its project, the tracklist from a setlist (breaks skipped
   assert.equal(r.trackIds.length, 4);
   assert.equal(r.folder.name, "Wild Hearts LP");
   assert.equal((await db.get("releases", r.id))!.driveFolderId, r.folder.id);
+  assert.equal((await db.get("releases", r.id))!.driveFolderName, "Wild Hearts LP");
   // Band folder / Releases / {title}: the Releases folder is found (or made) in the band folder; a second release goes beside the first
   const second = await cmd("releases.create", { title: "EP two", makeFolder: true });
   assert.notEqual(second.folder.id, r.folder.id);
@@ -121,15 +123,23 @@ test("releases.create: its project, the tracklist from a setlist (breaks skipped
   assert.equal((await cmd("releases.folder", { id: r.id })).id, r.folder.id);
 
   // renaming the release renames its project; members can't write
-  await cmd("releases.update", { id: r.id, patch: { title: "Wild Hearts", status: "mixing", budget: null } });
+  await cmd("releases.update", { id: r.id, patch: { title: "Wild Hearts" } });
   assert.equal((await db.get("projects", r.projectId))!.name, "Wild Hearts");
-  assert.equal((await db.get("releases", r.id))!.budget, undefined);
+  await assert.rejects(cmd("releases.update", { id: r.id, patch: { status: "mixing" } }), "status is not a release field any more");
+  await assert.rejects(cmd("releases.update", { id: r.id, patch: { budget: 100 } }), "nor is budget");
   for (const n of ["releases.create", "releases.update", "releases.remove", "releases.tracks.add", "releases.tracks.update", "releases.files.attach", "releases.files.approve"]) assert.ok(!registry[n].roles.includes("member"), n);
   // no band folder: the release is still made, without a folder
   await db.update(ctx, "artists", TEST_ARTIST, { driveFolderId: "" });
   const bare = await cmd("releases.create", { title: "EP", kind: "ep", makeFolder: true });
   assert.equal(bare.folder, null);
   await code(cmd("releases.folder", { id: bare.id }), "no_band_folder");
+  // a folder picked at creation can be anywhere in Drive (no band folder needed): by id or link; a file or an unknown folder is refused
+  const picked = await cmd("releases.create", { title: "Picked", driveFolderId: "https://drive.google.com/drive/folders/fake-folder-rehearsals?usp=sharing" });
+  assert.deepEqual([picked.folder.id, picked.folder.name], ["fake-folder-rehearsals", "Rehearsal recordings"]);
+  assert.equal((await db.get("releases", picked.id))!.driveFolderName, "Rehearsal recordings");
+  assert.equal((await cmd("releases.folder", { id: picked.id })).id, "fake-folder-rehearsals");
+  await code(cmd("releases.create", { title: "Bad", driveFolderId: "fake-release-mix-1" }), "invalid_input");
+  await code(cmd("releases.create", { title: "Bad", driveFolderId: "nope-not-a-folder" }), "not_found");
 });
 
 test("tracks: add (skipping songs already on), reorder keeps the side breaks by position, side breaks, remove renumbers, update", async () => {
@@ -250,7 +260,7 @@ test("Roadie: releases are a tool group, search finds them, the cards read plain
   const hits = await searchAll(ctx, { q: "wild hearts" });
   assert.deepEqual(hits.results.map((r) => [r.kind, r.id]), [["release", id]]);
   assert.equal((await cmd("records.get", { kind: "releases", id })).title, "Wild Hearts LP");
-  assert.equal(summarize("releases.create", { title: "Wild Hearts LP", kind: "album", budget: 600000, setlistId: "s" }), "Start the album Wild Hearts LP (budget $6,000.00), with its own money project and a tracklist");
+  assert.equal(summarize("releases.create", { title: "Wild Hearts LP", kind: "album", setlistId: "s" }), "Start the album Wild Hearts LP, with its own money project and a tracklist");
   assert.equal(summarize("releases.tracks.add", { releaseId: id, songIds: ["a", "b"] }, undefined, { title: "Wild Hearts LP" }), "Put 2 songs on the release Wild Hearts LP");
   assert.equal(summarize("releases.files.approve", { id: "f", approved: true }, undefined, { title: "Mix v4" }), "Sign off Mix v4: the track moves on");
   assert.ok(needsConfirm("releases.remove", { id }));

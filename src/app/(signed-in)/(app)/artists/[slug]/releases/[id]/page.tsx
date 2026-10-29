@@ -12,11 +12,11 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useDragReorder } from "@/lib/drag-reorder";
 import { fmtLen, STATUS_LABEL } from "@/lib/music";
 import { formatCents, projectTotals } from "@/lib/money";
-import { RELEASE_KIND_LONG, RELEASE_STATUSES, RELEASE_STATUS_LABEL, releaseMeta, latestMix, mixLabel, sidesOf, totalLength, trackProgress } from "@/lib/releases";
+import { RELEASE_KIND_LONG, releaseMeta, latestMix, mixLabel, sidesOf, totalLength, trackProgress } from "@/lib/releases";
 import { ReleaseMissing, StatusPill, releaseHref, trackHref, useRelease, type ReleaseData, type ReleaseRow, type TrackRow } from "@/components/releases/common";
 import { ReleaseMoney } from "@/components/releases/ReleaseMoney";
 import { ReleaseFiles } from "@/components/releases/ReleaseFiles";
-import type { ReleaseStatus, Expense, Income, Payout, SetlistTemplate } from "@/schema";
+import type { Expense, Income, Payout, SetlistTemplate } from "@/schema";
 
 /** "Mar 6, 2027". */
 const fmtDate = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -43,9 +43,6 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const setTab = (t: Tab) => router.replace(releaseHref(release.id, t === "tracks" ? undefined : t), { scroll: false });
   const { call, error, busy } = useCommand();
   const update = async (patch: Record<string, unknown>) => !!(await call("releases.update", { id: release.id, patch }));
-  // The picked status shows at once; once the saved release catches up, it shows the release's again.
-  const [status, setStatus] = useState<ReleaseStatus | null>(null);
-  useEffect(() => setStatus(null), [release.status]);
 
   const p = trackProgress(tracks);
   const n = p.total;
@@ -70,15 +67,7 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
           ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
           : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
         <div className="grid min-w-0 flex-1 content-start gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            {admin
-              ? <select className="select !w-auto" aria-label="Status" value={status ?? release.status} data-testid="release-status-select"
-                  onChange={async (e) => { const s = e.target.value as ReleaseStatus; setStatus(s); if (!(await update({ status: s }))) setStatus(null); }}>
-                  {RELEASE_STATUSES.map((s) => <option key={s} value={s}>{RELEASE_STATUS_LABEL[s]}</option>)}
-                </select>
-              : <StatusPill status={release.status} testid="release-status" />}
-            <span className="s">{RELEASE_KIND_LONG[release.kind]}</span>
-          </div>
+          <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
           <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
             <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
@@ -101,7 +90,7 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   );
 }
 
-/** "Spent $4,212.00 of $6,000.00": the release project's expenses plus what was paid out on it, against the budget. Admins only. */
+/** "Spent $4,212.00": the release project's expenses plus what was paid out on it. Admins only. */
 function Spent({ release }: { release: ReleaseRow }) {
   const income = useCollection<Income>("income");
   const expenses = useCollection<Expense>("expenses");
@@ -109,7 +98,7 @@ function Spent({ release }: { release: ReleaseRow }) {
   // The release's project is never the default one, so records without a projectId never count here.
   const t = projectTotals({ projectId: release.projectId, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] });
   const spent = t.outPaid + t.outOwed;
-  return <span data-testid="release-spent">Spent <b>{formatCents(spent)}</b>{release.budget != null ? ` of ${formatCents(release.budget)}` : ""}</span>;
+  return <span data-testid="release-spent">Spent <b>{formatCents(spent)}</b></span>;
 }
 
 function move<T>(xs: readonly T[], from: number, to: number): T[] {
@@ -188,7 +177,7 @@ function Tracklist({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
                           {admin && <td><span className="cursor-grab select-none px-1 text-muted" title="Drag to reorder" aria-label={`Drag ${t.title} to reorder`} data-testid="track-grip" {...dr.handle(i)}>⋮⋮</span></td>}
                           <td className="tabular-nums">{i + 1}</td>
                           <td><Link href={trackHref(release.id, t.id)} className="nm" data-testid="track-title">{t.title}</Link></td>
-                          <td><StatusPill status={t.status} kind="track" testid="track-status" /></td>
+                          <td><StatusPill status={t.status} testid="track-status" /></td>
                           <td className="whitespace-nowrap" data-testid="track-mix">{mixLabel(latestMix(files, t.id))}</td>
                           <td className="len" data-testid="track-files">{files.filter((f) => f.releaseTrackId === t.id).length}</td>
                           <td className="len">{t.lengthSec ? fmtLen(t.lengthSec) : <span className="dash">—</span>}</td>
@@ -350,7 +339,7 @@ function ReleaseDetails({ release, admin }: { release: ReleaseRow; admin: boolea
         {field("formats", "Formats", "Not set")}
         <div><dt className="lbl">Drive folder</dt><dd>
           {release.driveFolderId
-            ? <a href={`https://drive.google.com/drive/folders/${release.driveFolderId}`} target="_blank" rel="noreferrer" data-testid="release-folder-link">Band folder / Releases / {release.title}</a>
+            ? <a href={`https://drive.google.com/drive/folders/${release.driveFolderId}`} target="_blank" rel="noreferrer" data-testid="release-folder-link">{release.driveFolderName ?? release.title} ↗</a>
             : admin
               ? <span className="grid gap-1 justify-items-start">
                   <button type="button" className="btn outline sm" disabled={busy || !hasBandFolder} onClick={() => call("releases.folder", { id: release.id })} data-testid="make-folder-btn">Make release folder</button>

@@ -7,14 +7,15 @@ import type { Ctx } from "../ctx";
 import { driveClient, type DriveFile, type DriveService } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
-import { releaseKind, releaseStatus, trackStatus, trackCredit, fileKind, dateStr, cents, driveRef } from "@/schema";
+import { releaseKind, trackStatus, trackCredit, fileKind, dateStr, driveRef } from "@/schema";
 import { guessReleaseKind, guessVersion, sidesFor, sortTracks, trackReached } from "@/lib/releases";
 import { providerFor } from "@/lib/music";
 import { artistFor } from "./projects";
+import { chosenFolder } from "./google";
 
 // Releases (#12): a release is a record next to Songs: an ordered tracklist built from songs (releases/{id}/tracks), the files
 // that only belong to the record (files docs with releaseId / releaseTrackId: mixes by version, masters, stems, artwork...),
-// and its money, which is the project made with it (projectId, kind "release"), measured against the release's own budget.
+// and its money, which is the project made with it (projectId, kind "release").
 // Songs are untouched: charts and demos stay on the song; a track points at its song.
 
 const id1 = z.string().min(1);
@@ -100,37 +101,37 @@ async function renumber(w: Writer, releaseId: string, ordered: Doc[], keepSides 
 
 export const releasesCreate = defineCommand({
   name: "releases.create", roles: ["admin", "mcp"],
-  description: "Start a release (an album, EP or single): title, kind (album|ep|single, default album), status (planning|recording|mixing|mastering|released, default planning), releaseDate (YYYY-MM-DD, the target), budget (cents). " +
+  description: "Start a release (an album, EP or single): title, kind (album|ep|single, default album), releaseDate (YYYY-MM-DD, the target; once it has passed the release counts as released). Where a record stands is its tracks' statuses. " +
     "Makes its money project (kind release, same name) at the same time: every expense and income for the record goes on that project. The tracklist starts from setlistId (a setlist template's songs in order) and/or songIds (from search), or empty. " +
-    "makeFolder:true also makes \"Band folder / Releases / {title}\" in Drive. Returns { id, projectId, trackIds, folder }.",
+    "driveFolderId (a folder id or Drive folder link, anywhere in Drive) is the release's own folder: its files and uploads go there; makeFolder:true makes \"Band folder / Releases / {title}\" instead. Returns { id, projectId, trackIds, folder }.",
   input: z.strictObject({
-    title: z.string().trim().min(1), kind: releaseKind.default("album"), status: releaseStatus.default("planning"), releaseDate: dateStr.optional(), budget: cents.nonnegative().optional(),
-    setlistId: id1.optional(), songIds: z.array(id1).default([]), makeFolder: z.boolean().default(false),
+    title: z.string().trim().min(1), kind: releaseKind.default("album"), releaseDate: dateStr.optional(),
+    setlistId: id1.optional(), songIds: z.array(id1).default([]), driveFolderId: z.string().trim().min(1).optional(), makeFolder: z.boolean().default(false),
   }),
   async run(ctx, i) {
+    // The chosen folder is checked with Drive before anything is written: a link to a file or a folder Drive can't see is refused.
+    const chosen = i.driveFolderId ? await chosenFolder(artistIdOf(ctx), i.driveFolderId) : null;
     const r = await run(ctx, async (w) => {
       const artist = await artistFor(w);
       const project = await w.create("projects", { artistId: artist.id, kind: "release", name: i.title, status: "open" });
       const release = await w.create("releases", {
-        artistId: artist.id, title: i.title, kind: i.kind, status: i.status, projectId: project.id,
-        ...(i.releaseDate ? { releaseDate: i.releaseDate } : {}), ...(i.budget !== undefined ? { budget: i.budget } : {}),
+        artistId: artist.id, title: i.title, kind: i.kind, projectId: project.id, ...(i.releaseDate ? { releaseDate: i.releaseDate } : {}), ...(chosen ? { driveFolderId: chosen.id, driveFolderName: chosen.name } : {}),
       });
       const songIds = [...(i.setlistId ? await setlistSongIds(w, i.setlistId) : []), ...i.songIds];
       const tracks = await appendTracks(w, release.id, songIds);
       return { id: release.id, projectId: project.id, trackIds: tracks.ids };
     });
     // Drive is outside the transaction (run() may retry); a band without a band folder just gets no folder.
-    const folder = i.makeFolder ? await ensureReleaseFolder(ctx, r.id).catch((e) => { if (e instanceof AppError && e.code === "no_band_folder") return null; throw e; }) : null;
+    const folder = chosen ? info(chosen) : i.makeFolder ? await ensureReleaseFolder(ctx, r.id).catch((e) => { if (e instanceof AppError && e.code === "no_band_folder") return null; throw e; }) : null;
     return { ...r, folder };
   },
 });
 
 export const releasesUpdate = defineCommand({
   name: "releases.update", roles: ["admin", "mcp"],
-  description: "Edit a release (id from search): title (renames its project too), kind, status, releaseDate / budget (cents) / cover (a Drive file: { driveFileId, url }) / distributor / upc / formats (null clears).",
+  description: "Edit a release (id from search): title (renames its project too), kind, releaseDate / cover (a Drive file: { driveFileId, url }) / distributor / upc / formats (null clears).",
   input: z.strictObject({ id: id1, patch: z.strictObject({
-    title: z.string().trim().min(1).optional(), kind: releaseKind.optional(), status: releaseStatus.optional(), releaseDate: dateStr.nullable().optional(),
-    budget: cents.nonnegative().nullable().optional(), cover: driveRef.nullable().optional(), distributor: z.string().trim().nullable().optional(),
+    title: z.string().trim().min(1).optional(), kind: releaseKind.optional(), releaseDate: dateStr.nullable().optional(), cover: driveRef.nullable().optional(), distributor: z.string().trim().nullable().optional(),
     upc: z.string().trim().nullable().optional(), formats: z.string().trim().nullable().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
@@ -352,6 +353,7 @@ export const releaseFilesNote = defineCommand({
 
 export interface FolderInfo { id: string; name: string; url: string }
 const info = (f: DriveFile): FolderInfo => ({ id: f.id, name: f.name, url: f.webViewLink });
+const artistIdOf = (ctx: Ctx) => { if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400); return ctx.artistId; };
 
 async function findOrMakeFolder(drive: DriveService, parent: string, name: string, mates: Bandmate[]): Promise<{ folder: DriveFile; made: boolean }> {
   const there = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name === name);
@@ -377,7 +379,7 @@ export async function ensureReleaseFolder(ctx: Ctx, releaseId: string): Promise<
   const mates = await bandmates();
   const releases = await findOrMakeFolder(drive, band, RELEASES_FOLDER_NAME, mates);
   const own = await findOrMakeFolder(drive, releases.folder.id, release.title as string, mates);
-  await db.update(ctx, "releases", releaseId, { driveFolderId: own.folder.id });
+  await db.update(ctx, "releases", releaseId, { driveFolderId: own.folder.id, driveFolderName: own.folder.name });
   return info(own.folder);
 }
 

@@ -45,7 +45,7 @@ const WORDS: [RegExp, string][] = [
   [/\bflag\b|\bbooking\b/, "booking"],
   [/\bupcoming\b|\bholds?\b/, "upcomingShows"], [/\bplayed\b/, "playedShows"], [/\bcancel(?:l?ed)?\b/, "canceledShows"], [/\bdropped\b/, "droppedShows"],
   [/\bstage ?plots?\b|\binput list\b/, "stagePlots"],
-  [/\bmix(?:es)?\b|\bmaster(?:s|ing)?\b|\bisrc\b|\bstems\b/, "releaseTrack"], [/\brelease money\b|\brelease budget\b/, "releaseMoney"], [/\breleases?\b|\balbums?\b|\btracklist\b|\b(?:an |the )?ep\b|\bvinyl\b/, "releasePage"],
+  [/\bmix(?:es)?\b|\bmaster(?:s|ing)?\b|\bisrc\b|\bstems\b/, "releaseTrack"], [/\brelease money\b/, "releaseMoney"], [/\breleases?\b|\balbums?\b|\btracklist\b|\b(?:an |the )?ep\b|\bvinyl\b/, "releasePage"],
   [/\bsetlists?\b|\bset ?list\b/, "setlists"], [/\bsongs?\b/, "songs"], [/\brehearsals?\b/, "rehearsals"],
   [/\bprojects?\b/, "projects"], [/\bpayouts?\b|\bwe owe\b|\bsplit evenly\b/, "payouts"], [/\bincome\b|\bdeal\b|\bguarantee\b|\bowed to us\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b/, "expenses"], [/\bmoney\b/, "money"],
 ];

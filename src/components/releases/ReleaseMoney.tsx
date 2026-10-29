@@ -19,7 +19,7 @@ export const signed = (c: number) => `${c < 0 ? "−" : c > 0 ? "+" : ""}${forma
 
 interface Line { key: string; kind: "income" | "expense" | "payout"; id: string; date: string; cat: string; trackId?: string; details: string; notes?: string; who: string; amount: number; sign: 1 | -1; owed: boolean }
 
-/** The release's money: its project's income, expenses and payouts against the release's budget. Admins only. */
+/** The release's money: its project's income, expenses and payouts. Admins only. */
 export function ReleaseMoney({ data }: { data: ReleaseData }) {
   if (!data.admin || !data.release) return null;
   return <View data={data} />;
@@ -45,8 +45,6 @@ function View({ data }: { data: ReleaseData }) {
   const spent = t.outPaid + t.outOwed;
   const earned = t.inReceived + t.inOwed;
   const net = earned - spent;
-  const budget = release.budget;
-  const pct = budget ? Math.round((spent / budget) * 100) : 0;
 
   const personName = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? musicians.rows?.find((m) => m.userId === uid)?.name ?? "Someone";
   const trackLabel = (id?: string) => {
@@ -65,11 +63,6 @@ function View({ data }: { data: ReleaseData }) {
   const spentCats = byCategory(moneyRows({ income: [], expenses: exp, payouts: pay })).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }));
   const earnedCats = byCategory(moneyRows({ income: inc, expenses: [], payouts: [] })).map((r) => ({ ...r, label: INCOME_LABEL[r.key] ?? r.key }));
 
-  const saveBudget = async (v: string) => {
-    const cents = v.trim() ? parseDollars(v) : null;
-    return !!(await call("releases.update", { id: release.id, patch: { budget: cents } }));
-  };
-
   return (
     <div className="grid gap-5" data-testid="release-money">
       <section className="card" aria-labelledby="release-money-h">
@@ -80,13 +73,7 @@ function View({ data }: { data: ReleaseData }) {
             <button type="button" className="btn outline sm" onClick={() => setModal(true)} data-testid="add-income-btn">+ Add income</button>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="grid gap-1" data-testid="tile-budget">
-            <span className="lbl">Budget</span>
-            <InlineValue testid="release-budget" label="Budget" kind="text" inputMode="decimal" className="font-mono text-xl font-bold" canEdit error={error}
-              value={budget ? (budget / 100).toFixed(2) : ""} display={budget ? formatCents(budget) : undefined} emptyLabel="Set a budget"
-              validate={(v) => (!v.trim() || parseDollars(v) !== null ? null : "Needs a dollar amount.")} onSave={saveBudget} />
-          </div>
+        <div className="grid grid-cols-3 gap-3">
           <div className="grid gap-1" data-testid="tile-spent">
             <span className="lbl">Spent</span>
             <b className="font-mono text-xl" data-testid="release-spent-amount">{formatCents(spent)}</b>
@@ -101,15 +88,6 @@ function View({ data }: { data: ReleaseData }) {
             <b className="font-mono text-xl" data-testid="release-net-amount">{signed(net)}</b>
           </div>
         </div>
-        {!!budget && (
-          <div className="grid gap-1.5">
-            <div role="progressbar" aria-label="Budget spent" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(pct, 100)} aria-valuetext={`${pct}% of budget spent`}
-              data-testid="budget-bar" className="overflow-hidden rounded-full" style={{ height: 6, background: "var(--divider)" }}>
-              <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: pct > 100 ? "var(--danger)" : "var(--accent)" }} />
-            </div>
-            <span className="s" data-testid="budget-left">{pct}% of budget spent · {spent <= budget ? `${formatCents(budget - spent)} left` : `${formatCents(spent - budget)} over`}</span>
-          </div>
-        )}
         <ErrorBox error={error} />
       </section>
 

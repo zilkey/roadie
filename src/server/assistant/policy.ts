@@ -147,7 +147,7 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "projects.update": (i, b) => `Change ${b?.name ? `the project ${b.name}` : "the project"}: ${Object.keys(i.patch ?? {}).join(", ")}`,
   "projects.close": (_i, b) => `Close ${b?.name ? `the project ${b.name}` : "the project"}: nothing new can be put on it`,
   "projects.reopen": (_i, b) => `Reopen ${b?.name ? `the project ${b.name}` : "the project"}`,
-  "releases.create": (i) => `Start the ${RELEASE_KIND_LABEL[i.kind as keyof typeof RELEASE_KIND_LABEL]?.toLowerCase() ?? "release"} ${i.title}${i.budget ? ` (budget ${formatCents(i.budget)})` : ""}, with its own money project${i.setlistId || i.songIds?.length ? " and a tracklist" : ""}`,
+  "releases.create": (i) => `Start the ${RELEASE_KIND_LABEL[i.kind as keyof typeof RELEASE_KIND_LABEL]?.toLowerCase() ?? "release"} ${i.title}, with its own money project${i.setlistId || i.songIds?.length ? " and a tracklist" : ""}`,
   "releases.remove": (i) => `Archive the release${i.label ? ` ${i.label}` : ""} with its tracks and files; its project is closed`,
   "releases.tracks.add": (i, b) => `Put ${i.setlistId ? "a setlist's songs" : `${Array.isArray(i.songIds) ? i.songIds.length : "some"} song${Array.isArray(i.songIds) && i.songIds.length === 1 ? "" : "s"}`} on the release${b?.title ? ` ${b.title}` : ""}`,
   "releases.files.approve": (i, b) => (i.approved ? `Sign off ${b?.title ?? "the mix"}: the track moves on` : `Take back the sign-off on ${b?.title ?? "the mix"}`),

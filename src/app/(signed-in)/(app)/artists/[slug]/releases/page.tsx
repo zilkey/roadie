@@ -6,9 +6,9 @@ import { useProfile } from "@/lib/auth";
 import { AdminOnly } from "@/components/Guard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { fmtLen } from "@/lib/music";
-import { RELEASE_KIND_LONG, totalLength } from "@/lib/releases";
+import { RELEASE_KIND_LONG, isReleased, totalLength, trackProgress } from "@/lib/releases";
 import { defaultProject, formatCents, projectTotals } from "@/lib/money";
-import { StatusPill, useReleases } from "@/components/releases/common";
+import { useReleases } from "@/components/releases/common";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import type { Expense, Income, Payout, Project } from "@/schema";
 
@@ -32,10 +32,10 @@ function Releases() {
     return releases.map((a) => {
       const mine = tracks.filter((t) => t.releaseId === a.id);
       const t = admin ? projectTotals({ projectId: a.projectId, defaultProjectId: def, income: income.rows ?? [], expenses: expenses.rows ?? [], payouts: payouts.rows ?? [] }) : null;
-      return { a, count: mine.length, len: totalLength(mine), spent: t ? t.outPaid + t.outOwed : 0, earned: t ? t.inReceived + t.inOwed : 0 };
+      return { a, count: mine.length, len: totalLength(mine), p: trackProgress(mine), spent: t ? t.outPaid + t.outOwed : 0, earned: t ? t.inReceived + t.inOwed : 0 };
     }).sort((x, y) => {
       // Unreleased first, by release date (no date last), then title.
-      const rx = x.a.status === "released" ? 1 : 0, ry = y.a.status === "released" ? 1 : 0;
+      const rx = isReleased(x.a) ? 1 : 0, ry = isReleased(y.a) ? 1 : 0;
       if (rx !== ry) return rx - ry;
       const dx = x.a.releaseDate ?? "￿", dy = y.a.releaseDate ?? "￿";
       return dx < dy ? -1 : dx > dy ? 1 : x.a.title.localeCompare(y.a.title);
@@ -60,7 +60,7 @@ function Releases() {
           <thead>
             <tr>
               <th scope="col">Release</th>
-              <th scope="col">Status</th>
+              <th scope="col">Progress</th>
               <th scope="col" className="len">Tracks</th>
               <th scope="col">Release</th>
               {admin && <th scope="col" className="len">Spent</th>}
@@ -68,7 +68,7 @@ function Releases() {
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ a, count, len, spent, earned }) => (
+            {rows.map(({ a, count, len, p, spent, earned }) => (
               <tr key={a.id} data-testid={`release-row-${a.id}`}>
                 <td>
                   <div className="flex items-center gap-3 py-2">
@@ -82,7 +82,7 @@ function Releases() {
                     </span>
                   </div>
                 </td>
-                <td><StatusPill status={a.status} testid="release-status" /></td>
+                <td className="whitespace-nowrap" data-testid="release-progress">{isReleased(a) ? <span className="pill ok">Released</span> : p.total ? `Tracked ${p.tracked}/${p.total} · Mixed ${p.mixed}/${p.total} · Mastered ${p.mastered}/${p.total}` : <span className="dash">No tracks yet</span>}</td>
                 <td className="len whitespace-nowrap">{count}{len ? ` · ${fmtLen(len)}` : ""}</td>
                 <td className="whitespace-nowrap">{a.releaseDate ? fmtRelease(a.releaseDate) : <span className="dash">Not set</span>}</td>
                 {admin && <td className="len">{formatCents(spent)}</td>}

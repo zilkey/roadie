@@ -1,13 +1,12 @@
 /** Pure helpers for releases and their tracks (shared by the server commands, the pages and tests). */
-import type { ReleaseKind, ReleaseStatus, TrackStatus } from "@/schema/releases";
+import type { ReleaseKind, TrackStatus } from "@/schema/releases";
+import { todayStr } from "./booking";
 import type { FileKind } from "./music";
 
 export const RELEASE_KIND_LABEL: Record<ReleaseKind, string> = { album: "Album", ep: "EP", single: "Single" };
 /** What the index and header say about a kind ("Full-length release"). */
 export const RELEASE_KIND_LONG: Record<ReleaseKind, string> = { album: "Full-length album", ep: "EP", single: "Single" };
 export const RELEASE_KINDS: ReleaseKind[] = ["album", "ep", "single"];
-export const RELEASE_STATUS_LABEL: Record<ReleaseStatus, string> = { planning: "Planning", recording: "Recording", mixing: "Mixing", mastering: "Mastering", released: "Released" };
-export const RELEASE_STATUSES: ReleaseStatus[] = ["planning", "recording", "mixing", "mastering", "released"];
 
 export const TRACK_STATUS_LABEL: Record<TrackStatus, string> = { tracking: "Tracking", overdubs: "Overdubs", mixing: "Mixing", mixed: "Mixed", mastered: "Mastered" };
 /** In the order a track moves through them. */
@@ -94,9 +93,12 @@ export function mixLabel(f?: ReleaseFileLike): string {
   return [fmtVersion(f.version) || f.title, f.approved ? "approved" : notes ? `${notes} note${notes === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 }
 
-/** What the header says: "10 tracks · 41:20 · Target release Mar 6". */
-export function releaseMeta(a: { releaseDate?: string; status: ReleaseStatus }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string): string {
+/** A release is out once its release date has passed; without a date it is in the works. */
+export const isReleased = (a: { releaseDate?: string }, today = todayStr()) => !!a.releaseDate && a.releaseDate <= today;
+
+/** What the header says: "10 tracks · 41:20 · Target release Mar 6" ("Released Mar 6" once the date has passed). */
+export function releaseMeta(a: { releaseDate?: string }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string, today = todayStr()): string {
   const n = tracks.length;
   const len = totalLength(tracks);
-  return [`${n} track${n === 1 ? "" : "s"}`, len ? fmtLen(len) : null, a.releaseDate ? `${a.status === "released" ? "Released" : "Target release"} ${fmtDate(a.releaseDate)}` : null].filter(Boolean).join(" · ");
+  return [`${n} track${n === 1 ? "" : "s"}`, len ? fmtLen(len) : null, a.releaseDate ? `${isReleased(a, today) ? "Released" : "Target release"} ${fmtDate(a.releaseDate)}` : null].filter(Boolean).join(" · ");
 }

@@ -186,7 +186,7 @@ async function main() {
   const person = (key: string) => DEV_PEOPLE.find((p) => p.key === key)!.name;
   // --- the release (#12): Wild Hearts LP, on the release project above; ten tracks from the songs, a couple of mixes and the cover ---
   const releaseId = await create("releases", {
-    artistId: artist, title: "Wild Hearts LP", kind: "album", status: "mixing", projectId: releaseProject, releaseDate: "2027-03-06", budget: 600000,
+    artistId: artist, title: "Wild Hearts LP", kind: "album", projectId: releaseProject, releaseDate: "2027-03-06",
     formats: "Digital, CD, Vinyl", driveFolderId: "fake-folder-release-wild-hearts",
   });
   const trackStatus = ["mixed", "mixed", "mixed", "mixing", "mixed", "mixed", "mixed", "mixing", "overdubs", "overdubs"];
