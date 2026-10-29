@@ -31,7 +31,7 @@ export interface PayoutLike {
   id: string; to: { musicianId?: string; userId?: string; contactId?: string; name: string }; kind: string; amount: number; what?: string;
   projectId: string; showId?: string; dueDate?: string; paidAt?: string; method?: string; expenseIds?: string[]; deletedAt?: unknown;
 }
-export interface ProjectLike { id: string; kind: string; name: string; status: string; budget?: number; isDefault?: boolean; deletedAt?: unknown }
+export interface ProjectLike { id: string; kind: string; name: string; status: string; isDefault?: boolean; deletedAt?: unknown }
 
 /** The project a record belongs to: its projectId, else the default project (records written before `npm run migrate:money`). */
 export const projectOf = (x: { projectId?: string }, defaultProjectId: string | undefined) => x.projectId ?? defaultProjectId;

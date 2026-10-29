@@ -138,6 +138,8 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
   if (Array.isArray(out.emails)) out.emails = (out.emails as string[]).map(lowerEmail);
   if (Array.isArray(out.phones)) out.phones = (out.phones as string[]).map(e164);
   if (typeof out.instagram === "string") out.instagram = out.instagram.replace(/^@/, "");
+  // Budgets were dropped from projects (2026-10-29): a stored one is stripped on the next write.
+  if (kind === "projects") delete out.budget;
   // Lists written before checklist templates (until `npm run migrate:checklists` has run): no templateId yet, and items may still carry a due date.
   if (kind === "shows" && Array.isArray(out.checklists)) {
     out.checklists = (out.checklists as Doc[]).map((l) => ({

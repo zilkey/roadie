@@ -149,7 +149,7 @@ test("money summaries read like the sentence the person said", () => {
   assert.equal(summarize("income.add", { from: "Lost Lake", amount: 40000, category: "guarantee" }), "Lost Lake owes us $400.00 (guarantee, owed)");
   assert.equal(summarize("income.add", { from: "Lost Lake", amount: 40000, category: "guarantee", receivedAt: "2026-10-29", method: "check" }, undefined, { project: "Band" }), "Lost Lake paid us $400.00 (guarantee, Check, Band)");
   assert.equal(summarize("income.setReceived", { id: "i", method: "venmo" }, undefined, { from: "Lost Lake", amount: 40000 }), "Mark Lost Lake income of $400.00 as received (Venmo)");
-  assert.equal(summarize("projects.create", { kind: "video", name: "Lighthouse video", budget: 100000 }), "Start the video project Lighthouse video (budget $1,000.00)");
+  assert.equal(summarize("projects.create", { kind: "video", name: "Lighthouse video" }), "Start the video project Lighthouse video");
   assert.equal(summarize("projects.close", { id: "p" }, undefined, { name: "Lighthouse video" }), "Close the project Lighthouse video: nothing new can be put on it");
   assert.equal(summarize("expenses.payPerson", { userId: "u", method: "venmo" }, undefined, { person: "Eric", total: 4200 }), "Pay Eric $42.00 (Venmo)");
   for (const c of ["income.add", "income.update", "income.setReceived", "income.remove", "payouts.add", "payouts.update", "payouts.markPaid", "payouts.remove", "projects.create", "projects.update", "projects.close", "projects.reopen", "expenses.payPerson"]) assert.ok(needsConfirm(c, {}), c);

@@ -61,9 +61,9 @@ async function clearOtherDefaults(w: Writer, artistId: string, keepId?: string) 
 export const projectsCreate = defineCommand({
   name: "projects.create", roles: ["admin"],
   description: "Create a project, a bucket every income, expense and payout belongs to (Band is the default one; others are a duo, an album, a tour, a music video). " +
-    "kind: band|duo|album|tour|video|other, name, optional start/end (YYYY-MM-DD), budget (cents of planned spend). isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
+    "kind: band|duo|album|tour|video|other, name, optional start/end (YYYY-MM-DD). isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
   input: z.strictObject({
-    kind: projectKind, name: z.string().trim().min(1), start: dateStr.optional(), end: dateStr.optional(), budget: cents.nonnegative().optional(), isDefault: z.boolean().optional(),
+    kind: projectKind, name: z.string().trim().min(1), start: dateStr.optional(), end: dateStr.optional(), isDefault: z.boolean().optional(),
   }),
   run: (ctx, i) => run(ctx, async (w) => {
     const artist = await artistFor(w);
@@ -74,10 +74,10 @@ export const projectsCreate = defineCommand({
 
 export const projectsUpdate = defineCommand({
   name: "projects.update", roles: ["admin"],
-  description: "Edit a project (id from context.now projects): name, kind, start / end / budget (null clears), isDefault (true only: it becomes THE default and the old default stops being it).",
+  description: "Edit a project (id from context.now projects): name, kind, start / end (null clears), isDefault (true only: it becomes THE default and the old default stops being it).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     name: z.string().trim().min(1).optional(), kind: projectKind.optional(), start: dateStr.nullable().optional(), end: dateStr.nullable().optional(),
-    budget: cents.nonnegative().nullable().optional(), isDefault: z.boolean().optional(),
+    isDefault: z.boolean().optional(),
   }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const p = await requireProject(w, id);

@@ -19,8 +19,6 @@ export const Project = entity({
   start: dateStr.optional(),
   end: dateStr.optional(),
   status: projectStatus,
-  /** Planned spend, cents. */
-  budget: cents.nonnegative().optional(),
   /** Exactly one project per artist: Band. Money with no projectId belongs here. */
   isDefault: z.boolean().optional(),
 });

@@ -62,10 +62,8 @@ test("projects: admin only, exactly one default, close/reopen, closed refuses ne
   assert.deepEqual(await defaults(), [band]);
   const album = (await cmd("projects.create", { kind: "album", name: "LP", isDefault: true })).id;
   assert.deepEqual(await defaults(), [album]);
-  await cmd("projects.update", { id: band, patch: { isDefault: true, budget: 5000 } });
+  await cmd("projects.update", { id: band, patch: { isDefault: true } });
   assert.deepEqual(await defaults(), [band]);
-  await cmd("projects.update", { id: band, patch: { budget: null } });
-  assert.equal((await db.get("projects", band) as any).budget, undefined);
   await cmd("projects.close", { id: duo });
   await code(cmd("income.add", { amount: 100, category: "tips", from: "x", projectId: duo }), "invalid_state");
   await code(cmd("expenses.add", { amount: 100, what: "x", category: "gear", projectId: duo }), "invalid_state");

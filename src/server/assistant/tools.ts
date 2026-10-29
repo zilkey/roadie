@@ -534,7 +534,12 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (name === "context.now") return { output: dataResult(await contextNow(ctx, s)) };
     if (name === "search") {
       const p = z.strictObject({ q: z.string().min(1), kinds: z.array(z.enum(SEARCH_KINDS)).optional(), limit: z.number().int().min(1).max(50).optional() }).safeParse(input ?? {});
-      if (!p.success) throw new AppError("invalid_input", "Give me a name to search for (to count or filter records, use records.list)", 400);
+      if (!p.success) {
+        // Name the real mistake: a kind search doesn't cover (income, expenses...) is a records.list question, not a missing name.
+        const kinds = isObj(input) && Array.isArray(input.kinds) ? (input.kinds as unknown[]).filter((k) => !(SEARCH_KINDS as readonly unknown[]).includes(k)) : [];
+        if (kinds.length) throw new AppError("invalid_input", `search doesn't look in ${kinds.join(", ")}; it finds ${SEARCH_KINDS.join(", ")}. For other records (income, expenses, payouts, projects) call records.list with that kind and pick the row by its name or from.`, 400);
+        throw new AppError("invalid_input", "Give me a name to search for (to count or filter records, use records.list)", 400);
+      }
       return { output: dataResult(await searchAll(ctx, p.data)) };
     }
     if (name === "history.undoRun") {
@@ -590,6 +595,8 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     return { output: dataResult(r.result ?? null) };
   } catch (e) {
     const out = fail(e);
+    // The model's own bad input (a kind search doesn't cover, a missing field) is its to fix on the next call, not a line in the chat.
+    if (out.error.code === "invalid_input") return { output: out };
     return { output: out, action: { kind: "action", label: `Couldn't: ${out.error.message}` } };
   }
 }

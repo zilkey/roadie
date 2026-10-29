@@ -93,9 +93,9 @@ async function main() {
   const addProject = (input: Record<string, unknown>) => create("projects", { artistId: artist, status: "open", ...input });
   const bandProject = await addProject({ kind: "band", name: "Band", isDefault: true });
   const duoProject = await addProject({ kind: "duo", name: "Duo" });
-  const albumProject = await addProject({ kind: "album", name: "Wild Hearts LP", start: "2026-09-01", budget: 600000 });
-  const tourProject = await addProject({ kind: "tour", name: "Spring West Tour", start: "2027-03-15", end: "2027-03-29", budget: 250000 });
-  await addProject({ kind: "video", name: "Lighthouse video", budget: 120000 });
+  const albumProject = await addProject({ kind: "album", name: "Wild Hearts LP", start: "2026-09-01" });
+  const tourProject = await addProject({ kind: "tour", name: "Spring West Tour", start: "2027-03-15", end: "2027-03-29" });
+  await addProject({ kind: "video", name: "Lighthouse video" });
   const defaults: Record<string, string> = { "full-band": bandProject, trio: bandProject, duo: duoProject, "ingrid-solo": bandProject };
   const stored = (await db.get("artists", artist))!.configurations as { id: string }[];
   await db.update(ctx, "artists", artist, { configurations: stored.map((c) => ({ ...c, defaultProjectId: defaults[c.id] })) });

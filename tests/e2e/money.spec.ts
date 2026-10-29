@@ -109,7 +109,6 @@ test("Projects tab lists the seeded projects; New project adds Fall run and Canc
   await expect(page.getByTestId("np-name")).toHaveValue("");
   await page.getByTestId("np-name").fill("Fall run");
   await page.getByTestId("np-kind").selectOption("tour");
-  await page.getByTestId("np-budget").fill("2000");
   await page.getByTestId("np-add").click();
   await expect(table).toContainText("Fall run");
   await expect(table.locator("tr", { hasText: "Fall run" })).toContainText("Tour");
@@ -125,10 +124,20 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   const totals = page.getByTestId("project-totals");
   await expect(totals).toContainText("$6,000.00");
   await expect(totals).toContainText("$184.00");
-  // The Bandcamp money hasn't arrived, so it stays off the feed and shows as owed on the In tile.
+  // The Bandcamp money hasn't arrived: owed on the In tile, and listed under Money in as "Owed to us" (received income is green).
   await expect(page.getByTestId("tile-in")).toContainText("$184.00 owed to us");
-  await expect(page.getByTestId("project-records")).not.toContainText("Bandcamp");
-  await expect(page.getByTestId("project-records")).toContainText("still owed to us");
+  const records = page.getByTestId("project-records");
+  await expect(records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" })).toContainText("Owed to us");
+  await expect(records.locator(".chip.g").first()).toHaveText("Received");
+  await page.getByTestId("project-flow-out").click();
+  await expect(records).not.toContainText("Bandcamp");
+  await expect(records.locator(".chip.y").first()).toHaveText(/Paid/);
+  // Each record's project edits in place; the Bandcamp sale moves to the tour and back.
+  await page.getByTestId("project-flow-in").click();
+  const sel = records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]");
+  await sel.click();
+  await records.locator("[data-testid$=-project-input]").selectOption({ label: "Spring West Tour" });
+  await expect(records).not.toContainText("Bandcamp");
   await expect(page.getByTestId("project-by-category")).toBeVisible();
   await page.getByTestId("back").click();
   await expect(page).toHaveURL(/\/money\/projects$/);

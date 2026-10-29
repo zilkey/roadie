@@ -8,7 +8,8 @@ import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCateg
 import { fmtLong, showName as nameOfShow } from "@/lib/shows";
 import { HBars, MonthBars } from "./charts";
 import { Projects } from "./Projects";
-import { ledger, statusClass } from "./Project";
+import { InlineValue } from "@/components/InlineValue";
+import { UPDATE_COMMAND, ledger, projectOptions, statusClass } from "./Project";
 import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
@@ -154,7 +155,10 @@ function Admin() {
                     <tr key={l.key} data-testid={`recent-${l.key}`}>
                       <td className="nw">{shortDate(l.date)}</td>
                       <td><span className="font-bold">{l.title}</span> <span className="s">· {l.meta}</span></td>
-                      <td className="s">{projectName(l.projectId)}</td>
+                      <td className="s">
+                        <InlineValue testid={`recent-${l.key}-project`} label="Project" kind="select" value={projectOf(l, def?.id) ?? ""} options={projectOptions(projects.rows ?? [], projectOf(l, def?.id))}
+                          canEdit={l.editable} error={error} onSave={async (v) => !!(await call(UPDATE_COMMAND[l.kind], { id: l.id, patch: { projectId: v } }))} />
+                      </td>
                       <td className="nw text-right font-mono">{l.sign > 0 ? "+" : "−"}{formatCents(l.amount)}</td>
                       <td><span className={statusClass(l.status)}>{l.status}</span></td>
                     </tr>

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useArtistRouter } from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
-import { PROJECT_KIND_LABEL, defaultProject, formatCents, parseDollars, projectTotals } from "@/lib/money";
+import { PROJECT_KIND_LABEL, defaultProject, formatCents, projectTotals } from "@/lib/money";
 import type { Expense, Income, Payout, Project } from "@/schema";
 
 const KINDS = Object.entries(PROJECT_KIND_LABEL) as [Project["kind"], string][];
@@ -16,19 +16,6 @@ export function projectWhen(p: { start?: string; end?: string }) {
   if (p.start) return `From ${shortDate(p.start)}`;
   if (p.end) return `Until ${shortDate(p.end)}`;
   return "";
-}
-
-/** A thin progress bar for spend against budget (not the page loader). */
-export function BudgetBar({ spent, budget, testid }: { spent: number; budget: number; testid?: string }) {
-  const pct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
-  return (
-    <div className="grid gap-1" data-testid={testid}>
-      <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--divider)" }} role="progressbar" aria-valuenow={Math.min(pct, 100)} aria-valuemin={0} aria-valuemax={100}>
-        <div className="h-full rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: pct > 100 ? "var(--danger, #c0392b)" : "var(--accent)" }} />
-      </div>
-      <span className="s">{pct}% of {formatCents(budget)}</span>
-    </div>
-  );
 }
 
 /** The projects list. Admins see the money columns and can add a project; members see names, kinds and dates. */
@@ -51,7 +38,7 @@ export function Projects({ admin }: { admin: boolean }) {
         <thead>
           <tr>
             <th>Project</th><th>Kind</th><th>When</th>
-            {admin && <><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Net</th><th>Budget</th></>}
+            {admin && <><th className="text-right">In</th><th className="text-right">Out</th><th className="text-right">Net</th></>}
           </tr>
         </thead>
         <tbody>
@@ -68,7 +55,6 @@ export function Projects({ admin }: { admin: boolean }) {
                     <td className="nw text-right font-mono">{formatCents(t.income)}</td>
                     <td className="nw text-right font-mono">{formatCents(out)}</td>
                     <td className="nw text-right font-mono">{formatCents(t.net)}</td>
-                    <td style={{ minWidth: 150 }}>{p.budget ? <BudgetBar spent={out} budget={p.budget} /> : <span className="s">—</span>}</td>
                   </>
                 )}
               </tr>
@@ -105,15 +91,12 @@ function NewProject({ onDone }: { onDone(): void }) {
   const [kind, setKind] = useState<Project["kind"]>("other");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  const [budget, setBudget] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   async function add() {
-    const b = budget.trim() ? parseDollars(budget) : undefined;
     if (!name.trim()) return setMsg("Give the project a name.");
-    if (b === null) return setMsg("Budget should be a dollar amount.");
     if (start && end && end < start) return setMsg("The end date is before the start.");
     setMsg(null);
-    const r = await call("projects.create", { kind, name: name.trim(), ...(start ? { start } : {}), ...(end ? { end } : {}), ...(b !== undefined ? { budget: b } : {}) });
+    const r = await call("projects.create", { kind, name: name.trim(), ...(start ? { start } : {}), ...(end ? { end } : {}) });
     if (r) onDone();
   }
   return (
@@ -123,7 +106,6 @@ function NewProject({ onDone }: { onDone(): void }) {
         <label className="grid gap-1"><span className="lbl">Kind</span><Select<Project["kind"]> value={kind} options={KINDS} onChange={setKind} testid="np-kind" label="Kind" /></label>
         <label className="grid gap-1"><span className="lbl">Starts</span><input className="input" type="date" value={start} onChange={(e) => setStart(e.target.value)} data-testid="np-start" /></label>
         <label className="grid gap-1"><span className="lbl">Ends</span><input className="input" type="date" value={end} onChange={(e) => setEnd(e.target.value)} data-testid="np-end" /></label>
-        <label className="grid gap-1"><span className="lbl">Budget</span><input className="input" inputMode="decimal" placeholder="$0.00" value={budget} onChange={(e) => setBudget(e.target.value)} data-testid="np-budget" /></label>
       </div>
       <ErrorBox error={msg ?? error} />
       <div className="flex gap-2">

@@ -139,6 +139,7 @@ dialog.dlg::backdrop { background: var(--backdrop); }
 .chip.a { background: var(--accent-soft); color: var(--accent-soft-text); }
 .chip.m { background: var(--divider); color: var(--ink); }
 .chip.g { background: var(--success-bg); color: var(--success-text); }
+.chip.y { background: var(--unfinished); color: var(--owed-text); }
 .err { color: var(--danger); background: var(--danger-soft); border-radius: 10px; padding: 8px 12px; font-size: 0.875rem; }
 
 /* Saving: status label, toasts with Undo, draft note */
@@ -251,6 +252,7 @@ fieldset.sec { margin: 0; }
 .book-tw { min-width: 0; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow-x: auto; }
 .book-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 0.9375rem; }
 .book-table th { text-align: left; padding: 12px 14px; font-size: 0.8125rem; font-weight: 600; color: var(--muted); background: var(--empty); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.book-table th.text-right, .book-table td.text-right { text-align: right; }
 .book-table td { padding: 12px 14px; border-bottom: 1px solid var(--divider); vertical-align: middle; color: var(--nav-text); }
 .book-table tbody tr:last-child td { border-bottom: 0; }
 .book-table td.flag, .book-table th.flag { width: 44px; padding: 4px 0 4px 10px; }
@@ -300,9 +302,10 @@ fieldset.sec { margin: 0; }
 .flag-ic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .flag-ic:disabled { opacity: .5; cursor: default; }
 /* Add to Pitch List modal */
-dialog.pitch-dlg { padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--ink); width: min(580px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: 96px auto auto; box-shadow: 0 24px 60px var(--shadow); }
+dialog.pitch-dlg { padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--ink); width: min(580px, calc(100vw - 32px)); max-height: calc(100dvh - 128px); margin: 96px auto auto; overflow: auto; overscroll-behavior: contain; box-shadow: 0 24px 60px var(--shadow); }
 dialog.pitch-dlg::backdrop { background: var(--backdrop); }
-@media (max-width: 719px) { dialog.pitch-dlg { margin-top: 16px; } }
+/* The max height leaves the top margin plus a matching gap below, so the footer (Save) is always on screen or a scroll away. */
+@media (max-width: 719px) { dialog.pitch-dlg { margin-top: 16px; max-height: calc(100dvh - 32px); } }
 .show-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
 .show-table th { text-align: left; font-size: 0.7188rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 11px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--panel); }
 .show-table td { padding: 11px 12px; border-bottom: 1px solid var(--soft); vertical-align: top; white-space: nowrap; background: var(--panel); }

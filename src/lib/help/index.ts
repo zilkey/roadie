@@ -44,7 +44,7 @@ const WORDS: [RegExp, string][] = [
   [/\bupcoming\b|\bholds?\b/, "upcomingShows"], [/\bplayed\b/, "playedShows"], [/\bcancel(?:l?ed)?\b/, "canceledShows"], [/\bdropped\b/, "droppedShows"],
   [/\bstage ?plots?\b|\binput list\b/, "stagePlots"],
   [/\bsetlists?\b|\bset ?list\b/, "setlists"], [/\bsongs?\b/, "songs"], [/\brehearsals?\b/, "rehearsals"],
-  [/\bprojects?\b|\bbudget\b/, "projects"], [/\bpayouts?\b|\bwe owe\b|\bsplit evenly\b/, "payouts"], [/\bincome\b|\bdeal\b|\bguarantee\b|\bowed to us\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b/, "expenses"], [/\bmoney\b/, "money"],
+  [/\bprojects?\b/, "projects"], [/\bpayouts?\b|\bwe owe\b|\bsplit evenly\b/, "payouts"], [/\bincome\b|\bdeal\b|\bguarantee\b|\bowed to us\b/, "income"], [/\bexpenses?\b|\bpay(?:ing)? back\b/, "expenses"], [/\bmoney\b/, "money"],
 ];
 export function topicInWords(text: string): HelpTopic | undefined {
   const t = text.toLowerCase();
