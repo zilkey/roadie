@@ -63,6 +63,9 @@ service cloud.firestore {
       allow read: if band();
       match /entries/{eid}       { allow read: if isAdmin() || (isMember() && live() && resource.data.get('visibility', '') == 'band'); }
     }
+    // Posts (Instagram for now): that artist's admins only, like Booking. Lists must filter where('artistId', '==', ...).
+    // metaConnections/{artistId} (the band's Page token) is server-only: no read rule on purpose.
+    match /posts/{id}            { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // Stage plots: the band reads; the server writes. The engineer link is a server route, not a rule.
     match /stagePlots/{id}       { allow read: if band(); }
 

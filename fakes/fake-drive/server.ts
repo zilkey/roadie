@@ -8,6 +8,7 @@ export const MIME = {
   audio: "audio/mp4",
   wav: "audio/wav",
   video: "video/mp4",
+  jpeg: "image/jpeg",
 } as const;
 
 export interface DrivePermission { email: string; role: "owner" | "writer" | "reader" }
@@ -52,6 +53,10 @@ function initial(): DriveState {
   add("fake-release-mix-2", "Low Light v2.wav", MIME.wav, "jeff@example.com", ["fake-folder-release-wild-hearts"], all);
   add("fake-release-mix-3", "Low Light v3 mix.wav", MIME.wav, "jeff@example.com", ["fake-folder-release-wild-hearts"], all);
   add("fake-release-cover", "Wild Hearts cover 3000px.png", "image/png", "ingrid@example.com", ["fake-folder-release-wild-hearts"], all);
+  // Photos for Posts: a Posts folder (not chosen in the seed) and two JPEGs in the band folder to pick from Drive.
+  add("fake-folder-posts", "Posts", MIME.folder, "jeff@example.com", [BAND_FOLDER_ID], all);
+  add("fake-photo-roots", "Roots Music Project stage.jpg", MIME.jpeg, "jeff@example.com", [BAND_FOLDER_ID], all);
+  add("fake-photo-hidive", "Hi-Dive load-in.jpg", MIME.jpeg, "ingrid@example.com", [BAND_FOLDER_ID], all);
   add("fake-reh-1", "Rehearsal 2026-10-18 full run.wav", MIME.wav, "jeff@example.com", ["fake-folder-rehearsals"], all.filter((e) => !e.startsWith("emma")));
   add("fake-reh-2", "Rehearsal 2026-10-04 Glass Coast bridge.m4a", MIME.audio, "david@example.com", ["root-david"], ["jeff@example.com"]);
   add("fake-reh-3", "Rehearsal video Ruby Hill ending.mp4", MIME.video, "eric@example.com", ["fake-folder-rehearsals"], all);
@@ -77,6 +82,11 @@ function tone(): Buffer {
   return (toneWav = b);
 }
 
+/** Every JPEG is the same 1×1 pixel. */
+const PIXEL_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64");
+
 /** Hide nothing: the fake has a single flat view. */
 const find = (s: DriveState, id: string) => need(s.files.find((f) => f.id === id), "File");
 const emailsOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
@@ -101,7 +111,8 @@ const routes: Route<DriveState>[] = [
   }],
   ["GET", "/files/:id/content", ({ params }, s) => {
     const f = find(s, params.id);
-    if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio");
+    if (f.mimeType === MIME.jpeg) return { bytes: PIXEL_JPEG, type: MIME.jpeg };
+    if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio and JPEGs");
     return { bytes: tone(), type: "audio/wav" };
   }],
   ["GET", "/files/:id/permissions", ({ params }, s) => find(s, params.id).permissions],

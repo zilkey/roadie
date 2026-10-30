@@ -205,3 +205,37 @@ env -u FIRESTORE_EMULATOR_HOST -u FIREBASE_AUTH_EMULATOR_HOST \
 ## Part 5 · Later (the app runs without these)
 
 Gmail, Drive and Calendar have real clients: they turn on once the Google OAuth client and its secrets are set (`docs/FIREBASE-SETUP.md` section 5) and each admin connects on Settings > Google. Bandsintown and Spotify are still faked, so those features error in production until their real clients are written (sections 6–7). MCP hosting and the nightly backup are in sections 10–11. Do them when you want each feature live.
+
+### Meta (Instagram & Facebook)
+
+Posts publishes to the band's Instagram through **Instagram API with Facebook Login** (graph.facebook.com), not Instagram Login. One Meta app covers every band; for now it stays in development mode, which is enough for our own band.
+
+**The app** (developers.facebook.com › My Apps › Create app):
+
+1. Type **Business**. Leave it in development mode.
+2. Add the **Facebook Login for Business** product (or Facebook Login) and the **Instagram** product, "API setup with Facebook login".
+3. App roles: Jeff as admin, Ingrid as tester (App roles › Roles). In development mode, people with a role on the app get every permission without App Review. Other bands need App Review later (#19 stage 14).
+4. Permissions Roadie asks for: `pages_show_list`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`, `business_management` (needed when the Page sits in a business portfolio).
+5. Valid OAuth redirect URIs (Facebook Login › Settings):
+   - `https://app.myroadie.online/api/meta/callback`
+   - `http://localhost:3100/api/meta/callback`
+6. Secrets, before deploying (a referenced-but-missing secret fails the rollout):
+
+   ```sh
+   npx firebase apphosting:secrets:set META_APP_SECRET --project roadie-prod-iab   # App settings › Basic › App secret
+   openssl rand -base64 32 | npx firebase apphosting:secrets:set META_TOKEN_KEY --project roadie-prod-iab --data-file -
+   ```
+
+   and put the App ID in `apphosting.yaml` (`META_APP_ID`, a plain value).
+
+**The band's accounts** need:
+
+- An Instagram **Professional** account (Business or Creator). A personal one can't be posted to: in the Instagram app, Settings › Account type and tools › Switch to professional account.
+- That Instagram linked to the band's **Facebook Page** (on the Page: Settings › Linked accounts › Instagram).
+- The person connecting has full control of the Page, and a role on the Meta app while it's in development mode.
+
+**Connecting:** an admin opens Settings › Integrations › Instagram & Facebook and presses **Connect with Facebook**, then picks the band's Page when Facebook asks. Roadie trades the code for a long-lived user token and reads the Page token with it; Page tokens got that way don't expire, and Roadie checks that with `debug_token` (`expires_at` 0) before storing it, encrypted with `META_TOKEN_KEY`, in `metaConnections/{artistId}`. The card says "Working" when Instagram answers, "Sign in again" with Facebook's reason when it doesn't (a password change, removed access).
+
+**Posting:** Meta fetches the photo from a signed link on our server (`/api/posts/media/{id}`, good for an hour), so it can only be tried for real on production: localhost isn't reachable from Meta. Dev and tests use `fakes/fake-meta` (`META_GRAPH_URL`, `META_DIALOG_URL` in `.env.development` and `playwright.config.ts`). Instagram takes JPEGs only, up to 8 MB; the API can't delete a published post, so delete test posts in the Instagram app.
+
+**Found on the way:** (add here: whether Business Verification was needed, and dashboard steps that didn't match the docs.)

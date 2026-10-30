@@ -47,6 +47,14 @@ env:
     secret: GOOGLE_OAUTH_CLIENT_SECRET
   - variable: GOOGLE_TOKEN_KEY # 32 random bytes, base64: encrypts the stored refresh tokens
     secret: GOOGLE_TOKEN_KEY
+  # Instagram & Facebook for Posts (docs/SETUP.md, "Meta (Instagram & Facebook)"). Set both secrets before deploying:
+  # a referenced-but-missing secret fails the rollout. META_APP_ID is the Meta app's App ID (App settings > Basic).
+  - variable: META_APP_ID
+    value: "REPLACE_WITH_META_APP_ID"
+  - variable: META_APP_SECRET
+    secret: META_APP_SECRET
+  - variable: META_TOKEN_KEY # 32 random bytes, base64: encrypts the stored Page token
+    secret: META_TOKEN_KEY
   # The canonical address: base of every generated link ("can you play?" emails, MCP URL, share tags). Visits to the
   # old *.hosted.app address redirect here (next.config.ts).
   - variable: APP_URL

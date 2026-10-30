@@ -2,15 +2,11 @@
 import Link, { useArtist } from "@/lib/artist";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
-import { FileIcon } from "@/components/music/common";
+import { FileIcon, thumbOf } from "@/components/music/common";
 import { Upload } from "@/components/music/Upload";
 import type { FileDoc } from "@/schema";
 import type { ShowRow } from "../common";
 import { ShowCard } from "./kit";
-
-/** A Drive thumbnail for a real Drive file (the local fake's links aren't on drive.google.com, so they get the icon instead). */
-const thumbOf = (f: { driveFileId?: string; url: string; mimeType?: string }) =>
-  f.driveFileId && f.mimeType?.startsWith("image/") && /drive\.google\.com/.test(f.url) ? `https://drive.google.com/thumbnail?id=${f.driveFileId}&sz=w480` : null;
 
 /**
  * The show's posters: pictures (or PDFs) anyone in the band uploads. Each goes into the show's Drive folder, "{date} {venue}"

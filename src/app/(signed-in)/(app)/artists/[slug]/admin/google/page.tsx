@@ -112,6 +112,7 @@ function GoogleSettings() {
       {status && <FolderCard which="rehearsal" status={status} onChange={setStatus} />}
       {status && <FolderCard which="shows" status={status} onChange={setStatus} />}
       {status && <FolderCard which="releases" status={status} onChange={setStatus} />}
+      {status && <FolderCard which="posts" status={status} onChange={setStatus} />}
       {status && <ShortcutCard />}
     </div>
   );

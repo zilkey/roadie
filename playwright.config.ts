@@ -1,8 +1,8 @@
 // End-to-end tests. `npm run e2e` starts the test emulators (firebase.test.json), seeds them, then runs this.
-// Everything here is the test run's own: Next on 3110 building into .next-test, fakes on 3211-3217 with state in
+// Everything here is the test run's own: Next on 3110 building into .next-test, fakes on 3211-3218 with state in
 // .fake-data-test, emulators on 8290 and 9329. A running `npm run dev:all` is never reused or touched.
 import { defineConfig, devices } from "@playwright/test";
-import { APP, AUTH, BIT, CAL, DRIVE, EIA, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, ORS, SPOTIFY } from "./tests/e2e/env";
+import { APP, AUTH, BIT, CAL, DRIVE, EIA, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, META, ORS, SPOTIFY } from "./tests/e2e/env";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -45,6 +45,9 @@ export default defineConfig({
         FIREBASE_AUTH_EMULATOR_HOST: AUTH,
         GMAIL_BASE_URL: GMAIL, DRIVE_BASE_URL: DRIVE, CALENDAR_BASE_URL: CAL, BANDSINTOWN_BASE_URL: BIT, SPOTIFY_BASE_URL: SPOTIFY,
         ORS_BASE_URL: ORS, EIA_BASE_URL: EIA,
+        // Instagram & Facebook against fakes/fake-meta: a made-up app, its dialog and Graph.
+        META_APP_ID: "fake-meta-app", META_APP_SECRET: "fake-meta-secret", META_TOKEN_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        META_GRAPH_URL: META, META_DIALOG_URL: `${META}/dialog/oauth`,
         APP_URL: APP,
         // Real Google set up in .env.development.local must not reach e2e: an empty value beats the file.
         GOOGLE_OAUTH_CLIENT_ID: "",

@@ -151,6 +151,8 @@ export const Artist = entity({
   songwritingFolderId: z.string().optional(),
   /** The Shows folder: a poster uploaded to a show goes into a "{date} {venue}" folder inside it, made on the first upload. Set only by google.setShowsFolder. */
   showsFolderId: z.string().optional(),
+  /** The Posts folder: a photo uploaded on Posts goes into a "{YYYY-MM}" folder inside it, made on the month's first upload. Set only by google.setPostsFolder. */
+  postsFolderId: z.string().optional(),
   /** The Releases folder: "Create" on a release makes the release's folder inside it. Set only by google.setReleasesFolder. */
   releasesFolderId: z.string().optional(),
   /**

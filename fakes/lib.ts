@@ -26,6 +26,8 @@ export interface FakeDef<S> {
   routes: Route<S>[];
   /** Body HTML of the GET / page (inside the standard layout). */
   page: (state: S) => string;
+  /** Form posts are API calls (Meta's Graph API takes them): answer with JSON, not a redirect back to the page. */
+  formApi?: boolean;
 }
 
 export interface RunningFake { port: number; url: string; close: () => Promise<void> }
@@ -68,7 +70,7 @@ export function defineFake<S>(def: FakeDef<S>) {
         let body: unknown = undefined;
         if (raw) body = ct.includes("urlencoded") ? Object.fromEntries(new URLSearchParams(raw)) : (() => { try { return JSON.parse(raw); } catch { throw new HttpError(400, "Body is not valid JSON"); } })();
         const method = rq.method ?? "GET";
-        const isForm = ct.includes("urlencoded");
+        const isForm = ct.includes("urlencoded") && !def.formApi;
         if (method === "OPTIONS") return send(204, "text/plain", "", { "access-control-allow-methods": "*", "access-control-allow-headers": "*" });
         if (url.pathname === "/health") return send(200, "application/json", JSON.stringify({ ok: true, name: def.name }));
         if (method === "GET" && url.pathname === "/") return send(200, "text/html", layout(def.name, def.page(state)));
