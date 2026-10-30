@@ -13,7 +13,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
-import { positionBetween, slotIn, tourDays, tourWarnings, type EntryLike } from "@/lib/tours";
+import { attentionText, fmtTourDates, positionBetween, slotIn, tourDays, tourFilterOf, tourWarnings, type EntryLike } from "@/lib/tours";
 import { isEligible, needsConfirm } from "@/server/assistant/policy";
 import { groupOf, groupsFor } from "@/server/assistant/toolset";
 import { topicInWords } from "@/lib/help";
@@ -345,4 +345,21 @@ test("Roadie: tours is a tool group the tour phrases load, reads never ask, book
   assert.ok(isEligible("tours.addPitch", "admin"));
   assert.ok(!isEligible("tours.addPitch", "member"));
   assert.equal(topicInWords("what's a tour?")?.id, "tours");
+});
+
+test("the pages' tour dates, filter and needs-attention line", () => {
+  assert.equal(fmtTourDates("2027-03-09", "2027-03-14"), "Mar 9–14, 2027");
+  assert.equal(fmtTourDates("2027-03-30", "2027-04-02"), "Mar 30 – Apr 2, 2027");
+  assert.equal(fmtTourDates("2026-12-30", "2027-01-02"), "Dec 30, 2026 – Jan 2, 2027");
+  assert.equal(fmtTourDates("2027-03-09"), "From Mar 9, 2027");
+  assert.equal(fmtTourDates(undefined, "2027-03-14"), "Until Mar 14, 2027");
+  assert.equal(fmtTourDates(), "No dates yet");
+  const today = "2026-10-29";
+  assert.equal(tourFilterOf({ status: "planning", endDate: "2027-03-14" }, today), "upcoming");
+  assert.equal(tourFilterOf({ status: "planning" }, today), "upcoming");
+  assert.equal(tourFilterOf({ status: "idea" }, today), "ideas");
+  assert.equal(tourFilterOf({ status: "booked", endDate: "2025-10-12" }, today), "past");
+  assert.equal(tourFilterOf({ status: "done" }, today), "past");
+  assert.equal(attentionText([{ kind: "noStay" }, { kind: "openDate" }, { kind: "longDrive" }, { kind: "noStay" }]), "2 nights no stay · 1 long drive");
+  assert.equal(attentionText([{ kind: "openDate" }]), "");
 });

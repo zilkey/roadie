@@ -75,11 +75,12 @@ test("settings: General edits the artist name", async ({ page }) => {
   await expect(page.locator('input[value="E2E Soundcheck"]')).toHaveCount(0);
 });
 
-test("member sees 4 tabs with Rehearsals, 'My money' in More, and cannot open /booking or admin pages", async ({ page }) => {
+test("member sees 5 tabs with Tours and Rehearsals, 'My money' in More, and cannot open /booking or admin pages", async ({ page }) => {
   await signInAs(page, "david");
   await expect(page).toHaveURL(/\/calendar$/);
-  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(4);
+  await expect(page.getByTestId("topbar").getByTestId(/^tab-/)).toHaveCount(5);
   await expect(page.getByTestId("tab-booking")).toHaveCount(0);
+  await expect(page.getByTestId("tab-tours")).toBeVisible();
   await expect(page.getByTestId("tab-rehearsals")).toBeVisible();
   await expect(page.getByTestId("tab-money")).toHaveCount(0);
   await page.getByTestId("more-toggle").click(); await expect(page.getByTestId("more-money")).toHaveText("My money"); await page.keyboard.press("Escape");

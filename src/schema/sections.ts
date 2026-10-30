@@ -5,14 +5,14 @@ import { z } from "zod";
  * Per-user prefs, not business data: top-level `userPrefs/{uid}` = { hiddenSections: SectionId[], order: SectionId[] }, written with firebase-admin
  * directly (no history, not undoable), owner-only read by rules. A hidden section's routes still work when visited directly.
  */
-export const SECTION_IDS = ["shows", "booking", "templates", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans"] as const;
+export const SECTION_IDS = ["shows", "booking", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 export const SectionIdSchema = z.enum(SECTION_IDS);
 export const isSectionId = (s: unknown): s is SectionId => (SECTION_IDS as readonly unknown[]).includes(s);
 /** A stored section id, with the old name of a renamed section mapped to its new one ("albums" became "releases"). */
 export const legacySectionId = (s: unknown): unknown => (s === "albums" ? "releases" : s);
 
-export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", templates: "Email templates", shows: "Shows", songs: "Songs", releases: "Releases", setlists: "Setlist Templates", rehearsals: "Rehearsals", stagePlots: "Stage plots", money: "Money", fans: "Fans" };
+export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", templates: "Email templates", tours: "Tours", shows: "Shows", songs: "Songs", releases: "Releases", setlists: "Setlist Templates", rehearsals: "Rehearsals", stagePlots: "Stage plots", money: "Money", fans: "Fans" };
 export const SectionSetInput = z.strictObject({ section: SectionIdSchema, hidden: z.boolean() });
 
 /**

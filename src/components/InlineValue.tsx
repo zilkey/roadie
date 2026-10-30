@@ -11,7 +11,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-export type InlineKind = "text" | "textarea" | "time" | "url" | "select";
+export type InlineKind = "text" | "textarea" | "time" | "date" | "url" | "select";
 
 export function InlineValue({ testid, label, kind, value, display, link, emptyLabel = "Add…", options = [], placeholder, inputMode, canEdit, onSave, error, validate, autoStart, savedMs = 2500, className }: {
   /** button `${testid}`, input `${testid}-input`, tick `${testid}-saved`, error `${testid}-error`. */
@@ -135,7 +135,7 @@ export function InlineValue({ testid, label, kind, value, display, link, emptyLa
           {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       ) : (
-        <input {...common} className="input" type={kind === "time" ? "time" : kind === "url" ? "url" : "text"} inputMode={inputMode}
+        <input {...common} className="input" type={kind === "time" || kind === "date" ? kind : kind === "url" ? "url" : "text"} inputMode={inputMode}
           value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={() => void finish()} />
       )}
       {shownError && <span className="text-[0.8125rem] font-semibold text-[var(--danger)]" role="alert" data-testid={`${testid}-error`}>{shownError}</span>}
@@ -155,7 +155,7 @@ function GrowTextarea({ value, ...rest }: React.TextareaHTMLAttributes<HTMLTextA
   return <textarea ref={ref} rows={1} {...rest} className="input grow" value={value} />;
 }
 
-const PenIcon = () => (
+export const PenIcon = () => (
   <svg className="pen" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
   </svg>

@@ -26,6 +26,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
   releases: "releases", newRelease: "releases", release: (tab) => (tab === "money" ? "releaseMoney" : tab === "files" ? "releaseFiles" : "releasePage"), releaseMoney: "releaseMoney", releaseFiles: "releaseFiles", releaseTrack: "releaseTrack",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",
+  tours: "tours", newTour: "tours", tour: "tours",
   rehearsals: "rehearsals", rehearsal: "rehearsals", stagePlots: "stagePlots", stagePlot: "stagePlots", money: "money", fans: "fans", expense: "expenses", projects: "projects", project: "projects", fields: "customFields",
 };
 /** The topic that explains this page, if there is one. */

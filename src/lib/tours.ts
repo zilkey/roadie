@@ -126,3 +126,40 @@ export function tourWarnings(tour: TourLike, entries: readonly EntryLike[], show
   }
   return out;
 }
+
+// ---------- the pages ----------
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const parts = (d: string) => { const [y, m, day] = d.split("-").map(Number); return { y, m: MONTHS[m - 1], d: day }; };
+
+/** "Mar 9–14, 2027", "Mar 30 – Apr 2, 2027", "Dec 30, 2026 – Jan 2, 2027"; one end only: "From Mar 9, 2027" / "Until Mar 14, 2027". */
+export function fmtTourDates(start?: string, end?: string): string {
+  if (!start && !end) return "No dates yet";
+  const one = (d: string) => { const p = parts(d); return `${p.m} ${p.d}, ${p.y}`; };
+  if (!end) return `From ${one(start!)}`;
+  if (!start) return `Until ${one(end)}`;
+  if (start === end) return one(start);
+  const a = parts(start), b = parts(end);
+  if (a.y !== b.y) return `${one(start)} – ${one(end)}`;
+  if (a.m !== b.m) return `${a.m} ${a.d} – ${b.m} ${b.d}, ${b.y}`;
+  return `${a.m} ${a.d}–${b.d}, ${b.y}`;
+}
+
+export const TOUR_STATUS_LABEL = { idea: "Idea", planning: "Planning", booked: "Booked", done: "Done" } as const;
+
+/** The Tours list's filter: Ideas are status idea; Past is done or ended before today; the rest are Upcoming. */
+export type TourFilter = "upcoming" | "ideas" | "past" | "all";
+export function tourFilterOf(tour: TourLike & { status: string }, today: string): Exclude<TourFilter, "all"> {
+  if (tour.status === "done" || (tour.endDate && tour.endDate < today)) return "past";
+  return tour.status === "idea" ? "ideas" : "upcoming";
+}
+
+/** "1 night no stay · 1 long drive": the warnings that need doing something about (open dates have their own column). Empty when there are none. */
+export function attentionText(warnings: readonly { kind: TourWarningKind }[]): string {
+  const n = (k: TourWarningKind) => warnings.filter((w) => w.kind === k).length;
+  const plural = (c: number, one: string, many: string) => (c ? [`${c} ${c === 1 ? one : many}`] : []);
+  return [
+    ...plural(n("noStay"), "night no stay", "nights no stay"), ...plural(n("longDrive"), "long drive", "long drives"),
+    ...plural(n("lateArrival"), "late arrival", "late arrivals"), ...plural(n("outsideDates"), "thing outside the dates", "things outside the dates"),
+  ].join(" · ");
+}
