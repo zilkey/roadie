@@ -4,7 +4,8 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
-import { QUIET_DAYS, quietDays } from "@/lib/booking";
+import { QUIET_DAYS, quietDays, todayStr } from "@/lib/booking";
+import { addDays } from "@/lib/pickShow";
 
 let sys: Ctx;
 let pitchId: string;
@@ -67,7 +68,8 @@ test("needingFollowUp: Pitched and Talking quiet for 14 days, To Pitch never", a
   const third = ((await call("pitches.flag", { kind: "venue", id: ((await call("venues.create", venue("Lost Lake"))) as { id: string }).id })) as { id: string }).id;
   await call("pitches.move", { id: pitchId, status: "pitched" });
   await call("pitches.move", { id: other, status: "talking" });
-  const today = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+  // Calendar days from the band-timezone today: a UTC date is a day ahead on Denver evenings.
+  const today = (days: number) => addDays(todayStr(), days);
   const quiet = async (days: number) => ((await call("pitches.needingFollowUp", { today: today(days) })) as { pitches: { id: string; reasons: string[] }[] })
     .pitches.filter((p) => p.reasons.some((r) => r.startsWith("No contact"))).map((p) => p.id).sort();
   assert.deepEqual(await quiet(13), []);
