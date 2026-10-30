@@ -22,6 +22,8 @@ export const Tour = entity({
   /** "Money goes to": an existing open project that money added from the tour starts on. Not the tour's own. */
   projectId: id,
   notes: z.string().optional(),
+  /** The linked Google Sheet (the band version of the Sheet tab) in the band folder: made and refreshed only by tours.sheet. updatedBy is a name. */
+  sheet: z.strictObject({ driveFileId: z.string(), url: z.string(), updatedAt: z.string(), updatedBy: z.string() }).optional(),
 });
 export const TourInput = Tour.omit(serverMask);
 export type Tour = z.infer<typeof Tour>;

@@ -21,6 +21,7 @@ export const EXCLUDED: readonly string[] = [
   "email.link", "email.sync", "email.thread", "email.search", "email.people", // the same: they read threads from Gmail
   "stats.importCsv",  // bulk import of someone's file
   "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
+  "tours.sheet",      // rewrites the tour's Google Sheet over anyone's edits there: the Sheet tab's button, after its confirm
 ];
 /** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */
 const ALLOWED_DESPITE_PREFIX: readonly string[] = ["users.addToBand"];

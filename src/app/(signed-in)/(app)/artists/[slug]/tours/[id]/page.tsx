@@ -9,7 +9,7 @@ import { Menu } from "@/components/Menu";
 import { SaveStatus } from "@/components/SaveStatus";
 import { InlineValue } from "@/components/InlineValue";
 import { Tabs } from "@/components/booking/common";
-import { DetailCard, DetailPage } from "@/components/booking/DetailCards";
+import { DetailPage } from "@/components/booking/DetailCards";
 import { useAutosave } from "@/lib/autosave";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { fmtTourDates } from "@/lib/tours";
@@ -19,6 +19,7 @@ import { TourInfo, type TourForm } from "@/components/tours/TourInfo";
 import { TourAsk } from "@/components/tours/TourAsk";
 import { TourMoney } from "@/components/tours/TourMoney";
 import { TourPlan } from "@/components/tours/TourPlan";
+import { TourSheet } from "@/components/tours/TourSheet";
 import type { Musician, Project, Tour, TourEntry } from "@/schema";
 
 type Tab = "plan" | "sheet" | "info" | "money";
@@ -75,7 +76,7 @@ function TourView({ tour }: { tour: TourRow }) {
   const meta = [form.startDate || form.endDate ? fmtTourDates(form.startDate || undefined, form.endDate || undefined) : "", form.leavingFrom ? `from ${townOf(form.leavingFrom)}` : "", act ?? ""].filter(Boolean).join(" · ");
 
   return (
-    <DetailPage testid="tour-page" wide={tab === "plan"} back={<BackLink href="/tours" label="All tours" />}
+    <DetailPage testid="tour-page" wide={tab === "plan" || tab === "sheet"} back={<BackLink href="/tours" label="All tours" />}
       title={admin
         ? <InlineValue testid="tour-title" label="Name" kind="text" value={form.name} canEdit validate={(v) => (v ? null : "A tour needs a name")} onSave={(v) => save({ name: v })} />
         : form.name}
@@ -96,7 +97,7 @@ function TourView({ tour }: { tour: TourRow }) {
       <ErrorBox error={error} />
 
       {tab === "plan" && <TourPlan tour={tour} admin={admin} extend={save} />}
-      {tab === "sheet" && <DetailCard private title="Sheet" testid="tour-sheet"><span className="d-muted">The sheet is coming soon.</span></DetailCard>}
+      {tab === "sheet" && <TourSheet tour={tour} admin={admin} />}
       {tab === "info" && <TourInfo form={form} admin={admin} musicians={musicians} projects={projects} save={save} />}
       {tab === "money" && admin && <TourMoney tour={tour} />}
     </DetailPage>

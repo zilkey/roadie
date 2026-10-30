@@ -8,10 +8,15 @@ export const MIME = {
   audio: "audio/mp4",
   wav: "audio/wav",
   video: "video/mp4",
+  sheet: "application/vnd.google-apps.spreadsheet",
 } as const;
 
 export interface DrivePermission { email: string; role: "owner" | "writer" | "reader" }
-export interface DriveFile { id: string; name: string; mimeType: string; ownerEmail: string; parents: string[]; permissions: DrivePermission[]; createdAt: string; webViewLink: string }
+export interface DriveFile {
+  id: string; name: string; mimeType: string; ownerEmail: string; parents: string[]; permissions: DrivePermission[]; createdAt: string; webViewLink: string;
+  /** What was last written to a text file or a sheet (as CSV): the fake keeps no other bytes. */
+  text?: string;
+}
 export interface DriveState { seq: number; files: DriveFile[] }
 
 export const BAND_FOLDER_ID = "fake-band-folder";
@@ -88,7 +93,7 @@ const routes: Route<DriveState>[] = [
   }],
   ["POST", "/files", ({ body }, s) => {
     required(body, "name", "ownerEmail");
-    const f: DriveFile = { id: `fake-new-${++s.seq}`, name: body.name, mimeType: body.mimeType ?? MIME.doc, ownerEmail: body.ownerEmail, parents: emailsOf(body.parents), createdAt: new Date().toISOString(), webViewLink: "", permissions: [{ email: body.ownerEmail, role: "owner" }] };
+    const f: DriveFile = { id: `fake-new-${++s.seq}`, name: body.name, mimeType: body.mimeType ?? MIME.doc, ownerEmail: body.ownerEmail, parents: emailsOf(body.parents), createdAt: new Date().toISOString(), webViewLink: "", permissions: [{ email: body.ownerEmail, role: "owner" }], ...(typeof body.text === "string" ? { text: body.text } : {}) };
     f.webViewLink = link(f.id);
     s.files.push(f);
     return f;
@@ -99,8 +104,14 @@ const routes: Route<DriveState>[] = [
     if (typeof body.name === "string" && body.name) f.name = body.name;
     return f;
   }],
+  ["PUT", "/files/:id/content", ({ params, body }, s) => {
+    const f = find(s, params.id);
+    if (typeof body.text === "string") f.text = body.text;
+    return f;
+  }],
   ["GET", "/files/:id/content", ({ params }, s) => {
     const f = find(s, params.id);
+    if (f.text !== undefined) return { bytes: Buffer.from(f.text), type: "text/csv" };
     if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio");
     return { bytes: tone(), type: "audio/wav" };
   }],

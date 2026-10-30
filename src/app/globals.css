@@ -705,6 +705,27 @@ dialog.tp-sheet { margin: auto 0 0; padding: 0; border: 0; border-radius: 16px 1
 dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .tp-sheet-body { display: grid; gap: 12px; padding: 8px 16px 24px; }
 .tp-sheet-grab { width: 40px; height: 4px; border-radius: 999px; background: var(--line); margin: 0 auto 4px; }
+
+/* The Sheet tab (#52): one row per day, read-only; wide, so it scrolls in its box. */
+.ts-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; }
+.ts-table { border-collapse: collapse; width: 100%; min-width: 1180px; font-size: 0.875rem; line-height: 1.35; }
+.ts-table th { background: var(--empty); text-align: left; font-size: 0.75rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.ts-table td { padding: 10px 12px; border-top: 1px solid var(--divider); vertical-align: top; }
+.ts-table tr:first-child td { border-top: 0; }
+.ts-date b { display: block; white-space: nowrap; }
+.ts-date span { display: block; font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+.ts-line { display: block; }
+.ts-line + .ts-line, .ts-cell + .ts-cell, .ts-line + .ts-cell, .ts-cell + .ts-line { margin-top: 6px; }
+.ts-cell { display: block; width: calc(100% + 8px); text-align: left; color: inherit; text-decoration: none; border: 0; background: none; font: inherit; border-radius: 8px; padding: 2px 4px; margin: -2px -4px; cursor: pointer; }
+.ts-cell:hover { background: var(--accent-soft); }
+.ts-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ts-sub { display: block; font-size: 0.75rem; color: var(--muted); }
+.ts-dash { color: var(--muted); }
+.ts-open { display: inline-block; font-size: 0.75rem; font-weight: 800; color: inherit; border: 1.5px solid #0e7c7b; border-radius: 999px; padding: 1px 8px; margin-bottom: 6px; }
+.ts-opt { display: flex; align-items: flex-start; gap: 6px; text-decoration: none; color: inherit; border: 1.5px dashed #0e7c7b; border-radius: 9px; padding: 4px 8px; }
+.ts-opt + .ts-opt { margin-top: 6px; }
+.ts-opt .tp-rank { width: 18px; height: 18px; font-size: 0.6875rem; margin-top: 1px; }
+.ts-nostay { display: inline-block; color: var(--owed-text); background: var(--unfinished); border-radius: 8px; padding: 2px 8px; font-size: 0.8125rem; font-weight: 600; }
 .tp-sheet-x { width: 44px; height: 44px; border-radius: 999px; flex: none; }
 .tp-sheet-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .tp-sheet-row { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-height: 56px; }

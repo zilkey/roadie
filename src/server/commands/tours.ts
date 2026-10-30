@@ -14,6 +14,10 @@ import { dateStr, timeStr, geoPoint, tourStatus, entryVisibility } from "@/schem
 import { artistFor, requireOpenProject } from "./projects";
 import { createShow, ShowCreateIn } from "./shows";
 import { flagPitch } from "./booking";
+import { driveClient, type DriveFile } from "../integrations/drive";
+import { IntegrationError } from "../integrations/http";
+import { bandFolders } from "../music";
+import { sheetCsv, tourSheet, type SheetEntry, type SheetShow } from "@/lib/tourSheet";
 
 // Tours (#11, #41): a tour is a tag, not a project. Shows, pitches and money carry tourId; a tour's numbers are the records
 // with its tourId, whatever their project, and the same money still counts on its project. Tour.projectId is only where money
@@ -548,7 +552,42 @@ export const toursBook = defineCommand({
   },
 });
 
+// ---------- the Sheet tab's Google Sheet ----------
+
+const CSV = "text/csv", SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+
+export const toursSheet = defineCommand({
+  name: "tours.sheet", roles: ["admin"],
+  description: "Copy the tour's Sheet tab to its linked Google Sheet in the band folder: one row per day, the band version (no options, open dates or No date yet). " +
+    "The first time makes the sheet, named after the tour; after that it rewrites the same sheet, replacing edits made in Google Sheets. Returns { url, made }.",
+  input: z.strictObject({ id: id1 }),
+  async run(ctx, { id }) {
+    const tour = await readTour(ctx, id);
+    const artistId = await artistIdFor(ctx);
+    const entries = (await readEntries(ctx, id)).filter((e) => e.visibility === "band");
+    const shows = await showsOf(entries);
+    const csv = sheetCsv(tourSheet(tour as TourLike, entries as unknown as SheetEntry[], shows as unknown as Map<string, SheetShow>, new Map(), { band: true }));
+    const data = new Blob([csv], { type: CSV });
+    const drive = driveClient({ artistId });
+    let file: DriveFile | null = null, made = false;
+    if (tour.sheet?.driveFileId) {
+      // Gone from Drive: make a new one, as the first time.
+      try { file = await drive.replace(tour.sheet.driveFileId, { mimeType: CSV, data }); } catch (e) { if (!(e instanceof IntegrationError && e.status === 404)) throw e; }
+    }
+    if (!file) {
+      const { band } = await bandFolders(artistId);
+      if (!band) throw new AppError("no_band_folder", "Choose the band folder on Settings > Google first: the sheet goes inside it", 400);
+      file = await drive.upload({ name: tour.name as string, mimeType: CSV, as: SHEET_MIME, parentId: band, data });
+      made = true;
+    }
+    const me = await db.get("users", ctx.uid);
+    const sheet = { driveFileId: file.id, url: file.webViewLink, updatedAt: (ctx.now ?? new Date()).toISOString(), updatedBy: String(me?.name ?? "an admin").split(" ")[0] };
+    await run(ctx, (w) => w.update("tours", id, { sheet }));
+    return { url: sheet.url, made };
+  },
+});
+
 export const tourCommands = [
   toursList, toursGet, toursSummary, toursCreate, toursUpdate, toursRemove, toursAddShow, toursAddPitch, toursRemoveItem,
-  toursEntriesAdd, toursEntriesUpdate, toursEntriesMove, toursEntriesRemove, toursBook,
+  toursEntriesAdd, toursEntriesUpdate, toursEntriesMove, toursEntriesRemove, toursBook, toursSheet,
 ];

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { test, expect, type Browser } from "@playwright/test";
 import { A } from "./env";
 
@@ -426,6 +427,62 @@ test.describe.serial("tours", () => {
     await page.getByTestId("tour-tab-plan").click();
     await expect(page.getByTestId("tour-tray")).toBeVisible();
     await expect(page.getByTestId("plan-bucket")).toBeVisible();
+    await close();
+  });
+
+  // The Sheet tab (#52), on the plan the tests above built: Mar 10 has Load the van, Gas up and Motel 6 for 2 nights, Mar 12 the
+  // booked Dairy Arts Center, Mar 14 a Swallow Hill option, and Cervantes waits in No date yet.
+  test("sheet: admin reads a row per day with options, downloads the CSV, then copies to Google Sheets and updates it", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(`${tourUrl}?tab=sheet`);
+    await expect(page.getByTestId("tour-tab-sheet")).toHaveAttribute("aria-selected", "true");
+    const mar10 = page.getByTestId("sheet-row-2027-03-10");
+    await expect(mar10).toContainText("Load the van");
+    await expect(mar10.getByTestId("sheet-stay")).toContainText("Motel 6");
+    await expect(page.getByTestId("sheet-row-2027-03-11").getByTestId("sheet-stay")).toContainText("night 2 of 2");
+    await expect(page.getByTestId("sheet-row-2027-03-12").getByTestId("sheet-show")).toContainText("Dairy Arts Center");
+    const mar14 = page.getByTestId("sheet-row-2027-03-14");
+    await expect(mar14.getByTestId("sheet-open-day")).toBeVisible();
+    await expect(mar14.getByTestId("sheet-option")).toContainText("Swallow Hill Music");
+    await expect(page.getByTestId("sheet-bucket")).toContainText("Cervantes' Other Side");
+
+    await mar10.getByTestId("sheet-entry").filter({ hasText: "Load the van" }).click();
+    await expect(page.getByTestId("entry-modal")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("entry-modal")).toBeHidden();
+
+    const [download] = await Promise.all([page.waitForEvent("download"), page.getByTestId("sheet-csv").click()]);
+    expect(download.suggestedFilename()).toBe("Mountain West.csv");
+    const csv = fs.readFileSync((await download.path())!, "utf8");
+    expect(csv.split("\r\n")[0]).toBe("Date,Day,Town,Drive,Show,Times,Set,Sound,Contact,Stay,Notes");
+    expect(csv).toContain("Swallow Hill Music");
+
+    await expect(page.getByTestId("sheet-open")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-copy")).toHaveText("Copy to Google Sheets");
+    await page.getByTestId("sheet-copy").click();
+    await expect(page.getByTestId("sheet-linked")).toContainText("by Jeff");
+    await expect(page.getByTestId("sheet-open")).toHaveAttribute("href", /\/files\/fake-new-\d+$/);
+    const href = await page.getByTestId("sheet-open").getAttribute("href");
+    await expect(page.getByTestId("sheet-copy")).toHaveText("Update sheet");
+    page.once("dialog", (d) => d.accept());
+    await page.getByTestId("sheet-copy").click();
+    await expect(page.getByText("Updated the Google Sheet")).toBeVisible();
+    await expect(page.getByTestId("sheet-open")).toHaveAttribute("href", href!);
+    await close();
+  });
+
+  test("sheet: a member sees the band's rows only, and Open in Google Sheets but no Copy", async ({ browser }) => {
+    const { page, close } = await as(browser, "david");
+    await page.goto(`${tourUrl}?tab=sheet`);
+    await expect(page.getByTestId("sheet-row-2027-03-10")).toContainText("Load the van");
+    await expect(page.getByTestId("sheet-row-2027-03-12").getByTestId("sheet-show")).toContainText("Dairy Arts Center");
+    await expect(page.getByTestId("sheet-option")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-open-day")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-bucket")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-entry")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-copy")).toHaveCount(0);
+    await expect(page.getByTestId("sheet-open")).toBeVisible();
+    await expect(page.getByTestId("sheet-csv")).toBeVisible();
     await close();
   });
 });

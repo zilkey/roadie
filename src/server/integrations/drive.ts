@@ -27,8 +27,10 @@ export interface DriveService {
   get(id: string): Promise<DriveFile>;
   copy(id: string, opts: { parentId: string; name?: string }): Promise<DriveFile>;
   createFolder(name: string, parentId: string): Promise<DriveFile>;
-  /** A new file in `parentId` with these bytes. */
-  upload(opts: { name: string; mimeType: string; parentId: string; data: Blob }): Promise<DriveFile>;
+  /** A new file in `parentId` with these bytes. `as` converts on the way in (text/csv as a Google Sheet). */
+  upload(opts: { name: string; mimeType: string; parentId: string; data: Blob; as?: string }): Promise<DriveFile>;
+  /** New bytes for a file that exists (its id, name and place stay); a Google Sheet takes CSV and is rewritten from it. */
+  replace(id: string, opts: { mimeType: string; data: Blob }): Promise<DriveFile>;
   share(id: string, emails: string[], role?: "reader" | "writer"): Promise<DriveFile>;
   /** Give the file a new name (its id and place stay). */
   rename(id: string, name: string): Promise<DriveFile>;
@@ -59,8 +61,9 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     get: (id) => call("GET", f(id)),
     copy: (id, o) => call("POST", `${f(id)}/copy`, { body: o }),
     createFolder: (name, parentId) => call("POST", "/files", { body: { name, mimeType: FOLDER_MIME, parents: [parentId], ownerEmail: FAKE_OWNER } }),
-    // The fake keeps no bytes: it records the file, like any other it holds.
-    upload: (o) => call("POST", "/files", { body: { name: o.name, mimeType: o.mimeType, parents: [o.parentId], ownerEmail: FAKE_OWNER } }),
+    // The fake keeps no bytes, except text (a CSV for a sheet), so tests can read back what was written.
+    upload: async (o) => call("POST", "/files", { body: { name: o.name, mimeType: o.as ?? o.mimeType, parents: [o.parentId], ownerEmail: FAKE_OWNER, ...(o.mimeType.startsWith("text/") ? { text: await o.data.text() } : {}) } }),
+    replace: async (id, o) => call("PUT", `${f(id)}/content`, { body: { mimeType: o.mimeType, ...(o.mimeType.startsWith("text/") ? { text: await o.data.text() } : {}) } }),
     share: (id, emails, role = "reader") => call("POST", `${f(id)}/share`, { body: { emails, role } }),
     rename: (id, name) => call("PATCH", f(id), { body: { name } }),
     permissions: (id) => call("GET", `${f(id)}/permissions`),
@@ -139,7 +142,7 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
       const start = async (force: boolean) => fetch(`${uploadUrl}/files?${qs}`, {
         method: "POST",
         headers: { authorization: `Bearer ${await token(force)}`, "content-type": "application/json; charset=UTF-8", "x-upload-content-type": o.mimeType },
-        body: JSON.stringify({ name: o.name, mimeType: o.mimeType, parents: [o.parentId] }),
+        body: JSON.stringify({ name: o.name, mimeType: o.as ?? o.mimeType, parents: [o.parentId] }),
       });
       let res = await start(false);
       if (res.status === 401) res = await start(true);
@@ -151,6 +154,16 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
       const put = await fetch(session, { method: "PUT", headers: { "content-type": o.mimeType }, body: o.data });
       const data = await put.json().catch(() => undefined);
       if (!put.ok) throw new IntegrationError("drive", put.status, data?.error?.message ?? put.statusText);
+      return toFile(data as GFile);
+    },
+    async replace(id, o) {
+      // files.update with uploadType=media: a Google Sheet given CSV is imported again from it, keeping its id and link.
+      const qs = new URLSearchParams({ uploadType: "media", fields: FILE_FIELDS, ...ALL_DRIVES });
+      const put = async (force: boolean) => fetch(`${uploadUrl}${f(id)}?${qs}`, { method: "PATCH", headers: { authorization: `Bearer ${await token(force)}`, "content-type": o.mimeType }, body: o.data });
+      let res = await put(false);
+      if (res.status === 401) res = await put(true);
+      const data = await res.json().catch(() => undefined);
+      if (!res.ok) throw new IntegrationError("drive", res.status, data?.error?.message ?? res.statusText);
       return toFile(data as GFile);
     },
     async share(id, emails, role = "reader") {
