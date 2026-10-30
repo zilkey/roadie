@@ -16,19 +16,14 @@ interface Mate { id: string; name: string; email: string }
  * Search Drive, tick files, set kind and key, and fix sharing gaps before attaching.
  * `syncWith` follows another field (the song title). The parent reads picks through onChange.
  */
-export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, single = false, placeholder = "Search Drive by song title…", onChange, onPickHits, testid = "picker" }: {
+export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, placeholder = "Search Drive by song title…", onChange, testid = "picker" }: {
   syncWith?: string; exclude?: string[]; defaultKind?: FileKind;
   /** The kinds the picked file can be (a release's or a track's kinds instead of a song's). */
   kinds?: readonly FileKind[];
   /** Offer any kind of file (images, PDFs), not just audio, video and docs. */
   all?: boolean;
-  /** One file at most (ticking another unticks the first), with no kind or key to set. */
-  single?: boolean;
   placeholder?: string;
-  onChange(picks: Pick[]): void;
-  /** The picked files as found (name, type, link), alongside onChange. */
-  onPickHits?(hits: Hit[]): void;
-  testid?: string;
+  onChange(picks: Pick[]): void; testid?: string;
 }) {
   const { call, error, busy } = useCommand();
   // No band folder chosen yet: nothing can be "in" it, so its chips and Copy to band folder are off (Settings > Google sets it).
@@ -63,13 +58,12 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
 
   useEffect(() => {
     onChange(Object.entries(sel).map(([driveFileId, v]) => ({ driveFileId, kind: v.kind, ...(v.key.trim() ? { key: v.key.trim() } : {}) })));
-    onPickHits?.((hits ?? []).filter((h) => sel[h.driveFileId]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel]);
 
   const toggle = (h: Hit) => setSel((s) => {
     const { [h.driveFileId]: on, ...rest } = s;
-    return on ? rest : { ...(single ? {} : s), [h.driveFileId]: { kind: defaultKind ?? (kinds.includes(h.kind) ? h.kind : kinds[0]), key: h.key ?? "" } };
+    return on ? rest : { ...s, [h.driveFileId]: { kind: defaultKind ?? (kinds.includes(h.kind) ? h.kind : kinds[0]), key: h.key ?? "" } };
   });
   const setPick = (id: string, p: Partial<{ kind: FileKind; key: string }>) => setSel((s) => ({ ...s, [id]: { ...s[id], ...p } }));
 
@@ -110,7 +104,7 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
               {hasFolder && (h.inBandFolder ? <span className="chip g">Band folder</span> : <span className="chip a" data-testid="outside-band">Outside band folder</span>)}
             </label>
             {h.missing.length > 0 && <span className="s" data-testid="cant-open">Can&apos;t open: {h.missing.map(name).sort().join(", ")}</span>}
-            {on && !single && (
+            {on && (
               <div className="flex flex-wrap gap-2">
                 <select className="select !w-auto" value={on.kind} onChange={(e) => setPick(h.driveFileId, { kind: e.target.value as FileKind })} aria-label="Kind" data-testid="hit-kind">
                   {kinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}

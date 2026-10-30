@@ -16,7 +16,7 @@ import path from "node:path";
 
 const OFFSETS = [20, 30, 40, 50, 60, 70, 80, 90];
 // Dev ports the test run shifts: Next, fakes, Firestore, Auth, emulator hub, logging.
-const DEV_PORTS = [3100, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 8280, 9319, 4600, 4700];
+const DEV_PORTS = [3100, 3201, 3202, 3203, 3204, 3205, 3206, 3207, 8280, 9319, 4600, 4700];
 const CONFIG = "firebase.worktree.json";
 
 const git = (args: string) => execSync(`git ${args}`, { encoding: "utf8" }).trim();
@@ -26,7 +26,7 @@ const FILE = path.join(mainCheckout, "emulators");
 const LOCK = `${FILE}.lock`;
 
 interface Claim { offset: number; session: string; branch: string; worktree: string; claimed: string }
-const HEADER = "# offset  session  branch  worktree  claimed   (ports: dev port + offset; firestore 8280, auth 9319, next 3100, fakes 3201-3208, hub 4600, logging 4700)";
+const HEADER = "# offset  session  branch  worktree  claimed   (ports: dev port + offset; firestore 8280, auth 9319, next 3100, fakes 3201-3207, hub 4600, logging 4700)";
 
 function read(): Claim[] {
   if (!fs.existsSync(FILE)) return [];

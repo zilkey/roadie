@@ -5,7 +5,7 @@ import { useArtistRouter as useRouter } from "@/lib/artist";
 import { clientDb } from "./firebase-client";
 import { useAuth, useProfile } from "./auth";
 import { runCommand } from "./commands";
-import { defaultHidden, hiddenFromPrefs, normalizeOrder, SECTION_LABEL, type SectionId } from "@/schema/sections";
+import { defaultHidden, isSectionId, normalizeOrder, SECTION_LABEL, type SectionId } from "@/schema/sections";
 import { toast } from "@/components/Toasts";
 
 /** Live nav prefs of the signed-in user (userPrefs/{uid}; owner-only read): hidden sections (the defaults until the person stores their own) and their order. `loaded` is false until the first snapshot. */
@@ -19,7 +19,8 @@ export function useHiddenSections() {
   useEffect(() => {
     if (!uid) return;
     return onSnapshot(doc(clientDb(), "userPrefs", uid), (s) => {
-      setHidden(hiddenFromPrefs(s.data(), role)); setOrder(normalizeOrder(s.data()?.order)); setLoaded(true);
+      const v = s.data()?.hiddenSections;
+      setHidden(Array.isArray(v) ? v.filter(isSectionId) : defaultHidden(role)); setOrder(normalizeOrder(s.data()?.order)); setLoaded(true);
     }, () => setLoaded(true));
   }, [uid, role]);
   return { hidden, order, loaded };

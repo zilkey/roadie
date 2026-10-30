@@ -47,17 +47,11 @@ const FOLDERS = {
     is: "A release's new Drive folder goes inside it.",
     unset: "Not chosen yet. A release's new Drive folder goes inside it; Create stays off on a release until you choose it.",
   },
-  posts: {
-    title: "Posts folder", command: "google.setPostsFolder", tid: "posts-folder", card: "google-posts-folder",
-    saved: "Posts folder saved. Upload on Posts puts photos here now.",
-    is: "Photos uploaded on Posts go here, in a folder for the month, shared with the band.",
-    unset: "Not chosen yet. This is where photos uploaded on Posts go; Upload stays off on Posts until you choose it.",
-  },
 } as const;
 
 /**
  * A Drive folder setting: the band folder (song files are checked against it), the Charts folder (lyrics and chord
- * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase), the rehearsal recordings folder (uploads from a rehearsal go into it) the Shows folder (a show's posters go into it, in a folder per show) the Releases folder (a release's new Drive folder is made inside it) or the Posts folder (photos uploaded on Posts, a folder per month). Chosen by searching the band account's Drive for folders by
+ * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase), the rehearsal recordings folder (uploads from a rehearsal go into it) the Shows folder (a show's posters go into it, in a folder per show) or the Releases folder (a release's new Drive folder is made inside it). Chosen by searching the band account's Drive for folders by
  * name, or by pasting a folder link. Until it's set, what depends on it is off everywhere.
  */
 export function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; status: Status; onChange(s: Status): void }) {
@@ -67,7 +61,7 @@ export function FolderCard({ which, status, onChange }: { which: keyof typeof FO
   const [q, setQ] = useState("");
   const [found, setFound] = useState<Folder[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const f = { band: status.bandFolder, charts: status.chartsFolder, demos: status.demosFolder, songwriting: status.songwritingFolder, rehearsal: status.rehearsalFolder, shows: status.showsFolder, releases: status.releasesFolder, posts: status.postsFolder }[which];
+  const f = { band: status.bandFolder, charts: status.chartsFolder, demos: status.demosFolder, songwriting: status.songwritingFolder, rehearsal: status.rehearsalFolder, shows: status.showsFolder, releases: status.releasesFolder }[which];
   const isLink = /drive\.google\.com|\/folders\//.test(q);
 
   async function choose(folder: string) {

@@ -34,7 +34,7 @@ async function requireShow(w: Writer, id: string): Promise<Doc> {
 export const showFolderName = (show: { date: string; venue?: { name: string }; kind?: string; hostName?: string; editionName?: string }) =>
   `${show.date} ${showName(show as never)}`.replace(/[/\\]/g, "-").trim();
 
-export async function findOrMakeFolder(drive: DriveService, parent: string, name: string, mates: Bandmate[]): Promise<DriveFile> {
+async function findOrMakeFolder(drive: DriveService, parent: string, name: string, mates: Bandmate[]): Promise<DriveFile> {
   const there = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name === name);
   if (there) return there;
   const folder = await drive.createFolder(name, parent);

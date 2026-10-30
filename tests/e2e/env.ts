@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 /**
  * Where the e2e run's own servers live. Tests never share ports, data or a Next build with `npm run dev:all`
- * (emulators 8280/9319, Next 3100, fakes 3201-3208), so a test run can't touch dev data. Keep in sync with
+ * (emulators 8280/9319, Next 3100, fakes 3201-3207), so a test run can't touch dev data. Keep in sync with
  * firebase.test.json and the `test` / `e2e` scripts in package.json.
  * Every port is its dev port + TEST_PORT_OFFSET (10 by default). A worktree claims its own offset with
  * `npm run worktree:ports claim`, which also writes the matching firebase.worktree.json.
@@ -20,7 +20,6 @@ export const BIT = `http://${at(3204)}`;
 export const SPOTIFY = `http://${at(3205)}`;
 export const ORS = `http://${at(3206)}`;
 export const EIA = `http://${at(3207)}`;
-export const META = `http://${at(3208)}`;
 /** The seeded artist's URL name (scripts/seed.ts): every band page is under /artists/{slug}. */
 export const ARTIST_SLUG = "ingrid-avison-band";
 /** A band page of the seeded artist: A("/shows/1") -> "/artists/ingrid-avison-band/shows/1". */

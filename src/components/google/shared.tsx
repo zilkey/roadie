@@ -24,8 +24,6 @@ export interface Status {
   showsFolder: FolderStatus;
   /** The chosen Releases folder (a release's new Drive folder is made inside it), the same way. */
   releasesFolder: FolderStatus;
-  /** The chosen Posts folder (photos uploaded on Posts, in a folder per month), the same way. */
-  postsFolder: FolderStatus;
   /** The caller can use Calendar: the local fake, or their own Google account has Calendar connected. */
   calendarReady: boolean;
   /** The band's shared calendar, as named when it was chosen. */

@@ -100,7 +100,7 @@ export function splitArtistPath(path: string): { slug: string; rest: string } | 
  * artist-relative link to the current artist, so a section missing here renders its links unscoped and they 404; and old
  * links and bookmarks from before artists had URLs redirect to the same page in the signed-in person's artist.
  */
-export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "tours", "songs", "releases", "setlists", "rehearsals", "stage-plots", "money", "fans", "posts", "admin", "me"] as const;
+export const LEGACY_SECTIONS = ["shows", "calendar", "booking", "tours", "songs", "releases", "setlists", "rehearsals", "stage-plots", "money", "fans", "admin", "me"] as const;
 export const isLegacyPath = (path: string) => LEGACY_SECTIONS.some((s) => path === `/${s}` || path.startsWith(`/${s}/`) || path.startsWith(`/${s}?`));
 
 /**

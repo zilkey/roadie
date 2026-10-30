@@ -39,10 +39,6 @@ const ICON_PATH: Record<MimeGroup | Provider, string[]> = {
 };
 
 /** A stroke icon in the theme's muted ink. Pass provider for a non-Drive link (no mimeType: the icon says where it goes); kind is the fallback when the mimeType is missing. */
-/** A Drive thumbnail for a real Drive image (the local fake's links aren't on drive.google.com, so they get the icon instead). */
-export const thumbOf = (f: { driveFileId?: string; url?: string; mimeType?: string }) =>
-  f.driveFileId && f.mimeType?.startsWith("image/") && /drive\.google\.com/.test(f.url ?? "") ? `https://drive.google.com/thumbnail?id=${f.driveFileId}&sz=w480` : null;
-
 export function FileIcon({ mime, kind, provider }: { mime?: string; kind?: FileKind; provider?: Provider }) {
   const g = fileGroup({ mimeType: mime, kind });
   const key = provider ?? g;
