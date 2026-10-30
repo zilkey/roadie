@@ -46,7 +46,7 @@ env:
     value: 43651994081-elouttm8tt1i89ut44hg4lec410v6urj.apps.googleusercontent.com
   - variable: GOOGLE_OAUTH_CLIENT_SECRET
     secret: GOOGLE_OAUTH_CLIENT_SECRET
-  - variable: GOOGLE_TOKEN_KEY   # 32 random bytes, base64: encrypts the stored refresh tokens
+  - variable: GOOGLE_TOKEN_KEY # 32 random bytes, base64: encrypts the stored refresh tokens
     secret: GOOGLE_TOKEN_KEY
   # The canonical address: base of every generated link ("can you play?" emails, MCP URL, share tags). Visits to the
   # old *.hosted.app address redirect here (next.config.ts).
@@ -55,3 +55,5 @@ env:
   # The public site (landing, /privacy, /terms). Its other paths redirect to APP_URL (next.config.ts).
   - variable: SITE_URL
     value: https://myroadie.online
+  - variable: GOOGLE_MAPS_API_KEY
+    secret: GOOGLE_MAPS_API_KEY
