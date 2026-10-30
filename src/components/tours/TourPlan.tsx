@@ -32,7 +32,7 @@ type Open = { kind: EntryKind; date: string; slot: Slot } | { id: string };
  * a venue for this date…, and a drive, stay or note opens its modal (EntryModal). Gaps from tours.summary show where they bite:
  * "No stay tonight" is the unfinished box with "Add a stay". Admins drag tray rows, chips and entries onto days
  * (tours.addPitch / addShow / entries.move); every change has an Undo toast. Members see the band's entries only: no bucket,
- * no options, no tray, nothing to change.
+ * no options, no tray, nothing to change. A Done tour is history: no tray, no bucket and no phone + sheet (`planning`), the days full width.
  */
 export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolean; extend(patch: { startDate?: string; endDate?: string }): Promise<boolean> }) {
   const entriesQ = useCollection<TourEntry>(`tours/${tour.id}/entries`, admin ? {} : { where: [["visibility", "==", "band"]] });
@@ -42,6 +42,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
   const booking = useBooking();
   const pitches = useMemo(() => new Map(booking.pitches.map((p) => [p.id, p])), [booking.pitches]);
   const venues = useMemo(() => new Map(booking.venues.map((v) => [v.id, v])), [booking.venues]);
+  const planning = admin && tour.status !== "done";
   const { days, bucket } = useMemo(() => tourDays(tour, entries as unknown as (EntryLike & Entry)[]), [tour, entries]);
 
   // Warnings are the server's (tours.summary), fetched again whenever the plan or a show's date or times change.
@@ -188,13 +189,13 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
       <ErrorBox error={error} />
 
       <div className="tp-cols">
-        {admin && (
+        {planning && (
           <TourTray tourId={tour.id} venues={booking.venues} pitches={booking.pitches} shows={showsQ.rows ?? []} towns={towns} today={todayStr()}
             onDrag={(d) => (d ? setDrag(d) : endDrag())} onAdd={(d) => void add(d, null)} />
         )}
 
         <div className="grid min-w-0 flex-[999_1_480px] content-start gap-5">
-          {admin && (
+          {planning && (
             <section className="d-card" aria-labelledby="bucket-h" data-testid="plan-bucket" {...areaDrop(null)}>
               <div className="d-ch">
                 <h2 id="bucket-h" className="d-ct">No date yet <span className="font-medium text-muted">· {bucket.length}</span></h2>
@@ -241,7 +242,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
               return (
                 <div key={d.date} id={`day-${d.date}`} className="tp-day" data-testid={`plan-day-${d.date}`}>
                   <div className="tp-dlab"><div><b>{dayLabel(d.date)}</b>{sub && <span>{sub}</span>}</div>
-                    {admin && <button type="button" className="tp-dadd tp-phone" aria-label={`Add to ${dayLabel(d.date)}`} onClick={() => setSheet(d.date)} data-testid={`plan-day-add-${d.date}`}>
+                    {planning && <button type="button" className="tp-dadd tp-phone" aria-label={`Add to ${dayLabel(d.date)}`} onClick={() => setSheet(d.date)} data-testid={`plan-day-add-${d.date}`}>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg></button>}</div>
                   <div className="tp-dlist" {...areaDrop(d.date)}>
                     {es.length === 0 && (
@@ -279,7 +280,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
         </div>
       </div>
 
-      {admin && <AddSheet date={sheet} town={sheet ? townOfDay((days.find((x) => x.date === sheet)?.entries ?? []) as Entry[]) : undefined} towns={towns}
+      {planning && <AddSheet date={sheet} town={sheet ? townOfDay((days.find((x) => x.date === sheet)?.entries ?? []) as Entry[]) : undefined} towns={towns}
         venues={booking.venues} pitches={booking.pitches} tourId={tour.id} onAdd={(d, date) => void add(d, date)} onClose={() => setSheet(null)}
         onTravel={(kind, date) => { const es = (days.find((x) => x.date === date)?.entries ?? []) as Entry[]; setSheet(null); setOpen({ kind, date, slot: { after: es[es.length - 1]?.id } }); }} />}
       <EntryModal target={modalTarget} admin={admin} onClose={() => setOpen(null)} />

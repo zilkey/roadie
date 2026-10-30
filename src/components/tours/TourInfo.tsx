@@ -16,7 +16,8 @@ export interface TourForm {
 }
 
 /**
- * Info: Tour details (each value click-to-edit), Who's going (the rehearsal's Band members card) and Notes. Every change goes
+ * Info: Tour details (each value click-to-edit), Who's going (the rehearsal's Band members card; on a Done tour, Who came: a
+ * read-only list of the tour's people) and Notes. Every change goes
  * through `save`, the page's autosave (tours.update), so it shows in SaveStatus and gets an Undo toast. Members read it.
  */
 export function TourInfo({ form, admin, musicians, projects, save }: {
@@ -27,6 +28,8 @@ export function TourInfo({ form, admin, musicians, projects, save }: {
   const configs = artist?.configurations ?? [];
   const open = projects.filter((p) => p.status !== "closed" || p.id === form.projectId);
   const active = musicians.filter((m) => m.active || form.personnel.includes(m.id));
+  const done = form.status === "done";
+  const came = musicians.filter((m) => form.personnel.includes(m.id));
   const fullBand = active.length > 0 && active.every((m) => form.personnel.includes(m.id));
   const toggle = (id: string) => void save({ personnel: form.personnel.includes(id) ? form.personnel.filter((x) => x !== id) : [...form.personnel, id] });
 
@@ -53,14 +56,20 @@ export function TourInfo({ form, admin, musicians, projects, save }: {
         <span className="text-[0.8125rem] d-muted">Dates are optional. Leave them blank and the tour stretches to fit what&apos;s on it; set them and Roadie warns about anything outside.</span>
       </DetailCard>
 
+      {done ? (
+        <DetailCard private title="Who came" testid="tour-who-card">
+          {came.length === 0 ? <span className="d-muted">No one listed.</span> : (
+            <ul className="m-0 grid list-none p-0">
+              {came.map((x) => <li key={x.id} className="d-row" data-testid="tour-member-row"><Person m={x} /></li>)}
+            </ul>
+          )}
+        </DetailCard>
+      ) : (
       <DetailCard private title="Who's going" testid="tour-who-card" headerExtra={fullBand ? <span className="d-muted text-sm">Full band</span> : undefined}>
         <ul className="m-0 grid list-none p-0">
           {active.map((x) => (
             <li key={x.id} className="d-row" data-testid="tour-member-row">
-              <span className="flex min-w-0 flex-1 items-center gap-3">
-                <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold">{x.name.charAt(0)}</span>
-                <span className="min-w-0 font-semibold">{x.name}{x.instruments.length > 0 && <span className="d-muted font-normal"> · {x.instruments.join(", ")}</span>}</span>
-              </span>
+              <Person m={x} />
               <label className="flex min-h-[44px] items-center gap-1.5 text-sm">
                 <input type="checkbox" checked={form.personnel.includes(x.id)} disabled={!admin} onChange={() => toggle(x.id)} data-testid={`tour-coming-${x.name}`} />Coming
               </label>
@@ -68,6 +77,7 @@ export function TourInfo({ form, admin, musicians, projects, save }: {
           ))}
         </ul>
       </DetailCard>
+      )}
 
       <DetailCard private title="Notes" testid="tour-notes-card">
         {admin
@@ -75,6 +85,16 @@ export function TourInfo({ form, admin, musicians, projects, save }: {
           : form.notes ? <p className="m-0 whitespace-pre-wrap">{form.notes}</p> : <span className="d-muted">No notes.</span>}
       </DetailCard>
     </CardGroup>
+  );
+}
+
+/** A band member's initial, name and instruments. */
+function Person({ m }: { m: Row<Musician> }) {
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-3">
+      <span aria-hidden className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold">{m.name.charAt(0)}</span>
+      <span className="min-w-0 font-semibold">{m.name}{m.instruments.length > 0 && <span className="d-muted font-normal"> · {m.instruments.join(", ")}</span>}</span>
+    </span>
   );
 }
 

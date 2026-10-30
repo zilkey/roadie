@@ -392,4 +392,40 @@ test.describe.serial("tours", () => {
     await expect(david.page.getByTestId("calendar-tours-toggle")).toHaveAttribute("aria-pressed", "false");
     await david.close();
   });
+  test("a Done tour reads as history: no tray or No date yet, full-width days, Who came; back to Planning restores them", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(`${tourUrl}?tab=info`);
+    // The label sits on the click-to-edit value's line.
+    const label = await page.getByTestId("tour-details-card").locator("dt", { hasText: "Ends" }).boundingBox();
+    const value = await page.getByTestId("tour-end").boundingBox();
+    expect(Math.abs((label!.y + label!.height / 2) - (value!.y + value!.height / 2))).toBeLessThan(2);
+
+    await page.getByTestId("tour-status").click();
+    await page.getByTestId("tour-status-input").selectOption("done");
+    await expect(page.getByTestId("tour-status-pill")).toHaveText("Done");
+    const who = page.getByTestId("tour-who-card");
+    await expect(who.locator("h2")).toHaveText("Who came");
+    await expect(who.getByTestId("tour-member-row")).toHaveCount(2);
+    await expect(who).toContainText("Jeff");
+    await expect(who).not.toContainText("David");
+    await expect(who.locator("input")).toHaveCount(0);
+
+    await page.getByTestId("tour-tab-plan").click();
+    await expect(page.getByTestId("plan-days")).toBeVisible();
+    await expect(page.getByTestId("tour-tray")).toHaveCount(0);
+    await expect(page.getByTestId("plan-bucket")).toHaveCount(0);
+    const plan = await page.getByTestId("tour-plan").boundingBox();
+    const days = await page.getByTestId("plan-days").boundingBox();
+    expect(days!.width).toBeGreaterThan(plan!.width - 2);
+
+    await page.getByTestId("tour-tab-info").click();
+    await page.getByTestId("tour-status").click();
+    await page.getByTestId("tour-status-input").selectOption("planning");
+    await expect(page.getByTestId("tour-who-card").locator("h2")).toHaveText("Who's going");
+    await expect(page.getByTestId("tour-coming-Jeff")).toBeChecked();
+    await page.getByTestId("tour-tab-plan").click();
+    await expect(page.getByTestId("tour-tray")).toBeVisible();
+    await expect(page.getByTestId("plan-bucket")).toBeVisible();
+    await close();
+  });
 });
