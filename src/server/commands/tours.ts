@@ -38,7 +38,7 @@ async function requireTour(w: Writer, id: string): Promise<Doc> {
   return t;
 }
 /** The tour's live entries. `pending` also sees entries this run has just written (they come unfiltered, so the tour's own path is all there is). */
-const liveEntries = (w: Writer, tourId: string, pending = true) => w.query(entriesPath(tourId), undefined, { pending });
+export const liveEntries = (w: Writer, tourId: string, pending = true) => w.query(entriesPath(tourId), undefined, { pending });
 async function requireEntry(w: Writer, tourId: string, id: string): Promise<Doc> {
   const e = await w.get(entriesPath(tourId), id);
   if (!e || e.deletedAt) throw new AppError("not_found", "That isn't on the tour", 404);
@@ -70,7 +70,7 @@ async function tzOfShow(w: Writer, show: Doc): Promise<string> {
   return (v?.timeZone as string | undefined) ?? BAND_TIME_ZONE;
 }
 /** End of `date` in the tour, after `after` / before `before` when given. */
-async function positionOn(w: Writer, tourId: string, date: string | undefined, o: { after?: string; before?: string; skip?: string } = {}) {
+export async function positionOn(w: Writer, tourId: string, date: string | undefined, o: { after?: string; before?: string; skip?: string } = {}) {
   const day = (await liveEntries(w, tourId)).filter((e) => (e.date ?? undefined) === date && e.id !== o.skip) as (Doc & { position: number })[];
   const p = slotIn(day, o);
   if (p === null) throw new AppError("invalid_input", "after / before must be entries on that day", 400);
@@ -83,7 +83,7 @@ async function moneyOfShow(w: Writer, coll: (typeof MONEY)[number], showId: stri
 }
 
 /** Put a show on the tour: tourId on the show and its money (projects untouched), and a show entry on its date. Moves it off another tour first. */
-async function addShowTo(w: Writer, tour: Doc, show: Doc): Promise<{ entryId: string; existing: boolean }> {
+export async function addShowTo(w: Writer, tour: Doc, show: Doc): Promise<{ entryId: string; existing: boolean }> {
   if (show.tourId === tour.id) {
     const have = (await liveEntries(w, tour.id)).find((e) => e.kind === "show" && e.showId === show.id);
     if (have) return { entryId: have.id, existing: true };
@@ -171,7 +171,7 @@ async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?:
 }
 
 /** Miles and minutes for a drive, from ORS behind routeCache. Outside any transaction (it writes the cache); blank when ORS can't say. */
-async function driveFacts(from?: { lat: number; lng: number } | null, to?: { lat: number; lng: number } | null): Promise<{ miles: number | null; minutes: number | null }> {
+export async function driveFacts(from?: { lat: number; lng: number } | null, to?: { lat: number; lng: number } | null): Promise<{ miles: number | null; minutes: number | null }> {
   if (!from || !to) return { miles: null, minutes: null };
   try {
     const r = await route(from, to, { needMinutes: true });

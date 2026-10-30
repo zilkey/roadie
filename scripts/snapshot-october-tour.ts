@@ -38,13 +38,13 @@ export interface TourReport {
  */
 export type Aliases = Record<string, string>;
 const RENAMED: Record<string, string> = { Alibi: "The Alibi" };
-const NOT_VENUES = /^(pending|travel\/rest\/work day|co tour)$/i;
+export const NOT_VENUES = /^(pending|travel\/rest\/work day|co tour)$/i;
 const TYPES: Record<string, string> = { brewery: "Brewery / taproom", "music venue": "Bar / club", "listening room": "Listening room" };
 
 // Column positions in the FINAL tab.
-const C = { lodging: 0, date: 2, venue: 3, location: 4, time: 5, event: 6, setLength: 8, sound: 9, contact: 10, info: 11, pay: 12, estimate: 13, note: 14 } as const;
+export const C = { lodging: 0, date: 2, venue: 3, location: 4, time: 5, event: 6, setLength: 8, sound: 9, contact: 10, info: 11, pay: 12, estimate: 13, note: 14 } as const;
 
-const slug = (s: string) => s.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+export const slug = (s: string) => s.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 function contactFrom(name: string, info: string): BookContact[] {
   if (!name || /^(tbd|-)/i.test(name)) return [];

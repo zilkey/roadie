@@ -1,9 +1,10 @@
 /**
- * OpenRouteService: address autocomplete/reverse geocoding (Pelias) and driving directions.
- * Locally the fake at fakes/fake-ors answers; in production set ORS_BASE_URL=https://api.openrouteservice.org
- * and the secret ORS_API_KEY (free sign-up at openrouteservice.org). The key stays on the server.
+ * Maps lookups: address autocomplete, geocoding, reverse geocoding and driving directions. In production they go to Google Maps
+ * Platform (google-maps.ts; secret GOOGLE_MAPS_API_KEY: Places API (New), Geocoding API, Routes API). Without that key this
+ * OpenRouteService (Pelias) client answers; locally it talks to the fake at fakes/fake-ors (openrouteservice.org is shut down).
  */
 import { jsonClient } from "./http";
+import { googleMapsClient } from "./google-maps";
 
 export interface OrsPlace {
   /** Venue/place name when ORS knows one ("Mighty Fine Rehearsal Studios"). */
@@ -34,6 +35,7 @@ interface PeliasFeature {
 const METERS_PER_MILE = 1609.344;
 
 export function orsClient(baseUrl = process.env.ORS_BASE_URL ?? "http://127.0.0.1:3206"): OrsService {
+  if (process.env.GOOGLE_MAPS_API_KEY) return googleMapsClient(process.env.GOOGLE_MAPS_API_KEY);
   const key = process.env.ORS_API_KEY ?? "";
   const call = jsonClient("ors", baseUrl, { authorization: key });
   const place = (f: PeliasFeature): OrsPlace => ({

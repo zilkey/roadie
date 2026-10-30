@@ -7,3 +7,4 @@ export { bandsintownClient, type BandsintownService } from "./bandsintown";
 export { spotifyClient, type SpotifyService } from "./spotify";
 export { orsClient, type OrsService, type OrsPlace } from "./ors";
 export { eiaClient, type EiaService, type EiaWeeklyPrice } from "./eia";
+export { googleMapsClient } from "./google-maps";
