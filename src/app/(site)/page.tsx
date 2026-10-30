@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { appUrl } from "@/lib/app-url";
 import { ARTISTS_PATH } from "@/lib/routes";
-import { CostShareCalc } from "./CostShareCalc";
 
 export const metadata: Metadata = {
   description: "Roadie keeps the business side of your band in one place: booking, setlists, rehearsals, tours and money. Free and open source.",
@@ -132,23 +131,13 @@ export default async function Home() {
           <div>
             <p className="mono" style={{ color: "var(--amber)" }}>The business plan</p>
             <h2 id="money-h" style={{ marginTop: 12 }}><span className="mk">I don&apos;t want your money.</span></h2>
-            <p className="lede">Not a subscription, and not a cut of your gigs. Roadie is open source and built to break even, not to make a profit. Every month I publish what it costs to run, and here&apos;s who pays that bill, in order.</p>
+            <p className="lede">Not a subscription, and not a cut of your gigs. Roadie is open source and built to break even, not to make a profit. Right now it&apos;s completely free. I pay for all hosting costs personally. Over time, if hosting costs add up to more than I can pay, I&apos;ll try to find sponsors. If that fails, I may have to charge a small fee just to cover hosting costs. This is a service project for me, not a business.</p>
           </div>
           <ol className="ladder">
             <li><h3>I pay it</h3><p>While the bill is small, I cover it.</p></li>
-            <li><h3>Grants</h3><p>Arts councils, open source funds and music organizations. If a grant covers hosting, nobody pays.</p></li>
-            <li><h3>Cost share</h3><p>Only if grants fall short: a recent bill divided by active artists, charged every few months so card fees don&apos;t eat it.</p></li>
+            <li><h3>Sponsors</h3><p>Arts councils, open source funds and music organizations. If a sponsor covers hosting, nobody pays.</p></li>
+            <li><h3>Cost share</h3><p>Only if sponsors fall short: a recent bill divided by active artists, charged every few months so card fees don&apos;t eat it.</p></li>
           </ol>
-          <div className="mgrid">
-            <ul className="promises">
-              <li><span><b>Cost share isn&apos;t a price.</b> When the bill drops, your share drops. When a grant lands, it pauses.</span></li>
-              <li><span><b>Can&apos;t pay? Same app.</b> No locked features, no paywall, no pro tier.</span></li>
-              <li><span><b>No investors, no ads, no selling your data.</b> Nobody can buy Roadie and jack up the price.</span></li>
-              <li><span><b>Your files stay in your Google Drive</b>, so the usual biggest cost isn&apos;t even on the bill.</span></li>
-              <li><span><b>If it gets big, it becomes a nonprofit.</b> Any salaries go on the same public bill, and any change is announced with numbers before it happens.</span></li>
-            </ul>
-            <CostShareCalc />
-          </div>
         </div>
       </section>
 
@@ -165,19 +154,6 @@ export default async function Home() {
             <li><b>Built in public</b><span>The cost page and the changelog are public. You can see what I built, what it cost, and what broke.</span></li>
             <li><b>Musicians should own their tools</b><span>Not rent them from a company that might raise the price or get bought.</span></li>
           </ul>
-        </div>
-      </section>
-
-      <section className="next band" aria-labelledby="next-h">
-        <div className="col">
-          <div>
-            <p className="mono" style={{ color: "#8f8c84" }}>On the roadmap</p>
-            <h2 id="next-h" style={{ marginTop: 12 }}>What&apos;s next.</h2>
-            <p className="lede">I&apos;m building what working musicians ask for. These are coming, not here yet.</p>
-          </div>
-          <div className="chips">
-            {["Printable setlists", "Scheduled posts to Instagram, Facebook, YouTube and TikTok", "Stage plots for venues", "Fan sign-up QR codes", "Merch links", "Releases"].map((c) => <span key={c}>{c}</span>)}
-          </div>
         </div>
       </section>
 
