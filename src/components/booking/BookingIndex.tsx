@@ -21,6 +21,7 @@ import { useFestivalPage } from "@/components/booking/useFestivalPage";
 import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, highlight, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
 import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
+import { AddToTourDialog } from "@/components/booking/AddToTourDialog";
 import { SearchBuckets } from "@/components/booking/SearchBuckets";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
@@ -98,6 +99,12 @@ function Booking({ seg }: { seg: Seg }) {
   const shownRows = seg === "festivals" ? festivalRowsShown : rows;
   const listLoading = b.loading || (seg === "festivals" && !page.rows);
   const [target, setTarget] = useState<PitchTarget | null>(null);
+  // Pitch List selection (admins; local, not saved): the pitch ids ticked for "Add to a tour" / "Make a tour".
+  const [picked, setPicked] = useState<string[]>([]);
+  const [tourOpen, setTourOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const chosen = b.pitches.filter((p) => picked.includes(p.id));
+  const togglePick = (id: string) => setPicked((x) => x.includes(id) ? x.filter((y) => y !== id) : [...x, id]);
   const activeCount = b.pitches.filter((p) => isActive(p.status)).length;
 
 
@@ -177,7 +184,15 @@ function Booking({ seg }: { seg: Seg }) {
         {!listLoading && shownRows.length === 0 && (seg === "pitches" && !q.trim() && !filtering
           ? <div className="empty"><span>Nothing on the Pitch List. Tap a flag to add something.</span></div>
           : <div className="empty" data-testid="no-results"><span>Nothing matches.</span></div>)}
-        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} /></div>}
+        {seg === "pitches" && chosen.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#1c1b22] px-3 py-2 text-white" data-testid="selection-bar">
+            <b className="mr-auto" data-testid="selection-count">{chosen.length} {chosen.length === 1 ? "pitch" : "pitches"} selected</b>
+            <button type="button" className="btn" onClick={() => setTourOpen(true)} data-testid="selection-add-to-tour">Add to a tour</button>
+            <button type="button" className="btn acc" onClick={() => router.push(`/tours/new?pitchIds=${chosen.map((p) => p.id).join(",")}`)} data-testid="selection-make-tour">Make a tour</button>
+          </div>
+        )}
+        {note && <p className="s" role="status" data-testid="selection-note">{note}</p>}
+        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={seg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} selected={seg === "pitches" ? picked : undefined} onSelect={togglePick} /></div>}
         {shownRows.length > 0 && CAPTION[seg] && <p className="s" data-testid="table-caption">{CAPTION[seg]}</p>}
         {seg === "festivals" && page.hasMore && (
           <button type="button" className="btn ghost justify-self-center" disabled={page.loadingMore} onClick={() => void page.more()} data-testid="festivals-more">
@@ -186,6 +201,8 @@ function Booking({ seg }: { seg: Seg }) {
         )}
       </div>
       </>}
+      <AddToTourDialog open={tourOpen} onClose={() => setTourOpen(false)} pitches={chosen}
+        onDone={(m) => { setNote(m); setPicked([]); }} />
       <PitchModal target={target} onClose={() => setTarget(null)} />
       {form}
     </div>
@@ -233,7 +250,7 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 );
 
 /** `q` marks the matched text in the name and email cells; without `onSort` the headers don't sort (search buckets). */
-export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean }) {
+export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false, selected, onSelect }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean; /** Pitch List: pitch ids ticked, and the toggle (admins). Without them there is no checkbox column. */ selected?: string[]; onSelect?(pitchId: string): void }) {
   const hl = (text: string): ReactNode => {
     if (!q.trim()) return text;
     const h = highlight(text, q);
@@ -314,6 +331,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
   return (
     <table className={wideName ? "book-table wn" : "book-table"}>
       <thead><tr>
+        {selected && <th className="flag" aria-label="Select" />}
         {flagged && <th className="flag" aria-label="Pitch List flag" />}
         {heads.map((h, i) => {
           const sortBy = seg === "festivals" && onSort ? SORT_BY[h] : undefined;
@@ -333,6 +351,8 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
       <tbody>
         {rows.map((r) => (
           <tr key={`${r.kind}:${r.id}`} data-testid={`row-${r.kind}-${r.id}`} data-quiet={quiet(r) ? "1" : undefined}>
+            {selected && <td className="flag">{r.pitch && <input type="checkbox" className="h-[18px] w-[18px]" checked={selected.includes(r.pitch.id)}
+              onChange={() => onSelect?.(r.pitch!.id)} aria-label={`Select ${r.name}`} data-testid={`pitch-select-${r.pitch.id}`} />}</td>}
             {flagged && flag(r)}
             {seg === "festivals" ? (<>
               <td className="name">{link(r.festival!, r.kind === "festival" ? `festival-full-${r.id}` : `festival-name-${r.id}`)}</td>

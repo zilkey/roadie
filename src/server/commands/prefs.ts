@@ -4,7 +4,7 @@ import { PrintOptions } from "@/schema/print";
 import { AppError } from "../errors";
 import { db } from "../db";
 import { roleIn } from "@/schema";
-import { dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
+import { calendarTours, setCalendarTours, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
 import { callerArtistId } from "../venues";
 import { defineCommand } from "./types";
 
@@ -64,4 +64,15 @@ export const artistsDismissSetup = defineCommand({
   async run(ctx) { await dismissSetup(ctx.uid, await artistOf(ctx)); return { dismissed: true }; },
 });
 
-export const prefsCommands = [artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];
+export const calendarSetTours = defineCommand({
+  name: "calendar.setTours", roles: ["admin", "member"], input: z.strictObject({ on: z.boolean() }),
+  description: "Show (on:true) or hide the Tours layer on the caller's Calendar: a bar for each tour across its days, with its drives, stays and open dates. Personal: nobody else's Calendar changes. Off by default.",
+  async run(ctx, i) { await setCalendarTours(ctx.uid, i.on); return { on: i.on }; },
+});
+export const calendarToursOn = defineCommand({
+  name: "calendar.tours", roles: ["admin", "member"], input: z.strictObject({}),
+  description: "Whether the caller has the Tours layer switched on in their Calendar.",
+  async run(ctx) { return { on: await calendarTours(ctx.uid) }; },
+});
+
+export const prefsCommands = [calendarSetTours, calendarToursOn, artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];

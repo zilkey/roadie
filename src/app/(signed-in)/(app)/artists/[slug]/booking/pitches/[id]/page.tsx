@@ -15,6 +15,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { BackLink, ConfigurationPicker, StatusPill, hrefFor, useNotFound, type PitchRow } from "@/components/booking/common";
 import { STATUSES, STATUS_LABEL, sortedDates, type Status } from "@/lib/booking";
+import { PitchTourCard } from "@/components/tours/PitchTourCard";
 import { EmailCard } from "@/components/booking/EmailCard";
 import { BookedItForm } from "@/components/booking/BookedItForm";
 import { MemberDates, PitchDates } from "@/components/shows/PitchAvailability";
@@ -189,6 +190,8 @@ function PitchPage() {
         <PitchDates pitchId={id} dates={dateRows ?? sortedDates(p.dates)} onDatesChange={editDates} onBlur={() => void as.flush()}
           personnel={people} place={p.target.name} musicians={musicians} />
       </section>
+
+      <PitchTourCard pitchId={id} tourId={p.tourId} />
 
       <section className="card" data-testid="pitch-activity-card">
         <div className="card-head"><h2>Activity</h2></div>

@@ -14,6 +14,7 @@ import { addDays, fmtTime, showCity, showName } from "@/lib/shows";
 import { dayLabel, driveText, planStats, routeTowns, tourDays, type EntryLike, type TourWarning } from "@/lib/tours";
 import type { Show, TourEntry } from "@/schema";
 import { townOf, type TourRow } from "./common";
+import { BookDialog, type BookTarget } from "./BookDialog";
 import { EntryModal, type EntryKind, type EntryTarget } from "./EntryModal";
 import { GripIcon, TourTray, type Drag } from "./TourTray";
 
@@ -55,6 +56,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
 
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Open | null>(null);
+  const [book, setBook] = useState<BookTarget | null>(null);
   const [pick, setPick] = useState<{ date: string | null } | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [over, setOver] = useState<Over | null>(null);
@@ -248,7 +250,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
                     {es.map((e, i) => [
                       <EntryRow key={e.id} e={e} admin={admin} show={e.showId ? shows.get(e.showId) : undefined} pitch={e.pitchId ? pitches.get(e.pitchId) : undefined}
                         city={e.pitchId ? cityOfPitch(e.pitchId) : undefined} rank={options.indexOf(e) + 1} long={longDrive.has(e.id)}
-                        onOpen={() => setOpen({ id: e.id })} onRemove={() => void remove(e)} drag={{ ...entryDrag(e), ...rowDrop(d.date, e) }} />,
+                        onOpen={() => setOpen({ id: e.id })} onBook={() => setBook({ tourId: tour.id, entry: e })} onRemove={() => void remove(e)} drag={{ ...entryDrag(e), ...rowDrop(d.date, e) }} />,
                       plus(i + 1),
                     ])}
                     {noStay.has(d.date) && (
@@ -274,6 +276,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
       </div>
 
       <EntryModal target={modalTarget} admin={admin} onClose={() => setOpen(null)} />
+      {admin && <BookDialog target={book} entries={entries} nameOf={(id) => pitches.get(id)?.target.name ?? "the pitch"} cityOf={cityOfPitch} onClose={() => setBook(null)} />}
       {admin && (
         <PickDialog open={!!pick} onClose={() => setPick(null)} testid="plan-pick"
           title={pick?.date ? `Pitch a venue for ${dayLabel(pick.date)}` : "Add a pitch with no date"}
@@ -300,9 +303,9 @@ const ICONS: Record<string, React.ReactNode> = {
 };
 
 /** One entry on a day. Shows open the show page and options the pitch; drives, stays and notes open their modal (members just read them). */
-function EntryRow({ e, admin, show, pitch, city, rank, long, onOpen, onRemove, drag }: {
+function EntryRow({ e, admin, show, pitch, city, rank, long, onOpen, onBook, onRemove, drag }: {
   e: Entry; admin: boolean; show?: Row<Show>; pitch?: { target: { name: string }; status: string; dates?: string[] }; city?: string; rank: number; long: boolean;
-  onOpen(): void; onRemove(): void; drag: Record<string, unknown>;
+  onOpen(): void; onBook(): void; onRemove(): void; drag: Record<string, unknown>;
 }) {
   const icon = ICONS[e.kind] && <span className={`tp-ico${e.kind === "show" ? " show" : ""}`}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{ICONS[e.kind]}</svg></span>;
   const grip = admin && <GripIcon />;
@@ -328,6 +331,7 @@ function EntryRow({ e, admin, show, pitch, city, rank, long, onOpen, onRemove, d
           <span className="tp-rank" aria-label={`Option ${rank}`}>{rank}</span>
           <span className="tp-main"><span className="tp-nm">{name}</span><span className="tp-sub">{[city, pitch ? STATUS_LABEL[pitch.status as keyof typeof STATUS_LABEL] : "", also.length ? `also ${also.join(", ")}` : ""].filter(Boolean).join(" · ")}</span></span>
         </Link>
+        {admin && <button type="button" className="btn ghost sm" style={{ minHeight: 44 }} onClick={onBook} data-testid="plan-book">Book</button>}
         <XButton label={`Take ${dayLabel(e.date!)} off ${name}'s dates`} onClick={onRemove} />
       </div>
     );

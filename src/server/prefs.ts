@@ -54,3 +54,12 @@ export async function setupDismissed(uid: string, artistId: string): Promise<boo
 export async function dismissSetup(uid: string, artistId: string): Promise<void> {
   await ref(uid).set({ uid, setupDismissed: { [artistId]: true } }, { merge: true });
 }
+
+/** Whether the caller shows the Tours layer on the Calendar (default off). */
+export async function calendarTours(uid: string): Promise<boolean> {
+  return (await ref(uid).get()).data()?.calendarTours === true;
+}
+
+export async function setCalendarTours(uid: string, on: boolean): Promise<void> {
+  await ref(uid).set({ uid, calendarTours: on }, { merge: true });
+}

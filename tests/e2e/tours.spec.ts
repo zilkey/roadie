@@ -304,4 +304,92 @@ test.describe.serial("tours", () => {
     await expect(admin.page.getByTestId("paid-out")).toContainText(WHAT);
     await admin.close();
   });
+  // Booking (#45). Dairy Arts Center is an option on Mar 12 and 19 since the first test.
+  test("booking: Book on an option with another option that night; the other waits in No date yet and we land on the show", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    const day = page.getByTestId("plan-day-2027-03-12");
+    await page.getByTestId("tray-search").fill("Cervantes");
+    const item = page.getByTestId("tray-items").locator("li").filter({ hasText: "Cervantes' Other Side" });
+    await day.scrollIntoViewIfNeeded();
+    await item.dragTo(day.locator(".tp-dlist"));
+    await expect(day.locator('[data-kind="option"]')).toHaveCount(2);
+
+    await day.locator('[data-kind="option"]').filter({ hasText: "Dairy Arts Center" }).getByTestId("plan-book").click();
+    const dialog = page.getByTestId("book-dialog");
+    await expect(dialog).toContainText("Book Dairy Arts Center");
+    await expect(dialog.getByTestId("book-date-2027-03-12")).toBeChecked();
+    await expect(dialog.getByTestId("book-date-2027-03-19")).not.toBeChecked();
+    const other = dialog.locator('fieldset[data-testid^="book-other-"]');
+    await expect(other).toHaveCount(1);
+    await expect(other).toContainText("Cervantes' Other Side");
+    await expect(other.locator('input[data-testid$="-drop"]')).toBeChecked();
+    await expect(dialog.getByTestId("book-stay")).toBeChecked();
+    await dialog.getByTestId("book-submit").click();
+
+    await expect(page).toHaveURL(/\/shows\/[^/?]+$/);
+    await expect(page.getByTestId("where-tour")).toContainText(/Mountain West · day \d+ of \d+/);
+
+    await page.goto(tourUrl);
+    const booked = page.getByTestId("plan-day-2027-03-12");
+    await expect(booked.locator('[data-kind="show"]')).toContainText("Dairy Arts Center");
+    await expect(booked.locator('[data-kind="option"]')).toHaveCount(0);
+    await expect(booked.locator('[data-kind="stay"]')).toHaveCount(1);
+    await expect(page.getByTestId("plan-day-2027-03-19").locator('[data-kind="option"]')).toHaveCount(0);
+    await expect(page.getByTestId("plan-bucket")).toContainText("Cervantes' Other Side");
+    await close();
+  });
+
+  test("booking: a pitch's tour changes from the pitch page, and its option follows", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    // Swallow Hill Music is an option on Mar 14 since the drag test.
+    await page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]').filter({ hasText: "Swallow Hill Music" }).locator("a").click();
+    await expect(page).toHaveURL(/\/booking\/pitches\//);
+    const card = page.getByTestId("pitch-tour-card");
+    await expect(card.getByTestId("pitch-tour")).toContainText("Mountain West");
+    await expect(card.getByTestId("pitch-tour-plan")).toContainText("Sun Mar 14");
+
+    await card.getByTestId("pitch-tour").click();
+    await card.getByTestId("pitch-tour-input").selectOption({ value: "" });
+    await expect(card.getByTestId("pitch-tour")).toContainText("No tour");
+    await expect(card.getByTestId("pitch-tour-open")).toHaveCount(0);
+    await page.goto(tourUrl);
+    await expect(page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]')).toHaveCount(0);
+    await page.goBack();
+
+    await page.getByTestId("pitch-tour").click();
+    await page.getByTestId("pitch-tour-input").selectOption({ label: "Mountain West" });
+    await expect(page.getByTestId("pitch-tour-plan")).toContainText("Sun Mar 14");
+    await page.getByTestId("pitch-tour-open").click();
+    await expect(page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]')).toContainText("Swallow Hill Music");
+    await close();
+  });
+  test("calendar: the Tours switch lays the tour over its days, and stays on for that person", async ({ browser }) => {
+    const tourId = tourUrl.split("/").pop()!;
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(A("/calendar?m=2027-03"));
+    const toggle = page.getByTestId("calendar-tours-toggle");
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId(`tour-bar-${tourId}`)).toHaveCount(0);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId(`tour-bar-${tourId}`)).toContainText("Mountain West");
+    await expect(page.getByTestId("day-2027-03-10").getByTestId("tour-chip").filter({ hasText: "Motel 6" })).toHaveCount(1);
+    await page.getByTestId("day-2027-03-12").click();
+    await expect(page.getByTestId("tour-panel")).toContainText("Mountain West");
+
+    await page.reload();
+    await expect(page.getByTestId("calendar-tours-toggle")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId(`tour-bar-${tourId}`)).toBeVisible();
+    await page.getByTestId("calendar-tours-toggle").click();
+    await expect(page.getByTestId(`tour-bar-${tourId}`)).toHaveCount(0);
+    await close();
+
+    // Another person's calendar never had it on.
+    const david = await as(browser, "david");
+    await david.page.goto(A("/calendar?m=2027-03"));
+    await expect(david.page.getByTestId("calendar-tours-toggle")).toHaveAttribute("aria-pressed", "false");
+    await david.close();
+  });
 });

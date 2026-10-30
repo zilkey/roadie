@@ -157,15 +157,18 @@ async function removePitchFrom(w: Writer, tourId: string, pitch: Doc) {
   if (pitch.tourId === tourId) await w.update("pitches", pitch.id, { tourId: null });
 }
 
-/** One option goes: its date comes off the pitch, and a pitch with no options left leaves the tour. `nextStep` asks someone to tell them. */
-async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?: { text: string; due: string } } = {}) {
+/** One option goes: its date comes off the pitch, and a pitch with no options left leaves the tour (`bucket`: waits in No date yet instead). `nextStep` asks someone to tell them. */
+async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?: { text: string; due: string }; bucket?: boolean } = {}) {
   await w.softDelete(entriesPath(tourId), entry.id);
   const pitch = await w.get("pitches", entry.pitchId as string);
   if (!pitch || pitch.deletedAt) return;
   const patch: Record<string, unknown> = {};
   if (entry.date && ((pitch.dates as string[] | undefined) ?? []).includes(entry.date as string)) patch.dates = (pitch.dates as string[]).filter((d) => d !== entry.date);
   const left = (await liveEntries(w, tourId)).filter((e) => e.kind === "option" && e.pitchId === pitch.id && e.id !== entry.id);
-  if (!left.length && pitch.tourId === tourId) patch.tourId = null;
+  if (!left.length && pitch.tourId === tourId) {
+    if (o.bucket) await w.create(entriesPath(tourId), { tourId, kind: "option", position: await positionOn(w, tourId, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id });
+    else patch.tourId = null;
+  }
   if (o.nextStep) patch.nextStep = o.nextStep;
   if (Object.keys(patch).length) await w.update("pitches", pitch.id, patch);
 }
@@ -496,12 +499,14 @@ export const toursEntriesRemove = defineCommand({
 
 // ---------- booking an option ----------
 
+const OtherChoice = z.enum(["drop", "keep", "tellBooked"]);
+
 export const toursBook = defineCommand({
   name: "tours.book", roles: [...ADMIN],
   description: "Book an option on a tour (entryId: an option entry from tours.get; date: the date it's booked for, YYYY-MM-DD): books the pitch the way shows.create with pitchId does (the show, its deal, the pitch booked), " +
-    "puts the show on the tour, and the option entry becomes the show's entry (same id). The pitch's other dates go. others decides the other options that day: keep (default), drop (their date comes off), " +
-    "or tellBooked (dropped, and their pitch gets a next step to tell them we're booked). addStay adds a stay after the show that night. Returns { showId, entryId, dropped }.",
-  input: z.strictObject({ tourId: id1, entryId: id1, date: dateStr, others: z.enum(["drop", "keep", "tellBooked"]).default("keep"), addStay: z.boolean().default(false) }),
+    "puts the show on the tour, and the option entry becomes the show's entry (same id). The pitch's other dates go. others decides the other options that day: keep (default), drop (their date comes off; a pitch left with no options waits in No date yet), " +
+    "or tellBooked (dropped, and their pitch gets a next step to tell them we're booked); give one of those for all of them, or { [pitchId]: choice } per pitch (pitches left out are kept). addStay adds a stay after the show that night. Returns { showId, entryId, dropped }.",
+  input: z.strictObject({ tourId: id1, entryId: id1, date: dateStr, others: z.union([OtherChoice, z.record(id1, OtherChoice)]).default("keep"), addStay: z.boolean().default(false) }),
   async run(ctx, i) {
     const out = await run(ctx, async (w) => {
       const tour = await requireTour(w, i.tourId);
@@ -525,11 +530,11 @@ export const toursBook = defineCommand({
       for (const x of all.filter((x) => x.kind === "option" && x.pitchId === pitch.id && x.id !== e.id)) await w.softDelete(entriesPath(i.tourId), x.id);
       await w.update("pitches", pitch.id, { dates: [i.date] });
       const dropped: string[] = [];
-      if (i.others !== "keep") {
-        for (const x of all.filter((x) => x.kind === "option" && x.date === i.date && x.pitchId !== pitch.id)) {
-          await dropOption(w, i.tourId, x, i.others === "tellBooked" ? { nextStep: { text: `Tell them we're booked on ${dayLabel(i.date)}`, due: todayOf(ctx) } } : {});
-          dropped.push(x.pitchId as string);
-        }
+      for (const x of all.filter((x) => x.kind === "option" && x.date === i.date && x.pitchId !== pitch.id)) {
+        const choice = typeof i.others === "string" ? i.others : i.others[x.pitchId as string] ?? "keep";
+        if (choice === "keep") continue;
+        await dropOption(w, i.tourId, x, choice === "tellBooked" ? { nextStep: { text: `Tell them we're booked on ${dayLabel(i.date)}`, due: todayOf(ctx) } } : { bucket: true });
+        dropped.push(x.pitchId as string);
       }
       if (i.addStay) {
         const day = byPosition(all.filter((x) => x.date === i.date && x.id !== e.id) as (Doc & { position: number })[]);

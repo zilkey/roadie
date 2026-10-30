@@ -223,3 +223,36 @@ export function tourByDay(m: TourMoneyRecords, entryDates: ReadonlyMap<string, s
   const on = <T extends TourTagged>(xs: readonly T[], k: string | null) => xs.filter((x) => tourDayOf(x, entryDates) === k);
   return keys.map((k) => ({ date: k, totals: tourTotals({ income: on(m.income, k), expenses: on(m.expenses, k), payouts: on(m.payouts, k) }, today) }));
 }
+
+// ---------- links from pitches and shows ----------
+
+/** Which day of the tour a date is: { n: 2, of: 5 } for the second of five days; null when it is outside the tour's days. */
+export function tourDayNumber(tour: TourLike, entries: readonly EntryLike[], date: string): { n: number; of: number } | null {
+  const { days } = tourDays(tour, entries);
+  const i = days.findIndex((d) => d.date === date);
+  return i < 0 ? null : { n: i + 1, of: days.length };
+}
+
+/** When the tour's drive gets in on `date` as "HH:MM": the last drive (leaveBy + minutes) before the day's show entry by position, else the day's last drive. Null without one. */
+export function arrivalOf(entries: readonly EntryLike[], date: string): string | null {
+  const live = entries.filter((e) => !e.deletedAt && e.date === date);
+  const show = byPosition(live.filter((e) => e.kind === "show"))[0];
+  const drives = byPosition(live.filter((e) => e.kind === "drive" && e.leaveBy && e.minutes !== undefined && (!show || e.position < show.position)));
+  const d = drives[drives.length - 1];
+  if (!d) return null;
+  const at = (toMinutes(d.leaveBy!) + Math.round(d.minutes!)) % (24 * 60);
+  return `${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`;
+}
+
+/** "Fri Mar 12 (option 1 of 2) · Sat Mar 13", or "No date yet": the days a pitch is an option on the tour; the rank shows where more than one option shares the day. */
+export function onPlanText(entries: readonly EntryLike[], pitchId: string): string {
+  const live = entries.filter((e) => !e.deletedAt && e.kind === "option");
+  const mine = byPosition(live.filter((e) => e.pitchId === pitchId));
+  if (!mine.length) return "";
+  const parts = [...mine].sort((a, b) => (a.date ?? "9").localeCompare(b.date ?? "9") || a.position - b.position).map((e) => {
+    if (!e.date) return "No date yet";
+    const same = byPosition(live.filter((o) => o.date === e.date));
+    return same.length > 1 ? `${dayLabel(e.date)} (option ${same.findIndex((o) => o.id === e.id) + 1} of ${same.length})` : dayLabel(e.date);
+  });
+  return parts.join(" · ");
+}

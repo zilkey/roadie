@@ -1,7 +1,8 @@
 "use client";
 import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
-import { Suspense, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
@@ -26,6 +27,8 @@ interface NewTourForm {
   personnel: string[];
   /** Pitches in the range start ticked; these were unticked. */
   skipPitchIds: string[];
+  /** Pitches picked on the Pitch List (?pitchIds=): listed and ticked even without a date in the range. */
+  pickPitchIds: string[];
 }
 
 /**
@@ -35,24 +38,33 @@ interface NewTourForm {
 function Form() {
   const router = useRouter();
   const { doc: artist, artistId } = useArtist();
+  const params = useSearchParams();
   const { call, error, busy } = useCommand();
   const musicians = useCollection<Musician>("musicians").rows ?? [];
   const projects = useCollection<Project>("projects").rows ?? [];
   const pitches = useCollection<Pitch>("pitches", { where: [["artistId", "==", artistId]] }).rows ?? [];
   const draft = useDraft<NewTourForm>(draftPath.newIn("tours"),
-    { name: "", startDate: "", endDate: "", leavingFrom: null, leavingText: "", billedAs: "", projectId: "", personnel: [], skipPitchIds: [] },
+    { name: "", startDate: "", endDate: "", leavingFrom: null, leavingText: "", billedAs: "", projectId: "", personnel: [], skipPitchIds: [], pickPitchIds: (params.get("pitchIds") ?? "").split(",").filter(Boolean) },
     { title: (v) => `New tour${v.name.trim() ? ` · ${v.name.trim()}` : ""}` });
   const v = draft.value;
   const set = (p: Partial<NewTourForm>) => draft.setValue({ ...v, ...p });
   const mutationId = useRef(newMutationId());
   const off = !draft.ready;
+  // A draft from before keeps its values; pitches picked on the Pitch List this time are added to it, ticked.
+  const urlPicks = params.get("pitchIds") ?? "";
+  useEffect(() => {
+    const add = urlPicks.split(",").filter((x) => x && !(v.pickPitchIds ?? []).includes(x));
+    if (draft.ready && add.length) set({ pickPitchIds: [...(v.pickPitchIds ?? []), ...add], skipPitchIds: v.skipPitchIds.filter((x) => !add.includes(x)) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.ready, urlPicks]);
 
   const open = projects.filter((p) => p.status !== "closed");
   const projectId = v.projectId || defaultProjectFor(artist, v.billedAs, open) || "";
   // Pitches offering a date in the range (both ends set), soonest first.
   const inRange = (d: string) => !!v.startDate && !!v.endDate && d >= v.startDate && d <= v.endDate;
-  const offering = pitches.filter((p) => OPEN_PITCH.has(p.status) && !p.tourId && (p.dates ?? []).some(inRange))
-    .sort((a, b) => (a.dates.find(inRange)! < b.dates.find(inRange)! ? -1 : 1));
+  const picks = v.pickPitchIds ?? [];
+  const offering = pitches.filter((p) => picks.includes(p.id) || (OPEN_PITCH.has(p.status) && !p.tourId && (p.dates ?? []).some(inRange)))
+    .sort((a, b) => (a.dates.find(inRange) ?? "~") < (b.dates.find(inRange) ?? "~") ? -1 : 1);
   const ticked = offering.filter((p) => !v.skipPitchIds.includes(p.id));
 
   async function save(e: React.FormEvent) {
@@ -62,7 +74,9 @@ function Form() {
       name: v.name.trim(), projectId,
       ...(v.startDate ? { startDate: v.startDate } : {}), ...(v.endDate ? { endDate: v.endDate } : {}),
       ...(v.leavingFrom ? { leavingFrom: v.leavingFrom } : {}), ...(v.billedAs ? { billedAs: v.billedAs } : {}),
-      personnel: v.personnel, pitchIds: ticked.map((p) => p.id),
+      personnel: v.personnel,
+      // Booked pitches bring their shows; the rest go on as options.
+      pitchIds: ticked.filter((p) => p.showIds.length === 0).map((p) => p.id), showIds: ticked.flatMap((p) => p.showIds),
     }, { clientMutationId: mutationId.current, clearDraft: draft.draftId });
     if (r?.id) { await draft.clear(); router.replace(`/tours/${r.id}`); }
   }
@@ -109,16 +123,16 @@ function Form() {
               onToggle={() => set({ personnel: on ? v.personnel.filter((x) => x !== m.id) : [...v.personnel, m.id] })}>{m.name}</PickChip>;
           })}
         </div>
-        {v.startDate && v.endDate && (
+        {((v.startDate && v.endDate) || offering.length > 0) && (
           <fieldset className="m-0 grid border-0 p-0" data-testid="tour-pitches">
             <legend className="lbl mb-0.5 p-0">Start with these pitches</legend>
-            <span className="s mb-1">Pitches offering dates between {fmtPitchDate(v.startDate)} and {fmtPitchDate(v.endDate)}</span>
+            {v.startDate && v.endDate && <span className="s mb-1">Pitches offering dates between {fmtPitchDate(v.startDate)} and {fmtPitchDate(v.endDate)}</span>}
             {offering.length === 0 && <span className="d-muted">None yet.</span>}
             {offering.map((p) => (
               <label key={p.id} className="flex min-h-[44px] items-center gap-2.5 border-b border-divider last:border-b-0" data-testid={`tour-pitch-${p.target.name}`}>
                 <input type="checkbox" className="h-[18px] w-[18px]" checked={!v.skipPitchIds.includes(p.id)}
                   onChange={(e) => set({ skipPitchIds: e.target.checked ? v.skipPitchIds.filter((x) => x !== p.id) : [...v.skipPitchIds, p.id] })} />
-                <span><b>{p.target.name}</b> <span className="d-muted">· {p.dates.filter(inRange).map(fmtPitchDate).join(", ")}</span></span>
+                <span><b>{p.target.name}</b> <span className="d-muted">· {(p.showIds.length > 0 ? "Booked" : p.dates.filter(inRange).map(fmtPitchDate).join(", ")) || "No dates in range"}</span></span>
               </label>
             ))}
           </fieldset>

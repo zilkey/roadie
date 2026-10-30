@@ -13,6 +13,7 @@ import type { Contact, Edition, Venue } from "@/schema";
 import type { ShowRow } from "../common";
 import { UnfinishedPlaceholder } from "./kit";
 import { DayOfContact } from "./DayOfContact";
+import { ShowTourRow, useShowTour } from "./ShowTourRow";
 
 type Where = "venue" | "house" | "festival";
 type TimeKey = "loadIn" | "soundcheck" | "doors" | "showStart" | "set";
@@ -108,6 +109,14 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
     return (await call("shows.update", { id: show.id, patch: { times: timesWith(show, change) } })) !== undefined;
   }
 
+  const tourInfo = useShowTour(show, admin);
+  async function pickTour(next: string): Promise<boolean> {
+    setError(null);
+    if (next === (show.tourId ?? "")) return true;
+    const r = next ? await call("tours.addShow", { tourId: next, showId: show.id }) : await call("tours.removeItem", { tourId: show.tourId, showId: show.id });
+    return r !== undefined;
+  }
+
   // ---------- view ----------
   const t = show.times;
   const len = setLengthOf(t);
@@ -121,11 +130,13 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
     ? <Link href={`/booking/venues/${show.venue.id}`} className="text-[1.0625rem] font-bold" style={{ color: "var(--ink)" }} data-testid="where-venue">{show.venue.name}</Link>
     : <span className="text-[1.0625rem] font-bold" data-testid="where-venue">{show.editionId && kindOf(show) !== "house" ? "Venue TBD" : showName(show)}</span>;
 
+  const arrives = tourInfo.arrival && <span className="s d-muted" data-testid="where-arrival"> · arriving {fmtTime(tourInfo.arrival)} from the tour&apos;s drive</span>;
   const cell = (k: TimeKey, label: string) => (
     <div key={k} className="grid min-w-0 content-start gap-0.5"><span className="lbl">{label}</span>
       <InlineValue testid={`where-${k}`} label={label} kind="time" value={t[k] ?? ""} canEdit={admin} autoStart={addingTimes && k === "loadIn" && nothing}
         display={<b>{k === "set" ? setText : fmtTime(t[k] ?? "")}</b>} emptyLabel="Add…" className="self-start"
         onSave={(v) => saveTimes({ [k]: v })} error={cmdError} />
+      {k === "loadIn" && t.loadIn && arrives}
     </div>
   );
 
@@ -199,6 +210,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
             {addingTimes && admin && <span className="s" data-testid="where-times-hint">Tab moves to the next time. Each one saves as you leave it.</span>}
           </div>
         )}
+        {!editing && <ShowTourRow show={show} admin={admin} info={tourInfo} onPick={pickTour} />}
         <DayOfContact show={show} admin={admin} />
         {!editing && (
           <div className="s flex flex-wrap items-center gap-x-5 gap-y-1" data-testid="where-foot">
