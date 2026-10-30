@@ -205,3 +205,40 @@ env -u FIRESTORE_EMULATOR_HOST -u FIREBASE_AUTH_EMULATOR_HOST \
 ## Part 5 · Later (the app runs without these)
 
 Gmail, Drive and Calendar have real clients: they turn on once the Google OAuth client and its secrets are set (`docs/FIREBASE-SETUP.md` section 5) and each admin connects on Settings > Google. Bandsintown and Spotify are still faked, so those features error in production until their real clients are written (sections 6–7). MCP hosting and the nightly backup are in sections 10–11. Do them when you want each feature live.
+
+### Meta (Instagram & Facebook)
+
+Posts publishes to the band's Instagram through **Instagram API with Unified login** (Instagram use case › API setup with Unified login). Meta's dashboard calls the Facebook Login path legacy; Unified login is the one that gets new features (Reels, trial reels, Stories). One Meta app covers every band; for now it stays in development mode, which is enough for our own band.
+
+**Portfolios:** the Meta app sits in Jeff's own business portfolio, because it's for every band. Each band's Instagram sits in that band's portfolio (ours: Ingrid's). Unified login needs the app to be owned by a portfolio (otherwise the "API setup with Unified login" tab doesn't show), and the person connecting needs access to the portfolio that owns the band's Instagram. A Facebook Page isn't needed.
+
+**The app** (developers.facebook.com › My Apps, app 1839984933676596):
+
+1. Type **Business**, owned by Jeff's business portfolio. Leave it in development mode.
+2. Instagram use case › **API setup with Unified login**: create its configuration with content publishing (and the basic access it requires; Meta's default configuration also asks for messages and comments). Pick one labelled "Instagram Login Compatible", or people can only log in with Facebook. Its id goes in `apphosting.yaml` as `META_CONFIG_ID` (a plain value). The configuration also sets the token's expiry; the preview shows it.
+3. App roles: Jeff as admin, Ingrid as tester (App roles › Roles). In development mode, people with a role on the app get every permission without App Review. Other bands need Advanced Access and Live mode later (#19 stage 14).
+4. Permissions posting needs: `instagram_basic` and `instagram_content_publish` (on an Instagram User token: `instagram_business_basic`, `instagram_business_content_publish`). Roadie refuses a connection that's missing either and says which.
+5. Valid OAuth redirect URIs, on the app and in the configuration:
+   - `https://app.myroadie.online/api/meta/callback`
+   - `http://localhost:3100/api/meta/callback`
+6. Secrets, before deploying (a referenced-but-missing secret fails the rollout):
+
+   ```sh
+   npx firebase apphosting:secrets:set META_APP_SECRET --project roadie-prod-iab   # App settings › Basic › App secret
+   openssl rand -base64 32 | npx firebase apphosting:secrets:set META_TOKEN_KEY --project roadie-prod-iab --data-file -
+   ```
+
+   and put the App ID in `apphosting.yaml` (`META_APP_ID`, a plain value).
+
+**The band's accounts** need an Instagram **Professional** account (Business or Creator) in the band's business portfolio. A personal one can't be posted to: in the Instagram app, Settings › Account type and tools › Switch to professional account. The person connecting has access to that portfolio, and a role on the Meta app while it's in development mode.
+
+**Connecting:** an admin opens Settings › Integrations › Instagram & Facebook and presses **Connect Instagram**. Meta's dialog (`config_id`, `prompt=login` so both Instagram and Facebook are offered) lets them log in with either, pick the band's portfolio and tick the band's Instagram. The code comes back through `/api/meta/callback` to that page, which finishes as the signed-in admin. Roadie stores the token encrypted with `META_TOKEN_KEY` in `metaConnections/{artistId}`, with its kind, expiry and the portfolio. It takes whichever kind of token Meta gives:
+
+- **System-user token** (what Meta's Unified login docs describe: a Business Integration System User token, owned by the band's portfolio, so it keeps working if the person who connected leaves). Calls go to graph.facebook.com. `debug_token` gives what was granted and the expiry (`expires_at` 0: never); `/me/assigned_instagram_accounts` gives the account. The card says "Doesn't expire", or "Good until {date}; connect again before then" when the configuration gives it an expiry: Roadie can't renew this kind.
+- **Instagram User token** (it starts with `IG`; what the access-token reference describes). Calls go to graph.instagram.com. The hour-long token is exchanged (`ig_exchange_token`) for one good for 60 days, and Roadie renews it (`ig_refresh_token`) once it's a week old, checked before each publish and whenever the card or Posts opens. Instagram won't renew a token under 24 hours old. The card says "Roadie renews it". There's no scheduled job yet, so a band that opens neither for 60 days has to connect again.
+
+The card says "Working" when Instagram answers, and "Sign in again" with Meta's reason when it doesn't (a password change, the app removed from the portfolio, the Instagram moved to another portfolio, an expired token, a failed renewal); Posts says the same instead of the form.
+
+**Posting:** Meta fetches the photo from a signed link on our server (`/api/posts/media/{id}`, good for an hour), so it can only be tried for real on production: localhost isn't reachable from Meta. Dev and tests use `fakes/fake-meta` (`META_GRAPH_URL`, `META_IG_URL`, `META_DIALOG_URL` and a made-up `META_CONFIG_ID` in `.env.development` and `playwright.config.ts`); its `/__scenario` picks the token kind. Instagram takes JPEGs only, up to 8 MB; the API can't delete a published post, so delete test posts in the Instagram app.
+
+**Found on the way:** (add here: which token kind a real connect returns, its `expires_in` and `debug_token`, whether Business Verification was needed, and dashboard steps that didn't match the docs.)

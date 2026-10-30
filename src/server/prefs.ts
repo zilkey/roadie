@@ -1,20 +1,19 @@
 /** Per-user prefs at userPrefs/{uid}. Written with firebase-admin directly (like drafts): personal, so no history entry and no undo. */
-import { defaultHidden, isSectionId, legacySectionId, normalizeOrder, type SectionId } from "@/schema/sections";
+import { hiddenFromPrefs, normalizeOrder, SECTION_IDS, type SectionId } from "@/schema/sections";
 import { PrintOptions } from "@/schema/print";
 import { firestore } from "./admin";
 
 const ref = (uid: string) => firestore().collection("userPrefs").doc(uid);
 
-/** The caller's hidden sections; their role's defaults until they have stored a list of their own (an empty list is their own). */
+/** The caller's hidden sections; their role's defaults until they have stored a list of their own (an empty list is their own), plus sections added since (hiddenFromPrefs). */
 export async function hiddenSections(uid: string, role: string): Promise<SectionId[]> {
-  const v = (await ref(uid).get()).data()?.hiddenSections;
-  return Array.isArray(v) ? v.map(legacySectionId).filter(isSectionId) : defaultHidden(role);
+  return hiddenFromPrefs((await ref(uid).get()).data(), role);
 }
 
 export async function setSectionHidden(uid: string, role: string, section: SectionId, hidden: boolean): Promise<SectionId[]> {
   const cur = await hiddenSections(uid, role);
   const next = hidden ? [...new Set([...cur, section])] : cur.filter((s) => s !== section);
-  await ref(uid).set({ uid, hiddenSections: next }, { merge: true });
+  await ref(uid).set({ uid, hiddenSections: next, seenSections: [...SECTION_IDS] }, { merge: true });
   return next;
 }
 
