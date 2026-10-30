@@ -13,7 +13,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
-import { attentionText, fmtTourDates, positionBetween, slotIn, tourDays, tourFilterOf, tourWarnings, type EntryLike } from "@/lib/tours";
+import { attentionText, driveText, fmtTourDates, planStats, routeTowns, positionBetween, slotIn, tourDays, tourFilterOf, tourWarnings, type EntryLike } from "@/lib/tours";
 import { isEligible, needsConfirm } from "@/server/assistant/policy";
 import { groupOf, groupsFor } from "@/server/assistant/toolset";
 import { topicInWords } from "@/lib/help";
@@ -362,4 +362,30 @@ test("the pages' tour dates, filter and needs-attention line", () => {
   assert.equal(tourFilterOf({ status: "done" }, today), "past");
   assert.equal(attentionText([{ kind: "noStay" }, { kind: "openDate" }, { kind: "longDrive" }, { kind: "noStay" }]), "2 nights no stay · 1 long drive");
   assert.equal(attentionText([{ kind: "openDate" }]), "");
+});
+
+test("the Plan tab's stat pills, drive line and route towns", () => {
+  assert.equal(driveText(430, 463.2), "7 h 10 min · 463 mi");
+  assert.equal(driveText(undefined, 64), "64 mi");
+  assert.equal(driveText(), "");
+  const entries = [
+    { id: "s", kind: "show" as const, date: "2027-03-09", position: 1 },
+    { id: "o1", kind: "option" as const, date: "2027-03-12", position: 1 },
+    { id: "o2", kind: "option" as const, position: 1 },
+    { id: "d1", kind: "drive" as const, date: "2027-03-09", position: 0, miles: 64, minutes: 65 },
+    { id: "d2", kind: "drive" as const, date: "2027-03-10", position: 0, miles: 996, minutes: 955 },
+    { id: "gone", kind: "show" as const, date: "2027-03-10", position: 2, deletedAt: {} },
+  ];
+  const st = planStats(entries, [
+    { kind: "noStay", date: "2027-03-11", message: "" }, { kind: "noStay", date: "2027-03-10", message: "" },
+    { kind: "openDate", date: "2027-03-11", message: "" }, { kind: "longDrive", date: "2027-03-10", entryId: "d2", message: "" },
+  ]);
+  assert.deepEqual({ shows: st.shows, options: st.options, openDates: st.openDates, driving: st.driving }, { shows: 1, options: 1, openDates: 1, driving: "1,060 mi · 17 h driving" });
+  assert.deepEqual(st.attention, [
+    { kind: "noStay", text: "2 nights with no stay", date: "2027-03-10" },
+    { kind: "longDrive", text: "1 long drive", date: "2027-03-10" },
+  ]);
+  assert.equal(planStats([], []).driving, "");
+  assert.deepEqual([...routeTowns([{ address: "Boulder, CO, USA" }, { name: "Salt Lake City", address: "Salt Lake City, UT, USA" }, undefined], ["Provo", undefined])].sort(),
+    ["boulder", "provo", "salt lake city"]);
 });

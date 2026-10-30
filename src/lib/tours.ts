@@ -163,3 +163,40 @@ export function attentionText(warnings: readonly { kind: TourWarningKind }[]): s
     ...plural(n("lateArrival"), "late arrival", "late arrivals"), ...plural(n("outsideDates"), "thing outside the dates", "things outside the dates"),
   ].join(" · ");
 }
+
+// ---------- the Plan tab ----------
+
+/** "7 h 10 min · 463 mi"; either half alone; empty when the server has neither yet. */
+export function driveText(minutes?: number, miles?: number): string {
+  return [minutes !== undefined ? hoursText(minutes) : "", miles !== undefined ? `${Math.round(miles).toLocaleString("en-US")} mi` : ""].filter(Boolean).join(" · ");
+}
+
+/** The stat pills over the plan: shows booked, open dates and dated options, the warnings that need doing (each with its first day), and the driving. */
+export function planStats(entries: readonly EntryLike[], warnings: readonly TourWarning[]) {
+  const live = entries.filter((e) => !e.deletedAt);
+  const drives = live.filter((e) => e.kind === "drive");
+  const firstDay = (k: TourWarningKind) => warnings.filter((w) => w.kind === k && w.date).map((w) => w.date!).sort()[0];
+  const n = (k: TourWarningKind) => warnings.filter((w) => w.kind === k).length;
+  const plural = (c: number, one: string, many: string) => `${c} ${c === 1 ? one : many}`;
+  const attention: { kind: TourWarningKind; text: string; date?: string }[] = [];
+  if (n("noStay")) attention.push({ kind: "noStay", text: plural(n("noStay"), "night with no stay", "nights with no stay"), date: firstDay("noStay") });
+  if (n("longDrive")) attention.push({ kind: "longDrive", text: plural(n("longDrive"), "long drive", "long drives"), date: firstDay("longDrive") });
+  if (n("lateArrival")) attention.push({ kind: "lateArrival", text: plural(n("lateArrival"), "late arrival", "late arrivals"), date: firstDay("lateArrival") });
+  if (n("outsideDates")) attention.push({ kind: "outsideDates", text: plural(n("outsideDates"), "thing outside the dates", "things outside the dates"), date: firstDay("outsideDates") });
+  const minutes = drives.reduce((s, e) => s + (e.minutes ?? 0), 0), miles = drives.reduce((s, e) => s + (e.miles ?? 0), 0);
+  return {
+    shows: live.filter((e) => e.kind === "show").length,
+    options: live.filter((e) => e.kind === "option" && e.date).length,
+    openDates: n("openDate"),
+    attention,
+    driving: drives.length ? `${Math.round(miles).toLocaleString("en-US")} mi · ${Math.round(minutes / 60)} h driving` : "",
+  };
+}
+
+/** The lower-cased towns a tour passes through (the "Near the route" filter): where it leaves from, every drive's ends, every stay, and the towns of its shows and options. */
+export function routeTowns(places: readonly ({ name?: string; address: string } | undefined)[], cities: readonly (string | undefined)[]): Set<string> {
+  const out = new Set<string>();
+  for (const p of places) if (p) for (const t of [p.name, p.address.split(",")[0]]) if (t?.trim()) out.add(t.trim().toLowerCase());
+  for (const c of cities) if (c?.trim()) out.add(c.trim().toLowerCase());
+  return out;
+}

@@ -16,6 +16,7 @@ import { fmtTourDates } from "@/lib/tours";
 import { TourStatusPill, actName, townOf, type TourRow } from "@/components/tours/common";
 import { TourInfo, type TourForm } from "@/components/tours/TourInfo";
 import { TourAsk } from "@/components/tours/TourAsk";
+import { TourPlan } from "@/components/tours/TourPlan";
 import type { Musician, Project, Tour } from "@/schema";
 
 type Tab = "plan" | "sheet" | "info" | "money";
@@ -68,7 +69,7 @@ function TourView({ tour }: { tour: TourRow }) {
   const meta = [form.startDate || form.endDate ? fmtTourDates(form.startDate || undefined, form.endDate || undefined) : "", form.leavingFrom ? `from ${townOf(form.leavingFrom)}` : "", act ?? ""].filter(Boolean).join(" · ");
 
   return (
-    <DetailPage testid="tour-page" back={<BackLink href="/tours" label="All tours" />}
+    <DetailPage testid="tour-page" wide={tab === "plan"} back={<BackLink href="/tours" label="All tours" />}
       title={admin
         ? <InlineValue testid="tour-title" label="Name" kind="text" value={form.name} canEdit validate={(v) => (v ? null : "A tour needs a name")} onSave={(v) => save({ name: v })} />
         : form.name}
@@ -86,7 +87,7 @@ function TourView({ tour }: { tour: TourRow }) {
         options={[["plan", "Plan"], ["sheet", "Sheet"], ["info", "Info"], ...(admin ? [["money", "Money"] as [Tab, string]] : [])]} />
       <ErrorBox error={error} />
 
-      {tab === "plan" && <DetailCard private title="Plan" testid="tour-plan"><span className="d-muted">The day-by-day plan is coming soon.</span></DetailCard>}
+      {tab === "plan" && <TourPlan tour={tour} admin={admin} extend={save} />}
       {tab === "sheet" && <DetailCard private title="Sheet" testid="tour-sheet"><span className="d-muted">The sheet is coming soon.</span></DetailCard>}
       {tab === "info" && <TourInfo form={form} admin={admin} musicians={musicians} projects={projects} save={save} />}
       {tab === "money" && admin && <DetailCard private title="Money" testid="tour-money"><span className="d-muted">The tour&apos;s money is coming soon.</span></DetailCard>}

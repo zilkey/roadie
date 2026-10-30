@@ -91,4 +91,91 @@ test.describe.serial("tours", () => {
     await expect(page.getByTestId("tour-coming-Jeff")).toBeDisabled();
     await close();
   });
+
+  // The Plan tab. The tour is Mar 9–20, 2027, with the Dairy Arts Center pitch as options on Mar 12 and 19.
+  test("plan: + between two entries adds there, and the order holds after a reload", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    const day = page.getByTestId("plan-day-2027-03-10");
+    await expect(page.getByTestId("plan-day-2027-03-12").locator('[data-kind="option"]')).toContainText("Dairy Arts Center");
+
+    // An empty day: + Add → Note….
+    await day.getByTestId("plan-plus-2027-03-10-0-actions").click();
+    await page.getByTestId("plan-plus-2027-03-10-0-menu-note").click();
+    await page.getByTestId("entry-text").fill("Load the van");
+    await page.getByTestId("entry-add").click();
+    await expect(day.getByTestId("plan-entry")).toHaveText([/Load the van/]);
+
+    // After the note: a stay, with an explicit Add.
+    await day.getByTestId("plan-plus-2027-03-10-1-actions").click();
+    await page.getByTestId("plan-plus-2027-03-10-1-menu-stay").click();
+    await expect(page.getByTestId("entry-new-stay")).toBeVisible();
+    await page.getByTestId("entry-name").fill("The van");
+    await page.getByTestId("entry-add").click();
+    await expect(day.getByTestId("plan-entry")).toHaveCount(2);
+
+    // Between the two: another note lands in the middle.
+    await day.getByTestId("plan-plus-2027-03-10-1-actions").click();
+    await page.getByTestId("plan-plus-2027-03-10-1-menu-note").click();
+    await page.getByTestId("entry-text").fill("Gas up");
+    await page.getByTestId("entry-add").click();
+    const order = [/Load the van/, /Gas up/, /Stay · The van/];
+    await expect(day.getByTestId("plan-entry")).toHaveText(order);
+    await page.reload();
+    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-entry")).toHaveText(order);
+
+    // The night of the 10th is covered now; the 9th still asks for one.
+    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-no-stay")).toHaveCount(0);
+    await expect(page.getByTestId("plan-day-2027-03-09").getByTestId("plan-no-stay")).toContainText("No stay tonight.");
+    await close();
+  });
+
+  test("plan: clicking a stay opens it autosaving, with one Done", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    const day = page.getByTestId("plan-day-2027-03-10");
+    await day.locator('[data-kind="stay"]').getByTestId("plan-entry-open").click();
+    await expect(page.getByTestId("entry-edit-stay")).toBeVisible();
+    await expect(page.getByTestId("entry-add")).toHaveCount(0);
+    await page.getByTestId("entry-name").fill("Motel 6");
+    await page.getByTestId("entry-nights").fill("2");
+    await page.getByTestId("entry-nights").press("Enter");
+    await expect(page.getByTestId("entry-edit-stay").getByTestId("save-status")).toContainText("Saved");
+    await page.getByTestId("entry-done").click();
+    await expect(page.getByTestId("entry-modal")).toBeHidden();
+    await expect(day.locator('[data-kind="stay"]')).toContainText("Stay · Motel 6");
+    await expect(day.locator('[data-kind="stay"]')).toContainText("2 nights");
+    // Two nights cover the 11th too.
+    await expect(page.getByTestId("plan-day-2027-03-11").getByTestId("plan-no-stay")).toHaveCount(0);
+    await close();
+  });
+
+  test("plan: dragging a venue onto a day pitches it for that date", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    await page.getByTestId("tray-search").fill("Swallow Hill");
+    const item = page.getByTestId("tray-items").locator("li").filter({ hasText: "Swallow Hill Music" });
+    // (An earlier spec may have pitched it already; then its open pitch gets the date.)
+    await expect(item).toBeVisible();
+    const day = page.getByTestId("plan-day-2027-03-14");
+    // The tray is sticky, so it stays beside the day while the day scrolls into view.
+    await day.scrollIntoViewIfNeeded();
+    await item.dragTo(day.locator(".tp-dlist"));
+    await expect(day.locator('[data-kind="option"]')).toContainText("Swallow Hill Music");
+    await close();
+  });
+
+  test("plan: a member sees the band's entries only, with nothing to change", async ({ browser }) => {
+    const { page, close } = await as(browser, "david");
+    await page.goto(tourUrl);
+    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-entry")).toHaveText([/Load the van/, /Gas up/, /Stay · Motel 6/]);
+    await expect(page.getByTestId("tour-tray")).toHaveCount(0);
+    await expect(page.getByTestId("plan-bucket")).toHaveCount(0);
+    await expect(page.locator('[data-kind="option"]')).toHaveCount(0);
+    await expect(page.getByTestId("plan-entry-x")).toHaveCount(0);
+    await expect(page.getByTestId("plan-entry-open")).toHaveCount(0);
+    await expect(page.getByTestId("plan-plus-2027-03-10-0-actions")).toHaveCount(0);
+    await expect(page.getByTestId("plan-stat-open")).toHaveCount(0);
+    await close();
+  });
 });

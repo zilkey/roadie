@@ -17,11 +17,13 @@ const AlertIcon = ({ size }: { size?: number }) => <Svg size={size}><path d="M10
 const LockIcon = ({ size }: { size?: number }) => <Svg size={size}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 018 0v3" /></Svg>;
 
 /** A detail page: back link, title (+ pill), meta line, a `more` menu at the top right, then a single column of cards. */
-export function DetailPage({ back, title, pill, meta, more, children, testid }: {
+export function DetailPage({ back, title, pill, meta, more, children, testid, wide }: {
   back: ReactNode; title: ReactNode; pill?: ReactNode; meta?: ReactNode; more?: ReactNode; children: ReactNode; testid?: string;
+  /** A page that lays cards side by side (a tour's Plan tab): up to 1240 px instead of one 860 px column. */
+  wide?: boolean;
 }) {
   return (
-    <div className="d-page" data-testid={testid}>
+    <div className={wide ? "d-page wide" : "d-page"} data-testid={testid}>
       <header className="d-head">
         {back}
         <div className="flex flex-wrap items-start justify-between gap-4">
