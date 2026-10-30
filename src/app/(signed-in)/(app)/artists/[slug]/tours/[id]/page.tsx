@@ -81,7 +81,9 @@ function TourView({ tour }: { tour: TourRow }) {
         : form.name}
       pill={<TourStatusPill status={form.status} />}
       meta={meta ? <span data-testid="tour-meta">{meta}</span> : undefined}
-      more={!admin ? <Link href={`/money/expense?tourId=${tour.id}${todays ? `&tourEntryId=${todays.id}` : ""}`} className="btn outline" data-testid="tour-add-expense">+ Add an expense</Link> : <div className="flex flex-wrap items-center gap-2">
+      more={!admin ? <div className="flex flex-wrap items-center gap-2">
+        {form.startDate && form.startDate <= today && today <= (form.endDate || form.startDate) && <Link href={`/tours/${tour.id}/day/${today}`} className="btn outline" data-testid="tour-todays-sheet">Today&apos;s sheet</Link>}
+        <Link href={`/money/expense?tourId=${tour.id}${todays ? `&tourEntryId=${todays.id}` : ""}`} className="btn outline" data-testid="tour-add-expense">+ Add an expense</Link></div> : <div className="flex flex-wrap items-center gap-2">
         <SaveStatus {...as.statusProps} />
         <TourAsk tour={tour} musicians={musicians} />
         <Menu label="More actions" testid="tour" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[
@@ -90,7 +92,7 @@ function TourView({ tour }: { tour: TourRow }) {
         ]} />
       </div>}>
       <Tabs<Tab> testid="tour-tab" value={tab} onChange={setTab}
-        options={[["plan", "Plan"], ["sheet", "Sheet"], ["info", "Info"], ...(admin ? [["money", "Money"] as [Tab, string]] : [])]} />
+        options={[["plan", "Plan"], ["sheet", "Sheet", "tp-desk"], ["info", "Info"], ...(admin ? [["money", "Money"] as [Tab, string]] : [])]} />
       <ErrorBox error={error} />
 
       {tab === "plan" && <TourPlan tour={tour} admin={admin} extend={save} />}

@@ -60,7 +60,7 @@ export function TourTray({ tourId, venues, pitches, shows, towns, today, onDrag,
   const type = tab === "venues" ? "venue" : tab === "pitches" ? "pitch" : "show";
 
   return (
-    <section className="d-card tp-tray" aria-labelledby="tray-h" data-testid="tour-tray">
+    <section className="d-card tp-tray tp-desk" aria-labelledby="tray-h" data-testid="tour-tray">
       <div className="d-ch"><h2 id="tray-h" className="d-ct">Add to tour</h2><span className="text-[0.8125rem] text-muted">Drag onto a day</span></div>
       <div className="seg wide" role="radiogroup" aria-label="What to add">
         {(["pitches", "venues", "shows"] as Tab[]).map((t) => (

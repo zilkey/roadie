@@ -277,7 +277,7 @@ export function Flagged({ kind, id, pitches, big, square, label, children }: { k
 }
 
 /** View switcher or filter: a tab bar, never a form field. Arrow keys / Home / End move between tabs. */
-export function Tabs<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, React.ReactNode][]; onChange(v: T): void; testid?: string }) {
+export function Tabs<T extends string>({ value, options, onChange, testid }: { value: T; options: [T, React.ReactNode, string?][]; onChange(v: T): void; testid?: string }) {
   function onKey(e: React.KeyboardEvent<HTMLDivElement>) {
     const i = options.findIndex(([v]) => v === value);
     const next = e.key === "ArrowRight" || e.key === "ArrowDown" ? (i + 1) % options.length
@@ -290,8 +290,8 @@ export function Tabs<T extends string>({ value, options, onChange, testid }: { v
   }
   return (
     <div className="tabs" role="tablist" data-testid={testid} onKeyDown={onKey}>
-      {options.map(([v, l]) => (
-        <button key={v} type="button" role="tab" aria-selected={value === v} tabIndex={value === v ? 0 : -1} onClick={() => onChange(v)} data-testid={`${testid}-${v}`}>{l}</button>
+      {options.map(([v, l, cls]) => (
+        <button key={v} type="button" role="tab" className={cls} aria-selected={value === v} tabIndex={value === v ? 0 : -1} onClick={() => onChange(v)} data-testid={`${testid}-${v}`}>{l}</button>
       ))}
     </div>
   );

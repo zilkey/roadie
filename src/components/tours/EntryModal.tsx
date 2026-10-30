@@ -139,7 +139,8 @@ function PlaceField({ label, optional, value, onPick, onClear, testid }: { label
   return (
     <div className="grid gap-1">
       <span className="lbl">{label}{optional && <i className="font-normal not-italic"> (optional)</i>}</span>
-      <AddressAutocomplete value={placeText(value)} testId={testid} placeholder="Search a town or an address" onPick={onPick}
+      <AddressAutocomplete value={placeText(value)} testId={testid} placeholder="Search a town or an address"
+        onPick={(p) => onPick({ ...(p.name ? { name: p.name } : {}), address: p.address, lat: p.lat, lng: p.lng })} // a suggestion carries more (county, state) than a saved place takes
         onChange={(t) => { if (!t.trim() && value) onClear(); }} />
     </div>
   );

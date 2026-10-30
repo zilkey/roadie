@@ -37,6 +37,7 @@ export const ROUTES = {
   tours: { title: "Tours", path: "/tours" },
   newTour: { title: "Create Tour", path: "/tours/new" },
   tour: { title: "Tour", path: "/tours/:id", params: ["id"] },
+  tourDay: { title: "Tour day", path: "/tours/:id/day/:date", params: ["id", "date"] },
   songs: { title: "Songs", path: "/songs" },
   song: { title: "Song", path: "/songs/:id", params: ["id"] },
   releases: { title: "Releases", path: "/releases" },

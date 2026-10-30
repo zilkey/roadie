@@ -17,6 +17,7 @@ import { townOf, type TourRow } from "./common";
 import { BookDialog, type BookTarget } from "./BookDialog";
 import { EntryModal, type EntryKind, type EntryTarget } from "./EntryModal";
 import { GripIcon, TourTray, type Drag } from "./TourTray";
+import { AddSheet } from "./AddSheet";
 
 type Entry = Row<TourEntry>;
 type Slot = { after?: string; before?: string };
@@ -58,6 +59,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
   const [open, setOpen] = useState<Open | null>(null);
   const [book, setBook] = useState<BookTarget | null>(null);
   const [pick, setPick] = useState<{ date: string | null } | null>(null);
+  const [sheet, setSheet] = useState<string | null>(null); // phone: the day whose + sheet is open
   const [drag, setDrag] = useState<Drag | null>(null);
   const [over, setOver] = useState<Over | null>(null);
   const endDrag = () => { setDrag(null); setOver(null); };
@@ -238,12 +240,14 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
               );
               return (
                 <div key={d.date} id={`day-${d.date}`} className="tp-day" data-testid={`plan-day-${d.date}`}>
-                  <div className="tp-dlab"><b>{dayLabel(d.date)}</b>{sub && <span>{sub}</span>}</div>
+                  <div className="tp-dlab"><div><b>{dayLabel(d.date)}</b>{sub && <span>{sub}</span>}</div>
+                    {admin && <button type="button" className="tp-dadd tp-phone" aria-label={`Add to ${dayLabel(d.date)}`} onClick={() => setSheet(d.date)} data-testid={`plan-day-add-${d.date}`}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg></button>}</div>
                   <div className="tp-dlist" {...areaDrop(d.date)}>
                     {es.length === 0 && (
                       <div className="tp-empty">
-                        Nothing yet.{admin && <> Drag something here, or <PlusMenu testid={`plan-plus-${d.date}-0`} label={`Add on ${dayLabel(d.date)}`} onPick={(k) => startNew(k, d.date, {})}
-                          trigger={<span className="text-[0.8125rem] font-bold">+ Add</span>} triggerClass="btn ghost sm" /></>}
+                        Nothing yet.{admin && <span className="tp-desk"> Drag something here, or <PlusMenu testid={`plan-plus-${d.date}-0`} label={`Add on ${dayLabel(d.date)}`} onPick={(k) => startNew(k, d.date, {})}
+                          trigger={<span className="text-[0.8125rem] font-bold">+ Add</span>} triggerClass="btn ghost sm" /></span>}
                       </div>
                     )}
                     {es.length > 0 && plus(0)}
@@ -275,6 +279,9 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
         </div>
       </div>
 
+      {admin && <AddSheet date={sheet} town={sheet ? townOfDay((days.find((x) => x.date === sheet)?.entries ?? []) as Entry[]) : undefined} towns={towns}
+        venues={booking.venues} pitches={booking.pitches} tourId={tour.id} onAdd={(d, date) => void add(d, date)} onClose={() => setSheet(null)}
+        onTravel={(kind, date) => { const es = (days.find((x) => x.date === date)?.entries ?? []) as Entry[]; setSheet(null); setOpen({ kind, date, slot: { after: es[es.length - 1]?.id } }); }} />}
       <EntryModal target={modalTarget} admin={admin} onClose={() => setOpen(null)} />
       {admin && <BookDialog target={book} entries={entries} nameOf={(id) => pitches.get(id)?.target.name ?? "the pitch"} cityOf={cityOfPitch} onClose={() => setBook(null)} />}
       {admin && (
@@ -369,7 +376,7 @@ function PlusMenu({ testid, label, onPick, trigger, triggerClass }: { testid: st
 function PlusSlot({ testid, date, after, before, name, onPick }: { testid: string; date: string; after?: Entry; before?: Entry; name(e: Entry): string; onPick(k: EntryKind | "pitch"): void }) {
   const where = after && before ? `between ${name(after)} and ${name(before)}` : after ? `after ${name(after)}` : before ? `before ${name(before)}` : "";
   return (
-    <div className="tp-plusline">
+    <div className="tp-plusline tp-desk">
       <i />
       <PlusMenu testid={testid} label={`Add on ${dayLabel(date)} ${where}`.trim()} onPick={onPick} triggerClass="tp-plus"
         trigger={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden><path d="M12 5v14M5 12h14" /></svg>} />

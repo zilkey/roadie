@@ -9,6 +9,7 @@ import { useCalendarItems } from "@/lib/calendarData";
 import { useToursPref, useTourLayers } from "@/components/calendar/useToursLayer";
 import { TourPanel } from "@/components/calendar/TourPanel";
 import { onTour } from "@/lib/calendarTours";
+import { useTourDayRedirect } from "@/components/tours/useTourDayRedirect";
 import { MonthGrid } from "@/components/calendar/MonthGrid";
 import { DayPanel } from "@/components/calendar/DayPanel";
 import { ComingUp } from "@/components/calendar/ComingUp";
@@ -33,6 +34,7 @@ function Calendar() {
   const router = useRouter();
   const pathname = usePathname();
   const param = useSearchParams().get("m") ?? "";
+  useTourDayRedirect();
   const today = todayStr();
   const ym = /^\d{4}-(0[1-9]|1[0-2])$/.test(param) ? param : today.slice(0, 7);
   const { items, comingUp, admin } = useCalendarItems();

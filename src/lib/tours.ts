@@ -256,3 +256,35 @@ export function onPlanText(entries: readonly EntryLike[], pitchId: string): stri
   });
   return parts.join(" · ");
 }
+
+// ---------- the member's day sheet ----------
+
+/** One day of a tour for the phone: the day's drives, shows, stays and notes in position order, which day it is, and tomorrow's first drive and show. */
+export function daySheet<E extends EntryLike>(tour: TourLike, entries: readonly E[], date: string) {
+  const live = entries.filter((e) => !e.deletedAt);
+  const on = (d: string, kind: EntryLike["kind"]) => byPosition(live.filter((e) => e.date === d && e.kind === kind));
+  const tomorrow = addDays(date, 1);
+  const day = tourDayNumber(tour, live, date);
+  const nextDrive = day && day.n < day.of ? on(tomorrow, "drive")[0] : undefined, nextShow = day && day.n < day.of ? on(tomorrow, "show")[0] : undefined;
+  return {
+    day, drives: on(date, "drive"), shows: on(date, "show"), stays: on(date, "stay"), notes: on(date, "note"),
+    tomorrow: nextDrive || nextShow ? { drive: nextDrive, show: nextShow } : null,
+  };
+}
+
+/** The town the day is in: where its last drive goes, else the city of its first show. Empty when nothing says. */
+export function dayTown(sheet: { drives: readonly EntryLike[]; shows: readonly EntryLike[] }, cityOf: (showId: string) => string | undefined): string {
+  const to = sheet.drives[sheet.drives.length - 1]?.to;
+  return (to && (to.name ?? to.address.split(",")[0])) || (sheet.shows[0]?.showId && cityOf(sheet.shows[0].showId)) || "";
+}
+
+/** The tour a person lands on today: one that is under way (not an idea), covers `today`, and has them in its personnel; the earliest start wins. */
+export function tourToday<T extends TourLike & { status: string; personnel?: readonly string[] }>(tours: readonly T[], today: string, musicianId?: string): T | null {
+  if (!musicianId) return null;
+  const live = tours.filter((t) => t.status !== "idea" && t.startDate && t.endDate && t.startDate <= today && today <= t.endDate && t.personnel?.includes(musicianId));
+  return live.sort((a, b) => a.startDate!.localeCompare(b.startDate!))[0] ?? null;
+}
+
+/** A Google Maps directions link to a geocoded place, from another one when we have it. */
+export const mapsUrl = (from: { lat: number; lng: number } | undefined, to: { lat: number; lng: number }) =>
+  `https://www.google.com/maps/dir/?api=1${from ? `&origin=${from.lat},${from.lng}` : ""}&destination=${to.lat},${to.lng}`;
