@@ -8,8 +8,8 @@ import { syncShow } from "../showSync";
 import { BAND_TIME_ZONE, dateInBandZone } from "@/lib/timezone";
 import { showCity, showName } from "@/lib/shows";
 import { sortedDates } from "@/lib/booking";
-import { incomeExpected, incomeSoFar, moneyTotals, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
-import { byPosition, dayLabel, slotIn, tourDays, tourWarnings, type EntryLike, type ShowFacts, type TourLike } from "@/lib/tours";
+import type { ExpenseLike, IncomeLike, PayoutLike } from "@/lib/money";
+import { byPosition, dayLabel, slotIn, tourByDay, tourDays, tourTotals, tourWarnings, type EntryLike, type ShowFacts, type TourLike } from "@/lib/tours";
 import { dateStr, timeStr, geoPoint, tourStatus, entryVisibility } from "@/schema";
 import { artistFor, requireOpenProject } from "./projects";
 import { createShow, ShowCreateIn } from "./shows";
@@ -197,10 +197,6 @@ async function tourMoney(tourId: string) {
   const [income, expenses, payouts] = await Promise.all(MONEY.map((c) => db.list(c, (q) => q.where("tourId", "==", tourId))));
   return { income: income as unknown as IncomeLike[], expenses: expenses as unknown as ExpenseLike[], payouts: payouts as unknown as PayoutLike[] };
 }
-/** The tour's money, the incomeSoFar way: a show that hasn't happened yet doesn't count until its date (it is in expected). Paid and owed kept apart. */
-function totalsOf(m: Awaited<ReturnType<typeof tourMoney>>, today: string) {
-  return { ...moneyTotals({ income: incomeSoFar(m.income, today), expenses: m.expenses, payouts: m.payouts }), expected: incomeExpected(m.income, today).total };
-}
 async function showsOf(entries: Doc[]): Promise<Map<string, Doc>> {
   const ids = [...new Set(entries.filter((e) => e.showId).map((e) => e.showId as string))];
   const docs = await Promise.all(ids.map((x) => db.get("shows", x)));
@@ -235,7 +231,7 @@ export const toursList = defineCommand({
       return {
         id: t.id, name: t.name, status: t.status, startDate: t.startDate ?? null, endDate: t.endDate ?? null, projectId: t.projectId,
         counts: { days: days.length, shows: n("show"), ...(seesAll(ctx) ? { options: n("option") } : {}), drives: n("drive"), stays: n("stay"), warnings: warnings.length },
-        ...(seesAll(ctx) ? { totals: totalsOf(await tourMoney(t.id), today) } : {}),
+        ...(seesAll(ctx) ? { totals: tourTotals(await tourMoney(t.id), today) } : {}),
       };
     }));
     return { tours: rows.sort((a, b) => (a.startDate ?? "9999") < (b.startDate ?? "9999") ? -1 : 1) };
@@ -261,7 +257,7 @@ export const toursSummary = defineCommand({
   name: "tours.summary", roles: [...BAND],
   description: "How a tour is doing (\"how's the tour doing?\"): days (every date it covers, each with its entries in order), the bucket of undated options, and warnings, worked out fresh: " +
     "noStay (a night with no stay), openDate (a day with nothing booked or pitched), longDrive (over 5 h), lateArrival (leaving at leaveBy gets in after a show's load in), outsideDates (an entry outside the tour's dates). " +
-    "Admins also get totals in cents over the records tagged with the tour (inReceived / inOwed / outPaid / outOwed / net / netIfSettled; shows not played yet are only in expected) and byDay (the same per day: an entry's date for money pinned to one, else the record's own date). Members get no options and no money.",
+    "Admins also get totals in cents over the records tagged with the tour (inReceived / inOwed / outPaid / outOwed / net / netIfSettled; shows not played yet are only in expected) and byDay (the same per day: an entry's date for money pinned to one; money not pinned to an entry is the Whole tour row, date null). Members get no options and no money.",
   input: z.strictObject({ id: id1 }),
   async run(ctx, { id }) {
     const tour = await readTour(ctx, id);
@@ -281,13 +277,10 @@ export const toursSummary = defineCommand({
     const today = todayOf(ctx);
     const money = await tourMoney(id);
     const entryDate = new Map(entries.map((e) => [e.id, e.date as string | undefined]));
-    const dayOf = (x: { tourEntryId?: string; date?: string; paidAt?: string; dueDate?: string }) => (x.tourEntryId ? entryDate.get(x.tourEntryId) : undefined) ?? x.date ?? x.paidAt ?? x.dueDate ?? null;
-    const keys = [...new Set([...money.income, ...money.expenses, ...money.payouts].filter((x) => !x.deletedAt).map((x) => dayOf(x as never)))].sort((a, b) => (a ?? "~") < (b ?? "~") ? -1 : 1);
-    const on = <T>(xs: T[], k: string | null) => xs.filter((x) => dayOf(x as never) === k);
     return {
       ...out,
-      totals: totalsOf(money, today),
-      byDay: keys.map((k) => ({ date: k, totals: totalsOf({ income: on(money.income, k), expenses: on(money.expenses, k), payouts: on(money.payouts, k) }, today) })),
+      totals: tourTotals(money, today),
+      byDay: tourByDay(money, entryDate, today),
     };
   },
 });

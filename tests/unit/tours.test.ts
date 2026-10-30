@@ -13,7 +13,8 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
-import { attentionText, driveText, fmtTourDates, planStats, routeTowns, positionBetween, slotIn, tourDays, tourFilterOf, tourWarnings, type EntryLike } from "@/lib/tours";
+import { projectTotals } from "@/lib/money";
+import { tourByDay, tourDayOf, attentionText, driveText, fmtTourDates, planStats, routeTowns, positionBetween, slotIn, tourDays, tourFilterOf, tourWarnings, type EntryLike } from "@/lib/tours";
 import { isEligible, needsConfirm } from "@/server/assistant/policy";
 import { groupOf, groupsFor } from "@/server/assistant/toolset";
 import { topicInWords } from "@/lib/help";
@@ -266,9 +267,10 @@ test("tours.summary: totals are this tour's records the incomeSoFar way, by day,
   assert.equal(s.totals.expected, 30000);
   assert.equal(s.totals.outPaid, 2000 + 6000);
   assert.equal(s.totals.outOwed, 10000, "the sub's pay isn't paid yet");
-  const day = (d: string) => s.byDay.find((x: { date: string }) => x.date === d)?.totals;
-  assert.equal(day("2026-11-05").inReceived, 50000);
-  assert.equal(day("2026-11-06").outPaid, 6000);
+  // Nothing here is pinned to an entry, so it is all the Whole tour row.
+  assert.deepEqual(s.byDay.map((x: { date: string | null }) => x.date), [null]);
+  assert.equal(s.byDay[0].totals.inReceived, 50000);
+  assert.equal(s.byDay[0].totals.outPaid, 8000);
   const kinds = s.warnings.map((w: { kind: string; date: string }) => `${w.kind} ${w.date}`);
   for (const k of ["noStay 2026-11-05", "openDate 2026-11-06", "openDate 2026-11-07"]) assert.ok(kinds.includes(k), k);
   assert.ok(!kinds.includes("openDate 2026-11-05"));
@@ -388,4 +390,42 @@ test("the Plan tab's stat pills, drive line and route towns", () => {
   assert.equal(planStats([], []).driving, "");
   assert.deepEqual([...routeTowns([{ address: "Boulder, CO, USA" }, { name: "Salt Lake City", address: "Salt Lake City, UT, USA" }, undefined], ["Provo", undefined])].sort(),
     ["boulder", "provo", "salt lake city"]);
+});
+
+test("tour totals count only tagged records across two projects, and those records still count in their project", async () => {
+  const t = (await newTour()).id;
+  await cmd("income.add", { amount: 20000, category: "tips", from: "Door", projectId: duo, receivedAt: "2026-11-05", tourId: t });
+  await cmd("income.add", { amount: 30000, category: "tips", from: "Merch", projectId: band, receivedAt: "2026-11-06", tourId: t });
+  await cmd("income.add", { amount: 77700, category: "tips", from: "Elsewhere", projectId: band, receivedAt: "2026-11-06" });
+  await cmd("expenses.add", { amount: 4000, what: "Gas", category: "gas", projectId: duo, tourId: t });
+  await cmd("expenses.add", { amount: 5000, what: "Motel", category: "lodging", projectId: band, tourId: t });
+  await cmd("expenses.add", { amount: 99900, what: "Not the tour's", category: "gear", projectId: band });
+  await cmd("payouts.add", { to: { name: "Sub" }, kind: "pay", amount: 10000, projectId: duo, tourId: t, paidAt: "2026-11-07" });
+  const s = await cmd("tours.summary", { id: t });
+  assert.equal(s.totals.inReceived, 50000);
+  assert.equal(s.totals.outPaid, 4000 + 5000 + 10000);
+  assert.equal(s.totals.outOwed, 0);
+  const all = Object.fromEntries(await Promise.all(["income", "expenses", "payouts"].map(async (c) => [c, await db.list(c)])));
+  const mine = (id: string) => projectTotals({ projectId: id, defaultProjectId: band, income: all.income as never, expenses: all.expenses as never, payouts: all.payouts as never });
+  assert.equal(mine(duo).inReceived, 20000);
+  assert.equal(mine(duo).outPaid, 4000 + 10000);
+  assert.equal(mine(band).inReceived, 30000 + 77700);
+  assert.equal(mine(band).outPaid, 5000 + 99900);
+  // Unpinned money is the Whole tour row.
+  assert.deepEqual(s.byDay.map((d: { date: string | null }) => d.date), [null]);
+});
+
+test("tourByDay: pinned money lands on the entry's date, unpinned is the null row, a future show's income is only expected", () => {
+  const dates = new Map([["d1", "2026-11-05"], ["s2", "2026-11-08"]]);
+  const rec = (amount: number, extra: Record<string, unknown> = {}) => ({ amount, ...extra }) as never;
+  const rows = tourByDay({
+    income: [rec(10000, { tourEntryId: "s2", receivedAt: undefined }), rec(5000, { tourEntryId: "d1", receivedAt: "2026-11-05" })],
+    expenses: [rec(2000, { tourEntryId: "d1" }), rec(700)],
+    payouts: [],
+  }, dates, "2026-11-06");
+  assert.deepEqual(rows.map((r) => r.date), ["2026-11-05", "2026-11-08", null]);
+  assert.equal(rows[0].totals.inReceived, 5000);
+  assert.equal(rows[0].totals.outPaid, 2000);
+  assert.equal(rows[2].totals.outPaid, 700);
+  assert.equal(tourDayOf({ tourEntryId: "gone" }, dates), null);
 });

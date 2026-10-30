@@ -2,12 +2,14 @@
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { AddressAutocomplete, type Place } from "@/components/AddressAutocomplete";
-import { EditFoot, EditInput, ModalHead, MoneyDialog } from "@/components/money/MoneyOutModal";
+import { EditFoot, EditInput, ModalHead, MoneyDialog, MoneyOutModal } from "@/components/money/MoneyOutModal";
+import { MoneyInModal } from "@/components/money/MoneyInModal";
+import type { MoneyDefaults } from "@/components/money/modals";
 import { useInstantSave } from "@/components/shows/saved";
-import { useCollection, type Row } from "@/lib/firestore-hooks";
+import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { EXPENSE_LABEL, formatCents } from "@/lib/money";
 import { dayLabel, driveText } from "@/lib/tours";
-import type { Expense, Income, Payout, TourEntry } from "@/schema";
+import type { Expense, Income, Payout, Tour, TourEntry } from "@/schema";
 import { townOf } from "./common";
 
 export type EntryKind = "drive" | "stay" | "note";
@@ -23,7 +25,7 @@ const placeText = (p?: { name?: string; address: string } | null) => (p ? (p.nam
  * A drive, stay or note on a tour day (the "Stay modal" board). From a + it is new: the fields stay here until the explicit
  * "Add stay" (tours.entries.add, at the slot the + was in). Clicking an existing entry opens the same fields autosaving one at a
  * time through tours.entries.update (each with an Undo toast), and one Done. A drive shows its miles and time once the server
- * has them. For admins, an existing drive or stay lists the money pinned to it.
+ * has them. For admins, an existing drive or stay lists the money pinned to it (click a line to edit it) and has + Money out.
  */
 export function EntryModal({ target, admin, onClose }: { target: EntryTarget | null; admin: boolean; onClose(): void }) {
   const title = !target ? "" : "entry" in target ? existingTitle(target.entry) : `Add a ${NOUN[target.kind]}`;
@@ -125,7 +127,7 @@ function EditEntry({ tourId, entry: e, admin, onClose }: { tourId: string; entry
           </div>
         </>}
         {k === "note" && <NoteInput value={e.text ?? ""} onCommit={(v) => { if (!v.trim()) { setBad("A note needs some text. Use × on the plan to remove it."); return false; } setBad(null); return save({ text: v.trim() }, "the note"); }} />}
-        {admin && k !== "note" && <EntryMoney entryId={e.id} />}
+        {admin && k !== "note" && <EntryMoney tourId={tourId} entry={e} />}
       </div>
       <EditFoot prefix="entry" status={s.status} error={s.error} bad={bad} onClose={onClose} />
     </div>
@@ -162,26 +164,40 @@ function NoteInput({ value, onCommit }: { value: string; onCommit(v: string): bo
   );
 }
 
-/** Admins: the money pinned to this entry (tourEntryId). Adding money from here comes with the tour's Money tab. */
-function EntryMoney({ entryId }: { entryId: string }) {
-  const by = { where: [["tourEntryId", "==", entryId]] as [string, "==", string][] };
+/**
+ * Admins: the money pinned to this entry (tourEntryId), each line opening its modal to edit, and + Money out, which opens the
+ * Money out modal pinned to the entry (a drive starts on Gas with its From, To and When filled).
+ */
+function EntryMoney({ tourId, entry }: { tourId: string; entry: Row<TourEntry> }) {
+  const tour = useDoc<Tour>("tours", tourId).doc;
+  const [modal, setModal] = useState<{ out: boolean; defaults: MoneyDefaults } | null>(null);
+  const by = { where: [["tourEntryId", "==", entry.id]] as [string, "==", string][] };
   const expenses = useCollection<Expense>("expenses", by).rows ?? [];
   const payouts = useCollection<Payout>("payouts", by).rows ?? [];
   const income = useCollection<Income>("income", by).rows ?? [];
+  const context = { kind: "tour" as const, tourId, projectId: tour?.projectId ?? "", tourEntryId: entry.id };
   const lines = [
-    ...expenses.map((x) => ({ id: x.id, what: x.what, sub: EXPENSE_LABEL[x.category] ?? x.category, cents: -x.amount })),
-    ...payouts.map((x) => ({ id: x.id, what: x.to.name, sub: "Payout", cents: -x.amount })),
-    ...income.map((x) => ({ id: x.id, what: x.from, sub: "Money in", cents: x.amount })),
+    ...expenses.map((x) => ({ id: x.id, kind: "expense" as const, what: x.what, sub: EXPENSE_LABEL[x.category] ?? x.category, cents: -x.amount })),
+    ...payouts.map((x) => ({ id: x.id, kind: "payout" as const, what: x.to.name, sub: "Payout", cents: -x.amount })),
+    ...income.map((x) => ({ id: x.id, kind: "income" as const, what: x.from, sub: "Money in", cents: x.amount })),
   ];
+  const open = (out: boolean, defaults: MoneyDefaults) => setModal({ out, defaults });
+  const gas = entry.kind === "drive" ? { category: "gas", drive: { from: entry.from, to: entry.to, roundTrip: !!entry.roundTrip, date: entry.date } } : {};
   return (
     <div className="grid gap-1 border-t border-divider pt-3" data-testid="entry-money">
-      <span className="flex items-center gap-2"><b>Money</b><span className="text-[0.75rem] font-bold" style={{ color: "var(--owed-text)" }}>Admins only</span></span>
+      <span className="flex items-center gap-2">
+        <b>Money</b><span className="text-[0.75rem] font-bold" style={{ color: "var(--owed-text)" }}>Admins only</span>
+        <button type="button" className="btn ghost sm ml-auto" disabled={!tour} onClick={() => open(true, { context, ...gas })} data-testid="entry-money-out">+ Money out</button>
+      </span>
       {lines.length === 0 && <span className="text-[0.875rem] text-muted">Nothing on this yet.</span>}
       {lines.map((l) => (
-        <div key={l.id} className="d-row" data-testid="entry-money-row">
+        <button type="button" key={l.id} className="d-row cursor-pointer text-left hover:bg-soft" data-testid="entry-money-row" aria-label="Edit"
+          onClick={() => open(l.kind !== "income", { context, edit: { kind: l.kind, id: l.id } })}>
           <span>{l.what}<span className="text-muted"> · {l.sub}</span></span><b>{formatCents(Math.abs(l.cents))}</b>
-        </div>
+        </button>
       ))}
+      <MoneyOutModal open={!!modal?.out} onClose={() => setModal(null)} defaults={modal?.out ? modal.defaults : undefined} />
+      <MoneyInModal open={!!modal && !modal.out} onClose={() => setModal(null)} defaults={modal && !modal.out ? modal.defaults : undefined} />
     </div>
   );
 }

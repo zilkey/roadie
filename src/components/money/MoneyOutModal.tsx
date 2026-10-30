@@ -13,6 +13,7 @@ import { sortTracks } from "@/lib/releases";
 import type { MoneyDefaults, MoneyOutModalProps } from "./modals";
 import { CategoryField } from "./CategoryField";
 import { GasFields, gasAmount, useGas } from "./GasFields";
+import { TourFields, useTourPick } from "./TourFields";
 
 
 /** The native <dialog> both money modals sit in: closed unless `open`, and the form inside is keyed on each open so it resets. */
@@ -66,7 +67,7 @@ export function withContext(d: MoneyDefaults | undefined): MoneyDefaults | undef
   if (c.kind === "show") return { ...d, showId: c.showId, projectId: c.projectId ?? d.projectId };
   if (c.kind === "rehearsal") return { ...d, projectId: c.projectId ?? d.projectId };
   if (c.kind === "release") return { ...d, projectId: c.projectId, releaseTrackId: undefined };
-  // Tour money (the tag and the "On" field) is wired into the modals with the tour's Money tab (#44); until then it starts on the tour's project.
+  // A tour starts Project on its "Money goes to" (still changeable, like a rehearsal); the tag itself is TourFields.
   if (c.kind === "tour") return { ...d, projectId: c.projectId };
   return { ...d, projectId: c.projectId, releaseTrackId: c.releaseTrackId };
 }
@@ -78,14 +79,16 @@ export function useProjectsAndShows(defaults: { projectId?: string; showId?: str
   const open = useMemo(() => (projects.rows ?? []).filter((p) => p.status !== "closed").sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name)), [projects.rows]);
   const sortedShows = useMemo(() => [...(shows.rows ?? [])].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")), [shows.rows]);
   const [projectPick, setProjectPick] = useState<string | null>(null);
+  // A picked tour's "Money goes to": the project until the admin picks one.
+  const [projectHint, setProjectHint] = useState<string | null>(null);
   const [showId, setShowId] = useState(defaults?.showId ?? "");
   const show = sortedShows.find((s) => s.id === showId);
   // Untouched: the opener's project, else the chosen show's (if still open), else the default project.
-  const projectId = projectPick ?? [defaults?.projectId, show?.projectId as string | undefined].find((p) => p && open.some((o) => o.id === p)) ?? open.find((p) => p.isDefault)?.id ?? open[0]?.id ?? "";
-  return { open, shows: sortedShows, show, projectId, setProjectPick, showId, setShowId };
+  const projectId = projectPick ?? [projectHint, defaults?.projectId, show?.projectId as string | undefined].find((p) => p && open.some((o) => o.id === p)) ?? open.find((p) => p.isDefault)?.id ?? open[0]?.id ?? "";
+  return { open, shows: sortedShows, show, projectId, setProjectPick, setProjectHint, showId, setShowId };
 }
 
-/** Project and Show pickers; a `context` hides the ones its record decides (show: both; release or track: Project). */
+/** Project and Show pickers; a `context` hides the ones its record decides (show: both; release or track: Project; a tour or rehearsal hides neither). */
 export function ProjectShowFields({ s, prefix, context }: { s: ReturnType<typeof useProjectsAndShows>; prefix: string; context?: MoneyDefaults["context"] }) {
   const hideProject = context?.kind === "show" || context?.kind === "release" || context?.kind === "track";
   const hideShow = context?.kind === "show";
@@ -299,6 +302,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
   const ps = useProjectsAndShows(defaults);
   const tr = useReleaseTracks(ps.projectId, defaults);
   const track = tr.trackId ? { releaseTrackId: tr.trackId } : {};
+  const tp = useTourPick(context, undefined, { ps });
   const reimburse = !!defaults?.expenseIds?.length;
   const owed = useDocs<Expense>("expenses", defaults?.expenseIds ?? [], { skip: !reimburse });
 
@@ -313,7 +317,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
   const [link, setLink] = useState("");
   const [showLink, setShowLink] = useState(false);
   const [method, setMethod] = useState("");
-  const [when, setWhen] = useState(dateInBandZone());
+  const [when, setWhen] = useState(defaults?.drive?.date ?? dateInBandZone());
   const [payer, setPayer] = useState(me.role === "admin" ? me.uid : "");
   const [payBack, setPayBack] = useState(false);
   // Reimbursable: the bandmate who paid out of pocket (the We owe card opens this on a person).
@@ -326,7 +330,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
   const gasOn = category === "gas" && !reimburse && (kind === "expense" || kind === "reimb");
   const venue = ps.show?.venue;
   const venueText = [venue?.name, venue?.address, venue?.city].filter(Boolean).join(", ");
-  const gas = useGas({ active: gasOn, drivers: bandUsers, defaultDriver: defaults?.userId, rehearsalId, venueText: context?.kind === "show" ? venueText : undefined });
+  const gas = useGas({ active: gasOn, drivers: bandUsers, defaultDriver: defaults?.userId, rehearsalId, venueText: context?.kind === "show" ? venueText : undefined, ...defaults?.drive });
   const gasAmt = gasAmount(gas);
   useEffect(() => { if (gasOn && gasAmt && !amountEdited) setAmount(gasAmt); }, [gasOn, gasAmt, amountEdited]);
   const priorNames = useMemo(() => [...new Set([...(expensesAll.rows ?? []).map((x) => x.to?.name), ...(payoutsAll.rows ?? []).map((p) => p.to.name)].filter((n): n is string => !!n))], [expensesAll.rows, payoutsAll.rows]);
@@ -373,7 +377,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
       // The member page's gas expense, logged for the driver: always paid back.
       if (!(await call("expenses.add", {
         amount: cents, what: whatText, category: "gas", projectId: ps.projectId, userId: gas.driverId, payBack: true, date: when,
-        ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt, ...gas.payload(cents),
+        ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...tp.payload, ...receipt, ...gas.payload(cents),
       }))) return;
     } else if (reimburse) {
       if (!(await call("expenses.payPerson", { userId: reimbUser, ids: owed.rows.map((x) => x.id), method, paidAt: when, paidBy: payer }))) return;
@@ -381,18 +385,18 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
       // The same record a member logs for themselves: they paid, pay-back on. We paid also settles it right away.
       const r = await call("expenses.add", {
         amount: cents, what: whatText, category, projectId: ps.projectId, userId: member, payBack: true, date: when,
-        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt,
+        ...(to ? { to: to.to } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...tp.payload, ...receipt,
       });
       if (!r?.id) return;
       if (paid && !(await call("expenses.payPerson", { userId: member, ids: [r.id], method, paidAt: when, paidBy: payer }))) return;
     } else if (expense) {
       if (!(await call("expenses.add", {
-        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...receipt,
+        amount: cents, what: whatText, category, projectId: ps.projectId, to: to!.to, ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...tp.payload, ...receipt,
         ...(paid ? { userId: payer, date: when, payBack } : { owed: true }),
       }))) return;
     } else {
       if (!(await call("payouts.add", {
-        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track,
+        to: to!.to, kind, amount: cents, projectId: ps.projectId, ...(whatText ? { what: whatText } : {}), ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...tp.payload,
         ...(paid ? { method, paidAt: when, paidBy: payer } : {}),
       }))) return;
     }
@@ -451,6 +455,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
         )}
         <ProjectShowFields s={ps} prefix="mo" context={context} />
         {!reimburse && <TrackField t={tr} prefix="mo" context={context} />}
+        {!reimburse && <TourFields t={tp} prefix="mo" />}
         {(needsPayer || reimb || gasOn) && (
           <div className="grid gap-[14px] sm:grid-cols-2">
             {gasOn ? <span /> : needsPayer ? <PayerField admins={admins} value={payer} onChange={setPayer} testid="mo-payer" label={reimb ? "Paid back by" : undefined} /> : <span />}
@@ -573,13 +578,14 @@ export function EditAmount({ cents, onSave, setBad, testid }: { cents: number; o
   );
 }
 
-/** Project, Show and Track pickers whose changes save straight to the record (a new project also drops the old project's track). */
-export function useEditPickers(doc: { projectId?: string; showId?: string; releaseTrackId?: string }, save: (patch: Record<string, unknown>, what: string) => unknown) {
+/** Project, Show, Track and Tour/On pickers whose changes save straight to the record (a new project also drops the old project's track). */
+export function useEditPickers(doc: { projectId?: string; showId?: string; releaseTrackId?: string; tourId?: string; tourEntryId?: string }, context: MoneyDefaults["context"], save: (patch: Record<string, unknown>, what: string) => unknown) {
   const ps = useProjectsAndShows({ projectId: doc.projectId, showId: doc.showId });
   const tr = useReleaseTracks(ps.projectId, { releaseTrackId: doc.releaseTrackId });
   const s = { ...ps, setProjectPick: (v: string) => { ps.setProjectPick(v); void save({ projectId: v, ...(doc.releaseTrackId ? { releaseTrackId: null } : {}) }, "the project"); }, setShowId: (v: string) => { ps.setShowId(v); void save({ showId: v || null }, "the show"); } } as typeof ps;
   const t = { ...tr, setTrackId: (v: string) => { tr.setTrackId(v); void save({ releaseTrackId: v || null }, "the track"); } } as typeof tr;
-  return { s, t };
+  const tp = useTourPick(context, { tourId: doc.tourId, tourEntryId: doc.tourEntryId }, { save });
+  return { s, t, tp };
 }
 
 /** The footer of an edit: save state, a validation message, and the one Done button. */
@@ -621,7 +627,7 @@ function ExpenseEditBody({ x, context, onClose }: { x: Row<Expense>; context?: M
   const { save, status, error, bad, setBad } = useEditSave("expenses.update", x.id);
   const { users, options } = useEditWho();
   const bandUsers = useBandUsers(users);
-  const { s, t } = useEditPickers(x, save);
+  const { s, t, tp } = useEditPickers(x, context, save);
   const [who, setWho] = useState<WhoOption | null>(x.to ? toOption(x.to) : null);
   const bill = x.owed === true;
   const gas = x.category === "gas" || !!x.gas;
@@ -666,6 +672,7 @@ function ExpenseEditBody({ x, context, onClose }: { x: Row<Expense>; context?: M
         )}
         {!gas && <ProjectShowFields s={s} prefix="mo" context={context} />}
         {!gas && <TrackField t={t} prefix="mo" context={context} />}
+        <TourFields t={tp} prefix="mo" />
         <EditInput label={<>Receipt <span className="font-normal">(Drive link)</span></>} value={x.receipt?.url ?? ""} testid="mo-receipt" placeholder="Paste a Drive link"
           onCommit={(v) => { const link = v.trim(); if (link) void save({ receipt: { driveFileId: fileIdOf(link), url: link } }, "the receipt"); else void save({ receipt: null }, "the receipt"); return true; }} />
       </fieldset>
@@ -685,7 +692,7 @@ function PayoutEditBody({ x, context, onClose }: { x: Row<Payout>; context?: Mon
   const { save, status, error, bad, setBad } = useEditSave("payouts.update", x.id);
   const { users, options } = useEditWho();
   const admins = useAdmins(users);
-  const { s, t } = useEditPickers(x, save);
+  const { s, t, tp } = useEditPickers(x, context, save);
   const [who, setWho] = useState<WhoOption | null>(toOption(x.to));
   const kinds = PAY_KINDS.some(([k]) => k === x.kind) ? PAY_KINDS : [...PAY_KINDS, [x.kind, PAYOUT_KIND_LABEL[x.kind] ?? x.kind] as [string, string]];
   return (
@@ -708,6 +715,7 @@ function PayoutEditBody({ x, context, onClose }: { x: Row<Payout>; context?: Mon
         </div>
         <ProjectShowFields s={s} prefix="mo" context={context} />
         <TrackField t={t} prefix="mo" context={context} />
+        <TourFields t={tp} prefix="mo" />
         {x.paidAt && (
           <>
             <div className="grid gap-[14px] sm:grid-cols-2">

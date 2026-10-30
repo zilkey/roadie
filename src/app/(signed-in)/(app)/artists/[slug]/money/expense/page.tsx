@@ -14,7 +14,8 @@ import { newMutationId } from "@/lib/commands";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { defaultProject, dollarsToCents, EXPENSE_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
-import type { Release, Project, Rehearsal, Show, User } from "@/schema";
+import { useTourEntries } from "@/components/tours/money";
+import type { Release, Project, Rehearsal, Show, Tour, User } from "@/schema";
 
 interface Hit { driveFileId: string; name: string; url: string }
 const CATEGORIES = Object.entries(EXPENSE_LABEL) as [string, string][];
@@ -23,10 +24,12 @@ const fileIdOf = (url: string) => /\/d\/([\w-]+)/.exec(url)?.[1] ?? /[?&]id=([\w
 /**
  * The member expense page ("Add an expense"): a bandmate logs something they paid for. Admins log money through Money out;
  * if one opens this page it logs their own expense. Category is an autocomplete (gas when opened from a rehearsal or a
- * show, else gear). Gas uses the shared gas section with the driver fixed to the signed-in person (From their saved home,
+ * show or a drive, else gear). Gas uses the shared gas section with the driver fixed to the signed-in person (From their saved home,
  * or typed with "Save as my home"; To the rehearsal's location or the show's venue) and is always paid back; other
  * categories keep "The band should pay me back". ?rehearsalId fills the Project from the rehearsal (hidden Rehearsal);
  * ?showId (or ?show) fills it from the show and hides the Show and Project pickers. The receipt hides behind "Add receipt".
+ * ?tourId (with optional ?tourEntryId) tags the expense to a tour: Project starts on the tour's "Money goes to", an "On (optional)"
+ * select pins it to a drive, stay or show (or the whole tour), and Save/Cancel/Back return to the tour.
  * A new expense is a draft with an explicit Save button (you can still fix it until it's paid back); Cancel clears it.
  */
 export default function Page() { return <Suspense><AddExpense /></Suspense>; }
@@ -45,20 +48,32 @@ function AddExpense() {
   const fromProject = sp.get("project") ?? "";
   const projectReleases = useCollection<Release>("releases", { where: [["projectId", "==", fromProject]], skip: !fromProject });
   const fromRelease = projectReleases.rows?.[0];
+  // Opened from a tour: the expense is tagged to it (and optionally to one of its entries).
+  const tourId = sp.get("tourId") ?? "";
+  const tour = useDoc<Tour>("tours", tourId || "none").doc;
+  const tourEntries = useTourEntries(tourId || undefined, false);
   const reh = useDoc<Rehearsal>("rehearsals", rehearsalId || "none");
   const rehearsal = rehearsalId ? reh.doc : null;
   // Opened from a rehearsal or show page: Save, Cancel and Back go back there.
-  const returnTo = rehearsalId ? `/rehearsals/${rehearsalId}?tab=money` : fromShow ? `/shows/${fromShow}?tab=finances` : fromRelease ? `/releases/${fromRelease.id}?tab=money` : "/money";
+  const returnTo = tourId ? `/tours/${tourId}` : rehearsalId ? `/rehearsals/${rehearsalId}?tab=money` : fromShow ? `/shows/${fromShow}?tab=finances` : fromRelease ? `/releases/${fromRelease.id}?tab=money` : "/money";
   const draft = useDraft(
-    fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses")
+    tourId ? draftPath.newUnder("tours", tourId, "expenses") : fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses")
       : fromProject ? draftPath.newUnder("projects", fromProject, "expenses") : draftPath.newIn("expenses"),
     {
-      amount: "", amountEdited: false, what: "", cat: rehearsalId || fromShow ? "gas" : "gear", showId: fromShow, projectId: fromProject, link: "", payBack: true,
+      amount: "", amountEdited: false, what: "", cat: rehearsalId || fromShow ? "gas" : "gear", showId: fromShow, projectId: fromProject, tourEntryId: sp.get("tourEntryId") ?? "", link: "", payBack: true,
     },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
-  const { amount, what, cat, showId, projectId: pickedProject, link } = draft.value;
+  const { amount, what, cat, showId, projectId: pickedProject, link, tourEntryId } = draft.value;
   const isGas = cat === "gas";
+  // Opened from a drive: once the tour's entries load, the category starts on gas (unless it was already changed).
+  const gasForDrive = useRef(false);
+  useEffect(() => {
+    if (gasForDrive.current || !draft.ready || !sp.get("tourEntryId") || tourEntries.byId.get(sp.get("tourEntryId")!)?.kind !== "drive") return;
+    gasForDrive.current = true;
+    draft.setValue((d) => (d.cat === "gear" && !d.what && !d.amount ? { ...d, cat: "gas" } : d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.ready, tourEntries.byId]);
   // Gas is always paid back; anything else is the person's choice.
   const payBack = isGas || draft.value.payBack !== false;
   const patch = (p: Partial<typeof draft.value>) => draft.setValue((d) => ({ ...d, ...p }));
@@ -72,7 +87,10 @@ function AddExpense() {
   const venueText = [venue?.name, venue?.address, venue?.city].filter(Boolean).join(", ");
   // The signed-in person is the only driver (a member can't read the other users).
   const self = [{ id: me.uid, name: me.name ?? "You" } as Row<User>];
-  const gas = useGas({ active: isGas && draft.ready, drivers: self, defaultDriver: me.uid, rehearsalId: rehearsalId || undefined, venueText: fromShow ? venueText : undefined });
+  // On a tour drive, From and To start on the drive's places.
+  const drive = tourEntryId ? tourEntries.byId.get(tourEntryId) : undefined;
+  const gas = useGas({ active: isGas && draft.ready, drivers: self, defaultDriver: me.uid, rehearsalId: rehearsalId || undefined, venueText: fromShow ? venueText : undefined,
+    ...(drive?.kind === "drive" ? { from: drive.from, to: drive.to, roundTrip: drive.roundTrip } : {}) });
 
   // Pre-fill the amount from the gas estimate until the person types their own.
   const gasAmt = isGas ? gasAmount(gas) : "";
@@ -90,7 +108,7 @@ function AddExpense() {
   const openProjects = (projects.rows ?? []).filter((p) => p.status === "open").sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
   const defaultId = defaultProject(projects.rows ?? [])?.id;
   const fixed = fromShow ? showDoc?.projectId : undefined;
-  const projectId = [fixed, pickedProject, rehearsal?.projectId, showDoc?.projectId, defaultId].find((id) => id && openProjects.some((p) => p.id === id)) ?? "";
+  const projectId = [fixed, pickedProject, tour?.projectId, rehearsal?.projectId, showDoc?.projectId, defaultId].find((id) => id && openProjects.some((p) => p.id === id)) ?? "";
   const sorted = [...(shows.rows ?? [])].filter((s) => !isOff(s)).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
 
   async function find() {
@@ -104,6 +122,7 @@ function AddExpense() {
     void _admin;
     const r = await call("expenses.add", {
       amount: cents, what: whatOut, category: cat, payBack, ...(projectId ? { projectId } : {}),
+      ...(tourId ? { tourId, ...(tourEntryId ? { tourEntryId } : {}) } : {}),
       ...(showId && !rehearsalId ? { showId } : {}), ...(rehearsalId ? { rehearsalId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
       ...(isGas ? gasBits : {}),
@@ -117,7 +136,7 @@ function AddExpense() {
 
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<BackLink href={returnTo} label={rehearsalId ? "Rehearsal" : fromShow ? "Show" : fromRelease ? fromRelease.title : "My money"} />} title="Add an expense"
+      <PageTitle back={<BackLink href={returnTo} label={tourId ? tour?.name ?? "Tour" : rehearsalId ? "Rehearsal" : fromShow ? "Show" : fromRelease ? fromRelease.title : "My money"} />} title="Add an expense"
         sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : showDoc ? showName(showDoc) : undefined} />
       {!draft.ready ? null : <div className="card">
         <CategoryField value={cat} options={CATEGORIES} onChange={(k) => patch({ cat: k })} testid="exp-cat" />
@@ -138,6 +157,12 @@ function AddExpense() {
           <select className="select" value={showId} onChange={(e) => patch({ showId: e.target.value })} data-testid="expense-show">
             <option value="">Pick a show (optional)</option>
             {sorted.map((s) => <option key={s.id} value={s.id}>{fmtLong(s.date)} · {showName(s)}</option>)}
+          </select></label>}
+
+        {tourId && <label className="grid gap-1"><span className="lbl">On (optional)</span>
+          <select className="select" value={tourEntryId} onChange={(e) => patch({ tourEntryId: e.target.value })} data-testid="expense-on">
+            <option value="">Whole tour</option>
+            {tourEntries.options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select></label>}
 
         {showReceipt || link ? <>

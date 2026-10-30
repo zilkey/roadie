@@ -9,6 +9,7 @@ import { useDoc, type Row } from "@/lib/firestore-hooks";
 import type { Income } from "@/schema";
 import type { MoneyDefaults } from "./modals";
 import { EditAmount, EditFoot, EditInput, MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useEditPickers, useEditSave, useProjectsAndShows, useReleaseTracks, withContext } from "./MoneyOutModal";
+import { TourFields, useTourPick } from "./TourFields";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
@@ -32,6 +33,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
   const defaults = withContext(given);
   const ps = useProjectsAndShows(defaults);
   const tr = useReleaseTracks(ps.projectId, defaults);
+  const tp = useTourPick(context, undefined, { ps });
   const [got, setGot] = useState(false);
   const [category, setCategory] = useState("guarantee");
   const [from, setFrom] = useState("");
@@ -52,7 +54,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
     e.preventDefault(); e.stopPropagation();
     if (!canSave || !cents) return;
     const r = await call("income.add", {
-      amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}),
+      amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}), ...tp.payload,
       date: got ? when : dateInBandZone(), ...(got ? { method, receivedAt: when } : {}),
     });
     if (r) onClose();
@@ -79,6 +81,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
         </label>
         <ProjectShowFields s={ps} prefix="mi" context={context} />
         <TrackField t={tr} prefix="mi" context={context} />
+        <TourFields t={tp} prefix="mi" />
         {got && <MethodWhenFields method={method} setMethod={setMethod} when={when} setWhen={setWhen} prefix="mi" />}
       </div>
       <ModalFoot saves={saves} error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mi" />
@@ -93,7 +96,7 @@ function IncomeEdit({ id, context, onClose }: { id: string; context?: MoneyDefau
 
 function IncomeEditBody({ x, context, onClose }: { x: Row<Income>; context?: MoneyDefaults["context"]; onClose(): void }) {
   const { save, status, error, bad, setBad } = useEditSave("income.update", x.id);
-  const { s, t } = useEditPickers(x, save);
+  const { s, t, tp } = useEditPickers(x, context, save);
   return (
     <div data-testid="money-in-edit">
       <ModalHead title="Money in" sub="Changes save as you go" onClose={onClose} testid="mi-close" />
@@ -108,6 +111,7 @@ function IncomeEditBody({ x, context, onClose }: { x: Row<Income>; context?: Mon
         <EditAmount cents={x.amount} setBad={setBad} testid="mi-amount" onSave={(amount) => void save({ amount }, "the amount")} />
         <ProjectShowFields s={s} prefix="mi" context={context} />
         <TrackField t={t} prefix="mi" context={context} />
+        <TourFields t={tp} prefix="mi" />
         {x.receivedAt && (
           <div className="grid gap-[14px] sm:grid-cols-2">
             <label className="grid gap-1">

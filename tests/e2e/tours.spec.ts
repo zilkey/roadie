@@ -178,4 +178,130 @@ test.describe.serial("tours", () => {
     await expect(page.getByTestId("plan-stat-open")).toHaveCount(0);
     await close();
   });
+  // Money. The tour has a drive on Mar 9 (no places), and the stay "Motel 6" on Mar 10-11.
+  test("money: a drive on Mar 9 for the money tests to pin to", async ({ browser }) => {
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    const day = page.getByTestId("plan-day-2027-03-09");
+    await day.getByTestId("plan-plus-2027-03-09-0-actions").click();
+    await page.getByTestId("plan-plus-2027-03-09-0-menu-drive").click();
+    await page.getByTestId("entry-add").click();
+    await expect(day.locator('[data-kind="drive"]')).toHaveCount(1);
+    await close();
+  });
+
+  test("money: admin logs a bill on the stay from the Money tab, marks it paid, and sees it under that day", async ({ browser }) => {
+    const VENDOR = `Motel Co ${Date.now()}`;
+    const BILL = `Two nights ${Date.now()}`;
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(`${tourUrl}?tab=money`);
+    await expect(page.getByTestId("tour-money")).toBeVisible();
+    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$0.00");
+
+    await page.getByTestId("money-out-open").click();
+    const modal = page.getByTestId("money-out-modal");
+    await expect(modal).toBeVisible();
+    await modal.getByTestId("mo-owe").check();
+    await modal.getByTestId("mo-kind").selectOption("expense");
+    await modal.getByTestId("mo-cat").fill("gear");
+    await modal.getByTestId("mo-cat-opt-gear").click();
+    await modal.getByTestId("mo-who-input").fill(VENDOR);
+    await modal.getByTestId("mo-who-other").click();
+    await modal.getByTestId("mo-amount").fill("120");
+    await modal.getByTestId("mo-what").fill(BILL);
+    const stay = await modal.getByTestId("mo-on").locator("option", { hasText: "Motel 6" }).getAttribute("value");
+    await modal.getByTestId("mo-on").selectOption(stay!);
+    await modal.getByTestId("mo-save").click();
+    await expect(modal).toBeHidden();
+
+    const out = page.getByTestId("paid-out");
+    const row = out.locator('[data-testid^="expense-row-"]', { hasText: BILL });
+    await expect(row).toContainText("Mar 10");
+    await expect(row).toContainText("Motel 6");
+    await expect(row).toContainText("we owe");
+    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$120.00");
+    await expect(page.getByTestId("tour-day-2027-03-10")).toBeVisible();
+
+    await row.locator('[data-testid^="expense-mark-paid-"]').click();
+    const dialog = page.getByTestId("money-out-modal");
+    await expect(dialog.getByTestId("mark-paid-form")).toBeVisible();
+    await dialog.getByTestId("mp-save").click();
+    await expect(dialog).toBeHidden();
+    await expect(row).not.toContainText("we owe");
+    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$120.00");
+    await expect(page.getByTestId("tour-net-amount")).toContainText("120.00");
+
+    // Clicking the day narrows the Money out card to it; another day shows none of it; Show all clears.
+    await page.getByTestId("tour-day-2027-03-10").click();
+    await expect(out).toContainText(BILL);
+    await page.getByTestId("tour-day-2027-03-09").click();
+    await expect(out).not.toContainText(BILL);
+    await expect(page.getByTestId("paid-out-empty")).toBeVisible();
+    await page.getByTestId("tour-day-whole").click();
+    await expect(out).not.toContainText(BILL);
+    await page.getByTestId("tour-day-clear").click();
+    await expect(out).toContainText(BILL);
+    await expect(page.getByTestId("tour-day-total")).toContainText("$120.00");
+    await close();
+  });
+
+  test("money: + Money out in a stay's modal pins the expense to it; it shows there and on the Money tab", async ({ browser }) => {
+    const WHAT = `Parking ${Date.now()}`;
+    const { page, close } = await as(browser, "jeff");
+    await page.goto(tourUrl);
+    await page.getByTestId("plan-day-2027-03-10").locator('[data-kind="stay"]').getByTestId("plan-entry-open").click();
+    await expect(page.getByTestId("entry-edit-stay")).toBeVisible();
+    await page.getByTestId("entry-money-out").click();
+    const modal = page.getByTestId("money-out-modal");
+    await expect(modal).toBeVisible();
+    await expect(modal.getByTestId("mo-on").locator("option:checked")).toContainText("Motel 6");
+    await modal.getByTestId("mo-paid").check();
+    await modal.getByTestId("mo-kind").selectOption("expense");
+    await modal.getByTestId("mo-cat").fill("gear");
+    await modal.getByTestId("mo-cat-opt-gear").click();
+    await modal.getByTestId("mo-who-input").fill("City Garage");
+    await modal.getByTestId("mo-who-other").click();
+    await modal.getByTestId("mo-amount").fill("15");
+    await modal.getByTestId("mo-what").fill(WHAT);
+    await modal.getByTestId("mo-save").click();
+    await expect(modal).toBeHidden();
+    await expect(page.getByTestId("entry-money-row").filter({ hasText: WHAT })).toContainText("$15.00");
+    await page.getByTestId("entry-done").click();
+
+    await page.goto(`${tourUrl}?tab=money`);
+    const row = page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]', { hasText: WHAT });
+    await expect(row).toContainText("Mar 10");
+    await expect(row).toContainText("Motel 6");
+    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$135.00");
+    await close();
+  });
+
+  test("money: a member adds an expense from the tour on a drive; it lands back on the tour tagged to the drive", async ({ browser }) => {
+    const WHAT = `Gas to the first show ${Date.now()}`;
+    const { page, close } = await as(browser, "david");
+    await page.goto(tourUrl);
+    await page.getByTestId("tour-add-expense").click();
+    await expect(page).toHaveURL(/\/money\/expense\?tourId=/);
+    await expect(page.getByTestId("expense-on")).toBeVisible();
+    const drive = await page.getByTestId("expense-on").locator("option", { hasText: "Drive" }).getAttribute("value");
+    await page.getByTestId("expense-on").selectOption(drive!);
+    await page.getByTestId("exp-cat").fill("gas");
+    await page.getByTestId("exp-cat-opt-gas").click();
+    await page.getByTestId("exp-amount").fill("38.50");
+    await page.getByTestId("expense-what").fill(WHAT);
+    await page.getByTestId("exp-save").click();
+    await expect(page).toHaveURL(new RegExp(`${tourUrl}$`));
+    await close();
+
+    const admin = await as(browser, "jeff");
+    await admin.page.goto(`${tourUrl}?tab=money`);
+    const row = admin.page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]', { hasText: WHAT });
+    await expect(row).toContainText("David paid");
+    await expect(row).toContainText("Mar 9");
+    await expect(row).toContainText("Drive");
+    await expect(admin.page.getByTestId("tour-spent-amount")).toHaveText("$173.50");
+    await admin.page.getByTestId("tour-day-2027-03-09").click();
+    await expect(admin.page.getByTestId("paid-out")).toContainText(WHAT);
+    await admin.close();
+  });
 });

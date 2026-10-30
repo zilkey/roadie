@@ -13,11 +13,13 @@ import { DetailCard, DetailPage } from "@/components/booking/DetailCards";
 import { useAutosave } from "@/lib/autosave";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { fmtTourDates } from "@/lib/tours";
+import { todayStr } from "@/lib/booking";
 import { TourStatusPill, actName, townOf, type TourRow } from "@/components/tours/common";
 import { TourInfo, type TourForm } from "@/components/tours/TourInfo";
 import { TourAsk } from "@/components/tours/TourAsk";
+import { TourMoney } from "@/components/tours/TourMoney";
 import { TourPlan } from "@/components/tours/TourPlan";
-import type { Musician, Project, Tour } from "@/schema";
+import type { Musician, Project, Tour, TourEntry } from "@/schema";
 
 type Tab = "plan" | "sheet" | "info" | "money";
 
@@ -51,6 +53,10 @@ function TourView({ tour }: { tour: TourRow }) {
   const { call, error, busy } = useCommand();
   const musicians = useCollection<Musician>("musicians").rows ?? [];
   const projects = useCollection<Project>("projects").rows ?? [];
+  // Members: + Add an expense, pinned to today's drive, else stay, else show.
+  const entries = useCollection<TourEntry>(`tours/${tour.id}/entries`, { skip: admin, where: [["visibility", "==", "band"]] }).rows ?? [];
+  const today = todayStr();
+  const todays = (["drive", "stay", "show"] as const).map((k) => entries.find((e) => e.kind === k && e.date === today)).find(Boolean);
 
   const [form, setForm] = useState<TourForm>(() => formOf(tour));
   const as = useAutosave({ command: "tours.update", id: tour.id, rev: tour.rev, title: tour.name, onUseTheirs: () => setForm(formOf(tour)) });
@@ -75,7 +81,7 @@ function TourView({ tour }: { tour: TourRow }) {
         : form.name}
       pill={<TourStatusPill status={form.status} />}
       meta={meta ? <span data-testid="tour-meta">{meta}</span> : undefined}
-      more={admin && <div className="flex flex-wrap items-center gap-2">
+      more={!admin ? <Link href={`/money/expense?tourId=${tour.id}${todays ? `&tourEntryId=${todays.id}` : ""}`} className="btn outline" data-testid="tour-add-expense">+ Add an expense</Link> : <div className="flex flex-wrap items-center gap-2">
         <SaveStatus {...as.statusProps} />
         <TourAsk tour={tour} musicians={musicians} />
         <Menu label="More actions" testid="tour" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[
@@ -90,7 +96,7 @@ function TourView({ tour }: { tour: TourRow }) {
       {tab === "plan" && <TourPlan tour={tour} admin={admin} extend={save} />}
       {tab === "sheet" && <DetailCard private title="Sheet" testid="tour-sheet"><span className="d-muted">The sheet is coming soon.</span></DetailCard>}
       {tab === "info" && <TourInfo form={form} admin={admin} musicians={musicians} projects={projects} save={save} />}
-      {tab === "money" && admin && <DetailCard private title="Money" testid="tour-money"><span className="d-muted">The tour&apos;s money is coming soon.</span></DetailCard>}
+      {tab === "money" && admin && <TourMoney tour={tour} />}
     </DetailPage>
   );
 }

@@ -28,7 +28,9 @@ const firstName = (n: string) => n.split(" ")[0] || n;
  * first suggestion picked), MPG, round trip, and the estimate (expenses.estimateGas, re-run 300 ms after the inputs settle).
  * `good` is the estimate once nothing is missing; `payload()` is what expenses.add takes on top of amount/what/projectId.
  */
-export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defaultDriver?: string; rehearsalId?: string; venueText?: string }) {
+export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defaultDriver?: string; rehearsalId?: string; venueText?: string;
+  /** A tour drive: start From and To on its typed places (not the driver's home) and Round trip as the drive has it. */
+  from?: Place; to?: Place; roundTrip?: boolean }) {
   const me = useProfile();
   const est = useCommand();
   const estCall = useRef(est.call); estCall.current = est.call;
@@ -42,11 +44,21 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
   const rehLoc = o.rehearsalId ? reh.doc?.location : undefined;
   const rehHasLoc = !!(rehLoc && (rehLoc.address || rehLoc.lat !== undefined));
 
-  const [fromPick, setFromPick] = useState<Place | null>(null);
-  const [fromText, setFromText] = useState("");
-  const [toPick, setToPick] = useState<Place | null>(null);
-  const [toText, setToText] = useState(o.venueText ?? "");
-  const [roundTrip, setRoundTrip] = useState(true);
+  const [fromPick, setFromPick] = useState<Place | null>(o.from ?? null);
+  const [fromText, setFromText] = useState(o.from ? placeLabel(o.from) : "");
+  const fromTyped = !!o.from;
+  const [toPick, setToPick] = useState<Place | null>(o.to ?? null);
+  const [toText, setToText] = useState(o.to ? placeLabel(o.to) : o.venueText ?? "");
+  const [roundTrip, setRoundTrip] = useState(o.roundTrip ?? true);
+  // A drive that arrives after the first render (the member page reads the tour's entries live): take its places once, if nothing was typed.
+  const tookDrive = useRef(!!(o.from || o.to));
+  useEffect(() => {
+    if (tookDrive.current || !(o.from || o.to)) return;
+    tookDrive.current = true;
+    if (o.from) { setFromPick((c) => c ?? o.from!); setFromText((t) => t || placeLabel(o.from)); }
+    if (o.to) { setToPick((c) => c ?? o.to!); setToText((t) => t || placeLabel(o.to)); }
+    if (o.roundTrip !== undefined) setRoundTrip(o.roundTrip);
+  }, [o.from, o.to, o.roundTrip]);
   const [mpgText, setMpgText] = useState("");
   const [saveHome, setSaveHome] = useState(true);
   const [saveMpg, setSaveMpg] = useState(true);
@@ -69,7 +81,8 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
   }, [o.active, o.venueText]);
 
   function setDriver(id: string) {
-    setPick(id); setNeed({ mpg: false, home: false, dest: false }); setLast(null); setMpgText(""); setFromPick(null); setFromText("");
+    setPick(id); setNeed({ mpg: false, home: false, dest: false }); setLast(null); setMpgText("");
+    if (!fromTyped) { setFromPick(null); setFromText(""); }
   }
 
   const input = {
@@ -117,7 +130,7 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
     };
   }
   return {
-    ...o, driverId, driverName, setDriver, forOther, isAdmin, est, cur, good, missing, rehLoc, rehHasLoc, showMpgBox, showHomeBox, showToBox, payload,
+    ...o, fromTyped, driverId, driverName, setDriver, forOther, isAdmin, est, cur, good, missing, rehLoc, rehHasLoc, showMpgBox, showHomeBox, showToBox, payload,
     fromPick, fromText, setFromPick, setFromText, toPick, toText, setToPick, setToText, roundTrip, setRoundTrip, mpgText, setMpgText,
     saveHome, setSaveHome, saveMpg, setSaveMpg, setRehearsal, setSetRehearsal,
   };
@@ -153,7 +166,13 @@ export function GasFields({ g, testid, you, hideDriver, hideSetRehearsal }: {
           {g.drivers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
       </label>}
-      {g.driverId && (g.showHomeBox ? (
+      {g.driverId && (g.fromTyped ? (
+        <div className="grid gap-1">
+          <span className="lbl">From</span>
+          <AddressAutocomplete value={g.fromText} placeholder="Start typing an address…" testId={`${testid}-from`}
+            onPick={(p) => { g.setFromPick(p); g.setFromText(placeLabel(p)); }} onChange={(t) => { g.setFromText(t); if (g.fromPick) g.setFromPick(null); }} />
+        </div>
+      ) : g.showHomeBox ? (
         <div className={warnBox} style={warnStyle}>
           <span className="lbl" style={{ color: "inherit" }}>From: where did {who} start?</span>
           <AddressAutocomplete value={g.fromText} placeholder="Start typing an address…" testId={`${testid}-from`}

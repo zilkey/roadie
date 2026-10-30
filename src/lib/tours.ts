@@ -4,6 +4,7 @@
  * every time from the tour and its entries.
  */
 import { addDays } from "./shows";
+import { incomeExpected, incomeSoFar, moneyTotals, type ExpenseLike, type IncomeLike, type PayoutLike } from "./money";
 
 export interface EntryLike {
   id: string; kind: "show" | "option" | "drive" | "stay" | "note"; date?: string; position: number; visibility?: string;
@@ -199,4 +200,26 @@ export function routeTowns(places: readonly ({ name?: string; address: string } 
   for (const p of places) if (p) for (const t of [p.name, p.address.split(",")[0]]) if (t?.trim()) out.add(t.trim().toLowerCase());
   for (const c of cities) if (c?.trim()) out.add(c.trim().toLowerCase());
   return out;
+}
+
+type TourMoneyRecords = { income: readonly (IncomeLike & TourTagged)[]; expenses: readonly (ExpenseLike & TourTagged)[]; payouts: readonly (PayoutLike & TourTagged)[] };
+interface TourTagged { tourEntryId?: string }
+
+/** A tour's money, the incomeSoFar way: a show that hasn't happened yet doesn't count until its date (it is in expected). Paid and owed kept apart. */
+export function tourTotals(m: TourMoneyRecords, today: string) {
+  return { ...moneyTotals({ income: incomeSoFar(m.income, today), expenses: m.expenses, payouts: m.payouts }), expected: incomeExpected(m.income, today).total };
+}
+export type TourTotals = ReturnType<typeof tourTotals>;
+
+/** The day a money line falls on: its entry's date when it is pinned to one, else null ("Whole tour"). */
+export function tourDayOf(x: TourTagged, entryDates: ReadonlyMap<string, string | undefined>): string | null {
+  return (x.tourEntryId ? entryDates.get(x.tourEntryId) : undefined) ?? null;
+}
+
+/** The tour's totals per day (each day that has money pinned to it, in date order), then null for the whole tour when anything is unpinned. */
+export function tourByDay(m: TourMoneyRecords, entryDates: ReadonlyMap<string, string | undefined>, today: string): { date: string | null; totals: TourTotals }[] {
+  const all = [...m.income, ...m.expenses, ...m.payouts].filter((x) => !(x as { deletedAt?: unknown }).deletedAt);
+  const keys = [...new Set(all.map((x) => tourDayOf(x, entryDates)))].sort((a, b) => ((a ?? "~") < (b ?? "~") ? -1 : 1));
+  const on = <T extends TourTagged>(xs: readonly T[], k: string | null) => xs.filter((x) => tourDayOf(x, entryDates) === k);
+  return keys.map((k) => ({ date: k, totals: tourTotals({ income: on(m.income, k), expenses: on(m.expenses, k), payouts: on(m.payouts, k) }, today) }));
 }

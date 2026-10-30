@@ -1,3 +1,4 @@
+import type { Place } from "@/components/AddressAutocomplete";
 /**
  * The two money modals (MoneyOutModal.tsx, MoneyInModal.tsx) and what opens them. Any page may open one with the
  * context it has: a show passes its showId and projectId, the We owe card passes the person (userId or musicianId)
@@ -8,7 +9,9 @@
  * The record a money modal or card belongs to. When a modal gets one, it hides the pickers the record decides and
  * writes the record's ids: a show hides Project and Show (the show's project), a rehearsal hides Rehearsal and starts
  * Project on the rehearsal's (still changeable), a release hides Project and Track (whole release), a track hides
- * Project and Track (pinned to the track), a tour starts Project on its "Money goes to" (still changeable) and writes tourId.
+ * Project and Track (pinned to the track), a tour hides the Tour select (the context decides it), starts Project on its "Money goes to" (still changeable) and shows
+ * "On (optional)" (Whole tour, or one drive, stay or show; tourEntryId starts it), and writes tourId / tourEntryId on what it adds. Without a context
+ * the Money page offers "Tour (optional)" beside Project.
  * Everything is stored the same way it is from the Money page.
  */
 export type MoneyContext =
@@ -22,6 +25,8 @@ export type MoneyContext =
 export interface MoneyDefaults {
   /** The record the modal was opened from; see MoneyContext. */
   context?: MoneyContext;
+  /** Money out, gas only: the tour drive the gas is for. From and To start on its places (typed, not the driver's home), Round trip as given (default no), When on its date. */
+  drive?: { from?: Place; to?: Place; roundTrip?: boolean; date?: string };
   /** Money out only: start on this category ("gas" opens the gas form). */
   category?: string;
   projectId?: string;

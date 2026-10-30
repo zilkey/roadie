@@ -5,6 +5,8 @@ import { ErrorBox, useCommand } from "@/components/ui";
 import { AdminOnlyBadge, ShowCard, UnfinishedPlaceholder } from "@/components/shows/page/kit";
 import { useBand } from "@/components/shows/common";
 import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, countsAsPaidOut, formatCents, owesBack, parseDollars, showTotals, splitEvenly } from "@/lib/money";
+import { useTourEntries } from "@/components/tours/money";
+import { tourDayOf } from "@/lib/tours";
 import type { Expense, Income, Payout, User } from "@/schema";
 import type { ShowDeal } from "@/schema/shows";
 import { MoneyInModal } from "./MoneyInModal";
@@ -17,10 +19,12 @@ import type { MoneyCardProps, MoneyContext, MoneyDefaults } from "./modals";
  * (MoneyInModal / MoneyOutModal) with that context.
  *
  * Money in: the income on the context, each with its status; one still owed to us gets a How? select and a Received
- * button. A show also shows its deal terms. A release lists its tracks' lines too, tagged with the track.
+ * button. A show also shows its deal terms. A release lists its tracks' lines too, tagged with the track. A tour's lines are
+ * tagged with their day and entry ("Tue Mar 9 · Drive Boulder → Fort Collins") or "Whole tour"; its `day` prop narrows both
+ * cards to one day's lines (a date), or to the unpinned ones (null), for the Money tab's By day table.
  * Money out: everything going out or owed: expenses (a bandmate's pay-back ones with who paid and whether they are
  * owed back or paid back, open bills as "We owe" with Mark paid), and payouts (paid, or "We owe" with Mark paid).
- * Mark paid opens the modal's mark-paid form. A rehearsal's + Money out starts on Gas. On a show, Split evenly
+ * Mark paid opens the modal's mark-paid form. A rehearsal's + Money out starts on Gas (a tour's starts empty). On a show, Split evenly
  * proposes one "pay" payout per player without pay (nothing about the rule is stored).
  * Clicking a line opens its modal in edit mode (defaults.edit): fields autosave, one Done; a paid-back expense is read-only.
  * Every line has Remove (income, payouts, and expenses nobody has paid back yet).
@@ -51,16 +55,25 @@ function whereOf(c: MoneyContext): [string, "==", string] {
 }
 const releaseIdOf = (c: MoneyContext) => (c.kind === "release" || c.kind === "track" ? c.releaseId : null);
 
-/** "3 · Low Light" for a release's tracks, so a line pinned to one can say which. */
-function useTrackLabel(c: MoneyContext) {
+/**
+ * The tag a money line carries: on a release, the track it is pinned to ("3 · Low Light"); on a tour, its entry ("Tue Mar 9 ·
+ * Drive Boulder → Fort Collins") or "Whole tour". Also `dayOf`, the date a tour line falls on (null = Whole tour), for the day filter.
+ */
+function useLineTag(c: MoneyContext) {
   const releaseId = releaseIdOf(c);
   const tracks = useCollection<{ position: string | number; title: string }>(`releases/${releaseId ?? "none"}/tracks`, { skip: !releaseId }).rows ?? [];
+  const entries = useTourEntries(c.kind === "tour" ? c.tourId : undefined);
+  const dates = new Map([...entries.byId].map(([id, o]) => [id, o.date as string | undefined]));
   // On a track page every line is the track's: no tag.
-  return (id?: string) => {
-    if (!id || c.kind === "track") return null;
-    const t = tracks.find((x) => x.id === id);
+  const tag = (x: { releaseTrackId?: string; tourEntryId?: string }) => {
+    if (c.kind === "tour") return entries.labelOf(x.tourEntryId) ?? "Whole tour";
+    if (!x.releaseTrackId || c.kind === "track") return null;
+    const t = tracks.find((y) => y.id === x.releaseTrackId);
     return t ? `${t.position} · ${t.title}` : null;
   };
+  /** Whether a line is on the day the card is narrowed to (undefined = all of them). */
+  const onDay = (x: { tourEntryId?: string }, day: string | null | undefined) => day === undefined || c.kind !== "tour" || tourDayOf(x, dates) === day;
+  return { tag, onDay };
 }
 
 /** Props that make a money line open its edit modal: a hover style, reachable by keyboard, and ignoring clicks on the buttons and selects inside it. */
@@ -84,10 +97,13 @@ function ShowTerms({ showId }: { showId: string }) {
   return terms ? <p className="s mb-2" data-testid="income-terms">{terms}</p> : null;
 }
 
-export function MoneyInCard({ context }: MoneyCardProps) {
+/** Narrows a tour's cards to one day's lines: a date, or null for the lines not pinned to an entry. Undefined shows everything. */
+export interface DayFilter { day?: string | null | undefined }
+
+export function MoneyInCard({ context, day }: MoneyCardProps & DayFilter) {
   const rows = useCollection<Income>("income", { where: [whereOf(context)] }).rows;
-  const trackLabel = useTrackLabel(context);
-  const income = [...(rows ?? [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const { tag: tagOf, onDay } = useLineTag(context);
+  const income = (rows ?? []).filter((x) => onDay(x, day)).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const [modal, setModal] = useState<MoneyDefaults | null>(null);
   const [how, setHow] = useState<Record<string, string>>({});
   const { call, busy, error } = useCommand();
@@ -97,11 +113,11 @@ export function MoneyInCard({ context }: MoneyCardProps) {
     <ShowCard title="Money in" testid="income" badge={<AdminOnlyBadge />} aside={add}>
       {context.kind === "show" && <ShowTerms showId={context.showId} />}
       {rows && income.length === 0 ? (
-        <UnfinishedPlaceholder lead="Nothing in yet." testid="income-empty">Add what came in or is owed to the band with + Money in.</UnfinishedPlaceholder>
+        <UnfinishedPlaceholder lead="Nothing in yet." testid="income-empty">{day === undefined ? "Add what came in or is owed to the band with + Money in." : "Nothing came in on that day."}</UnfinishedPlaceholder>
       ) : (
         <div>
           {income.map((x) => {
-            const tag = trackLabel(x.releaseTrackId);
+            const tag = tagOf(x);
             return (
               <div key={x.id} {...lineProps(`income-row-${x.id}`, () => setModal({ context, edit: { kind: "income", id: x.id } }))}>
                 <span>
@@ -137,13 +153,13 @@ export function MoneyInCard({ context }: MoneyCardProps) {
 
 interface Proposal { key: string; name: string; to: { musicianId: string } | { userId: string }; amount: string }
 
-export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps & { /** Shows only: the Split evenly button. */ splitEvenly?: boolean }) {
+export function MoneyOutCard({ context, day, splitEvenly: canSplit }: MoneyCardProps & DayFilter & { /** Shows only: the Split evenly button. */ splitEvenly?: boolean }) {
   const where = [whereOf(context)];
   const expenses = useCollection<Expense>("expenses", { where }).rows;
   const payouts = useCollection<Payout>("payouts", { where }).rows;
   const income = useCollection<Income>("income", { where, skip: context.kind !== "show" }).rows ?? [];
   const users = useCollection<User>("users").rows ?? [];
-  const trackLabel = useTrackLabel(context);
+  const { tag: tagOf, onDay } = useLineTag(context);
   const { shows, musicians } = useBand();
   const show = context.kind === "show" ? shows.find((s) => s.id === context.showId) : undefined;
   const [modal, setModal] = useState<MoneyDefaults | null>(null);
@@ -153,8 +169,8 @@ export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps 
 
   const nameOfUser = (uid: string) => users.find((u) => u.id === uid)?.name ?? "Someone";
   const lines = [
-    ...(expenses ?? []).map((x) => ({ key: `e-${x.id}`, date: x.date, e: x as Expense | undefined, p: undefined as Payout | undefined })),
-    ...(payouts ?? []).filter(countsAsPaidOut).map((p) => ({ key: `p-${p.id}`, date: p.paidAt ?? p.dueDate ?? "9", e: undefined as Expense | undefined, p: p as Payout | undefined })),
+    ...(expenses ?? []).filter((x) => onDay(x, day)).map((x) => ({ key: `e-${x.id}`, date: x.date, e: x as Expense | undefined, p: undefined as Payout | undefined })),
+    ...(payouts ?? []).filter(countsAsPaidOut).filter((p) => onDay(p, day)).map((p) => ({ key: `p-${p.id}`, date: p.paidAt ?? p.dueDate ?? "9", e: undefined as Expense | undefined, p: p as Payout | undefined })),
   ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.key.localeCompare(b.key)));
   const total = lines.reduce((n, l) => n + (l.e?.amount ?? l.p?.amount ?? 0), 0);
   const loaded = expenses !== null && payouts !== null;
@@ -195,13 +211,13 @@ export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps 
     <ShowCard title="Money out" testid="paid-out" badge={<AdminOnlyBadge />} aside={actions}>
       {loaded && lines.length === 0 && !plan ? (
         <UnfinishedPlaceholder lead="Nothing out yet." testid="paid-out-empty">
-          Add what the band paid or owes with + Money out{canSplit ? ", or split the night" : ""}.
+          {day === undefined ? <>Add what the band paid or owes with + Money out{canSplit ? ", or split the night" : ""}.</> : "Nothing went out on that day."}
         </UnfinishedPlaceholder>
       ) : (
         <div>
           {lines.map(({ key, e, p }) => {
             if (e) {
-              const tag = trackLabel(e.releaseTrackId);
+              const tag = tagOf(e);
               const bill = e.owed === true;
               return (
                 <div key={key} {...lineProps(`expense-row-${e.id}`, () => setModal({ context, edit: { kind: "expense", id: e.id } }))}>
@@ -223,7 +239,7 @@ export function MoneyOutCard({ context, splitEvenly: canSplit }: MoneyCardProps 
               );
             }
             const pay = p!;
-            const tag = trackLabel(pay.releaseTrackId);
+            const tag = tagOf(pay);
             return (
               <div key={key} {...lineProps(`payout-row-${pay.id}`, () => setModal({ context, edit: { kind: "payout", id: pay.id } }))}>
                 <span>
