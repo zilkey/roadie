@@ -22,6 +22,8 @@ export interface CalendarPreview {
   action: "create" | "update";
   /** On the calendar already and nothing changed since it was last sent. */
   unchanged: boolean;
+  /** Linked, but someone deleted the event in Calendar: sending puts it back only when asked to (restore). */
+  deleted: boolean;
   event: { title: string; start: string; end: string; allDay: boolean; timeZone: string; location: string; description: string };
   invitees: Invitee[];
   noEmail: string[];
@@ -117,6 +119,8 @@ async function build(ctx: Ctx, kind: CalendarKind, id: string) {
 
 const client = (ctx: Ctx, calendarId: string): CalendarService => calendarClient({ uid: ctx.uid, calendarId });
 const notFound = (e: unknown) => e instanceof IntegrationError && e.status === 404;
+/** The linked event as Calendar has it now, or null when it's gone for good. */
+const eventOf = (cal: CalendarService, eventId: string) => cal.get(eventId).catch((e) => (notFound(e) ? null : googleError(e)));
 /** Google's answer (no access, not connected, ...) as the command's error: the admin pressed a button and should see why. */
 function googleError(e: unknown): never {
   if (e instanceof IntegrationError) throw new AppError("calendar_error", `Google Calendar: ${e.message}`, e.status === 401 || e.status === 403 ? 403 : 502);
@@ -151,8 +155,11 @@ async function sameDay(ctx: Ctx, kind: CalendarKind, doc: Doc, calendarId: strin
 
 export async function calendarPreview(ctx: Ctx, kind: CalendarKind, id: string): Promise<CalendarPreview> {
   const { doc, calendar, input, who, hash } = await build(ctx, kind, id);
+  // A Google error here just means we can't tell: the send says so if it matters.
+  const ev = doc.calendarEventId ? await eventOf(client(ctx, calendar.id), doc.calendarEventId as string).catch(() => undefined) : undefined;
+  const deleted = ev === null || !!ev?.cancelled;
   return {
-    calendar, action: doc.calendarEventId ? "update" : "create", unchanged: !!doc.calendarEventId && doc.calendarHash === hash,
+    calendar, action: doc.calendarEventId ? "update" : "create", unchanged: !!doc.calendarEventId && !deleted && doc.calendarHash === hash, deleted,
     event: { title: input.title, start: input.start, end: input.end, allDay: !input.start.includes("T"), timeZone: input.timeZone ?? BAND_TIME_ZONE, location: input.location ?? "", description: input.description ?? "" },
     ...who,
     existing: doc.calendarEventId ? [] : await sameDay(ctx, kind, doc, calendar.id),
@@ -174,31 +181,45 @@ export async function calendarLink(ctx: Ctx, kind: CalendarKind, id: string, eve
   return { id, calendar: "linked" };
 }
 
-/** Send the event: update the one already there (or make it again if someone deleted it in Calendar), else create it. */
-export async function calendarSend(ctx: Ctx, kind: CalendarKind, id: string): Promise<{ id: string; calendar: "created" | "updated" }> {
+/**
+ * Send the event: update the one already there, else create it. When someone deleted the linked event in Calendar it
+ * stays deleted (#48: a send used to bring it back without a word) unless `restore`: then it comes back, or is made
+ * again when Google has purged it.
+ */
+export async function calendarSend(ctx: Ctx, kind: CalendarKind, id: string, opts: { restore?: boolean } = {}): Promise<{ id: string; calendar: "created" | "updated" | "restored" }> {
   const { doc, calendar, input, hash } = await build(ctx, kind, id);
   const cal = client(ctx, calendar.id);
   if (doc.calendarEventId) {
-    try {
-      await cal.update(doc.calendarEventId as string, input);
-      await db.update(ctx, kind, id, { calendarHash: hash });
-      return { id, calendar: "updated" };
-    } catch (e) { if (!notFound(e)) googleError(e); }
+    const eventId = doc.calendarEventId as string;
+    const ev = await eventOf(cal, eventId);
+    if ((!ev || ev.cancelled) && !opts.restore) {
+      throw new AppError("calendar_event_deleted", `Someone deleted this ${kind === "shows" ? "show" : "rehearsal"}'s event on the band calendar. Ask before putting it back: send again with restore to put it back, or take it off (on: false) to leave it deleted.`, 409);
+    }
+    if (ev) {
+      try {
+        await cal.update(eventId, input, { restore: ev.cancelled });
+        await db.update(ctx, kind, id, { calendarHash: hash });
+        return { id, calendar: ev.cancelled ? "restored" : "updated" };
+      } catch (e) { if (!notFound(e)) googleError(e); }
+    }
   }
   const ev = await cal.create(input).catch(googleError);
   await db.update(ctx, kind, id, { calendarEventId: ev.id, calendarHash: hash });
   return { id, calendar: "created" };
 }
 
+/** Delete a show's or rehearsal's linked event on the band calendar (everyone invited gets a cancellation). Already gone there is fine. */
+export async function deleteEvent(ctx: Ctx, doc: Doc): Promise<void> {
+  if (!doc.calendarEventId) return;
+  const artist = await artistOf(ctx, doc);
+  const calendar = artist?.calendar as { id: string } | null | undefined;
+  if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
+  try { await client(ctx, calendar.id).delete(doc.calendarEventId as string); } catch (e) { if (!notFound(e)) googleError(e); }
+}
+
 /** Take the event off the band calendar. Already gone there is fine. */
 export async function calendarRemove(ctx: Ctx, kind: CalendarKind, id: string): Promise<{ id: string; calendar: "removed" }> {
-  const doc = await load(kind, id);
-  if (doc.calendarEventId) {
-    const artist = await artistOf(ctx, doc);
-    const calendar = artist?.calendar as { id: string } | null | undefined;
-    if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
-    try { await client(ctx, calendar.id).delete(doc.calendarEventId as string); } catch (e) { if (!notFound(e)) googleError(e); }
-  }
+  await deleteEvent(ctx, await load(kind, id));
   await db.update(ctx, kind, id, { calendarEventId: null, calendarHash: null });
   return { id, calendar: "removed" };
 }

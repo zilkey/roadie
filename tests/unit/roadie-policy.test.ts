@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { sessionFor, type Who } from "@/server/assistant/confirm";
-import { BAND_SETTINGS, isExcluded, needsConfirm, refusal, summarize } from "@/server/assistant/policy";
+import { BAND_SETTINGS, isExcluded, needsConfirm, pastDate, refusal, summarize } from "@/server/assistant/policy";
 import { execTool, readback } from "@/server/assistant/tools";
 import { contextNow, searchAll } from "@/server/assistant/context";
 import { ensureThread, newThreadId } from "@/server/assistant/threads";
@@ -171,7 +171,7 @@ test("read-backs use names, not ids", async () => {
   assert.equal(await readback("expenses.add", { amount: 2000, what: "strings", category: "travel", userId: mae.uid }, {}, s), "Logged $20 strings, paid by Mae");
   assert.equal(await readback("expenses.add", { amount: 2000, what: "strings", category: "travel" }, {}, s), "Logged $20 strings, paid by Jeff");
   assert.equal(await readback("shows.setStatus", { id: showId, status: "confirmed" }, {}, s), "Set Hi-Dive · 2026-11-14 to confirmed");
-  assert.equal(await readback("shows.create", { date: "2026-11-14", venueId, status: "confirmed" }, { id: showId }, s), "Booked Hi-Dive on 2026-11-14");
+  assert.equal(await readback("shows.create", { date: "2026-11-14", venueId, status: "confirmed" }, { id: showId }, { ...s, now: new Date("2026-10-26T21:54:00Z") }), "Booked Hi-Dive on Sat, Nov 14");
   assert.equal(await readback("shows.update", { id: showId, patch: { venueId, billedAs: "trio", times: { loadIn: "18:00" } } }, {}, s), "Updated Hi-Dive · 2026-11-14: venue Hi-Dive, billed as Trio, loadIn 18:00");
   assert.equal(await readback("venues.create", { name: "Hi-Dive" }, { id: venueId, merged: true }, s), "Hi-Dive was already in the directory: merged into the existing venue");
   assert.equal(await readback("setlists.setItems", { showId, items: [{ type: "song" }, { type: "break" }, { type: "song" }] }, {}, s), "Set the setlist for Hi-Dive · 2026-11-14: 2 songs");
@@ -185,6 +185,32 @@ test("a checklist tick reads back the item and the show", async () => {
   await db.update(sys, "shows", showId, { checklists: [{ id: listId, name: "Gear", templateId: null, items: [{ id: itemId, label: "merch table", done: false }] }] });
   assert.equal(await readback("shows.checkItem", { id: showId, listId, itemId, done: true }, {}, s), "Checked 'merch table' on Hi-Dive · 2026-11-14");
   assert.equal(await readback("shows.checkItem", { id: showId, listId, itemId, done: false }, {}, s), "Unchecked 'merch table' on Hi-Dive · 2026-11-14");
+});
+
+test("dates without a year (#48): read-backs say the year when it isn't this one; a date before today asks first; localTime has the year", async () => {
+  const s = { ...(await sess()), now: new Date("2026-10-26T21:54:00Z") }; // Mon Oct 26, 2026, 3:54 pm in Denver
+  assert.equal(await readback("rehearsals.create", { date: "2026-12-05", startTime: "19:00" }, { id: "r1" }, s), "Added a rehearsal on Sat, Dec 5 at 19:00");
+  assert.equal(await readback("rehearsals.update", { id: "r1", patch: { date: "2025-12-06" } }, {}, s), "Moved the rehearsal to Sat, Dec 6, 2025");
+  assert.equal(await readback("shows.create", { date: "2027-01-09", venueId, status: "hold" }, { id: "x" }, s), "Put a hold on Hi-Dive on Sat, Jan 9, 2027");
+  assert.match(await readback("shows.update", { id: showId, patch: { date: "2027-01-09" } }, {}, s), /moved to Sat, Jan 9, 2027$/);
+
+  assert.equal(pastDate("rehearsals.create", { date: "2025-12-05" }, "2026-10-26"), "2025-12-05");
+  assert.equal(pastDate("rehearsals.create", { date: "2026-12-05" }, "2026-10-26"), undefined);
+  assert.equal(pastDate("rehearsals.update", { id: "r", patch: { notes: "x" } }, "2026-10-26"), undefined);
+  assert.equal(pastDate("tours.addPitch", { tourId: "t", venueId, dates: ["2026-11-01", "2025-11-02"] }, "2026-10-26"), "2025-11-02");
+  assert.equal(pastDate("expenses.add", { date: "2025-01-01" }, "2026-10-26"), undefined, "money about what already happened never asks");
+
+  const noop = () => {};
+  const out = await execTool(s, "rehearsals.create", { date: "2025-12-05", personnel: [], songs: [] }, noop);
+  assert.equal((out.output as { needsConfirmation?: boolean }).needsConfirmation, true);
+  assert.match((out.output as { message: string }).message, /Fri, Dec 5, 2025 is before today/);
+  assert.equal(out.stop, false, "a past-date card doesn't end the message");
+  const ok = await execTool(s, "rehearsals.create", { date: "2026-12-05", personnel: [], songs: [] }, noop);
+  assert.equal(ok.action?.kind, "readback");
+  assert.equal(ok.action?.label, "Added a rehearsal on Sat, Dec 5");
+
+  const c = await contextNow({ ...sys, artistId: TEST_ARTIST, now: s.now }, { ...who });
+  assert.match(c.localTime, /^Mon, Oct 26, 2026, 3:54\sPM$/);
 });
 
 test("context.now names the artist and the band; search finds setlist templates and carries a musician's userId", async () => {

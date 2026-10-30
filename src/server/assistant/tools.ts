@@ -14,11 +14,12 @@ import { owesBack } from "@/lib/money";
 import type { PrintOptions } from "@/schema/print";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
 import { contextNow, searchAll, SEARCH_KINDS } from "./context";
-import { eligibleCommands, hasSummary, isEligible, isReadOnly, needsConfirm, refusal, summarize } from "./policy";
+import { eligibleCommands, hasSummary, isEligible, isReadOnly, needsConfirm, pastDate, refusal, summarize } from "./policy";
 import { cardFields, picksFor } from "./card";
 import { makeCtx, newRun, runAs, type Session } from "./run";
 import { createPending, findOpenPending, getRuns, markRunUndone, patchMessageAction, recordRun } from "./threads";
-import { showName, type ShowPlaceLike } from "@/lib/shows";
+import { fmtLongYearIfNot, showName, type ShowPlaceLike } from "@/lib/shows";
+import { dateInBandZone } from "@/lib/timezone";
 import { ROLE_LABEL, type ContactRole } from "@/lib/venues";
 import { allowUrls, isAllowedUrl, MAX_QUERY_CHARS, MAX_WEB_READS, MAX_WEB_SEARCHES, newWebTurn, socialOf, web, WEB_NOTICE, type WebTurn } from "./web";
 import { draftVenue, MAX_DRAFTS } from "./lookup";
@@ -195,6 +196,8 @@ const dollars = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
 const quote = (t: unknown) => `'${String(t)}'`;
 const list = (xs: string[]) => xs.join(", ");
 const showLabel = (d: Row) => `${showName(d as ShowPlaceLike)} · ${d.date}`;
+/** A date in a read-back: "Sat, Dec 5", with the year when it isn't this year. */
+const when = (date: string, s: Session) => fmtLongYearIfNot(date, dateInBandZone(s.now ?? new Date()));
 
 /** Names for the ids a command was given, looked up once each (records.get as the speaker). Anything unreadable falls back to a plain word. */
 function lookups(s: Session) {
@@ -231,26 +234,29 @@ async function payoutTo(to: Row | undefined, l: L): Promise<string> {
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<string> | string> = { // eslint-disable-line @typescript-eslint/no-explicit-any
   "expenses.payPerson": async (i, r, _s, l) => `Paid ${await l.person(i.userId)} back ${dollars(r?.total ?? 0)} (${plural(r?.paid?.length ?? 0, "expense")})`,
-  "shows.update": async (i, _r, _s, l) => {
+  "shows.update": async (i, _r, s, l) => {
     const p = (i.patch ?? {}) as Row;
     const parts = await Promise.all(Object.keys(p).map(async (k) => {
       if (k === "times") return list(Object.entries(p.times).map(([t, v]) => (v === null ? `${t} cleared` : `${t} ${v}`)));
       if (k === "venueId") return `venue ${p.venueId ? await l.venue(p.venueId) : "none"}`;
       if (k === "personnel") return `playing: ${list(await Promise.all((p.personnel as string[]).map((m) => l.musician(m))))}`;
       if (k === "billedAs") return `billed as ${p.billedAs ? await l.config(p.billedAs) : "no lineup"}`;
+      if (k === "date" && typeof p.date === "string") return `moved to ${when(p.date, s)}`;
       return `${k} ${JSON.stringify(p[k])}`;
     }));
     return `Updated ${await l.show(i.id)}: ${list(parts)}`;
   },
   "tours.create": (i) => `Started the tour ${quote(i.name)}`,
   "tours.addShow": async (i, _r, _s, l) => `Put ${await l.show(i.showId)} on ${(await l.get("tours", i.tourId))?.name ?? "the tour"}`,
-  "tours.addPitch": async (i, r, _s, l) => `Put ${i.venueId ? await l.venue(i.venueId) : await l.pitch(i.pitchId ?? r?.pitchId)} on ${(await l.get("tours", i.tourId))?.name ?? "the tour"} as ${plural(r?.entryIds?.length ?? 1, "option")}${i.dates?.length ? ` (${list(i.dates)})` : ""}`,
-  "tours.entries.add": (i, r) => `Added ${i.kind === "drive" ? `a drive${i.to?.name ? ` to ${i.to.name}` : ""}` : i.kind === "stay" ? (i.name ? quote(i.name) : "a stay") : "a note"} on ${i.date}${i.leaveBy ? `, leaving at ${i.leaveBy}` : ""}${r?.minutes ? ` (${Math.round(r.minutes)} min)` : ""}`,
+  "tours.addPitch": async (i, r, s, l) => `Put ${i.venueId ? await l.venue(i.venueId) : await l.pitch(i.pitchId ?? r?.pitchId)} on ${(await l.get("tours", i.tourId))?.name ?? "the tour"} as ${plural(r?.entryIds?.length ?? 1, "option")}${i.dates?.length ? ` (${list((i.dates as string[]).map((d) => when(d, s)))})` : ""}`,
+  "tours.entries.add": (i, r, s) => `Added ${i.kind === "drive" ? `a drive${i.to?.name ? ` to ${i.to.name}` : ""}` : i.kind === "stay" ? (i.name ? quote(i.name) : "a stay") : "a note"} on ${when(i.date, s)}${i.leaveBy ? `, leaving at ${i.leaveBy}` : ""}${r?.minutes ? ` (${Math.round(r.minutes)} min)` : ""}`,
   "tours.book": async (i, r, _s, l) => `Booked ${await l.show(r?.showId)} on the tour${r?.dropped?.length ? ` and dropped ${plural(r.dropped.length, "other option")} that day` : ""}`,
   "shows.cancel": () => "Canceled the show",
   "shows.drop": () => "Dropped the show",
   "shows.setStatus": async (i, _r, _s, l) => `Set ${await l.show(i.id)} to ${i.status}`,
-  "shows.create": async (i, _r, _s, l) => `${i.status === "hold" ? "Put a hold on" : "Booked"} ${i.venueId ? await l.venue(i.venueId) : (i.place?.city ?? "a show")} on ${i.date}`,
+  "shows.create": async (i, _r, s, l) => `${i.status === "hold" ? "Put a hold on" : "Booked"} ${i.venueId ? await l.venue(i.venueId) : (i.place?.city ?? "a show")} on ${when(i.date, s)}`,
+  "rehearsals.create": (i, _r, s) => `Added a rehearsal on ${when(i.date, s)}${i.startTime ? ` at ${i.startTime}` : ""}`,
+  "rehearsals.update": (i, _r, s) => (i.patch?.date ? `Moved the rehearsal to ${when(i.patch.date, s)}` : `Updated the rehearsal: ${list(Object.keys(i.patch ?? {}))}`),
   "shows.checkItem": async (i, _r, _s, l) => {
     const d = await l.get("shows", i.id);
     const item = ((d?.checklists ?? []) as Row[]).find((c) => c.id === i.listId)?.items?.find((x: Row) => x.id === i.itemId);
@@ -573,7 +579,8 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     if (!parsed.success) return { output: fail(runAsInvalid(parsed.error)) };
     const picks = choice?.picks ?? [];
     const fromWeb = w.tainted && !isReadOnly(name);
-    if (needsConfirm(name, parsed.data) || fromWeb || picks.length) {
+    const past = isReadOnly(name) ? undefined : pastDate(name, parsed.data, dateInBandZone(s.now ?? new Date()));
+    if (needsConfirm(name, parsed.data) || past || fromWeb || picks.length) {
       // The server never runs this from the flow. It stores the input and asks the person; only /api/assistant/confirm runs it.
       const open = await findOpenPending(s.threadId, name, parsed.data, s.now);
       const base = summarize(name, parsed.data, await labelFor(s, name, parsed.data), filled.before);
@@ -589,6 +596,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
       const choose = picks.map((x) => `${x.path.split(".").pop()}${x.was ? ` ("${x.was}" isn't on the list)` : ""}`).join(", ");
       const message = choose
         ? `Not done yet. The card has a dropdown for ${choose}: the person picks one there, then taps Yes. Don't retry with another value or ask again; say in one line that they pick it on the card.`
+        : past ? `Not done yet: ${when(past, s)} is before today, so the person has a Yes / Cancel card. Say the date with its year in one line; if they meant the next one, they tap Cancel and you send that date instead.`
         : "Not done yet. The person has a Yes / Cancel card. Do not ask again; tell them to tap Yes. If the request had more in it (another venue, another change), go on with that now.";
       // A send, pay, delete or cancel card ends the message. A card for a plain write (from the web, or with a pick) doesn't: the rest of the request (the next venue) goes on, each with its own card.
       return { output: { needsConfirmation: true, pendingId: p.id, message: note ? `${message} The reply already says what's missing; don't repeat it.` : message }, action: open ? undefined : action, ...(note ? { say: note } : {}), stop: needsConfirm(name, parsed.data) };

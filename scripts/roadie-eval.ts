@@ -7,7 +7,8 @@
  * emulator data is untouched (the eval band stays; wipe it with `npm run wipe` whenever).
  *
  * A scenario is a list of turns. Each turn's checks: `calls` (tool names that must appear, in order, as regexes),
- * `noCalls`, `cards` (how many confirm cards), `text` / `noText` (regexes on the reply), `noAsk` (no ui.ask buttons).
+ * `noCalls`, `cards` (how many confirm cards), `text` / `noText` (regexes on the reply), `noAsk` (no ui.ask buttons),
+ * `args` (a call to the first regex whose input matches the second: the date it picked).
  */
 import { getChatFlow } from "../src/server/assistant/flow";
 import { ensureThread, newMessageId, newThreadId } from "../src/server/assistant/threads";
@@ -21,7 +22,7 @@ import { adminAuth } from "../src/server/admin";
 import { syncClaims } from "../src/server/session";
 import type { AssistantAction, AssistantEvent, ToolTrace } from "../src/schema/assistant";
 
-interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean }
+interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][] }
 interface Turn extends Check { say: string }
 interface Scenario { name: string; route?: string; turns: Turn[] }
 
@@ -33,7 +34,22 @@ const SOFAR =
 // A refusal, not the polite note about blanks ("I couldn't find a street address … Yes adds it as is").
 const REFUSES = /\b(can't (?:add|do|help)|cannot (?:add|do)|unable to|I need (?:a|an|the|more)|required|without (?:a|the) (?:street )?address)\b/i;
 
+// Dates without a year (#48): asked on 2026-10-26, "Saturday Dec 5" became 2025-12-05. Phrased from today, so they mean the same whenever the eval runs.
+const TODAY = dateInBandZone();
+let soon = addDays(TODAY, 36);
+while (Number(soon.slice(8)) > 27) soon = addDays(soon, 1); // "the next day" stays in the month
+const spoken = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { ...o, timeZone: "UTC" });
+const SOON_SAID = `${spoken(soon, { weekday: "long" })} ${spoken(soon, { month: "short", day: "numeric" })}`; // "Saturday Dec 5"
+const nth = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+const JAN9 = `${Number(TODAY.slice(0, 4)) + (TODAY > `${TODAY.slice(0, 4)}-01-09` ? 1 : 0)}-01-09`;
+const dateIs = (d: string) => new RegExp(`"date":"${d}"`);
+
 const SCENARIOS: Scenario[] = [
+  { name: "year-rehearsal", turns: [
+    { say: `add a rehearsal on ${SOON_SAID}`, args: [[/rehearsals\.create/, dateIs(soon)]], cards: 0, noText: REFUSES },
+    { say: `move it to the ${nth(Number(addDays(soon, 1).slice(8)))}`, args: [[/rehearsals\.update/, dateIs(addDays(soon, 1))]], cards: 0 },
+  ] },
+  { name: "year-next-january", turns: [{ say: "add a show at Lost Lake on Jan 9", args: [[/shows\.create/, dateIs(JAN9)]], noText: REFUSES }] },
   { name: "sofar-three", turns: [{ say: SOFAR, calls: [/venues\.draft/, /venues\.draft/, /venues\.draft/, /venues\.create/, /venues\.create/, /venues\.create/], cards: 3, noAsk: true, noText: REFUSES }] },
   { name: "sofar-then-type", turns: [
     { say: "Add SoFar as a venue in Fort Collins. Their page is https://www.instagram.com/sofarfortcollins/", calls: [/venues\.draft/, /venues\.create/], cards: 1, noAsk: true },
@@ -122,6 +138,10 @@ async function runScenario(sc: Scenario, who: { uid: string; artistId: string })
     let at = 0;
     for (const re of t.calls ?? []) { const i = names.findIndex((x, k) => k >= at && re.test(x)); if (i < 0) failures.push(`${where}: expected a call ${re} (calls: ${names.join(", ") || "none"})`); else at = i + 1; }
     for (const re of t.noCalls ?? []) if (names.some((x) => re.test(x))) failures.push(`${where}: unexpected call ${re}`);
+    for (const [re, arg] of t.args ?? []) {
+      const tried = trace.filter((x) => re.test(x.name));
+      if (!tried.some((x) => arg.test(x.input))) failures.push(`${where}: expected ${re} with ${arg} (got: ${tried.map((x) => x.input).join(" | ") || "no call"})`);
+    }
     if (t.cards !== undefined && cards !== t.cards) failures.push(`${where}: ${cards} card(s), expected ${t.cards}`);
     if (t.noAsk && asks) failures.push(`${where}: asked with buttons instead of acting`);
     if (t.text && !t.text.test(out.text)) failures.push(`${where}: reply doesn't match ${t.text}`);

@@ -7,7 +7,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { syncShow, type SyncResult } from "../showSync";
-import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
 import { noteOf, setContactRoles } from "../venues";
 import { dayOfContactOf } from "@/lib/venues";
 import { addDays, calendarInvitees, checklistsOf, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
@@ -348,8 +348,12 @@ export const showsDrop = defineCommand({
 
 export const showsRemove = defineCommand({
   name: "shows.remove", roles: ["admin"], input: idInput,
-  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. Takes it off Bandsintown; remove its Calendar event first (shows.calendar on:false).",
+  description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. " +
+    "Takes it off Bandsintown and off the band calendar (history.undoRun puts the event back); if the calendar can't be reached, nothing is removed.",
   async run(ctx, { id }) {
+    // The event first: a show gone from the app must not stay on everyone's calendar. The show keeps calendarEventId, so Undo can bring the event back.
+    const before = await db.get("shows", id);
+    if (before && !before.deletedAt) await deleteEvent(ctx, before);
     await run(ctx, async (w) => {
       await requireShow(w, id);
       await w.softDelete("shows", id);
@@ -575,10 +579,11 @@ export const showsCalendarLink = defineCommand({
 });
 
 export const showsCalendar = defineCommand({
-  name: "shows.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
+  name: "shows.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean(), restore: z.boolean().optional() }),
   description: "Send the show's event to the band's Google Calendar with invites (on:true: creates it, or updates the one there to match the show), or take it off (on:false). " +
-    "Saving a show never does this: show the person shows.calendarPreview first. Written with the caller's own Google account, so it fails if they can't write to the band calendar.",
-  run: (ctx, i) => (i.on ? calendarSend(ctx, "shows", i.id) : calendarRemove(ctx, "shows", i.id)),
+    "Saving a show never does this: show the person shows.calendarPreview first. Written with the caller's own Google account, so it fails if they can't write to the band calendar. " +
+    "If someone deleted the event in Calendar (the preview's deleted), on:true fails unless restore:true: ask the person before putting it back.",
+  run: (ctx, i) => (i.on ? calendarSend(ctx, "shows", i.id, { restore: i.restore }) : calendarRemove(ctx, "shows", i.id)),
 });
 
 // ---------- deal (admin only) ----------

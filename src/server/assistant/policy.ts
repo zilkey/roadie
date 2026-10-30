@@ -74,6 +74,19 @@ const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.li
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
 
 /** True when `name` with this input must not run without the person's yes. TODO: count touched records after a dry run instead of guessing from the input. */
+/** The dates a command puts a show, rehearsal, pitch option or tour entry on (new or moved to). */
+function datesSet(name: string, o: Record<string, any>): string[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (name === "shows.create" || name === "rehearsals.create" || name === "tours.entries.add") return [o.date];
+  if (name === "shows.update" || name === "rehearsals.update") return [o.patch?.date];
+  if (name === "tours.addPitch") return o.dates ?? [];
+  return [];
+}
+
+/** The first date before `today` (YYYY-MM-DD) a show, rehearsal, pitch option or tour entry would be put on. Roadie asks first (#48: a date without a year landed last year). */
+export function pastDate(name: string, input: unknown, today: string): string | undefined {
+  return datesSet(name, (input ?? {}) as Record<string, unknown>).find((d) => typeof d === "string" && d < today);
+}
+
 export function needsConfirm(name: string, input: unknown): boolean {
   if (ALWAYS_CONFIRM.includes(name) || isRemove(name)) return true;
   if (name === "venues.update" && sharedVenueFields(input).length) return true;
@@ -113,8 +126,8 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     if (p.publishToBandsintown !== undefined) out.push(p.publishToBandsintown ? `List${l} on Bandsintown` : `Take${l} off Bandsintown`);
     return out.join("; ");
   },
-  "shows.calendar": (i) => (i.on ? `Put the show${i.label ? ` ${i.label}` : ""} on the band calendar and invite the band` : `Take the show${i.label ? ` ${i.label}` : ""} off the band calendar`),
-  "rehearsals.calendar": (i) => (i.on ? "Put the rehearsal on the band calendar and invite everyone coming" : "Take the rehearsal off the band calendar"),
+  "shows.calendar": (i) => (i.on ? `${i.restore ? "Put back the deleted event for" : "Put"} the show${i.label ? ` ${i.label}` : ""} on the band calendar and invite the band` : `Take the show${i.label ? ` ${i.label}` : ""} off the band calendar`),
+  "rehearsals.calendar": (i) => (i.on ? `${i.restore ? "Put back the deleted event for" : "Put"} the rehearsal on the band calendar and invite everyone coming` : "Take the rehearsal off the band calendar"),
   "musicians.archive": (i) => `Archive ${i.label ?? "this person"}: they leave the band and lose their sign-in for this band`,
   "musicians.removeFromBand": (i) => `Take ${i.label ?? "this person"} out of the band (they keep their sign-in)`,
   "artists.removeSongField": () => "Delete the song field: every song loses its value",

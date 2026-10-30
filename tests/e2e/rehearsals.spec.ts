@@ -129,8 +129,18 @@ test("a rehearsal goes on the band calendar only from its button, after a previe
   await expect(dlg.getByTestId("cal-preview-where")).toContainText("The Loft");
   await dlg.getByTestId("cal-send").click();
   await expect(line).toContainText("On the band calendar");
-  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { title: string }[];
-  expect(events.some((e) => /rehearsal at The Loft$/.test(e.title))).toBe(true);
+  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { id: string; title: string }[];
+  const sent = events.find((e) => /rehearsal at The Loft$/.test(e.title));
+  expect(sent).toBeTruthy();
+
+  // Someone deletes it in Google Calendar: the preview says so, and only "Put it back" brings it back (#48)
+  await request.delete(`${CAL}/events/${sent!.id}`);
+  await page.getByTestId("reh-calendar-open").click();
+  await expect(dlg.getByTestId("cal-preview-deleted")).toContainText("Someone deleted this rehearsal's event");
+  await expect(dlg.getByTestId("cal-send")).toHaveText("Put it back");
+  await dlg.getByTestId("cal-send").click();
+  await expect(page.getByTestId("reh-calendar-note")).toContainText("Put back on the band calendar");
+  expect(((await (await request.get(`${CAL}/events/${sent!.id}`)).json()) as { cancelled?: boolean }).cancelled).toBeUndefined();
 
   await page.getByTestId("reh-calendar-open").click();
   await dlg.getByTestId("cal-remove").click();
@@ -165,7 +175,7 @@ test("a rehearsal links to an event already on the band calendar instead of addi
   await expect(dlg.getByTestId("cal-send")).toHaveText("Update event");
   await dlg.getByTestId("cal-remove").click();
   await expect(line).toContainText("Not on the band calendar");
-  expect((await request.get(`${CAL}/events/${made.id}`)).status()).toBe(404);
+  expect(((await (await request.get(`${CAL}/events/${made.id}`)).json()) as { cancelled?: boolean }).cancelled).toBe(true);
   await request.delete(`${CAL}/events/${dentist.id}`);
   await close();
 });

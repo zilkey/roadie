@@ -313,17 +313,51 @@ test("Calendar: an event already on the band calendar that day is offered, linke
   assert.match((await cal.get(mine.id)).title, /Ingrid Avison Trio at Hi-Dive/);
 });
 
-test("Calendar: an event deleted in Google comes back on the next send; no write access fails with Google's reason", async () => {
+test("Calendar: an event deleted in Google stays deleted until restore puts it back; no write access fails with Google's reason", async () => {
   await useBandCalendar();
   const r = await create({});
   await cmd("shows.calendar", { id: r.id, on: true });
-  await calendarClient().delete((await db.get("shows", r.id))!.calendarEventId);
-  assert.equal((await cmd("shows.calendar", { id: r.id, on: true })).calendar, "created");
+  const evId = (await db.get("shows", r.id))!.calendarEventId;
+  await calendarClient().delete(evId);
+  const p = await cmd("shows.calendarPreview", { id: r.id });
+  assert.deepEqual([p.action, p.deleted, p.unchanged], ["update", true, false]);
+  await assert.rejects(cmd("shows.calendar", { id: r.id, on: true }), /Someone deleted this show's event/);
+  assert.equal((await calendarClient().get(evId)).cancelled, true, "a plain send doesn't bring it back");
+  assert.equal((await cmd("shows.calendar", { id: r.id, on: true, restore: true })).calendar, "restored");
+  assert.equal((await calendarClient().get(evId)).cancelled, undefined);
+  assert.equal((await calendarClient().list()).length, 1);
+  assert.equal((await cmd("shows.calendarPreview", { id: r.id })).deleted, false);
 
   await useBandCalendar(READONLY_CALENDAR_ID);
   const other = await create({ date: "2027-02-01" });
   await assert.rejects(cmd("shows.calendar", { id: other.id, on: true }), /Google Calendar: .*writer access/);
   assert.equal((await db.get("shows", other.id))!.calendarEventId, undefined);
+});
+
+test("Calendar: removing a show or rehearsal takes its event off the band calendar, and Undo puts it back", async () => {
+  const { undoRun } = await import("@/server/undo");
+  await useBandCalendar();
+  const show = await create({});
+  const reh = await cmd("rehearsals.create", { date: "2027-01-10", personnel: [ids.ingrid], songs: [] });
+  await cmd("shows.calendar", { id: show.id, on: true });
+  await cmd("rehearsals.calendar", { id: reh.id, on: true });
+  assert.equal((await calendarClient().list()).length, 2);
+
+  const rm = { ...ctx, runId: newRunId() };
+  await cmd("shows.remove", { id: show.id }, rm);
+  await cmd("rehearsals.remove", { id: reh.id }, rm);
+  assert.equal((await calendarClient().list()).length, 0, "both events came off");
+
+  const rep = await undoRun(ctx, rm.runId);
+  assert.deepEqual(rep.calendar.map((x) => x.kind).sort(), ["rehearsals", "shows"]);
+  assert.deepEqual(rep.failed, []);
+  assert.deepEqual((await calendarClient().list()).map((e) => e.id).sort(),
+    [(await db.get("shows", show.id))!.calendarEventId, (await db.get("rehearsals", reh.id))!.calendarEventId].sort(), "the same events are back");
+
+  // The calendar can't be reached (here: no band calendar chosen any more): nothing is removed.
+  await db.update(ctx, "artists", artistId, { calendar: null });
+  await assert.rejects(cmd("shows.remove", { id: show.id }), /No band calendar yet/);
+  assert.ok(!(await db.get("shows", show.id))!.deletedAt);
 });
 
 test("Rehearsals: preview and send to the band calendar; all day without a start time; saving never sends", async () => {

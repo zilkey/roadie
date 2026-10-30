@@ -84,6 +84,8 @@ export function fmtTime(t?: string): string {
 }
 export const fmtLong = (s?: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "");
 export const fmtLongYear = (s?: string) => (s ? new Date(s + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : "");
+/** "Sat, Dec 5" this year, "Sat, Jan 9, 2027" any other year: a date never reads as this year when it isn't. */
+export const fmtLongYearIfNot = (s: string, today: string) => (s.slice(0, 4) === today.slice(0, 4) ? fmtLong(s) : fmtLongYear(s));
 /** How an ask names its dates: "Sat, Mar 6 or Fri, Mar 12", or "[date]" before any is picked. */
 export const askDatesPhrase = (dates: string[]) => dates.map(fmtLong).join(" or ") || "[date]";
 /**

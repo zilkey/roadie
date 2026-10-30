@@ -39,7 +39,7 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   const tonight = tonightDate(now);
   return {
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
-    now: now.toISOString(), localTime: fmtInstant(now, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: BAND_TIME_ZONE,
+    now: now.toISOString(), localTime: fmtInstant(now, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: BAND_TIME_ZONE,
     today, tonight,
     artist: a ? { id: a.id, name: a.name, slug: a.slug, configurations: ((a.configurations ?? []) as Row[]).map((c) => ({ id: c.id, name: c.name })) } : null,
     band: team.map((m) => ({ musicianId: m.id, name: m.name, userId: m.userId ?? null, instruments: m.instruments ?? [] })),

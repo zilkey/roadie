@@ -102,7 +102,7 @@ function ShowView({ show }: { show: ShowRow }) {
             <div className="grid gap-2">
               <ErrorBox error={error} />
               <button type="button" className="btn outline danger justify-self-start" disabled={busy} data-testid="show-archive"
-                onClick={async () => { if (confirm("Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }}>Archive show</button>
+                onClick={async () => { if (confirm(show.calendarEventId ? "Archive this show? Its event comes off the band calendar too." : "Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }}>Archive show</button>
             </div>
           )}
         </div>

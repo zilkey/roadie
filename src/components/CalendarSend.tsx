@@ -7,6 +7,8 @@ interface Preview {
   calendar: { id: string; name: string };
   action: "create" | "update";
   unchanged: boolean;
+  /** Someone deleted the event in Calendar: it comes back only on "Put it back". */
+  deleted: boolean;
   event: { title: string; start: string; end: string; allDay: boolean; timeZone: string; location: string; description: string };
   invitees: { name: string; email: string }[];
   noEmail: string[];
@@ -56,10 +58,10 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
     setNote("Linked to the event already on the band calendar.");
   }
   async function send(on: boolean) {
-    const r = await act.call<{ calendar: string }>(`${kind}.calendar`, { id, on });
+    const r = await act.call<{ calendar: string }>(`${kind}.calendar`, { id, on, ...(on && preview?.deleted ? { restore: true } : {}) });
     if (!r) return;
     setOpen(false);
-    setNote(r.calendar === "removed" ? "Taken off the band calendar." : r.calendar === "created" ? "Sent to the band calendar." : "Calendar event updated.");
+    setNote(r.calendar === "removed" ? "Taken off the band calendar." : r.calendar === "created" ? "Sent to the band calendar." : r.calendar === "restored" ? "Put back on the band calendar." : "Calendar event updated.");
   }
 
   const what = kind === "shows" ? "show" : "rehearsal";
@@ -79,10 +81,16 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
           load.error ? <ErrorBox error={load.error} /> : <p className="s m-0">Loading…</p>
         ) : (
           <div className="grid gap-3" data-testid="cal-preview">
-            <p className="s m-0">
-              {preview.action === "create" ? "This goes" : "This updates the event"} on <b data-testid="cal-preview-calendar">{preview.calendar.name}</b>
-              {preview.unchanged ? <span data-testid="cal-preview-unchanged">. Nothing changed since it was last sent.</span> : "."}
-            </p>
+            {preview.deleted ? (
+              <p className="s m-0" data-testid="cal-preview-deleted">
+                Someone deleted this {what}&apos;s event on <b data-testid="cal-preview-calendar">{preview.calendar.name}</b>. Put it back, or remove it here to leave it off.
+              </p>
+            ) : (
+              <p className="s m-0">
+                {preview.action === "create" ? "This goes" : "This updates the event"} on <b data-testid="cal-preview-calendar">{preview.calendar.name}</b>
+                {preview.unchanged ? <span data-testid="cal-preview-unchanged">. Nothing changed since it was last sent.</span> : "."}
+              </p>
+            )}
             <dl className="m-0 grid gap-2.5">
               <div className="grid gap-0.5"><dt className="lbl">Title</dt><dd className="m-0 font-semibold" data-testid="cal-preview-title">{preview.event.title}</dd></div>
               <div className="grid gap-0.5"><dt className="lbl">When</dt><dd className="m-0" data-testid="cal-preview-when">{eventWhen(preview.event)}</dd></div>
@@ -115,7 +123,7 @@ export function CalendarSend({ kind, id, eventId, admin, off, beforeOpen, testid
           <button type="button" className="btn ghost" onClick={() => setOpen(false)} data-testid="cal-cancel">Cancel</button>
           {off
             ? <button type="button" className="btn acc" disabled={act.busy} onClick={() => void send(false)} data-testid="cal-remove">Remove from calendar</button>
-            : <button type="button" className="btn acc" disabled={act.busy || !preview} onClick={() => void send(true)} data-testid="cal-send">{preview?.action === "update" ? "Update event" : preview?.existing.length ? "Add a new event" : "Add to calendar"}</button>}
+            : <button type="button" className="btn acc" disabled={act.busy || !preview} onClick={() => void send(true)} data-testid="cal-send">{preview?.deleted ? "Put it back" : preview?.action === "update" ? "Update event" : preview?.existing.length ? "Add a new event" : "Add to calendar"}</button>}
         </div>
       </Dialog>
     </>

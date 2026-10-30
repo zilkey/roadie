@@ -10,7 +10,11 @@ import { googleJson, useRealGoogle, type TokenSource } from "./google";
 import { accessTokenFor } from "../google/grants";
 
 export interface CalAttendee { email: string; responseStatus: "needsAction" | "accepted" | "declined" | "tentative" }
-export interface CalEvent { id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees: CalAttendee[]; createdAt: string; updatedAt: string }
+export interface CalEvent {
+  id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees: CalAttendee[]; createdAt: string; updatedAt: string;
+  /** Deleted in Calendar: Google still answers for it (status "cancelled") until it is purged. */
+  cancelled?: boolean;
+}
 export interface CalEventInput { title: string; start: string; end: string; location?: string; description?: string; timeZone?: string; attendees?: string[]; calendarId?: string }
 
 /** A calendar in the account's list and what that account may do on it. owner and writer can add events. */
@@ -19,7 +23,8 @@ export const canWrite = (c: Pick<CalInfo, "accessRole">) => c.accessRole === "ow
 
 export interface CalendarService {
   create(input: CalEventInput): Promise<CalEvent>;
-  update(id: string, patch: Partial<CalEventInput>): Promise<CalEvent>;
+  /** `restore` brings back an event someone deleted in Calendar (cancelled); without it a cancelled event stays deleted. */
+  update(id: string, patch: Partial<CalEventInput>, opts?: { restore?: boolean }): Promise<CalEvent>;
   delete(id: string): Promise<void>;
   get(id: string): Promise<CalEvent>;
   list(opts?: { from?: string; to?: string; calendarId?: string }): Promise<CalEvent[]>;
@@ -51,7 +56,7 @@ export function fakeCalendarClient(baseUrl: string): CalendarService {
   const e = (id: string) => `/events/${encodeURIComponent(id)}`;
   return {
     create: (input) => call("POST", "/events", { body: input }),
-    update: (id, patch) => call("PATCH", e(id), { body: patch }),
+    update: (id, patch, o) => call("PATCH", e(id), { body: { ...patch, ...(o?.restore ? { status: "confirmed" } : {}) } }),
     delete: async (id) => { await call("DELETE", e(id)); },
     get: (id) => call("GET", e(id)),
     list: (o = {}) => call("GET", "/events", { query: o }),
@@ -75,6 +80,7 @@ const toEvent = (e: GEvent, calendarId: string): CalEvent => ({
   id: e.id, calendarId, title: e.summary ?? "", start: e.start?.dateTime ?? e.start?.date ?? "", end: e.end?.dateTime ?? e.end?.date ?? "",
   ...(e.location ? { location: e.location } : {}), ...(e.description ? { description: e.description } : {}), ...(e.start?.timeZone ? { timeZone: e.start.timeZone } : {}),
   attendees: (e.attendees ?? []).map((a) => ({ email: a.email, responseStatus: a.responseStatus ?? "needsAction" })), createdAt: e.created ?? "", updatedAt: e.updated ?? "",
+  ...(e.status === "cancelled" ? { cancelled: true } : {}),
 });
 
 /** RFC 3339 for timeMin/timeMax; a bare date means midnight UTC. */
@@ -102,12 +108,12 @@ export function googleCalendar(token: TokenSource, defaultCalendarId = "primary"
       });
       return toEvent(ev, cal);
     },
-    async update(id, p) {
+    async update(id, p, o) {
       const cur = await get(id);
       const tz = p.timeZone ?? cur.timeZone;
       const body: Record<string, unknown> = {
-        // The show still exists, so an event someone deleted in Calendar comes back.
-        status: "confirmed",
+        // Only on purpose: an event someone deleted in Calendar stays deleted unless the person said to put it back.
+        ...(o?.restore ? { status: "confirmed" } : {}),
         ...(p.title !== undefined ? { summary: p.title } : {}), ...(p.location !== undefined ? { location: p.location } : {}),
         ...(p.description !== undefined ? { description: p.description } : {}),
         ...(p.start !== undefined ? { start: time(p.start, tz) } : {}), ...(p.end !== undefined ? { end: time(p.end, tz) } : {}),

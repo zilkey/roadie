@@ -4,6 +4,8 @@ export interface CalAttendee { email: string; responseStatus: "needsAction" | "a
 export interface CalEvent {
   id: string; calendarId: string; title: string; start: string; end: string; location?: string; description?: string; timeZone?: string;
   attendees: CalAttendee[]; createdAt: string; updatedAt: string;
+  /** Deleted, like Google: still answers GET until purged, never listed; a PATCH with status "confirmed" brings it back. */
+  cancelled?: boolean;
 }
 /** A calendar in the signed-in account's list, with that account's access to it (Google's calendarList.accessRole). */
 export interface CalInfo { id: string; name: string; accessRole: "owner" | "writer" | "reader" | "freeBusyReader"; primary?: boolean }
@@ -41,7 +43,7 @@ const routes: Route<CalState>[] = [
   }],
   ["GET", "/events", ({ query }, s) => {
     const from = query.get("from"), to = query.get("to"), cal = query.get("calendarId");
-    return s.events.filter((e) => (!cal || e.calendarId === cal) && (!from || e.end >= from) && (!to || e.start <= to)).sort((a, b) => a.start.localeCompare(b.start));
+    return s.events.filter((e) => !e.cancelled && (!cal || e.calendarId === cal) && (!from || e.end >= from) && (!to || e.start <= to)).sort((a, b) => a.start.localeCompare(b.start));
   }],
   ["GET", "/events/:id", ({ params }, s) => need(s.events.find((e) => e.id === params.id), "Event")],
   ["PATCH", "/events/:id", ({ params, body }, s) => {
@@ -49,19 +51,21 @@ const routes: Route<CalState>[] = [
     canWrite(s, e.calendarId);
     for (const k of ["title", "start", "end", "timeZone", "location", "description"] as const) if (body[k] !== undefined) (e as unknown as Record<string, unknown>)[k] = body[k];
     if (body.attendees !== undefined) e.attendees = att(body.attendees);
+    if (body.status === "confirmed") delete e.cancelled;
     e.updatedAt = new Date().toISOString();
     return e;
   }],
   ["DELETE", "/events/:id", ({ params }, s) => {
-    canWrite(s, need(s.events.find((x) => x.id === params.id), "Event").calendarId);
-    s.events = s.events.filter((x) => x.id !== params.id);
+    const e = need(s.events.find((x) => x.id === params.id && !x.cancelled), "Event");
+    canWrite(s, e.calendarId);
+    e.cancelled = true;
     return { ok: true };
   }],
 ];
 
 export const fakeCalendar = defineFake<CalState>({
   name: "fake-calendar", defaultPort: 3203, initial: () => ({ seq: 0, events: [], calendars: CALENDARS }), routes,
-  page: (s) => `<table><tr><th>Id</th><th>Calendar</th><th>Title</th><th>When</th><th>Where</th><th>Attendees</th></tr>${s.events.map((e) =>
+  page: (s) => `<table><tr><th>Id</th><th>Calendar</th><th>Title</th><th>When</th><th>Where</th><th>Attendees</th></tr>${s.events.filter((e) => !e.cancelled).map((e) =>
     `<tr><td>${e.id}</td><td>${esc(e.calendarId)}</td><td>${esc(e.title)}</td><td>${esc(e.start)} to ${esc(e.end)}</td><td>${esc(e.location)}</td><td>${esc(e.attendees.map((a) => `${a.email} (${a.responseStatus})`).join(", "))}</td></tr>`).join("") || "<tr><td colspan=6>No events.</td></tr>"}</table>`,
 });
 runIfMain(import.meta, fakeCalendar);

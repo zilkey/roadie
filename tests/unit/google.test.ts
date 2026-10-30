@@ -275,8 +275,10 @@ test("calendar: create sends invites with local times and a time zone; update ke
   assert.equal(ins.url.searchParams.get("sendUpdates"), "all");
   assert.deepEqual((ins.body as { start: unknown }).start, { dateTime: "2026-11-07T18:00:00", date: null, timeZone: "America/Denver" });
   await cal.update("e1", { start: "2026-11-07T19:00:00", attendees: ["A@x.com", "b@x.com"] });
-  const patch = seen.find((s) => s.method === "PATCH")!.body as { status: string; start: unknown; attendees: unknown };
-  assert.equal(patch.status, "confirmed");
+  const patch = seen.find((s) => s.method === "PATCH")!.body as { status?: string; start: unknown; attendees: unknown };
+  assert.equal(patch.status, undefined, "an event deleted in Calendar stays deleted");
+  await cal.update("e1", { title: "Show" }, { restore: true });
+  assert.equal((seen.filter((s) => s.method === "PATCH")[1].body as { status?: string }).status, "confirmed", "restore brings it back");
   assert.deepEqual(patch.start, { dateTime: "2026-11-07T19:00:00", date: null, timeZone: "America/Denver" });
   assert.deepEqual(patch.attendees, [{ email: "A@x.com", responseStatus: "accepted" }, { email: "b@x.com", responseStatus: "needsAction" }]);
   await assert.rejects(cal.delete("e1"), (e: unknown) => e instanceof IntegrationError && e.status === 404);

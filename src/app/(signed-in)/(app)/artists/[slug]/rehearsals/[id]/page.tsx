@@ -221,7 +221,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
       {mapsQuery && <a className="text-sm underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapsQuery)}`}>Open in Maps</a>}
     </div>
   ) : <span className="d-muted">{admin ? "No address yet. Add one so members can get directions and log gas in one tap." : "No address yet. An admin will add it. You can still log gas by typing where you drove."}</span>;
-  const archive = async () => { if (confirm("Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); };
+  const archive = async () => { if (confirm(existing.calendarEventId ? "Archive this rehearsal? Its event comes off the band calendar too." : "Archive this rehearsal?") && (await call("rehearsals.remove", { id: existing.id }))) router.push("/rehearsals"); };
 
   return (
     <DetailPage testid="rehearsal-page" back={<BackLink href="/rehearsals" label="All rehearsals" />}

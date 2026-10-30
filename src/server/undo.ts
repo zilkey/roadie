@@ -3,13 +3,16 @@
  * reversals are themselves written to history under a NEW runId (which can be undone in turn = redo).
  * A field that was edited again after the run is left alone (reported in changedSince / skippedFields), never overwritten.
  * Immutable collections (statSnapshots) are skipped and reported.
- * Things outside Firestore (sent email, Calendar events, Bandsintown listings, Drive copies) are not undone.
+ * Things outside Firestore (sent email, Calendar events, Bandsintown listings, Drive copies) are not undone, with one
+ * exception: a show or rehearsal brought back that is still linked to a band calendar event (removing it deleted the
+ * event) puts the event back.
  */
 import type { Timestamp } from "firebase-admin/firestore";
 import { collections, kindOf } from "@/schema";
 import { newRunId, type Ctx } from "./ctx";
 import { db, run, type Doc } from "./db";
 import { AppError } from "./errors";
+import { calendarSend } from "./calendarSync";
 
 export interface UndoItem { kind: string; id: string; op: string; as?: string; reason?: string; /** Fields left alone because they changed again after this run. */ skippedFields?: string[] }
 export interface UndoReport {
@@ -24,6 +27,8 @@ export interface UndoReport {
   failed: UndoItem[];
   /** Entries where every changed field was edited again since: nothing was overwritten. */
   changedSince: UndoItem[];
+  /** Shows and rehearsals whose band calendar event was put back. */
+  calendar: UndoItem[];
 }
 
 const CHUNK = 100;
@@ -53,7 +58,7 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
   if (opts.ownerUid && entries.some((e) => e.actor?.uid !== opts.ownerUid)) {
     throw new AppError("forbidden", "You can only undo your own runs", 403);
   }
-  const report: UndoReport = { undoRunId: newRunId(), reverted: [], unchanged: [], needsManualCorrection: [], failed: [], changedSince: [] };
+  const report: UndoReport = { undoRunId: newRunId(), reverted: [], unchanged: [], needsManualCorrection: [], failed: [], changedSince: [], calendar: [] };
   const undoCtx: Ctx = { ...ctx, runId: report.undoRunId };
 
   const todo: Doc[] = [];
@@ -91,7 +96,23 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
       void err;
     }
   }
+  await calendarBack(undoCtx, report);
   return report;
+}
+
+/** A show or rehearsal brought back by the undo that is still linked to a calendar event: removing it deleted the event, so it goes back on. */
+async function calendarBack(ctx: Ctx, report: UndoReport) {
+  for (const item of report.reverted) {
+    if ((item.kind !== "shows" && item.kind !== "rehearsals") || item.as !== "restore") continue;
+    const doc = await db.get(item.kind, item.id);
+    if (!doc?.calendarEventId || doc.deletedAt) continue;
+    try {
+      await calendarSend(ctx, item.kind, item.id, { restore: true });
+      report.calendar.push(item);
+    } catch (e) {
+      report.failed.push({ ...item, reason: `Couldn't put it back on the band calendar: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
 }
 
 /** How many of an actor's newest history entries runsOf looks at. */

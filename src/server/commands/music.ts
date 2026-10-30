@@ -5,7 +5,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
-import { calendarLink, calendarPreview, calendarRemove, calendarSend } from "../calendarSync";
+import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
 import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { guessKey, guessKind, isAttachable, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -520,12 +520,17 @@ export const rehearsalsImportSetlist = defineCommand({
 export const rehearsalsRemove = defineCommand({
   name: "rehearsals.remove",
   roles: ["admin"],
-  description: "Archive a rehearsal and detach its recordings.",
+  description: "Archive a rehearsal and detach its recordings. Takes its event off the band calendar (history.undoRun puts it back); if the calendar can't be reached, nothing is removed.",
   input: idInput,
-  run: (ctx, { id }) => run(ctx, async (w) => {
-    for (const f of await w.query("files", (q) => q.where("rehearsalId", "==", id))) await w.softDelete("files", f.id);
-    return w.softDelete("rehearsals", id);
-  }),
+  async run(ctx, { id }) {
+    // The event first; the rehearsal keeps calendarEventId so Undo can bring the event back.
+    const before = await db.get("rehearsals", id);
+    if (before && !before.deletedAt) await deleteEvent(ctx, before);
+    return run(ctx, async (w) => {
+      for (const f of await w.query("files", (q) => q.where("rehearsalId", "==", id))) await w.softDelete("files", f.id);
+      return w.softDelete("rehearsals", id);
+    });
+  },
 });
 
 export const rehearsalsCalendarPreview = defineCommand({
@@ -542,10 +547,11 @@ export const rehearsalsCalendarLink = defineCommand({
 });
 
 export const rehearsalsCalendar = defineCommand({
-  name: "rehearsals.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
+  name: "rehearsals.calendar", roles: ["admin", "mcp"], input: z.strictObject({ id: z.string().min(1), on: z.boolean(), restore: z.boolean().optional() }),
   description: "Send the rehearsal's event to the band's Google Calendar with invites to everyone coming (on:true: creates it, or updates the one there), or take it off (on:false). " +
-    "Saving a rehearsal never does this: show the person rehearsals.calendarPreview first. Written with the caller's own Google account.",
-  run: (ctx, i) => (i.on ? calendarSend(ctx, "rehearsals", i.id) : calendarRemove(ctx, "rehearsals", i.id)),
+    "Saving a rehearsal never does this: show the person rehearsals.calendarPreview first. Written with the caller's own Google account. " +
+    "If someone deleted the event in Calendar (the preview's deleted), on:true fails unless restore:true: ask the person before putting it back.",
+  run: (ctx, i) => (i.on ? calendarSend(ctx, "rehearsals", i.id, { restore: i.restore }) : calendarRemove(ctx, "rehearsals", i.id)),
 });
 
 export const musicCommands = [

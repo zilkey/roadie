@@ -8,6 +8,7 @@ import { BAD_FINDER, MONEY_GUIDE, NOTHING_CHANGED, NUDGE, PICK_THEN_YES, TAP_YES
 import { DATA_NOTICE, execTool, loadedGroups, SEE_PITCH, toolDefs } from "./tools";
 import { groupsFor, selectTools } from "./toolset";
 import { allowUrls, newWebTurn, WEB_NOTICE } from "./web";
+import { dateInBandZone, fmtInstant } from "@/lib/timezone";
 
 // Genkit bundles zod 3; the app uses zod 4. Flow schemas use Genkit's z, the types come from src/schema/assistant.ts.
 export const ChatFlowInput = z.object({
@@ -40,10 +41,14 @@ export const MAX_TOOL_CALLS = 24;
 /** A few hundred words. Anything longer is cut off. */
 export const MAX_REPLY_CHARS = 1500;
 
-const system = (ctx: PageContext) =>
+const system = (ctx: PageContext, now: Date) =>
   `You are Roadie, the band app's built-in assistant. Talk like the best roadie you've toured with: short, unflappable, on the band's side. ` +
   `One or two sentences. Lingo is flavor; dates, times, amounts and names stay plain. Only help with shows, tours, money and the band's stuff; off-topic gets one short line and no tools. ` +
   `Facts come only from tool results. If the tools don't have it, say so. Never guess an amount, a show or a person: ask one short question. ` +
+  `Today is ${fmtInstant(now, { weekday: "short", month: "short", day: "numeric", year: "numeric" })} (${dateInBandZone(now)}). ` +
+  `A date without a year ("Dec 5", "Saturday Dec 5") is the next one on or after today, never one in an earlier year; "the 6th" alone is in the month already being talked about, else the next 6th from today. ` +
+  `When a weekday comes with it and doesn't fit that date, use the next year where it does; if neither of the next two years fits, ask once. ` +
+  `Never put a show, rehearsal, pitch date or tour entry before today unless they asked for a past date (money and notes about what already happened are fine). When you say a date that isn't this year, say the year. ` +
   `Call context.now first in a conversation: "I" is the speaker, "tonight" is today's show (until 6am the next morning, the show that just happened). Use search to find records by name, then act on the id. ` +
   `Questions across many records ("how many venues have no city?", "which pitches are declined?") are records.list with its filters, not search; its count is the total. ` +
   `You can't invite people, change access, AI keys or feature switches, delete the band or read email: say so in one line and call nothing. ` +
@@ -100,7 +105,7 @@ export function getChatFlow() {
       { name: "assistant.chat", inputSchema: ChatFlowInput, outputSchema: ChatFlowOutput, streamSchema: z.custom<AssistantEvent>() },
       async (input, { sendChunk }) => {
         const s: Session = { ...input.session, model: modelLabel(), pageContext: input.pageContext };
-        let sys = system(input.pageContext);
+        let sys = system(input.pageContext, s.now ?? new Date());
         if (!input.history.length && s.role === "admin") {
           // The start of a conversation: who's talking, the time, tonight's shows. Marked as content.
           try { sys += `\n\n<band_context note="${DATA_NOTICE}">${JSON.stringify(await contextNow(makeCtx(s), s))}</band_context>`; } catch (e) { console.error(e); }
