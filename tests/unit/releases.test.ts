@@ -10,7 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { navFor } from "@/lib/nav";
 import { DEFAULT_SECTION_ORDER, defaultHidden } from "@/schema/sections";
 import { resolveRoute, routeForPath } from "@/lib/routes";
-import { guessReleaseKind, guessVersion, latestMix, mixLabel, sidesFor, sidesOf, trackProgress } from "@/lib/releases";
+import { guessReleaseKind, guessVersion, latestMix, mixLabel, sidesFor, sidesOf, spentByTrack, trackProgress } from "@/lib/releases";
 import { needsConfirm, summarize } from "@/server/assistant/policy";
 import { groupsFor } from "@/server/assistant/toolset";
 import { searchAll } from "@/server/assistant/context";
@@ -55,6 +55,16 @@ beforeEach(async () => {
     songs.push((await db.create(ctx, "songs", { title, lengthSec, status: "active" })).id);
   }
   templateId = (await cmd("setlistTemplates.create", { name: "Set", items: [{ type: "song", songId: songs[1] }, { type: "break" }, { type: "song", songId: songs[0] }, { type: "song", songId: songs[2] }] })).id;
+});
+
+test("spentByTrack: each track in order (nothing spent reads 0), then Whole release; removed lines skipped, a gone track's lines count as whole release", () => {
+  const tracks = [{ id: "t2", position: 2, title: "Low Light" }, { id: "t1", position: 1, title: "Opener" }];
+  const rows = spentByTrack(tracks, [
+    { amount: 30000, releaseTrackId: "t2" }, { amount: 5000, releaseTrackId: "t2" }, { amount: 180000 },
+    { amount: 999, releaseTrackId: "t1", deletedAt: "x" }, { amount: 700, releaseTrackId: "gone" },
+  ]);
+  assert.deepEqual(rows.map((r) => [r.key, r.label, r.out]), [["t1", "1 · Opener", 0], ["t2", "2 · Low Light", 35000], ["release", "Whole release", 180700]]);
+  assert.deepEqual(spentByTrack(tracks, [{ amount: 100, releaseTrackId: "t1" }]).map((r) => r.key), ["t1", "t2"]);
 });
 
 test("pure helpers: sides, progress, versions, kinds, the latest mix", () => {

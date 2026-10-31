@@ -41,6 +41,8 @@ export const Expense = entity({
   /** New writes use expenseCategory; the legacy ledger values (guarantee, door, merch, tips, venmo) survive on old docs until `npm run migrate:money` rewrites them. */
   category: z.union([expenseCategory, ledgerCategory]),
   what: z.string().min(1),
+  /** Details that don't belong in the title (invoice numbers, what a campaign was, how a split works); shown small under it. */
+  notes: z.string().optional(),
   /** Who was paid (or is owed): a vendor from contacts, a band member, a player, or just a name. Missing on expenses logged before vendors were tracked. */
   to: payoutTo.optional(),
   /** "We owe": a bill nobody has paid yet. expenses.markPaid clears it with the payer and the date. Missing = paid. */

@@ -179,7 +179,7 @@ function Admin() {
                   {recent.map((l) => (
                     <tr key={l.key} data-testid={`recent-${l.key}`}>
                       <td className="nw">{shortDate(l.date)}</td>
-                      <td><span className="font-bold">{l.showId ? <Link href={`/shows/${l.showId}`} data-testid={`recent-${l.key}-show`}>{l.title} ›</Link> : l.title}</span> <span className="s">· {l.meta}</span></td>
+                      <td><span className="font-bold">{l.showId ? <Link href={`/shows/${l.showId}`} data-testid={`recent-${l.key}-show`}>{l.title} ›</Link> : l.title}</span> <span className="s">· {l.meta}</span>{l.notes && <span className="s block" data-testid={`recent-${l.key}-notes`}>{l.notes}</span>}</td>
                       <td className="s">
                         <InlineValue testid={`recent-${l.key}-project`} label="Project" kind="select" value={projectOf(l, def?.id) ?? ""} options={projectOptions(projects.rows ?? [], projectOf(l, def?.id))}
                           canEdit={l.editable} error={error} onSave={async (v) => !!(await call(UPDATE_COMMAND[l.kind], { id: l.id, patch: { projectId: v } }))} />

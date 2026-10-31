@@ -29,7 +29,7 @@ export const RELEASE_TOPICS: HelpTopic[] = [
     title: "A release's Money tab",
     text: [
       "A release's money is its project's: every expense and income for the record lands on the project made with the release (kind Release, same name), so it also shows under Projects on the Money page.",
-      "\"Where it stands\" has Spent (expenses and payouts on the project), Earned (income, received or still owed) and Net so far. Spent by category and Earned by source break those down.",
+      "\"Where it stands\" has Spent (expenses and payouts on the project), Earned (income, received or still owed) and Net so far. Spent by category and Earned by source break those down, and Spent by song shows what went out for each track (money pinned to a track) with the rest as Whole release.",
       "\"All lines\" lists every record on the project, newest first: Date, Category, Track (when it was one track's), Details, Who and Amount, with a filter for Everything, Expenses, Income or Owed back. \"+ Money in\" and \"+ Money out\" are the same forms as on the Money page, opened with the release's project picked (Money in offers the record kinds: Streaming, Digital sales, CDs and vinyl, Pre-orders, Crowdfunding, Sync). Both get a Track field when the project is a release's: pick one of its tracks to pin the money to it (\"Whole release\" otherwise), and it shows in the Track column.",
     ].join("\n\n"),
     related: ["releasePage", "projects", "income", "expenses"],

@@ -25,6 +25,8 @@ const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("e
  */
 export interface LedgerLine {
   key: string; id: string; kind: "income" | "expense" | "payout"; date: string; title: string; name?: string; meta: string; amount: number; sign: 1 | -1; status: string; projectId?: string; showId?: string; editable: boolean;
+  /** An expense's notes, shown small under the title. */
+  notes?: string;
   markPaid?: MoneyDefaults["markPaid"];
 }
 
@@ -47,7 +49,7 @@ export function ledger(i: { income: readonly Income[]; expenses: readonly Expens
     const back = bill || x.payBack === false ? "" : x.paidBackAt ? `${who(x.paidBackBy ?? reimb.get(x.reimbursedBy ?? "")?.paidBy) || "the band"} paid ${who(x.userId) || "them"} back ${shortDate(x.paidBackAt)}` : `${who(x.userId) || "they"} ${who(x.userId) ? "is" : "are"} owed back`;
     out.push({
       key: `expense-${x.id}`, id: x.id, kind: "expense", date: x.date, projectId: x.projectId, showId: x.showId, amount: x.amount, sign: -1, editable: !x.paidBackAt,
-      title: x.what, name: x.what, meta: [x.to?.name, EXP(x.category), shortDate(x.date), bill ? "" : paidBy(x.userId), back].filter(Boolean).join(" · "),
+      title: x.what, name: x.what, ...(x.notes ? { notes: x.notes } : {}), meta: [x.to?.name, EXP(x.category), shortDate(x.date), bill ? "" : paidBy(x.userId), back].filter(Boolean).join(" · "),
       status: bill ? "We owe" : "Paid", ...(bill ? { markPaid: { kind: "expense" as const, id: x.id } } : {}),
     });
   }
@@ -201,6 +203,7 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
                           validate={(v) => (v.trim() ? null : "Needs a name.")} onSave={(v) => fix(l, { [NAME_FIELD[l.kind]]: v.trim() })} />
                       : l.title}
                   </div>
+                  {l.notes && <div className="s" data-testid={`${l.key}-notes`}>{l.notes}</div>}
                   <div className="s flex flex-wrap items-center gap-x-1">
                     <span>{l.meta} ·</span>
                     <InlineValue testid={`${l.key}-project`} label="Project" kind="select" value={cur} options={projectOptions(projects.rows ?? [], cur)} canEdit={canEdit} error={error}

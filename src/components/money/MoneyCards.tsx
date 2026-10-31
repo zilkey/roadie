@@ -228,6 +228,7 @@ export function MoneyOutCard({ context, day, splitEvenly: canSplit }: MoneyCardP
                       : e.payBack === false ? <span className="chip" data-testid={`expense-status-${e.id}`}>no pay back</span>
                       : e.paidBackAt ? <span className="chip g" data-testid={`expense-status-${e.id}`}>paid back {shortDate(e.paidBackAt)}</span>
                       : <span className="chip owed" data-testid={`expense-status-${e.id}`}>owed back</span>}
+                    {e.notes && <span className="s block" data-testid={`expense-notes-${e.id}`}>{e.notes}</span>}
                   </span>
                   <span className="flex flex-wrap items-center justify-end gap-2">
                     <b>{formatCents(e.amount)}</b>

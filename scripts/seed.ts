@@ -275,7 +275,7 @@ async function main() {
   await create("expenses", { userId: uid.david, date: "2026-10-24", amount: 14000, category: "lodging", what: "Motel deposit for the tour", projectId: tourProject });
   // The release's spend: studio time on the project, and one mix's revisions pinned to its track.
   await create("expenses", { userId: uid.jeff, date: "2026-09-14", amount: 180000, category: "recording", what: "3 days tracking", projectId: releaseProject, payBack: false });
-  await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 30000, category: "mixing", what: "Mix v2 revisions", projectId: releaseProject, releaseTrackId: trackIds[2], payBack: false });
+  await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 30000, category: "mixing", what: "Mix v2 revisions", notes: "Vocal up a hair in the last chorus", projectId: releaseProject, releaseTrackId: trackIds[2], payBack: false });
   // A vendor paid by an admin from her own account (nothing to pay back), and a bill nobody has paid yet.
   await create("expenses", { userId: uid.ingrid, date: "2026-10-03", amount: 6000, category: "space", what: "Room rental", to: { name: "Doghouse Studio" }, payBack: false, projectId: bandProject });
   await create("expenses", { userId: uid.jeff, date: "2026-10-20", amount: 23000, category: "space", what: "Video studio day", to: { name: "Video Studio Space" }, owed: true, payBack: false, projectId: bandProject });

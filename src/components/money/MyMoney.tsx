@@ -88,7 +88,7 @@ function MyExpense({ x, project, projects }: { x: Row<Expense>; project?: string
   return (
     <div className="card" data-testid={`expense-${x.id}`}>
       <div className="money-row" style={{ border: 0, padding: 0 }} data-testid={`my-expense-${x.id}`}>
-        <span><b>{x.what}</b><br /><span className="s">{[project, shortDate(x.date)].filter(Boolean).join(" · ")} · {CATEGORY_LABEL[x.category] ?? x.category}</span></span>
+        <span><b>{x.what}</b><br />{x.notes && <><span className="s" data-testid={`expense-notes-${x.id}`}>{x.notes}</span><br /></>}<span className="s">{[project, shortDate(x.date)].filter(Boolean).join(" · ")} · {CATEGORY_LABEL[x.category] ?? x.category}</span></span>
         <span className="grid justify-items-end gap-1"><span className="font-mono">{formatCents(x.amount)}</span>
           <span className={`chip ${paid && x.payBack !== false ? "g" : x.payBack === false ? "" : "owed"}`} data-testid={`expense-status-${x.id}`}>{status}</span></span>
       </div>

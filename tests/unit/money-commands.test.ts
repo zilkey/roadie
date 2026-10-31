@@ -168,6 +168,18 @@ test("expenses: default project, the show's project, admin on behalf, member ref
   assert.equal(lines[0].projectId, duo);
 });
 
+test("expenses: notes are optional details under the title; update sets them, null clears, blank is refused", async () => {
+  const a = await cmd("expenses.add", { amount: 162500, what: "Mixing 1/4 (Jeff)", notes: "8 songs, two $6,500 invoices", category: "mixing" });
+  assert.equal(((await db.get("expenses", a.id)) as any).notes, "8 songs, two $6,500 invoices");
+  const b = await cmd("expenses.add", { amount: 500, what: "Strings", category: "gear" });
+  assert.equal(((await db.get("expenses", b.id)) as any).notes, undefined);
+  await cmd("expenses.update", { id: b.id, patch: { notes: "  D'Addario 12s  " } });
+  assert.equal(((await db.get("expenses", b.id)) as any).notes, "D'Addario 12s");
+  await cmd("expenses.update", { id: b.id, patch: { notes: null } });
+  assert.equal(((await db.get("expenses", b.id)) as any).notes, undefined);
+  await assert.rejects(cmd("expenses.update", { id: b.id, patch: { notes: "   " } }));
+});
+
 test("expenses: a vendor (to) is resolved and named; an owed bill has no payer until markPaid names an admin", async () => {
   const s = await mkShow();
   const contact = (await db.create(ctx, "contacts", { name: "Doghouse Studio", emails: [], phones: [], matchKey: "doghouse" })).id;

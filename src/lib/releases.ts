@@ -102,3 +102,20 @@ export function releaseMeta(a: { releaseDate?: string }, tracks: readonly { leng
   const len = totalLength(tracks);
   return [`${n} track${n === 1 ? "" : "s"}`, len ? fmtLen(len) : null, a.releaseDate ? `${isReleased(a, today) ? "Released" : "Target release"} ${fmtDate(a.releaseDate)}` : null].filter(Boolean).join(" · ");
 }
+
+/**
+ * What went out for each track of a release, in track order, then everything not pinned to a track as "Whole release"
+ * (only when there is some). `out` is the release's expenses and payouts, paid or still owed, reimbursements already left
+ * out, so the rows add up to the release's Spent. A line pinned to a track that is no longer on the release counts as Whole release.
+ */
+export function spentByTrack(tracks: readonly { id: string; position: number; title: string }[], out: readonly { amount: number; releaseTrackId?: string; deletedAt?: unknown }[]) {
+  const per = new Map(tracks.map((t) => [t.id, 0]));
+  let whole = 0;
+  for (const x of out) {
+    if (x.deletedAt) continue;
+    if (x.releaseTrackId && per.has(x.releaseTrackId)) per.set(x.releaseTrackId, per.get(x.releaseTrackId)! + x.amount);
+    else whole += x.amount;
+  }
+  const rows = sortTracks(tracks).map((t) => ({ key: t.id, label: `${t.position} · ${t.title}`, in: 0, out: per.get(t.id)! }));
+  return whole ? [...rows, { key: "release", label: "Whole release", in: 0, out: whole }] : rows;
+}

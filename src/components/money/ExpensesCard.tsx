@@ -139,7 +139,8 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
                 {x.owed ? <span className="chip a" data-testid="expense-status">we owe</span>
                   : x.payBack === false ? <span className="chip" data-testid="expense-status">no pay back</span>
                   : x.paidBackAt ? <span className="chip g" data-testid="expense-status">paid back {shortDate(x.paidBackAt)}</span>
-                  : owesBack(x) ? <span className="chip owed" data-testid="expense-status">waiting</span> : null}</span>
+                  : owesBack(x) ? <span className="chip owed" data-testid="expense-status">waiting</span> : null}
+                {x.notes && <span className="s block" data-testid="expense-notes">{x.notes}</span>}</span>
               <span>{formatCents(x.amount)}</span>
             </div>
           ))}

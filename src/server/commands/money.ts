@@ -156,14 +156,14 @@ const GasIn = expenseGasBase.omit({ overridden: true });
 
 export const expensesAdd = defineCommand({
   name: "expenses.add", roles: ["admin", "member"],
-  description: "Add an expense: amount in cents, what it was for, category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
+  description: "Add an expense: amount in cents, what it was for (a short title), notes (optional: the details, shown under the title), category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Doghouse $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
     "A gas expense (category gas) carries the frozen estimate in `gas` and is always paid back. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
-    amount: z.number().int().positive(), what: z.string().trim().min(1), category: expenseCategory, date: dateStr.optional(),
+    amount: z.number().int().positive(), what: z.string().trim().min(1), notes: z.string().trim().min(1).optional(), category: expenseCategory, date: dateStr.optional(),
     showId: z.string().min(1).optional(), projectId: id1.optional(), rehearsalId: z.string().min(1).optional(), releaseTrackId: id1.optional(), gas: GasIn.optional(),
     tourId: id1.optional(), tourEntryId: id1.optional(),
     receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
@@ -285,9 +285,9 @@ export const expensesEstimateGas = defineCommand({
 
 export const expensesUpdate = defineCommand({
   name: "expenses.update", roles: ["admin", "member"],
-  description: "Fix an expense until it's paid back: what, amount, payBack, category (gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project), tourId / tourEntryId (null clears). Admins may also move it to another payer (userId). Members only their own.",
+  description: "Fix an expense until it's paid back: what, notes (null clears), amount, payBack, category (gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project), tourId / tourEntryId (null clears). Admins may also move it to another payer (userId). Members only their own.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
-    what: z.string().trim().min(1).optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
+    what: z.string().trim().min(1).optional(), notes: z.string().trim().min(1).nullable().optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
     receipt: driveRef.nullable().optional(), showId: z.string().min(1).nullable().optional(), category: expenseCategory.optional(), projectId: id1.optional(),
     releaseTrackId: id1.nullable().optional(), tourId: id1.nullable().optional(), tourEntryId: id1.nullable().optional(),
     to: PayoutTo.nullable().optional(), userId: id1.optional(),

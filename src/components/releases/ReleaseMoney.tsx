@@ -2,14 +2,15 @@
 import { HBars } from "@/components/money/charts";
 import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, byCategory, defaultProject, formatCents, moneyRows, projectOf, projectTotals } from "@/lib/money";
+import { CATEGORY_LABEL, INCOME_LABEL, byCategory, countsAsPaidOut, defaultProject, formatCents, moneyRows, projectOf, projectTotals } from "@/lib/money";
+import { spentByTrack } from "@/lib/releases";
 import type { Expense, Income, Payout, Project } from "@/schema";
 import type { ReleaseData } from "./common";
 
 /** "+$1,180.00", "−$3,032.00", "$0.00". */
 export const signed = (c: number) => `${c < 0 ? "−" : c > 0 ? "+" : ""}${formatCents(Math.abs(c))}`;
 
-/** The release's money: where it stands (spent, earned, net, by category), then the shared Money in and Money out cards on the release (tracks' lines included, tagged). Admins only. */
+/** The release's money: where it stands (spent, earned, net, by category, by song), then the shared Money in and Money out cards on the release (tracks' lines included, tagged). Admins only. */
 export function ReleaseMoney({ data }: { data: ReleaseData }) {
   if (!data.admin || !data.release) return null;
   return <View data={data} />;
@@ -34,6 +35,8 @@ function View({ data }: { data: ReleaseData }) {
 
   const spentCats = byCategory(moneyRows({ income: [], expenses: exp, payouts: pay })).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }));
   const earnedCats = byCategory(moneyRows({ income: inc, expenses: [], payouts: [] })).map((r) => ({ ...r, label: INCOME_LABEL[r.key] ?? r.key }));
+  // Like the Spent tile: everything out, paid or still owed, so the songs and Whole release add up to it.
+  const bySong = spentByTrack(data.tracks, [...exp, ...pay.filter(countsAsPaidOut)]);
 
   return (
     <div className="grid gap-5" data-testid="release-money">
@@ -65,6 +68,8 @@ function View({ data }: { data: ReleaseData }) {
           <span className="s">Streaming and sync show up here once statements come in.</span>
         </div>
       </div>
+
+      {data.tracks.length > 0 && <HBars title="Spent by song" testid="spent-by-song" spent rows={bySong} />}
 
       <MoneyInCard context={context} />
       <MoneyOutCard context={context} />

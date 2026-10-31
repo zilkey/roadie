@@ -195,7 +195,15 @@ test("the Money tab: spent, earned and net, the Money in and Money out cards (li
   await expect(page.getByTestId("tile-net")).toContainText("−$1,516.00");
   const moneyIn = page.getByTestId("income");
   const moneyOut = page.getByTestId("paid-out");
-  await expect(moneyOut.locator('[data-testid^="expense-row-"]', { hasText: "Mix v2 revisions" })).toContainText("3 · Low Light");
+  const mixRow = moneyOut.locator('[data-testid^="expense-row-"]', { hasText: "Mix v2 revisions" });
+  await expect(mixRow).toContainText("3 · Low Light");
+  // notes sit in small text under the title
+  await expect(mixRow.locator('[data-testid^="expense-notes-"]')).toHaveText("Vocal up a hair in the last chorus");
+  // Spent by song: every track in order, the mix revisions on Low Light, the studio days on the whole release
+  const bySong = page.getByTestId("spent-by-song");
+  await expect(bySong.locator('[data-testid^="spent-by-song-"]')).toHaveCount(11);
+  await expect(bySong.locator('[data-testid^="spent-by-song-"]', { hasText: "3 · Low Light" })).toContainText("$300.00");
+  await expect(page.getByTestId("spent-by-song-release")).toContainText("$1,800.00");
   await expect(moneyIn.locator('[data-testid^="income-row-"]')).toHaveCount(2);
   // + Money in is the Money page's form on the release's project
   await moneyIn.getByTestId("money-in-open").click();
@@ -226,6 +234,7 @@ test("the Money tab: spent, earned and net, the Money in and Money out cards (li
   await expect(out).toBeHidden();
   await expect(moneyOut.locator('[data-testid^="payout-row-"]', { hasText: "Ava Strings" })).toBeVisible();
   await expect(page.getByTestId("release-spent-amount")).toHaveText("$2,300.00");
+  await expect(page.getByTestId("spent-by-song-release")).toContainText("$2,000.00");
 
   // Files: the cover sits under Artwork; an upload lands in the release folder
   await page.getByTestId("release-tab-files").click();
