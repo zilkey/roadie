@@ -10,7 +10,6 @@ export const StatSnapshot = entity({
   monthlyListeners: z.number().int().optional(),
   streams: z.number().int().optional(),
   popularity: z.number().int().min(0).max(100).optional(),
-  topTracks: z.array(z.strictObject({ title: z.string(), streams: z.number().int() })).optional(),
   importFile: driveRef.optional(),
 });
 export const StatSnapshotInput = StatSnapshot.omit(serverMask);

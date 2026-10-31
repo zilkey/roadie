@@ -124,7 +124,7 @@ test("bandsintown: create, update, list, delete", async () => {
   await assert.rejects(b.create({ datetime: "x" } as never), /400/);
 });
 
-test("spotify: daily history with drift, today's numbers, top tracks", async () => {
+test("spotify: daily history with drift, today's numbers", async () => {
   const s = spotifyClient(urls["fake-spotify"]);
   const today = await s.artist();
   assert.equal(today.date, new Date().toISOString().slice(0, 10));
@@ -134,6 +134,4 @@ test("spotify: daily history with drift, today's numbers, top tracks", async () 
   assert.ok(new Set(hist.map((h) => h.followers)).size > 20, "followers drift");
   assert.ok(hist.every((h) => h.popularity >= 0 && h.popularity <= 100));
   assert.equal((await s.history({ from: hist[5].date, to: hist[7].date })).length, 3);
-  const top = await s.topTracks();
-  assert.equal(top[0].name, "Glass Coast");
 });

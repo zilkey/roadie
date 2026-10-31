@@ -106,7 +106,7 @@ Done for Google: each of `gmail.ts`, `drive.ts`, `calendar.ts` holds the fake's 
 - [x] `src/server/integrations/drive.ts`: `files.list/get/copy`, `permissions.list/create` (quiet, or with Drive's invite email for addresses without a Google account). "Anyone with the link" and domain sharing count in `missingFor` (`src/server/music.ts`); Google Groups can't be expanded.
 - [x] `src/server/integrations/calendar.ts`: `events.insert/patch/delete/get/list` with `sendUpdates=all` on the band account's primary calendar. Patches keep attendees' answers and bring back an event someone deleted in Calendar.
 - [ ] `src/server/integrations/bandsintown.ts`: see step 7 (needs approval; the public API is read-only).
-- [ ] `src/server/integrations/spotify.ts`: Web API client-credentials flow, `GET /v1/artists/{id}` (followers, popularity) and top tracks (market US). No history endpoint exists.
+- [ ] `src/server/integrations/spotify.ts`: Web API client-credentials flow, `GET /v1/artists/{id}` (followers, popularity). No history endpoint exists.
 - [ ] Optional hardening: log the sent email before/with the send so a log failure can't lose it (`pitches.sendEmail` in `src/server/commands/booking.ts`).
 
 ## 7. Bandsintown and Spotify credentials

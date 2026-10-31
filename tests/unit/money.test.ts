@@ -267,7 +267,7 @@ test("stats: daily pull is idempotent, CSV import writes snapshots, current + te
   const p1 = await cmd("stats.pull", {});
   assert.deepEqual(p1.written, [`spotifyApi_${p1.date}`]);
   const snap = (await db.get("statSnapshots", `spotifyApi_${p1.date}`)) as any;
-  assert.equal(snap.source, "spotifyApi"); assert.ok(snap.followers > 0); assert.ok(snap.topTracks.length > 0);
+  assert.equal(snap.source, "spotifyApi"); assert.ok(snap.followers > 0);
   const p2 = await cmd("stats.pull", {});
   assert.deepEqual(p2.skipped, [`spotifyApi_${p1.date}`]);
   await assert.rejects(db.update(ctx, "statSnapshots", snap.id, { followers: 1 }), (e: AppError) => e.code === "immutable");

@@ -22,11 +22,8 @@ async function writeSnapshots(ctx: Ctx, snaps: Record<string, unknown>[]) {
 
 /** The daily Spotify pull. Also run by `npm run stats:pull`. */
 export async function pullSpotify(ctx: Ctx) {
-  const [a, tracks] = await Promise.all([spotifyClient().artist(), spotifyClient().topTracks().catch(() => [])]);
-  const r = await writeSnapshots(ctx, [{
-    source: "spotifyApi", date: a.date, followers: a.followers, popularity: a.popularity,
-    ...(tracks.length ? { topTracks: tracks.map((t) => ({ title: t.name, streams: t.plays })) } : {}),
-  }]);
+  const a = await spotifyClient().artist();
+  const r = await writeSnapshots(ctx, [{ source: "spotifyApi", date: a.date, followers: a.followers, popularity: a.popularity }]);
   return { date: a.date, followers: a.followers, popularity: a.popularity, ...r };
 }
 
