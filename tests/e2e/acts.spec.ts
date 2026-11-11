@@ -20,6 +20,12 @@ async function openVenue(page: Page, search: string) {
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 
+/** The Acts tab pages by 2 in e2e (NEXT_PUBLIC_ACTS_PAGE): "Load more" until every listed act is on the page. */
+async function loadAll(page: Page) {
+  for (let i = 0; i < 50 && (await page.getByTestId("acts-more").count()); i++) await page.getByTestId("acts-more").click();
+  await expect(page.getByTestId("acts-more")).toHaveCount(0);
+}
+
 test.describe.configure({ mode: "serial" });
 const href: Record<string, string> = {};
 
@@ -121,10 +127,20 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
   await expect(page.getByTestId(`act-seen-${sup}`)).toContainText("Bluebird Room (opening)");
 
+  // All acts is more than a page: 2 rows, then "Load more (N left)" until they're all there
   await page.getByTestId("acts-filter-all").click();
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(2);
+  await expect(page.getByTestId("acts-more")).toContainText(/Load more \(\d+ left\)/);
+  await page.getByTestId("acts-more").click();
+  await expect.poll(() => page.getByTestId(/^act-row-/).count()).toBeGreaterThan(2);
+  await loadAll(page);
   await expect(page.getByTestId(`act-row-${sup}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
+  // a new filter starts back at the first page; the search looks through every act, not just the page
+  await page.getByTestId("acts-filter-opened").click();
+  await page.getByTestId("acts-filter-all").click();
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(2);
 
   // the star on a row shortlists it
   await page.getByTestId(`act-star-${head}`).click();
@@ -137,6 +153,7 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   // search narrows the list
   await page.getByTestId("acts-filter-all").click();
   await page.getByTestId("acts-q").fill("lone");
+  await expect(page.getByTestId("acts-more")).toHaveCount(0);
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${sup}`)).toHaveCount(0);
   await page.getByTestId("acts-q").fill("zzz nobody");
@@ -148,6 +165,7 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId("act-rel-hint")).toHaveText("Hidden from the Acts list unless you ask for it.");
   await page.goto(A("/booking/acts"));
   await page.getByTestId("acts-filter-all").click();
+  await loadAll(page);
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toHaveCount(0);
   await page.getByTestId("acts-q").fill("lone");

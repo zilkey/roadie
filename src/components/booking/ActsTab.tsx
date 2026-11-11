@@ -5,6 +5,10 @@
  *
  * The acts and this band's take on them are live (useCollection); what the calendars say about each (rooms, next show, opened at our
  * rooms, on tour) comes from acts.find, which reads every venue's shows on the server. It is fetched again when the acts change.
+ *
+ * Paging: the filters, city and search run over every act on the client, then the table shows the first ACTS_PAGE of them and
+ * "Load more" adds a page (the Festivals tab's button, the Shows list's client-side slice). A new filter, city or search starts back
+ * at the first page, in its own change handler: no effect sets the page, so a filter can't set off a run of re-renders.
  */
 import { useEffect, useMemo, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
@@ -38,6 +42,8 @@ export function ActThumb({ src, size = 40 }: { src?: string; size?: number }) {
   return <span style={box} className="inline-flex shrink-0 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--muted)]"><NoteIcon size={Math.round(size * 0.45)} /></span>;
 }
 
+/** Acts per page. e2e sets a small one (NEXT_PUBLIC_ACTS_PAGE) so its few fixture acts span pages. */
+export const ACTS_PAGE = Number(process.env.NEXT_PUBLIC_ACTS_PAGE) || 50;
 const ROOMS_SHOWN = 3;
 const roleWord = (roles: ("headliner" | "support")[]) => (roles.length === 2 ? "headlining, opening" : roles[0] === "support" ? "opening" : "headlining");
 
@@ -51,9 +57,14 @@ export function ActsTab() {
   const shortlistLookup = useCommand();
   const [lookupStatus, setLookupStatus] = useState("");
   const [found, setFound] = useState<Map<string, FoundRow> | null>(null);
-  const [filter, setFilter] = useState<ActFilter>("shortlist");
-  const [city, setCity] = useState("");
-  const [q, setQ] = useState("");
+  const [filter, setFilterState] = useState<ActFilter>("shortlist");
+  const [city, setCityState] = useState("");
+  const [q, setQState] = useState("");
+  const [shown, setShown] = useState(ACTS_PAGE);
+  // Each change starts back at the first page.
+  const setFilter = (v: ActFilter) => { setFilterState(v); setShown(ACTS_PAGE); };
+  const setCity = (v: string) => { setCityState(v); setShown(ACTS_PAGE); };
+  const setQ = (v: string) => { setQState(v); setShown(ACTS_PAGE); };
 
   // What the calendars say about every act: fetched once the acts load, and again when one is added or renamed.
   const actsVersion = (acts.rows ?? []).length;
@@ -72,6 +83,8 @@ export function ActsTab() {
     return listed.sort((x, y) => (found?.get(x.id)?.next?.date ?? "9999").localeCompare(found?.get(y.id)?.next?.date ?? "9999") || x.name.localeCompare(y.name));
   }, [acts.rows, found, takes, filter, city, q]);
   const loading = !acts.rows || !notes.rows || (!found && !error);
+  const page = rows.slice(0, shown);
+  const left = rows.length - page.length;
 
   const toLookUp = filter === "shortlist" && rows.some((a) => !a.lookedUpAt && !a.lookupCandidates?.length);
   const lookUpShortlist = async () => {
@@ -127,7 +140,7 @@ export function ActsTab() {
               <th>Our take</th>
             </tr></thead>
             <tbody>
-              {rows.map((a) => {
+              {page.map((a) => {
                 const f = found?.get(a.id), take = takes.get(a.id), on = !!take?.shortlist;
                 const rooms = f?.rooms ?? [];
                 return (
@@ -164,6 +177,11 @@ export function ActsTab() {
             </tbody>
           </table>
         </div>
+      )}
+      {!loading && left > 0 && (
+        <button type="button" className="btn ghost justify-self-center" onClick={() => setShown((n) => n + ACTS_PAGE)} data-testid="acts-more">
+          Load more ({left} left)
+        </button>
       )}
       <p className="s m-0" data-testid="table-caption">Every act seen on a venue calendar, plus any you add. &quot;Opened at our rooms&quot; means they played support at a venue on our list. &quot;On tour&quot; means 2+ Colorado dates within a few weeks.</p>
     </div>

@@ -62,6 +62,8 @@ export default defineConfig({
         VENUE_EVENTS_FIXTURES: path.join(process.cwd(), "fixtures", "calendars"),
         // Booking's Venue calendars tab pages by 2 here, so the three fixture shows span two pages.
         NEXT_PUBLIC_VENUE_CALENDARS_PAGE: "2",
+        // The Acts tab (#77) pages by 2 here too, so "All acts" needs "Load more" for the fixture's acts.
+        NEXT_PUBLIC_ACTS_PAGE: "2",
         // Real Google set up in .env.development.local must not reach e2e: an empty value beats the file.
         GOOGLE_OAUTH_CLIENT_ID: "",
       },
