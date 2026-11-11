@@ -9,11 +9,13 @@
  * it back in `Mcp-Session-Id`; a forged or foreign id fails the signature and gets 404, which tells the client to
  * initialize again.
  */
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { authenticateToken, bearerOf, mcpCtx } from "./auth";
 import { createMcpServer } from "./tools";
+import { resourceMetadataUrl } from "./oauth";
+import { sessionSecret } from "./secret";
 import { newRunId } from "@/server/ctx";
 import { AppError } from "@/server/errors";
 
@@ -23,17 +25,6 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 const rpcError = (status: number, message: string) => json(status, { jsonrpc: "2.0", error: { code: -32000, message }, id: null });
 
-/**
- * Production must set MCP_SESSION_SECRET (an App Hosting secret) so every instance signs the same way. Dev and tests run
- * one process against the emulators and get a random one.
- */
-let fallbackSecret: string | undefined;
-function sessionSecret(): string {
-  if (process.env.MCP_SESSION_SECRET) return process.env.MCP_SESSION_SECRET;
-  const realProject = !!process.env.GCLOUD_PROJECT && !process.env.GCLOUD_PROJECT.startsWith("demo-");
-  if (realProject) throw new Error("MCP_SESSION_SECRET is not set: MCP sessions can't be signed. Add it as an App Hosting secret (docs/MCP.md).");
-  return (fallbackSecret ??= randomBytes(32).toString("base64url"));
-}
 const sign = (runId: string, tokenHash: string) => createHmac("sha256", sessionSecret()).update(`${runId}:${tokenHash}`).digest("base64url");
 export const sessionIdFor = (runId: string, tokenHash: string) => `${runId}.${sign(runId, tokenHash)}`;
 /** The runId a session id stands for, if it was issued to this token; otherwise undefined. */
@@ -55,7 +46,8 @@ export async function handleMcpRequest(req: Request): Promise<Response> {
     let id;
     try { id = await authenticateToken(raw); }
     catch (e) {
-      if (e instanceof AppError) return json(e.status, e.toJSON(), { "WWW-Authenticate": "Bearer" });
+      // The resource_metadata pointer is how Claude's connectors find the OAuth sign-in (mcp/oauth.ts).
+      if (e instanceof AppError) return json(e.status, e.toJSON(), { "WWW-Authenticate": e.status === 401 ? `Bearer resource_metadata="${resourceMetadataUrl()}"` : "Bearer" });
       throw e;
     }
 

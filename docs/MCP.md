@@ -23,7 +23,11 @@ npx firebase apphosting:secrets:grantaccess MCP_SESSION_SECRET --backend roadie-
 
 There is also a stdio entry for Claude Code on your own machine (`npm run mcp:stdio`, key in `MCP_TOKEN`). It points at the emulators by default; for the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`.
 
-## 3. Connect Claude Code
+## 3. Connect the Claude apps (claude.ai, desktop, iPhone/Android)
+
+Settings > Connectors > Add custom connector, URL `https://app.myroadie.online/mcp`. These apps can't send a header, so they sign in with OAuth (`mcp/oauth.ts`): the 401 from `/mcp` points at `/.well-known/oauth-protected-resource/mcp`, which names the app as the authorization server (`/.well-known/oauth-authorization-server`, `/oauth/register`, `/oauth/authorize`, `/oauth/token`). The person pastes their `btk_` key on the `/oauth/authorize` page and the access token Claude gets back is that key, so revoking it works exactly as with Claude Code. Client ids, codes and refresh tokens are sealed with `MCP_SESSION_SECRET`; nothing is stored.
+
+## 4. Connect Claude Code
 
 HTTP (one shared server, many clients):
 

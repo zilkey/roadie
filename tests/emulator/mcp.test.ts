@@ -15,6 +15,8 @@ import { hashToken } from "@/server/availability";
 import { authenticateToken } from "../../mcp/auth";
 import { callTool, toolList } from "../../mcp/tools";
 import { handleMcpRequest, sessionIdFor, SESSION_HEADER } from "../../mcp/web";
+import { authorizationServerMetadata, authorize, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
+import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -229,7 +231,7 @@ test("HTTP: bearer auth, one runId per session, revoking a key stops a live sess
   const { token, id } = await newKey();
   const bad = await post({}, {});
   assert.equal(bad.status, 401);
-  assert.equal(bad.headers.get("www-authenticate"), "Bearer");
+  assert.equal(bad.headers.get("www-authenticate"), `Bearer resource_metadata="${resourceMetadataUrl()}"`, "401s point at the OAuth metadata");
 
   const client = await connect(token);
   const tools = await client.listTools();
@@ -388,4 +390,126 @@ test("read tools: search, follow-ups, availability, missing files, Bandsintown r
   assert.equal(typeof rec.createdAt, "string", "timestamps are ISO strings");
   const notReadable = await callTool("records.list", { kind: "users" }, async () => ctx);
   assert.equal(parse(notReadable).error.code, "invalid_input");
+});
+
+// ---------- OAuth (Claude's "Add custom connector") ----------
+
+/** The app's routes for the OAuth flow, served in-process like /mcp above. APP_URL is http://app.test for these tests. */
+const routes: Record<string, (req: Request) => Response | Promise<Response>> = {
+  "/mcp": handleMcpRequest,
+  "/.well-known/oauth-protected-resource": protectedResourceMetadata,
+  "/.well-known/oauth-protected-resource/mcp": protectedResourceMetadata,
+  "/.well-known/oauth-authorization-server": authorizationServerMetadata,
+  "/oauth/register": register,
+  "/oauth/authorize": authorize,
+  "/oauth/token": tokenEndpoint,
+};
+const app: typeof fetch = async (input, init) => {
+  const req = new Request(input, init);
+  const h = routes[new URL(req.url).pathname];
+  return h ? h(req) : new Response("not found", { status: 404 });
+};
+const REDIRECT = "https://claude.example/api/mcp/auth_callback";
+
+/** What Claude keeps between steps: registration, PKCE verifier, tokens; and where it sent the browser. */
+function claudeLike() {
+  const store: { client?: any; verifier?: string; tokens?: any; authUrl?: URL } = {};
+  const provider: OAuthClientProvider = {
+    get redirectUrl() { return REDIRECT; },
+    get clientMetadata() { return { client_name: "Claude", redirect_uris: [REDIRECT], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }; },
+    state: () => "st4te",
+    clientInformation: () => store.client,
+    saveClientInformation: (c) => { store.client = c; },
+    tokens: () => store.tokens,
+    saveTokens: (t) => { store.tokens = t; },
+    redirectToAuthorization: (u) => { store.authUrl = u; },
+    saveCodeVerifier: (v) => { store.verifier = v; },
+    codeVerifier: () => store.verifier!,
+  };
+  return { store, provider };
+}
+/** The person on our sign-in page: open it, paste a key, press Connect. Returns the redirect back to Claude. */
+async function signIn(authUrl: URL, key: string) {
+  const page = await app(authUrl);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /Connect Roadie to Claude/);
+  const form = new FormData();
+  for (const m of html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)) form.set(m[1], m[2].replace(/&amp;/g, "&").replace(/&quot;/g, '"'));
+  form.set("key", key);
+  return app("http://app.test/oauth/authorize", { method: "POST", body: form, redirect: "manual" });
+}
+
+test("OAuth: Claude's connector discovers sign-in, the person pastes their key, and /mcp works with the token", async (t) => {
+  const prev = process.env.APP_URL;
+  process.env.APP_URL = "http://app.test";
+  t.after(() => { if (prev === undefined) delete process.env.APP_URL; else process.env.APP_URL = prev; });
+  const { token: key } = await newKey();
+  const { store, provider } = claudeLike();
+
+  // First connect: 401 -> metadata -> registration -> sent to our authorize page.
+  const first = new StreamableHTTPClientTransport(new URL(URL_), { fetch: app, authProvider: provider });
+  await assert.rejects(new Client({ name: "claude", version: "1" }).connect(first), UnauthorizedError);
+  assert.ok(store.client?.client_id, "registered");
+  assert.equal(store.authUrl?.origin + store.authUrl!.pathname, "http://app.test/oauth/authorize");
+  assert.equal(store.authUrl!.searchParams.get("code_challenge_method"), "S256");
+
+  // A wrong key stays on the page with a message; Cancel goes back to Claude with access_denied.
+  const wrong = await signIn(store.authUrl!, "btk_wrong");
+  assert.equal(wrong.status, 401);
+  assert.match(await wrong.text(), /didn&#39;t work/);
+  const cancelForm = new FormData();
+  for (const [k, v] of store.authUrl!.searchParams) cancelForm.set(k, v);
+  cancelForm.set("cancel", "1");
+  const cancelled = await app("http://app.test/oauth/authorize", { method: "POST", body: cancelForm, redirect: "manual" });
+  assert.equal(new URL(cancelled.headers.get("location")!).searchParams.get("error"), "access_denied");
+
+  const back = await signIn(store.authUrl!, key);
+  assert.equal(back.status, 302);
+  const to = new URL(back.headers.get("location")!);
+  assert.equal(to.origin + to.pathname, REDIRECT);
+  assert.equal(to.searchParams.get("state"), "st4te");
+  const code = to.searchParams.get("code")!;
+  assert.equal(code.includes(key), false, "the key never travels in the clear");
+
+  await first.finishAuth(code);
+  assert.equal(store.tokens.access_token, key, "the bearer is the person's Roadie key");
+  assert.ok(store.tokens.refresh_token);
+  const client = new Client({ name: "claude", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(URL_), { fetch: app, authProvider: provider }));
+  assert.deepEqual((await client.listTools()).tools.map((x) => x.name).sort(), EXPECTED);
+  await client.close().catch(() => {});
+
+  // The code can't be used with another verifier, and refresh hands back the key while it is still good.
+  const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
+  const stolen = await tokenReq({ grant_type: "authorization_code", code, code_verifier: "not-the-verifier", redirect_uri: REDIRECT, client_id: store.client.client_id });
+  assert.equal((await stolen.json()).error, "invalid_grant");
+  const refreshed = await tokenReq({ grant_type: "refresh_token", refresh_token: store.tokens.refresh_token, client_id: store.client.client_id });
+  assert.equal((await refreshed.json()).access_token, key);
+});
+
+test("OAuth: unknown clients and return addresses get a page, not a redirect; expired codes and revoked keys are refused", async () => {
+  const { token: key, id } = await newKey();
+  const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT] }) })).json();
+  const badRegs = [["javascript:alert(1)"], ["http://evil.example/cb"], []];
+  for (const redirect_uris of badRegs) {
+    const r = await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris }) });
+    assert.equal(r.status, 400, JSON.stringify(redirect_uris));
+  }
+  const q = (p: Record<string, string>) => `http://app.test/oauth/authorize?${new URLSearchParams({ response_type: "code", code_challenge: "x", code_challenge_method: "S256", ...p })}`;
+  assert.equal((await app(q({ client_id: "made-up", redirect_uri: REDIRECT }), { redirect: "manual" })).status, 400);
+  assert.equal((await app(q({ client_id: reg.client_id, redirect_uri: "https://evil.example/cb" }), { redirect: "manual" })).status, 400);
+  const noPkce = await app(`http://app.test/oauth/authorize?${new URLSearchParams({ response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT })}`, { redirect: "manual" });
+  assert.equal(new URL(noPkce.headers.get("location")!).searchParams.get("error"), "invalid_request");
+
+  const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
+  const verifier = "v".repeat(50);
+  const challenge = (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url");
+  const expired = seal({ t: "code", k: key, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() - 1 });
+  assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: expired, code_verifier: verifier })).json()).error, "invalid_grant");
+  const good = seal({ t: "code", k: key, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() + 60_000 });
+  const refresh = seal({ t: "refresh", k: key, c: reg.client_id });
+  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
+  assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: good, code_verifier: verifier })).json()).error, "invalid_grant");
+  assert.equal((await (await tokenReq({ grant_type: "refresh_token", refresh_token: refresh })).json()).error, "invalid_grant");
 });
