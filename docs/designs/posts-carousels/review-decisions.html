@@ -188,12 +188,16 @@ code { font: 13px var(--mono); background: var(--accent-soft); padding: 1px 5px;
       el("span", { class: "where", text: [f.stage, f.scope].filter(Boolean).join(" · ") })));
     if (f.summary) c.append(el("p", { class: "body", text: f.summary }));
     if (f.recommendation) {
-      const r = el("p", { class: "rec" }); r.append(el("b", { text: "Suggested change: " }), document.createTextNode(f.recommendation)); c.append(r);
+      const r = el("p", { class: "rec" }); r.append(el("b", { text: "Reviewers suggest: " }), document.createTextNode(f.recommendation)); c.append(r);
     }
+    if (f.from) c.append(el("p", { class: "where", text: "Raised by: " + f.from }));
     const fs = el("fieldset", { style: "border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:8px" });
     fs.append(el("legend", { class: "label", text: "Your call" }));
     const row = el("div", { class: "choices" });
-    CHOICES.forEach(([val, label]) => {
+    const opts = Array.isArray(f.options) && f.options.length
+      ? f.options.map(o => [o.value, o.label])
+      : CHOICES;
+    opts.forEach(([val, label]) => {
       const id = `c-${f.id}-${val}`;
       const input = el("input", { type: "radio", name: "c-" + f.id, id, value: val });
       if (chosen === val) input.checked = true;
