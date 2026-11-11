@@ -1,11 +1,16 @@
 "use client";
 /**
  * "Find their team" on an act's Contacts card: looks for the act's booking agent, manager, publicist and label on its website and
- * a Google search (acts.findTeam), and lists who it found. Nothing is saved until Add, which makes them a contact linked to the act.
+ * a Google search (acts.findTeam), then searches for each person's own email and LinkedIn, and lists who it found. Nothing is saved
+ * until Add, which makes them a contact linked to the act, with a note on how they were found. Someone already in contacts links to
+ * their page, and "Add their info" fills in what the search found that the contact doesn't have yet.
  */
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
-import { TEAM_ROLE_LABEL, teamContactInput, teamSearchUrl, type TeamPerson, type TeamResult } from "@/lib/acts";
+import Link from "@/lib/artist";
+import { TEAM_ROLE_LABEL, teamContactInput, teamContactPatch, teamSearchUrl, type TeamPerson, type TeamResult } from "@/lib/acts";
+import { todayStr } from "@/lib/booking";
+import { ContactLinks, hrefFor, type Noted } from "@/components/booking/common";
 import type { Contact } from "@/schema";
 
 import type { Row } from "@/lib/firestore-hooks";
@@ -25,15 +30,16 @@ export function FindTeamButton({ busy, onClick }: { busy: boolean; onClick(): vo
 export function TeamFindings({ result, actId, actName, hasWebsite, linked, onClose }: {
   result: TeamResult; actId: string; actName: string; hasWebsite: boolean;
   /** The act's linked contacts, so someone already added says so. */
-  linked: Row<Contact>[]; onClose(): void;
+  linked: Noted<Row<Contact>>[]; onClose(): void;
 }) {
   const { call, error, busy } = useCommand();
-  const [added, setAdded] = useState<Set<number>>(new Set());
-  const isLinked = (p: TeamPerson) => linked.some((c) => (p.email && c.emails.includes(p.email)) || (p.name && c.name.toLowerCase() === p.name.toLowerCase()));
+  const [added, setAdded] = useState<Map<number, string>>(new Map());
+  const linkedOf = (p: TeamPerson) => linked.find((c) => (p.email && c.emails.includes(p.email)) || (p.name && c.name.toLowerCase() === p.name.toLowerCase()));
   const add = async (p: TeamPerson, i: number) => {
-    const r = await call("contacts.create", { ...teamContactInput(p, actName), attachTo: { kind: "acts", id: actId } });
-    if (r) setAdded((s) => new Set(s).add(i));
+    const r = await call<{ id: string }>("contacts.create", { ...teamContactInput(p, actName, todayStr()), attachTo: { kind: "acts", id: actId } });
+    if (r) setAdded((s) => new Map(s).set(i, r.id));
   };
+  const addInfo = (c: Noted<Row<Contact>>, patch: Record<string, unknown>) => call("contacts.update", { id: c.id, patch });
   const where = `${result.read.length ? `${result.read.length} page${result.read.length === 1 ? "" : "s"}` : ""}${result.read.length && result.searched ? " and " : ""}${result.searched ? "a Google search" : ""}`;
 
   return (
@@ -52,21 +58,34 @@ export function TeamFindings({ result, actId, actName, hasWebsite, linked, onClo
       </div>
       <ErrorBox error={error} />
       {result.people.map((p, i) => {
-        const done = added.has(i) || isLinked(p);
+        const c = linkedOf(p);
+        const contactId = c?.id ?? added.get(i);
+        const patch = c && teamContactPatch(p, c, actName, todayStr());
         return (
           <div key={`${p.email ?? p.name}-${i}`} className="flex flex-wrap items-center gap-3" data-testid={`act-team-person-${i}`}>
             <span className="grid min-w-0 flex-[1_1_240px] gap-0.5">
               <span className="flex flex-wrap items-baseline gap-x-2">
-                <b>{p.name ?? p.email}</b>
+                {contactId
+                  ? <Link href={hrefFor("contact", contactId)} className="font-bold text-[var(--accent-text)] hover:underline" data-testid={`act-team-link-${i}`}>{p.name ?? p.email}</Link>
+                  : <b>{p.name ?? p.email}</b>}
                 <span className="chip">{TEAM_ROLE_LABEL[p.role]}</span>
                 {p.company && <span className="s">{p.company}</span>}
               </span>
               {p.name && p.email && <span className="font-mono text-sm break-all">{p.email}</span>}
               {p.phone && <span className="s">{p.phone}</span>}
-              <span className="s">{p.source ? <a href={p.source} target="_blank" rel="noreferrer">On {hostOf(p.source)} ↗</a> : "From a Google search"}</span>
+              {p.links?.length ? <ContactLinks links={p.links} testid={`act-team-links-${i}`} /> : null}
+              <span className="s">
+                {p.source ? <a href={p.source} target="_blank" rel="noreferrer">On {hostOf(p.source)} ↗</a> : "From a Google search"}
+                {p.infoFrom && p.infoFrom !== p.source && <>{" · "}<a href={p.infoFrom} target="_blank" rel="noreferrer">contact info on {hostOf(p.infoFrom)} ↗</a></>}
+              </span>
             </span>
-            {done
-              ? <span className="chip a" data-testid={`act-team-added-${i}`}>In contacts</span>
+            {contactId
+              ? (
+                <span className="flex items-center gap-2">
+                  {patch && <button type="button" className="btn soft sm" disabled={busy} onClick={() => void addInfo(c!, patch)} data-testid={`act-team-update-${i}`}>Add their info</button>}
+                  <Link href={hrefFor("contact", contactId)} className="chip a" data-testid={`act-team-added-${i}`}>In contacts →</Link>
+                </span>
+              )
               : <button type="button" className="btn acc sm" disabled={busy} onClick={() => void add(p, i)} data-testid={`act-team-add-${i}`}>Add</button>}
           </div>
         );

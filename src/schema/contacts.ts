@@ -13,6 +13,8 @@ export const Contact = entity({
   emails: z.array(email),
   phones: z.array(z.string().regex(/^\+[1-9]\d{6,14}$/, "E.164, e.g. +13035551212")),
   instagram: z.string().regex(/^[^@\s]+$/, "Handle without @").optional(),
+  /** Where to find them on the web: LinkedIn, their agency's page for them, their own site. */
+  links: z.array(z.string().url()).optional(),
   matchKey: z.string().min(1),
   ...sourcesShape,
 });

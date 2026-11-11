@@ -1,8 +1,8 @@
 // "Find their team" on an act's Contacts card: the pure parts, no emulator, no network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { emailsIn, FAKE_TEAM, groundTeam, roleFromEmail, roleNear, teamPageLinks } from "@/server/assistant/actTeam";
-import { teamContactInput } from "@/lib/acts";
+import { emailsIn, FAKE_TEAM, groundPerson, groundTeam, linkedInHrefs, nameTokens, roleFromEmail, roleNear, teamPageLinks } from "@/server/assistant/actTeam";
+import { teamContactInput, teamContactPatch, teamNote } from "@/lib/acts";
 
 test("teamPageLinks: same-site contact, booking, about and press pages; not the home page, other sites or files", () => {
   const html = `
@@ -50,12 +50,49 @@ test("groundTeam: a name no page says and a phone not on a page are dropped", ()
   assert.deepEqual(out, [{ role: "booking", email: "jo@agency.com", source: "https://band.example/contact" }]);
 });
 
-test("teamContactInput: an inbox gets a name from the act; the role and company make the title", () => {
-  assert.deepEqual(teamContactInput({ role: "management", email: "mgmt@band.com" }, "The Band"), { name: "The Band manager", title: "Manager", emails: ["mgmt@band.com"], phones: [] });
-  const dana = teamContactInput({ role: "booking", name: "Dana Reyes", company: "Front Range Touring", phone: "+19705550142", source: "https://band.example/contact" }, "The Band");
+test("teamContactInput: an inbox gets a name from the act; the role and company make the title; a note says how they were found", () => {
+  const T = "2026-11-11";
+  assert.deepEqual(teamContactInput({ role: "management", email: "mgmt@band.com" }, "The Band", T), {
+    name: "The Band manager", title: "Manager", emails: ["mgmt@band.com"], phones: [],
+    notes: 'Found by "Find their team" for The Band on 2026-11-11. Manager for The Band: named in a Google search.',
+  });
+  const dana = teamContactInput({ role: "booking", name: "Dana Reyes", company: "Front Range Touring", phone: "+19705550142", source: "https://band.example/contact",
+    links: ["https://www.linkedin.com/in/dana-reyes"], infoFrom: "https://frt.example/team" }, "The Band", T);
   assert.equal(dana.name, "Dana Reyes");
   assert.equal(dana.title, "Booking agent, Front Range Touring");
   assert.deepEqual(dana.phones, ["+19705550142"]);
-  assert.equal(dana.sources?.[0].url, "https://band.example/contact");
-  assert.deepEqual(teamContactInput({ role: "general", email: "hi@band.com" }, "The Band"), { name: "The Band", emails: ["hi@band.com"], phones: [] });
+  assert.deepEqual(dana.links, ["https://www.linkedin.com/in/dana-reyes"]);
+  assert.deepEqual(dana.sources?.map((x) => x.url), ["https://band.example/contact", "https://frt.example/team"]);
+  assert.equal(dana.notes, 'Found by "Find their team" for The Band on 2026-11-11. Booking agent for The Band at Front Range Touring: named on band.example (https://band.example/contact). The phone came from a search for them, on frt.example (https://frt.example/team).');
+  assert.equal(teamContactInput({ role: "general", email: "hi@band.com" }, "The Band", T).name, "The Band");
+  assert.match(teamNote({ role: "general", email: "hi@band.com" }, "The Band", T), /The Band's general inbox: named in a Google search\.$/);
+});
+
+test("teamContactPatch: only what the contact lacks, with a line added to the notes; nothing new is undefined", () => {
+  const c = { emails: [], phones: [], notes: "Met at Larimer." };
+  const p = { role: "booking" as const, name: "Heath B", email: "heath@agency.example", links: ["https://www.linkedin.com/in/heathb"], infoFrom: "https://agency.example/roster" };
+  assert.deepEqual(teamContactPatch(p, c, "Brooke Alexx", "2026-11-11"), {
+    emails: ["heath@agency.example"], links: ["https://www.linkedin.com/in/heathb"],
+    notes: 'Met at Larimer.\n\nAdded email, links from "Find their team" for Brooke Alexx on 2026-11-11, on agency.example (https://agency.example/roster).',
+  });
+  assert.equal(teamContactPatch(p, { emails: ["heath@agency.example"], phones: [], links: p.links }, "Brooke Alexx", "2026-11-11"), undefined);
+});
+
+test("groundPerson: their own email, phone and LinkedIn from a page that names them, not a colleague's", () => {
+  const sam = { role: "publicity" as const, name: "Sam Ortiz" };
+  assert.deepEqual(groundPerson(sam, FAKE_TEAM.person.pages, FAKE_TEAM.person.sources), {
+    email: "sam@ortizpr.example", phone: "+13035550177", infoFrom: "https://ortizpr.example/team",
+    links: ["https://www.linkedin.com/in/sam-ortiz-pr", "https://ortizpr.example/team"],
+  });
+  // A page that doesn't name them adds nothing; someone with no name is never searched.
+  assert.deepEqual(groundPerson({ role: "booking", name: "Dana Reyes" }, FAKE_TEAM.person.pages, []), {});
+  assert.deepEqual(groundPerson({ role: "general", email: "x@y.example" }, FAKE_TEAM.person.pages, FAKE_TEAM.person.sources), {});
+  // An email they already have isn't replaced.
+  assert.equal(groundPerson({ ...sam, email: "sam@other.example" }, FAKE_TEAM.person.pages, []).email, undefined);
+});
+
+test("nameTokens and linkedInHrefs", () => {
+  assert.deepEqual(nameTokens('Joseph "JP" Pineda'), ["joseph", "pineda"]);
+  assert.deepEqual(nameTokens("Zoë Ålund"), ["zoe", "alund"]);
+  assert.deepEqual(linkedInHrefs('<a href="http://linkedin.com/in/jo-x?trk=1">x</a><a href="https://www.linkedin.com/company/acme">y</a>'), ["https://linkedin.com/in/jo-x"]);
 });

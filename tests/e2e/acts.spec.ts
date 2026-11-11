@@ -350,3 +350,28 @@ test("Pitch them: disabled with nothing to go on, then opens a new email to the 
   await page.getByTestId("email-cancel").click();
   await expect(page).toHaveURL(actUrl);
 });
+
+test("Find their team: each person's own email and LinkedIn; Add links them, with a note on how they were found; the contact links back", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const name = `A Brother's Fountain ${Date.now() % 100000}`;
+  await addAct(page, name);
+  const actUrl = page.url();
+
+  await page.getByTestId("act-find-team").click();
+  const sam = page.getByTestId("act-team").getByTestId(/^act-team-person-/).filter({ hasText: "Sam Ortiz" });
+  await expect(sam).toContainText("sam@ortizpr.example");
+  await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("href", "https://www.linkedin.com/in/sam-ortiz-pr");
+  await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("target", "_blank");
+  await sam.getByTestId(/^act-team-add-/).click();
+  await expect(sam.getByTestId(/^act-team-added-/)).toContainText("In contacts");
+
+  // The act's Contacts card lists Sam as a link to their page
+  await page.getByTestId("contact-link-Sam Ortiz").click();
+  await expect(page.getByTestId("contact-page")).toBeVisible();
+  await expect(page.getByTestId("contact-links")).toContainText("LinkedIn");
+  await expect(page.getByTestId("contact-google")).toHaveAttribute("href", /google\.com\/search\?q=%22Sam%20Ortiz%22/);
+  await expect(page.getByTestId("contact-google")).toHaveAttribute("target", "_blank");
+  await expect(page.getByTestId("contact-notes")).toContainText(`Found by "Find their team" for ${name}`);
+  await page.getByTestId("works-with").getByRole("link", { name }).click();
+  await expect(page).toHaveURL(actUrl);
+});

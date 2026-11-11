@@ -14,6 +14,7 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
 import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
 import { VenueTypeSelect } from "@/components/booking/VenueTypeSelect";
+import { linkLabel, withScheme } from "@/lib/links";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
@@ -76,6 +77,15 @@ export const KIND_PATH = { venue: "venues", promoter: "promoters", edition: "edi
 export const hrefFor = (kind: keyof typeof KIND_PATH, id: string) => kind === "contact" ? `/contacts/${id}` : `/booking/${KIND_PATH[kind]}/${id}`;
 
 export { BackLink } from "@/components/BackLink";
+
+/** A contact's web links (LinkedIn, their agency's page), each opening in a new tab. */
+export function ContactLinks({ links, testid = "contact-links" }: { links: string[]; testid?: string }) {
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-1 text-sm" data-testid={testid}>
+      {links.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer" className="link">{linkLabel(u)} ↗</a>)}
+    </span>
+  );
+}
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -537,11 +547,12 @@ export const contactForm = {
   fields: [
     { key: "name", label: "Name", required: true, half: true }, { key: "title", label: "Role", half: true },
     { key: "emails", label: "Emails (comma separated, first is primary)" }, { key: "phones", label: "Phones (comma separated)", half: true },
-    { key: "instagram", label: "Instagram", half: true }, { key: "notes", label: "Notes", type: "textarea" },
+    { key: "instagram", label: "Instagram", half: true }, { key: "links", label: "Links (LinkedIn, website; comma separated)" },
+    { key: "notes", label: "Notes", type: "textarea" },
   ] as Field[],
   blank: {} as Values,
-  initial: (d: Noted<Contact>): Values => ({ name: d.name, title: d.title ?? "", emails: d.emails.join(", "), phones: d.phones.join(", "), instagram: d.instagram ?? "", notes: d.notes ?? "" }),
-  build: (v: Values) => ({ name: v.name, title: opt(v.title ?? ""), emails: list(v.emails ?? ""), phones: list(v.phones ?? ""), instagram: opt(v.instagram ?? ""), notes: opt(v.notes ?? "") }),
+  initial: (d: Noted<Contact>): Values => ({ name: d.name, title: d.title ?? "", emails: d.emails.join(", "), phones: d.phones.join(", "), instagram: d.instagram ?? "", links: (d.links ?? []).join(", "), notes: d.notes ?? "" }),
+  build: (v: Values) => ({ name: v.name, title: opt(v.title ?? ""), emails: list(v.emails ?? ""), phones: list(v.phones ?? ""), instagram: opt(v.instagram ?? ""), links: list(v.links ?? "").map(withScheme), notes: opt(v.notes ?? "") }),
 };
 
 /** Turn builder output into a patch: undefined means clear. */
@@ -575,9 +586,10 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, can
               <div key={c.id} className="d-row contact-row" data-testid={`contact-${c.name}`}>
                 <div className="grid min-w-0 flex-[1_1_260px] gap-1">
                   <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                    <Link href={hrefFor("contact", c.id)} className="font-bold">{c.name}</Link>
+                    <Link href={hrefFor("contact", c.id)} className="font-bold text-[var(--accent-text)] hover:underline" data-testid={`contact-link-${c.name}`}>{c.name}</Link>
                     {c.title && <span className="s">{c.title}</span>}
                   </div>
+                  {(c.links?.length ?? 0) > 0 && <ContactLinks links={c.links!} />}
                   {c.emails.map((e, i) => (
                     <div key={e} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-mono text-sm break-all">{e}</span>
