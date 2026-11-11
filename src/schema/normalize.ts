@@ -23,6 +23,9 @@ export function e164(s: string): string {
 export type MatchDoc = Record<string, unknown>;
 
 /** matchKey per collection. Returns undefined for collections without one. */
+/** An act's matchKey: its slug without a leading "the" ("The Brothers Comatose" and "Brothers Comatose" are one act). */
+export const actKey = (name: string) => slug(name).replace(/^the-(?=.)/, "");
+
 export function matchKeyFor(collection: string, d: MatchDoc): string | undefined {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   switch (collection) {
@@ -40,6 +43,8 @@ export function matchKeyFor(collection: string, d: MatchDoc): string | undefined
       return slug(str(d.name));
     case "venueTypes":
       return slug(str(d.label));
+    case "acts":
+      return actKey(str(d.name));
     default:
       return undefined;
   }

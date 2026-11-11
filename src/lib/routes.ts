@@ -25,6 +25,8 @@ export const ROUTES = {
   bookingPromoters: { title: "Promoters", path: "/booking/promoters" },
   venue: { title: "Venue", path: "/booking/venues/:id", params: ["id"] },
   promoter: { title: "Promoter", path: "/booking/promoters/:id", params: ["id"] },
+  bookingActs: { title: "Acts", path: "/booking/acts" },
+  act: { title: "Act", path: "/booking/acts/:id", params: ["id"] },
   festival: { title: "Festival", path: "/booking/festivals/:id", params: ["id"] },
   edition: { title: "Festival year", path: "/booking/editions/:id", params: ["id"] },
   contacts: { title: "Contacts", path: "/contacts" },
@@ -69,7 +71,7 @@ export const ROUTES = {
 
 /** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
 export const RECORD_ROUTES = {
-  show: "shows", venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", contact: "contacts",
+  show: "shows", venue: "venues", promoter: "promoters", act: "acts", festival: "festivals", edition: "editions", contact: "contacts",
   pitch: "pitches", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
   showSetlist: "shows", showFinances: "shows", project: "projects", release: "releases", tour: "tours", releaseMoney: "releases", releaseFiles: "releases",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;

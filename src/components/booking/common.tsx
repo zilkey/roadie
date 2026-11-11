@@ -71,7 +71,7 @@ export function useBooking() {
   };
 }
 
-export const KIND_PATH = { venue: "venues", promoter: "promoters", edition: "editions", festival: "festivals", contact: "contacts" } as const;
+export const KIND_PATH = { venue: "venues", promoter: "promoters", edition: "editions", festival: "festivals", contact: "contacts", act: "acts" } as const;
 /** Contacts have their own section (/contacts); everything else lives under /booking. */
 export const hrefFor = (kind: keyof typeof KIND_PATH, id: string) => kind === "contact" ? `/contacts/${id}` : `/booking/${KIND_PATH[kind]}/${id}`;
 
@@ -493,6 +493,12 @@ export const promoterForm = {
   initial: (d: Noted<Promoter>): Values => ({ name: d.name, kind: d.kind, website: d.website ?? "", howToPitch: d.howToPitch ?? "", notes: d.notes ?? "" }),
   build: (v: Values) => ({ name: v.name, kind: v.kind, website: opt(v.website ?? ""), howToPitch: opt(v.howToPitch ?? ""), notes: opt(v.notes ?? "") }),
 };
+/** Adding an act by hand (#77): its name; the rest is Look up's, or click-to-edit on the act page. */
+export const actForm = {
+  fields: [{ key: "name", label: "Name", required: true }] as Field[],
+  blank: {} as Values,
+  build: (v: Values) => ({ name: v.name }),
+};
 export const festivalForm = {
   fields: [
     { key: "name", label: "Name", required: true },
@@ -541,7 +547,7 @@ export const contactForm = {
 /** Turn builder output into a patch: undefined means clear. */
 export const toPatch = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === undefined ? null : v]));
 
-const NOUN = { venues: "venue", promoters: "promoter", festivals: "festival" } as const;
+const NOUN = { venues: "venue", promoters: "promoter", festivals: "festival", acts: "act" } as const;
 
 /**
  * A place's people, for the body of a "Contacts" DetailCard (its plus opens AddContactDialog). Each row: name, title, emails with Email
@@ -549,7 +555,7 @@ const NOUN = { venues: "venue", promoters: "promoter", festivals: "festival" } a
  * `canEdit` false (members): the same rows as plain text, roles as pills, no toggles and no ×.
  */
 export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, canEdit = true, pitchId }: {
-  kind: "venues" | "promoters" | "festivals"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
+  kind: "venues" | "promoters" | "festivals" | "acts"; parentId: string; contactIds: string[]; contacts: Row<Contact>[];
   roles?: Pick<NoteFields, "bookingContactIds" | "dayOfContactIds">; canEdit?: boolean;
   /** The active pitch for this place, if any: Email then logs the mail on it. */
   pitchId?: string;

@@ -68,7 +68,8 @@ export const VenueCalendar = z.discriminatedUnion("type", [
 export type VenueCalendar = z.infer<typeof VenueCalendar>;
 
 export const actRole = z.enum(["headliner", "support", "unknown"]);
-export const Act = z.strictObject({ name: z.string().min(1), role: actRole });
+/** `actId`: the shared act (acts/{id}, #77) this name is, linked at refresh by matchKey; none for names that aren't an act ("Open Mic Night"). */
+export const Act = z.strictObject({ name: z.string().min(1), role: actRole, actId: id.optional() });
 export type Act = z.infer<typeof Act>;
 /** How much of the bill this source shows: on a "full" source, no support listed counts more toward an opener slot (openerChance). */
 export const billDetail = z.enum(["full", "headliner", "title"]);
@@ -86,6 +87,8 @@ export const VenueEvent = z.strictObject({
   start: timeStr.optional(),
   title: z.string().min(1),
   acts: z.array(Act),
+  /** The acts' actIds, for "where they've played" (array-contains). */
+  actIds: z.array(id).optional(),
   bill: billDetail,
   /** The bill names a support act still to be announced ("support TBA"): the slot may be open. */
   supportTba: z.boolean().optional(),

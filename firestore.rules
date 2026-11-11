@@ -44,6 +44,10 @@ service cloud.firestore {
     match /venueEventSources/{id} { allow read: if band(); }
     // One band's take on a venue's show, id = {artistId}__{eventId}: that artist's admins only, like venueNotes. Lists must filter by artistId.
     match /venueEventNotes/{id}  { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    // Acts (#77): the bands on venue calendars' bills, public facts shared with every band like venueEvents. Server writes.
+    match /acts/{id}             { allow read: if band(); }
+    // One band's take on an act (shortlist, relationship, note, contacts), id = {artistId}__{actId}: that artist's admins only. Lists must filter by artistId.
+    match /actNotes/{id}         { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // An artist's checklist templates: that artist's admins only. Lists must filter where('artistId', '==', ...).
     match /checklistTemplates/{id} { allow read: if roleIn(resource.data.artistId) == 'admin'; }
     // An artist doc is readable by its own members only (the app reads it by id: /artists/[slug] resolves through your session).
@@ -96,7 +100,7 @@ service cloud.firestore {
     }
 
     // A band's contacts: that artist's admins only (per-artist role, like venueNotes). Lists must filter where('artistId', '==', ...).
-    // What they are linked to is the band's too: venueNotes, festivalNotes and promoterNotes contactIds, show deals, payouts, expenses.
+    // What they are linked to is the band's too: venueNotes, festivalNotes, promoterNotes and actNotes contactIds, show deals, payouts, expenses.
     match /contacts/{id}           { allow read: if roleIn(resource.data.artistId) == 'admin'; }
 
     // Admin only

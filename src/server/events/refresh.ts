@@ -16,6 +16,7 @@ import { cleanTitle, isMusic, reconcileActs, splitTitle } from "./bill";
 import { parseDateText, parseTime, resolveStartsAt, todayIn } from "./dates";
 import type { RawEvent, ReaderCtx, ReaderResult } from "./types";
 import { READERS } from "./readers";
+import { linkActs } from "./acts";
 
 export type EventDraft = Omit<VenueEvent, "id" | "venueId" | "source" | "firstSeenAt" | "lastSeenAt">;
 export interface ReadOutcome { events: EventDraft[]; unparsed: number; dropped: number; raw: number; bill: ReaderResult["bill"] }
@@ -114,6 +115,7 @@ export async function upsertEvents(venueId: string, type: VenueCalendar["type"],
   const nowIso = now.toISOString();
   const today = todayIn(tz, now);
   const existing = new Map((await db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true })).map((d) => [d.id, d]));
+  await linkActs(drafts); // acts[].actId by matchKey, new acts for new names (#77)
   const writes: [string, Record<string, unknown>][] = [];
   const keep = new Set<string>();
   let added = 0, gone = 0;

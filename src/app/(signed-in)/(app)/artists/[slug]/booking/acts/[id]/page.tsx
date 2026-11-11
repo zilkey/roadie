@@ -1,0 +1,207 @@
+"use client";
+/**
+ * An act's page (issue #77, board "DetailAct" on the booking canvas). About and Where they've played are shared with every band
+ * (acts/{id} and venue calendars); Our take and Contacts are this band's (actNotes). Look up (#78) fills About from the web: until
+ * then its button shows but does nothing, and the about fields are click-to-edit once anything is in them.
+ */
+import { useParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import Link, { useArtist } from "@/lib/artist";
+import { AdminOnly } from "@/components/Guard";
+import { ErrorBox, useCommand } from "@/components/ui";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
+import { BackLink, ContactsPanel, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { CardGroup, DetailCard, DetailPage, KV } from "@/components/booking/DetailCards";
+import { AddContactDialog } from "@/components/booking/AddContactDialog";
+import { InlineValue, PlusButton } from "@/components/InlineValue";
+import { ActThumb, StarIcon } from "@/components/booking/ActsTab";
+import { actStats, type EvLike } from "@/lib/acts";
+import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
+import { dateInBandZone, fmtInstant } from "@/lib/timezone";
+import { ACT_RELATIONSHIPS, ARTIST_LINKS, RELATIONSHIP_HINT, RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship, type ArtistLinkKey, type Show, type VenueEvent } from "@/schema";
+
+export default function Page() { return <AdminOnly><ActPage /></AdminOnly>; }
+
+const LINK_LABEL = Object.fromEntries(ARTIST_LINKS) as Record<ArtistLinkKey, string>;
+const shortDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+function ActPage() {
+  const { id } = useParams<{ id: string }>();
+  const { artistId } = useArtist();
+  const { doc: act, loading } = useDoc<ActDoc>("acts", id);
+  const notes = useCollection<ActNote>("actNotes", { where: [["artistId", "==", artistId], ["actId", "==", id]] });
+  const events = useCollection<VenueEvent>("venueEvents", { where: [["actIds", "array-contains", id]], includeDeleted: true });
+  const shows = useCollection<Show>("shows");
+  const b = useBooking();
+  const { call, error, busy } = useCommand();
+  const [addingContact, setAddingContact] = useState(false);
+
+  const venues = useMemo(() => new Map(b.venues.map((v) => [v.id, v])), [b.venues]);
+  // Rooms on our list: the ones the band has notes, a pitch or a show at (Booking's "ours").
+  const ours = useMemo(() => {
+    const s = new Set<string>();
+    for (const [vid, n] of b.venueNotes) if (!n.deletedAt) s.add(vid);
+    for (const p of b.pitches) if (p.target.kind === "venue") s.add(p.target.id);
+    for (const x of shows.rows ?? []) if (x.venue) s.add(x.venue.id);
+    return s;
+  }, [b.venueNotes, b.pitches, shows.rows]);
+  const today = dateInBandZone();
+  const played = useMemo(() => (events.rows ?? []).filter((e) => e.status !== "gone").sort((x, y) => y.date.localeCompare(x.date)), [events.rows]);
+  const stats = useMemo(() => actStats((events.rows ?? []) as unknown as EvLike[], venues, ours, today).get(id), [events.rows, venues, ours, today, id]);
+
+  const nf = useNotFound(loading, act, "act");
+  if (nf || !act) return nf;
+  const take = notes.rows?.[0];
+  const on = !!take?.shortlist;
+  const rel = take?.relationship as ActRelationship | undefined;
+  const contactIds = take?.contactIds ?? [];
+
+  const update = async (patch: Record<string, unknown>) => !!(await call("acts.update", { id, patch }));
+  const setRel = (r: ActRelationship) => void call("acts.note", { id, relationship: rel === r ? null : r });
+  const saveNote = async (next: string) => !!(await call("acts.note", { id, note: next }));
+
+  const opened = stats?.openedAt.length ?? 0;
+  const next = stats?.next;
+  const lonely = played.filter((e) => e.date >= today && e.acts.length === 1 && e.acts[0].actId === id);
+
+  return (
+    <DetailPage testid="act-page" back={<BackLink mode="back" href="/booking/acts" label="All acts" />}
+      title={<span className="flex items-center gap-4"><ActThumb src={act.imageUrl} size={72} /><span>{act.name}</span></span>}
+      meta={(opened > 0 || next) && (
+        <span className="flex flex-wrap items-center gap-1.5">
+          {opened > 0 && <span className="chip a" data-testid="act-opened-chip">Opened at {opened} room{opened === 1 ? "" : "s"} we play</span>}
+          {next && <span className="chip" data-testid="act-next-chip">{next.role === "headliner" ? "Headlining" : "Opening at"} {next.name} {shortDay(next.date)}</span>}
+        </span>
+      )}
+      more={
+        <button type="button" className={on ? "btn soft" : "btn"} aria-pressed={on} data-on={on ? "1" : "0"} disabled={busy} onClick={() => void call("acts.shortlist", { id, on: !on })} data-testid="act-shortlist">
+          <StarIcon on={on} size={16} />{on ? "Shortlisted" : "Shortlist"}
+        </button>
+      }>
+      <ErrorBox error={error} />
+      <CardGroup kind="shared">
+        <About act={act} error={error} update={update} />
+        <DetailCard title="Where they've played" testid="act-played" headerExtra={<span className="s">From venue calendars</span>}>
+          {!events.rows ? <span className="s">Loading…</span>
+            : played.length === 0 ? <div className="empty"><span>Not on any venue calendar in Roadie.</span></div>
+            : (
+              <div className="grid">
+                {played.map((e) => {
+                  const me = e.acts.find((a) => a.actId === id);
+                  const others = e.acts.filter((a) => a.actId !== id).map((a) => a.name);
+                  const v = venues.get(e.venueId);
+                  return (
+                    <div key={e.id} className="d-row grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-3" data-testid={`act-played-${e.id}`}>
+                      <b className="whitespace-nowrap">{e.date >= today ? fmtEventDay(e.date) : fmtEventYear(e.date)}</b>
+                      <span className="min-w-0">
+                        {v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`}>{v.name}</Link> : "A venue"}
+                        <span className="s">{v?.address.city ? ` · ${v.address.city}` : ""}{others.length ? ` · with ${others.join(", ")}` : ""}</span>
+                      </span>
+                      {me?.role === "support" ? <span className="chip">Opening</span> : <span className="chip dk">Headlining</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          <span className="s">Only rooms in Roadie with a calendar it can read.{lonely.length > 0 && ` The ${[...new Set(lonely.map((e) => venues.get(e.venueId)?.name ?? "venue"))].join(" and ")} headline${lonely.length === 1 ? " has" : "s have"} no support listed yet.`}</span>
+        </DetailCard>
+      </CardGroup>
+
+      <CardGroup kind="private">
+        <DetailCard private title="Our take" testid="act-take">
+          <div className="grid gap-2">
+            <span className="d-k">What are they to us?</span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="What are they to us">
+              {ACT_RELATIONSHIPS.map((r) => (
+                <button key={r} type="button" className="pick" aria-pressed={rel === r} disabled={busy} onClick={() => setRel(r)} data-testid={`act-rel-${r}`}>{RELATIONSHIP_LABEL[r]}</button>
+              ))}
+            </div>
+            <span className="s" data-testid="act-rel-hint">{rel ? RELATIONSHIP_HINT[rel] : "Pick one, or leave it blank."}</span>
+          </div>
+          <KV rows={[["Note", <InlineValue key="note" testid="act-note" label="Note" kind="textarea" value={take?.note ?? ""} emptyLabel="Add a note…" canEdit error={error} onSave={saveNote} />]]} />
+        </DetailCard>
+
+        <DetailCard private title="Contacts" testid="act-contacts" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>
+          {contactIds.length === 0
+            ? <div className="empty"><span>No one yet. Add their booker, manager or a member: they&apos;re your contacts, linked to this act.</span></div>
+            : <ContactsPanel kind="acts" parentId={id} contactIds={contactIds} contacts={b.contacts} />}
+        </DetailCard>
+        <AddContactDialog kind="acts" parentId={id} parentName={act.name} linkedIds={contactIds} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
+      </CardGroup>
+    </DetailPage>
+  );
+}
+
+/** About: what Look up (#78) finds, each value click-to-edit. Nothing yet: the empty box with Look up. */
+function About({ act, error, update }: { act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean> }) {
+  const [addingGenre, setAddingGenre] = useState(false);
+  const [addingLink, setAddingLink] = useState(false);
+  const genres = act.genres ?? [];
+  const links = Object.entries(act.links ?? {}).filter(([, v]) => v) as [ArtistLinkKey, string][];
+  const empty = !act.description && !act.hometown && !genres.length && !links.length;
+  const lookUp = (
+    // Look up is #78: the button is here so the card is ready for it.
+    <button type="button" className="btn acc sm" disabled title="Coming soon" data-testid="act-lookup">Look up {act.name}</button>
+  );
+  if (empty) {
+    return (
+      <DetailCard title="About" testid="act-about">
+        <div className="empty grid justify-items-start gap-2.5" data-testid="act-about-empty">
+          <span>Nothing about this act yet. Look up searches the web for their links, where they&apos;re from and what they sound like. You can fix anything it gets wrong.</span>
+          {lookUp}
+        </div>
+      </DetailCard>
+    );
+  }
+  const setGenres = (next: string[]) => update({ genres: next.length ? next : null });
+  return (
+    <DetailCard title="About" testid="act-about">
+      <KV rows={[
+        ["Sounds like", <InlineValue key="d" testid="act-description" label="Sounds like" kind="textarea" value={act.description ?? ""} canEdit error={error} onSave={(v) => update({ description: v.trim() || null })} />],
+        ["Genres", (
+          <span key="g" className="flex flex-wrap items-center gap-1.5" data-testid="act-genres">
+            {genres.map((g) => (
+              <span key={g} className="chip w lg">{g}<button type="button" aria-label={`Remove ${g}`} onClick={() => void setGenres(genres.filter((x) => x !== g))}>×</button></span>
+            ))}
+            {addingGenre
+              ? <InlineValue testid="act-genre-new" label="New genre" kind="text" value="" autoStart canEdit error={error}
+                  onSave={async (v) => { setAddingGenre(false); const g = v.trim(); return !g || genres.includes(g) ? true : setGenres([...genres, g]); }} />
+              : <PlusButton label="Add a genre" testid="act-genre-add" onClick={() => setAddingGenre(true)} />}
+          </span>
+        )],
+        ["From", <InlineValue key="h" testid="act-hometown" label="From" kind="text" value={act.hometown ?? ""} canEdit error={error} onSave={(v) => update({ hometown: v.trim() || null })} />],
+        ["Links", (
+          <span key="l" className="grid gap-2" data-testid="act-links">
+            <span className="flex flex-wrap items-center gap-2">
+              {links.map(([k, url]) => <a key={k} className="chip w" href={url} target="_blank" rel="noreferrer">{LINK_LABEL[k]} ↗</a>)}
+              {!addingLink && <PlusButton label="Add a link" testid="act-link-add" onClick={() => setAddingLink(true)} />}
+            </span>
+            {addingLink && <AddLink have={act.links ?? {}} onCancel={() => setAddingLink(false)} onSave={async (links) => { const ok = await update({ links }); if (ok) setAddingLink(false); return ok; }} />}
+          </span>
+        )],
+      ]} />
+      <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}Click anything to fix it.</span>
+    </DetailCard>
+  );
+}
+
+/** Pick which link and paste it: Website, Instagram, Spotify, Bandcamp… (the band's own link kinds). An empty URL removes that link. */
+function AddLink({ have, onSave, onCancel }: { have: Partial<Record<ArtistLinkKey, string>>; onSave(links: Partial<Record<ArtistLinkKey, string>>): Promise<boolean>; onCancel(): void }) {
+  const [kind, setKind] = useState<ArtistLinkKey>(ARTIST_LINKS.find(([k]) => !have[k])?.[0] ?? "website");
+  const [url, setUrl] = useState(have[kind] ?? "");
+  const save = () => {
+    const next = { ...have };
+    if (url.trim()) next[kind] = url.trim(); else delete next[kind];
+    void onSave(next);
+  };
+  return (
+    <span className="flex flex-wrap items-center gap-2" data-testid="act-link-form">
+      <select className="select !w-auto" value={kind} aria-label="Which link" onChange={(e) => { const k = e.target.value as ArtistLinkKey; setKind(k); setUrl(have[k] ?? ""); }}>
+        {ARTIST_LINKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+      <input className="input !w-[260px]" type="url" placeholder="https://…" aria-label="Link" value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") save(); }} data-testid="act-link-url" />
+      <button type="button" className="btn acc sm" onClick={save} data-testid="act-link-save">Save</button>
+      <button type="button" className="btn ghost sm" onClick={onCancel}>Cancel</button>
+    </span>
+  );
+}

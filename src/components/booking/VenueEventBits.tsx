@@ -3,11 +3,11 @@
  * The pieces of a venue-calendar show (issue #60) that the venue's Events tab and Booking's Venue calendars tab both draw:
  * the badges (the opener-chance guess), the poster, the act line, the ticket link and this band's take.
  */
-import { useArtist } from "@/lib/artist";
+import { Fragment, useState } from "react";
+import Link, { useArtist } from "@/lib/artist";
 import { useCommand } from "@/components/ui";
-import { useState } from "react";
 import { billParts, openerChance } from "@/lib/venueEvents";
-import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
+import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 export type Ev = VenueEvent & { id: string };
 export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | null | undefined;
@@ -41,12 +41,20 @@ export function EventPoster({ src, alt, size = 64, testid = "venue-event" }: { s
   return <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="shrink-0 rounded-lg object-cover" style={box} data-testid={`${testid}-image`} />;
 }
 
+/** An act's name, linked to its act page (#77) for admins when it is a linked act. */
+export function ActName({ a }: { a: Act }) {
+  const { role } = useArtist();
+  return role === "admin" && a.actId ? <Link href={`/booking/acts/${a.actId}`} className="underline decoration-[var(--divider)] underline-offset-2 hover:decoration-current" data-testid={`act-name-${a.actId}`}>{a.name}</Link> : <>{a.name}</>;
+}
+const names = (acts: Act[]) => acts.map((a, i) => <Fragment key={`${i}-${a.name}`}>{i > 0 && ", "}<ActName a={a} /></Fragment>);
+
 /** "Headliner with Support, Support", or the listed title when the source named no acts. */
 export function EventActs({ e, className = "font-semibold" }: { e: Ev; className?: string }) {
-  const { head, rest } = billParts(e.acts);
+  const { rest } = billParts(e.acts);
+  const byRole = (headliner: boolean) => e.acts.filter((a) => (a.role === "headliner") === headliner);
   return (
     <div className={className} data-testid="venue-event-acts">
-      {e.acts.length ? <>{head.join(", ")}{rest.length > 0 && <span className="font-normal"> with {rest.join(", ")}</span>}</> : e.title}
+      {e.acts.length ? <>{names(byRole(true))}{rest.length > 0 && <span className="font-normal"> with {names(byRole(false))}</span>}</> : e.title}
     </div>
   );
 }

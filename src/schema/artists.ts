@@ -37,7 +37,7 @@ export const ARTIST_LINKS = [
   ["tidal", "Tidal"], ["linktree", "Linktree"], ["bandsintown", "Bandsintown"],
 ] as const;
 export type ArtistLinkKey = (typeof ARTIST_LINKS)[number][0];
-const ArtistLinks = z.strictObject(Object.fromEntries(ARTIST_LINKS.map(([k]) => [k, z.string().optional()])) as Record<ArtistLinkKey, z.ZodOptional<z.ZodString>>);
+export const ArtistLinks = z.strictObject(Object.fromEntries(ARTIST_LINKS.map(([k]) => [k, z.string().optional()])) as Record<ArtistLinkKey, z.ZodOptional<z.ZodString>>);
 /** A Signal group invite link. Anyone who has it can join the group. */
 export const SIGNAL_GROUP_PREFIX = "https://signal.group/#";
 export const SIGNAL_NO_KEY = "That Signal group link has nothing after the #. Copy the whole link from Signal.";

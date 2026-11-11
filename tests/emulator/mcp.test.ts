@@ -110,6 +110,8 @@ const EXPECTED = [
   // money, stats
   "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
   "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
+  // acts (#77): finding acts, the shortlist, our take
+  "acts.find", "acts.create", "acts.update", "acts.shortlist", "acts.note",
   // geo (address typeahead, read-only)
   "geo.autocomplete",
   // read tools and undo

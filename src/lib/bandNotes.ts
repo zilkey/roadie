@@ -4,20 +4,23 @@
  */
 import { BAND_NOTES, type NotedKind } from "@/schema/bandNotes";
 
-export type BandNoteFields = Partial<Record<"notes" | "payNotes" | "howToPitch", string>> & { venueIds?: string[]; contactIds?: string[] };
+export type BandNoteFields = Partial<Record<"notes" | "payNotes" | "howToPitch" | "note" | "relationship", string>> & { venueIds?: string[]; contactIds?: string[]; shortlist?: boolean };
 
 const textFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].fields;
 const listFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].lists;
-export const noteFieldNames = (kind: NotedKind): readonly string[] => [...textFields(kind), ...listFields(kind)];
+const flagFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].flags;
+export const noteFieldNames = (kind: NotedKind): readonly string[] => [...textFields(kind), ...listFields(kind), ...flagFields(kind)];
 export const isNoteField = (kind: NotedKind, k: string) => noteFieldNames(kind).includes(k);
 export const isListField = (kind: NotedKind, k: string) => listFields(kind).includes(k);
+export const isFlagField = (kind: NotedKind, k: string) => flagFields(kind).includes(k);
 
-/** The note fields of a notes doc (or of a command's input). Empty strings and lists count as unset. */
+/** The note fields of a notes doc (or of a command's input). Empty strings and lists, and false flags, count as unset. */
 export function noteFieldsOf(kind: NotedKind, d: object | null | undefined): BandNoteFields {
   const x = (d ?? {}) as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const k of textFields(kind)) if (typeof x[k] === "string" && x[k]) out[k] = x[k];
   for (const k of listFields(kind)) if (Array.isArray(x[k]) && x[k].length) out[k] = x[k];
+  for (const k of flagFields(kind)) if (x[k] === true) out[k] = true;
   return out as BandNoteFields;
 }
 const isSet = (v: unknown) => (Array.isArray(v) ? v.length > 0 : !!v);

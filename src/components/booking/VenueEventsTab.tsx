@@ -10,7 +10,7 @@ import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
 import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, titleSaysMore } from "@/lib/venueEvents";
-import { EventActs, EventBadges, EventPoster, OpenerNote, TakePicker, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
+import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, TakePicker, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { dateInBandZone } from "@/lib/timezone";
 import { CALENDAR_TYPES, PRESETS, type CalendarType, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
@@ -37,6 +37,7 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
   const past = all.filter((e) => e.date < today).reverse();
   const [setup, setSetup] = useState(false);
   const cal = venue.calendar;
+  const openers = useMemo(() => whoOpens(all), [all]);
 
   return (
     <>
@@ -50,6 +51,18 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
             {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}
+        {openers.length > 0 && (
+          <DetailCard title="Who opens here" testid="venue-openers" headerExtra={<span className="s">Support acts on the calendar</span>}>
+            <div className="grid gap-1">
+              {openers.map((o) => (
+                <div key={o.key} className="flex flex-wrap items-baseline gap-x-2 text-sm" data-testid={`venue-opener-${o.key}`}>
+                  <b><ActName a={o.act} /></b>
+                  <span className="s">{o.count} show{o.count === 1 ? "" : "s"} · {o.last >= today ? "next" : "last"} {o.last >= today ? fmtEventDay(o.last) : fmtEventYear(o.last)}</span>
+                </div>
+              ))}
+            </div>
+          </DetailCard>
+        )}
         {past.length > 0 && (
           <DetailCard title={`Past shows (${past.length})`} testid="venue-events-past">
             <details>
@@ -58,7 +71,7 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
                 {past.map((e) => (
                   <div key={e.id} className="flex flex-wrap items-baseline gap-x-3 text-sm" data-testid={`venue-event-past-${e.id}`}>
                     <b className="whitespace-nowrap">{fmtEventYear(e.date)}</b>
-                    <span>{e.acts.length ? e.acts.map((a) => a.name).join(", ") : e.title}</span>
+                    <span>{e.acts.length ? e.acts.map((a, i) => <span key={`${i}-${a.name}`}>{i > 0 && ", "}<ActName a={a} /></span>) : e.title}</span>
                   </div>
                 ))}
               </div>
@@ -69,6 +82,29 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
       {admin && <CalendarSetup venue={venue} open={setup} onClose={() => setSetup(false)} />}
     </>
   );
+}
+
+/**
+ * "Who opens here" (#77): the acts seen in support slots at this room, most often first. Each with how many shows and its next one
+ * (or, with none coming, its last). Gone shows don't count.
+ */
+function whoOpens(events: Ev[]) {
+  const today = dateInBandZone();
+  const by = new Map<string, { key: string; act: Ev["acts"][number]; count: number; next?: string; latest: string }>();
+  for (const e of events) {
+    if (e.status === "gone") continue;
+    for (const a of e.acts) {
+      if (a.role !== "support" || !a.actId) continue; // acts only: not "with", "& More!"
+      const key = a.actId;
+      const o = by.get(key) ?? { key, act: a, count: 0, latest: e.date };
+      o.count++;
+      if (e.date >= today && (!o.next || e.date < o.next)) o.next = e.date;
+      if (e.date > o.latest) o.latest = e.date;
+      by.set(key, o);
+    }
+  }
+  return [...by.values()].map((o) => ({ ...o, last: o.next ?? o.latest }))
+    .sort((x, y) => y.count - x.count || y.latest.localeCompare(x.latest) || x.act.name.localeCompare(y.act.name));
 }
 
 function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { id: string }; cal?: VenueCalendar; health: VenueEventSource | null; admin: boolean; onSetup(): void }) {

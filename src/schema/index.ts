@@ -6,7 +6,8 @@ import { ContactRecord } from "./contacts";
 import { VenueRecord } from "./venues";
 import { VenueNoteInput } from "./venueNotes";
 import { VenueEventNoteInput } from "./venueEvents";
-import { FestivalNoteInput, EditionNoteInput, PromoterNoteInput, ContactNoteInput } from "./bandNotes";
+import { FestivalNoteInput, EditionNoteInput, PromoterNoteInput, ContactNoteInput, ActNoteInput } from "./bandNotes";
+import { ActRecord } from "./acts";
 import { PromoterRecord } from "./promoters";
 import { FestivalRecord } from "./festivals";
 import { VenueTypeInput } from "./venueTypes";
@@ -49,6 +50,7 @@ export * from "./venueNotes";
 export * from "./venueEvents";
 export * from "./bandNotes";
 export * from "./promoters";
+export * from "./acts";
 export * from "./festivals";
 export * from "./venueTypes";
 export * from "./editions";
@@ -106,6 +108,8 @@ export const collections: Record<string, CollectionDef> = {
   editionNotes: { input: EditionNoteInput },
   promoterNotes: { input: PromoterNoteInput },
   contactNotes: { input: ContactNoteInput },
+  acts: { input: ActRecord, dedupe: true },
+  actNotes: { input: ActNoteInput },
   pitches: { input: PitchInput },
   comments: { input: CommentInput },
   activity: { input: ActivityInput, appendOnly: true },
@@ -167,5 +171,5 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
 
 /** Fields the server computes in normalizeDoc; stripped from validation and re-added. */
 export const computedFields: Record<string, string[]> = {
-  contacts: ["matchKey"], venues: ["matchKey"], promoters: ["matchKey"], festivals: ["matchKey"], venueTypes: ["matchKey"], setlists: ["totalSec"], setlistTemplates: ["totalSec"],
+  contacts: ["matchKey"], venues: ["matchKey"], promoters: ["matchKey"], acts: ["matchKey"], festivals: ["matchKey"], venueTypes: ["matchKey"], setlists: ["totalSec"], setlistTemplates: ["totalSec"],
 };

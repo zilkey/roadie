@@ -11,7 +11,7 @@ import { artistIdOf, noteOf, writeNote } from "./venues";
 
 export { hasNotes, noteFieldsOf, splitNotes, withBandNote, type BandNoteFields } from "@/lib/bandNotes";
 
-type Fields = Record<string, string | string[]>;
+type Fields = Record<string, string | string[] | boolean>;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 // ---------- inside a write unit ----------
@@ -23,7 +23,7 @@ export async function bandNoteOf(w: Writer, kind: NotedKind, entity: Doc, artist
 }
 
 /**
- * Apply a patch to this band's notes (null, "" or [] clears a field). The doc is created on the first write that sets something;
+ * Apply a patch to this band's notes (null, "", [] or false clears a field). The doc is created on the first write that sets something;
  * an archived one is brought back. Returns the fields as they are now.
  */
 export async function writeBandNote(w: Writer, kind: NotedKind, entity: Doc, artistId: string, patch: Record<string, unknown>): Promise<BandNoteFields> {
@@ -32,7 +32,7 @@ export async function writeBandNote(w: Writer, kind: NotedKind, entity: Doc, art
   const { doc, fields } = await bandNoteOf(w, kind, entity, artistId);
   const next: Fields = { ...(fields as Fields) };
   for (const [k, v] of Object.entries(patch)) {
-    if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) delete next[k]; else next[k] = v as string | string[];
+    if (v === null || v === undefined || v === "" || v === false || (Array.isArray(v) && !v.length)) delete next[k]; else next[k] = v as string | string[] | boolean;
   }
   if (!doc) {
     if (hasNotes(next)) await w.create(coll, { artistId, [key]: entity.id, ...next }, { id });
@@ -55,7 +55,7 @@ export async function fillBandNote(w: Writer, kind: NotedKind, entity: Doc, arti
     if (isListField(kind, k) && Array.isArray(v)) {
       const joined = [...new Set([...((have[k] as string[] | undefined) ?? []), ...(v as string[])])];
       if (joined.length !== ((have[k] as string[] | undefined) ?? []).length) add[k] = joined;
-    } else if (typeof v === "string" && v && !have[k]) add[k] = v;
+    } else if (((typeof v === "string" && v) || v === true) && !have[k]) add[k] = v;
   }
   if (Object.keys(add).length) await writeBandNote(w, kind, entity, artistId, add);
 }

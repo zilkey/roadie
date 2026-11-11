@@ -10,7 +10,7 @@ import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import { Menu } from "@/components/Menu";
 import {
-  EntityForm, Tabs, StatusChip, type SubmitMeta, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
+  EntityForm, Tabs, StatusChip, type SubmitMeta, actForm, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
 } from "@/components/booking/common";
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
 import { fmtPhone, listRows, type ListRow, type Place, type Ref } from "@/components/booking/listRows";
@@ -24,15 +24,16 @@ import type { Show } from "@/schema";
 import { AddToTourDialog } from "@/components/booking/AddToTourDialog";
 import { SearchBuckets } from "@/components/booking/SearchBuckets";
 import { VenueCalendars } from "@/components/booking/VenueCalendars";
+import { ActsTab } from "@/components/booking/ActsTab";
 
 /** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
 export function BookingIndex({ seg }: { seg: Tab }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
 
 /** The table kinds. Contacts is not a tab (it has its own section) but its table still draws the search results. */
 export type Seg = "pitches" | "venues" | "festivals" | "promoters" | "contacts";
-/** "calendars" (Venue calendars) is every venue's upcoming shows, not a table of booking records: it has no ListRow kind. */
-type Tab = Exclude<Seg, "contacts"> | "calendars";
-type Add = null | "venue" | "promoter" | "festival";
+/** "calendars" (Venue calendars) is every venue's upcoming shows and "acts" the bands on them (#77): not tables of booking records, so no ListRow kind. */
+type Tab = Exclude<Seg, "contacts"> | "calendars" | "acts";
+type Add = null | "venue" | "promoter" | "festival" | "act";
 
 function Booking({ seg }: { seg: Tab }) {
   const router = useRouter();
@@ -48,9 +49,9 @@ function Booking({ seg }: { seg: Tab }) {
     if (!v.trim() && params.get("q") !== null) router.replace(`/booking/${seg}`);
   };
   // An unfinished "new X" opens its form by itself (a draft link to it opens the form).
-  const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")) };
+  const drafts = { venue: useHasDraft(draftPath.newIn("venues")), promoter: useHasDraft(draftPath.newIn("promoters")), festival: useHasDraft(draftPath.newIn("festivals")), act: useHasDraft(draftPath.newIn("acts")) };
   const [explicit, setAdd] = useState<Add | "none" | undefined>(undefined);
-  const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival"] as const).find((k) => drafts[k]) ?? null;
+  const add: Add = explicit === "none" ? null : explicit ?? (["venue", "promoter", "festival", "act"] as const).find((k) => drafts[k]) ?? null;
 
   // Rooms this band has something on (notes, a pitch, a show) come first; the rest of the shared directory follows.
   const shows = useCollection<Show>("shows");
@@ -68,7 +69,7 @@ function Booking({ seg }: { seg: Tab }) {
   const [place, setPlace] = useState<string[]>([]);
   const [venueType, setVenueType] = useState<string[]>([]);
   const statusFilter = seg === "pitches" ? status : "";
-  const listSeg: Exclude<Seg, "contacts"> = seg === "calendars" ? "venues" : seg; // the calendars tab draws no ListRows; any table kind will do
+  const listSeg: Exclude<Seg, "contacts"> = seg === "calendars" || seg === "acts" ? "venues" : seg; // these tabs draw no ListRows; any table kind will do
   const listed = useMemo(() => {
     const searching = q.trim().length > 0;
     const hit = searching ? new Set(searchItems(buildSearchItems(b), q).map((i) => `${i.kind}:${i.id}`)) : null;
@@ -114,17 +115,17 @@ function Booking({ seg }: { seg: Tab }) {
 
 
   async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
-    const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create" }[kind];
+    const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", act: "acts.create" }[kind];
     const r = await call<{ id: string }>(cmd, data, meta);
     if (r) router.push(hrefFor(kind, r.id));
     return !!r;
   }
-  const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm };
+  const forms = { venue: venueForm, promoter: promoterForm, festival: festivalForm, act: actForm };
 
   const addActions = (
     <Menu label="Add to booking" testid="booking-add" triggerClass="btn acc" trigger={<span className="px-1 font-semibold">+ Add ▾</span>}
-      items={(["venue", "promoter", "festival"] as const).map((k) => ({
-        key: k, testid: `add-${k}`, label: `+ Add ${k === "festival" ? "festival or series" : k === "venue" ? "a place" : k}`,
+      items={(["venue", "promoter", "festival", "act"] as const).map((k) => ({
+        key: k, testid: `add-${k}`, label: `+ Add ${k === "festival" ? "festival or series" : k === "venue" ? "a place" : k === "act" ? "an act" : k}`,
         onSelect: () => setAdd(add === k ? "none" : k),
       }))} />
   );
@@ -160,7 +161,7 @@ function Booking({ seg }: { seg: Tab }) {
         {addActions}
       </>} />
       <Tabs<Tab> testid="booking-seg" value={seg} onChange={setSeg}
-        options={[["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["calendars", "Venue calendars"]]} />
+        options={[["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["calendars", "Venue calendars"], ["acts", "Acts"]]} />
       <ErrorBox error={error} />
 
       {seg === "pitches" && !q.trim() && (
@@ -182,7 +183,7 @@ function Booking({ seg }: { seg: Tab }) {
           )}
         </div>
       )}
-      {q.trim() ? <SearchBuckets q={q} ours={ours} onFlag={setTarget} onLeave={() => setQ("")} /> : seg === "calendars" ? <VenueCalendars /> : <>
+      {q.trim() ? <SearchBuckets q={q} ours={ours} onFlag={setTarget} onLeave={() => setQ("")} /> : seg === "calendars" ? <VenueCalendars /> : seg === "acts" ? <ActsTab /> : <>
       <div className="grid min-w-0 gap-3" data-testid={seg === "pitches" ? "pitch-list" : "booking-list"}>
         {seg === "festivals" && <ErrorBox error={page.error} />}
         {listLoading && <span className="s">Loading…</span>}

@@ -30,6 +30,7 @@ import { syncClaims } from "../src/server/session";
 import type { AssistantAction, AssistantEvent, ToolTrace } from "../src/schema/assistant";
 import { answerPending } from "../src/server/assistant/confirm";
 import { loadHistory, saveTurn } from "../src/server/assistant/threads";
+import { upsertEvents } from "../src/server/events/refresh";
 import { checkRecorded, describe, POST_SHOW, recorded, seedWorld, type PostShowScenario, type ShowKey } from "./roadie-post-show";
 
 interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][]; cardVoice?: boolean }
@@ -92,6 +93,11 @@ const SCENARIOS: Scenario[] = [
   { name: "voice-short-reply", voice: true, turns: [{ say: "How much did we make last night?", noCalls: [/\.add$/], cards: 0, noText: /[*#`•\n]|^\s*(?:[-\d]+[.)])\s/m }] },
   { name: "voice-tap-only", voice: true, turns: [{ say: "turn on the engineer link for the stage plot", calls: [/stagePlots\.shareLink/], cards: 1, cardVoice: false, text: /\btap\b[\s\S]*\bYes\b|\bYes\b[\s\S]*\btap/i, noText: /^Want me to/i }] },
   ...POST_SHOW.map((p): Scenario => ({ name: p.name, turns: p.turns, postShow: p })),
+  // Acts (#77). The Aggie (Fort Collins) and the Bluebird (Denver) have calendars: North Fork Crossing opens at both within two weeks (on tour),
+  // Wheelwright headlines the Bluebird, The Brothers Comatose the Aggie (see seedActs).
+  { name: "acts-tour", turns: [{ say: "which acts are on tour around here right now?", calls: [/acts\.find/], text: /North Fork Crossing/, noText: REFUSES }] },
+  { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
+  { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], args: [[/acts\.note/, /"relationship":"openFor"/]], noText: REFUSES }] },
   { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
 ];
 
@@ -140,6 +146,20 @@ async function seedVoice(artistId: string) {
   await call("stagePlots.create", { name: "Full band" });
 }
 
+/** Acts (#77): two Colorado rooms whose calendars list linked acts (upsertEvents links them and makes the acts, as a refresh does). */
+async function seedActs(artistId: string) {
+  const sys = importCtx("import", newRunId(), artistId);
+  const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
+  const aggie = await call("venues.create", { name: "Aggie Theatre", type: "bar", address: { city: "Fort Collins", state: "CO" }, region: "north" });
+  const bluebird = await call("venues.create", { name: "Bluebird Theater", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" });
+  const ev = (days: number, acts: [string, "headliner" | "support"][]) => ({
+    sourceId: `${days}-${acts[0][0]}`, date: addDays(TODAY, days), title: acts.map((a) => a[0]).join(", "), acts: acts.map(([name, role]) => ({ name, role })), bill: "full" as const, status: "onsale" as const,
+  });
+  const now = new Date();
+  await upsertEvents(aggie.id, "ics", [ev(5, [["The Brothers Comatose", "headliner"], ["North Fork Crossing", "support"]])], now, "America/Denver");
+  await upsertEvents(bluebird.id, "ics", [ev(12, [["Wheelwright", "headliner"], ["North Fork Crossing", "support"]]), ev(30, [["Morrow Morrow", "headliner"]])], now, "America/Denver");
+}
+
 async function band() {
   const slug = `eval-${Date.now().toString(36)}`;
   const sys = importCtx();
@@ -152,6 +172,7 @@ async function band() {
   await seedTour(artist.id);
   await seedSongs(artist.id);
   await seedVoice(artist.id);
+  await seedActs(artist.id);
   return { uid: u.uid, artistId: artist.id };
 }
 

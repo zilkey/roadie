@@ -32,7 +32,7 @@ const FestivalNew = FestivalIn.extend({ address: FestivalInput.shape.address.unw
 const EditionIn = EditionInput.omit({ festivalName: true }).extend({ venueIds: arr(EditionInput.shape.venueIds) });
 const lowerEmails = z.array(z.string().transform(lowerEmail).pipe(emailSchema));
 const ContactIn = ContactInput.omit({ artistId: true }).extend({ emails: lowerEmails.default([]), phones: z.array(z.string().transform(e164).pipe(ContactInput.shape.phones.element)).default([]) });
-const parentKind = z.enum(["venues", "promoters", "festivals"]);
+const parentKind = z.enum(["venues", "promoters", "festivals", "acts"]);
 
 async function requireVenue(w: Writer, id: string) {
   const v = await w.get("venues", id);
@@ -314,11 +314,11 @@ export const contactsRemove = defineCommand({
   }),
 });
 
-/** Contact links are the band's own: venueNotes, promoterNotes and festivalNotes contactIds. */
+/** Contact links are the band's own: venueNotes, promoterNotes, festivalNotes and actNotes contactIds. */
 async function attach(w: Writer, kind: z.infer<typeof parentKind>, parentId: string, contactId: string) {
   await requireContact(w, contactId);
   const p = await w.get(kind, parentId);
-  if (!p || p.deletedAt) throw new AppError("not_found", "Place not found", 404);
+  if (!p || p.deletedAt) throw new AppError("not_found", kind === "acts" ? "Act not found" : "Place not found", 404);
   if (kind === "venues") {
     const artistId = await artistIdOf(w);
     const { fields } = await noteOf(w, p, artistId);
@@ -344,11 +344,11 @@ async function detach(w: Writer, kind: z.infer<typeof parentKind>, parentId: str
 }
 const linkInput = z.strictObject({ contactId: z.string().min(1), kind: parentKind, id: z.string().min(1) });
 export const contactsAttach = defineCommand({
-  name: "contacts.attach", roles: [...ROLES], input: linkInput, description: "Link an existing contact to a venue, promoter or festival.",
+  name: "contacts.attach", roles: [...ROLES], input: linkInput, description: "Link an existing contact to a venue, promoter, festival or act (an act's booker, manager or a member).",
   run: (ctx, i) => run(ctx, async (w) => { await attach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
 });
 export const contactsDetach = defineCommand({
-  name: "contacts.detach", roles: [...ROLES], input: linkInput, description: "Unlink a contact from a venue, promoter or festival (a venue contact's roles go with it).",
+  name: "contacts.detach", roles: [...ROLES], input: linkInput, description: "Unlink a contact from a venue, promoter, festival or act (a venue contact's roles go with it).",
   run: (ctx, i) => run(ctx, async (w) => { await detach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
 });
 export const contactsSetRoles = defineCommand({

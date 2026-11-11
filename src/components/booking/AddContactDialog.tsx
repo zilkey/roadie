@@ -8,8 +8,8 @@ import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { CONTACT_ROLES, ROLE_LABEL, type ContactRole } from "@/lib/venues";
 
-type Kind = "venues" | "promoters" | "festivals";
-const NOUN: Record<Kind, string> = { venues: "venue", promoters: "promoter", festivals: "festival" };
+type Kind = "venues" | "promoters" | "festivals" | "acts";
+const NOUN: Record<Kind, string> = { venues: "venue", promoters: "promoter", festivals: "festival", acts: "act" };
 type Mode = "exist" | "new";
 
 /**
@@ -18,10 +18,12 @@ type Mode = "exist" | "new";
  * On a venue both halves also set the person's roles here. Cancel and × close; a half-finished new person stays a draft, and a draft
  * found when the page loads opens the dialog on "New person" (`onWantOpen`).
  */
-export function AddContactDialog({ kind, parentId, parentName, open, onClose, onWantOpen }: {
+export function AddContactDialog({ kind, parentId, parentName, open, onClose, onWantOpen, linkedIds }: {
   kind: Kind; parentId: string; parentName: string; open: boolean; onClose(): void;
   /** Called once, when an unfinished new person is waiting for this place on page load. */
   onWantOpen?(): void;
+  /** Acts (not in useBooking): the contacts already linked, so the picker leaves them out. */
+  linkedIds?: string[];
 }) {
   const path = draftPath.newUnder(kind, parentId, "contacts");
   const hasDraft = useHasDraft(path);
@@ -52,7 +54,7 @@ export function AddContactDialog({ kind, parentId, parentName, open, onClose, on
         <label><input type="radio" name={`${formId}-mode`} checked={mode === "new"} onChange={() => setMode("new")} data-testid="contact-add-new" />New person</label>
       </div>
       {mode === "exist"
-        ? <ExistingPicker kind={kind} parentId={parentId} busy={busy} addLabel={`Add to ${noun}`} rolesBox={kind === "venues" && <RolesBox roles={roles} set={setRoles} />}
+        ? <ExistingPicker kind={kind} parentId={parentId} linkedIds={linkedIds} busy={busy} addLabel={`Add to ${noun}`} rolesBox={kind === "venues" && <RolesBox roles={roles} set={setRoles} />}
           onCancel={close} onPick={async (contactId) => {
             const r = await call("contacts.attach", { contactId, kind, id: parentId });
             if (r && (await applyRoles(contactId))) close();
@@ -70,13 +72,13 @@ export function AddContactDialog({ kind, parentId, parentName, open, onClose, on
 }
 
 /** Find someone the band already has and pick one: the "Already in …" half, kept generic enough for the other list cards. */
-function ExistingPicker({ kind, parentId, busy, addLabel, rolesBox, onPick, onCancel }: {
-  kind: Kind; parentId: string; busy: boolean; addLabel: string; rolesBox: React.ReactNode; onPick(id: string): Promise<void>; onCancel(): void;
+function ExistingPicker({ kind, parentId, linkedIds, busy, addLabel, rolesBox, onPick, onCancel }: {
+  kind: Kind; parentId: string; linkedIds?: string[]; busy: boolean; addLabel: string; rolesBox: React.ReactNode; onPick(id: string): Promise<void>; onCancel(): void;
 }) {
   const b = useBooking();
   const [q, setQ] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
-  const linked = useMemo(() => new Set(b[kind].find((p) => p.id === parentId)?.contactIds ?? []), [b, kind, parentId]);
+  const linked = useMemo(() => new Set(kind === "acts" ? linkedIds ?? [] : b[kind].find((p) => p.id === parentId)?.contactIds ?? []), [b, kind, parentId, linkedIds]);
   /** contact id → the places they're on, for the hit line and the search. */
   const works = useMemo(() => {
     const m = new Map<string, string[]>();

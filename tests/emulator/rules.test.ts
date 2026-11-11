@@ -39,6 +39,10 @@ before(async () => {
       await setDoc(doc(d, `${c}/y__x`), { ...live, artistId: "y", notes: "y's" });
       await setDoc(doc(d, `${c}/x__v/history/000001`), { ...live, runId: "r1", artistId: "x" });
     }
+    // Acts (#77): the shared record, and one band's take on it ({artistId}__{actId}).
+    await setDoc(doc(d, "acts/ax"), { ...live, name: "Denson", matchKey: "denson" });
+    await setDoc(doc(d, "actNotes/x__ax"), { ...live, artistId: "x", actId: "ax", note: "x's" });
+    await setDoc(doc(d, "actNotes/y__ax"), { ...live, artistId: "y", actId: "ax", note: "y's" });
     await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
     await setDoc(doc(d, "shows/x/comments/c1"), { ...live });
@@ -289,6 +293,33 @@ test("venues: a member and an admin of another artist read the shared record; ve
   await assertSucceeds(getDoc(doc(otherAdmin(), "venueNotes/y__x")));
   await assertSucceeds(getDoc(doc(admin(), "venueNotes/x__x")));
   await assertFails(getDoc(doc(admin(), "venueNotes/y__x"))); // and x's admin never sees y's
+});
+
+test("acts: a member reads the shared record; actNotes stay with that artist's admins", async () => {
+  await assertSucceeds(getDoc(doc(hugo(), "acts/ax")));
+  await assertSucceeds(getDoc(doc(admin(), "acts/ax")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "acts/ax")));
+  await assertFails(getDoc(doc(anon(), "acts/ax")));
+  await assertSucceeds(getDoc(doc(admin(), "actNotes/x__ax")));
+  await assertFails(getDoc(doc(hugo(), "actNotes/x__ax")));
+  await assertFails(getDoc(doc(otherAdmin(), "actNotes/x__ax")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "actNotes/y__ax")));
+  await assertFails(getDoc(doc(admin(), "actNotes/y__ax")));
+  await assertFails(getDoc(doc(noRole(), "actNotes/x__ax")));
+  await assertFails(getDoc(doc(anon(), "actNotes/x__ax")));
+});
+
+test("actNotes lists must filter by artistId; acts and actNotes cannot be written from the client", async () => {
+  await assertFails(getDocs(collection(admin(), "actNotes")));
+  await assertSucceeds(getDocs(query(collection(admin(), "actNotes"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(query(collection(admin(), "actNotes"), where("artistId", "==", "y"))));
+  await assertFails(getDocs(query(collection(hugo(), "actNotes"), where("artistId", "==", "x"))));
+  await assertSucceeds(getDocs(collection(hugo(), "acts")));
+  for (const who of [admin(), hugo()]) {
+    await assertFails(setDoc(doc(who, "acts/new"), { name: "x" }));
+    await assertFails(setDoc(doc(who, "actNotes/x__new"), { artistId: "x" }));
+    await assertFails(deleteDoc(doc(who, "actNotes/x__ax")));
+  }
 });
 
 test("venueNotes: the per-artist role decides, not the best role", async () => {
