@@ -229,6 +229,24 @@ export function readShowFilter(v: unknown): ShowFilter {
 }
 
 /**
+ * The show filters in a URL, so a link sends the exact list: ?show=all (likely is the default and leaves it out), ?notfit=show
+ * (hiding them is the default), ?genre= once per genre and ?when=3m|6m. Anything unknown is the default.
+ */
+export function showFilterFromParams(p: URLSearchParams): ShowFilter {
+  return readShowFilter({ show: p.get("show"), hideNotFit: p.get("notfit") !== "show", genres: p.getAll("genre"), when: p.get("when") });
+}
+/** Write `f` into `u` (dropping what's there), leaving the defaults out. */
+export function showFilterToParams(u: URLSearchParams, f: ShowFilter): URLSearchParams {
+  for (const k of SHOW_FILTER_PARAMS) u.delete(k);
+  if (f.show !== DEFAULT_SHOW_FILTER.show) u.set("show", f.show);
+  if (!f.hideNotFit) u.set("notfit", "show");
+  for (const g of f.genres) u.append("genre", g);
+  if (f.when !== DEFAULT_SHOW_FILTER.when) u.set("when", f.when);
+  return u;
+}
+export const SHOW_FILTER_PARAMS = ["show", "notfit", "genre", "when"] as const;
+
+/**
  * Whether a picked genre covers one of theirs: every word of the pick is in it, so "indie" covers "indie folk" and "indie rock",
  * and "indie folk" doesn't cover "folk".
  */

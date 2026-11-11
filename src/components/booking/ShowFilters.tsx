@@ -3,7 +3,8 @@
  * The show filters Booking's Venue calendars tab and a venue's Events tab share: a dropdown of Likely needs an opener (the
  * default) or All shows, a Hide "not a fit" checkbox (on by default; admins only, since only they have takes), the main act's
  * genres (several at once) and When (All times, the default, 3 or 6 months out or more). They add up: a show is listed only when
- * it passes every one. Each list remembers its own per viewer on this device (localStorage, like the stage plot paper size).
+ * it passes every one. A venue's Events tab remembers its own per viewer on this device (localStorage); Venue calendars keeps
+ * them in the URL (showFilterToParams).
  */
 import { useEffect, useState } from "react";
 import { clientAuth } from "@/lib/firebase-client";

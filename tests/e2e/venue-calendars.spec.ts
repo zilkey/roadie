@@ -139,7 +139,8 @@ test("a search on the Venue calendars tab shows the search cards, and clearing i
   await expect(page.getByTestId("search-buckets")).toBeVisible();
   await expect(page.getByTestId("venue-calendars")).toHaveCount(0);
   await page.getByTestId("search-clear").click();
-  await expect(page).toHaveURL(/\/booking\/calendars$/);
+  await expect(page).toHaveURL(/\/booking\/calendars\?show=all$/); // the filters outlast the search
+  await expect(page.getByTestId("calendar-filter-show")).toHaveValue("all");
   await expect(shows(page).first()).toBeVisible();
 });
 
@@ -158,9 +159,10 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await expect(shows(page)).toHaveCount(1);
   await expect(row("Headline Example Trio")).toHaveCount(1);
 
-  // All shows, remembered after a reload
+  // All shows: in the URL, so it lasts a reload
   await page.getByTestId("calendar-filter-show").selectOption("all");
   await expect(shows(page)).toHaveCount(2);
+  await expect(page).toHaveURL(/\/booking\/calendars\?show=all$/);
   await page.reload();
   await expect(page.getByTestId("calendar-filter-show")).toHaveValue("all");
   await expect(shows(page)).toHaveCount(2);
@@ -209,4 +211,16 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(shows(page)).toHaveCount(2);
 
+  // a link sends the exact list; back to the defaults leaves the URL bare
+  await page.goto(A("/booking/calendars?show=all&notfit=show&region=boulder&when=6m"));
+  await expect(page.getByTestId("calendar-filter-show")).toHaveValue("all");
+  await expect(page.getByTestId("calendar-filter-hide")).not.toBeChecked();
+  await expect(page.getByTestId("calendar-filter-region")).toHaveValue("boulder");
+  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("6m");
+  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  await page.getByTestId("calendar-filter-show").selectOption("likely");
+  await page.getByTestId("calendar-filter-hide").check();
+  await page.getByTestId("calendar-filter-region").selectOption("");
+  await page.getByTestId("calendar-filter-when").selectOption("any");
+  await expect(page).toHaveURL(/\/booking\/calendars$/);
 });

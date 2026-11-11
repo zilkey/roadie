@@ -6,7 +6,7 @@ import { extract } from "@/server/events/selectors";
 import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenFrom, addMonths, latestFirst, showListed, genresMatch, genreOptions, readShowFilter, DEFAULT_SHOW_FILTER, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenFrom, addMonths, latestFirst, showListed, genresMatch, genreOptions, readShowFilter, showFilterFromParams, showFilterToParams, DEFAULT_SHOW_FILTER, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
 import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
@@ -639,6 +639,14 @@ describe("show filters", () => {
   test("the default: likely only, not-a-fit hidden, any genre, all times", () => {
     assert.deepEqual(DEFAULT_SHOW_FILTER, { show: "likely", hideNotFit: true, genres: [], when: "any" });
     assert.deepEqual(readShowFilter({ show: "hide", when: "1m", genres: ["indie", 3] }), { ...DEFAULT_SHOW_FILTER, genres: ["indie"] });
+  });
+  test("in the URL: defaults left out, the rest round-trips, anything unknown is the default", () => {
+    assert.equal(showFilterToParams(new URLSearchParams("tab=x&show=all"), DEFAULT_SHOW_FILTER).toString(), "tab=x");
+    const f = { show: "all" as const, hideNotFit: false, genres: ["indie", "folk rock"], when: "6m" as const };
+    const u = showFilterToParams(new URLSearchParams("region=denver"), f);
+    assert.equal(u.toString(), "region=denver&show=all&notfit=show&genre=indie&genre=folk+rock&when=6m");
+    assert.deepEqual(showFilterFromParams(u), f);
+    assert.deepEqual(showFilterFromParams(new URLSearchParams("show=hide&when=1m&notfit=yes")), DEFAULT_SHOW_FILTER);
   });
   test("the filters add up: likely, not hidden, the main act's genre and far enough out", () => {
     const f = { ...DEFAULT_SHOW_FILTER, genres: ["indie"] };

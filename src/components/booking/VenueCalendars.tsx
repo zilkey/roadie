@@ -4,7 +4,9 @@
  * opener slot six months out is likelier to land than one in a few days), to find opener slots to pitch. Each row's pieces are the
  * venue Events tab's (VenueEventBits); the venue name opens that venue's Events tab. The filters are the Events tab's
  * (ShowFilterBar: Likely needs an opener or All shows, Hide "not a fit", the main act's genres, When) plus a region, with the
- * opener disclaimer under them. They add up.
+ * opener disclaimer under them. They add up, and they ride in the URL so a link sends the exact list (the Acts tab's way):
+ * ?show=, ?notfit=, ?genre= and ?when= (showFilterToParams) and ?region=, defaults left out. They're written with
+ * history.replaceState, which the App Router picks up without a navigation.
  *
  * Paging is a live Firestore query (date from the "When" start on, latest date first) whose limit grows by a page per
  * "Load more": every band user may read venueEvents, a range and an order on the same field need no composite index, and a
@@ -19,8 +21,9 @@ import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
 import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, TicketLink } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
-import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
-import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
+import { useSearchParams } from "next/navigation";
+import { ShowFilterBar } from "@/components/booking/ShowFilters";
+import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
 import { dateInBandZone } from "@/lib/timezone";
 import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
@@ -54,9 +57,8 @@ export function VenueCalendars() {
   // `pages` is how many pages the viewer asked for; `limit` is how far the query reads, grown past that when the filters hide rows.
   const [pages, setPages] = useState(1);
   const [limit, setLimit] = useState(CALENDARS_PAGE);
-  // A new key since the furthest-first change: the old one remembered pills and a "Next 3 months" default.
-  const [saved, setF] = useShowFilter("venueCalendarsShows", { region: "" as Region | "" });
-  const f: CalendarFilter = { ...saved, region: regionOf(saved.region) };
+  const params = useSearchParams();
+  const [f, setF] = useState<CalendarFilter>(() => ({ ...showFilterFromParams(params), region: regionOf(params.get("region") ?? "") }));
   const from = whenFrom(today, f.when);
   const events = useCollection<VenueEvent>("venueEvents", { where: [["date", ">=", from]], order: ["date", "desc"], limit, includeDeleted: true, waitForServer: true });
   const sources = useCollection<VenueEventSource>("venueEventSources", { includeDeleted: true });
@@ -101,7 +103,14 @@ export function VenueCalendars() {
   const filling = (!!raw && !readAll && rows.length < want) || (!!raw && !acts.rows);
   // A filter change shows "Loading…" until its first page is all there, then the table once; Load more keeps the table up.
   const settling = filling && pages === 1;
-  const change = (patch: Partial<CalendarFilter>) => { setF({ ...f, ...patch }); setPages(1); setLimit(CALENDARS_PAGE); };
+  const change = (patch: Partial<CalendarFilter>) => {
+    const next = { ...f, ...patch };
+    setF(next); setPages(1); setLimit(CALENDARS_PAGE);
+    const u = showFilterToParams(new URLSearchParams(window.location.search), next);
+    if (next.region) u.set("region", next.region); else u.delete("region");
+    const qs = u.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  };
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="venue-calendars">
