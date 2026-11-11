@@ -159,6 +159,9 @@ test("an act's name on the Booking Venue calendars tab links to its page", async
   await signInAs(page, "rudy");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-calendars").click();
+  // every show, any time: the calendars tab starts on likely opener slots in the next 3 months, and the fixture shows are in 2031
+  await page.getByTestId("calendar-filter-all").click();
+  await page.getByTestId("calendar-filter-when").selectOption("any");
   const link = page.getByTestId(`act-name-${href.support.split("/").pop()}`).first();
   await expect(link).toBeVisible();
   await link.click();

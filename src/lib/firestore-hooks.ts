@@ -12,11 +12,15 @@ type Where = [field: string, op: WhereFilterOp, value: unknown];
  * Live read-only listener. Soft-deleted docs are hidden. Sort client-side (avoids composite indexes). Client writes are denied by rules: use runCommand.
  * `group` reads every collection with that name (a collection-group query, needs an index in firestore.indexes.json when combined with `order`);
  * `order` and `limit` are applied by the server; `includeDeleted` skips the soft-delete filter (history entries are never deleted).
+ * `fromCache` is true while `rows` are the SDK's local answer, not yet the server's: a new query (a bigger `limit`, say) can first get
+ * only the docs an earlier listener left in the cache, then the server's full answer. Pass `waitForServer` to rely on it: it also
+ * fires when the server confirms the cache's answer unchanged (an empty one, say), which the SDK otherwise doesn't report.
  */
-export function useCollection<T = Record<string, unknown>>(path: string, opts: { where?: Where[]; skip?: boolean; group?: boolean; order?: [field: string, dir: "asc" | "desc"]; limit?: number; includeDeleted?: boolean } = {}) {
+export function useCollection<T = Record<string, unknown>>(path: string, opts: { where?: Where[]; skip?: boolean; group?: boolean; order?: [field: string, dir: "asc" | "desc"]; limit?: number; includeDeleted?: boolean; waitForServer?: boolean } = {}) {
   const { state } = useAuth();
   const ready = state.status === "ready" && !opts.skip;
   const [rows, setRows] = useState<Row<T>[] | null>(null);
+  const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const key = JSON.stringify([path, opts]);
   useEffect(() => {
@@ -27,14 +31,15 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
     ];
     return onSnapshot(
       query(opts.group ? collectionGroup(clientDb(), path) : collection(clientDb(), path), ...cs),
-      (s) => { setRows(s.docs.map((d) => ({ ...(d.data() as T), id: d.id }))); setError(null); },
+      { includeMetadataChanges: !!opts.waitForServer },
+      (s) => { setRows(s.docs.map((d) => ({ ...(d.data() as T), id: d.id }))); setFromCache(s.metadata.fromCache); setError(null); },
       (e) => setError(e.message),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, key]);
   const loading = rows === null && !error && !opts.skip;
   useBusyWhile(loading);
-  return { rows, error, loading };
+  return { rows, error, loading, fromCache };
 }
 
 /** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc, with its `deletedAt`). */

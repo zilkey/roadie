@@ -6,7 +6,7 @@ import { extract } from "@/server/events/selectors";
 import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenUntil, nextCalendarLimit } from "@/lib/venueEvents";
 import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
@@ -612,5 +612,40 @@ describe("splitTitle and isMusic: prod refresh follow-ups (#76)", () => {
     assert.equal(isMusic("Happy Hour @ The Junkyard Social Club with Sol Aldinger"), true);
     assert.equal(isMusic("Happy Hour 3-6PM"), false);
     assert.equal(isMusic("Songwriters at the Speakeasy", [], "Happy hour drinks and a meetup of local songwriters"), true);
+  });
+});
+
+describe("whenUntil (Venue calendars' When filter)", () => {
+  test("next month and next 3 months end on the same day of the month, any time has no end", () => {
+    assert.equal(whenUntil("2026-11-11", "1m"), "2026-12-11");
+    assert.equal(whenUntil("2026-11-11", "3m"), "2027-02-11");
+    assert.equal(whenUntil("2026-11-11", "any"), "");
+  });
+  test("a day the later month lacks is that month's last day", () => {
+    assert.equal(whenUntil("2027-01-31", "1m"), "2027-02-28");
+    assert.equal(whenUntil("2027-11-30", "3m"), "2028-02-29");
+  });
+});
+
+describe("nextCalendarLimit (Venue calendars reading on past filtered-out shows)", () => {
+  test("waits for the server's answer, stops at the end of the calendars or once a page matches, else doubles", () => {
+    assert.equal(nextCalendarLimit(50, null, 0, 50), 50); // no server answer yet (or only the cache's)
+    assert.equal(nextCalendarLimit(100, 50, 0, 50), 100); // a short read is the end
+    assert.equal(nextCalendarLimit(50, 50, 50, 50), 50); // a page's worth matches
+    assert.equal(nextCalendarLimit(50, 50, 3, 50), 100);
+  });
+  test("a sparse filter over a big calendar settles in a few reads, not one per page", () => {
+    // 3,000 upcoming shows, one in 60 a likely opener slot (prod had ~40 reads of 50 for one click)
+    const shows = Array.from({ length: 3000 }, (_, i) => i % 60 === 0);
+    let limit = 50, reads = 0;
+    for (;;) {
+      const got = shows.slice(0, limit);
+      reads++;
+      const next = nextCalendarLimit(limit, got.length, got.filter(Boolean).length, 50);
+      if (next === limit) break;
+      limit = next;
+      assert.ok(reads < 20, "the limit never settles");
+    }
+    assert.ok(reads <= 7, `took ${reads} reads`);
   });
 });

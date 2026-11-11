@@ -139,3 +139,26 @@ export const byWhen = (a: { date: string; start?: string }, b: { date: string; s
 
 /** Still to come and still listed: today or later (the band's zone) and not dropped off the venue's calendar. */
 export const isUpcoming = (e: { date: string; status?: string }, today: string) => e.date >= today && e.status !== "gone";
+
+/**
+ * Venue calendars' next read limit. The pills and region filter on the client, so a page can come up short: the live query then
+ * grows, doubling (a sparse filter takes a few reads, not dozens, each one a fresh snapshot and render), until `want` shows match or
+ * the calendars run out. `read` is how many shows the server returned for `limit`, or null while its answer is still coming; a
+ * cache answer must count as null, since it holds only what the last, smaller read left behind and would look like the end.
+ */
+export function nextCalendarLimit(limit: number, read: number | null, matched: number, want: number): number {
+  if (read === null || read < limit || matched >= want) return limit;
+  return limit * 2;
+}
+
+/** The Venue calendars "When" filter: shows up to a month or three months from today, or any time. */
+export type CalendarWhen = "1m" | "3m" | "any";
+export const CALENDAR_WHEN: [CalendarWhen, string][] = [["1m", "Next month"], ["3m", "Next 3 months"], ["any", "Any time"]];
+/** The last date ("YYYY-MM-DD") a "When" choice shows, or "" for any time. A month on from Jan 31 is the last day of February. */
+export function whenUntil(today: string, when: CalendarWhen): string {
+  if (when === "any") return "";
+  const [y, m, d] = today.split("-").map(Number);
+  const months = when === "1m" ? 1 : 3;
+  const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last))).toISOString().slice(0, 10);
+}

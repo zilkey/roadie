@@ -13,6 +13,11 @@ async function signInAs(page: Page, key: string) {
 }
 
 const shows = (page: Page) => page.getByTestId("venue-calendars").locator("tbody tr");
+/** The fixture shows are years out and not all likely opener slots: list every show, any time (the default is likely, next 3 months). */
+async function everyShow(page: Page) {
+  await page.getByTestId("calendar-filter-all").click();
+  await page.getByTestId("calendar-filter-when").selectOption("any");
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -34,6 +39,7 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await page.getByTestId("booking-seg-calendars").click();
   await expect(page).toHaveURL(/\/booking\/calendars$/);
   await expect(page.getByTestId("booking-seg-calendars")).toHaveAttribute("aria-selected", "true");
+  await everyShow(page);
 
   // first page: the two soonest, in date order, with the bill, the time and the venue
   await expect(shows(page)).toHaveCount(2);
@@ -75,6 +81,7 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
 test("a search on the Venue calendars tab shows the search cards, and clearing it brings the shows back", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/calendars"));
+  await everyShow(page);
   await expect(shows(page).first()).toBeVisible();
   await page.getByTestId("booking-search").fill("Bluebird");
   await expect(page.getByTestId("search-buckets")).toBeVisible();
@@ -87,19 +94,46 @@ test("a search on the Venue calendars tab shows the search cards, and clearing i
 test("the filters narrow the shows and are remembered", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/calendars"));
-  await expect(shows(page)).toHaveCount(2);
   const row = (name: string) => shows(page).filter({ hasText: name });
+  const pill = (k: string) => page.getByTestId(`calendar-filter-${k}`);
 
-  // Likely needs an opener: only the trio (support still to be announced); the list reads on past the first page to find it
-  await page.getByTestId("calendar-filter-likely").click();
-  await expect(page.getByTestId("calendar-filter-likely")).toHaveAttribute("aria-pressed", "true");
+  // the default: likely opener slots in the next 3 months, anywhere; the 2031 fixture shows are further out
+  await expect(pill("likely")).toHaveAttribute("aria-pressed", "true");
+  await expect(pill("hide")).toHaveAttribute("aria-pressed", "false");
+  await expect(pill("all")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
+  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("3m");
+  await expect(page.getByTestId("opener-disclaimer")).toHaveText("Opener chance is a guess from the listing, not perfect. Hover a badge for why.");
+  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+
+  // Any time: only the trio (support still to be announced) is a likely slot; the list reads on past the first page to find it,
+  // in one settled render: no "no match" note or half-filled table on the way (each bigger read's first snapshot comes from the
+  // cache with only the last read's shows, which once read as the end and flashed the note once a round)
+  await page.evaluate(() => {
+    const root = document.querySelector('[data-testid="venue-calendars"]')!;
+    const seen: string[] = [];
+    (window as unknown as { __seen: string[] }).__seen = seen;
+    new MutationObserver(() => {
+      const s = root.querySelector('[data-testid="venue-calendars-none"]') ? "none" : root.querySelector("table") ? `table:${root.querySelectorAll("tbody tr").length}` : "loading";
+      if (seen.at(-1) !== s) seen.push(s);
+    }).observe(root, { subtree: true, childList: true });
+  });
+  await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(shows(page)).toHaveCount(1);
   await expect(row("Headline Example Trio")).toHaveCount(1);
+  const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
+  expect(seen.filter((s) => s !== "loading")).toEqual(["table:1"]);
   // remembered after a reload
   await page.reload();
-  await expect(page.getByTestId("calendar-filter-likely")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("any");
+  await expect(pill("likely")).toHaveAttribute("aria-pressed", "true");
   await expect(shows(page)).toHaveCount(1);
-  await page.getByTestId("calendar-filter-likely").click();
+
+  // the pills are one at a time: All shows turns Likely off
+  await pill("all").click();
+  await expect(pill("all")).toHaveAttribute("aria-pressed", "true");
+  await expect(pill("likely")).toHaveAttribute("aria-pressed", "false");
+  await expect(shows(page)).toHaveCount(2);
 
   // Hide "not a fit"
   await page.getByTestId("venue-calendars-more").click();
@@ -107,10 +141,11 @@ test("the filters narrow the shows and are remembered", async ({ page }) => {
   const take = row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]');
   const before = await take.inputValue();
   await take.selectOption("notFit");
-  await page.getByTestId("calendar-filter-notfit").click();
+  await pill("hide").click();
+  await expect(pill("all")).toHaveAttribute("aria-pressed", "false");
   await expect(row("Headline Example Trio")).toHaveCount(0);
   await expect(row("Lone Example Act")).toHaveCount(1);
-  await page.getByTestId("calendar-filter-notfit").click();
+  await pill("all").click();
   await page.getByTestId("venue-calendars-more").click(); // a filter change starts over at the first page
   await row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]').selectOption(before);
 
@@ -120,15 +155,9 @@ test("the filters narrow the shows and are remembered", async ({ page }) => {
   await page.getByTestId("calendar-filter-region").selectOption("denver");
   await expect(shows(page)).toHaveCount(2);
 
-  // date range: up to the end of April 2031 leaves the March and April shows
-  await page.getByTestId("calendar-filter-to").fill("2031-04-30");
+  // When: next month leaves nothing (the shows are in 2031)
+  await page.getByTestId("calendar-filter-when").selectOption("1m");
+  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(shows(page)).toHaveCount(2);
-  await expect(row("Headline Example Trio")).toHaveCount(0);
-  await page.getByTestId("calendar-filter-from").fill("2031-04-01");
-  await expect(shows(page)).toHaveCount(1);
-  await expect(row("Lone Example Act")).toHaveCount(1);
-
-  await page.getByTestId("calendar-filter-clear").click();
-  await expect(shows(page)).toHaveCount(2);
-  await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
 });
