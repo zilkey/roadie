@@ -1,0 +1,257 @@
+/**
+ * "Find their team" on an act's Contacts card: who books, manages or does press for the act. Only on a click, never from chat.
+ * - The act's own website: the home page, then up to five pages on the same site whose link says contact, booking, management,
+ *   team, about, press or EPK. Bandcamp too, when the act has it.
+ * - One Google search through Gemini's grounding ("<act> band booking agent manager publicist"), and up to three of the pages it
+ *   came from (not social or listings sites): agency rosters and press pages often name the agent.
+ * - A structured extraction over those pages, then a check: an email is kept only when it is written on a page that was read, a name
+ *   only when a page (or the search answer) says it, a phone only when its digits are on a page. Emails on the pages that the model
+ *   left out are added too, with a role guessed from the words around them (or the address itself: booking@, mgmt@, press@).
+ * Nothing is saved: the card lists what was found and each person has an Add button (the band's own contacts, linked to the act).
+ */
+import { z as gz } from "genkit";
+import { db } from "../db";
+import { AppError } from "../errors";
+import type { ArtistLinkKey } from "@/schema";
+import { e164 } from "@/schema/normalize";
+import { TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult } from "@/lib/acts";
+import { getAi, modelMode, withModelRetry } from "./ai";
+import { fetchBytes, isAggregator, normalizeUrl, pageText, resolveSource, searchWeb, socialOf, WEB_NOTICE } from "./web";
+
+export { TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult };
+/** One page that was read: its address, readable text and the addresses in its mailto links. */
+export interface ReadPage { url: string; text: string; emails: string[] }
+
+const BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
+const MAX_HTML_BYTES = 2_000_000;
+const MAX_SITE_PAGES = 5;
+const MAX_SOURCE_PAGES = 3;
+const PAGE_CHARS = 6_000;
+const MAX_PEOPLE = 12;
+
+/** Words in a link (its address or its text) that point at a page with the act's people on it. */
+const TEAM_WORDS = /\b(contact|contacts|booking|book us|book-us|bookings|management|mgmt|team|about|press|epk|info|connect)\b/i;
+
+/**
+ * Pages on the same site that likely list the act's people, from the home page's links: the address or the link text says contact,
+ * booking, management, team, about, press or EPK. The home page itself, other sites, files and anchors on the same page are left out.
+ */
+export function teamPageLinks(html: string, base: string, max = MAX_SITE_PAGES): string[] {
+  let home: URL;
+  try { home = new URL(base); } catch { return []; }
+  const host = home.hostname.replace(/^www\./, "");
+  const out: string[] = [];
+  for (const [, href, inner] of html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    let u: URL;
+    try { u = new URL(href.replace(/&amp;/g, "&"), home); } catch { continue; }
+    if (!/^https?:$/.test(u.protocol) || u.hostname.replace(/^www\./, "") !== host) continue;
+    if (/\.(pdf|jpe?g|png|gif|webp|zip|mp3|wav)$/i.test(u.pathname)) continue;
+    u.hash = "";
+    const n = normalizeUrl(u.href.replace(/^http:/, "https:"));
+    if (!n || n === normalizeUrl(home.href)) continue;
+    const words = `${decodeURIComponent(u.pathname).replace(/[-_/]+/g, " ")} ${inner.replace(/<[^>]+>/g, " ")}`;
+    if (TEAM_WORDS.test(words) && !out.includes(n)) out.push(n);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Addresses that are page plumbing, not people: image names (logo@2x.png), error trackers, site builders, placeholders. */
+const JUNK_EMAIL = /\.(png|jpe?g|gif|webp|svg|css|js)$|@(sentry|.*\.sentry|wixpress|.*\.wixpress|sentry-next\.wixpress|godaddy|domain|email|yourdomain|example)\.(com|io|net|org)$|^(noreply|no-reply|donotreply|privacy|abuse|webmaster|postmaster)@/i;
+
+/** Every email address written in some text, lowercase, each once, without page plumbing. */
+export function emailsIn(text: string): string[] {
+  const out = new Set<string>();
+  for (const [m] of text.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)) {
+    const e = m.toLowerCase().replace(/\.$/, "");
+    if (!JUNK_EMAIL.test(e)) out.add(e);
+  }
+  return [...out];
+}
+
+const ROLE_WORDS: [TeamRole, RegExp][] = [
+  ["booking", /\b(booking|bookings|book(?:ed)? by|agent|agency|talent buyer|touring)\b/i],
+  ["management", /\b(management|manager|mgmt|managed by)\b/i],
+  ["publicity", /\b(press|publicist|publicity|pr|media inquiries|media)\b/i],
+  ["label", /\b(label|records|recordings)\b/i],
+  ["general", /\b(general|info|inquiries|enquiries|contact us|say hi|hello)\b/i],
+];
+
+/** The role an address's own name says: booking@, mgmt@, press@, info@… else undefined. */
+export function roleFromEmail(email: string): TeamRole | undefined {
+  const local = email.split("@")[0].toLowerCase();
+  if (/book|agent|tour/.test(local)) return "booking";
+  if (/mgmt|manage/.test(local)) return "management";
+  if (/^(press|pr|publicity|media)\b/.test(local)) return "publicity";
+  if (/label|records/.test(local)) return "label";
+  if (/^(info|hello|hi|contact|band|general|inquiries|team|mail)$/.test(local)) return "general";
+  return undefined;
+}
+
+/** The role the words just before an address on the page say ("Booking: jo@agency.com"), else the address's own, else "other". */
+export function roleNear(text: string, email: string): TeamRole {
+  const at = text.toLowerCase().indexOf(email.toLowerCase());
+  if (at >= 0) {
+    const before = text.slice(Math.max(0, at - 120), at);
+    // The nearest heading wins: look at the words closest to the address first.
+    const lines = before.split("\n").reverse();
+    // Lines with an address on them are skipped: "mgmt@band.com" above a general inbox says nothing about it.
+    for (const line of lines) {
+      if (line.includes("@")) continue;
+      for (const [role, re] of ROLE_WORDS) if (re.test(line)) return role;
+    }
+  }
+  return roleFromEmail(email) ?? "other";
+}
+
+const PeopleOut = gz.object({
+  people: gz.array(gz.object({
+    name: gz.string().nullable().describe("The person's full name as the page writes it, or null for an inbox with no name (booking@band.com)"),
+    role: gz.enum(TEAM_ROLES).describe("booking = booking agent or agency; management = manager; publicity = publicist or press; label = record label; general = the band's own general inbox; other = anyone else on the team"),
+    company: gz.string().nullable().describe("The agency, management company, PR firm or label they are at, as the page writes it, or null"),
+    email: gz.string().nullable().describe("Their email exactly as written on a page, or null"),
+    phone: gz.string().nullable().describe("Their phone exactly as written on a page, or null"),
+    sourceUrl: gz.string().nullable().describe("The url of the page that says this, or null when only the search answer does"),
+  })).describe("The act's team: booking agent, manager, publicist, label contact, general inbox. Empty when the pages name no one"),
+});
+type PeopleRaw = gz.infer<typeof PeopleOut>["people"];
+
+const extractSystem = () =>
+  "You list the people who work for one music act (a band or artist) from pages about it: its booking agent, manager, publicist, " +
+  "label contact, and the band's own general inbox. Use only what the pages and the search answer say; never make up a name, an email or a phone. " +
+  "Leave out venues, promoters, fans, other bands and the website's maker. " + WEB_NOTICE;
+
+const SEARCH_SYSTEM =
+  "Search the web for one music act's team and answer in at most six short sentences: who their booking agent is (and the agency), " +
+  "their manager (and the company), their publicist and their label, with any booking or management email shown publicly. Facts only. " +
+  "Say when you couldn't find something.";
+
+const clip = (s: string | null | undefined) => (typeof s === "string" && s.trim() ? s.trim().replace(/\s+/g, " ") : undefined);
+const digits = (s: string) => s.replace(/\D/g, "");
+
+/**
+ * Keep only what the pages back up, then add the addresses the model left out. `answer` is the search answer: a name or company it
+ * says counts, but an email or phone must be on a page that was read.
+ */
+export function groundTeam(raw: PeopleRaw | null | undefined, pages: ReadPage[], answer = ""): TeamPerson[] {
+  const pageText = pages.map((p) => p.text).join("\n");
+  const said = `${pageText}\n${answer}`.toLowerCase();
+  const pageDigits = digits(pageText);
+  const pageEmails = new Map<string, string>(); // email → the first page it is on
+  for (const p of pages) for (const e of [...p.emails.map((x) => x.toLowerCase()), ...emailsIn(p.text)]) if (!JUNK_EMAIL.test(e) && !pageEmails.has(e)) pageEmails.set(e, p.url);
+  const urls = new Set(pages.map((p) => p.url));
+
+  const out: TeamPerson[] = [];
+  const has = (p: TeamPerson) => out.find((o) => (p.email && o.email === p.email) || (p.name && o.name?.toLowerCase() === p.name.toLowerCase()));
+  for (const r of raw ?? []) {
+    const email = clip(r.email)?.toLowerCase();
+    const okEmail = email && pageEmails.has(email) ? email : undefined;
+    const name = clip(r.name);
+    const okName = name && name.length <= 80 && said.includes(name.toLowerCase()) ? name : undefined;
+    if (!okName && !okEmail) continue;
+    const company = clip(r.company);
+    const phone = clip(r.phone);
+    const p164 = phone ? e164(phone) : undefined;
+    const okPhone = p164 && /^\+[1-9]\d{6,14}$/.test(p164) && digits(phone!).length >= 7 && pageDigits.includes(digits(phone!).slice(-7)) ? p164 : undefined;
+    const src = normalizeUrl(clip(r.sourceUrl) ?? "");
+    const source = src && urls.has(src) ? src : okEmail ? pageEmails.get(okEmail) : undefined;
+    const role = TEAM_ROLES.includes(r.role) ? r.role : "other";
+    const person: TeamPerson = {
+      role, ...(okName ? { name: okName } : {}), ...(company && company.length <= 100 && said.includes(company.toLowerCase()) ? { company } : {}),
+      ...(okEmail ? { email: okEmail } : {}), ...(okPhone ? { phone: okPhone } : {}), ...(source ? { source } : {}),
+    };
+    const dup = has(person);
+    if (dup) Object.assign(dup, { ...person, ...dup });
+    else out.push(person);
+  }
+  for (const [email, url] of pageEmails) {
+    if (out.some((o) => o.email === email)) continue;
+    const page = pages.find((p) => p.url === url)!;
+    out.push({ role: roleNear(page.text, email), email, source: url });
+  }
+  const order = (r: TeamRole) => TEAM_ROLES.indexOf(r);
+  return out.sort((a, b) => order(a.role) - order(b.role)).slice(0, MAX_PEOPLE);
+}
+
+async function readPage(url: string): Promise<{ page: ReadPage; html: string } | undefined> {
+  try {
+    const r = await fetchBytes(url, { ua: BROWSER_UA, accept: "text/html", type: /html/i, max: MAX_HTML_BYTES });
+    const html = r.body.toString("utf8");
+    const p = pageText(html);
+    return { html, page: { url: normalizeUrl(r.url) ?? r.url, text: p.text.slice(0, PAGE_CHARS), emails: p.emails } };
+  } catch (e) {
+    console.warn("acts.findTeam read", url, e instanceof Error ? e.message : e);
+    return undefined;
+  }
+}
+
+/** The act's own site: home page first, then its contact/booking/about pages. Bandcamp too. */
+async function readOwnSite(links: Partial<Record<ArtistLinkKey, string>>): Promise<ReadPage[]> {
+  const pages: ReadPage[] = [];
+  if (links.website) {
+    const home = await readPage(links.website);
+    if (home) {
+      pages.push(home.page);
+      const more = await Promise.all(teamPageLinks(home.html, home.page.url).map(readPage));
+      for (const m of more) if (m) pages.push(m.page);
+    }
+  }
+  if (links.bandcamp) { const bc = await readPage(links.bandcamp); if (bc) pages.push(bc.page); }
+  return pages;
+}
+
+/** Canned pages and model output for the fake model: "A Brother's Fountain" has a team (and one made-up email the check must drop). */
+export const FAKE_TEAM = {
+  pages: [
+    {
+      url: "https://abrothersfountain.example/contact",
+      text: "Contact\nBooking\nDana Reyes, Front Range Touring\ndana@frontrangetouring.example\n(970) 555-0142\nManagement\nmgmt@abrothersfountain.example\nGeneral\nhello@abrothersfountain.example",
+      emails: ["dana@frontrangetouring.example", "hello@abrothersfountain.example"],
+    },
+  ] as ReadPage[],
+  answer: "A Brother's Fountain is booked by Dana Reyes at Front Range Touring. Their publicist is Sam Ortiz.",
+  people: [
+    { name: "Dana Reyes", role: "booking", company: "Front Range Touring", email: "dana@frontrangetouring.example", phone: "(970) 555-0142", sourceUrl: "https://abrothersfountain.example/contact" },
+    { name: "Sam Ortiz", role: "publicity", company: null, email: "sam@made-up-pr.example", phone: null, sourceUrl: null },
+  ] as PeopleRaw,
+};
+
+/** Look for the act's team. Throws not_found for a missing act; a web that can't be reached comes back as nothing found. */
+export async function findActTeam(id: string): Promise<TeamResult> {
+  const act = await db.get("acts", id) as (Record<string, unknown> & { name: string; links?: Partial<Record<ArtistLinkKey, string>> }) | null;
+  if (!act || act.deletedAt) throw new AppError("not_found", "No act with that id", 404);
+  if (modelMode() === "fake") {
+    if (!/fountain/i.test(act.name)) return { id, name: act.name, people: [], read: [], searched: true };
+    return { id, name: act.name, people: groundTeam(FAKE_TEAM.people, FAKE_TEAM.pages, FAKE_TEAM.answer), read: FAKE_TEAM.pages.map((p) => p.url), searched: true };
+  }
+
+  const links = act.links ?? {};
+  const q = `"${act.name}" band booking agent, manager, management, publicist, record label, booking contact email`;
+  const [own, found] = await Promise.all([
+    readOwnSite(links),
+    withModelRetry(() => searchWeb(q, { system: SEARCH_SYSTEM, max: 8 })).catch((e) => { console.error("acts.findTeam search", e); return undefined; }),
+  ]);
+  const sources = found ? (await Promise.all(found.sources.map((s) => resolveSource(s.url)))).filter((u): u is string => !!u) : [];
+  const have = new Set(own.map((p) => p.url));
+  const extra = sources.filter((u) => !have.has(u) && !socialOf(u) && !isAggregator(u)).slice(0, MAX_SOURCE_PAGES);
+  const more = (await Promise.all(extra.map(readPage))).filter((r) => !!r).map((r) => r!.page);
+  const pages = [...own, ...more];
+  const answer = found?.answer ?? "";
+  if (!pages.length && !answer) return { id, name: act.name, people: [], read: [], searched: !!found };
+
+  const { ai, model } = await getAi();
+  const prompt = [
+    `Act: ${act.name}.`,
+    answer && `<search_answer>${answer}</search_answer>`,
+    ...pages.map((p) => `<page url="${p.url}">\n${p.text}${p.emails.length ? `\nEmail links: ${p.emails.join(", ")}` : ""}\n</page>`),
+  ].filter(Boolean).join("\n\n");
+  let raw: PeopleRaw = [];
+  try {
+    const res = await withModelRetry(() => ai.generate({ model: model as never, system: extractSystem(), prompt, output: { schema: PeopleOut } }));
+    raw = res.output?.people ?? [];
+  } catch (e) {
+    // The addresses on the pages still count without the model.
+    console.error("acts.findTeam extract", e);
+  }
+  return { id, name: act.name, people: groundTeam(raw, pages, answer), read: pages.map((p) => p.url), searched: !!found };
+}

@@ -3,7 +3,8 @@
  * An act's page (issue #77, board "DetailAct" on the booking canvas). About and Where they've played are shared with every band
  * (acts/{id} and venue calendars); Our take and Contacts are this band's (actNotes). Look up (#78) fills About from Spotify and the web (and asks "same band?"
  * when Spotify has several of that name, next to what the web found and the show posters); the about fields are click-to-edit once
- * anything is in them. Search Google is always there, and each show in Where they've played links to the venue's event page.
+ * anything is in them. Look up and the Contacts card's "Find their team" look for the act's booking agent, manager and publicist (acts.findTeam).
+ * Search Google is always there, and each show in Where they've played links to the venue's event page.
  */
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -16,8 +17,9 @@ import { CardGroup, DetailCard, DetailPage, KV } from "@/components/booking/Deta
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { ActThumb, StarIcon } from "@/components/booking/ActsTab";
+import { FindTeamButton, TeamFindings } from "@/components/booking/ActTeam";
 import { EventPoster } from "@/components/booking/VenueEventBits";
-import { actSearchUrl, actStats, type EvLike } from "@/lib/acts";
+import { actSearchUrl, actStats, type EvLike, type TeamResult } from "@/lib/acts";
 import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
 import { dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { ACT_RELATIONSHIPS, ARTIST_LINKS, RELATIONSHIP_HINT, RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship, type ArtistLinkKey, type Show, type VenueEvent } from "@/schema";
@@ -37,6 +39,10 @@ function ActPage() {
   const b = useBooking();
   const { call, error, busy } = useCommand();
   const [addingContact, setAddingContact] = useState(false);
+  // Find their team: the Contacts card's button, and Look up runs it too. What it finds is listed under the contacts, never saved.
+  const team = useCommand();
+  const [teamFound, setTeamFound] = useState<TeamResult | null>(null);
+  const findTeam = async () => { const r = await team.call<TeamResult>("acts.findTeam", { id }); if (r) setTeamFound(r); };
 
   const venues = useMemo(() => new Map(b.venues.map((v) => [v.id, v])), [b.venues]);
   // Rooms on our list: the ones the band has notes, a pitch or a show at (Booking's "ours").
@@ -89,7 +95,7 @@ function ActPage() {
       </>}>
       <ErrorBox error={error} />
       <CardGroup kind="shared">
-        <About id={id} act={act} error={error} update={update}
+        <About id={id} act={act} error={error} update={update} onLookup={() => void findTeam()}
           rooms={[...new Set(played.map((e) => venues.get(e.venueId)?.name).filter((n): n is string => !!n))]}
           cities={played.map((e) => venues.get(e.venueId)?.address.city).filter((c): c is string => !!c)}
           posters={played.filter((e) => e.imageUrl).slice(0, 3).map((e) => ({ id: e.id, src: e.imageUrl!, url: e.ticketUrl, label: `${venues.get(e.venueId)?.name ?? "The"} show, ${shortDay(e.date)}` }))} />
@@ -138,10 +144,16 @@ function ActPage() {
           <KV rows={[["Note", <InlineValue key="note" testid="act-note" label="Note" kind="textarea" value={take?.note ?? ""} emptyLabel="Add a note…" canEdit error={error} onSave={saveNote} />]]} />
         </DetailCard>
 
-        <DetailCard private title="Contacts" testid="act-contacts" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>
+        <DetailCard private title="Contacts" testid="act-contacts" headerExtra={<span className="flex items-center gap-2"><FindTeamButton busy={team.busy} onClick={() => void findTeam()} /><PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} /></span>}>
           {contactIds.length === 0
             ? <div className="empty"><span>No one yet. Add their booker, manager or a member: they&apos;re your contacts, linked to this act.</span></div>
             : <ContactsPanel kind="acts" parentId={id} contactIds={contactIds} contacts={b.contacts} />}
+          <ErrorBox error={team.error} />
+          {team.busy && !teamFound && <span className="s" data-testid="act-team-busy">Looking for their booking agent, manager and publicist on their website and Google…</span>}
+          {teamFound && (
+            <TeamFindings result={teamFound} actId={id} actName={act.name} hasWebsite={!!act.links?.website}
+              linked={contactIds.map((cid) => b.contacts.find((c) => c.id === cid)).filter((c): c is NonNullable<typeof c> => !!c)} onClose={() => setTeamFound(null)} />
+          )}
         </DetailCard>
         <AddContactDialog kind="acts" parentId={id} parentName={act.name} linkedIds={contactIds} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
       </CardGroup>
@@ -156,8 +168,11 @@ interface Poster { id: string; src: string; url?: string; label: string }
  * About: what Look up (#78) finds, each value click-to-edit. Nothing yet: the empty box with Look up. When Spotify has several
  * artists by the name, the "same band?" question sits under what the web found, with the show posters to compare against.
  */
-function About({ id, act, error, update, rooms, cities, posters }: {
-  id: string; act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean>; rooms: string[]; cities: string[]; posters: Poster[];
+function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
+  id: string; act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean>;
+  /** Look up (not a "same band?" answer) also looks for their team, listed on the Contacts card. */
+  onLookup(): void;
+  rooms: string[]; cities: string[]; posters: Poster[];
 }) {
   const lookup = useCommand();
   const run = (spotifyId?: string | null) => void lookup.call("acts.lookup", { id, ...(spotifyId !== undefined ? { spotifyId } : {}) });
@@ -168,7 +183,7 @@ function About({ id, act, error, update, rooms, cities, posters }: {
   const empty = !act.description && !act.hometown && !genres.length && !links.length;
   const cands = act.lookupCandidates ?? [];
   const lookBtn = (label: string, cls: string) => (
-    <button type="button" className={`btn ${cls} sm`} disabled={lookup.busy} onClick={() => run()} data-testid="act-lookup">{lookup.busy ? "Looking up…" : label}</button>
+    <button type="button" className={`btn ${cls} sm`} disabled={lookup.busy} onClick={() => { run(); onLookup(); }} data-testid="act-lookup">{lookup.busy ? "Looking up…" : label}</button>
   );
   const google = (
     <a className="btn ghost sm" href={actSearchUrl(act.name, cities)} target="_blank" rel="noreferrer" data-testid="act-google">Search Google ↗</a>

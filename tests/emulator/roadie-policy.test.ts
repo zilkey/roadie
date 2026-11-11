@@ -177,5 +177,6 @@ test("help.explain with no arguments explains the page the person is on, tab inc
 test("an act's Look up is never Roadie's: acts.lookup and acts.lookupShortlist are not eligible", () => {
   assert.equal(isEligible("acts.lookup", "admin"), false);
   assert.equal(isEligible("acts.lookupShortlist", "admin"), false);
+  assert.equal(isEligible("acts.findTeam", "admin"), false);
   assert.equal(isEligible("acts.find", "admin"), true);
 });

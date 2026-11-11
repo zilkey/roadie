@@ -14,6 +14,7 @@ import { ActInput, ACT_RELATIONSHIPS, RELATIONSHIP_LABEL, type ActRelationship }
 import { actListed, actStats, type ActFilter, type EvLike, type VenueLike } from "@/lib/acts";
 import { dateInBandZone } from "@/lib/timezone";
 import { lookUpAct, type LookupResult } from "../assistant/actLookup";
+import { findActTeam } from "../assistant/actTeam";
 
 const ROLES = ["admin", "mcp"] as const;
 const ActIn = ActInput.extend({ contactIds: z.array(z.string().min(1)).optional() });
@@ -149,4 +150,14 @@ export const actsLookupShortlist = defineCommand({
   },
 });
 
-export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote, actsLookup, actsLookupShortlist];
+export const actsFindTeam = defineCommand({
+  name: "acts.findTeam", roles: ["admin"],
+  description:
+    "Look for an act's team: booking agent, manager, publicist, label and general inbox, from the act's own website (its contact, booking, " +
+    "about and press pages), its Bandcamp, and a Google search (Gemini's grounding) with the pages it came from. An email is returned only when " +
+    "it is written on a page that was read. Saves nothing: the act page's \"Find their team\" button lists people, each with an Add button.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  run: (_ctx, { id }) => findActTeam(id),
+});
+
+export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote, actsLookup, actsLookupShortlist, actsFindTeam];

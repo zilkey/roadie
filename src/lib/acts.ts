@@ -159,3 +159,27 @@ export function actSearchUrl(name: string, cities: string[] = []): string {
   const where = [...new Set(cities.filter(Boolean))].slice(0, 2).join(" ");
   return `https://www.google.com/search?q=${encodeURIComponent(`"${name}" band${where ? ` ${where}` : ""}`)}`;
 }
+
+/** "Find their team" on an act's Contacts card (src/server/assistant/actTeam.ts): who the act's people are to it. */
+export const TEAM_ROLES = ["booking", "management", "publicity", "label", "general", "other"] as const;
+export type TeamRole = (typeof TEAM_ROLES)[number];
+export const TEAM_ROLE_LABEL: Record<TeamRole, string> = {
+  booking: "Booking agent", management: "Manager", publicity: "Publicist", label: "Label", general: "General inbox", other: "Team",
+};
+/** One person "Find their team" turned up. An email is always one written on a page it read. */
+export interface TeamPerson { name?: string; role: TeamRole; company?: string; email?: string; phone?: string; source?: string }
+export interface TeamResult { id: string; name: string; people: TeamPerson[]; read: string[]; searched: boolean }
+
+/** A Google search for the act's booking agent and manager, for when Find their team comes back empty. */
+export const teamSearchUrl = (name: string) => `https://www.google.com/search?q=${encodeURIComponent(`"${name}" band booking agent OR manager OR management`)}`;
+
+/** What Add puts on the contact: the person's name, else the inbox as "<act> manager" (a general inbox is just the act). */
+export function teamContactInput(p: TeamPerson, actName: string) {
+  const label = TEAM_ROLE_LABEL[p.role];
+  const name = p.name ?? (p.role === "general" ? actName : `${actName} ${label.toLowerCase()}`);
+  const title = [p.role === "general" || p.role === "other" ? undefined : label, p.company].filter(Boolean).join(", ");
+  return {
+    name, ...(title ? { title } : {}), emails: p.email ? [p.email] : [], phones: p.phone ? [p.phone] : [],
+    ...(p.source ? { sources: [{ url: p.source, checkedAt: new Date().toISOString() }] } : {}),
+  };
+}

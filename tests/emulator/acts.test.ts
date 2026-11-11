@@ -327,3 +327,25 @@ test("acts.lookupShortlist looks up only shortlisted acts not yet looked up; a s
   assert.equal(again.lookedUp, 0);
   assert.equal(again.left, 0);
 });
+
+// ---------- Find their team ----------
+
+test("acts.findTeam: lists the team, saves nothing; Add makes a contact linked to the act; an unknown act finds no one", async () => {
+  const a = await cmd("acts.create", { name: "A Brother's Fountain" });
+  const r = await cmd("acts.findTeam", { id: a.id });
+  assert.deepEqual(r.people.map((p: { role: string; email?: string; name?: string }) => [p.role, p.name ?? p.email]), [
+    ["booking", "Dana Reyes"], ["management", "mgmt@abrothersfountain.example"], ["publicity", "Sam Ortiz"], ["general", "hello@abrothersfountain.example"],
+  ]);
+  assert.ok(!r.people.some((p: { email?: string }) => p.email === "sam@made-up-pr.example"), "made-up email dropped");
+  assert.equal((await db.list("contacts")).length, 0, "nothing saved");
+  const { teamContactInput } = await import("@/lib/acts");
+  const c = await cmd("contacts.create", { ...teamContactInput(r.people[0], "A Brother's Fountain"), attachTo: { kind: "acts", id: a.id } });
+  const saved = (await db.get("contacts", c.id))! as Record<string, any>;
+  assert.equal(saved.title, "Booking agent, Front Range Touring");
+  assert.deepEqual(saved.phones, ["+19705550142"]);
+  assert.deepEqual((await take(a.id))!.contactIds, [c.id]);
+
+  const other = await cmd("acts.create", { name: "Nobody Knows Us" });
+  assert.deepEqual((await cmd("acts.findTeam", { id: other.id })).people, []);
+  await assert.rejects(cmd("acts.findTeam", { id: "nope" }), /No act/);
+});

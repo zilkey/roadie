@@ -28,7 +28,7 @@ export const EXCLUDED: readonly string[] = [
   "tours.sheet",      // rewrites the tour's Google Sheet over anyone's edits there: the Sheet tab's button, after its confirm
   "venueEvents.",     // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview
   "venues.setCalendar",
-  "acts.lookup", "acts.lookupShortlist", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
+  "acts.lookup", "acts.lookupShortlist", "acts.findTeam", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
   "dayOf.",           // hiding a row of the day-of banner (#66): the banner's own ×, personal to whoever taps it
 ];
 /** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */
