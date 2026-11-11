@@ -50,6 +50,10 @@ test("search and a filter chip narrow the list; a name opens the contact", async
   await expect(page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" })).toHaveCount(1);
   await expect(page.getByTestId(/^row-contact-/).filter({ hasText: "Rosa Jackson" })).toHaveCount(0);
   await page.getByTestId("contacts-filter-clear").click();
+  await page.getByTestId("contacts-filter-agent").click(); // the seed has no booking agents
+  await expect(page.getByTestId("contacts-filter-agent")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId(/^row-contact-/).filter({ hasText: "Desmond Webb" })).toHaveCount(0);
+  await page.getByTestId("contacts-filter-clear").click();
   await page.getByTestId("contacts-search").fill("desmond");
   await page.getByTestId(/^contact-full-/).click();
   await expect(page.getByTestId("contact-page")).toBeVisible();
