@@ -1,0 +1,250 @@
+<title>Carousel Spec Decisions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; a sticky progress bar; findings grouped by severity, each a decision row. Roadie's own palette (Figtree, ink + indigo). */
+:root {
+  --bg: #f7f6f3; --surface: #ffffff; --line: #e6e3dc; --ink: #1c1b22; --muted: #5f5d6b;
+  --accent: #3a46c4; --accent-soft: #eceefc;
+  --blocker: #b3261e; --blocker-soft: #fbe9e7; --major: #8a5a00; --major-soft: #fff3d6; --nit: #146c43; --nit-soft: #e3f4ea;
+  --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15141a; --surface: #1e1d25; --line: #33313d; --ink: #ecebf1; --muted: #a9a6b6;
+  --accent: #9aa3ff; --accent-soft: #262a4d;
+  --blocker: #ff8a80; --blocker-soft: #3a1d1b; --major: #f5c46b; --major-soft: #352a12; --nit: #7fd6a4; --nit-soft: #173126;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #15141a; --surface: #1e1d25; --line: #33313d; --ink: #ecebf1; --muted: #a9a6b6;
+  --accent: #9aa3ff; --accent-soft: #262a4d;
+  --blocker: #ff8a80; --blocker-soft: #3a1d1b; --major: #f5c46b; --major-soft: #352a12; --nit: #7fd6a4; --nit-soft: #173126;
+  color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface) }
+.wrap { max-width: 860px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 96px; display: flex; flex-direction: column; gap: 22px }
+h1 { margin: 0; font-size: clamp(24px, 4vw, 32px); font-weight: 800; letter-spacing: -.01em; text-wrap: balance }
+h2 { margin: 0; font-size: 17px; font-weight: 800; display: flex; align-items: center; gap: 10px }
+p { margin: 0 }
+a { color: var(--accent) }
+.lede { color: var(--muted); max-width: 64ch }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted) }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px }
+.bar .count { font-weight: 700; font-variant-numeric: tabular-nums }
+.track { flex: 1 1 160px; height: 8px; background: var(--accent-soft); border-radius: 99px; overflow: hidden; min-width: 120px }
+.track span { display: block; height: 100%; background: var(--accent); width: 0; transition: width .25s }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1.5px solid transparent; font: 700 15px var(--font); cursor: pointer; background: var(--accent); color: #fff }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line) }
+.btn:disabled { opacity: .5; cursor: not-allowed }
+.btn:focus-visible, button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px }
+.sev { font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 2px 9px; border-radius: 99px }
+.sev.blocker { background: var(--blocker-soft); color: var(--blocker) }
+.sev.major { background: var(--major-soft); color: var(--major) }
+.sev.nit { background: var(--nit-soft); color: var(--nit) }
+.group { display: flex; flex-direction: column; gap: 12px }
+.group-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px }
+.item { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.item.done { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)) }
+.item-top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap }
+.item h3 { margin: 0; font-size: 16px; font-weight: 800; flex: 1 1 240px; min-width: 0 }
+.where { font: 12.5px var(--mono); color: var(--muted) }
+.body { color: var(--ink); min-width: 0; overflow-wrap: anywhere }
+.rec { color: var(--muted); font-size: 14px; overflow-wrap: anywhere }
+.rec b { color: var(--ink) }
+.choices { display: flex; flex-wrap: wrap; gap: 8px }
+.choice { position: relative }
+.choice input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer }
+.choice span { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1.5px solid var(--line); font-weight: 700; font-size: 14px; color: var(--ink); background: var(--surface) }
+.choice input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent) }
+.choice input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px }
+textarea { width: 100%; min-height: 64px; resize: vertical; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font: 14px/1.5 var(--font); background: var(--bg); color: var(--ink) }
+.label { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted) }
+.saved { font-size: 12.5px; color: var(--muted); min-height: 1em }
+.empty, .notice { background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 20px; color: var(--muted) }
+.notice.ok { border-style: solid; border-color: var(--accent); color: var(--ink); background: var(--accent-soft) }
+.bulk { font-size: 13px }
+code { font: 13px var(--mono); background: var(--accent-soft); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere }
+@media (prefers-reduced-motion: reduce) { .track span { transition: none } }
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <p class="label">Roadie · Posts · issue #75</p>
+    <h1>Carousel spec: your calls</h1>
+    <p class="lede">Fresh reviewers went over the social media photo spec in five passes (Google's Elephant-Goldfish review). These are the findings that need a decision from you. Pick an answer for each one and add a note where you want. Answers save as you go. Press <b>Done</b> at the end and Claude writes them back to the issue.</p>
+    <p class="meta"><span>Spec: <a href="https://github.com/zilkey/roadie/blob/claude/social-media-photo-carousel-9j41bk/docs/designs/posts-carousels/design.md" target="_blank" rel="noopener">design.md</a></span><span>Issue: <a href="https://github.com/zilkey/roadie-issues/issues/75" target="_blank" rel="noopener">zilkey/roadie-issues#75</a></span><span id="sourceNote"></span></p>
+  </header>
+
+  <div class="bar" role="region" aria-label="Progress">
+    <span class="count" id="count">0 of 0 answered</span>
+    <span class="track" aria-hidden="true"><span id="fill"></span></span>
+    <button class="btn" id="doneBtn" type="button" disabled>Done</button>
+  </div>
+
+  <div id="status" class="notice" hidden></div>
+  <main id="list" style="display:flex;flex-direction:column;gap:28px">
+    <div class="empty" id="empty">Loading the findings. They come from the review's data store; if nothing appears, the review is still running and Claude hasn't added them yet.</div>
+  </main>
+</div>
+
+<script>
+(function () {
+  const SEV_ORDER = { blocker: 0, major: 1, nit: 2 };
+  const SEV_LABEL = { blocker: "Blockers", major: "Major", nit: "Nits" };
+  const SEV_HELP = {
+    blocker: "Reviewers think the spec can't go forward without these.",
+    major: "Worth settling before anyone builds.",
+    nit: "Small wording and consistency fixes. They default to Apply, so only change the ones you disagree with."
+  };
+  const CHOICES = [
+    ["apply", "Change the spec"],
+    ["keep", "Keep it as is"],
+    ["other", "Something else"]
+  ];
+  let db = null, findings = [], responses = {}, state = {}, timers = {};
+
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, attrs, ...kids) => {
+    const n = document.createElement(tag);
+    for (const k in (attrs || {})) {
+      if (k === "class") n.className = attrs[k];
+      else if (k === "text") n.textContent = attrs[k];
+      else n.setAttribute(k, attrs[k]);
+    }
+    kids.forEach(k => k != null && n.append(k));
+    return n;
+  };
+
+  function answerFor(f) {
+    const r = responses[f.id];
+    if (r && r.choice) return r.choice;
+    return f.severity === "nit" ? "apply" : "";
+  }
+
+  function progress() {
+    const need = findings.filter(f => f.severity !== "nit");
+    const answered = need.filter(f => answerFor(f)).length;
+    $("count").textContent = need.length
+      ? `${answered} of ${need.length} decisions made`
+      : "No decisions yet";
+    $("fill").style.width = need.length ? (100 * answered / need.length) + "%" : "0";
+    const submitted = state.submitted === true;
+    $("doneBtn").disabled = !db || !need.length || answered < need.length || submitted;
+    $("doneBtn").textContent = submitted ? "Sent to Claude" : "Done";
+    const s = $("status");
+    if (submitted) {
+      s.hidden = false; s.className = "notice ok";
+      s.textContent = "Marked done. Tell Claude in chat and it will post these answers to issue #75. You can still change an answer; press Done again afterwards.";
+    } else if (!db) {
+      s.hidden = false; s.className = "notice";
+      s.textContent = "This view can't save answers. Open the page on claude.ai while signed in.";
+    } else { s.hidden = true; }
+  }
+
+  async function save(f, patch) {
+    const prev = responses[f.id] || {};
+    const next = Object.assign({}, prev, patch, { updatedAt: new Date().toISOString() });
+    responses[f.id] = next;
+    progress();
+    const note = document.querySelector(`[data-saved="${f.id}"]`);
+    if (note) note.textContent = "Saving…";
+    try {
+      await db.doc("responses/" + f.id).set(next);
+      if (state.submitted) { await db.doc("meta/state").set({ submitted: false, reopenedAt: new Date().toISOString() }); }
+      if (note) note.textContent = "Saved";
+    } catch (e) {
+      if (note) note.textContent = "Not saved: " + (e && e.message ? e.message : "try again");
+    }
+  }
+
+  function render() {
+    const list = $("list");
+    list.replaceChildren();
+    if (!findings.length) {
+      list.append(el("div", { class: "empty", text: "No findings yet. The review is still running; Claude adds them here when all five passes are done." }));
+      progress(); return;
+    }
+    const groups = {};
+    findings.forEach(f => (groups[f.severity] = groups[f.severity] || []).push(f));
+    Object.keys(groups).sort((a, b) => SEV_ORDER[a] - SEV_ORDER[b]).forEach(sev => {
+      const items = groups[sev].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const g = el("section", { class: "group", "aria-labelledby": "h-" + sev });
+      const head = el("div", { class: "group-head" },
+        el("h2", { id: "h-" + sev }, el("span", { class: "sev " + sev, text: SEV_LABEL[sev] }), el("span", { text: items.length + (items.length === 1 ? " finding" : " findings") })));
+      g.append(head, el("p", { class: "rec", text: SEV_HELP[sev] }));
+      items.forEach(f => g.append(card(f)));
+      list.append(g);
+    });
+    progress();
+  }
+
+  function card(f) {
+    const chosen = answerFor(f);
+    const c = el("article", { class: "item" + (chosen ? " done" : ""), id: "f-" + f.id });
+    c.append(el("div", { class: "item-top" },
+      el("h3", { text: f.title }),
+      el("span", { class: "where", text: [f.stage, f.scope].filter(Boolean).join(" · ") })));
+    if (f.summary) c.append(el("p", { class: "body", text: f.summary }));
+    if (f.recommendation) {
+      const r = el("p", { class: "rec" }); r.append(el("b", { text: "Suggested change: " }), document.createTextNode(f.recommendation)); c.append(r);
+    }
+    const fs = el("fieldset", { style: "border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:8px" });
+    fs.append(el("legend", { class: "label", text: "Your call" }));
+    const row = el("div", { class: "choices" });
+    CHOICES.forEach(([val, label]) => {
+      const id = `c-${f.id}-${val}`;
+      const input = el("input", { type: "radio", name: "c-" + f.id, id, value: val });
+      if (chosen === val) input.checked = true;
+      input.addEventListener("change", () => { c.classList.add("done"); save(f, { choice: val }); });
+      row.append(el("label", { class: "choice", for: id }, input, el("span", { text: label })));
+    });
+    fs.append(row);
+    c.append(fs);
+    const nid = "n-" + f.id;
+    const ta = el("textarea", { id: nid, placeholder: chosen === "other" ? "What should happen instead?" : "Optional note for the spec author" });
+    ta.value = (responses[f.id] && responses[f.id].note) || "";
+    ta.addEventListener("input", () => {
+      clearTimeout(timers[f.id]);
+      timers[f.id] = setTimeout(() => save(f, { note: ta.value, choice: answerFor(f) || undefined }), 600);
+    });
+    c.append(el("label", { class: "label", for: nid, text: "Note" }), ta, el("span", { class: "saved", "data-saved": f.id }));
+    return c;
+  }
+
+  $("doneBtn").addEventListener("click", async () => {
+    if (!db) return;
+    $("doneBtn").disabled = true;
+    try {
+      // Nits left on their default get an explicit answer so the record is complete.
+      const writes = findings.filter(f => f.severity === "nit" && !(responses[f.id] && responses[f.id].choice))
+        .map(f => { responses[f.id] = Object.assign({}, responses[f.id], { choice: "apply", defaulted: true }); return db.doc("responses/" + f.id).set(responses[f.id]); });
+      await Promise.all(writes);
+      await db.doc("meta/state").set({ submitted: true, submittedAt: new Date().toISOString() });
+    } catch (e) {
+      $("status").hidden = false; $("status").className = "notice";
+      $("status").textContent = "Couldn't mark done: " + (e && e.message ? e.message : "try again");
+      $("doneBtn").disabled = false;
+    }
+  });
+
+  (async () => {
+    progress();
+    db = await (window.claude && window.claude.use ? window.claude.use("db") : null);
+    if (!db) { render(); progress(); return; }
+    db.collection("findings").onSnapshot(s => {
+      findings = s.docs.map(d => Object.assign({ id: d.id }, d.data()));
+      const src = findings.length ? `${findings.length} findings from 5 review passes` : "";
+      $("sourceNote").textContent = src;
+      render();
+    }, () => render());
+    db.collection("responses").onSnapshot(s => {
+      const focused = document.activeElement && document.activeElement.tagName === "TEXTAREA";
+      s.docs.forEach(d => { responses[d.id] = d.data(); });
+      if (!focused) render(); else progress();
+    });
+    db.doc("meta/state").onSnapshot(s => { state = s.exists ? s.data() : {}; progress(); });
+  })();
+})();
+</script>
