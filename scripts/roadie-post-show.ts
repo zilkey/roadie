@@ -112,11 +112,11 @@ export const POST_SHOW: PostShowScenario[] = [
     turns: [{ say: "forgot to do this after the show last night: 200 guarantee by check, 45 in cash tips, maybe 80 people, 5 star show" }],
     expect: { show: "lastNight", income: [{ category: "guarantee", amount: 200, method: "check" }, { category: "tips", amount: 45, method: "cash" }], crowd: 80, showStars: 5, venueStars: null, untouched: ["tonight"] } },
 
-  // 10. Speech to text: "merge" is merch, "then mo" is Venmo, "the blue store" is the Red Barn, "for stars" is 4. "to forty" is most likely 240:
+  // 10. Speech to text: "merge" is merch, "then mo" is Venmo, "the red born" is the Red Barn, "for stars" is 4. "to forty" is most likely 240:
   // Roadie may enter it or ask, but the reply has to say the number it took, so she hears it before she taps Yes.
   { name: "post-show-speech-to-text", world: "one", page: "home",
     turns: [
-      { say: "ok so tonight at the blue store the door was to forty cash and merge was 95 cash and then like 30 on then mo for merge crowd was maybe fifty five and yeah venue for stars",
+      { say: "ok so tonight at the red born the door was to forty cash and merge was 95 cash and then like 30 on then mo for merge crowd was maybe fifty five and yeah venue for stars",
         text: /240|\?/ },
       { say: "yes two hundred forty" },
     ],
