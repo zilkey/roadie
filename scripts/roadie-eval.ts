@@ -100,6 +100,8 @@ const SCENARIOS: Scenario[] = [
   { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
   { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"relationship":"openFor"/]], noArgs: [[/acts\.note/, /"note":"[^"]/]], noText: REFUSES }] },
   { name: "acts-note-text", turns: [{ say: "add a note on the act Morrow Morrow: great harmonies, super friendly crew", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"note":"[^"]*harmonies/i]], noArgs: [[/acts\.note/, /"relationship"/]], noText: REFUSES }] },
+  // #79: the band's own genres (General Settings) feed the opener guess's genre fit
+  { name: "artist-genres", turns: [{ say: "our genres are americana and indie folk", calls: [/artists\.update/], noCalls: [/acts\./], args: [[/artists\.update/, /"genres":\["americana","indie folk"\]/]], noText: REFUSES }] },
   { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
 ];
 

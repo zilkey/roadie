@@ -127,3 +127,23 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await expect(card.getByTestId("link-spotify")).toBeVisible();
   await expect(card.getByTestId("link-tiktok")).toHaveCount(0);
 });
+
+test("Genres on General Settings: added in lowercase, no duplicates, autosaved, removed with ×", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await expect(page).toHaveURL(/\/calendar$/); // signed in before the next page load
+  await openArtist(page);
+  const card = page.getByTestId("genres");
+  await card.getByTestId("genre-add-input").fill("  Indie   Folk ");
+  await card.getByTestId("genre-add-save").click();
+  await card.getByTestId("genre-add-input").fill("indie folk");
+  await card.getByTestId("genre-add-input").press("Enter");
+  await expect(card.getByTestId("genres-list").locator(".chip")).toHaveText(["indie folk×"]);
+  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+  await page.reload();
+  await expect(card.getByTestId("genre-indie folk")).toBeVisible();
+  await card.getByTestId("genre-remove-indie folk").click();
+  await expect(card.getByTestId("genres-empty")).toBeVisible();
+  await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+  await page.reload();
+  await expect(card.getByTestId("genres-empty")).toBeVisible();
+});

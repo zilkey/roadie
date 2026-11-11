@@ -129,6 +129,8 @@ export const Artist = entity({
   slug: artistSlug,
   configurations: z.array(Configuration),
   links: ArtistLinks,
+  /** What the band plays, lowercase ("americana", "indie folk"), set on General Settings. Booking's opener guess (#79) moves a show up when the headliner's genres fit these. Missing = none. */
+  genres: z.array(z.string().min(1)).optional(),
   /**
    * The band's Signal group (Who's free can post there). Private, unlike `links`: anyone with it can join the group, so it
    * never goes into booking templates, emails, Bandsintown, calendar sync or the /ask pages.

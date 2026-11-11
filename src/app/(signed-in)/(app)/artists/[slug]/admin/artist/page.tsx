@@ -119,6 +119,33 @@ function LinksCard({ links, onChange }: { links: Links; onChange: (next: Links) 
   );
 }
 
+/** What the band plays: chips, autosaved. Booking's opener guess moves a show up when the headliner's genres fit these (#79). */
+function GenresCard({ genres, onChange }: { genres: string[]; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  function add(e: React.FormEvent) {
+    e.preventDefault();
+    const g = draft.trim().toLowerCase().replace(/\s+/g, " ");
+    if (g && !genres.includes(g)) onChange([...genres, g]);
+    setDraft("");
+  }
+  return (
+    <section className="card" data-testid="genres" aria-labelledby="genres-title">
+      <div><h2 id="genres-title" className="text-lg font-bold">Genres</h2><p className="s">What the band plays. Booking uses these to spot headliners who fit your sound.</p></div>
+      {genres.length === 0 ? <p className="s" data-testid="genres-empty">No genres yet.</p> : (
+        <div className="flex flex-wrap gap-1.5" data-testid="genres-list">
+          {genres.map((g) => (
+            <span key={g} className="chip w lg" data-testid={`genre-${g}`}>{g}<button type="button" aria-label={`Remove ${g}`} onClick={() => onChange(genres.filter((x) => x !== g))} data-testid={`genre-remove-${g}`}>×</button></span>
+          ))}
+        </div>
+      )}
+      <form className="link-add" onSubmit={add} noValidate data-testid="genre-add">
+        <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. americana" aria-label="Add a genre" data-testid="genre-add-input" />
+        <button className="btn acc" disabled={!draft.trim()} data-testid="genre-add-save">Add</button>
+      </form>
+    </section>
+  );
+}
+
 /** The band's Signal group (Who's free can post there). Not a link: it's private, so it has its own card. Autosaved; empty or Delete removes it. */
 function BandChatCard({ url, onChange }: { url: string; onChange: (next: string) => void }) {
   const r = url.trim() ? normalizeSignalGroupUrl(url) : null;
@@ -174,11 +201,12 @@ function ArtistEditor() {
   const [features, setFeatures] = useState<NonNullable<Artist["features"]>>({});
   const [payment, setPayment] = useState("");
   const [wording, setWording] = useState("");
-  const resetFrom = (a: Artist) => { setLinks(a.links ?? {}); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
+  const [genres, setGenres] = useState<string[]>([]);
+  const resetFrom = (a: Artist) => { setLinks(a.links ?? {}); setGenres(a.genres ?? []); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
   const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, scope: "general", title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
-  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features] : null);
+  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features, artist.genres] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return null;
@@ -201,14 +229,16 @@ function ArtistEditor() {
     if (r && "error" in r) return as.hold("the payment app needs a Venmo link (or delete it)");
     as.patch({ paymentUrl: r?.url ?? null });
   }
+  function editGenres(next: string[]) { setGenres(next); as.patch({ genres: next.length ? next : null }); }
   function editWording(next: string) { setWording(next); as.patch({ listWording: next.trim() || null }); }
   function editFeature(k: "fans" | "merch", on: boolean) { const next = { ...features, [k]: on }; setFeatures(next); as.patch({ features: next }); }
   return (
     <div className="grid gap-5" onBlur={() => void as.flush()}>
-      <PageTitle title="General Settings" sub="The band's name, web address and links." actions={<SaveStatus {...as.statusProps} />} />
+      <PageTitle title="General Settings" sub="The band's name, web address, links and genres." actions={<SaveStatus {...as.statusProps} />} />
       <ErrorBox error={error} />
       <ArtistCard artist={artist} />
       <LinksCard links={links} onChange={editLinks} />
+      <GenresCard genres={genres} onChange={editGenres} />
       <BandChatCard url={signal} onChange={editSignal} />
       <FansMerchCard features={features} payment={payment} wording={wording} onFeature={editFeature} onPayment={editPayment} onWording={editWording} />
       <ChecklistTemplatesEditor artistId={artist.id} />
