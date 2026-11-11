@@ -1,7 +1,7 @@
 # Backup and restore
 
 ## What a backup is
-`npm run backup -- --out backups` (or `tsx scripts/backup.ts`) writes `backups/YYYY-MM-DD/<collection>.json`, one file per top-level collection, with every document including sub-collections (`pitches/{id}/activity`, `comments`) and soft-deleted ones, plus `_manifest.json` with counts. Each row is `{path, data}`; Firestore timestamps are `{"__ts": {seconds, nanoseconds}}`. Auth accounts are not included (people sign in with Google again and `/api/session` re-sets the role from the `users` document).
+`npm run backup -- --out backups` (or `tsx scripts/backup.ts`) writes `backups/YYYY-MM-DD/<collection>.json` (today's UTC date; `--date 2026-10-23` names it yourself), one file per top-level collection, with every document including sub-collections (`pitches/{id}/activity`, `comments`) and soft-deleted ones, plus `_manifest.json` with counts. Each row is `{path, data}`; Firestore timestamps are `{"__ts": {seconds, nanoseconds}}`. Auth accounts are not included (people sign in with Google again and `/api/session` re-sets the role from the `users` document).
 
 ## Nightly job (`.github/workflows/backup.yml`)
 Runs at 09:17 UTC every day (and on demand from the Actions tab), dumps the real Firestore and commits the result to a **private** backup repo. It has never been run; set up once:
@@ -22,8 +22,9 @@ npm run restore -- backups/2026-10-23 --dry-run     # validate only
 npm run restore -- backups/2026-10-23               # into an EMPTY database
 npm run restore -- backups/2026-10-23 --overwrite   # over existing documents (others are left alone)
 ```
-Every document is validated with the Zod schemas (common fields, strict collection shape, id equals path); if any fails nothing is written and the problems are listed. What the server keeps outside `db.ts` has no schema and is restored as it was: Roadie's threads (`assistantThreads` with their messages and pending actions), `userPrefs`, `googleGrants`, `metaConnections`, `stagePlotTokens`, the `routeCache`, `geocodes` and `fuelPrices` caches, and `users/{uid}/private`. The list is `SERVER_KEPT` in `src/server/backup.ts`; a collection in neither that list nor the schemas fails the restore with "no schema for collection", so a new one has to be added on purpose. Restore refuses a non-empty database without `--overwrite`, and refuses real Firestore (no emulator host) without `--yes`. It writes documents exactly as they were (ids, timestamps, history), so it is the one writer that bypasses `db.ts` on purpose.
+Every app document is validated with the Zod schemas (common fields, strict collection shape, id equals path); if any fails nothing is written and the problems are listed. Two kinds are restored as they were, unvalidated. What the server keeps outside `db.ts` has no schema: Roadie's threads (`assistantThreads` with their messages and pending actions), `userPrefs`, `googleGrants`, `metaConnections`, `stagePlotTokens`, the `routeCache`, `geocodes` and `fuelPrices` caches, the venue calendars' `venueEvents` and `venueEventSources`, and `users/{uid}/private`. That list is `SERVER_KEPT` in `src/server/backup.ts`. And archived collections the app no longer reads or writes (`ledger`) are kept as data: `ARCHIVED_COLLECTIONS`, same file. A collection in none of those lists nor the schemas fails the restore with "no schema for collection", so a new one has to be added on purpose. Restore refuses a non-empty database without `--overwrite`, and refuses real Firestore (no emulator host) without `--yes`. It writes documents exactly as they were (ids, timestamps, history), so it is the one writer that bypasses `db.ts` on purpose.
 To try it locally: `npm run emulators`, `npm run seed`, `npm run backup`, wipe the emulator, `npm run restore -- backups/<date>`.
+To run the app locally on production data, use the `local-backup` skill (`.claude/skills/local-backup/SKILL.md`): it backs up prod with the service-account key in `.secrets` and loads it into the emulator, Auth accounts included.
 
 ## Wipe
 ```
@@ -68,10 +69,12 @@ Every script that writes (`wipe`, `restore`) takes the same three flags:
 - `--dry-run` validates and counts, writes nothing. Always first.
 - **no flag at all** is the emulator: the npm scripts set `FIRESTORE_EMULATOR_HOST`, so a bare `npm run <script>`
   can only ever touch `demo-band-tracker`.
-- `--yes` is required when there is **no** emulator host set, i.e. real Firestore. Without it the script throws
-  *"This would write to REAL Firestore. Re-run with --dry-run to look first, or --yes if that is what you want."*
+- `--yes` is required when there is **no** emulator host set, i.e. real Firestore. Without it restore throws
+  *"This would write to REAL Firestore. Re-run with --yes if that is what you want."* (`scripts/restore.ts`); wipe has
+  its own, stricter guards (above).
 
-The guard is literally `!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes") && !flag("dry-run")`.
+In restore the check comes after validation and after a `--dry-run` has already returned:
+`!process.env.FIRESTORE_EMULATOR_HOST && !flag("yes")`.
 Where an npm script hardcodes the emulator host (`seed`, `wipe`), **it can never hit production**; a production run
 needs `GOOGLE_APPLICATION_CREDENTIALS=./key.json` and `--yes`.
 

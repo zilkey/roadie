@@ -11,10 +11,11 @@ calendar up (it proposes CSS selectors for a plain page); it never runs on a ref
 | `venues/{id}.calendar` | The setting (`src/schema/venueEvents.ts`, `VenueCalendar`) | every band user | `venues.setCalendar` (History) |
 | `venueEvents/{venueId}__{hash}` | One show as the calendar lists it: date, times, title, acts, bill detail, image URL, ticket link, status, first/last seen | every band user | the refresh, directly (a copy of a public page; no History) |
 | `venueEventSources/{venueId}` | The last refresh: when, how many, unreadable dates, error | every band user | the refresh, directly |
-| `venueEventNotes/{artistId}__{eventId}` | The band's take (not a fit / interested / pitched) | that band's admins | `venueEvents.setTake` (History) |
+| `venueEventNotes/{artistId}__{eventId}` | The band's take on one show: Not a fit, a note, and the pitch it was added to (`pitchId`) | that band's admins | `venueEvents.setTake`, `venueEvents.pitch` / `unpitch` (History) |
 
 A show that drops off the calendar is marked `gone`, not deleted; past shows are kept (they show who plays the room).
-Images are referenced by the source's own URL, never copied.
+Images are referenced by the source's own URL, never copied. Backups keep `venueEvents` and `venueEventSources` as they
+are, without schema checks (`SERVER_KEPT` in `src/server/backup.ts`).
 
 ## Code
 
@@ -25,8 +26,18 @@ Images are referenced by the source's own URL, never copied.
 - `src/server/events/refresh.ts`: the shared post-step (dates in the venue's time zone, acts from the title in `bill.ts`,
   music only, the calendar's filter) and the upsert.
 - `src/server/events/suggest.ts`: Gemini's selector proposals for setup.
-- Commands (`src/server/commands/venueEvents.ts`): `venues.setCalendar`, `venueEvents.refresh`, `venueEvents.preview`,
-  `venueEvents.suggestSelectors`, `venueEvents.setTake`. Roadie (the assistant) gets none of them.
+- `src/server/events/acts.ts`: links each bill name to a shared act (`acts`, issue #77), creating new acts as calendars
+  refresh; `onTour.ts` then marks headline shows of acts touring nearby (#79). The Acts pages under Booking read these.
+- Commands (`src/server/commands/venueEvents.ts`):
+  - `venues.setCalendar` (admin): the setting.
+  - `venueEvents.refresh` (admin, member): read a venue's calendar now.
+  - `venueEvents.preview`, `venueEvents.suggestSelectors` (admin): setup.
+  - `venueEvents.setTake` (admin): Not a fit (null clears it) and a note.
+  - `venueEvents.pitch` / `venueEvents.unpitch` (admin): we pitch the venue, not the show. Pitch puts the venue on the
+    Pitch List (or uses its open pitch), adds the show's date to the pitch and links them; unpitch undoes the link and date.
+  - `venueEvents.looked` (admin, member): remembers when the caller last opened Venue calendars, for the New chips.
+
+  Roadie (the assistant) gets none of them.
 
 ## Refreshing
 
@@ -38,4 +49,4 @@ setups, is the same Vertex model Roadie uses. It refreshes four venues at a time
 ## Tests
 
 `tests/unit/venue-events.test.ts`, `tests/unit/venue-readers-{a,b}.test.ts`, `tests/emulator/venue-events.test.ts`,
-`tests/e2e/venue-events.spec.ts`. e2e reads calendars from `fixtures/calendars/` (`VENUE_EVENTS_FIXTURES`), never the network.
+`tests/unit/venue-types-festivals.test.ts`, `tests/e2e/venue-events.spec.ts`, `tests/e2e/venue-calendars.spec.ts`. e2e reads calendars from `fixtures/calendars/` (`VENUE_EVENTS_FIXTURES`), never the network.

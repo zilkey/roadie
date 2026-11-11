@@ -4,8 +4,10 @@ Someone is in the passenger seat after the show with cash in her hand, counting 
 Roadie about the night. This page has the sample conversations, what each should leave on the show, what Roadie did
 with them before any change, what was changed, and what it does now.
 
-This covers the text path only. Roadie has no speech to text of its own: the "speech-to-text" conversation is the kind
-of text a phone keyboard's dictation produces.
+This covers the text path only. The "speech-to-text" conversation is the kind of text a phone keyboard's dictation
+produces. Roadie has its own mic since #69 (the Talk to Roadie button, `src/components/roadie/useVoice.ts` and
+`recorder.ts`, transcribed by `POST /api/assistant/transcribe` in `src/server/assistant/transcribe.ts`), but these
+conversations are not run through it.
 
 - The conversations as data, with their checks: `scripts/roadie-post-show.ts`.
 - They run in the eval: `npm run eval:roadie` runs everything, `ROADIE_EVAL=post-show npm run eval:roadie` only these,
@@ -47,7 +49,7 @@ Each conversation gets its own throwaway band:
 
 ## Baseline: Roadie before any change
 
-8 of 14 passed.
+8 of 14 passed. (The baseline and After runs had 14 conversations; 11b came later and is in neither table.)
 
 | Conversation | Baseline | What went wrong |
 |---|---|---|
@@ -118,7 +120,8 @@ Not every run is clean. Across the repeat runs while fixing:
 
 ## Still open
 
-- Voice: no speech to text, no one-tap talk button, nothing for the screen being off. Not built.
+- Voice: the mic and spoken replies are built (see the top), but nothing handles the screen being off, and these
+  conversations have never been run as audio.
 - One card per amount. A five-line night is five Yes taps in a dark car. One "report" card for the whole night (one
   Yes, one Undo) would need a new command and a card design.
 - The confirm step is the cards plus the app's summary line; there is no single confirm screen and no offline draft.
