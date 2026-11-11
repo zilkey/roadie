@@ -342,6 +342,9 @@ test("acts.findTeam: lists the team, saves nothing; Add makes a contact linked t
   assert.equal(sam.phone, "+13035550177");
   assert.deepEqual(sam.links, ["https://www.linkedin.com/in/sam-ortiz-pr", "https://ortizpr.example/team"]);
   assert.ok(!r.people.some((p: { email?: string }) => p.email === "sam@made-up-pr.example"), "made-up email dropped");
+  // dedupeTeam folded "D. Reyes" into Dana Reyes and the press inbox (the address Sam's search found) into Sam, page and all.
+  assert.equal(sam.source, "https://abrothersfountain.example/contact");
+  assert.equal(r.people.filter((p: { email?: string }) => p.email === "sam@ortizpr.example").length, 1);
   assert.equal((await db.list("contacts")).length, 0, "nothing saved");
   const { teamContactInput } = await import("@/lib/acts");
   const c = await cmd("contacts.create", { ...teamContactInput(r.people[0], "A Brother's Fountain", "2026-11-11"), attachTo: { kind: "acts", id: a.id } });

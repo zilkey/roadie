@@ -173,6 +173,41 @@ export const TEAM_ROLE_LABEL: Record<TeamRole, string> = {
 export interface TeamPerson { name?: string; role: TeamRole; company?: string; email?: string; phone?: string; source?: string; links?: string[]; infoFrom?: string }
 export interface TeamResult { id: string; name: string; people: TeamPerson[]; read: string[]; searched: boolean }
 
+/** The parts of a name worth matching: lowercase words of three letters or more ("Joseph \"JP\" Pineda" → joseph, pineda). */
+export function nameTokens(name: string): string[] {
+  return name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z]+/).filter((t) => t.length >= 3);
+}
+
+/** A name's first-name forms (its first word and any nickname in quotes) and its surname: `Joseph "JP" Pineda` → [joseph, jp], pineda. */
+function nameForms(name: string): { firsts: string[]; last: string } | undefined {
+  const plain = name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[“”]/g, '"');
+  const nicks = [...plain.matchAll(/"([^"]+)"|\(([^)]+)\)/g)].map((m) => (m[1] ?? m[2]).replace(/[^a-z]/g, "")).filter(Boolean);
+  const words = plain.replace(/"[^"]*"|\([^)]*\)/g, " ").split(/[^a-z]+/).filter(Boolean);
+  if (words.length < 2) return undefined;
+  const last = words[words.length - 1];
+  if (last.length < 2) return undefined;
+  return { firsts: [words[0], ...nicks], last };
+}
+
+/**
+ * Whether two names are the same person, conservatively: the same name, or the same surname with first names that match, where one
+ * may be an initial or a nickname in quotes (`Joseph "JP" Pineda`, `JP Pineda`, `J. Pineda`). Different first names stay apart.
+ */
+export function sameTeamName(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]+/g, " ").trim();
+  if (norm(a) && norm(a) === norm(b)) return true;
+  const x = nameForms(a), y = nameForms(b);
+  if (!x || !y || x.last !== y.last) return false;
+  return x.firsts.some((f) => y.firsts.some((g) => f === g || (f.length === 1 && g.startsWith(f)) || (g.length === 1 && f.startsWith(g))));
+}
+
+/** The contact a person Find their team turned up already is: one with their email, else one with the same name (sameTeamName). */
+export function teamContactMatch<C extends { name: string; emails: string[] }>(p: TeamPerson, contacts: C[]): C | undefined {
+  const email = p.email?.toLowerCase();
+  return (email ? contacts.find((c) => c.emails.some((e) => e.toLowerCase() === email)) : undefined)
+    ?? (p.name ? contacts.find((c) => sameTeamName(c.name, p.name!)) : undefined);
+}
+
 /** A Google search for the act's booking agent and manager, for when Find their team comes back empty. */
 export const teamSearchUrl = (name: string) => `https://www.google.com/search?q=${encodeURIComponent(`"${name}" band booking agent OR manager OR management`)}`;
 

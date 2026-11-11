@@ -152,7 +152,7 @@ function ActPage() {
           {team.busy && !teamFound && <span className="s" data-testid="act-team-busy">Looking for their booking agent, manager and publicist on their website and Google…</span>}
           {teamFound && (
             <TeamFindings result={teamFound} actId={id} actName={act.name} hasWebsite={!!act.links?.website}
-              linked={contactIds.map((cid) => b.contacts.find((c) => c.id === cid)).filter((c): c is NonNullable<typeof c> => !!c)} onClose={() => setTeamFound(null)} />
+              contacts={b.contacts} linkedIds={contactIds} onClose={() => setTeamFound(null)} />
           )}
         </DetailCard>
         <AddContactDialog kind="acts" parentId={id} parentName={act.name} linkedIds={contactIds} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />

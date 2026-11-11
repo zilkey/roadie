@@ -11,6 +11,7 @@
  *   adds is checked the same way: an email only when it's on a page that names the person and is theirs (their name in the address,
  *   or written near their name), a phone only when it's near their name, a LinkedIn profile only when its address has their name,
  *   and a page as a link only when it names them.
+ * - Last, dedupeTeam: each address on one person only, an inbox folded into the person it belongs to, and name variants merged.
  * Nothing is saved: the card lists what was found and each person has an Add button (the band's own contacts, linked to the act).
  */
 import { z as gz } from "genkit";
@@ -18,11 +19,11 @@ import { db } from "../db";
 import { AppError } from "../errors";
 import type { ArtistLinkKey } from "@/schema";
 import { e164 } from "@/schema/normalize";
-import { TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult } from "@/lib/acts";
+import { nameTokens, sameTeamName, TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult } from "@/lib/acts";
 import { getAi, modelMode, withModelRetry } from "./ai";
 import { fetchBytes, isAggregator, normalizeUrl, pageText, resolveSource, searchWeb, socialOf, WEB_NOTICE } from "./web";
 
-export { TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult };
+export { nameTokens, TEAM_ROLES, TEAM_ROLE_LABEL, type TeamRole, type TeamPerson, type TeamResult };
 /** One page that was read: its address, readable text and the addresses in its mailto links. */
 export interface ReadPage { url: string; text: string; emails: string[] }
 
@@ -183,10 +184,6 @@ export function groundTeam(raw: PeopleRaw | null | undefined, pages: ReadPage[],
 /** A page read for one person: also the LinkedIn profiles it links to (agency rosters often do). */
 export interface PersonPage extends ReadPage { hrefs: string[] }
 
-/** The parts of a name worth matching: lowercase words of three letters or more ("Joseph \"JP\" Pineda" → joseph, pineda). */
-export function nameTokens(name: string): string[] {
-  return name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z]+/).filter((t) => t.length >= 3);
-}
 const LINKEDIN = /^https:\/\/([a-z]+\.)?linkedin\.com\/in\/([^/?#]+)/i;
 /** LinkedIn profile links in a page's html. */
 export function linkedInHrefs(html: string): string[] {
@@ -284,12 +281,76 @@ async function readOwnSite(links: Partial<Record<ArtistLinkKey, string>>): Promi
   return pages;
 }
 
-/** Canned pages and model output for the fake model: "A Brother's Fountain" has a team (and one made-up email the check must drop). */
+const union = (...lists: (string | undefined)[][]) => [...new Set(lists.flat().filter((u): u is string => !!u))];
+
+/** An unnamed inbox folded into the person whose address it is: their name and role, the inbox's page kept as where the email was. */
+function withInbox(person: TeamPerson, inbox: TeamPerson): TeamPerson {
+  const source = person.source ?? inbox.source;
+  const infoFrom = person.infoFrom ?? (inbox.source !== source ? inbox.source : undefined);
+  const links = union(person.links ?? [], inbox.links ?? [], [inbox.source].filter((u) => u !== source && u !== infoFrom));
+  return {
+    ...inbox, ...person, ...(person.company ?? inbox.company ? { company: person.company ?? inbox.company } : {}),
+    ...(person.phone ?? inbox.phone ? { phone: person.phone ?? inbox.phone } : {}),
+    ...(source ? { source } : {}), ...(infoFrom ? { infoFrom } : {}), ...(links.length ? { links } : {}),
+  };
+}
+
+/** Two rows that are one person (by name): the fuller name, the first row's role unless it's just "other", the rest filled in from both. */
+function samePerson(a: TeamPerson, b: TeamPerson): TeamPerson {
+  const name = (b.name?.length ?? 0) > (a.name?.length ?? 0) ? b.name : a.name;
+  const source = a.source ?? b.source;
+  const links = union(a.links ?? [], b.links ?? [], [b.source].filter((u) => u !== source));
+  const out: TeamPerson = { ...b, ...a, ...(name ? { name } : {}), role: a.role === "other" ? b.role : a.role };
+  for (const k of ["company", "email", "phone", "source", "infoFrom"] as const) { const v = a[k] ?? b[k]; if (v) out[k] = v; }
+  if (links.length) out.links = links;
+  return out;
+}
+
+/**
+ * The last check after the per-person searches, so the list has each person and each address once:
+ * - An address is never on two people. The row that had it before the search keeps it (`before`, the grounded list, row for row),
+ *   else the first; a second named person loses it (two agents at booking@agency.com: only the first keeps it).
+ * - A named person and an unnamed inbox with the same address are one row, under the person's name and role, keeping both pages.
+ * - Name variants are one person (sameTeamName: `Joseph "JP" Pineda`, `JP Pineda`, `J. Pineda`), merged.
+ * Then sorted by role, as groundTeam does.
+ */
+export function dedupeTeam(people: TeamPerson[], before: TeamPerson[] = people): TeamPerson[] {
+  const rows: (TeamPerson | undefined)[] = people.map((p) => ({ ...p }));
+  const searched = (i: number) => !!rows[i]?.email && !before[i]?.email;
+  const order = rows.map((_, i) => i).sort((a, b) => Number(searched(a)) - Number(searched(b)));
+  const owner = new Map<string, number>();
+  for (const i of order) {
+    const r = rows[i]!;
+    if (!r.email) continue;
+    const o = owner.get(r.email);
+    if (o === undefined) { owner.set(r.email, i); continue; }
+    const first = rows[o]!;
+    if (!r.name) { rows[o] = first.name ? withInbox(first, r) : samePerson(first, r); rows[i] = undefined; }
+    else if (!first.name) { rows[i] = withInbox(r, first); rows[o] = undefined; owner.set(r.email, i); }
+    else delete r.email; // rows are copies
+  }
+  const out: TeamPerson[] = [];
+  for (const r of rows) {
+    if (!r) continue;
+    const at = r.name ? out.findIndex((o) => o.name && sameTeamName(o.name, r.name!)) : -1;
+    if (at < 0) { out.push(r); continue; }
+    // One email each: the merged row keeps the first one's; the other's stays nowhere (it was on the same person anyway).
+    out[at] = samePerson(out[at], r);
+  }
+  const rank = (r: TeamRole) => TEAM_ROLES.indexOf(r);
+  return out.sort((a, b) => rank(a.role) - rank(b.role));
+}
+
+/**
+ * Canned pages and model output for the fake model: "A Brother's Fountain" has a team (and one made-up email the check must drop), and
+ * two duplicates dedupeTeam must fold: "D. Reyes" is Dana Reyes, and the press inbox on the act's page is the address Sam Ortiz's
+ * search finds.
+ */
 export const FAKE_TEAM = {
   pages: [
     {
       url: "https://abrothersfountain.example/contact",
-      text: "Contact\nBooking\nDana Reyes, Front Range Touring\ndana@frontrangetouring.example\n(970) 555-0142\nManagement\nmgmt@abrothersfountain.example\nGeneral\nhello@abrothersfountain.example",
+      text: "Contact\nBooking\nDana Reyes, Front Range Touring\ndana@frontrangetouring.example\n(970) 555-0142\nManagement\nmgmt@abrothersfountain.example\nPress\nsam@ortizpr.example\nGeneral\nhello@abrothersfountain.example\nAll tour dates booked by D. Reyes.",
       emails: ["dana@frontrangetouring.example", "hello@abrothersfountain.example"],
     },
   ] as ReadPage[],
@@ -297,6 +358,7 @@ export const FAKE_TEAM = {
   people: [
     { name: "Dana Reyes", role: "booking", company: "Front Range Touring", email: "dana@frontrangetouring.example", phone: "(970) 555-0142", sourceUrl: "https://abrothersfountain.example/contact" },
     { name: "Sam Ortiz", role: "publicity", company: null, email: "sam@made-up-pr.example", phone: null, sourceUrl: null },
+    { name: "D. Reyes", role: "booking", company: null, email: null, phone: null, sourceUrl: "https://abrothersfountain.example/contact" },
   ] as PeopleRaw,
   /** The search for Sam Ortiz: the PR firm's team page names Sam and a colleague; only Sam's address and LinkedIn are theirs. */
   person: {
@@ -316,9 +378,9 @@ export async function findActTeam(id: string): Promise<TeamResult> {
   if (!act || act.deletedAt) throw new AppError("not_found", "No act with that id", 404);
   if (modelMode() === "fake") {
     if (!/fountain/i.test(act.name)) return { id, name: act.name, people: [], read: [], searched: true };
-    const people = groundTeam(FAKE_TEAM.people, FAKE_TEAM.pages, FAKE_TEAM.answer)
-      .map((p) => p.name === "Sam Ortiz" ? { ...p, ...groundPerson(p, FAKE_TEAM.person.pages, FAKE_TEAM.person.sources) } : p);
-    return { id, name: act.name, people, read: FAKE_TEAM.pages.map((p) => p.url), searched: true };
+    const team = groundTeam(FAKE_TEAM.people, FAKE_TEAM.pages, FAKE_TEAM.answer);
+    const people = team.map((p) => p.name === "Sam Ortiz" ? { ...p, ...groundPerson(p, FAKE_TEAM.person.pages, FAKE_TEAM.person.sources) } : p);
+    return { id, name: act.name, people: dedupeTeam(people, team), read: FAKE_TEAM.pages.map((p) => p.url), searched: true };
   }
 
   const links = act.links ?? {};
@@ -354,5 +416,5 @@ export async function findActTeam(id: string): Promise<TeamResult> {
   const skip = new Set(pages.map((p) => p.url));
   const named = team.filter((p) => p.name).slice(0, MAX_PERSON_SEARCHES);
   const people = await Promise.all(team.map((p) => (named.includes(p) ? findPerson(p, act.name, skip) : p)));
-  return { id, name: act.name, people, read: pages.map((p) => p.url), searched: !!found };
+  return { id, name: act.name, people: dedupeTeam(people, team), read: pages.map((p) => p.url), searched: !!found };
 }

@@ -2,13 +2,14 @@
 /**
  * "Find their team" on an act's Contacts card: looks for the act's booking agent, manager, publicist and label on its website and
  * a Google search (acts.findTeam), then searches for each person's own email and LinkedIn, and lists who it found. Nothing is saved
- * until Add, which makes them a contact linked to the act, with a note on how they were found. Someone already in contacts links to
- * their page, and "Add their info" fills in what the search found that the contact doesn't have yet.
+ * until Add, which makes them a contact linked to the act, with a note on how they were found. Someone already in the band's contacts
+ * (same email, or the same name as teamContactMatch reads it) is never added twice: linked to this act they link to their page;
+ * not linked yet, Link links them (contacts.attach). Either way "Add their info" fills in what the search found that they lack.
  */
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import Link from "@/lib/artist";
-import { TEAM_ROLE_LABEL, teamContactInput, teamContactPatch, teamSearchUrl, type TeamPerson, type TeamResult } from "@/lib/acts";
+import { TEAM_ROLE_LABEL, teamContactInput, teamContactMatch, teamContactPatch, teamSearchUrl, type TeamPerson, type TeamResult } from "@/lib/acts";
 import { todayStr } from "@/lib/booking";
 import { ContactLinks, hrefFor, type Noted } from "@/components/booking/common";
 import type { Contact } from "@/schema";
@@ -27,14 +28,19 @@ export function FindTeamButton({ busy, onClick }: { busy: boolean; onClick(): vo
 }
 
 /** What Find their team turned up, under the act's contacts. */
-export function TeamFindings({ result, actId, actName, hasWebsite, linked, onClose }: {
+export function TeamFindings({ result, actId, actName, hasWebsite, contacts, linkedIds, onClose }: {
   result: TeamResult; actId: string; actName: string; hasWebsite: boolean;
-  /** The act's linked contacts, so someone already added says so. */
-  linked: Noted<Row<Contact>>[]; onClose(): void;
+  /** All the band's contacts, so someone already in them is linked, not added again. */
+  contacts: Noted<Row<Contact>>[];
+  /** The act's linked contacts' ids. */
+  linkedIds: string[]; onClose(): void;
 }) {
   const { call, error, busy } = useCommand();
   const [added, setAdded] = useState<Map<number, string>>(new Map());
-  const linkedOf = (p: TeamPerson) => linked.find((c) => (p.email && c.emails.includes(p.email)) || (p.name && c.name.toLowerCase() === p.name.toLowerCase()));
+  const linked = contacts.filter((c) => linkedIds.includes(c.id));
+  // A match among the act's own contacts wins over one elsewhere in the band's.
+  const matchOf = (p: TeamPerson) => teamContactMatch(p, linked) ?? teamContactMatch(p, contacts);
+  const link = (c: Noted<Row<Contact>>) => call("contacts.attach", { contactId: c.id, kind: "acts", id: actId });
   const add = async (p: TeamPerson, i: number) => {
     const r = await call<{ id: string }>("contacts.create", { ...teamContactInput(p, actName, todayStr()), attachTo: { kind: "acts", id: actId } });
     if (r) setAdded((s) => new Map(s).set(i, r.id));
@@ -58,7 +64,8 @@ export function TeamFindings({ result, actId, actName, hasWebsite, linked, onClo
       </div>
       <ErrorBox error={error} />
       {result.people.map((p, i) => {
-        const c = linkedOf(p);
+        const c = matchOf(p);
+        const isLinked = !!c && linkedIds.includes(c.id);
         const contactId = c?.id ?? added.get(i);
         const patch = c && teamContactPatch(p, c, actName, todayStr());
         return (
@@ -83,7 +90,9 @@ export function TeamFindings({ result, actId, actName, hasWebsite, linked, onClo
               ? (
                 <span className="flex items-center gap-2">
                   {patch && <button type="button" className="btn soft sm" disabled={busy} onClick={() => void addInfo(c!, patch)} data-testid={`act-team-update-${i}`}>Add their info</button>}
-                  <Link href={hrefFor("contact", contactId)} className="chip a" data-testid={`act-team-added-${i}`}>In contacts →</Link>
+                  {c && !isLinked
+                    ? <button type="button" className="btn acc sm" disabled={busy} onClick={() => void link(c)} data-testid={`act-team-attach-${i}`}>Link</button>
+                    : <Link href={hrefFor("contact", contactId)} className="chip a" data-testid={`act-team-added-${i}`}>In contacts →</Link>}
                 </span>
               )
               : <button type="button" className="btn acc sm" disabled={busy} onClick={() => void add(p, i)} data-testid={`act-team-add-${i}`}>Add</button>}

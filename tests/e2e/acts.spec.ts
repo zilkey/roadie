@@ -375,3 +375,19 @@ test("Find their team: each person's own email and LinkedIn; Add links them, wit
   await page.getByTestId("works-with").getByRole("link", { name }).click();
   await expect(page).toHaveURL(actUrl);
 });
+
+test("Find their team on another act: Sam Ortiz is already a contact (from the test above), so Link links them, no second Add", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await addAct(page, `A Brother's Fountain ${Date.now() % 100000} B`);
+
+  await page.getByTestId("act-find-team").click();
+  // Dana Reyes and "D. Reyes" are one row, and the press inbox is Sam's address: four people, not six.
+  await expect(page.getByTestId("act-team").getByTestId(/^act-team-person-/)).toHaveCount(4);
+  const sam = page.getByTestId("act-team").getByTestId(/^act-team-person-/).filter({ hasText: "Sam Ortiz" });
+  await expect(sam.getByTestId(/^act-team-add-/)).toHaveCount(0);
+  await expect(sam.getByTestId(/^act-team-update-/)).toHaveCount(0);
+  await sam.getByTestId(/^act-team-attach-/).click();
+  await expect(sam.getByTestId(/^act-team-added-/)).toContainText("In contacts");
+  await expect(sam.getByTestId(/^act-team-attach-/)).toHaveCount(0);
+  await expect(page.getByTestId("contact-link-Sam Ortiz")).toBeVisible();
+});
