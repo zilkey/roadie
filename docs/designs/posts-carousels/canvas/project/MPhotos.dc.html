@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Phone · Photos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f7f6f3}
+*{box-sizing:border-box}
+a{color:#3a46c4}a:hover{color:#2a3497}
+.ph{position:relative;width:390px;height:844px;overflow:hidden;font:15px/1.5 Figtree,system-ui,sans-serif;color:#1c1b22;background:#f7f6f3;display:flex;flex-direction:column}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.top{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-bottom:1px solid #e6e3dc}
+.top h1{margin:0;font-size:20px;font-weight:800;flex:1}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1.5px solid transparent;border-radius:10px;padding:0 14px;font:700 15px Figtree,sans-serif;background:#1c1b22;color:#fff;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.acc{background:#3a46c4}
+.btn.plain{background:#fff;color:#1c1b22;border-color:#d9d6ce}
+.ic{width:18px;height:18px;flex:none}
+.bar{display:flex;gap:8px;padding:10px 16px}
+.in{min-height:44px;border:1px solid #d9d6ce;border-radius:10px;padding:8px 12px;font:15px Figtree,sans-serif;background:#fff;color:#1c1b22;flex:1;min-width:0}
+.body{flex:1;overflow:hidden;padding:0 16px}
+.day{display:flex;align-items:baseline;gap:8px;margin:6px 0 8px}
+.day h2{margin:0;font-size:15px;font-weight:800}
+.chip{display:inline-flex;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#eceefc;color:#3a46c4}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-bottom:14px}
+.t{position:relative;padding:0;border:0;background:none;aspect-ratio:1/1;border-radius:4px;overflow:hidden;cursor:pointer;outline:3px solid transparent;outline-offset:-3px}
+.t .tp{position:absolute;inset:0}
+.t.sel{outline-color:#3a46c4}
+.t.sel .tp{inset:6px;border-radius:3px}
+.k{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:rgb(28 27 34 / .35);color:#fff;font:800 12px Figtree,sans-serif;display:grid;place-items:center}
+.t.sel .k{background:#3a46c4}
+.p1{background:#cfc6b6}.p2{background:#b9c0cb}.p3{background:#d8cfc2}.p4{background:#a9b3a6}.p5{background:#c4b4a8}.p6{background:#9fa9b8}.p7{background:#d3d6d9}.p8{background:#b8ab98}
+.act{display:flex;align-items:center;gap:10px;padding:12px 16px 20px;background:#1c1b22;color:#fff}
+.act .grow{flex:1}
+.act .btn.plain{background:transparent;color:#fff;border-color:#5f5d6b}
+</style>
+</helmet>
+<div class="ph">
+<header class="top"><h1>Photos</h1><button class="btn plain" type="button">Upload</button></header>
+<div class="bar"><label class="sr" for="mf">Folder</label><select id="mf" class="in"><option>Ideas · Dean · Hi-Dive</option><option>Ideas · all</option><option>Ideas · Jeff's phone spring 26</option><option>Drafts</option><option>Posted</option><option>Show folders</option></select></div>
+<div class="body">
+<div class="day"><h2>Sat Nov 14</h2><span class="chip">Hi-Dive show</span></div>
+<div class="grid">
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4410.HEIC, picked 1"><span class="tp p1"></span><span class="k">1</span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4412.HEIC, picked 2"><span class="tp p2"></span><span class="k">2</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4413.HEIC"><span class="tp p3"></span><span class="k"></span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4419.HEIC, picked 3"><span class="tp p4"></span><span class="k">3</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4421.HEIC"><span class="tp p5"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4425.HEIC"><span class="tp p6"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4430.HEIC"><span class="tp p7"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4431.HEIC"><span class="tp p8"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4433.HEIC"><span class="tp p2"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4436.HEIC"><span class="tp p1"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4437.HEIC"><span class="tp p4"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4440.HEIC"><span class="tp p6"></span><span class="k"></span></button>
+</div>
+<div class="day"><h2>Fri Nov 13</h2></div>
+<div class="grid">
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4390.HEIC"><span class="tp p5"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4391.HEIC"><span class="tp p3"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4395.HEIC"><span class="tp p7"></span><span class="k"></span></button>
+</div>
+</div>
+<div class="act" role="region" aria-label="Selection"><span class="grow"><b>3 picked</b></span><button class="btn plain" type="button">Clear</button><a class="btn acc" href="AddToDraft.dc.html">Add to draft</a></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

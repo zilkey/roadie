@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add to carousel draft</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f7f6f3}
+*{box-sizing:border-box}
+a{color:#3a46c4}a:hover{color:#2a3497}
+.app{position:relative;min-height:980px;font:15px/1.5 Figtree,system-ui,sans-serif;color:#1c1b22;background:#f7f6f3}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.top{display:flex;align-items:center;gap:18px;padding:10px 20px;background:#fff;border-bottom:1px solid #e6e3dc}
+.logo{display:inline-block;padding:5px 14px 4px;background:#1c1b22;color:#fff;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;transform:rotate(-2deg);border-radius:2px}
+.ghost{padding:24px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;max-width:1360px;margin:0 auto}
+.ghost span{aspect-ratio:1/1;border-radius:10px;background:#d8d3c8}
+.scrim{position:absolute;inset:0;background:rgb(28 27 34 / .5);padding:56px 16px;display:flex;justify-content:center;align-items:flex-start}
+.dlg{width:100%;max-width:640px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgb(28 27 34 / .35);display:flex;flex-direction:column}
+.dh{display:flex;align-items:center;gap:12px;padding:18px 22px 6px}
+.dh h1{margin:0;font-size:22px;font-weight:800;flex:1}
+.x{width:44px;height:44px;border-radius:10px;background:#efede7;color:#1c1b22;display:grid;place-items:center;text-decoration:none}
+.ic{width:18px;height:18px;flex:none}
+.strip{display:flex;gap:6px;padding:4px 22px 14px}
+.strip span{width:52px;height:52px;border-radius:8px;display:grid;place-items:center;font:800 13px Figtree,sans-serif;color:#1c1b22}
+.p1{background:#cfc6b6}.p2{background:#b9c0cb}.p3{background:#d8cfc2}.p4{background:#a9b3a6}.p7{background:#d3d6d9}
+.db{padding:0 22px 18px;display:flex;flex-direction:column;gap:10px}
+.opt{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1.5px solid #e6e3dc;border-radius:12px;cursor:pointer}
+.opt.on{border-color:#3a46c4;background:#f7f8ff}
+.opt input[type=radio]{width:20px;height:20px;margin:2px 0 0;accent-color:#3a46c4;flex:none}
+.ob{display:flex;flex-direction:column;gap:8px;flex:1;min-width:0}
+.ob b{font-weight:800}
+.in{min-height:44px;border:1px solid #d9d6ce;border-radius:10px;padding:8px 12px;font:15px Figtree,sans-serif;background:#fff;color:#1c1b22;width:100%}
+.muted{color:#5f5d6b}.small{font-size:13px}
+.rl{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f5d6b;margin-top:6px}
+.where{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:12px;background:#faf9f6;border:1px solid #efede7;font-size:14px}
+.where p{margin:0}
+.df{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center;padding:14px 22px;border-top:1px solid #efede7;background:#faf9f6;border-radius:0 0 16px 16px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1.5px solid transparent;border-radius:10px;padding:0 16px;font:700 15px Figtree,sans-serif;background:#1c1b22;color:#fff;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.acc{background:#3a46c4}
+.btn.plain{background:#fff;color:#1c1b22;border-color:#d9d6ce}
+</style>
+</helmet>
+<div class="app">
+<header class="top"><span class="logo">Roadie</span></header>
+<div class="ghost" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+<div class="scrim">
+<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt">
+<div class="dh"><h1 id="dt">Add 5 photos to a carousel draft</h1><a class="x" href="Main.dc.html" aria-label="Close"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a></div>
+<div class="strip" aria-hidden="true"><span class="p1">1</span><span class="p2">2</span><span class="p4">3</span><span class="p7">4</span><span class="p3">5</span></div>
+<div class="db">
+<label class="opt on"><input type="radio" name="to" checked><span class="ob"><b>New draft</b><span class="sr">Draft name</span><input class="in" value="Hi-Dive announcement" aria-label="Draft name"><span class="muted small">The name is the folder's name in Drive. You can change it later.</span></span></label>
+<span class="rl">Or add to a draft</span>
+<label class="opt"><input type="radio" name="to"><span class="ob"><b>Thanks, Denver</b><span class="muted small">2 photos · started by Ingrid on Nov 2 · these go after them</span></span></label>
+<div class="where">
+<p><b>In Drive:</b> Roadie moves 5 photos from Ideas to Posts › Drafts › Hi-Dive announcement.</p>
+<p class="muted small">Photos from a show folder or anywhere outside Posts stay where they are, and the draft gets a shortcut to each.</p>
+</div>
+</div>
+<div class="df"><a class="btn plain" href="Main.dc.html">Cancel</a><a class="btn acc" href="Edit.dc.html">Make the draft</a></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

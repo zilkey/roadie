@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Posts · Photos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f7f6f3}
+*{box-sizing:border-box}
+a{color:#3a46c4}a:hover{color:#2a3497}
+.app{font:15px/1.5 Figtree,system-ui,sans-serif;color:#1c1b22;background:#f7f6f3;min-height:1300px;position:relative}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 20px;background:#fff;border-bottom:1px solid #e6e3dc}
+.logo{display:inline-block;padding:5px 14px 4px;background:#1c1b22;color:#fff;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;transform:rotate(-2deg);border-radius:2px}
+.nav{display:flex;flex-wrap:wrap;gap:2px;flex:1 1 auto}
+.nav a{display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-radius:8px;font-weight:700;font-size:14px;color:#45434f;text-decoration:none}
+.nav a.on{background:#eceefc;color:#3a46c4}
+.me{width:36px;height:36px;border-radius:50%;background:#3a46c4;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px;text-decoration:none}
+.main{max-width:1360px;margin:0 auto;padding:24px 24px 120px}
+h1{margin:0;font-size:28px;font-weight:800;letter-spacing:-.01em}
+h2{margin:0;font-size:17px;font-weight:800}
+p{margin:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1.5px solid transparent;border-radius:10px;padding:0 16px;font:700 15px Figtree,sans-serif;background:#1c1b22;color:#fff;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.acc{background:#3a46c4;color:#fff}
+.btn.ghost{background:#eceefc;color:#3a46c4}
+.btn.plain{background:#fff;color:#1c1b22;border-color:#d9d6ce}
+.btn.sm{min-height:32px;padding:0 11px;font-size:13px;border-radius:9px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid #e6e3dc;overflow-x:auto;margin:14px 0 18px}
+.tab{flex-shrink:0;border-bottom:3px solid transparent;margin-bottom:-1px;padding:8px 14px;min-height:44px;font:700 15px Figtree,sans-serif;color:#5f5d6b;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.tab.on{color:#3a46c4;border-bottom-color:#3a46c4}
+.card{background:#fff;border:1px solid #e6e3dc;border-radius:14px}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#efede7;color:#5f5d6b;white-space:nowrap}
+.chip.a{background:#eceefc;color:#3a46c4}.chip.g{background:#e3f4ea;color:#146c43}.chip.y{background:#fff6dc;color:#6e5410}
+.muted{color:#5f5d6b}.small{font-size:13px}
+.in{min-height:44px;border:1px solid #d9d6ce;border-radius:10px;padding:8px 12px;font:15px Figtree,sans-serif;background:#fff;color:#1c1b22}
+.ic{width:18px;height:18px;flex:none}
+.shell{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.rail{flex:1 1 240px;max-width:100%;padding:12px;display:flex;flex-direction:column;gap:2px}
+@media (min-width:900px){.rail{max-width:270px}}
+.rl{font-size:12px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5f5d6b;padding:10px 10px 4px}
+.fo{display:flex;align-items:center;gap:8px;min-height:40px;padding:0 10px;border-radius:9px;color:#1c1b22;text-decoration:none;font-size:14px;font-weight:600}
+.fo .n{margin-left:auto;font-size:12px;font-weight:700;color:#5f5d6b}
+.fo.on{background:#eceefc;color:#3a46c4}.fo.on .n{color:#3a46c4}
+.fo.sub{padding-left:34px;font-weight:500}
+.content{flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:14px}
+.drop{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px 16px;border:1.5px dashed #b9b5aa;border-radius:12px;background:#faf9f6;font-size:14px}
+.drop .grow{flex:1 1 280px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.bar .grow{flex:1}
+.seg{display:inline-flex;border:1px solid #d9d6ce;border-radius:10px;overflow:hidden;background:#fff}
+.seg button{min-height:40px;padding:0 14px;border:0;background:#fff;font:700 14px Figtree,sans-serif;color:#5f5d6b;cursor:pointer}
+.seg button.on{background:#1c1b22;color:#fff}
+.day{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin-top:6px}
+.day h2{font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.t{position:relative;display:block;padding:0;border:0;border-radius:10px;background:none;cursor:pointer;aspect-ratio:1/1;overflow:hidden;outline:3px solid transparent;outline-offset:-3px}
+.t .tp{position:absolute;inset:0}
+.t.sel{outline-color:#3a46c4}
+.t.sel .tp{inset:7px;border-radius:5px}
+.k{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:rgb(28 27 34 / .35);color:#fff;font:800 13px Figtree,sans-serif;display:grid;place-items:center}
+.t.sel .k{background:#3a46c4}
+.tag{position:absolute;left:8px;bottom:8px;right:8px;display:flex;gap:4px;flex-wrap:wrap}
+.tag span{font:700 11.5px Figtree,sans-serif;padding:2px 7px;border-radius:6px;background:#1c1b22;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.t.used .tp{opacity:.55}
+.p1{background:#cfc6b6}.p2{background:#b9c0cb}.p3{background:#d8cfc2}.p4{background:#a9b3a6}.p5{background:#c4b4a8}.p6{background:#9fa9b8}.p7{background:#d3d6d9}.p8{background:#b8ab98}
+.act{position:sticky;bottom:16px;margin-top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px 14px 12px 18px;background:#1c1b22;color:#fff;border-radius:14px;box-shadow:0 12px 30px rgb(28 27 34 / .25)}
+.act .grow{flex:1 1 220px}
+.act .strip{display:flex;gap:6px}
+.act .strip span{width:34px;height:34px;border-radius:6px;display:grid;place-items:center;font:800 12px Figtree,sans-serif;color:#1c1b22}
+.act .btn.plain{background:transparent;color:#fff;border-color:#5f5d6b}
+</style>
+</helmet>
+<div class="app">
+<header class="top">
+<span class="logo">Roadie</span>
+<nav class="nav" aria-label="Main"><a href="#">Calendar</a><a href="#">Shows</a><a href="#">Booking</a><a href="#">Songs</a><a href="#">Rehearsals</a><a href="#">Money</a><a class="on" href="Main.dc.html" aria-current="page">Posts</a><a href="#">More</a></nav>
+<a class="me" href="Settings.dc.html" aria-label="Jeff, settings">J</a>
+</header>
+<main class="main">
+<h1>Posts</h1>
+<nav class="tabs" aria-label="Posts"><a class="tab" href="#">Posts</a><a class="tab on" href="Main.dc.html" aria-current="page">Photos</a></nav>
+<div class="shell">
+<nav class="rail card" aria-label="Folders">
+<span class="rl">Posts folder</span>
+<a class="fo on" href="#" aria-current="true"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h5l2 3h4l2-3h5"></path><path d="M5 5h14l2 7v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6z"></path></svg>Ideas<span class="n">214</span></a>
+<a class="fo sub" href="#">Jeff's phone spring 26<span class="n">86</span></a>
+<a class="fo sub" href="#">Dean · Hi-Dive<span class="n">41</span></a>
+<a class="fo sub" href="#">Rehearsal 10-29<span class="n">12</span></a>
+<a class="fo sub" href="#">Loose in Ideas<span class="n">75</span></a>
+<a class="fo" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16M6 16l9.5-9.5a2.1 2.1 0 0 1 3 3L9 19H6z"></path></svg>Drafts<span class="n">2</span></a>
+<a class="fo sub" href="Edit.dc.html">Hi-Dive announcement<span class="n">4</span></a>
+<a class="fo sub" href="#">Thanks, Denver<span class="n">2</span></a>
+<a class="fo" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg>Posted<span class="n">31</span></a>
+<span class="rl">Elsewhere in Drive</span>
+<a class="fo" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>Show folders</a>
+<a class="fo" href="#"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>Search all of Drive</a>
+</nav>
+<div class="content">
+<div class="drop"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"></path></svg><span class="grow"><b>Drop photos here</b> <span class="muted">or put them in Posts › Ideas from Google Drive on your phone. Any folder name works.</span></span><button class="btn plain sm" type="button">Upload</button><a class="btn plain sm" href="#">Open Ideas in Drive</a></div>
+<div class="bar">
+<div class="seg" role="group" aria-label="Show"><button class="on" type="button" aria-pressed="true">Not in a post yet</button><button type="button" aria-pressed="false">All</button></div>
+<span class="grow"></span>
+<label class="sr" for="find">Search photos</label><input id="find" class="in" placeholder="Search by file name">
+<label class="sr" for="sort">Sort</label><select id="sort" class="in"><option>Newest taken first</option><option>Oldest taken first</option><option>Newest added first</option></select>
+</div>
+<div class="day"><h2>Sat Nov 14</h2><span class="chip a">Hi-Dive show</span><span class="muted small">23 photos · Dean · Hi-Dive</span><button class="btn plain sm" type="button" style="margin-left: auto">Select all 23</button></div>
+<div class="grid">
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4410.HEIC, picked 1"><span class="tp p1"></span><span class="k">1</span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4412.HEIC, picked 2"><span class="tp p2"></span><span class="k">2</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4413.HEIC"><span class="tp p3"></span><span class="k"></span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4419.HEIC, picked 3"><span class="tp p4"></span><span class="k">3</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4421.HEIC"><span class="tp p5"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4425.HEIC"><span class="tp p6"></span><span class="k"></span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="IMG_4430.HEIC, picked 4"><span class="tp p7"></span><span class="k">4</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4431.HEIC"><span class="tp p8"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4433.HEIC"><span class="tp p2"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_4436.HEIC"><span class="tp p1"></span><span class="k"></span></button>
+</div>
+<div class="day"><h2>Thu Oct 29</h2><span class="chip a">Rehearsal</span><span class="muted small">12 photos · Rehearsal 10-29</span><button class="btn plain sm" type="button" style="margin-left: auto">Select all 12</button></div>
+<div class="grid">
+<button class="t" type="button" aria-pressed="false" aria-label="PXL_20261029_0142.jpg"><span class="tp p6"></span><span class="k"></span></button>
+<button class="t sel" type="button" aria-pressed="true" aria-label="PXL_20261029_0150.jpg, picked 5"><span class="tp p3"></span><span class="k">5</span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="PXL_20261029_0151.jpg"><span class="tp p5"></span><span class="k"></span></button>
+<button class="t used" type="button" aria-pressed="false" aria-label="PXL_20261029_0155.jpg, in the draft Thanks, Denver"><span class="tp p8"></span><span class="k"></span><span class="tag"><span>Draft · Thanks, Denver</span></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="PXL_20261029_0160.jpg"><span class="tp p4"></span><span class="k"></span></button>
+</div>
+<div class="day"><h2>Sat Apr 18</h2><span class="muted small">86 photos · Jeff's phone spring 26</span><button class="btn plain sm" type="button" style="margin-left: auto">Select all 86</button></div>
+<div class="grid">
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_2201.HEIC"><span class="tp p7"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_2202.HEIC"><span class="tp p1"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_2205.HEIC"><span class="tp p2"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_2209.HEIC"><span class="tp p5"></span><span class="k"></span></button>
+<button class="t" type="button" aria-pressed="false" aria-label="IMG_2214.HEIC"><span class="tp p3"></span><span class="k"></span></button>
+</div>
+<div class="act" role="region" aria-label="Selection">
+<span class="strip" aria-hidden="true"><span class="p1">1</span><span class="p2">2</span><span class="p4">3</span><span class="p7">4</span><span class="p3">5</span></span>
+<span class="grow"><b>5 picked</b> <span style="color: #c9c7d1">· in the order you tapped them · a carousel takes up to 10</span></span>
+<button class="btn plain sm" type="button">Clear</button>
+<a class="btn acc" href="AddToDraft.dc.html">Add to carousel draft<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></a>
+</div>
+</div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Posted carousel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f7f6f3}
+*{box-sizing:border-box}
+a{color:#3a46c4}a:hover{color:#2a3497}
+.app{font:15px/1.5 Figtree,system-ui,sans-serif;color:#1c1b22;background:#f7f6f3;min-height:1100px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:10px 20px;background:#fff;border-bottom:1px solid #e6e3dc}
+.logo{display:inline-block;padding:5px 14px 4px;background:#1c1b22;color:#fff;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;transform:rotate(-2deg);border-radius:2px}
+.nav{display:flex;flex-wrap:wrap;gap:2px;flex:1 1 auto}
+.nav a{display:inline-flex;align-items:center;min-height:40px;padding:0 12px;border-radius:8px;font-weight:700;font-size:14px;color:#45434f;text-decoration:none}
+.nav a.on{background:#eceefc;color:#3a46c4}
+.me{width:36px;height:36px;border-radius:50%;background:#3a46c4;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px;text-decoration:none}
+.main{max-width:1100px;margin:0 auto;padding:22px 24px 64px;display:flex;flex-direction:column;gap:16px}
+h1{margin:0;font-size:28px;font-weight:800;letter-spacing:-.01em}
+h2{margin:0;font-size:17px;font-weight:800}
+p{margin:0}
+.crumb{font-size:14px;color:#5f5d6b;margin-bottom:2px}
+.ic{width:18px;height:18px;flex:none}
+.banner{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:14px 16px;border-radius:12px;background:#e3f4ea;color:#146c43;font-weight:700}
+.banner .grow{flex:1 1 240px}
+.card{background:#fff;border:1px solid #e6e3dc;border-radius:14px}
+.sec{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.sec+.sec{border-top:1px solid #efede7}
+.strip{display:flex;gap:8px;flex-wrap:wrap}
+.strip span{width:72px;height:90px;border-radius:8px}
+.p1{background:#cfc6b6}.p2{background:#b9c0cb}.p3{background:#d8cfc2}.p4{background:#a9b3a6}.p7{background:#d3d6d9}.p9{background:#c7b9a3}
+.res{display:flex;flex-direction:column;gap:8px}
+.r{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border:1px solid #e6e3dc;border-radius:12px}
+.r .grow{flex:1 1 220px}
+.r b{display:block}
+.r small{display:block;color:#5f5d6b;font-size:13px}
+.pf{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;font-size:11px;font-weight:800;background:#146c43;color:#fff;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1.5px solid transparent;border-radius:10px;padding:0 16px;font:700 15px Figtree,sans-serif;background:#1c1b22;color:#fff;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:#eceefc;color:#3a46c4}
+.btn.sm{min-height:32px;padding:0 11px;font-size:13px;border-radius:9px}
+.drive{display:flex;flex-direction:column;gap:2px;font-size:14px}
+.f{font-family:ui-monospace,Menlo,monospace;font-size:13px;display:flex;gap:8px;align-items:center;min-height:30px}
+.f.d1{padding-left:22px}
+.muted{color:#5f5d6b}.small{font-size:13px}
+.cap{white-space:pre-line;font-size:14px}
+</style>
+</helmet>
+<div class="app">
+<header class="top">
+<span class="logo">Roadie</span>
+<nav class="nav" aria-label="Main"><a href="#">Calendar</a><a href="#">Shows</a><a href="#">Booking</a><a href="#">Songs</a><a href="#">Rehearsals</a><a href="#">Money</a><a class="on" href="Main.dc.html">Posts</a><a href="#">More</a></nav>
+<a class="me" href="Settings.dc.html" aria-label="Jeff, settings">J</a>
+</header>
+<main class="main">
+<div><p class="crumb"><a href="Main.dc.html">Posts</a> › Published</p><h1>Hi-Dive announcement</h1><p class="muted small">Carousel of 6 · posted by Jeff on Tue Nov 10 at 4:12 PM</p></div>
+<div class="banner" role="status"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span class="grow">Posted to Instagram. The photos moved to Posted in Drive.</span></div>
+<section class="card">
+<div class="sec">
+<h2>Where it went</h2>
+<div class="res">
+<div class="r"><span class="pf">IG</span><span class="grow"><b>@ingridavisonband</b><small>Carousel · 6 photos</small></span><a class="btn ghost sm" href="#">View on Instagram</a></div>
+</div>
+</div>
+<div class="sec">
+<h2>Photos</h2>
+<div class="strip" aria-hidden="true"><span class="p9"></span><span class="p1"></span><span class="p2"></span><span class="p4"></span><span class="p7"></span><span class="p3"></span></div>
+<p class="cap">Denver! We're back at Hi-Dive on Sat Nov 14, full band. Doors at 8. Tickets in bio.
+
+#denvermusic #hidive</p>
+</div>
+<div class="sec">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center"><h2 style="flex: 1 1 200px">In Drive</h2><a class="btn ghost sm" href="#">Open the folder</a></div>
+<div class="drive">
+<span class="f">Posts › Posted › 2026-11 › 2026-11-10 Hi-Dive announcement</span>
+<span class="f d1">01 Hi-Dive poster.jpg <span class="muted">(shortcut)</span></span>
+<span class="f d1">02 IMG_4410.HEIC</span>
+<span class="f d1">03 IMG_4412.HEIC</span>
+<span class="f d1">04 IMG_4419.HEIC</span>
+<span class="f d1">05 IMG_4430.HEIC</span>
+<span class="f d1">06 PXL_20261029_0150.jpg</span>
+</div>
+<p class="muted small">In Photos these show "Posted Nov 10" and drop out of "Not in a post yet". The poster's shortcut points at the file in Shows › Hi-Dive, which stays there.</p>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post the carousel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f7f6f3}
+*{box-sizing:border-box}
+a{color:#3a46c4}a:hover{color:#2a3497}
+.app{position:relative;font:15px/1.5 Figtree,system-ui,sans-serif;color:#1c1b22;background:#f7f6f3;min-height:1300px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.top{display:flex;align-items:center;gap:18px;padding:10px 20px;background:#fff;border-bottom:1px solid #e6e3dc}
+.logo{display:inline-block;padding:5px 14px 4px;background:#1c1b22;color:#fff;font-weight:800;font-size:15px;letter-spacing:.08em;text-transform:uppercase;transform:rotate(-2deg);border-radius:2px}
+.ghostpage{padding:24px;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.gl{height:28px;width:320px;border-radius:6px;background:#e6e3dc}
+.gc{height:900px;border-radius:14px;background:#fff;border:1px solid #e6e3dc}
+.scrim{position:absolute;inset:0;background:rgb(28 27 34 / .5);padding:48px 16px;display:flex;justify-content:center;align-items:flex-start}
+.dlg{width:100%;max-width:760px;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgb(28 27 34 / .35);display:flex;flex-direction:column}
+.dh{display:flex;align-items:center;gap:12px;padding:18px 22px 8px}
+.dh h1{margin:0;font-size:22px;font-weight:800;flex:1}
+.x{width:44px;height:44px;border-radius:10px;background:#efede7;color:#1c1b22;display:grid;place-items:center;text-decoration:none}
+.ic{width:18px;height:18px;flex:none}
+.strip{display:flex;gap:6px;padding:0 22px 6px;flex-wrap:wrap}
+.strip span{width:48px;height:60px;border-radius:7px}
+.p1{background:#cfc6b6}.p2{background:#b9c0cb}.p3{background:#d8cfc2}.p4{background:#a9b3a6}.p7{background:#d3d6d9}.p9{background:#c7b9a3}
+.sec{padding:14px 22px;display:flex;flex-direction:column;gap:10px}
+.sec+.sec{border-top:1px solid #efede7}
+h2{margin:0;font-size:16px;font-weight:800}
+p{margin:0}
+.accts{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.acct{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #e6e3dc;border-radius:12px;cursor:pointer}
+.acct.on{border-color:#3a46c4;background:#f7f8ff}
+.acct input{width:20px;height:20px;margin:0;accent-color:#3a46c4}
+.acct b{display:block;font-size:14px}
+.acct small{display:block;font-size:12.5px;color:#5f5d6b}
+.pf{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;font-size:11px;font-weight:800;border:1.5px solid #1c1b22;flex:none}
+.checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.checks li{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.ok{color:#146c43}.warn{color:#6e5410}
+.checks li .ic{margin-top:2px}
+.seg{display:inline-flex;border:1px solid #d9d6ce;border-radius:10px;overflow:hidden;background:#fff;align-self:flex-start}
+.seg button{min-height:40px;padding:0 14px;border:0;background:#fff;font:700 14px Figtree,sans-serif;color:#5f5d6b;cursor:pointer}
+.seg button.on{background:#1c1b22;color:#fff}
+.drive{display:flex;flex-direction:column;gap:4px;padding:12px 14px;border-radius:12px;background:#faf9f6;border:1px solid #efede7;font-size:14px}
+.f{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.muted{color:#5f5d6b}.small{font-size:13px}
+.df{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;align-items:center;padding:14px 22px;border-top:1px solid #efede7;background:#faf9f6;border-radius:0 0 16px 16px}
+.df .grow{flex:1 1 200px;font-size:13px;color:#5f5d6b}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1.5px solid transparent;border-radius:10px;padding:0 16px;font:700 15px Figtree,sans-serif;background:#1c1b22;color:#fff;text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn.acc{background:#3a46c4}
+.btn.plain{background:#fff;color:#1c1b22;border-color:#d9d6ce}
+.btn.sm{min-height:32px;padding:0 11px;font-size:13px;border-radius:9px}
+</style>
+</helmet>
+<div class="app">
+<header class="top"><span class="logo">Roadie</span></header>
+<div class="ghostpage" aria-hidden="true"><div class="gl"></div><div class="gc"></div></div>
+<div class="scrim">
+<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dt">
+<div class="dh"><h1 id="dt">Post "Hi-Dive announcement"</h1><a class="x" href="Edit.dc.html" aria-label="Back to the draft"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></a></div>
+<div class="strip" aria-hidden="true"><span class="p9"></span><span class="p1"></span><span class="p2"></span><span class="p4"></span><span class="p7"></span><span class="p3"></span></div>
+<div class="sec">
+<h2>Post to</h2>
+<div class="accts">
+<label class="acct on"><input type="checkbox" checked><span class="pf">IG</span><span><b>@ingridavisonband</b><small>Instagram · carousel of 6</small></span></label>
+</div>
+</div>
+<div class="sec">
+<h2>Before it goes</h2>
+<ul class="checks">
+<li class="ok"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span>6 photos, all cropped to 4:5.</span></li>
+<li class="ok"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg><span>4 are iPhone HEIC photos. Roadie sends Instagram a JPEG of each; the originals in Drive don't change.</span></li>
+<li class="warn"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8v5M12 16.5v.5"></path><circle cx="12" cy="12" r="9"></circle></svg><span>Slides 3–6 have no alt text. <a href="Edit.dc.html">Add it</a> or post without it.</span></li>
+</ul>
+</div>
+<div class="sec">
+<h2>When</h2>
+<div class="seg" role="group" aria-label="When to post"><button class="on" type="button" aria-pressed="true">Now</button><button type="button" aria-pressed="false">Pick a time</button></div>
+</div>
+<div class="sec">
+<h2>Then, in Drive</h2>
+<div class="drive">
+<p>Roadie moves the draft's folder to <b>Posts › Posted › 2026-11</b> and renames it:</p>
+<p class="f">2026-11-10 Hi-Dive announcement</p>
+<p class="muted small">The photos inside are numbered 01–06 in carousel order. If Instagram turns the post down, nothing moves and the draft stays as it is.</p>
+</div>
+</div>
+<div class="df"><span class="grow">Instagram: 2 of 50 posts used today</span><a class="btn plain" href="Edit.dc.html">Back to the draft</a><a class="btn acc" href="Posted.dc.html">Post now</a></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1300}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
