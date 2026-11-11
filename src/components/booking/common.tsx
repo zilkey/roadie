@@ -6,6 +6,7 @@ import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, 
 import { useCommand, ErrorBox, PickChip, Select } from "@/components/ui";
 import { CONTACT_ROLES, ROLE_LABEL, rolesOf, withNotes, type NoteFields } from "@/lib/venues";
 import { withBandNote, type BandNoteFields } from "@/lib/bandNotes";
+import { REGION_LABEL } from "@/lib/regions";
 import { SaveStatus } from "@/components/SaveStatus";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
@@ -441,7 +442,7 @@ const num = (s: string) => (s.trim() ? Number(s) : undefined);
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 const o = (...pairs: [string, string][]) => pairs;
 const US_ZONES = o(["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona (no DST)"], ["America/Los_Angeles", "Pacific"], ["America/Anchorage", "Alaska"], ["Pacific/Honolulu", "Hawaii"]);
-const REGIONS = o(["boulder", "Boulder"], ["denver", "Denver"], ["north", "North"], ["south", "South"], ["mountains", "Mountains"], ["southwest", "Southwest"], ["out", "Out of state"]);
+const REGIONS = o(...Object.entries(REGION_LABEL));
 
 /** The shared room: name, address and facts every band sees. Edited with an explicit Save (and a confirmation), because it changes the room for every band. */
 export const roomForm = {

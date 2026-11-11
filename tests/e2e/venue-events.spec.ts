@@ -25,7 +25,7 @@ const shows = (page: Page) => page.getByTestId("venue-events-list").locator(":sc
 test.describe.configure({ mode: "serial" });
 let bluebirdUrl = "";
 
-test("an admin refreshes the Bluebird Room's calendar and sees the bills, the open slot, and the past shows folded away", async ({ page }) => {
+test("an admin refreshes the Bluebird Room's calendar and sees the bills, the opener guess, the posters, and the past shows folded away", async ({ page }) => {
   await signInAs(page, "rudy");
   await openVenue(page, "Bluebird Room");
   bluebirdUrl = new URL(page.url()).pathname;
@@ -33,22 +33,30 @@ test("an admin refreshes the Bluebird Room's calendar and sees the bills, the op
   await page.getByTestId("venue-tab-events").click();
   await expect(page).toHaveURL(/tab=events/);
   await expect(page.getByTestId("venue-calendar-type")).toHaveText("iCal feed");
-  await expect(page.getByTestId("venue-calendar-health")).toContainText("Not refreshed yet");
+  // venue-calendars.spec.ts may refresh the same calendar first in another worker of this shard
+  await expect(page.getByTestId("venue-calendar-health")).toContainText(/Not refreshed yet|Refreshed/);
 
   await page.getByTestId("venue-calendar-refresh").click();
   await expect(page.getByTestId("venue-calendar-health")).toContainText("found 3 shows");
   await expect(page.getByTestId("venue-calendar-error")).toHaveCount(0);
   await expect(shows(page)).toHaveCount(3);
 
+  // the opener guess (#76): support listed → no badge; one act on a title-only calendar → Maybe; support TBA → Likely
   const withSupport = shows(page).filter({ hasText: "The Example Band" });
   await expect(withSupport.getByTestId("venue-event-acts")).toHaveText("The Example Band with Sample Support");
-  await expect(withSupport.getByTestId("venue-event-open")).toHaveCount(0);
-  await expect(shows(page).filter({ hasText: "Lone Example Act" }).getByTestId("venue-event-open")).toHaveCount(0);
+  await expect(withSupport.getByTestId("venue-event-chance")).toHaveCount(0);
+  await expect(shows(page).filter({ hasText: "Lone Example Act" }).getByTestId("venue-event-chance")).toHaveText("Maybe");
   // "with special guests": the support is still to be announced
   const guests = shows(page).filter({ hasText: "Headline Example Trio" });
   await expect(guests.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
-  await expect(guests.getByTestId("venue-event-open")).toHaveText("Open slot?");
-  await expect(page.getByTestId("venue-event-open")).toHaveCount(1);
+  await expect(guests.getByTestId("venue-event-chance")).toHaveText("Likely opener slot");
+  await expect(guests.getByTestId("venue-event-chance")).toHaveAttribute("title", /Support still to be announced.*A guess from the listing, not perfect\./);
+  await expect(page.getByTestId("opener-disclaimer")).toContainText("a guess from the listing, not perfect");
+  // the room's record: two settled bills (the 2020 shows) are not enough to say
+  await expect(page.getByTestId("venue-calendar-openers")).toHaveText("Books openers: not enough shows yet");
+  // the poster from the feed, a plain square for the shows without one
+  await expect(guests.getByTestId("venue-event-image")).toHaveAttribute("src", "/icon-192.png");
+  await expect(withSupport.getByTestId("venue-event-noimage")).toBeVisible();
 
   // past shows: a collapsed card, who played the room
   await expect(page.getByTestId("venue-events-past")).toContainText("Past shows (2)");
@@ -81,7 +89,7 @@ test("a member sees the shows but cannot set a take or change the source", async
   await signInAs(page, "hugo");
   await page.goto(`${bluebirdUrl}?tab=events`);
   await expect(shows(page)).toHaveCount(3);
-  await expect(shows(page).filter({ hasText: "Headline Example Trio" }).getByTestId("venue-event-open")).toBeVisible();
+  await expect(shows(page).filter({ hasText: "Headline Example Trio" }).getByTestId("venue-event-chance")).toBeVisible();
   await expect(page.getByText("Our take")).toHaveCount(0);
   await expect(page.locator('select[data-testid^="venue-event-take-"]')).toHaveCount(0);
   await expect(page.getByTestId("venue-calendar-setup")).toHaveCount(0);

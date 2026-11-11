@@ -9,6 +9,7 @@ import { firestore } from "../admin";
 import { db, type Doc } from "../db";
 import { AppError } from "../errors";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
+import { roomStats } from "@/lib/venueEvents";
 import { VenueCalendar, VenueEvent, type VenueEventSource } from "@/schema";
 import { Net } from "./fetch";
 import { cleanTitle, isMusic, reconcileActs, splitTitle } from "./bill";
@@ -72,7 +73,27 @@ export async function readCalendar(cal: VenueCalendar, rc: ReaderCtx): Promise<R
     events.push(d);
   }
   events.sort((a, b) => (a.date + (a.start ?? "")).localeCompare(b.date + (b.start ?? "")));
+  markRuns(events);
   return { events, unparsed, dropped, raw: res.events.length, bill: res.bill };
+}
+
+const headKey = (e: EventDraft) => (e.acts.find((a) => a.role === "headliner")?.name ?? e.title).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const nextDay = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+/** The same headliner on nights in a row is a run: each of its shows gets `nights` (how many). Drafts are sorted by date. */
+export function markRuns(events: EventDraft[]) {
+  const byHead = new Map<string, EventDraft[]>();
+  for (const e of events) if (e.status !== "cancelled") byHead.set(headKey(e), [...(byHead.get(headKey(e)) ?? []), e]);
+  for (const list of byHead.values()) {
+    let run: EventDraft[] = [];
+    const close = () => { if (run.length > 1) for (const e of run) e.nights = run.length; run = []; };
+    for (const e of list) {
+      const last = run[run.length - 1];
+      if (last && (e.date === last.date || e.date === nextDay(last.date))) { if (e.date !== last.date) run.push(e); continue; }
+      close();
+      run = [e];
+    }
+    close();
+  }
 }
 
 export const eventId = (venueId: string, sourceId: string) => `${venueId}__${createHash("sha1").update(sourceId).digest("hex").slice(0, 16)}`;
@@ -133,12 +154,15 @@ export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Dat
     const out = await readCalendar(cal, { net: opts.net ?? new Net(), tz, now });
     const { added, gone } = await upsertEvents(venueId, cal.type, out.events, now, tz);
     const today = todayIn(tz, now);
-    Object.assign(health, { lastSuccessAt: health.lastRunAt, lastCount: out.events.length, lastUnparsed: out.unparsed });
+    // The room's record, over every stored show (past ones too), now that this run's are written.
+    const stored = await db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
+    const record = roomStats(stored as unknown as VenueEvent[], today);
+    Object.assign(health, { lastSuccessAt: health.lastRunAt, lastCount: out.events.length, lastUnparsed: out.unparsed, ...record });
     await firestore().doc(`venueEventSources/${venueId}`).set(health);
     return { ...base, type: cal.type, count: out.events.length, upcoming: out.events.filter((e) => e.date >= today).length, added, gone, unparsed: out.unparsed, dropped: out.dropped };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await firestore().doc(`venueEventSources/${venueId}`).set({ ...health, ...(prev?.lastSuccessAt ? { lastSuccessAt: prev.lastSuccessAt, lastCount: prev.lastCount ?? 0 } : {}), lastError: msg.slice(0, 300) });
+    await firestore().doc(`venueEventSources/${venueId}`).set({ ...health, ...(prev?.lastSuccessAt ? { lastSuccessAt: prev.lastSuccessAt, lastCount: prev.lastCount ?? 0 } : {}), ...(prev?.billsSeen !== undefined ? { billsSeen: prev.billsSeen, ...(prev.supportShare !== undefined ? { supportShare: prev.supportShare } : {}) } : {}), lastError: msg.slice(0, 300) });
     return { ...base, type: cal.type, error: msg };
   }
 }

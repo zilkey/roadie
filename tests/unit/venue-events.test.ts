@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import { splitTitle, isMusic, cleanTitle } from "@/server/events/bill";
 import { parseDateText, parseTime, resolveStartsAt, todayIn } from "@/server/events/dates";
 import { extract } from "@/server/events/selectors";
-import { readCalendar, toDraft, eventId } from "@/server/events/refresh";
+import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openSlot, titleSaysMore } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore } from "@/lib/venueEvents";
+import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
 // suggestSelectors must never reach a real model here (the unit runner sets no NODE_ENV, and a Vertex key may be in the env).
@@ -59,7 +60,53 @@ describe("splitTitle", () => {
   });
 });
 
+describe("splitTitle (prod titles)", () => {
+  const roles = (t: string) => splitTitle(t).acts.map((a) => `${a.name}:${a.role}`);
+  test("very special guest is a named support act", () => {
+    assert.deepEqual(roles("Trace Bundy 18th Annual Acoustic Holiday With very special guest Andy McKee"), ["Trace Bundy:headliner", "Andy McKee:support"]);
+  });
+  test("musical guest", () => {
+    assert.deepEqual(roles("Hazlett with musical guest lighthearted"), ["Hazlett:headliner", "lighthearted:support"]);
+  });
+  test("+ Special Guests Name", () => {
+    assert.deepEqual(names("Catie Turner + Special Guests Kiss Bang"), ["Catie Turner", "Kiss Bang"]);
+  });
+  test("per-night dates are dropped from support names", () => {
+    assert.deepEqual(names("Leftover Salmon Feat. Sam Bush with special guests Deer Creek Sharpshooters (11/27) and Tonewood (11/28)"),
+      ["Leftover Salmon", "Sam Bush", "Deer Creek Sharpshooters", "Tonewood"]);
+  });
+  test("a band named Filmmaker Support Group", () => {
+    const b = splitTitle("Filmmaker Support Group");
+    assert.deepEqual(b.acts, [{ name: "Filmmaker Support Group", role: "headliner" }]);
+    assert.equal(b.supportTba, false);
+    assert.equal(isMusic("Filmmaker Support Group"), true);
+  });
+  test("feat. list drops guest musicians", () => {
+    assert.deepEqual(names("Last Waltz Revisited feat. Polytoxic, The Denver Horns & Guest Musicians"), ["Last Waltz Revisited", "Polytoxic", "The Denver Horns"]);
+  });
+  test("RESCHEDULED prefix and An Evening with", () => {
+    assert.equal(names("RESCHEDULED\u2013An Evening with Julian Lage Quartet feat. John Medeski, Jorge Roeder")[0], "Julian Lage Quartet");
+  });
+  test("a parenthetical after the headliner", () => {
+    assert.deepEqual(names("Jim James (Solo Acoustic) with special guest Lauren Frihauf"), ["Jim James", "Lauren Frihauf"]);
+  });
+  test("a two-night-stand tail is dropped", () => {
+    assert.deepEqual(names("Assembly of Dust | Reid Genauer's Epic Two-Night Stand (Night 2)"), ["Assembly of Dust"]);
+  });
+  test("special guests TBA / unnamed means support TBA, one act", () => {
+    for (const t of ["Band with special guests TBA", "Headline Example Trio with special guests"]) {
+      const b = splitTitle(t);
+      assert.equal(b.acts.length, 1, t);
+      assert.equal(b.supportTba, true, t);
+    }
+  });
+});
+
 describe("isMusic", () => {
+  test("holiday greetings, drawing clubs and science on tap are not music", () => {
+    for (const t of ["Merry Christmas!", "Dead Pen Drawing Club", "Science On Tap"]) assert.equal(isMusic(t), false, t);
+    assert.equal(isMusic("Happy Hour with The Pine Hollows band"), true);
+  });
   test("trivia, yoga and the like are dropped", () => {
     for (const t of ["Tuesday Trivia Night", "Sunday Yoga", "Bingo with Bev", "Paint & Sip"]) assert.equal(isMusic(t), false, t);
   });
@@ -74,15 +121,144 @@ describe("isMusic", () => {
   });
 });
 
-describe("openSlot", () => {
-  const act = (name: string, role: "headliner" | "support" | "unknown") => ({ name, role });
-  test("full bill with only a headliner is open", () => assert.equal(openSlot({ acts: [act("A", "headliner")], bill: "full" }), true));
-  test("title-only sources cannot tell", () => assert.equal(openSlot({ acts: [act("A", "headliner")], bill: "title" }), false));
-  test("a support act fills it", () => assert.equal(openSlot({ acts: [act("A", "headliner"), act("B", "support")], bill: "full" }), false));
-  test("support TBA is open even on a title source", () => assert.equal(openSlot({ acts: [act("A", "headliner")], bill: "title", supportTba: true }), true));
-  test("cancelled and gone are never open", () => {
-    assert.equal(openSlot({ acts: [], bill: "full", status: "cancelled" }), false);
-    assert.equal(openSlot({ acts: [], bill: "full", supportTba: true, status: "gone" }), false);
+describe("openerChance", () => {
+  const act = (name: string, role: "headliner" | "support" | "unknown" = "headliner") => ({ name, role });
+  const TODAY = "2026-11-11";
+  const FAR = "2026-12-16"; // 5 weeks out
+  const ev = (o: Record<string, unknown> = {}) => ({ acts: [act("A")], bill: "title" as const, title: "A", date: FAR, status: "onsale" as const, ...o }) as Parameters<typeof openerChance>[0];
+  const has = (r: { reasons: string[] }, re: RegExp) => r.reasons.some((x) => re.test(x));
+
+  test("cancelled, gone and past are unlikely, with the one stop reason", () => {
+    assert.deepEqual(openerChance(ev({ status: "cancelled" }), null, TODAY).reasons, ["Cancelled"]);
+    assert.deepEqual(openerChance(ev({ status: "gone" }), null, TODAY).reasons, ["No longer on the venue’s calendar"]);
+    const past = openerChance(ev({ date: "2026-11-10" }), null, TODAY);
+    assert.equal(past.chance, "unlikely");
+    assert.deepEqual(past.reasons, ["Already happened"]);
+    assert.equal(openerChance(ev({ status: "cancelled" }), null, TODAY).chance, "unlikely");
+  });
+  test("support already listed is unlikely", () => {
+    const r = openerChance(ev({ acts: [act("A"), act("B", "support")], bill: "full" }), null, TODAY);
+    assert.equal(r.chance, "unlikely");
+    assert.ok(has(r, /Support already listed/));
+  });
+  test("support TBA and one act far out is likely", () => {
+    const r = openerChance(ev({ supportTba: true }), null, TODAY);
+    assert.equal(r.chance, "likely");
+    assert.ok(has(r, /to be announced/));
+  });
+  test("a full-bill source with only a headliner 5 weeks out is likely", () => {
+    const r = openerChance(ev({ bill: "full" }), null, TODAY);
+    assert.equal(r.chance, "likely");
+    assert.ok(has(r, /lists support acts/));
+    assert.ok(has(r, /good time to ask/));
+  });
+  test("a title-only single act 5 weeks out is maybe", () => {
+    const r = openerChance(ev(), null, TODAY);
+    assert.equal(r.chance, "maybe");
+    assert.ok(has(r, /One act listed/));
+  });
+  test("under 2 weeks out is unlikely", () => {
+    const r = openerChance(ev({ date: "2026-11-20", bill: "full" }), null, TODAY);
+    assert.equal(r.chance, "unlikely");
+    assert.ok(has(r, /Under 2 weeks/));
+  });
+  test("the room's record lifts or drops the score", () => {
+    const base = openerChance(ev(), null, TODAY);
+    const often = openerChance(ev(), { supportShare: 0.6, billsSeen: 10 }, TODAY);
+    const rarely = openerChance(ev(), { supportShare: 0.1, billsSeen: 10 }, TODAY);
+    assert.equal(often.chance, "likely");
+    assert.ok(has(often, /books openers often/));
+    assert.equal(often.score, base.score + 1);
+    assert.ok(has(rarely, /rarely books openers/));
+    assert.equal(rarely.score, base.score - 1);
+  });
+  test("a record under MIN_BILLS is ignored", () => {
+    const base = openerChance(ev(), null, TODAY);
+    for (const share of [0.9, 0.0]) {
+      const r = openerChance(ev(), { supportShare: share, billsSeen: MIN_BILLS - 1 }, TODAY);
+      assert.equal(r.score, base.score);
+      assert.ok(!has(r, /room (?:rarely )?books/i));
+    }
+  });
+  test("themed titles carry a themed reason and are never likely", () => {
+    const themed: [string, RegExp][] = [
+      ["Emo Nite", /theme night/],
+      ["Dear Creedence: A Tribute to Creedence Clearwater Revival", /tribute/],
+      ["REPRISE: Recreating Iconic Phish Shows", /recreation/],
+      ["Last Waltz Revisited feat. Polytoxic", /recreation/],
+      ["Open Mic Night", /open mic/i],
+      ["Residency Concert Series (every Wednesday)", /residency/],
+      ["An Evening with Firefall", /An evening with/i],
+      ["2000's Rave", /theme night/],
+      ["DJ Meredith Marks", /DJ night/],
+    ];
+    for (const [title, re] of themed) {
+      for (const o of [{}, { supportTba: true }, { bill: "full" as const }]) {
+        const r = openerChance(ev({ title, ...o }), null, TODAY);
+        assert.ok(has(r, re), `${title}: ${r.reasons.join("; ")}`);
+        assert.notEqual(r.chance, "likely", title);
+      }
+    }
+  });
+  test("multi-night runs add a reason", () => {
+    assert.ok(has(openerChance(ev({ nights: 2 }), null, TODAY), /multi-night run/));
+    assert.ok(has(openerChance(ev({ title: "A (Night 2)" }), null, TODAY), /multi-night run/));
+    assert.ok(!has(openerChance(ev(), null, TODAY), /multi-night run/));
+  });
+  test("a band called Filmmaker Support Group is not a listed support act", () => {
+    const b = splitTitle("Filmmaker Support Group");
+    const r = openerChance(ev({ title: "Filmmaker Support Group", acts: b.acts, supportTba: b.supportTba }), null, TODAY);
+    assert.ok(!has(r, /Support already listed/));
+    assert.ok(!has(r, /to be announced/));
+  });
+});
+
+describe("booksOpeners and roomStats", () => {
+  const TODAY = "2026-11-11";
+  const h = (name: string) => ({ name, role: "headliner" as const });
+  const s = (name: string) => ({ name, role: "support" as const });
+  const show = (o: Record<string, unknown> = {}) => ({ acts: [h("A")], bill: "full" as const, title: "A", date: "2026-12-20", status: "onsale" as const, ...o }) as Parameters<typeof roomStats>[0][number];
+
+  test("thresholds", () => {
+    assert.equal(booksOpeners(null), "unknown");
+    assert.equal(booksOpeners(undefined), "unknown");
+    assert.equal(booksOpeners({ supportShare: 0.9, billsSeen: MIN_BILLS - 1 }), "unknown");
+    assert.equal(booksOpeners({ billsSeen: 20 }), "unknown");
+    assert.equal(booksOpeners({ supportShare: 0.5, billsSeen: MIN_BILLS }), "often");
+    assert.equal(booksOpeners({ supportShare: 0.49, billsSeen: MIN_BILLS }), "sometimes");
+    assert.equal(booksOpeners({ supportShare: 0.2, billsSeen: MIN_BILLS }), "sometimes");
+    assert.equal(booksOpeners({ supportShare: 0.19, billsSeen: MIN_BILLS }), "rarely");
+    assert.equal(booksOpeners({ supportShare: 0, billsSeen: MIN_BILLS }), "rarely");
+  });
+  test("only settled bills count: full-bill sources, under 2 weeks out, or past", () => {
+    const r = roomStats([
+      show({ acts: [h("A"), s("B")] }), // full bill, support
+      show(), // full bill, none
+      show({ bill: "title", date: "2026-12-20" }), // title-only far out: not settled
+      show({ bill: "title", date: "2026-11-20", acts: [h("A"), s("B")] }), // under 2 weeks
+      show({ bill: "title", date: "2026-10-01" }), // past
+    ], TODAY);
+    assert.equal(r.billsSeen, 4);
+    assert.equal(r.supportShare, 0.5);
+  });
+  test("cancelled, gone, themed and act-less shows are skipped", () => {
+    const r = roomStats([
+      show({ status: "cancelled" }), show({ status: "gone" }), show({ title: "Emo Nite" }), show({ acts: [] }),
+      show({ acts: [h("A"), s("B")] }),
+    ], TODAY);
+    assert.deepEqual(r, { billsSeen: 1, supportShare: 1 });
+  });
+  test("supportShare is rounded to 2 decimals", () => {
+    const r = roomStats([show({ acts: [h("A"), s("B")] }), show(), show()], TODAY);
+    assert.equal(r.supportShare, 0.33);
+    const r2 = roomStats([show({ acts: [h("A"), s("B")] }), show({ acts: [h("A"), s("B")] }), show()], TODAY);
+    assert.equal(r2.supportShare, 0.67);
+  });
+  test("no supportShare when nothing is settled", () => {
+    const r = roomStats([], TODAY);
+    assert.deepEqual(r, { billsSeen: 0 });
+    assert.ok(!("supportShare" in r));
+    assert.deepEqual(roomStats([show({ bill: "title" })], TODAY), { billsSeen: 0 });
   });
 });
 
@@ -384,5 +560,42 @@ describe("reconcileActs", () => {
   });
   test("\"w\" without a slash splits the bill", () => {
     assert.deepEqual(splitTitle("Example Band w Other Example").acts.map((a) => a.role), ["headliner", "support"]);
+  });
+});
+
+describe("markRuns", () => {
+  const d = (date: string, head: string, o: Record<string, unknown> = {}) => ({ date, title: head, acts: [{ name: head, role: "headliner" }], bill: "title", status: "onsale", ...o }) as unknown as EventDraft;
+  test("the same headliner on nights in a row is a run", () => {
+    const a = d("2026-11-27", "Leftover Salmon"), b = d("2026-11-28", "Leftover Salmon");
+    markRuns([a, b]);
+    assert.equal(a.nights, 2);
+    assert.equal(b.nights, 2);
+  });
+  test("a weekly repeat is not a run", () => {
+    const a = d("2026-11-04", "Open Jam"), b = d("2026-11-11", "Open Jam");
+    markRuns([a, b]);
+    assert.equal(a.nights, undefined);
+    assert.equal(b.nights, undefined);
+  });
+  test("a cancelled night is skipped", () => {
+    const a = d("2026-11-27", "Leftover Salmon"), b = d("2026-11-28", "Leftover Salmon", { status: "cancelled" });
+    markRuns([a, b]);
+    assert.equal(a.nights, undefined);
+    assert.equal(b.nights, undefined);
+  });
+});
+
+describe("parseIcs posters", () => {
+  const cal = (extra: string) => `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:1\r\nSUMMARY:A Band\r\nDTSTART:20261114T200000Z\r\n${extra}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  test("IMAGE;VALUE=URI", () => {
+    assert.equal(parseIcs(cal("IMAGE;VALUE=URI:https://x.example.com/a.jpg"))[0].imageUrl, "https://x.example.com/a.jpg");
+  });
+  test("ATTACH with an image FMTTYPE", () => {
+    assert.equal(parseIcs(cal("ATTACH;FMTTYPE=image/jpeg:https://x.example.com/b.jpg"))[0].imageUrl, "https://x.example.com/b.jpg");
+  });
+  test("a non-image ATTACH or inline base64 is not a poster", () => {
+    assert.equal(parseIcs(cal("ATTACH;FMTTYPE=application/pdf:https://x.example.com/c.pdf"))[0].imageUrl, undefined);
+    assert.equal(parseIcs(cal("ATTACH;FMTTYPE=image/png;ENCODING=BASE64;VALUE=BINARY:AAAA"))[0].imageUrl, undefined);
+    assert.equal(parseIcs(cal("X-NOTHING:1"))[0].imageUrl, undefined);
   });
 });

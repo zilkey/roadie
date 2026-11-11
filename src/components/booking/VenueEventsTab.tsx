@@ -1,16 +1,16 @@
 "use client";
 /**
  * A venue's Events tab (issue #60): the room's upcoming shows as its own calendar lists them, with the bill, a badge when it
- * looks like an open opener slot, and this band's take on each; past shows collapsed below (who plays the room); the calendar
- * source, when it last refreshed, and Refresh. No design-canvas board exists for this tab yet: it follows the venue page's cards.
+ * might need an opener (a guess: openerChance in src/lib/venueEvents.ts), and this band's take on each; past shows collapsed
+ * below (who plays the room); the calendar source, when it last refreshed, the room's record ("Books openers: often"), and Refresh. No design-canvas board exists for this tab yet: it follows the venue page's cards.
  */
 import { useMemo, useState } from "react";
 import { useArtist } from "@/lib/artist";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
-import { CALENDAR_LABEL, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, titleSaysMore } from "@/lib/venueEvents";
-import { EventActs, EventBadges, TakePicker, TicketLink, type Ev } from "@/components/booking/VenueEventBits";
+import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, titleSaysMore } from "@/lib/venueEvents";
+import { EventActs, EventBadges, EventPoster, OpenerNote, TakePicker, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { dateInBandZone } from "@/lib/timezone";
 import { CALENDAR_TYPES, PRESETS, type CalendarType, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
@@ -46,7 +46,8 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
           <DetailCard title={`Upcoming shows${events.rows ? ` (${upcoming.length})` : ""}`} testid="venue-events-upcoming">
             {!events.rows ? <div className="s">Loading…</div>
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
-              : <div className="grid gap-3" data-testid="venue-events-list">{upcoming.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} />)}</div>}
+              : <div className="grid gap-3" data-testid="venue-events-list">{upcoming.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} stats={health} today={today} />)}</div>}
+            {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}
         {past.length > 0 && (
@@ -89,6 +90,7 @@ function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { i
             <div className="s" data-testid="venue-calendar-health">
               {health ? <>Refreshed {ago(health.lastSuccessAt ?? health.lastRunAt)}{health.lastCount !== undefined ? ` · found ${health.lastCount} show${health.lastCount === 1 ? "" : "s"}` : ""}</> : "Not refreshed yet."}
             </div>
+            {health?.lastSuccessAt && <div className="s" data-testid="venue-calendar-openers" title="From the shows on its calendar whose bill is settled (past, under 2 weeks out, or a calendar that lists support acts)">Books openers: {BOOKS_OPENERS_LABEL[booksOpeners(health)]}{booksOpeners(health) !== "unknown" ? ` (${Math.round((health.supportShare ?? 0) * 100)}% of ${health.billsSeen} show${health.billsSeen === 1 ? "" : "s"})` : ""}</div>}
             {broken && <div className="d-warn" role="note" data-testid="venue-calendar-error"><span><b>The calendar didn&apos;t load last time.</b> {health!.lastError}</span></div>}
             {zero && <div className="d-warn" role="note" data-testid="venue-calendar-zero"><span>The calendar answered but no shows came through. It may have changed; check the source.</span></div>}
             {!!health?.lastUnparsed && <div className="s" data-testid="venue-calendar-unparsed">{health.lastUnparsed} listing{health.lastUnparsed === 1 ? "" : "s"} had a date Roadie couldn&apos;t read.</div>}
@@ -99,24 +101,16 @@ function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { i
   );
 }
 
-function EventImage({ src, alt }: { src?: string; alt: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) return <div className="h-16 w-16 shrink-0 rounded-lg bg-[var(--soft)]" aria-hidden data-testid="venue-event-noimage" />;
-  // Remote hosts are arbitrary (every venue's own CDN), so a plain img, not next/image with an allowlist.
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="h-16 w-16 shrink-0 rounded-lg object-cover" />;
-}
-
-function EventRow({ e, admin, take, artistId }: { e: Ev; admin: boolean; take?: VenueEventNote; artistId: string }) {
+function EventRow({ e, admin, take, artistId, stats, today }: { e: Ev; admin: boolean; take?: VenueEventNote; artistId: string; stats: RoomRecord; today: string }) {
   const time = eventTime(e);
   return (
     <div className="flex gap-3" data-testid={`venue-event-${e.id}`}>
-      <EventImage src={e.imageUrl} alt={e.title} />
+      <EventPoster src={e.imageUrl} alt={e.title} />
       <div className="grid min-w-0 flex-1 gap-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <b className="whitespace-nowrap">{fmtEventDay(e.date)}</b>
           {time && <span className="s">{time}</span>}
-          <EventBadges e={e} />
+          <EventBadges e={e} stats={stats} today={today} />
         </div>
         <EventActs e={e} />
         {titleSaysMore(e) ? <div className="s">{e.title}</div> : null}

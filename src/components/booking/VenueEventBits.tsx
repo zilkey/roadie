@@ -1,22 +1,44 @@
 "use client";
 /**
  * The pieces of a venue-calendar show (issue #60) that the venue's Events tab and Booking's Venue calendars tab both draw:
- * the badges, the act line, the ticket link and this band's take.
+ * the badges (the opener-chance guess), the poster, the act line, the ticket link and this band's take.
  */
 import { useArtist } from "@/lib/artist";
 import { useCommand } from "@/components/ui";
-import { billParts, openSlot } from "@/lib/venueEvents";
-import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type VenueEvent, type VenueEventNote } from "@/schema";
+import { useState } from "react";
+import { billParts, openerChance } from "@/lib/venueEvents";
+import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 export type Ev = VenueEvent & { id: string };
+export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | null | undefined;
 
-/** Open slot?, Sold out, Cancelled. */
-export function EventBadges({ e }: { e: Ev }) {
+export const OPENER_DISCLAIMER = "A guess from the listing, not perfect.";
+
+/** Likely opener slot / Maybe (the reasons and the disclaimer as its title), Sold out, Cancelled. */
+export function EventBadges({ e, stats, today }: { e: Ev; stats?: RoomRecord; today?: string }) {
+  const o = openerChance(e, stats, today);
   return (<>
-    {openSlot(e) && <span className="chip a" data-testid="venue-event-open" title={e.supportTba ? "Support still to be announced" : "No support act listed"}>Open slot?</span>}
+    {o.chance !== "unlikely" && (
+      <span className={`chip${o.chance === "likely" ? " a" : ""}`} data-testid="venue-event-chance" data-chance={o.chance}
+        title={`${o.reasons.join(". ")}. ${OPENER_DISCLAIMER}`}>
+        {o.chance === "likely" ? "Likely opener slot" : "Maybe"}
+      </span>
+    )}
     {e.status === "soldout" && <span className="chip m">Sold out</span>}
     {e.status === "cancelled" && <span className="chip m">Cancelled</span>}
   </>);
+}
+
+/** Under a list that shows the opener badges: how far to trust them. */
+export const OpenerNote = () => <span className="s" data-testid="opener-disclaimer">&ldquo;Likely opener slot&rdquo; and &ldquo;Maybe&rdquo; are {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover one for why.</span>;
+
+/** A show's poster, or a plain square when it has none or it won't load. Remote hosts are arbitrary (every venue's own CDN), so a plain img. */
+export function EventPoster({ src, alt, size = 64, testid = "venue-event" }: { src?: string; alt: string; size?: number; testid?: string }) {
+  const [failed, setFailed] = useState(false);
+  const box = { width: size, height: size };
+  if (!src || failed) return <div className="shrink-0 rounded-lg bg-[var(--soft)]" style={box} aria-hidden data-testid={`${testid}-noimage`} />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="shrink-0 rounded-lg object-cover" style={box} data-testid={`${testid}-image`} />;
 }
 
 /** "Headliner with Support, Support", or the listed title when the source named no acts. */

@@ -8,6 +8,7 @@ import { db } from "@/server/db";
 import { firestore } from "@/server/admin";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
+import { roomStats } from "@/lib/venueEvents";
 import { refreshAll, refreshVenue, eventId } from "@/server/events/refresh";
 import { venueEventNoteId } from "@/schema";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
@@ -100,6 +101,8 @@ describe("refreshVenue", () => {
     assert.equal(h.lastSuccessAt, NOW.toISOString());
     assert.equal(h.lastRunAt, NOW.toISOString());
     assert.equal(h.lastError, undefined);
+    // the room's record (#76), over the stored shows: both are under 2 weeks out, so settled; one has a support act
+    assert.deepEqual([h.billsSeen, h.supportShare], [2, roomStats(evs as any, NOW.toISOString().slice(0, 10)).supportShare]);
   });
   test("a second refresh keeps firstSeenAt and moves lastSeenAt", async () => {
     const v = await makeVenue({ calendar: CAL });

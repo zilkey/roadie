@@ -18,5 +18,6 @@ UID:example-2031-05-09-c@example.com
 SUMMARY:Headline Example Trio with special guests
 DTSTART:20310509T200000
 URL:https://tickets.example.com/shows/headline-trio
+IMAGE;VALUE=URI:/icon-192.png
 END:VEVENT
 END:VCALENDAR

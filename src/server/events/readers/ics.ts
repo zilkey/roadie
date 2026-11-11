@@ -1,7 +1,7 @@
 /**
  * iCalendar feeds (a ticketing site's .ics, a WordPress `?ical=1` feed, a public Google Calendar basic.ics). Tiny parser: unfolds
  * lines, reads each VEVENT's UID, SUMMARY, DTSTART, URL, DESCRIPTION and STATUS. Recurrence (RRULE) is not expanded: a repeating
- * event shows once, on its first date. Only events from a week ago on are kept. iCal has no images.
+ * event shows once, on its first date. Only events from a week ago on are kept. A poster comes from IMAGE (RFC 7986) or an image ATTACH.
  */
 import type { RawEvent, Reader } from "../types";
 
@@ -24,6 +24,13 @@ function dtstart(value: string): string | undefined {
   return `${d}T${m[4]}:${m[5]}:${m[6] ?? "00"}${m[7] ? "Z" : ""}`;
 }
 
+/** IMAGE;VALUE=URI:https://… or ATTACH;FMTTYPE=image/jpeg:https://… (not inline binary). */
+function image(cur: Record<string, { params: string; value: string }>): string | undefined {
+  const p = cur.IMAGE ?? (cur.ATTACH && /fmttype=image\//i.test(cur.ATTACH.params) ? cur.ATTACH : undefined);
+  if (!p || /encoding=base64/i.test(p.params)) return undefined;
+  return p.value.trim() || undefined;
+}
+
 export function parseIcs(body: string): RawEvent[] {
   const lines = body.replace(/\r\n?/g, "\n").replace(/\n[ \t]/g, "").split("\n");
   const out: RawEvent[] = [];
@@ -42,6 +49,7 @@ export function parseIcs(body: string): RawEvent[] {
           out.push({
             sourceId: cur.UID?.value.trim(), title, startsAt,
             ...(cur.URL ? { ticketUrl: cur.URL.value.trim() } : {}),
+            ...(image(cur) ? { imageUrl: image(cur) } : {}),
             ...(status ? { status } : {}),
             ...(cur.LOCATION ? { venueName: unescape(cur.LOCATION.value) } : {}),
             ...(cur.DESCRIPTION ? { description: unescape(cur.DESCRIPTION.value).replace(/\s+/g, " ").trim().slice(0, 400) } : {}),

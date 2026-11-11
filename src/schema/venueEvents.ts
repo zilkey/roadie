@@ -70,7 +70,7 @@ export type VenueCalendar = z.infer<typeof VenueCalendar>;
 export const actRole = z.enum(["headliner", "support", "unknown"]);
 export const Act = z.strictObject({ name: z.string().min(1), role: actRole });
 export type Act = z.infer<typeof Act>;
-/** How much of the bill this source shows: one act listed is an open slot only when the source would have shown a support act. */
+/** How much of the bill this source shows: on a "full" source, no support listed counts more toward an opener slot (openerChance). */
 export const billDetail = z.enum(["full", "headliner", "title"]);
 export const eventStatus = z.enum(["onsale", "soldout", "cancelled", "gone"]);
 
@@ -89,6 +89,8 @@ export const VenueEvent = z.strictObject({
   bill: billDetail,
   /** The bill names a support act still to be announced ("support TBA"): the slot may be open. */
   supportTba: z.boolean().optional(),
+  /** Nights in a row the same headliner plays the room (2+: a run), found at refresh. */
+  nights: z.number().int().optional(),
   imageUrl: z.string().optional(),
   ticketUrl: z.string().optional(),
   status: eventStatus,
@@ -107,6 +109,9 @@ export const VenueEventSource = z.strictObject({
   /** Events whose date wouldn't parse on the last run. */
   lastUnparsed: z.number().int().optional(),
   lastError: z.string().optional(),
+  /** The room's record (src/lib/venueEvents.ts roomStats): its settled bills, and the share of them with a support act. */
+  billsSeen: z.number().int().optional(),
+  supportShare: z.number().min(0).max(1).optional(),
 });
 export type VenueEventSource = z.infer<typeof VenueEventSource>;
 

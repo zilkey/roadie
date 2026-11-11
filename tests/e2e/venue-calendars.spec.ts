@@ -42,7 +42,9 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await expect(shows(page).nth(0).getByTestId("calendar-show-date")).toContainText("8 PM");
   await expect(shows(page).nth(0)).toContainText("Denver");
   await expect(shows(page).nth(1).getByTestId("venue-event-acts")).toHaveText("Lone Example Act");
-  await expect(page.getByTestId("venue-event-open")).toHaveCount(0);
+  await expect(shows(page).nth(0).getByTestId("venue-event-chance")).toHaveCount(0);
+  await expect(shows(page).nth(1).getByTestId("venue-event-chance")).toHaveText("Maybe");
+  await expect(shows(page).nth(0).getByTestId("calendar-show-poster-noimage")).toBeVisible();
   // past shows are not upcoming
   await expect(page.getByTestId("venue-calendars")).not.toContainText("Retired Example Duo");
 
@@ -51,7 +53,10 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await expect(shows(page)).toHaveCount(3);
   const trio = shows(page).nth(2);
   await expect(trio.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
-  await expect(trio.getByTestId("venue-event-open")).toHaveText("Open slot?");
+  await expect(trio.getByTestId("venue-event-chance")).toHaveText("Likely opener slot");
+  await expect(trio.getByTestId("calendar-show-poster-image")).toHaveAttribute("src", "/icon-192.png");
+  await expect(trio.getByTestId("calendar-show-poster-image")).toHaveAttribute("referrerpolicy", "no-referrer");
+  await expect(page.getByTestId("opener-disclaimer")).toBeVisible();
   await expect(page.getByTestId("venue-calendars-more")).toHaveCount(0);
 
   // our take, set here, is the same take the venue's Events tab shows
@@ -77,4 +82,53 @@ test("a search on the Venue calendars tab shows the search cards, and clearing i
   await page.getByTestId("search-clear").click();
   await expect(page).toHaveURL(/\/booking\/calendars$/);
   await expect(shows(page).first()).toBeVisible();
+});
+
+test("the filters narrow the shows and are remembered", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  await expect(shows(page)).toHaveCount(2);
+  const row = (name: string) => shows(page).filter({ hasText: name });
+
+  // Likely needs an opener: only the trio (support still to be announced); the list reads on past the first page to find it
+  await page.getByTestId("calendar-filter-likely").click();
+  await expect(page.getByTestId("calendar-filter-likely")).toHaveAttribute("aria-pressed", "true");
+  await expect(shows(page)).toHaveCount(1);
+  await expect(row("Headline Example Trio")).toHaveCount(1);
+  // remembered after a reload
+  await page.reload();
+  await expect(page.getByTestId("calendar-filter-likely")).toHaveAttribute("aria-pressed", "true");
+  await expect(shows(page)).toHaveCount(1);
+  await page.getByTestId("calendar-filter-likely").click();
+
+  // Hide "not a fit"
+  await page.getByTestId("venue-calendars-more").click();
+  await expect(shows(page)).toHaveCount(3);
+  const take = row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]');
+  const before = await take.inputValue();
+  await take.selectOption("notFit");
+  await page.getByTestId("calendar-filter-notfit").click();
+  await expect(row("Headline Example Trio")).toHaveCount(0);
+  await expect(row("Lone Example Act")).toHaveCount(1);
+  await page.getByTestId("calendar-filter-notfit").click();
+  await page.getByTestId("venue-calendars-more").click(); // a filter change starts over at the first page
+  await row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]').selectOption(before);
+
+  // region: the Bluebird Room is in Denver
+  await page.getByTestId("calendar-filter-region").selectOption("boulder");
+  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  await page.getByTestId("calendar-filter-region").selectOption("denver");
+  await expect(shows(page)).toHaveCount(2);
+
+  // date range: up to the end of April 2031 leaves the March and April shows
+  await page.getByTestId("calendar-filter-to").fill("2031-04-30");
+  await expect(shows(page)).toHaveCount(2);
+  await expect(row("Headline Example Trio")).toHaveCount(0);
+  await page.getByTestId("calendar-filter-from").fill("2031-04-01");
+  await expect(shows(page)).toHaveCount(1);
+  await expect(row("Lone Example Act")).toHaveCount(1);
+
+  await page.getByTestId("calendar-filter-clear").click();
+  await expect(shows(page)).toHaveCount(2);
+  await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
 });
