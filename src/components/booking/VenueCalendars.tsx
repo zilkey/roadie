@@ -17,8 +17,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, TakePicker, TicketLink, type Ev } from "@/components/booking/VenueEventBits";
-import { PitchShowDialog, PitchThisButton, type PitchShow } from "@/components/booking/PitchShowDialog";
+import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, TicketLink } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
@@ -82,8 +81,6 @@ export function VenueCalendars() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [upcoming, fKey, from, takes, records, venues, today, genres, actGenres]);
   const since = useLastLooked();
-  const [pitching, setPitching] = useState<PitchShow | null>(null);
-  const openPitch = (e: Ev) => setPitching({ e, venueName: venues.get(e.venueId)?.name ?? "the venue" });
   // The limit the server answered `raw` for. A new limit keeps the last rows on screen until its snapshot lands, and its first
   // snapshot may come from the cache with only the last read's shows: that one must not count, or it reads as "that's all" (the
   // empty "match" note flashed once a round in prod).
@@ -124,19 +121,19 @@ export function VenueCalendars() {
         <div className="book-tw">
           <table className="book-table wn">
             <thead><tr>
+              <th className="flag"><span className="sr-only">Pitch this, or not a fit</span></th>
               <th aria-label="Poster" />
               <th className="nw">Date</th>
               <th className="name">Show</th>
               <th>Venue</th>
               <th>City</th>
-              <th>Our take</th>
-              <th><span className="sr-only">Pitch</span></th>
             </tr></thead>
             <tbody>
               {shown.map((e) => {
                 const v = venues.get(e.venueId), time = eventTime(e);
                 return (
                   <tr key={e.id} data-testid={`calendar-show-${e.id}`}>
+                    <td className="flag"><ShowActions e={e} take={takes.get(e.id)} pitches={b.pitches} venueName={v?.name ?? "the venue"} /></td>
                     <td className="w-14"><EventPoster src={e.imageUrl} alt={e.title} size={48} testid="calendar-show-poster" /></td>
                     <td className="nw" data-testid="calendar-show-date"><b>{fmtEventDay(e.date)}</b>{time && <span className="sub">{time}</span>}</td>
                     <td className="name">
@@ -146,8 +143,6 @@ export function VenueCalendars() {
                     </td>
                     <td>{v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`} className="nm" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link> : <span className="dash">—</span>}</td>
                     <td className="nw">{v?.address.city || <span className="dash">—</span>}</td>
-                    <td><TakePicker e={e} take={takes.get(e.id)} artistId={artistId} label={false} /></td>
-                    <td className="text-right">{takes.get(e.id)?.take !== "pitched" && <PitchThisButton e={e} onOpen={openPitch} />}</td>
                   </tr>
                 );
               })}
@@ -157,7 +152,6 @@ export function VenueCalendars() {
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
-      <PitchShowDialog show={pitching} onClose={() => setPitching(null)} />
       {hasMore && !filling && (
         <button type="button" className="btn ghost justify-self-center" onClick={() => { setPages((n) => n + 1); if (rows.length <= want + CALENDARS_PAGE) setLimit((n) => n + CALENDARS_PAGE); }} data-testid="venue-calendars-more">
           Load more

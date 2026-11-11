@@ -227,16 +227,16 @@ describe("venueEvents.setTake", () => {
     const { v, e } = await seedEvent();
     const id = venueEventNoteId(TEST_ARTIST, e.id);
     assert.equal(id, `${TEST_ARTIST}__${e.id}`);
-    await cmd("venueEvents.setTake", { eventId: e.id, take: "interested", note: "  good room for us  " });
+    await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit", note: "  good room for us  " });
     let n = (await db.get("venueEventNotes", id))!;
-    assert.equal(n.take, "interested");
+    assert.equal(n.take, "notFit");
     assert.equal(n.note, "good room for us");
     assert.equal(n.artistId, TEST_ARTIST);
     assert.equal(n.venueId, v);
     assert.equal(n.eventId, e.id);
-    await cmd("venueEvents.setTake", { eventId: e.id, take: "pitched", pitchId: "p1" });
+    await cmd("venueEvents.setTake", { eventId: e.id, pitchId: "p1" });
     n = (await db.get("venueEventNotes", id))!;
-    assert.equal(n.take, "pitched");
+    assert.equal(n.take, "notFit");
     assert.equal(n.note, "good room for us", "a field left out is untouched");
     assert.equal(n.pitchId, "p1");
     await cmd("venueEvents.setTake", { eventId: e.id, take: null });
@@ -261,12 +261,15 @@ describe("venueEvents.setTake", () => {
   });
   test("each band has its own note; an unknown show is not found; a bad take is refused", async () => {
     const { e } = await seedEvent();
-    await cmd("venueEvents.setTake", { eventId: e.id, take: "interested" });
-    await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit" }, { ...ctx, artistId: "other-artist" });
-    assert.equal((await db.get("venueEventNotes", `${TEST_ARTIST}__${e.id}`))!.take, "interested");
-    assert.equal((await db.get("venueEventNotes", `other-artist__${e.id}`))!.take, "notFit");
-    await assert.rejects(cmd("venueEvents.setTake", { eventId: "nope", take: "interested" }), /not found/i);
+    await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit" });
+    await cmd("venueEvents.setTake", { eventId: e.id, take: null, note: "theirs" }, { ...ctx, artistId: "other-artist" });
+    assert.equal((await db.get("venueEventNotes", `${TEST_ARTIST}__${e.id}`))!.take, "notFit");
+    assert.ok(!(await db.get("venueEventNotes", `other-artist__${e.id}`))!.take);
+    await assert.rejects(cmd("venueEvents.setTake", { eventId: "nope", take: "notFit" }), /not found/i);
     assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "maybe" }));
+    // a show isn't shortlisted or pitched by hand: Pitch this pitches the venue
+    assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "interested" }));
+    assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "pitched" }));
   });
   test("members cannot set a take (admin-only command)", () => {
     assert.deepEqual(registry["venueEvents.setTake"].roles, ["admin"]);
@@ -285,32 +288,43 @@ describe("venueEvents.pitch (#79)", () => {
   const pitchesOf = async (v: string) => (await db.list("pitches", (q) => q.where("target.id", "==", v))).filter((p) => !p.deletedAt);
   const notesOf = async (id: string) => (await db.list(`pitches/${id}/activity`)).filter((a) => a.type === "note").map((a) => a.text);
 
-  test("asking to open: a venue pitch with the show's date, a timeline note, our take Pitched and the pitch linked", async () => {
+  test("no pitch yet: puts the venue on the Pitch List with the show's date and a timeline note, and links the show", async () => {
     const { v, e } = await seed();
-    const r = await cmd("venueEvents.pitch", { eventId: e.id, ask: "open" });
+    await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit" });
+    const r = await cmd("venueEvents.pitch", { eventId: e.id });
     assert.equal(r.existing, false);
     const [p] = await pitchesOf(v);
     assert.equal(p.id, r.pitchId);
     assert.deepEqual([p.target.kind, p.status, p.dates], ["venue", "toPitch", ["2026-12-18"]]);
-    assert.deepEqual(await notesOf(p.id), ["Asking to open for Tin Cup Jane on Fri, Dec 18 (from the venue's calendar)"]);
+    assert.deepEqual(await notesOf(p.id), ["Added Tin Cup Jane on Fri, Dec 18 (from the venue's calendar)"]);
     const n = (await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
-    assert.deepEqual([n.take, n.pitchId, n.venueId], ["pitched", p.id, v]);
+    assert.deepEqual([n.take, n.pitchId, n.venueId], [undefined, p.id, v], "pitching it clears Not a fit");
   });
-  test("an open pitch on the venue is reused and gets the date; another night adds no date", async () => {
+  test("an open pitch on the venue is reused and gets the date", async () => {
     const { v, e } = await seed();
     const first = await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });
-    const r = await cmd("venueEvents.pitch", { eventId: e.id, ask: "open" });
+    const r = await cmd("venueEvents.pitch", { eventId: e.id });
     assert.deepEqual([r.pitchId, r.existing], [first.id, true]);
     assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
-    await cmd("venueEvents.pitch", { eventId: e.id, ask: "another" });
-    assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
     assert.equal((await pitchesOf(v)).length, 1);
-    assert.match((await notesOf(first.id)).join("\n"), /asking to play another night/);
   });
-  test("an unknown show is not found; admin only; a bad ask is refused", async () => {
-    await assert.rejects(cmd("venueEvents.pitch", { eventId: "nope", ask: "open" }), /not found/i);
+  test("unpitch takes the show and its date off the pitch, logs it, and leaves the pitch on the Pitch List", async () => {
+    const { v, e } = await seed();
+    await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });
+    const { pitchId } = await cmd("venueEvents.pitch", { eventId: e.id });
+    await cmd("venueEvents.unpitch", { eventId: e.id });
+    const p = (await db.get("pitches", pitchId))!;
+    assert.deepEqual([p.status, p.dates, !!p.deletedAt], ["toPitch", ["2027-02-01"], false]);
+    assert.match((await notesOf(pitchId)).join("\n"), /Took Tin Cup Jane on Fri, Dec 18 off the pitch/);
+    assert.ok(!(await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!.pitchId);
+    // again, or a show never pitched: nothing to do
+    assert.deepEqual(await cmd("venueEvents.unpitch", { eventId: e.id }), { pitchId: null });
+  });
+  test("an unknown show is not found; admin only", async () => {
+    await assert.rejects(cmd("venueEvents.pitch", { eventId: "nope" }), /not found/i);
+    await assert.rejects(cmd("venueEvents.unpitch", { eventId: "nope" }), /not found/i);
     assert.deepEqual(registry["venueEvents.pitch"].roles, ["admin"]);
-    assert.throws(() => registry["venueEvents.pitch"].input.parse({ eventId: "x", ask: "headline" }));
+    assert.deepEqual(registry["venueEvents.unpitch"].roles, ["admin"]);
   });
 });
 

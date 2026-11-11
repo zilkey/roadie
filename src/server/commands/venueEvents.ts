@@ -10,7 +10,7 @@ import { AppError } from "../errors";
 import { artistIdOf, callerArtistId } from "../venues";
 import { lookAtCalendars } from "../prefs";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
-import { EVENT_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act } from "@/schema";
+import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act } from "@/schema";
 import { sortedDates } from "@/lib/booking";
 import { fmtEventDay } from "@/lib/venueEvents";
 import { flagPitch } from "./booking";
@@ -92,37 +92,60 @@ async function requireEvent(eventId: string) {
 
 export const venueEventsSetTake = defineCommand({
   name: "venueEvents.setTake", roles: ["admin"],
-  description: "This band's take on one of a venue's shows: not a fit, interested or pitched (null clears it), and a note. Private to the band.",
-  input: z.strictObject({ eventId: z.string().min(1), take: z.enum(EVENT_TAKES).nullable().optional(), note: z.string().nullable().optional(), pitchId: z.string().nullable().optional() }),
+  description: "This band's take on one of a venue's shows: notFit (null clears it), and a note. Private to the band. We pitch the venue, not the show: venueEvents.pitch adds the show to the venue's pitch.",
+  input: z.strictObject({ eventId: z.string().min(1), take: z.enum(SHOW_TAKES).nullable().optional(), note: z.string().nullable().optional(), pitchId: z.string().nullable().optional() }),
   run: (ctx, { eventId, take, note, pitchId }) => run(ctx, async (w) => {
     const ev = await requireEvent(eventId);
     return setEventNote(w, ev, { ...(take !== undefined ? { take } : {}), ...(note !== undefined ? { note: note?.trim() || null } : {}), ...(pitchId !== undefined ? { pitchId } : {}) });
   }),
 });
 
-/** What a show's pitch asks for (#79): to open for its headliner that night, or for a night of our own. */
-export const PITCH_ASKS = ["open", "another"] as const;
+/** "Tin Cup Jane": the show's headliner, else its listed title. */
+const showName = (ev: Doc) => (ev.acts as Act[]).find((a) => a.role === "headliner")?.name ?? String(ev.title);
 
 export const venueEventsPitch = defineCommand({
   name: "venueEvents.pitch", roles: ["admin"],
-  description: "Pitch a venue from one of its shows (#79): puts the venue on the Pitch List (or uses its open pitch), adds the show's date when asking to open for the headliner, logs what we're asking for on the pitch's timeline, sets our take on the show to Pitched and links the pitch to it.",
-  input: z.strictObject({ eventId: z.string().min(1), ask: z.enum(PITCH_ASKS) }),
-  run: (ctx, { eventId, ask }) => run(ctx, async (w) => {
+  description: "Pitch this: add one of a venue's shows to the venue's pitch. Puts the venue on the Pitch List when it isn't (or uses its open pitch), " +
+    "adds the show's date to the pitch's dates, logs it on the pitch's timeline and links the pitch to the show (clearing a Not a fit take).",
+  input: z.strictObject({ eventId: z.string().min(1) }),
+  run: (ctx, { eventId }) => run(ctx, async (w) => {
     const ev = await requireEvent(eventId);
-    const head = (ev.acts as Act[]).find((a) => a.role === "headliner")?.name ?? String(ev.title);
     const date = String(ev.date);
-    const r = await flagPitch(w, ctx, { kind: "venue", id: String(ev.venueId), ...(ask === "open" ? { dates: [date] } : {}) });
-    if (r.existing && ask === "open") {
+    const r = await flagPitch(w, ctx, { kind: "venue", id: String(ev.venueId), dates: [date] });
+    if (r.existing) {
       const p = await w.get("pitches", r.id);
       const dates = (p?.dates as string[] | undefined) ?? [];
       if (!dates.includes(date)) await w.update("pitches", r.id, { dates: sortedDates([...dates, date]) });
     }
-    const day = fmtEventDay(date);
-    await w.create(`pitches/${r.id}/activity`, {
-      type: "note", text: ask === "open" ? `Asking to open for ${head} on ${day} (from the venue's calendar)` : `Saw ${head} on ${day} on the venue's calendar: asking to play another night`,
-    });
-    await setEventNote(w, ev, { take: "pitched", pitchId: r.id });
+    await w.create(`pitches/${r.id}/activity`, { type: "note", text: `Added ${showName(ev)} on ${fmtEventDay(date)} (from the venue's calendar)` });
+    const note = await w.get("venueEventNotes", venueEventNoteId(await artistIdOf(w), eventId));
+    await setEventNote(w, ev, { pitchId: r.id, ...(note?.take ? { take: null } : {}) });
     return { pitchId: r.id, existing: r.existing };
+  }),
+});
+
+export const venueEventsUnpitch = defineCommand({
+  name: "venueEvents.unpitch", roles: ["admin"],
+  description: "Take one of a venue's shows off the venue's pitch: unlinks it, takes its date off the pitch's dates (unless another show on the pitch is that day) and logs it. The pitch stays on the Pitch List (pitches.remove takes it off).",
+  input: z.strictObject({ eventId: z.string().min(1) }),
+  run: (ctx, { eventId }) => run(ctx, async (w) => {
+    const ev = await requireEvent(eventId);
+    const artistId = await artistIdOf(w);
+    const note = await w.get("venueEventNotes", venueEventNoteId(artistId, eventId));
+    const pitchId = note?.pitchId as string | undefined;
+    if (!pitchId) return { pitchId: null };
+    const p = await w.get("pitches", pitchId);
+    if (p && !p.deletedAt) {
+      const date = String(ev.date);
+      const others = (await w.query("venueEventNotes", (q) => q.where("pitchId", "==", pitchId)))
+        .filter((n) => n.artistId === artistId && n.eventId !== eventId && !n.deletedAt);
+      const othersOnDay = (await Promise.all(others.map((n) => w.get("venueEvents", String(n.eventId))))).some((o) => o?.date === date);
+      const dates = (p.dates as string[] | undefined) ?? [];
+      if (!othersOnDay && dates.includes(date)) await w.update("pitches", pitchId, { dates: dates.filter((d) => d !== date) });
+      await w.create(`pitches/${pitchId}/activity`, { type: "note", text: `Took ${showName(ev)} on ${fmtEventDay(date)} off the pitch` });
+    }
+    await setEventNote(w, ev, { pitchId: null });
+    return { pitchId };
   }),
 });
 
@@ -136,4 +159,4 @@ export const venueEventsLooked = defineCommand({
   },
 });
 
-export const venueEventCommands = [venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsPitch];
+export const venueEventCommands = [venueEventsLooked, venuesSetCalendar, venueEventsRefresh, venueEventsPreview, venueEventsSuggest, venueEventsSetTake, venueEventsPitch, venueEventsUnpitch];

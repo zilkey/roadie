@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { A, FIRESTORE } from "./env";
 
 // The venue Events tab (#60). Bluebird Room's seeded calendar is an iCal feed answered from fixtures/calendars (never the network);
@@ -23,6 +23,9 @@ async function openVenue(page: Page, search: string) {
 const DOCS = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents`;
 const OWNER = { authorization: "Bearer owner" };
 const shows = (page: Page) => page.getByTestId("venue-events-list").locator(":scope > div");
+/** A show's flag and X (data-take: "notFit" or ""). */
+const takeIn = (row: Locator) => row.locator('[data-testid^="venue-event-take-"]');
+
 /** Every show: the list starts on likely opener slots. */
 const allShows = (page: Page) => page.getByTestId("venue-events-filter-show").selectOption("all");
 
@@ -91,27 +94,30 @@ test("an admin refreshes the Bluebird Room's calendar and sees the bills, the op
   await expect(shows(page)).toHaveCount(3);
 });
 
-test("an admin's take on a show is saved and survives a reload", async ({ page }) => {
+test("an admin marks a show Not a fit in one click; it's saved, and Hide \"not a fit\" drops it", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(`${bluebirdUrl}?tab=events`);
   await allShows(page);
+  await page.getByTestId("venue-events-filter-hide").uncheck();
   const row = shows(page).filter({ hasText: "Lone Example Act" });
-  const take = row.locator('select[data-testid^="venue-event-take-"]');
-  await expect(take).toHaveValue("");
-  await take.selectOption("interested");
-  await expect(take).toHaveValue("interested");
+  const take = takeIn(row);
+  await expect(take).toHaveAttribute("data-take", "");
+  await row.getByTestId(/^venue-event-notfit-/).click(); // one click: the X
+  await expect(take).toHaveAttribute("data-take", "notFit");
   await page.reload();
-  await expect(shows(page).filter({ hasText: "Lone Example Act" }).locator('select[data-testid^="venue-event-take-"]')).toHaveValue("interested");
+  await expect(takeIn(shows(page).filter({ hasText: "Lone Example Act" }))).toHaveAttribute("data-take", "notFit");
   // only that show got a take
-  await expect(shows(page).filter({ hasText: "The Example Band" }).locator('select[data-testid^="venue-event-take-"]')).toHaveValue("");
+  await expect(takeIn(shows(page).filter({ hasText: "The Example Band" }))).toHaveAttribute("data-take", "");
 
-  // Hide "not a fit" (on by default) drops a show marked not a fit; off brings it back
-  await row.locator('select[data-testid^="venue-event-take-"]').selectOption("notFit");
+  // Hide "not a fit" drops it; off brings it back
+  await page.getByTestId("venue-events-filter-hide").check();
   await expect(shows(page).filter({ hasText: "Lone Example Act" })).toHaveCount(0);
   await expect(shows(page)).toHaveCount(2);
   await page.getByTestId("venue-events-filter-hide").uncheck();
   await expect(shows(page)).toHaveCount(3);
-  await shows(page).filter({ hasText: "Lone Example Act" }).locator('select[data-testid^="venue-event-take-"]').selectOption("interested");
+  // the X again clears it
+  await shows(page).filter({ hasText: "Lone Example Act" }).getByTestId(/^venue-event-notfit-/).click();
+  await expect(takeIn(shows(page).filter({ hasText: "Lone Example Act" }))).toHaveAttribute("data-take", "");
   await page.getByTestId("venue-events-filter-hide").check();
   await expect(shows(page)).toHaveCount(3);
 });
@@ -147,7 +153,7 @@ test("a member sees the shows but cannot set a take or change the source", async
   await expect(shows(page)).toHaveCount(3);
   await expect(shows(page).filter({ hasText: "Headline Example Trio" }).getByTestId("venue-event-chance")).toBeVisible();
   await expect(page.getByText("Our take")).toHaveCount(0);
-  await expect(page.locator('select[data-testid^="venue-event-take-"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="venue-event-take-"]')).toHaveCount(0);
   await expect(page.getByTestId("venue-calendar-setup")).toHaveCount(0);
   await expect(page.getByTestId("calendar-setup")).toHaveCount(0);
   // a member can refresh

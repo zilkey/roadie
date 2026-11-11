@@ -2,8 +2,8 @@
 /**
  * Booking's Acts tab (issue #77, board "ListActs" on the booking canvas): every act seen on a venue calendar plus any added by hand,
  * filtered (a dropdown) to the shortlist, the acts that opened at rooms on our list, or those on tour, and by genre (several at once),
- * city and name; the filters add up. Each row shows a few genres and an icon per link we have. The star shortlists; the X
- * beside it dismisses the act as not a fit (hidden from here, with an Undo).
+ * city and name; the filters add up. Each row shows a few genres and an icon per link we have. The star (shortlist) and the X
+ * beside it (not a fit: hidden from here, with an Undo) are one choice: a click sets it, a click on the lit one clears it.
  *
  * The acts and this band's take on them are live (useCollection); what the calendars say about each (rooms, next show, opened at our
  * rooms, on tour) comes from acts.find, which reads every venue's shows on the server. It is fetched again when the acts change.
@@ -70,8 +70,7 @@ export function ActsTab() {
   const [city, setCityState] = useState("");
   const [q, setQState] = useState("");
   const [genres, setGenresState] = useState<string[]>([]);
-  const dismiss = useCommand();
-  const [dismissed, setDismissed] = useState<Row | null>(null);
+  const [dismissed, setDismissed] = useState<{ row: Row; was: "shortlist" | null } | null>(null);
   const [shown, setShown] = useState(ACTS_PAGE);
   // Each change starts back at the first page.
   const setFilter = (v: ActFilter) => { setFilterState(v); setShown(ACTS_PAGE); };
@@ -115,13 +114,19 @@ export function ActsTab() {
     setLookupStatus(`Looked up ${r.lookedUp}${bits.length ? `: ${bits.join(", ")}` : ""}.${r.left ? ` ${r.left} left: run it again.` : ""}`);
   };
 
-  const toggle = (a: Row) => void star.call("acts.shortlist", { id: a.id, on: !takes.get(a.id)?.shortlist });
-  /** Not a fit, from the row: the act leaves the list (unless it was searched for), so say so with an Undo. Again clears it. */
-  const notFit = async (a: Row) => {
-    const on = takes.get(a.id)?.relationship !== "notFit";
-    if (await dismiss.call("acts.note", { id: a.id, relationship: on ? "notFit" : null })) setDismissed(on ? a : null);
+  /**
+   * Shortlist and Not a fit are one choice: a click sets that one (and clears the other), a click on the lit one clears it. Not a
+   * fit takes the act off the list (unless it was searched for), so it says so with an Undo back to how it was.
+   */
+  const choose = async (a: Row, pick: "shortlist" | "notFit") => {
+    const t = takes.get(a.id), was = t?.relationship === "notFit" ? "notFit" : t?.shortlist ? "shortlist" : null;
+    const next = was === pick ? null : pick;
+    const ok = await star.call("acts.update", { id: a.id, patch: { shortlist: next === "shortlist", ...(next === "notFit" ? { relationship: "notFit" } : was === "notFit" ? { relationship: null } : {}) } });
+    if (ok) setDismissed(next === "notFit" ? { row: a, was: was === "shortlist" ? "shortlist" : null } : null);
   };
-  const undo = async () => { if (dismissed && await dismiss.call("acts.note", { id: dismissed.id, relationship: null })) setDismissed(null); };
+  const undo = async () => {
+    if (dismissed && await star.call("acts.update", { id: dismissed.row.id, patch: { relationship: null, shortlist: dismissed.was === "shortlist" } })) setDismissed(null);
+  };
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="acts-tab">
@@ -145,11 +150,11 @@ export function ActsTab() {
         <label className="sr-only" htmlFor="acts-q">Find an act</label>
         <input id="acts-q" className="input !min-h-9 !w-[220px]" type="search" placeholder="Find an act…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="acts-q" />
       </div>
-      <ErrorBox error={error ?? star.error ?? shortlistLookup.error ?? dismiss.error} />
+      <ErrorBox error={error ?? star.error ?? shortlistLookup.error} />
       {dismissed && (
         <div className="s flex flex-wrap items-center gap-2" role="status" data-testid="acts-dismissed">
-          <span><b>{dismissed.name}</b> is hidden as not a fit.</span>
-          <button type="button" className="btn ghost sm" disabled={dismiss.busy} onClick={() => void undo()} data-testid="acts-undo">Undo</button>
+          <span><b>{dismissed.row.name}</b> is hidden as not a fit.</span>
+          <button type="button" className="btn ghost sm" disabled={star.busy} onClick={() => void undo()} data-testid="acts-undo">Undo</button>
         </div>
       )}
       {lookupStatus && <span className="s" data-testid="acts-lookup-status">{lookupStatus}</span>}
@@ -177,10 +182,10 @@ export function ActsTab() {
                   <tr key={a.id} data-testid={`act-row-${a.id}`}>
                     <td className="flag">
                       <span className="inline-flex">
-                        <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Shortlist ${a.name}`} title={on ? "On the shortlist" : "Shortlist"} disabled={star.busy}
-                          onClick={() => toggle(a)} data-testid={`act-star-${a.id}`}><StarIcon on={on} /></button>
-                        <button type="button" className="flag-ic dismiss-ic" aria-pressed={nf} data-on={nf ? "1" : "0"} aria-label={`${a.name} is not a fit`} title={nf ? "Not a fit (again to clear)" : "Not a fit: hide it"} disabled={dismiss.busy}
-                          onClick={() => void notFit(a)} data-testid={`act-dismiss-${a.id}`}><XIcon size={16} /></button>
+                        <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Shortlist ${a.name}`} title={on ? "On the shortlist (click to clear)" : "Shortlist"} disabled={star.busy}
+                          onClick={() => void choose(a, "shortlist")} data-testid={`act-star-${a.id}`}><StarIcon on={on} /></button>
+                        <button type="button" className="flag-ic dismiss-ic" aria-pressed={nf} data-on={nf ? "1" : "0"} aria-label={`${a.name} is not a fit`} title={nf ? "Not a fit (click to clear)" : "Not a fit: hide it"} disabled={star.busy}
+                          onClick={() => void choose(a, "notFit")} data-testid={`act-dismiss-${a.id}`}><XIcon size={16} /></button>
                       </span>
                     </td>
                     <td className="name">

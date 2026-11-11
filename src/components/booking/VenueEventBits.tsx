@@ -1,13 +1,16 @@
 "use client";
 /**
  * The pieces of a venue-calendar show (issue #60) that the venue's Events tab and Booking's Venue calendars tab both draw:
- * the badges (the opener-chance guess), the poster, the act line, the ticket link and this band's take.
+ * the badges (the opener-chance guess), the poster, the act line, the ticket link, and the pitch flag and Not a fit (ShowActions).
  */
 import { Fragment, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
-import { useCommand } from "@/components/ui";
-import { billParts, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx } from "@/lib/venueEvents";
-import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
+import { Dialog, useCommand } from "@/components/ui";
+import { billParts, fmtEventDay, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx } from "@/lib/venueEvents";
+import { isActive } from "@/lib/booking";
+import { XIcon } from "@/components/booking/ActsTab";
+import { FlagIcon } from "@/components/booking/common";
+import { venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 export type Ev = VenueEvent & { id: string };
 export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | null | undefined;
@@ -67,20 +70,45 @@ export function TicketLink({ e }: { e: Ev }) {
   return e.ticketUrl ? <a className="text-sm underline" href={e.ticketUrl} target="_blank" rel="noreferrer">Tickets and details ↗</a> : null;
 }
 
-/** This band's take: private (venueEventNotes), so the control says who sees it. */
-export function TakePicker({ e, take, artistId, label = true }: { e: Ev; take?: VenueEventNote; artistId: string; /** false: no visible "Our take" (a table column header says it) */ label?: boolean }) {
-  const { call, error } = useCommand();
-  const { name } = useArtist();
-  const id = venueEventNoteId(artistId, e.id);
+/**
+ * A show's pitch flag and Not a fit, admins only (venueEventNotes is private to the band). The flag is the Booking lists' flag:
+ * hollow until the show is on the venue's open pitch. A click adds it (venueEvents.pitch: puts the venue on the Pitch List when it
+ * isn't, adds the show's date); on a filled flag it asks whether to take this show off the pitch or the venue off the Pitch List.
+ * The X marks the show Not a fit, again clears it. The wrapper carries data-pitched and data-take for tests.
+ */
+export function ShowActions({ e, take, pitches, venueName }: { e: Ev; take?: VenueEventNote; pitches: readonly { id: string; status: string }[]; venueName: string }) {
+  const { call, error, busy } = useCommand();
+  const { name, artistId } = useArtist();
+  const [asking, setAsking] = useState(false);
+  const pitch = take?.pitchId ? pitches.find((p) => p.id === take.pitchId && isActive(p.status)) : undefined;
+  const notFit = take?.take === "notFit";
+  const done = (ok: unknown) => { if (ok) setAsking(false); };
   return (
-    <label className="flex items-center gap-1 text-sm" title={`Only ${name} sees this`}>
-      {label && <span className="s">Our take</span>}
-      <select className="select !min-h-8 !w-auto !py-1 text-sm" value={take?.take ?? ""} aria-label="Our take" data-testid={`venue-event-take-${e.id}`} data-note-id={id}
-        onChange={(ev) => void call("venueEvents.setTake", { eventId: e.id, take: ev.target.value || null })}>
-        <option value="">—</option>
-        {EVENT_TAKES.map((t) => <option key={t} value={t}>{TAKE_LABEL[t]}</option>)}
-      </select>
-      {error && <span className="text-sm text-[var(--danger)]">{error}</span>}
-    </label>
+    <span className="inline-flex items-center" title={`Only ${name} sees this`} data-testid={`venue-event-take-${e.id}`} data-pitched={pitch ? "1" : "0"} data-take={notFit ? "notFit" : ""}
+      data-note-id={venueEventNoteId(artistId, e.id)}>
+      <button type="button" className="flag-ic" data-flagged={pitch ? "1" : "0"} aria-pressed={!!pitch} disabled={busy}
+        aria-label={pitch ? `On the Pitch List: ${venueName}` : "Pitch this"} title={pitch ? "On the pitch: click to remove" : `Pitch this: add it to ${venueName}'s pitch`}
+        onClick={() => (pitch ? setAsking(true) : void call("venueEvents.pitch", { eventId: e.id }))} data-testid={`pitch-this-${e.id}`}><FlagIcon filled={!!pitch} /></button>
+      <button type="button" className="flag-ic dismiss-ic" aria-pressed={notFit} data-on={notFit ? "1" : "0"} disabled={busy}
+        aria-label={notFit ? "Not a fit (click to clear)" : "Not a fit"} title={notFit ? "Not a fit (click to clear)" : "Not a fit"}
+        onClick={() => void call("venueEvents.setTake", { eventId: e.id, take: notFit ? null : "notFit" })} data-testid={`venue-event-notfit-${e.id}`}><XIcon size={16} /></button>
+      {error && !asking && <span className="text-sm text-[var(--danger)]">{error}</span>}
+      {asking && <Dialog open onClose={() => setAsking(false)} title="Remove from the pitch?" testid="unpitch-dialog">
+        <p className="s m-0">{venueName}&apos;s pitch has this show ({fmtEventDay(e.date)}).</p>
+        <div className="grid gap-2">
+          <button type="button" className="btn ghost justify-start" disabled={busy} onClick={async () => done(await call("venueEvents.unpitch", { eventId: e.id }))} data-testid="unpitch-show">
+            Remove this show from the pitch
+          </button>
+          <button type="button" className="btn ghost justify-start" disabled={busy} onClick={async () => done(pitch && await call("pitches.remove", { id: pitch.id }))} data-testid="unpitch-venue">
+            Remove {venueName} from the Pitch List
+          </button>
+        </div>
+        {error && <span className="text-sm text-[var(--danger)]">{error}</span>}
+        <div className="flex flex-wrap justify-between gap-2">
+          {pitch && <Link href={`/booking/pitches/${pitch.id}`} className="btn ghost" data-testid="unpitch-open">Open the pitch</Link>}
+          <button type="button" className="btn acc" onClick={() => setAsking(false)} data-testid="unpitch-cancel">Keep it</button>
+        </div>
+      </Dialog>}
+    </span>
   );
 }

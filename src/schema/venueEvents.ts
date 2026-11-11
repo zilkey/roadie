@@ -120,7 +120,14 @@ export const VenueEventSource = z.strictObject({
 });
 export type VenueEventSource = z.infer<typeof VenueEventSource>;
 
+/**
+ * A band's take on a show: not a fit, or nothing. We pitch the venue, not the show: Pitch this adds the show to the venue's pitch
+ * (venueEventNotes.pitchId). "interested" and "pitched" are only in notes written before that, and mean nothing now; nothing
+ * writes them (SHOW_TAKES).
+ */
 export const EVENT_TAKES = ["notFit", "interested", "pitched"] as const;
+/** The takes the commands set. */
+export const SHOW_TAKES = ["notFit"] as const;
 export const TAKE_LABEL: Record<(typeof EVENT_TAKES)[number], string> = { notFit: "Not a fit", interested: "Interested", pitched: "Pitched" };
 
 /** One band's take on a venue's show: `venueEventNotes/{artistId}__{eventId}`. */

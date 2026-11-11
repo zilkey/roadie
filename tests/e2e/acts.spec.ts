@@ -187,8 +187,13 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId(`act-dismiss-${lone}`).click();
   await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "false");
+  // the star and the X are one choice: the star takes it off not a fit, the X takes it off the shortlist
+  await page.getByTestId(`act-star-${lone}`).click();
+  await expect(page.getByTestId(`act-star-${lone}`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId(`act-dismiss-${lone}`).click(); // back to not a fit, as the later tests expect
   await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId(`act-star-${lone}`)).toHaveAttribute("aria-pressed", "false");
 });
 
 test("an act's name on the Booking Venue calendars tab links to its page", async ({ page }) => {
