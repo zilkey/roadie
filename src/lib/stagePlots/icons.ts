@@ -1,5 +1,5 @@
 /**
- * Stage plot gear icons, copied unchanged from junk.stories/band-app-stage-plots.html.
+ * Stage plot gear icons, first copied from junk.stories/band-app-stage-plots.html (cajon, congas, uprightBass and table came later).
  * 48x48 top-view symbols centered on 0,0, front facing down (audience). They paint with `currentColor` (lines) and
  * `var(--ic-fill)` (fills): the host SVG sets both.
  */
@@ -26,11 +26,22 @@ export const ICONS = {
   musicStand:{name:"Music stand", note:"For charts or an iPad", svg:`<path d="M-12-5h24l-2 6h-20z" ${F} ${S}/><path d="M0 1v7M0 8-5 13M0 8 5 13" ${N} ${S}/>`},
   pedalboard:{name:"Pedalboard", note:"On the floor at the player's feet", svg:`<rect x="-18" y="-8" width="36" height="16" rx="2.5" ${F} ${S}/><rect x="-14" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/><rect x="-3.5" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/><rect x="7" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/>`},
   laptop:{name:"Laptop / playback", note:"Tracks, click, or a sampler", svg:`<rect x="-14" y="-10" width="28" height="9" rx="1.5" ${D}/><rect x="-16" y="-1" width="32" height="12" rx="2" ${F} ${S}/><path d="M-11 3h22M-11 6.5h22" ${N} stroke="currentColor" stroke-width="1.4"/>`},
+  cajon:{name:"Cajón", note:"Box drum; the player sits on it, front toward the audience", svg:`<rect x="-11" y="-11" width="22" height="22" rx="2" ${F} ${S}/><path d="M-11 6h22" ${N} ${S}/><circle cx="0" cy="-2" r="1.4" ${D}/>`},
+  congas:{name:"Congas", note:"Pair of hand drums", svg:`<circle cx="-9" cy="1" r="9" ${F} ${S}/><circle cx="-9" cy="1" r="6" ${N} stroke="currentColor" stroke-width="1.2"/><circle cx="10" cy="0" r="8" ${F} ${S}/><circle cx="10" cy="0" r="5" ${N} stroke="currentColor" stroke-width="1.2"/>`},
+  uprightBass:{name:"Upright bass", note:"Double bass on its endpin", svg:`<path d="M0-6c-5 0-8 2.5-8 6 0 1.5.6 2.6 1.4 3.4C-9.5 4.8-11 7.5-11 11-11 17-6 21 0 21s11-4 11-10c0-3.5-1.5-6.2-4.4-7.6C7.4 2.6 8 1.5 8 0c0-3.5-3-6-8-6z" ${F} ${S}/><path d="M-4 6c-1 2-1 5 0 7M4 6c1 2 1 5 0 7" ${N} stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><rect x="-1.5" y="-21" width="3" height="20" rx="1" ${D}/><circle cx="0" cy="-22" r="2.6" ${D}/>`},
+  table:{name:"Table", note:"For synths, a laptop or a sampler", svg:`<rect x="-21" y="-11" width="42" height="22" rx="2" ${F} ${S}/><circle cx="-17" cy="-7" r="1.4" ${D}/><circle cx="17" cy="-7" r="1.4" ${D}/><circle cx="-17" cy="7" r="1.4" ${D}/><circle cx="17" cy="7" r="1.4" ${D}/>`},
 };
 
 export type IconType = keyof typeof ICONS;
 export const ICON_TYPES = Object.keys(ICONS) as [IconType, ...IconType[]];
 /** Each icon's size in feet (its 48-unit box scales to this). */
-export const SIZE: Record<IconType, number> = {performer:2,vocalMic:2.3,instMic:1.6,di:1.1,diStereo:1.3,amp:2.4,bassAmp:2.9,kit:6.4,keyboard:4.6,acoustic:2.8,electric:2.8,bass:3.4,wedge:2.3,iem:1.1,power:1,riser:8,stool:1.4,musicStand:1.9,pedalboard:2.4,laptop:1.6};
-/** The gear tray, in order. */
-export const TRAY: IconType[] = ["riser","stool","pedalboard","musicStand","wedge","power","acoustic","electric","bass","amp","instMic","vocalMic"];;
+export const SIZE: Record<IconType, number> = {performer:2,vocalMic:2.3,instMic:1.6,di:1.1,diStereo:1.3,amp:2.4,bassAmp:2.9,kit:6.4,keyboard:4.6,acoustic:2.8,electric:2.8,bass:3.4,wedge:2.3,iem:1.1,power:1,riser:8,stool:1.4,musicStand:1.9,pedalboard:2.4,laptop:1.6,cajon:1.3,congas:2.6,uprightBass:5.5,table:5};
+/** The gear tray, in order: stage furniture, drums and keys, strings, amps, mics and DIs, monitors and power. */
+export const TRAY: IconType[] = [
+  "riser","performer","stool","musicStand","table",
+  "kit","cajon","congas","keyboard","laptop",
+  "acoustic","electric","bass","uprightBass",
+  "amp","bassAmp","pedalboard",
+  "vocalMic","instMic","di","diStereo",
+  "wedge","iem","power",
+];
