@@ -39,7 +39,7 @@ const WITH = /\s+(?:w\/|w\.|w|with|featuring|feat\.?|ft\.?|support(?:ed)? by|spe
 const LIST = /\s*(?:,|\s\+\s|\s\/\s|•|·)\s*/;
 
 const CANCELLED = /\s*[(\[]?\b(?:cancell?ed|postponed|rescheduled)\b[)\]]?\s*[:\-–—]?\s*/gi;
-const notAnAct = (s: string) => !s || s.length < 2 || TBA.test(s) || /^(?:and|more|guests?|friends|tba|tbd|special guests?|the|(?:&\s*|and\s+)?(?:guest musicians|friends))$/i.test(s) || /^\$?\d+(?:\.\d+)?$/.test(s);
+const notAnAct = (s: string) => !s || s.length < 2 || TBA.test(s) || /^(?:and|more|guests?|friends|tba|tbd|special guests?|the|(?:&\s*|and\s+)?guest musicians)$/i.test(s) || /^\$?\d+(?:\.\d+)?$/.test(s);
 const tidy = (s: string) => s.replace(/^[\s"“”'’:;,.\-–—]+|[\s"“”'’:;,\-–—]+$/g, "").replace(/\s+/g, " ").trim();
 
 export interface Bill { acts: Act[]; supportTba: boolean }
@@ -54,12 +54,13 @@ export function splitTitle(raw: string): Bill {
   for (const re of TAIL) t = t.replace(re, " ");
   t = t.replace(/\b(?:with\s+)?special\s+guests?\b.*$/i, "").replace(TBA, "").trim();
   const at = WITH.exec(t);
-  const head = tidy(at ? t.slice(0, at.index) : t).replace(ANNUAL, "$1");
+  // "Trace Bundy 18th Annual Acoustic Holiday With …": the act before the event's name, only when a guest follows.
+  const head = at ? tidy(t.slice(0, at.index)).replace(ANNUAL, "$1") : tidy(t);
   const rest = at ? t.slice(at.index + at[0].length) : "";
   const acts: Act[] = [];
   const seen = new Set<string>();
   const add = (name: string, role: Act["role"]) => {
-    const n = tidy(name.replace(/\s+(?:&|and)\s+(?:guest musicians|friends)$/i, ""));
+    const n = tidy(name.replace(/\s+(?:&|and)\s+guest musicians$/i, ""));
     if (notAnAct(n) || seen.has(n.toLowerCase())) return;
     seen.add(n.toLowerCase());
     acts.push({ name: n, role });
@@ -108,8 +109,8 @@ export function reconcileActs(source: Act[], title: string): Bill {
 }
 
 /** Not music: trivia, yoga, markets... The calendar's own include/exclude filter runs as well. */
-const NOT_MUSIC = /\b(?:trivia|yoga|bingo|karaoke|paint(?:ing)?\s*(?:&|and|n)?\s*sip|sip\s*(?:&|and|n)\s*paint|craft(?:ing)? night|market|bazaar|brunch|workshop|class(?:es)?|lesson|meeting|book club|run club|running club|tasting|pairing|comedy|comedian|stand-?up|improv|drag (?:show|brunch|bingo)|movie|film screening|screening|game night|board games|trivia|puzzle|auction|fundraiser gala|private (?:event|party)|closed for|we(?:'| a)re closed|holiday hours|rental|wedding|lecture|talk:|panel|poetry|storytime|story time|kids craft|bootcamp|fitness|5k|10k|race|ted ?x|magic show|burlesque|wrestling|watch party|football|bike ride|group ride|sauna|hike|wildlife|nature walk|garden tour|cooking|members? (?:night|event)|nfl|super bowl|drawing club|meet ?up|happy hour|science on tap|artist talk|talk series|ya?rt sale|yard sale)\b|^(?:happy|merry) [a-z]+!*$/i;
-const IS_MUSIC = /\b(?:live music|concert|band|music|songwriter|singer|dj\b|jazz|bluegrass|folk|rock|blues|americana|country|jam|acoustic|orchestra|quartet|trio|duo|open mic|album|ep release|tour)\b/i;
+const NOT_MUSIC = /\b(?:trivia|yoga|bingo|karaoke|paint(?:ing)?\s*(?:&|and|n)?\s*sip|sip\s*(?:&|and|n)\s*paint|craft(?:ing)? night|market|bazaar|brunch|workshop|class(?:es)?|lesson|meeting|book club|run club|running club|tasting|pairing|comedy|comedian|stand-?up|improv|drag (?:show|brunch|bingo)|movie|film screening|screening|game night|board games|trivia|puzzle|auction|fundraiser gala|private (?:event|party)|closed for|we(?:'| a)re closed|holiday hours|rental|wedding|lecture|talk:|panel|poetry|storytime|story time|kids craft|bootcamp|fitness|5k|10k|race|ted ?x|magic show|burlesque|wrestling|watch party|football|bike ride|group ride|sauna|hike|wildlife|nature walk|garden tour|cooking|members? (?:night|event)|nfl|super bowl|drawing club|meet ?up|happy hour \d|science on tap|artist talk|talk series|ya?rt sale|yard sale)\b|^(?:happy|merry) [a-z]+!*$/i;
+const IS_MUSIC = /\b(?:live music|concert|band|music|songwriters?|singer|dj\b|jazz|bluegrass|folk|rock|blues|americana|country|jam|acoustic|orchestra|quartet|trio|duo|open mic|album|ep release|tour)\b/i;
 
 const LIVE = /\b(?:live music|concert|band|bluegrass|jazz|songwriter|acoustic|dj|album release|ep release|record release)\b/i;
 

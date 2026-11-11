@@ -599,3 +599,18 @@ describe("parseIcs posters", () => {
     assert.equal(parseIcs(cal("X-NOTHING:1"))[0].imageUrl, undefined);
   });
 });
+
+describe("splitTitle and isMusic: prod refresh follow-ups (#76)", () => {
+  test("\"& Friends\" stays part of the act's name", () => {
+    assert.deepEqual(names("Oteil & Friends featuring Steve Kimock"), ["Oteil & Friends", "Steve Kimock"]);
+    assert.deepEqual(names("Angie Stevens and Friends"), ["Angie Stevens and Friends"]);
+  });
+  test("an annual event's name is kept when no guest follows", () => {
+    assert.deepEqual(names("Dear Jack Foundation's 10th Annual VIP Night"), ["Dear Jack Foundation's 10th Annual VIP Night"]);
+  });
+  test("a happy hour with a band is music; a happy hour with hours is not", () => {
+    assert.equal(isMusic("Happy Hour @ The Junkyard Social Club with Sol Aldinger"), true);
+    assert.equal(isMusic("Happy Hour 3-6PM"), false);
+    assert.equal(isMusic("Songwriters at the Speakeasy", [], "Happy hour drinks and a meetup of local songwriters"), true);
+  });
+});
