@@ -139,6 +139,19 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-row-${sup}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
+  // Back from an act's page comes back to the list as it was: the filter (in the URL), every page open and the scroll
+  const rowsOpen = await page.getByTestId(/^act-row-/).count();
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const y = await page.evaluate(() => window.scrollY);
+  expect(y).toBeGreaterThan(100);
+  await page.getByTestId(/^act-row-/).last().getByTestId(/^act-link-/).click();
+  await expect(page.getByTestId("act-page")).toBeVisible();
+  await page.getByTestId("back").click();
+  await expect(page).toHaveURL(/\/booking\/acts\?show=all$/);
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(rowsOpen);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
+  await page.setViewportSize({ width: 1280, height: 900 });
   // a new filter starts back at the first page; the search looks through every act, not just the page
   await page.getByTestId("acts-filter").selectOption("opened");
   await page.getByTestId("acts-filter").selectOption("all");

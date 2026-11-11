@@ -16,7 +16,16 @@ export function canGoBack(s: string[]): boolean {
   return s.length >= 2;
 }
 
+/** Set by a back or forward step (the Back link's router.back, or the browser's) and cleared once the Shell records the new path. */
+let popped = false;
+if (typeof window !== "undefined") window.addEventListener("popstate", () => { popped = true; });
+/**
+ * Whether the page now mounting was reached by a back or forward step; reading it clears it. Read it in a mount effect: a page's
+ * effects run before the Shell's path effect in the same commit.
+ */
+export function takeSteppedBack(): boolean { const p = popped; popped = false; return p; }
+
 /** Create forms (".../new") are never a place to go back to: they leave by router.replace, so they are not recorded. */
-export function recordPath(path: string) { if (!path.endsWith("/new")) stack = nextStack(stack, path); }
+export function recordPath(path: string) { popped = false; if (!path.endsWith("/new")) stack = nextStack(stack, path); }
 /** The page before this one, if the person came from elsewhere in the app. */
 export function previousPath(): string | undefined { return canGoBack(stack) ? stack[stack.length - 2] : undefined; }

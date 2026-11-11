@@ -83,6 +83,20 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await expect(page).toHaveURL(new RegExp(`${venuePath}\\?tab=events$`));
   await expect(page.getByTestId("venue-tab-events")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("venue-events-list").getByTestId(/^pitch-this-/).first()).toBeVisible();
+
+  // Back comes back to the list as it was: the filter (in the URL), both pages and the scroll. A short window so it scrolls.
+  await page.goBack();
+  await page.setViewportSize({ width: 1280, height: 360 });
+  await expect(shows(page)).toHaveCount(3);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const y = await page.evaluate(() => window.scrollY);
+  expect(y).toBeGreaterThan(100);
+  await shows(page).nth(2).getByTestId(/^calendar-show-venue-/).click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  await page.getByTestId("back").click();
+  await expect(page).toHaveURL(/\/booking\/calendars\?show=all$/);
+  await expect(shows(page)).toHaveCount(3);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
 });
 
 test("Pitch this: one click adds the show to the venue's pitch; the filled flag asks to take the show off the pitch or the venue off the Pitch List", async ({ page }) => {

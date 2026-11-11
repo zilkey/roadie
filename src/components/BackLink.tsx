@@ -16,8 +16,10 @@ export function BackLink({ href, label, mode = "parent" }: { href: string; label
       onClick={(e) => {
         if (mode !== "back" || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         const prev = previousPath();
-        // Nowhere to go back to, or the previous page is the parent itself: follow the link (it carries the parent's own state, e.g. a tab).
-        if (!prev || prev === full(href).split(/[?#]/)[0]) return;
+        // Nowhere to go back to, or the previous page is the parent and the link names its state (e.g. ?tab=): follow the link. A
+        // bare parent link goes back instead, so a list comes back with its filters (they ride in its URL) and scroll (useListMemory).
+        const [path, query] = full(href).split("?");
+        if (!prev || (prev === path && query)) return;
         e.preventDefault();
         router.back();
       }}>

@@ -6,7 +6,8 @@
  * (ShowFilterBar: Likely needs an opener or All shows, Hide "not a fit", the main act's genres, When) plus a region, with the
  * opener disclaimer under them. They add up, and they ride in the URL so a link sends the exact list (the Acts tab's way):
  * ?show=, ?notfit=, ?genre= and ?when= (showFilterToParams) and ?region=, defaults left out. They're written with
- * history.replaceState, which the App Router picks up without a navigation.
+ * history.replaceState, which the App Router picks up without a navigation. Back from a venue's page steps back to that URL, and
+ * useListMemory opens as many pages as were open and scrolls back to where it was.
  *
  * Paging is a live Firestore query (date from the "When" start on, latest date first) whose limit grows by a page per
  * "Load more": every band user may read venueEvents, a range and an order on the same field need no composite index, and a
@@ -22,6 +23,7 @@ import { hrefFor, useBooking } from "@/components/booking/common";
 import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, TicketLink } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
+import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
 import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
@@ -103,6 +105,8 @@ export function VenueCalendars() {
   const filling = (!!raw && !readAll && rows.length < want) || (!!raw && !acts.rows);
   // A filter change shows "Loading…" until its first page is all there, then the table once; Load more keeps the table up.
   const settling = filling && pages === 1;
+  // Back from a venue's page: the same pages open (the limit reads on to them) and the same scroll.
+  useListMemory(pages, setPages, !!raw && !filling);
   const change = (patch: Partial<CalendarFilter>) => {
     const next = { ...f, ...patch };
     setF(next); setPages(1); setLimit(CALENDARS_PAGE);
