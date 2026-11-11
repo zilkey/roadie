@@ -76,13 +76,13 @@ export function cleanActName(raw: string): ActName {
 
 // ---------- what venue calendars say ----------
 
-export interface EvLike { id: string; venueId: string; date: string; status: string; acts: { name: string; role: string; actId?: string }[] }
+export interface EvLike { id: string; venueId: string; date: string; status: string; ticketUrl?: string; acts: { name: string; role: string; actId?: string }[] }
 export interface VenueLike { id: string; name: string; address?: { city?: string; state?: string } }
 export interface Room { venueId: string; name: string; city?: string; roles: ("headliner" | "support")[] }
 export interface ActStats {
   /** Every room they're on a calendar at, past or upcoming. */
   rooms: Room[];
-  next?: { date: string; venueId: string; name: string; role: "headliner" | "support"; eventId: string };
+  next?: { date: string; venueId: string; name: string; role: "headliner" | "support"; eventId: string; ticketUrl?: string };
   /** The rooms they played support at that are on this band's list. */
   openedAt: string[];
   /** 2+ Colorado rooms within TOUR_DAYS, from today on. */
@@ -116,7 +116,7 @@ export function actStats(events: EvLike[], venues: Map<string, VenueLike>, ours:
       if (role === "support" && ours.has(e.venueId) && !s.openedAt.includes(e.venueId)) s.openedAt.push(e.venueId);
       if (v.address?.city && !s.cities.includes(v.address.city)) s.cities.push(v.address.city);
       if (e.date >= today && e.status !== "cancelled") {
-        if (!s.next) s.next = { date: e.date, venueId: e.venueId, name: v.name, role, eventId: e.id };
+        if (!s.next) s.next = { date: e.date, venueId: e.venueId, name: v.name, role, eventId: e.id, ...(e.ticketUrl ? { ticketUrl: e.ticketUrl } : {}) };
         if ((v.address?.state ?? "").toUpperCase() === "CO") coDays.set(a.actId, [...(coDays.get(a.actId) ?? []), { day: dayNum(e.date), venueId: e.venueId }]);
       }
     }

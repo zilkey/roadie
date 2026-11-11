@@ -5,8 +5,9 @@ export interface CheckGroup { label?: string; options: { key: string; label: str
 
 /**
  * A filter that picks several values: a select-styled button ("All venue types", "Theater", "3 venue types") opening a
- * list of checkboxes. Nothing checked means no filter. Closes on Escape and on a click outside.
- * Test ids: `${testid}` (button), `${testid}-list`, `${testid}-${key}` (each checkbox), `${testid}-clear`.
+ * list of checkboxes. Nothing checked means no filter. Closes on Escape and on a click outside. Once something is checked, "Clear all"
+ * shows at the top and the bottom of the list (a long genre list shouldn't need a scroll to reach it).
+ * Test ids: `${testid}` (button), `${testid}-list`, `${testid}-${key}` (each checkbox), `${testid}-clear` (bottom), `${testid}-clear-top`.
  */
 export function CheckFilter({ label, all, noun, groups, value, onChange, testid }: {
   label: string; all: string; noun: string; groups: CheckGroup[]; value: string[]; onChange(v: string[]): void; testid: string;
@@ -36,6 +37,12 @@ export function CheckFilter({ label, all, noun, groups, value, onChange, testid 
       </button>
       {open && (
         <div className="menu-list check-list" id={id} role="group" aria-label={label} data-testid={`${testid}-list`}>
+          {value.length > 0 && (
+            <>
+              <button type="button" className="menu-item" onClick={() => onChange([])} data-testid={`${testid}-clear-top`}>Clear all</button>
+              <div className="menu-sep" role="separator" />
+            </>
+          )}
           {groups.filter((g) => g.options.length > 0).map((g, i) => (
             <div key={g.label ?? i} className="grid gap-1">
               {g.label && <span className="s font-semibold px-1 pt-1">{g.label}</span>}
@@ -51,7 +58,7 @@ export function CheckFilter({ label, all, noun, groups, value, onChange, testid 
           {value.length > 0 && (
             <>
               <div className="menu-sep" role="separator" />
-              <button type="button" className="menu-item" onClick={() => onChange([])} data-testid={`${testid}-clear`}>Clear</button>
+              <button type="button" className="menu-item" onClick={() => onChange([])} data-testid={`${testid}-clear`}>Clear all</button>
             </>
           )}
         </div>

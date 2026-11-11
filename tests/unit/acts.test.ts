@@ -48,6 +48,11 @@ let n = 0;
 const ev = (venueId: string, date: string, acts: EvLike["acts"], status = "onsale"): EvLike => ({ id: `e${++n}`, venueId, date, status, acts });
 const TODAY = "2026-11-10";
 
+test("actStats: the next show carries its ticket link", () => {
+  const e = { ...ev("aggie", "2026-11-20", [{ name: "T", role: "headliner", actId: "t" }]), ticketUrl: "https://tix.example/t" };
+  assert.equal(actStats([e], venues, new Set(), TODAY).get("t")?.next?.ticketUrl, "https://tix.example/t");
+});
+
 test("actStats: rooms with roles, next show skips past, gone and cancelled", () => {
   const events = [
     ev("aggie", "2026-10-01", [{ name: "A", role: "headliner", actId: "a" }]), // past
@@ -62,6 +67,7 @@ test("actStats: rooms with roles, next show skips past, gone and cancelled", () 
   assert.equal(s.next?.date, "2026-11-20");
   assert.equal(s.next?.venueId, "aggie");
   assert.equal(s.next?.role, "support");
+  assert.equal(s.next?.ticketUrl, undefined);
   const aggie = s.rooms.find((r) => r.venueId === "aggie")!;
   assert.deepEqual(aggie.roles.slice().sort(), ["headliner", "support"]);
   assert.equal(aggie.city, "Fort Collins");

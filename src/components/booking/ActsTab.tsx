@@ -11,8 +11,13 @@
  * Paging: the filters, city and search run over every act on the client, then the table shows the first ACTS_PAGE of them and
  * "Load more" adds a page (the Festivals tab's button, the Shows list's client-side slice). A new filter, city or search starts back
  * at the first page, in its own change handler: no effect sets the page, so a filter can't set off a run of re-renders.
+ *
+ * The filters ride in the URL so a link sends the exact list: ?show= (the dropdown; the shortlist is the default and leaves it out),
+ * ?genre= (once per genre), ?city= and ?find= (not ?q=: that's the booking-wide search, which replaces the tab). They're written with
+ * history.replaceState, which the App Router picks up without a navigation, so typing in Find doesn't refetch the page.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link, { useArtist } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
@@ -66,17 +71,32 @@ export function ActsTab() {
   const shortlistLookup = useCommand();
   const [lookupStatus, setLookupStatus] = useState("");
   const [found, setFound] = useState<Map<string, FoundRow> | null>(null);
-  const [filter, setFilterState] = useState<ActFilter>("shortlist");
-  const [city, setCityState] = useState("");
-  const [q, setQState] = useState("");
-  const [genres, setGenresState] = useState<string[]>([]);
+  const params = useSearchParams();
+  const [filter, setFilterState] = useState<ActFilter>(() => {
+    const v = params.get("show");
+    return ACT_FILTERS.some(([k]) => k === v) ? (v as ActFilter) : "shortlist";
+  });
+  const [city, setCityState] = useState(() => params.get("city") ?? "");
+  const [q, setQState] = useState(() => params.get("find") ?? "");
+  const [genres, setGenresState] = useState<string[]>(() => params.getAll("genre"));
   const [dismissed, setDismissed] = useState<{ row: Row; was: "shortlist" | null } | null>(null);
   const [shown, setShown] = useState(ACTS_PAGE);
-  // Each change starts back at the first page.
-  const setFilter = (v: ActFilter) => { setFilterState(v); setShown(ACTS_PAGE); };
-  const setCity = (v: string) => { setCityState(v); setShown(ACTS_PAGE); };
-  const setQ = (v: string) => { setQState(v); setShown(ACTS_PAGE); };
-  const setGenres = (v: string[]) => { setGenresState(v); setShown(ACTS_PAGE); };
+  // Each change starts back at the first page and puts the filters in the URL.
+  const toUrl = (f: { filter: ActFilter; city: string; q: string; genres: string[] }) => {
+    const u = new URLSearchParams(window.location.search);
+    for (const k of ["show", "genre", "city", "find"]) u.delete(k);
+    if (f.filter !== "shortlist") u.set("show", f.filter);
+    for (const g of f.genres) u.append("genre", g);
+    if (f.city) u.set("city", f.city);
+    if (f.q.trim()) u.set("find", f.q);
+    const qs = u.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  };
+  const cur = { filter, city, q, genres };
+  const setFilter = (v: ActFilter) => { setFilterState(v); setShown(ACTS_PAGE); toUrl({ ...cur, filter: v }); };
+  const setCity = (v: string) => { setCityState(v); setShown(ACTS_PAGE); toUrl({ ...cur, city: v }); };
+  const setQ = (v: string) => { setQState(v); setShown(ACTS_PAGE); toUrl({ ...cur, q: v }); };
+  const setGenres = (v: string[]) => { setGenresState(v); setShown(ACTS_PAGE); toUrl({ ...cur, genres: v }); };
   const ours = useOurGenres();
   const genreChoices = useMemo(() => genreOptions(ours, (acts.rows ?? []).map((a) => a.genres)), [ours, acts.rows]);
 
@@ -139,7 +159,7 @@ export function ActsTab() {
         <label className="sr-only" htmlFor="acts-city">City</label>
         <select id="acts-city" className="select !w-auto" value={city} onChange={(e) => setCity(e.target.value)} data-testid="acts-city">
           <option value="">Any city</option>
-          {cities.map((c) => <option key={c} value={c}>{c}</option>)}
+          {(city && !cities.includes(city) ? [city, ...cities] : cities).map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <span className="flex-auto" />
         {toLookUp && (
@@ -168,7 +188,6 @@ export function ActsTab() {
             <thead><tr>
               <th className="flag"><span className="sr-only">Shortlist or not a fit</span></th>
               <th className="name">Act</th>
-              <th>Links</th>
               <th>Seen at</th>
               <th>Next show</th>
               <th className="sl acts-sl">Sounds like</th>
@@ -200,16 +219,19 @@ export function ActsTab() {
                               {f?.tour && <span className="chip y" data-testid="act-tour">On tour</span>}
                             </span>
                           )}
+                          {a.links && Object.values(a.links).some(Boolean) && <span className="mt-1 -ml-2 flex"><LinkIcons links={a.links} name={a.name} testid={`act-links-${a.id}`} /></span>}
                         </span>
                       </div>
                     </td>
-                    <td><LinkIcons links={a.links} name={a.name} testid={`act-links-${a.id}`} /></td>
                     <td data-testid={`act-seen-${a.id}`}>
                       {rooms.length ? <>{rooms.length} room{rooms.length === 1 ? "" : "s"}
-                        <span className="sub">{rooms.slice(0, ROOMS_SHOWN).map((r) => `${r.name} (${roleWord(r.roles)})`).join(" · ")}{rooms.length > ROOMS_SHOWN ? ` · +${rooms.length - ROOMS_SHOWN}` : ""}</span></>
+                        <span className="sub">{rooms.slice(0, ROOMS_SHOWN).map((r, i) => <span key={r.venueId}>{i > 0 && " · "}<Link href={hrefFor("venue", r.venueId)} className="hover:underline">{r.name}</Link> ({roleWord(r.roles)})</span>)}{rooms.length > ROOMS_SHOWN ? ` · +${rooms.length - ROOMS_SHOWN}` : ""}</span></>
                         : <span className="dash">—</span>}
                     </td>
-                    <td className="nw">{f?.next ? <>{fmtEventDay(f.next.date)}<span className="sub">{f.next.name}</span></> : <span className="dash">—</span>}</td>
+                    <td className="nw" data-testid={`act-next-${a.id}`}>{f?.next ? <>
+                      {f.next.ticketUrl ? <a href={f.next.ticketUrl} target="_blank" rel="noreferrer" className="underline" title="Tickets and details" data-testid={`act-next-link-${a.id}`}>{fmtEventDay(f.next.date)} ↗</a> : fmtEventDay(f.next.date)}
+                      <span className="sub"><Link href={hrefFor("venue", f.next.venueId)} className="hover:underline" data-testid={`act-next-venue-${a.id}`}>{f.next.name}</Link></span>
+                    </> : <span className="dash">—</span>}</td>
                     <td className="sl acts-sl" data-testid={`act-genres-${a.id}`}>
                       {gs.length > 0 && (
                         <span className="mb-1 flex flex-wrap gap-1">
