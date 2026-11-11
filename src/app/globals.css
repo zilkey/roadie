@@ -313,6 +313,14 @@ fieldset.sec { margin: 0; }
 /* Acts (#77): the shortlist star (hollow grey, filled gold), and the soft accent button the act page's Shortlisted uses. */
 .star-ic { color: var(--muted); }
 .star-ic[data-on="1"] { color: var(--gold, #c48a00); }
+/* Acts table: "Not a fit" beside the star (hollow grey, red on hover), and the act's links as small icons. */
+.dismiss-ic { color: var(--muted); }
+.dismiss-ic:hover, .dismiss-ic[data-on="1"] { color: var(--danger); }
+.book-table th.acts-sl, .book-table td.acts-sl { min-width: 200px; max-width: 300px; }
+.link-icons { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.link-icons a { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; color: var(--muted); }
+.link-icons a:hover { color: var(--ink); background: var(--soft); }
+.link-icons a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn.soft { background: var(--accent-soft); border-color: var(--accent-soft); color: var(--accent-soft-text); font-weight: 700; }
 /* Add to Pitch List modal */
 dialog.pitch-dlg { padding: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--ink); width: min(580px, calc(100vw - 32px)); max-height: calc(100dvh - 128px); margin: 96px auto auto; overflow: auto; overscroll-behavior: contain; box-shadow: 0 24px 60px var(--shadow); }

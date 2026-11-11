@@ -4,6 +4,7 @@
  */
 import { actKey } from "@/schema/normalize";
 import type { ActRelationship } from "@/schema/acts";
+import { genresMatch } from "@/lib/venueEvents";
 
 // ---------- names ----------
 
@@ -135,13 +136,15 @@ export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Shortlist"], [
 
 export interface ActTake { shortlist?: boolean; relationship?: ActRelationship | string; note?: string }
 /**
- * Whether an act is on the list for a filter, a city and a search. "Not a fit" acts are hidden unless searched for by name.
+ * Whether an act is on the list for a filter, a city, genres (any of them, as on Venue calendars: "indie" covers "indie folk") and a
+ * search; they add up. "Not a fit" acts are hidden unless searched for by name.
  */
-export function actListed(a: { name: string }, s: ActStats | undefined, take: ActTake | undefined, f: { filter: ActFilter; city?: string; q?: string }): boolean {
+export function actListed(a: { name: string; genres?: string[] }, s: ActStats | undefined, take: ActTake | undefined, f: { filter: ActFilter; city?: string; q?: string; genres?: readonly string[] }): boolean {
   const q = f.q?.trim().toLowerCase();
   if (q && !a.name.toLowerCase().includes(q)) return false;
   if (!q && take?.relationship === "notFit") return false;
   if (f.city && !s?.cities.includes(f.city)) return false;
+  if (!genresMatch(f.genres ?? [], a.genres)) return false;
   if (f.filter === "shortlist") return !!take?.shortlist;
   if (f.filter === "opened") return !!s?.openedAt.length;
   if (f.filter === "tour") return !!s?.tour;

@@ -6,7 +6,7 @@ import { extract } from "@/server/events/selectors";
 import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenUntil, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenFrom, addMonths, latestFirst, showListed, genresMatch, genreOptions, readShowFilter, DEFAULT_SHOW_FILTER, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
 import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
@@ -615,15 +615,53 @@ describe("splitTitle and isMusic: prod refresh follow-ups (#76)", () => {
   });
 });
 
-describe("whenUntil (Venue calendars' When filter)", () => {
-  test("next month and next 3 months end on the same day of the month, any time has no end", () => {
-    assert.equal(whenUntil("2026-11-11", "1m"), "2026-12-11");
-    assert.equal(whenUntil("2026-11-11", "3m"), "2027-02-11");
-    assert.equal(whenUntil("2026-11-11", "any"), "");
+describe("whenFrom (the When filter)", () => {
+  test("all times starts today; 3 and 6 months out start on the same day of the month", () => {
+    assert.equal(whenFrom("2026-11-11", "any"), "2026-11-11");
+    assert.equal(whenFrom("2026-11-11", "3m"), "2027-02-11");
+    assert.equal(whenFrom("2026-11-11", "6m"), "2027-05-11");
   });
   test("a day the later month lacks is that month's last day", () => {
-    assert.equal(whenUntil("2027-01-31", "1m"), "2027-02-28");
-    assert.equal(whenUntil("2027-11-30", "3m"), "2028-02-29");
+    assert.equal(addMonths("2027-01-31", 1), "2027-02-28");
+    assert.equal(addMonths("2027-11-30", 3), "2028-02-29");
+  });
+});
+
+describe("show filters", () => {
+  const TODAY = "2026-11-11";
+  const ev = (date: string, actId = "a1", start?: string) => ({ date, start, acts: [{ name: "A", role: "headliner" as const, actId }, { name: "B", role: "support" as const, actId: "b1" }] });
+  const acts = new Map<string, string[] | undefined>([["a1", ["indie folk"]], ["a2", ["death metal"]], ["b1", ["indie rock"]]]);
+  const x = (o: Partial<Parameters<typeof showListed>[2]> = {}) => ({ from: TODAY, acts, chance: () => "likely" as const, ...o });
+  test("furthest out first, then the later start on a day", () => {
+    const rows = [ev("2026-12-01"), ev("2027-06-01"), ev("2027-01-01", "a1", "19:00"), ev("2027-01-01", "a1", "21:00")].sort(latestFirst);
+    assert.deepEqual(rows.map((r) => `${r.date} ${r.start ?? ""}`.trim()), ["2027-06-01", "2027-01-01 21:00", "2027-01-01 19:00", "2026-12-01"]);
+  });
+  test("the default: likely only, not-a-fit hidden, any genre, all times", () => {
+    assert.deepEqual(DEFAULT_SHOW_FILTER, { show: "likely", hideNotFit: true, genres: [], when: "any" });
+    assert.deepEqual(readShowFilter({ show: "hide", when: "1m", genres: ["indie", 3] }), { ...DEFAULT_SHOW_FILTER, genres: ["indie"] });
+  });
+  test("the filters add up: likely, not hidden, the main act's genre and far enough out", () => {
+    const f = { ...DEFAULT_SHOW_FILTER, genres: ["indie"] };
+    assert.equal(showListed(ev("2027-01-01"), f, x()), true);
+    assert.equal(showListed(ev("2027-01-01"), f, x({ chance: () => "maybe" })), false);
+    assert.equal(showListed(ev("2027-01-01"), { ...f, show: "all" }, x({ chance: () => "maybe" })), true);
+    assert.equal(showListed(ev("2027-01-01"), f, x({ take: "notFit" })), false);
+    assert.equal(showListed(ev("2027-01-01"), { ...f, hideNotFit: false }, x({ take: "notFit" })), true);
+    // the support act's genre doesn't count: only the main act's
+    assert.equal(showListed(ev("2027-01-01", "a2"), { ...f, genres: ["indie rock"] }, x()), false);
+    assert.equal(showListed(ev("2027-01-01", "a2"), { ...f, genres: ["indie", "metal"] }, x()), true);
+    assert.equal(showListed(ev("2027-01-01"), f, x({ from: whenFrom(TODAY, "3m") })), false);
+    assert.equal(showListed(ev("2027-03-01"), f, x({ from: whenFrom(TODAY, "3m") })), true);
+  });
+  test("a picked genre covers the genres with all its words", () => {
+    assert.equal(genresMatch([], undefined), true);
+    assert.equal(genresMatch(["indie"], ["indie folk"]), true);
+    assert.equal(genresMatch(["indie folk"], ["folk"]), false);
+    assert.equal(genresMatch(["Indie"], ["indie-pop"]), true);
+    assert.equal(genresMatch(["indie"], undefined), false);
+  });
+  test("genre choices: ours first, then the rest, most common first", () => {
+    assert.deepEqual(genreOptions(["folk"], [["rock", "folk"], ["rock"], ["jazz"], undefined]), { ours: ["folk"], rest: ["rock", "jazz"] });
   });
 });
 

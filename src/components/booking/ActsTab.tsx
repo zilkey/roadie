@@ -1,7 +1,9 @@
 "use client";
 /**
  * Booking's Acts tab (issue #77, board "ListActs" on the booking canvas): every act seen on a venue calendar plus any added by hand,
- * filtered to the shortlist, the acts that opened at rooms on our list, or those on tour, and by city and name. The star shortlists.
+ * filtered (a dropdown) to the shortlist, the acts that opened at rooms on our list, or those on tour, and by genre (several at once),
+ * city and name; the filters add up. Each row shows a few genres and an icon per link we have. The star shortlists; the X
+ * beside it dismisses the act as not a fit (hidden from here, with an Undo).
  *
  * The acts and this band's take on them are live (useCollection); what the calendars say about each (rooms, next show, opened at our
  * rooms, on tour) comes from acts.find, which reads every venue's shows on the server. It is fetched again when the acts change.
@@ -15,8 +17,11 @@ import Link, { useArtist } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { hrefFor } from "@/components/booking/common";
+import { CheckFilter } from "@/components/booking/CheckFilter";
+import { LinkIcons } from "@/components/booking/LinkIcons";
+import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ACT_FILTERS, actListed, type ActFilter, type ActStats } from "@/lib/acts";
-import { fmtEventDay } from "@/lib/venueEvents";
+import { fmtEventDay, genreOptions } from "@/lib/venueEvents";
 import { RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship } from "@/schema";
 
 type Row = ActDoc & { id: string };
@@ -32,6 +37,9 @@ export const NoteIcon = ({ size = 18 }: { size?: number }) => (
     <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
   </svg>
 );
+export const XIcon = ({ size = 18 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg>
+);
 /** The act's picture, or the music-note tile. */
 export function ActThumb({ src, size = 40 }: { src?: string; size?: number }) {
   const [failed, setFailed] = useState(false);
@@ -45,6 +53,7 @@ export function ActThumb({ src, size = 40 }: { src?: string; size?: number }) {
 /** Acts per page. e2e sets a small one (NEXT_PUBLIC_ACTS_PAGE) so its few fixture acts span pages. */
 export const ACTS_PAGE = Number(process.env.NEXT_PUBLIC_ACTS_PAGE) || 50;
 const ROOMS_SHOWN = 3;
+const GENRES_SHOWN = 3;
 const roleWord = (roles: ("headliner" | "support")[]) => (roles.length === 2 ? "headlining, opening" : roles[0] === "support" ? "opening" : "headlining");
 
 export function ActsTab() {
@@ -60,11 +69,17 @@ export function ActsTab() {
   const [filter, setFilterState] = useState<ActFilter>("shortlist");
   const [city, setCityState] = useState("");
   const [q, setQState] = useState("");
+  const [genres, setGenresState] = useState<string[]>([]);
+  const dismiss = useCommand();
+  const [dismissed, setDismissed] = useState<Row | null>(null);
   const [shown, setShown] = useState(ACTS_PAGE);
   // Each change starts back at the first page.
   const setFilter = (v: ActFilter) => { setFilterState(v); setShown(ACTS_PAGE); };
   const setCity = (v: string) => { setCityState(v); setShown(ACTS_PAGE); };
   const setQ = (v: string) => { setQState(v); setShown(ACTS_PAGE); };
+  const setGenres = (v: string[]) => { setGenresState(v); setShown(ACTS_PAGE); };
+  const ours = useOurGenres();
+  const genreChoices = useMemo(() => genreOptions(ours, (acts.rows ?? []).map((a) => a.genres)), [ours, acts.rows]);
 
   // What the calendars say about every act: fetched once the acts load, and again when one is added or renamed.
   const actsVersion = (acts.rows ?? []).length;
@@ -79,9 +94,9 @@ export function ActsTab() {
   const cities = useMemo(() => [...new Set([...(found?.values() ?? [])].flatMap((f) => f.cities))].sort(), [found]);
   const rows = useMemo(() => {
     const all = (acts.rows ?? []) as Row[];
-    const listed = all.filter((a) => actListed(a, found?.get(a.id), takes.get(a.id), { filter, city: city || undefined, q }));
+    const listed = all.filter((a) => actListed(a, found?.get(a.id), takes.get(a.id), { filter, city: city || undefined, q, genres }));
     return listed.sort((x, y) => (found?.get(x.id)?.next?.date ?? "9999").localeCompare(found?.get(y.id)?.next?.date ?? "9999") || x.name.localeCompare(y.name));
-  }, [acts.rows, found, takes, filter, city, q]);
+  }, [acts.rows, found, takes, filter, city, q, genres]);
   const loading = !acts.rows || !notes.rows || (!found && !error);
   const page = rows.slice(0, shown);
   const left = rows.length - page.length;
@@ -101,13 +116,21 @@ export function ActsTab() {
   };
 
   const toggle = (a: Row) => void star.call("acts.shortlist", { id: a.id, on: !takes.get(a.id)?.shortlist });
+  /** Not a fit, from the row: the act leaves the list (unless it was searched for), so say so with an Undo. Again clears it. */
+  const notFit = async (a: Row) => {
+    const on = takes.get(a.id)?.relationship !== "notFit";
+    if (await dismiss.call("acts.note", { id: a.id, relationship: on ? "notFit" : null })) setDismissed(on ? a : null);
+  };
+  const undo = async () => { if (dismissed && await dismiss.call("acts.note", { id: dismissed.id, relationship: null })) setDismissed(null); };
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="acts-tab">
       <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter acts">
-        {ACT_FILTERS.map(([k, label]) => (
-          <button key={k} type="button" className="pick" aria-pressed={filter === k} onClick={() => setFilter(k)} data-testid={`acts-filter-${k}`}>{label}</button>
-        ))}
+        <select className="select !w-auto" value={filter} onChange={(e) => setFilter(e.target.value as ActFilter)} aria-label="Which acts" data-testid="acts-filter">
+          {ACT_FILTERS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <CheckFilter label="Genre" all="Any genre" noun="genres" value={genres} onChange={setGenres} testid="acts-genre"
+          groups={[{ label: genreChoices.ours.length ? "Our genres" : undefined, options: genreChoices.ours.map((g) => ({ key: g, label: g })) }, { label: genreChoices.ours.length ? "Other genres" : undefined, options: genreChoices.rest.map((g) => ({ key: g, label: g })) }]} />
         <label className="sr-only" htmlFor="acts-city">City</label>
         <select id="acts-city" className="select !w-auto" value={city} onChange={(e) => setCity(e.target.value)} data-testid="acts-city">
           <option value="">Any city</option>
@@ -122,7 +145,13 @@ export function ActsTab() {
         <label className="sr-only" htmlFor="acts-q">Find an act</label>
         <input id="acts-q" className="input !min-h-9 !w-[220px]" type="search" placeholder="Find an act…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="acts-q" />
       </div>
-      <ErrorBox error={error ?? star.error ?? shortlistLookup.error} />
+      <ErrorBox error={error ?? star.error ?? shortlistLookup.error ?? dismiss.error} />
+      {dismissed && (
+        <div className="s flex flex-wrap items-center gap-2" role="status" data-testid="acts-dismissed">
+          <span><b>{dismissed.name}</b> is hidden as not a fit.</span>
+          <button type="button" className="btn ghost sm" disabled={dismiss.busy} onClick={() => void undo()} data-testid="acts-undo">Undo</button>
+        </div>
+      )}
       {lookupStatus && <span className="s" data-testid="acts-lookup-status">{lookupStatus}</span>}
       {loading && <span className="s">Loading…</span>}
       {!loading && rows.length === 0 && (
@@ -132,30 +161,36 @@ export function ActsTab() {
         <div className="book-tw">
           <table className="book-table wn">
             <thead><tr>
-              <th className="flag"><span className="sr-only">Shortlist</span></th>
+              <th className="flag"><span className="sr-only">Shortlist or not a fit</span></th>
               <th className="name">Act</th>
+              <th>Links</th>
               <th>Seen at</th>
               <th>Next show</th>
-              <th className="sl">Sounds like</th>
-              <th>Our take</th>
+              <th className="sl acts-sl">Sounds like</th>
             </tr></thead>
             <tbody>
               {page.map((a) => {
-                const f = found?.get(a.id), take = takes.get(a.id), on = !!take?.shortlist;
+                const f = found?.get(a.id), take = takes.get(a.id), on = !!take?.shortlist, nf = take?.relationship === "notFit";
+                const gs = a.genres ?? [], rel = take?.relationship as ActRelationship | undefined;
                 const rooms = f?.rooms ?? [];
                 return (
                   <tr key={a.id} data-testid={`act-row-${a.id}`}>
                     <td className="flag">
-                      <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Shortlist ${a.name}`} disabled={star.busy}
-                        onClick={() => toggle(a)} data-testid={`act-star-${a.id}`}><StarIcon on={on} /></button>
+                      <span className="inline-flex">
+                        <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Shortlist ${a.name}`} title={on ? "On the shortlist" : "Shortlist"} disabled={star.busy}
+                          onClick={() => toggle(a)} data-testid={`act-star-${a.id}`}><StarIcon on={on} /></button>
+                        <button type="button" className="flag-ic dismiss-ic" aria-pressed={nf} data-on={nf ? "1" : "0"} aria-label={`${a.name} is not a fit`} title={nf ? "Not a fit (again to clear)" : "Not a fit: hide it"} disabled={dismiss.busy}
+                          onClick={() => void notFit(a)} data-testid={`act-dismiss-${a.id}`}><XIcon size={16} /></button>
+                      </span>
                     </td>
                     <td className="name">
                       <div className="flex items-center gap-3">
                         <ActThumb src={a.imageUrl} />
                         <span className="min-w-0">
                           <Link href={hrefFor("act", a.id)} className="nm" data-testid={`act-link-${a.id}`}>{a.name}</Link>
-                          {(!!f?.openedAt.length || f?.tour) && (
+                          {(!!f?.openedAt.length || f?.tour || rel) && (
                             <span className="mt-1 flex flex-wrap gap-1.5">
+                              {rel && <span className="chip m" data-testid={`act-take-${a.id}`} title="Our take">{RELATIONSHIP_LABEL[rel]}</span>}
                               {!!f?.openedAt.length && <span className="chip a" data-testid="act-opened">Opened at our rooms</span>}
                               {f?.tour && <span className="chip y" data-testid="act-tour">On tour</span>}
                             </span>
@@ -163,14 +198,22 @@ export function ActsTab() {
                         </span>
                       </div>
                     </td>
+                    <td><LinkIcons links={a.links} name={a.name} testid={`act-links-${a.id}`} /></td>
                     <td data-testid={`act-seen-${a.id}`}>
                       {rooms.length ? <>{rooms.length} room{rooms.length === 1 ? "" : "s"}
                         <span className="sub">{rooms.slice(0, ROOMS_SHOWN).map((r) => `${r.name} (${roleWord(r.roles)})`).join(" · ")}{rooms.length > ROOMS_SHOWN ? ` · +${rooms.length - ROOMS_SHOWN}` : ""}</span></>
                         : <span className="dash">—</span>}
                     </td>
                     <td className="nw">{f?.next ? <>{fmtEventDay(f.next.date)}<span className="sub">{f.next.name}</span></> : <span className="dash">—</span>}</td>
-                    <td className="sl">{a.description ? <span className="s line-clamp-2" title={a.description}>{a.description}</span> : <span className="s">{a.lookedUpAt ? "Nothing found" : "Not looked up"}</span>}</td>
-                    <td>{take?.relationship ? RELATIONSHIP_LABEL[take.relationship as ActRelationship] : <span className="dash">—</span>}</td>
+                    <td className="sl acts-sl" data-testid={`act-genres-${a.id}`}>
+                      {gs.length > 0 && (
+                        <span className="mb-1 flex flex-wrap gap-1">
+                          {gs.slice(0, GENRES_SHOWN).map((g) => <span key={g} className="chip">{g}</span>)}
+                          {gs.length > GENRES_SHOWN && <span className="chip" title={gs.slice(GENRES_SHOWN).join(", ")}>+{gs.length - GENRES_SHOWN}</span>}
+                        </span>
+                      )}
+                      {a.description ? <span className="s line-clamp-2" title={a.description}>{a.description}</span> : !gs.length && <span className="s">{a.lookedUpAt ? "Nothing found" : "Not looked up"}</span>}
+                    </td>
                   </tr>
                 );
               })}

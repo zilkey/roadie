@@ -3,14 +3,16 @@
  * A venue's Events tab (issue #60): the room's upcoming shows as its own calendar lists them, with the bill, a badge when it
  * might need an opener (a guess: openerChance in src/lib/venueEvents.ts), and this band's take on each; past shows collapsed
  * below (who plays the room); the calendar source, when it last refreshed, the room's record ("Books openers: often"), and Refresh. No design-canvas board exists for this tab yet: it follows the venue page's cards.
- * "Pitch this" (#79) opens the same dialog as Booking's Venue calendars (PitchShowDialog).
+ * "Pitch this" (#79) opens the same dialog as Booking's Venue calendars (PitchShowDialog). The upcoming shows are furthest out
+ * first, under the same filters as Venue calendars (ShowFilterBar), remembered on their own.
  */
 import { useMemo, useState } from "react";
 import { useArtist } from "@/lib/artist";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
-import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, titleSaysMore, type OpenerCtx } from "@/lib/venueEvents";
+import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, openerChance, showListed, titleSaysMore, whenFrom, type OpenerCtx, type ShowFilter } from "@/lib/venueEvents";
+import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { PitchShowDialog, PitchThisButton, type PitchShow } from "@/components/booking/PitchShowDialog";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, TakePicker, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
@@ -36,27 +38,35 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
   const today = dateInBandZone();
   const all = useMemo(() => [...(events.rows ?? [])].sort(byWhen), [events.rows]);
-  const upcoming = all.filter((e) => isUpcoming(e, today));
+  const upcoming = useMemo(() => all.filter((e) => isUpcoming(e, today)).reverse(), [all, today]);
   const past = all.filter((e) => e.date < today).reverse();
   const [setup, setSetup] = useState(false);
   const cal = venue.calendar;
   const openers = useMemo(() => whoOpens(all), [all]);
   const [pitching, setPitching] = useState<PitchShow | null>(null);
-  // Genre fit: the headliners' looked-up genres, read only when the band has genres of its own.
+  // The headliners' looked-up genres: the genre filter, and genre fit when the band has genres of its own.
   const ours = useOurGenres();
   const headIds = useMemo(() => [...new Set(upcoming.flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)))], [upcoming]);
-  const acts = useDocs<ActDoc>("acts", headIds, { skip: !ours.length });
-  const genres = useMemo(() => (ours.length ? { ours, acts: new Map(acts.rows.map((a) => [a.id, a.genres])) } : null), [ours, acts.rows]);
+  const acts = useDocs<ActDoc>("acts", headIds);
+  const actGenres = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.genres])), [acts.rows]);
+  const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
+  const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
+  const [f, setF] = useShowFilter("venueEventsShows", {});
+  const change = (patch: Partial<ShowFilter>) => setF({ ...f, ...patch });
+  const from = whenFrom(today, f.when);
+  const shown = upcoming.filter((e) => showListed(e, { ...f, hideNotFit: admin && f.hideNotFit }, { from, take: takes.get(e.id)?.take, acts: actGenres, chance: () => openerChance(e, health, today, genres).chance }));
 
   return (
     <>
       <CardGroup kind="shared">
         <SourceCard venue={venue} cal={cal} health={health} admin={admin} onSetup={() => setSetup(true)} />
         {cal?.type !== "manual" && (
-          <DetailCard title={`Upcoming shows${events.rows ? ` (${upcoming.length})` : ""}`} testid="venue-events-upcoming">
+          <DetailCard title={`Upcoming shows${events.rows ? ` (${shown.length === upcoming.length ? upcoming.length : `${shown.length} of ${upcoming.length}`})` : ""}`} testid="venue-events-upcoming">
+            {!!upcoming.length && <div className="mb-3"><ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake={admin} testid="venue-events-filter" /></div>}
             {!events.rows ? <div className="s">Loading…</div>
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
-              : <div className="grid gap-3" data-testid="venue-events-list">{upcoming.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} stats={health} today={today} genres={genres} onPitch={(x) => setPitching({ e: x, venueName: venue.name })} />)}</div>}
+              : shown.length === 0 ? <div className="empty" data-testid="venue-events-none">No upcoming shows here match these filters.</div>
+              : <div className="grid gap-3" data-testid="venue-events-list">{shown.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} stats={health} today={today} genres={genres} onPitch={(x) => setPitching({ e: x, venueName: venue.name })} />)}</div>}
             {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}

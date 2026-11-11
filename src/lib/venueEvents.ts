@@ -191,14 +191,68 @@ export function nextCalendarLimit(limit: number, read: number | null, matched: n
   return limit * 2;
 }
 
-/** The Venue calendars "When" filter: shows up to a month or three months from today, or any time. */
-export type CalendarWhen = "1m" | "3m" | "any";
-export const CALENDAR_WHEN: [CalendarWhen, string][] = [["1m", "Next month"], ["3m", "Next 3 months"], ["any", "Any time"]];
-/** The last date ("YYYY-MM-DD") a "When" choice shows, or "" for any time. A month on from Jan 31 is the last day of February. */
-export function whenUntil(today: string, when: CalendarWhen): string {
-  if (when === "any") return "";
+/** Furthest out first (a slot six months out is likelier to pitch than one in a few days): byWhen backwards. */
+export const latestFirst = (a: { date: string; start?: string }, b: { date: string; start?: string }) => byWhen(b, a);
+
+/** The "When" filter on Venue calendars and a venue's Events tab: shows at least three or six months out, or any time. */
+export type CalendarWhen = "any" | "3m" | "6m";
+export const CALENDAR_WHEN: [CalendarWhen, string][] = [["any", "All times"], ["3m", "3 months out or more"], ["6m", "6 months out or more"]];
+/** The date `months` on from `today` ("YYYY-MM-DD"). A month on from Jan 31 is the last day of February. */
+export function addMonths(today: string, months: number): string {
   const [y, m, d] = today.split("-").map(Number);
-  const months = when === "1m" ? 1 : 3;
   const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
   return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last))).toISOString().slice(0, 10);
+}
+/** The first date a "When" choice shows: today for any time, else three or six months on. */
+export function whenFrom(today: string, when: CalendarWhen): string {
+  return when === "any" ? today : addMonths(today, when === "3m" ? 3 : 6);
+}
+
+/** Which shows: likely opener slots only, or all of them. */
+export type ShowChance = "likely" | "all";
+export const SHOW_CHANCE: [ShowChance, string][] = [["likely", "Likely needs an opener"], ["all", "All shows"]];
+/**
+ * The show filters both lists share. They add up: a show is listed only when it passes every one.
+ * `genres` are the main act's (headliner's) genres to keep, any of them; none picked is no genre filter.
+ */
+export interface ShowFilter { show: ShowChance; hideNotFit: boolean; genres: string[]; when: CalendarWhen }
+export const DEFAULT_SHOW_FILTER: ShowFilter = { show: "likely", hideNotFit: true, genres: [], when: "any" };
+/** A remembered filter, with anything unknown (an older shape) back to the default. */
+export function readShowFilter(v: unknown): ShowFilter {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  return {
+    show: SHOW_CHANCE.some(([k]) => k === o.show) ? o.show as ShowChance : DEFAULT_SHOW_FILTER.show,
+    hideNotFit: typeof o.hideNotFit === "boolean" ? o.hideNotFit : DEFAULT_SHOW_FILTER.hideNotFit,
+    genres: Array.isArray(o.genres) ? o.genres.filter((g): g is string => typeof g === "string" && !!g) : [],
+    when: CALENDAR_WHEN.some(([k]) => k === o.when) ? o.when as CalendarWhen : DEFAULT_SHOW_FILTER.when,
+  };
+}
+
+/**
+ * Whether a picked genre covers one of theirs: every word of the pick is in it, so "indie" covers "indie folk" and "indie rock",
+ * and "indie folk" doesn't cover "folk".
+ */
+export const genreCovers = (picked: string, theirs: string) => { const p = words(picked), t = words(theirs); return p.length > 0 && p.every((w) => t.includes(w)); };
+/** No genres picked, or one of them covers one of these. */
+export const genresMatch = (picked: readonly string[], theirs: readonly string[] | undefined) =>
+  !picked.length || picked.some((p) => (theirs ?? []).some((t) => genreCovers(p, t)));
+/** The main act's genres: every headliner's looked-up genres. */
+export const headlinerGenres = (e: Pick<VenueEvent, "acts">, acts: ReadonlyMap<string, readonly string[] | undefined>) =>
+  e.acts.filter((a) => a.role === "headliner" && a.actId).flatMap((a) => acts.get(a.actId!) ?? []);
+
+/** Whether a show passes the filters. `chance` is asked last (it's the dearest), and only when the filter needs it. */
+export function showListed(e: Pick<VenueEvent, "acts" | "date">, f: ShowFilter, x: { from: string; take?: string; acts: ReadonlyMap<string, readonly string[] | undefined>; chance(): OpenerChance }): boolean {
+  if (e.date < x.from) return false;
+  if (f.hideNotFit && x.take === "notFit") return false;
+  if (!genresMatch(f.genres, headlinerGenres(e, x.acts))) return false;
+  if (f.show === "likely" && x.chance() !== "likely") return false;
+  return true;
+}
+
+/** Genre filter choices: ours first, then every other genre seen, the most common first. */
+export function genreOptions(ours: readonly string[], seen: Iterable<readonly string[] | undefined>): { ours: string[]; rest: string[] } {
+  const n = new Map<string, number>();
+  for (const gs of seen) for (const g of new Set(gs ?? [])) n.set(g, (n.get(g) ?? 0) + 1);
+  const mine = new Set(ours);
+  return { ours: [...mine], rest: [...n].filter(([g]) => !mine.has(g)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g]) => g) };
 }

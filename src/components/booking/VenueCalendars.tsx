@@ -1,28 +1,27 @@
 "use client";
 /**
- * Booking's Venue calendars tab: every venue's upcoming shows (venueEvents, issue #60) in one list, soonest first, to find opener
- * slots to pitch. Each row's pieces are the venue Events tab's (VenueEventBits); the venue name opens that venue's Events tab. The
- * filter row follows the booking canvas board CalendarsPitch: three pills, one on at a time (Likely needs an opener, the default;
- * Hide "not a fit"; All shows), a region and a "When" (Next month, Next 3 months, the default, or Any time), with the opener
- * disclaimer under it.
+ * Booking's Venue calendars tab: every venue's upcoming shows (venueEvents, issue #60) in one list, furthest out first (an
+ * opener slot six months out is likelier to land than one in a few days), to find opener slots to pitch. Each row's pieces are the
+ * venue Events tab's (VenueEventBits); the venue name opens that venue's Events tab. The filters are the Events tab's
+ * (ShowFilterBar: Likely needs an opener or All shows, Hide "not a fit", the main act's genres, When) plus a region, with the
+ * opener disclaimer under them. They add up.
  *
- * Paging is a live Firestore query (date from today to the "When" limit, ordered by date) whose limit grows by a page per
+ * Paging is a live Firestore query (date from the "When" start on, latest date first) whose limit grows by a page per
  * "Load more": every band user may read venueEvents, a range and an order on the same field need no composite index, and a
- * refresh anywhere shows up without a reload. "gone" shows (dropped off a calendar), the pills and the region are applied on the
- * client, so a page can come up short; "Load more" still reads further.
- * The filters are remembered per viewer on this device (localStorage, like the stage plot paper size).
+ * refresh anywhere shows up without a reload. "gone" shows (dropped off a calendar) and the filters are applied on the client, so
+ * a page can come up short; "Load more" still reads further. Genres come from every act (the Acts tab reads the same).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
-import { useCollection, useDocs } from "@/lib/firestore-hooks";
+import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
-import { clientAuth } from "@/lib/firebase-client";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
 import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, TakePicker, TicketLink, type Ev } from "@/components/booking/VenueEventBits";
 import { PitchShowDialog, PitchThisButton, type PitchShow } from "@/components/booking/PitchShowDialog";
 import { useOurGenres } from "@/components/booking/useOurGenres";
-import { byWhen, CALENDAR_WHEN, eventTime, fmtEventDay, isUpcoming, nextCalendarLimit, openerChance, titleSaysMore, whenUntil, type CalendarWhen } from "@/lib/venueEvents";
+import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
+import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
 import { dateInBandZone } from "@/lib/timezone";
 import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
@@ -30,30 +29,9 @@ import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/sch
 /** Shows per page. e2e sets a small one (NEXT_PUBLIC_VENUE_CALENDARS_PAGE) so its three fixture shows span two pages. */
 export const CALENDARS_PAGE = Number(process.env.NEXT_PUBLIC_VENUE_CALENDARS_PAGE) || 50;
 
-/** Which shows: likely opener slots only, everything but "not a fit", or all of them. */
-export type CalendarShow = "likely" | "hide" | "all";
-const SHOW_PILLS: [CalendarShow, string][] = [["likely", "Likely needs an opener"], ["hide", "Hide \u201cnot a fit\u201d"], ["all", "All shows"]];
-export interface CalendarFilter { show: CalendarShow; region: Region | ""; when: CalendarWhen }
-const DEFAULT_FILTER: CalendarFilter = { show: "likely", region: "", when: "3m" };
-/** A remembered filter, with anything unknown (an older shape, a region since removed) back to the default. */
-function readFilter(v: unknown): CalendarFilter {
-  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-  return {
-    show: SHOW_PILLS.some(([k]) => k === o.show) ? o.show as CalendarShow : DEFAULT_FILTER.show,
-    region: typeof o.region === "string" && o.region in REGION_LABEL ? o.region as Region : "",
-    when: CALENDAR_WHEN.some(([k]) => k === o.when) ? o.when as CalendarWhen : DEFAULT_FILTER.when,
-  };
-}
-const filterKey = () => `venueCalendarsFilter:${clientAuth().currentUser?.uid ?? "anon"}`;
-
-/** [filter, setFilter]: remembered per signed-in viewer on this device (read after mount, so the first render matches the server). */
-function useCalendarFilter(): [CalendarFilter, (f: CalendarFilter) => void] {
-  const [f, set] = useState<CalendarFilter>(DEFAULT_FILTER);
-  useEffect(() => {
-    try { const v = localStorage.getItem(filterKey()); if (v) set(readFilter(JSON.parse(v))); } catch { /* nothing remembered */ }
-  }, []);
-  return [f, (v) => { set(v); try { localStorage.setItem(filterKey(), JSON.stringify(v)); } catch { /* private mode: lasts for this page */ } }];
-}
+type CalendarFilter = ShowFilter & { region: Region | "" };
+/** The region on its own: anything else (a region since removed) is anywhere. */
+const regionOf = (r: string): Region | "" => (r in REGION_LABEL ? r as Region : "");
 
 /**
  * "New since you last looked" (#79), per viewer: when they last opened this tab (venueEvents.looked, userPrefs), read once on
@@ -70,25 +48,6 @@ function useLastLooked(): string | null {
   return since;
 }
 
-/**
- * The looked-up genres of these acts, for genre fit (#79). The map only grows (a bigger read keeps what the last one found), so
- * the "Likely" filter doesn't drop rows while a new set of acts loads.
- */
-function useActGenres(ids: string[], skip: boolean): Map<string, string[] | undefined> {
-  const { rows } = useDocs<ActDoc>("acts", ids, { skip });
-  const [map, setMap] = useState<Map<string, string[] | undefined>>(() => new Map());
-  useEffect(() => {
-    setMap((m) => {
-      const changed = rows.filter((r) => !m.has(r.id) || (m.get(r.id) ?? []).join("|") !== (r.genres ?? []).join("|"));
-      if (!changed.length) return m;
-      const n = new Map(m);
-      for (const r of changed) n.set(r.id, r.genres);
-      return n;
-    });
-  }, [rows]);
-  return map;
-}
-
 export function VenueCalendars() {
   const { artistId } = useArtist();
   const b = useBooking();
@@ -96,10 +55,11 @@ export function VenueCalendars() {
   // `pages` is how many pages the viewer asked for; `limit` is how far the query reads, grown past that when the filters hide rows.
   const [pages, setPages] = useState(1);
   const [limit, setLimit] = useState(CALENDARS_PAGE);
-  const [f, setF] = useCalendarFilter();
-  const until = whenUntil(today, f.when);
-  const where: [string, "<=" | ">=", string][] = [["date", ">=", today], ...(until ? [["date", "<=", until] as [string, "<=", string]] : [])];
-  const events = useCollection<VenueEvent>("venueEvents", { where, order: ["date", "asc"], limit, includeDeleted: true, waitForServer: true });
+  // A new key since the furthest-first change: the old one remembered pills and a "Next 3 months" default.
+  const [saved, setF] = useShowFilter("venueCalendarsShows", { region: "" as Region | "" });
+  const f: CalendarFilter = { ...saved, region: regionOf(saved.region) };
+  const from = whenFrom(today, f.when);
+  const events = useCollection<VenueEvent>("venueEvents", { where: [["date", ">=", from]], order: ["date", "desc"], limit, includeDeleted: true, waitForServer: true });
   const sources = useCollection<VenueEventSource>("venueEventSources", { includeDeleted: true });
   const notes = useCollection<VenueEventNote>("venueEventNotes", { where: [["artistId", "==", artistId]] });
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
@@ -108,18 +68,19 @@ export function VenueCalendars() {
   // A bigger limit keeps the rows on screen until the new snapshot lands (useCollection keeps its last rows); a page that came
   // back full may have more behind it.
   const raw = events.rows;
-  const upcoming = useMemo(() => (raw ?? []).filter((e) => isUpcoming(e, today)).sort(byWhen), [raw, today]);
-  // Genre fit: only read the headliners' acts when the band has genres of its own to compare.
+  const upcoming = useMemo(() => (raw ?? []).filter((e) => isUpcoming(e, today)).sort(latestFirst), [raw, today]);
+  // Every act's genres: the genre filter's choices, the main act's genres for it, and genre fit in the opener guess.
   const ours = useOurGenres();
-  const headIds = useMemo(() => [...new Set(upcoming.flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)))], [upcoming]);
-  const actGenres = useActGenres(headIds, !ours.length);
+  const acts = useCollection<ActDoc>("acts");
+  const actGenres = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.genres])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
+  const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
+  const fKey = JSON.stringify(f);
   const rows = useMemo(() => upcoming.filter((e) => {
-    if (f.show === "hide" && takes.get(e.id)?.take === "notFit") return false;
-    if (f.show === "likely" && openerChance(e, records.get(e.venueId), today, genres).chance !== "likely") return false;
-    if (f.region) { const v = venues.get(e.venueId); if (v?.region !== f.region) return false; }
-    return true;
-  }), [upcoming, f, takes, records, venues, today, genres]);
+    if (f.region && venues.get(e.venueId)?.region !== f.region) return false;
+    return showListed(e, f, { from, take: takes.get(e.id)?.take, acts: actGenres, chance: () => openerChance(e, records.get(e.venueId), today, genres).chance });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [upcoming, fKey, from, takes, records, venues, today, genres, actGenres]);
   const since = useLastLooked();
   const [pitching, setPitching] = useState<PitchShow | null>(null);
   const openPitch = (e: Ev) => setPitching({ e, venueName: venues.get(e.venueId)?.name ?? "the venue" });
@@ -129,7 +90,8 @@ export function VenueCalendars() {
   const [readFor, setReadFor] = useState(0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (raw && !events.fromCache) setReadFor(limit); }, [raw, events.fromCache]);
-  const pending = !raw || readFor !== limit;
+  // Until the acts are in, the genre filters can't tell: don't read on looking for matches.
+  const pending = !raw || readFor !== limit || !acts.rows;
   const readAll = !pending && raw.length < limit;
   const want = pages * CALENDARS_PAGE;
   // Filters hide rows on the client: read on until a page's worth shows or the calendars run out.
@@ -139,32 +101,25 @@ export function VenueCalendars() {
   }, [pending, raw, limit, rows.length, want]);
   const shown = rows.slice(0, want);
   const hasMore = rows.length > want || (!!raw && !readAll);
-  const filling = !!raw && !readAll && rows.length < want;
+  const filling = (!!raw && !readAll && rows.length < want) || (!!raw && !acts.rows);
   // A filter change shows "Loading…" until its first page is all there, then the table once; Load more keeps the table up.
   const settling = filling && pages === 1;
-  const filtering = f.show !== "all" || !!f.region || f.when !== "any";
   const change = (patch: Partial<CalendarFilter>) => { setF({ ...f, ...patch }); setPages(1); setLimit(CALENDARS_PAGE); };
 
   return (
     <div className="grid min-w-0 gap-3" data-testid="venue-calendars">
       <div className="grid gap-1.5">
-        <div className="filter-bar" role="group" aria-label="Filter shows" data-testid="calendar-filters">
-          {SHOW_PILLS.map(([k, label]) => (
-            <button key={k} type="button" className="pick" aria-pressed={f.show === k} onClick={() => change({ show: k })} data-testid={`calendar-filter-${k}`}>{label}</button>
-          ))}
+        <ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake testid="calendar-filter">
           <select className="select" value={f.region} onChange={(e) => change({ region: e.target.value as Region | "" })} aria-label="Region" data-testid="calendar-filter-region">
             <option value="">Anywhere</option>
             {(Object.keys(REGION_LABEL) as Region[]).map((r) => <option key={r} value={r}>{REGION_LABEL[r]}</option>)}
           </select>
-          <select className="select" value={f.when} onChange={(e) => change({ when: e.target.value as CalendarWhen })} aria-label="When" data-testid="calendar-filter-when">
-            {CALENDAR_WHEN.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-        </div>
+        </ShowFilterBar>
         <p className="s" data-testid="opener-disclaimer">Opener chance is {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover a badge for why.</p>
       </div>
-      <ErrorBox error={events.error} />
-      {raw && readAll && upcoming.length === 0 && !filtering && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
-      {raw && readAll && rows.length === 0 && filtering && <div className="empty" data-testid="venue-calendars-none"><span>No upcoming shows match these filters.</span></div>}
+      <ErrorBox error={events.error ?? acts.error} />
+      {raw && readAll && upcoming.length === 0 && f.when === "any" && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
+      {raw && readAll && !filling && rows.length === 0 && (upcoming.length > 0 || f.when !== "any") && <div className="empty" data-testid="venue-calendars-none"><span>No upcoming shows match these filters.</span></div>}
       {shown.length > 0 && !settling && (
         <div className="book-tw">
           <table className="book-table wn">
@@ -201,7 +156,7 @@ export function VenueCalendars() {
         </div>
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
-      {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
+      {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
       <PitchShowDialog show={pitching} onClose={() => setPitching(null)} />
       {hasMore && !filling && (
         <button type="button" className="btn ghost justify-self-center" onClick={() => { setPages((n) => n + 1); if (rows.length <= want + CALENDARS_PAGE) setLimit((n) => n + CALENDARS_PAGE); }} data-testid="venue-calendars-more">

@@ -135,3 +135,14 @@ test("actListed: shortlist, opened, tour and city filters", () => {
   assert.equal(actListed(a, undefined, undefined, { filter: "all", city: "Denver" }), false);
   assert.equal(actListed(a, stats({ tour: true, cities: ["Denver"] }), undefined, { filter: "tour", city: "Boulder" }), false);
 });
+
+test("actListed: genres, any picked one, adding up with the other filters", () => {
+  const a = { name: "X", genres: ["indie folk", "americana"] };
+  assert.equal(actListed(a, stats(), undefined, { filter: "all", genres: [] }), true);
+  assert.equal(actListed(a, stats(), undefined, { filter: "all", genres: ["indie"] }), true);
+  assert.equal(actListed(a, stats(), undefined, { filter: "all", genres: ["metal", "americana"] }), true);
+  assert.equal(actListed(a, stats(), undefined, { filter: "all", genres: ["metal"] }), false);
+  assert.equal(actListed({ name: "Y" }, stats(), undefined, { filter: "all", genres: ["indie"] }), false); // no genres known
+  assert.equal(actListed(a, stats(), {}, { filter: "shortlist", genres: ["indie"] }), false);
+  assert.equal(actListed(a, stats(), { shortlist: true }, { filter: "shortlist", genres: ["indie"] }), true);
+});

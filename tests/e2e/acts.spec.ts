@@ -41,6 +41,7 @@ test("the venue's Events tab lists who opens here, and each name opens the act's
   await page.getByTestId("venue-tab-events").click();
   await page.getByTestId("venue-calendar-refresh").click();
   await expect(page.getByTestId("venue-calendar-health")).toContainText("found 3 shows");
+  await page.getByTestId("venue-events-filter-show").selectOption("all"); // every show, not only likely opener slots
 
   const openers = page.getByTestId("venue-openers");
   await expect(openers).toBeVisible();
@@ -123,13 +124,13 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
 
   await page.goto(A("/booking/acts"));
   await expect(page.getByTestId("acts-tab")).toBeVisible();
-  await expect(page.getByTestId("acts-filter-shortlist")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("acts-filter")).toHaveValue("shortlist");
   await expect(page.getByTestId(`act-row-${sup}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
   await expect(page.getByTestId(`act-seen-${sup}`)).toContainText("Bluebird Room (opening)");
 
   // All acts is more than a page: 2 rows, then "Load more (N left)" until they're all there
-  await page.getByTestId("acts-filter-all").click();
+  await page.getByTestId("acts-filter").selectOption("all");
   await expect(page.getByTestId(/^act-row-/)).toHaveCount(2);
   await expect(page.getByTestId("acts-more")).toContainText(/Load more \(\d+ left\)/);
   await page.getByTestId("acts-more").click();
@@ -139,20 +140,20 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
   // a new filter starts back at the first page; the search looks through every act, not just the page
-  await page.getByTestId("acts-filter-opened").click();
-  await page.getByTestId("acts-filter-all").click();
+  await page.getByTestId("acts-filter").selectOption("opened");
+  await page.getByTestId("acts-filter").selectOption("all");
   await expect(page.getByTestId(/^act-row-/)).toHaveCount(2);
 
   // the star on a row shortlists it
   await page.getByTestId(`act-star-${head}`).click();
   await expect(page.getByTestId(`act-star-${head}`)).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("acts-filter-shortlist").click();
+  await page.getByTestId("acts-filter").selectOption("shortlist");
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await page.getByTestId(`act-star-${head}`).click(); // and off again
   await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
 
   // search narrows the list
-  await page.getByTestId("acts-filter-all").click();
+  await page.getByTestId("acts-filter").selectOption("all");
   await page.getByTestId("acts-q").fill("lone");
   await expect(page.getByTestId("acts-more")).toHaveCount(0);
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
@@ -165,22 +166,38 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await page.getByTestId("act-rel-notFit").click();
   await expect(page.getByTestId("act-rel-hint")).toHaveText("Hidden from the Acts list unless you ask for it.");
   await page.goto(A("/booking/acts"));
-  await page.getByTestId("acts-filter-all").click();
+  await page.getByTestId("acts-filter").selectOption("all");
   await loadAll(page);
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toHaveCount(0);
   await page.getByTestId("acts-q").fill("lone");
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toContainText("Not a fit");
+
+  // the X on a row dismisses an act as not a fit, with an Undo; again on a searched-for one clears it
+  await page.getByTestId("acts-q").fill("");
+  await page.getByTestId(`act-dismiss-${head}`).click();
+  await expect(page.getByTestId("acts-dismissed")).toContainText("The Example Band is hidden as not a fit.");
+  await expect(page.getByTestId(`act-row-${head}`)).toHaveCount(0);
+  await page.getByTestId("acts-undo").click();
+  await expect(page.getByTestId("acts-dismissed")).toHaveCount(0);
+  await loadAll(page);
+  await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
+  await page.getByTestId("acts-q").fill("lone");
+  await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId(`act-dismiss-${lone}`).click();
+  await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId(`act-dismiss-${lone}`).click(); // back to not a fit, as the later tests expect
+  await expect(page.getByTestId(`act-dismiss-${lone}`)).toHaveAttribute("aria-pressed", "true");
 });
 
 test("an act's name on the Booking Venue calendars tab links to its page", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-calendars").click();
-  // every show, any time: the calendars tab starts on likely opener slots in the next 3 months, and the fixture shows are in 2031
-  await page.getByTestId("calendar-filter-all").click();
-  await page.getByTestId("calendar-filter-when").selectOption("any");
+  // every show: the calendars tab starts on likely opener slots
+  await page.getByTestId("calendar-filter-show").selectOption("all");
+  await page.getByTestId("venue-calendars-more").click(); // furthest out first: the support act's show is the soonest, on page 2
   const link = page.getByTestId(`act-name-${href.support.split("/").pop()}`).first();
   await expect(link).toBeVisible();
   await link.click();
@@ -268,11 +285,14 @@ test("Look up shortlist on the Acts tab looks up every shortlisted act not yet l
   const path = new URL(page.url()).pathname;
 
   await page.goto(A("/booking/acts"));
-  await expect(page.getByTestId("acts-filter-shortlist")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("acts-filter")).toHaveValue("shortlist");
   await page.getByTestId("acts-lookup-shortlist").click();
   await expect(page.getByTestId("acts-lookup-status")).toContainText("Looked up");
   await expect(page.getByTestId("acts-lookup-status")).toContainText("found something for 1");
   await expect(page.getByTestId("acts-lookup-shortlist")).toHaveCount(0); // nothing left to look up
+  // the row shows an icon for each link found
+  const looked = page.getByTestId(/^act-row-/).filter({ hasText: "North Fork Crossing" });
+  await expect(looked.getByTestId(/^act-links-.+-spotify$/)).toHaveAttribute("aria-label", "North Fork Crossing on Spotify");
 
   await page.goto(path);
   await expect(page.getByTestId("act-links")).toContainText("Spotify");

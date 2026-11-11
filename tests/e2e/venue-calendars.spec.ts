@@ -13,10 +13,9 @@ async function signInAs(page: Page, key: string) {
 }
 
 const shows = (page: Page) => page.getByTestId("venue-calendars").locator("tbody tr");
-/** The fixture shows are years out and not all likely opener slots: list every show, any time (the default is likely, next 3 months). */
+/** The fixture shows are not all likely opener slots: list every show (the default is likely ones only). */
 async function everyShow(page: Page) {
-  await page.getByTestId("calendar-filter-all").click();
-  await page.getByTestId("calendar-filter-when").selectOption("any");
+  await page.getByTestId("calendar-filter-show").selectOption("all");
 }
 
 test.describe.configure({ mode: "serial" });
@@ -41,23 +40,25 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await expect(page.getByTestId("booking-seg-calendars")).toHaveAttribute("aria-selected", "true");
   await everyShow(page);
 
-  // first page: the two soonest, in date order, with the bill, the time and the venue
+  // first page: the two furthest out, latest first, with the bill, the time and the venue
   await expect(shows(page)).toHaveCount(2);
-  await expect(shows(page).nth(0).getByTestId("venue-event-acts")).toHaveText("The Example Band with Sample Support");
-  await expect(shows(page).nth(0).getByTestId("calendar-show-date")).toContainText("Fri, Mar 14");
-  await expect(shows(page).nth(0).getByTestId("calendar-show-date")).toContainText("8 PM");
-  await expect(shows(page).nth(0)).toContainText("Denver");
+  const trio = shows(page).nth(0);
+  await expect(trio.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
   await expect(shows(page).nth(1).getByTestId("venue-event-acts")).toHaveText("Lone Example Act");
-  await expect(shows(page).nth(0).getByTestId("venue-event-chance")).toHaveCount(0);
   await expect(shows(page).nth(1).getByTestId("venue-event-chance")).toHaveText("Maybe");
-  await expect(shows(page).nth(0).getByTestId("calendar-show-poster-noimage")).toBeVisible();
   // past shows are not upcoming
   await expect(page.getByTestId("venue-calendars")).not.toContainText("Retired Example Duo");
 
-  // the next page
+  // the next page: the soonest
   await page.getByTestId("venue-calendars-more").click();
   await expect(shows(page)).toHaveCount(3);
-  const trio = shows(page).nth(2);
+  const soonest = shows(page).nth(2);
+  await expect(soonest.getByTestId("venue-event-acts")).toHaveText("The Example Band with Sample Support");
+  await expect(soonest.getByTestId("calendar-show-date")).toContainText("Fri, Mar 14");
+  await expect(soonest.getByTestId("calendar-show-date")).toContainText("8 PM");
+  await expect(soonest).toContainText("Denver");
+  await expect(soonest.getByTestId("venue-event-chance")).toHaveCount(0);
+  await expect(soonest.getByTestId("calendar-show-poster-noimage")).toBeVisible();
   await expect(trio.getByTestId("venue-event-acts")).toHaveText("Headline Example Trio");
   await expect(trio.getByTestId("venue-event-chance")).toHaveText("Likely opener slot");
   await expect(trio.getByTestId("calendar-show-poster-image")).toHaveAttribute("src", "/icon-192.png");
@@ -132,24 +133,37 @@ test("a search on the Venue calendars tab shows the search cards, and clearing i
   await expect(shows(page).first()).toBeVisible();
 });
 
-test("the filters narrow the shows and are remembered", async ({ page }) => {
+test("the filters add up, read on past hidden shows and are remembered", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/calendars"));
   const row = (name: string) => shows(page).filter({ hasText: name });
-  const pill = (k: string) => page.getByTestId(`calendar-filter-${k}`);
+  const takeOf = (name: string) => row(name).locator('select[data-testid^="venue-event-take-"]');
 
-  // the default: likely opener slots in the next 3 months, anywhere; the 2031 fixture shows are further out
-  await expect(pill("likely")).toHaveAttribute("aria-pressed", "true");
-  await expect(pill("hide")).toHaveAttribute("aria-pressed", "false");
-  await expect(pill("all")).toHaveAttribute("aria-pressed", "false");
+  // the default: likely opener slots, "not a fit" hidden, any genre, anywhere, all times; only the trio (support still to be announced)
+  await expect(page.getByTestId("calendar-filter-show")).toHaveValue("likely");
+  await expect(page.getByTestId("calendar-filter-hide")).toBeChecked();
+  await expect(page.getByTestId("calendar-filter-genre")).toHaveText("Any genre");
   await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
-  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("3m");
+  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("any");
   await expect(page.getByTestId("opener-disclaimer")).toHaveText("Opener chance is a guess from the listing, not perfect. Hover a badge for why.");
-  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  await expect(shows(page)).toHaveCount(1);
+  await expect(row("Headline Example Trio")).toHaveCount(1);
 
-  // Any time: only the trio (support still to be announced) is a likely slot; the list reads on past the first page to find it,
-  // in one settled render: no "no match" note or half-filled table on the way (each bigger read's first snapshot comes from the
-  // cache with only the last read's shows, which once read as the end and flashed the note once a round)
+  // All shows, remembered after a reload
+  await page.getByTestId("calendar-filter-show").selectOption("all");
+  await expect(shows(page)).toHaveCount(2);
+  await page.reload();
+  await expect(page.getByTestId("calendar-filter-show")).toHaveValue("all");
+  await expect(shows(page)).toHaveCount(2);
+
+  // Hide "not a fit": with the two furthest out marked not a fit, only the soonest is left, a page further on. The list reads on
+  // to find it in one settled render: no "no match" note or half-filled table on the way (each bigger read's first snapshot comes
+  // from the cache with only the last read's shows, which once read as the end and flashed the note once a round)
+  await page.getByTestId("calendar-filter-hide").uncheck();
+  const before = [await takeOf("Headline Example Trio").inputValue(), await takeOf("Lone Example Act").inputValue()];
+  await takeOf("Headline Example Trio").selectOption("notFit");
+  await takeOf("Lone Example Act").selectOption("notFit");
+  await expect(takeOf("Lone Example Act")).toHaveValue("notFit");
   await page.evaluate(() => {
     const root = document.querySelector('[data-testid="venue-calendars"]')!;
     const seen: string[] = [];
@@ -159,36 +173,20 @@ test("the filters narrow the shows and are remembered", async ({ page }) => {
       if (seen.at(-1) !== s) seen.push(s);
     }).observe(root, { subtree: true, childList: true });
   });
-  await page.getByTestId("calendar-filter-when").selectOption("any");
+  await page.getByTestId("calendar-filter-hide").check();
   await expect(shows(page)).toHaveCount(1);
-  await expect(row("Headline Example Trio")).toHaveCount(1);
+  await expect(row("The Example Band")).toHaveCount(1);
   const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
   expect(seen.filter((s) => s !== "loading")).toEqual(["table:1"]);
-  // remembered after a reload
-  await page.reload();
-  await expect(page.getByTestId("calendar-filter-when")).toHaveValue("any");
-  await expect(pill("likely")).toHaveAttribute("aria-pressed", "true");
-  await expect(shows(page)).toHaveCount(1);
-
-  // the pills are one at a time: All shows turns Likely off
-  await pill("all").click();
-  await expect(pill("all")).toHaveAttribute("aria-pressed", "true");
-  await expect(pill("likely")).toHaveAttribute("aria-pressed", "false");
-  await expect(shows(page)).toHaveCount(2);
-
-  // Hide "not a fit"
+  // and they add up: likely and not hidden leaves nothing (the trio is the only likely one)
+  await page.getByTestId("calendar-filter-show").selectOption("likely");
+  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  await page.getByTestId("calendar-filter-show").selectOption("all");
+  await page.getByTestId("calendar-filter-hide").uncheck();
   await page.getByTestId("venue-calendars-more").click();
-  await expect(shows(page)).toHaveCount(3);
-  const take = row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]');
-  const before = await take.inputValue();
-  await take.selectOption("notFit");
-  await pill("hide").click();
-  await expect(pill("all")).toHaveAttribute("aria-pressed", "false");
-  await expect(row("Headline Example Trio")).toHaveCount(0);
-  await expect(row("Lone Example Act")).toHaveCount(1);
-  await pill("all").click();
-  await page.getByTestId("venue-calendars-more").click(); // a filter change starts over at the first page
-  await row("Headline Example Trio").locator('select[data-testid^="venue-event-take-"]').selectOption(before);
+  await takeOf("Headline Example Trio").selectOption(before[0]);
+  await takeOf("Lone Example Act").selectOption(before[1]);
+  await page.getByTestId("calendar-filter-hide").check();
 
   // region: the Bluebird Room is in Denver
   await page.getByTestId("calendar-filter-region").selectOption("boulder");
@@ -196,9 +194,12 @@ test("the filters narrow the shows and are remembered", async ({ page }) => {
   await page.getByTestId("calendar-filter-region").selectOption("denver");
   await expect(shows(page)).toHaveCount(2);
 
-  // When: next month leaves nothing (the shows are in 2031)
-  await page.getByTestId("calendar-filter-when").selectOption("1m");
-  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
+  // When: the shows are in 2031, so 6 months out or more keeps them all
+  await page.getByTestId("calendar-filter-when").selectOption("6m");
+  await expect(shows(page)).toHaveCount(2);
+  await page.getByTestId("venue-calendars-more").click();
+  await expect(shows(page)).toHaveCount(3);
   await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(shows(page)).toHaveCount(2);
+
 });
