@@ -10,6 +10,11 @@ import { ArtistLinks } from "./artists";
  *   (src/server/events/acts.ts) or added by hand; `lookedUpAt` and the about fields are Look up's (#78).
  * - `actNotes/{artistId}__{actId}`: what one band thinks of the act (src/schema/bandNotes.ts). Admins only.
  */
+export const SpotifyCandidate = z.strictObject({
+  id: z.string().min(1), name: z.string().min(1), url: z.string().url(), genres: z.array(z.string()), imageUrl: z.string().optional(),
+});
+export type SpotifyCandidate = z.infer<typeof SpotifyCandidate>;
+
 export const ActDoc = entity({
   name: z.string().min(1),
   matchKey: z.string().min(1),
@@ -19,6 +24,8 @@ export const ActDoc = entity({
   hometown: z.string().optional(),
   imageUrl: z.string().optional(),
   lookedUpAt: z.string().optional(),
+  /** Look up (#78) found several Spotify artists with exactly this name: the About card asks "same band?" until one is picked. */
+  lookupCandidates: z.array(SpotifyCandidate).optional(),
   ...sourcesShape,
 });
 /** What db.ts validates for `acts`: the shared record. */
@@ -36,6 +43,6 @@ export const RELATIONSHIP_HINT: Record<ActRelationship, string> = {
 export const actRelationship = z.enum(ACT_RELATIONSHIPS);
 
 /** What the act commands accept: the shared fields plus this band's take, which goes to its actNotes. */
-export const ActInput = ActRecord.extend({
+export const ActInput = ActRecord.omit({ lookupCandidates: true, lookedUpAt: true }).extend({
   shortlist: z.boolean().optional(), relationship: actRelationship.optional(), note: z.string().optional(), contactIds: z.array(id).optional(),
 });

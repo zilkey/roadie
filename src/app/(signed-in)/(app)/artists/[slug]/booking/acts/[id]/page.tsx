@@ -1,8 +1,8 @@
 "use client";
 /**
  * An act's page (issue #77, board "DetailAct" on the booking canvas). About and Where they've played are shared with every band
- * (acts/{id} and venue calendars); Our take and Contacts are this band's (actNotes). Look up (#78) fills About from the web: until
- * then its button shows but does nothing, and the about fields are click-to-edit once anything is in them.
+ * (acts/{id} and venue calendars); Our take and Contacts are this band's (actNotes). Look up (#78) fills About from Spotify and the web (and asks "same band?"
+ * when Spotify has several of that name); the about fields are click-to-edit once anything is in them.
  */
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -80,7 +80,7 @@ function ActPage() {
       }>
       <ErrorBox error={error} />
       <CardGroup kind="shared">
-        <About act={act} error={error} update={update} />
+        <About id={id} act={act} error={error} update={update} rooms={[...new Set(played.map((e) => venues.get(e.venueId)?.name).filter((n): n is string => !!n))]} />
         <DetailCard title="Where they've played" testid="act-played" headerExtra={<span className="s">From venue calendars</span>}>
           {!events.rows ? <span className="s">Loading…</span>
             : played.length === 0 ? <div className="empty"><span>Not on any venue calendar in Roadie.</span></div>
@@ -133,29 +133,58 @@ function ActPage() {
 }
 
 /** About: what Look up (#78) finds, each value click-to-edit. Nothing yet: the empty box with Look up. */
-function About({ act, error, update }: { act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean> }) {
+function About({ id, act, error, update, rooms }: { id: string; act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean>; rooms: string[] }) {
+  const lookup = useCommand();
+  const run = (spotifyId?: string | null) => void lookup.call("acts.lookup", { id, ...(spotifyId !== undefined ? { spotifyId } : {}) });
   const [addingGenre, setAddingGenre] = useState(false);
   const [addingLink, setAddingLink] = useState(false);
   const genres = act.genres ?? [];
   const links = Object.entries(act.links ?? {}).filter(([, v]) => v) as [ArtistLinkKey, string][];
   const empty = !act.description && !act.hometown && !genres.length && !links.length;
-  const lookUp = (
-    // Look up is #78: the button is here so the card is ready for it.
-    <button type="button" className="btn acc sm" disabled title="Coming soon" data-testid="act-lookup">Look up {act.name}</button>
+  const cands = act.lookupCandidates ?? [];
+  const lookBtn = (label: string, cls: string) => (
+    <button type="button" className={`btn ${cls} sm`} disabled={lookup.busy} onClick={() => run()} data-testid="act-lookup">{lookup.busy ? "Looking up…" : label}</button>
   );
+  const lookErr = <ErrorBox error={lookup.error} />;
+  if (cands.length) {
+    const the = rooms.map((r) => `the ${r}`);
+    const where = the.length ? `Which one played ${the.length > 1 ? `${the.slice(0, -1).join(", ")} and ${the[the.length - 1]}` : the[0]}?` : "Which one is it?";
+    return (
+      <DetailCard title="About" testid="act-about">
+        <div className="grid gap-3" data-testid="act-same-band">
+          <span>More than one band goes by this name. {where}</span>
+          {cands.map((c) => (
+            <div key={c.id} className="flex flex-wrap items-center gap-3" data-testid={`act-cand-${c.id}`}>
+              <ActThumb src={c.imageUrl} size={56} />
+              <span className="min-w-0 flex-1">
+                <b>{c.name}</b>
+                <span className="s block">{c.genres?.length ? <>{c.genres.join(" · ")} · </> : null}<a href={c.url} target="_blank" rel="noreferrer">Listen on Spotify ↗</a></span>
+              </span>
+              <button type="button" className="btn acc sm" disabled={lookup.busy} onClick={() => run(c.id)} data-testid={`act-cand-pick-${c.id}`}>This one</button>
+            </div>
+          ))}
+          <span><button type="button" className="btn ghost sm" disabled={lookup.busy} onClick={() => run(null)} data-testid="act-cand-none">None of these</button></span>
+          {lookErr}
+        </div>
+      </DetailCard>
+    );
+  }
   if (empty) {
     return (
       <DetailCard title="About" testid="act-about">
         <div className="empty grid justify-items-start gap-2.5" data-testid="act-about-empty">
           <span>Nothing about this act yet. Look up searches the web for their links, where they&apos;re from and what they sound like. You can fix anything it gets wrong.</span>
-          {lookUp}
+          {act.lookedUpAt && <span data-testid="act-lookup-nothing">Look up found nothing for {act.name}. Add what you know by hand.</span>}
+          {lookBtn(`Look up ${act.name}`, "acc")}
+          {lookErr}
         </div>
       </DetailCard>
     );
   }
   const setGenres = (next: string[]) => update({ genres: next.length ? next : null });
   return (
-    <DetailCard title="About" testid="act-about">
+    <DetailCard title="About" testid="act-about" headerExtra={lookBtn(act.lookedUpAt ? "Look up again" : "Look up", "soft")}>
+      {lookErr}
       <KV rows={[
         ["Sounds like", <InlineValue key="d" testid="act-description" label="Sounds like" kind="textarea" value={act.description ?? ""} canEdit error={error} onSave={(v) => update({ description: v.trim() || null })} />],
         ["Genres", (

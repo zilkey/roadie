@@ -48,6 +48,8 @@ export function ActsTab() {
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.actId, n])), [notes.rows]);
   const { call, error } = useCommand();
   const star = useCommand();
+  const shortlistLookup = useCommand();
+  const [lookupStatus, setLookupStatus] = useState("");
   const [found, setFound] = useState<Map<string, FoundRow> | null>(null);
   const [filter, setFilter] = useState<ActFilter>("shortlist");
   const [city, setCity] = useState("");
@@ -71,6 +73,20 @@ export function ActsTab() {
   }, [acts.rows, found, takes, filter, city, q]);
   const loading = !acts.rows || !notes.rows || (!found && !error);
 
+  const toLookUp = filter === "shortlist" && rows.some((a) => !a.lookedUpAt && !a.lookupCandidates?.length);
+  const lookUpShortlist = async () => {
+    setLookupStatus("");
+    const r = await shortlistLookup.call<{ lookedUp: number; found: number; pick: number; nothing: number; failed: number; left: number }>("acts.lookupShortlist", {});
+    if (!r) return;
+    const bits = [
+      r.found ? `found something for ${r.found}` : "",
+      r.pick ? `${r.pick} need${r.pick === 1 ? "s" : ""} you to pick which band` : "",
+      r.nothing ? `nothing for ${r.nothing}` : "",
+      r.failed ? `${r.failed} failed, try again` : "",
+    ].filter(Boolean);
+    setLookupStatus(`Looked up ${r.lookedUp}${bits.length ? `: ${bits.join(", ")}` : ""}.${r.left ? ` ${r.left} left: run it again.` : ""}`);
+  };
+
   const toggle = (a: Row) => void star.call("acts.shortlist", { id: a.id, on: !takes.get(a.id)?.shortlist });
 
   return (
@@ -85,10 +101,16 @@ export function ActsTab() {
           {cities.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <span className="flex-auto" />
+        {toLookUp && (
+          <button type="button" className="btn soft sm" disabled={shortlistLookup.busy} onClick={() => void lookUpShortlist()} data-testid="acts-lookup-shortlist">
+            {shortlistLookup.busy ? "Looking up…" : "Look up shortlist"}
+          </button>
+        )}
         <label className="sr-only" htmlFor="acts-q">Find an act</label>
         <input id="acts-q" className="input !min-h-9 !w-[220px]" type="search" placeholder="Find an act…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="acts-q" />
       </div>
-      <ErrorBox error={error ?? star.error} />
+      <ErrorBox error={error ?? star.error ?? shortlistLookup.error} />
+      {lookupStatus && <span className="s" data-testid="acts-lookup-status">{lookupStatus}</span>}
       {loading && <span className="s">Loading…</span>}
       {!loading && rows.length === 0 && (
         <div className="empty" data-testid="acts-empty"><span>{filter === "shortlist" && !q && !city ? "Nothing on the shortlist yet. Tap an act's star to add it." : "Nothing matches."}</span></div>

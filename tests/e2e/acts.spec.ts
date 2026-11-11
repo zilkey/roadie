@@ -72,7 +72,7 @@ test("an act's page lists where they've played, and the shortlist, relationship 
   // About starts empty, with Look up not ready yet
   await page.goto(href.support);
   await expect(page.getByTestId("act-about-empty")).toBeVisible();
-  await expect(page.getByTestId("act-lookup")).toBeDisabled();
+  await expect(page.getByTestId("act-lookup")).toBeEnabled();
 
   // shortlist toggles and survives a reload
   const star = page.getByTestId("act-shortlist");
@@ -181,4 +181,79 @@ test("an act added by hand lands on its own page with nothing known about it yet
   await expect(page.getByTestId("act-about-empty")).toBeVisible();
   await expect(page.getByTestId("act-shortlist")).toHaveText("Shortlist");
   await expect(page.getByTestId("act-page")).toContainText("Not on any venue calendar in Roadie.");
+});
+
+async function addAct(page: Page, name: string) {
+  await page.goto(A("/booking/acts"));
+  await page.getByTestId("booking-add-actions").click();
+  await page.getByTestId("add-act").click();
+  await page.getByTestId("new-act-name").fill(name);
+  await page.getByTestId("new-act-submit").click();
+  await expect(page.getByTestId("act-page")).toContainText(name);
+}
+
+const CO = "4BrothersFountainCO01", UK = "4BrothersFountainUK02";
+
+test("Look up on a name Spotify shares asks which band: None of these keeps the web facts, Look up again asks again, This one picks", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await addAct(page, "A Brother's Fountain");
+  await page.getByTestId("act-lookup").click();
+
+  // two Spotify artists share the name, so the card asks
+  await expect(page.getByTestId("act-same-band")).toBeVisible();
+  await expect(page.getByTestId("act-same-band")).toContainText("More than one band goes by this name. Which one is it?");
+  for (const c of [CO, UK]) {
+    await expect(page.getByTestId(`act-cand-${c}`)).toContainText("Listen on Spotify");
+    await expect(page.getByTestId(`act-cand-${c}`)).not.toContainText("No genres");
+  }
+
+  // none of these: the web facts stay, no Spotify link
+  await page.getByTestId("act-cand-none").click();
+  await expect(page.getByTestId("act-same-band")).toHaveCount(0);
+  await expect(page.getByTestId("act-hometown")).toHaveText("Fort Collins, CO");
+  const links = page.getByTestId("act-links");
+  await expect(links).toContainText("Website");
+  await expect(links).not.toContainText("Spotify");
+  await expect(page.getByTestId("act-lookup")).toHaveText("Look up again");
+
+  // again: Spotify still has two, so it asks again; this one picks
+  await page.getByTestId("act-lookup").click();
+  await expect(page.getByTestId(`act-cand-pick-${CO}`)).toBeVisible();
+  await page.getByTestId(`act-cand-pick-${CO}`).click();
+  await expect(page.getByTestId("act-same-band")).toHaveCount(0);
+  const genres = page.getByTestId("act-genres");
+  await expect(genres).toContainText("folk");
+  await expect(genres).toContainText("americana");
+  await expect(page.getByTestId("act-hometown")).toHaveText("Fort Collins, CO");
+  for (const l of ["Website", "Instagram", "Bandcamp", "Spotify"]) await expect(links).toContainText(l);
+  await expect(links).not.toContainText("YouTube");
+  await expect(page.getByTestId("act-about")).toContainText("Looked up");
+
+  // click to fix a value; it sticks
+  await page.getByTestId("act-hometown").click();
+  await page.getByTestId("act-hometown-input").fill("Loveland, CO");
+  await page.getByTestId("act-hometown-input").press("Tab");
+  await expect(page.getByTestId("act-hometown")).toHaveText("Loveland, CO");
+  await page.reload();
+  await expect(page.getByTestId("act-hometown")).toHaveText("Loveland, CO");
+});
+
+test("Look up shortlist on the Acts tab looks up every shortlisted act not yet looked up", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await addAct(page, "North Fork Crossing");
+  await page.getByTestId("act-shortlist").click();
+  await expect(page.getByTestId("act-shortlist")).toHaveText("Shortlisted");
+  const path = new URL(page.url()).pathname;
+
+  await page.goto(A("/booking/acts"));
+  await expect(page.getByTestId("acts-filter-shortlist")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("acts-lookup-shortlist").click();
+  await expect(page.getByTestId("acts-lookup-status")).toContainText("Looked up");
+  await expect(page.getByTestId("acts-lookup-status")).toContainText("found something for 1");
+  await expect(page.getByTestId("acts-lookup-shortlist")).toHaveCount(0); // nothing left to look up
+
+  await page.goto(path);
+  await expect(page.getByTestId("act-links")).toContainText("Spotify");
+  await expect(page.getByTestId("act-same-band")).toHaveCount(0);
+  await expect(page.getByTestId("act-lookup")).toHaveText("Look up again");
 });

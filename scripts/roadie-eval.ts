@@ -96,8 +96,10 @@ const SCENARIOS: Scenario[] = [
   // Acts (#77). The Aggie (Fort Collins) and the Bluebird (Denver) have calendars: North Fork Crossing opens at both within two weeks (on tour),
   // Wheelwright headlines the Bluebird, The Brothers Comatose the Aggie (see seedActs).
   { name: "acts-tour", turns: [{ say: "which acts are on tour around here right now?", calls: [/acts\.find/], text: /North Fork Crossing/, noText: REFUSES }] },
-  { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
-  { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], args: [[/acts\.note/, /"relationship":"openFor"/]], noText: REFUSES }] },
+  // #78: acts aren't in search, so the first lookup is acts.find; and a relationship or a note writes only that (in #77's run Roadie also shortlisted Wheelwright).
+  { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
+  { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"relationship":"openFor"/]], noArgs: [[/acts\.note/, /"note":"[^"]/]], noText: REFUSES }] },
+  { name: "acts-note-text", turns: [{ say: "add a note on the act Morrow Morrow: great harmonies, super friendly crew", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"note":"[^"]*harmonies/i]], noArgs: [[/acts\.note/, /"relationship"/]], noText: REFUSES }] },
   { name: "fact-check", turns: [{ say: "what's the capacity of the Grey Eagle in Asheville?", calls: [/web\.search|venues\.draft/], noText: /\b(can't|cannot)\b/i }] },
 ];
 

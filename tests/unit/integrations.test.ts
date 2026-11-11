@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { startAll } from "../../fakes/run-all";
+import { spotifyCatalog } from "@/server/integrations/spotify";
 import { gmailClient, driveClient, calendarClient, bandsintownClient, spotifyClient, IntegrationError } from "@/server/integrations";
 
 let stop: () => Promise<void>;
@@ -134,4 +135,28 @@ test("spotify: daily history with drift, today's numbers", async () => {
   assert.ok(new Set(hist.map((h) => h.followers)).size > 20, "followers drift");
   assert.ok(hist.every((h) => h.popularity >= 0 && h.popularity <= 100));
   assert.equal((await s.history({ from: hist[5].date, to: hist[7].date })).length, 3);
+});
+
+test("spotify catalog: client-credentials token, artist search, artist by id; the stats client still works", async () => {
+  const env = { SPOTIFY_BASE_URL: urls["fake-spotify"] };
+  const c = spotifyCatalog(env);
+  const fountains = await c.searchArtists("A Brother's Fountain");
+  assert.equal(fountains.length, 2);
+  assert.deepEqual(fountains.map((h) => h.id).sort(), ["4BrothersFountainCO01", "4BrothersFountainUK02"]);
+  const co = fountains.find((h) => h.id === "4BrothersFountainCO01")!;
+  assert.deepEqual(co.genres, [], "Development Mode artists carry no genres");
+  assert.equal(co.url, "https://open.spotify.com/artist/4BrothersFountainCO01");
+  assert.equal(co.imageUrl, "https://i.scdn.example/4BrothersFountainCO01-320.jpg");
+  assert.equal(fountains.find((h) => h.id === "4BrothersFountainUK02")!.imageUrl, undefined);
+  assert.equal((await c.searchArtists("Wheelwright")).length, 1);
+  assert.deepEqual(await c.searchArtists("   "), []);
+  assert.deepEqual(await c.searchArtists("zzz nobody"), []);
+
+  const north = await c.artist("NorthForkCrossing0001");
+  assert.equal(north!.name, "North Fork Crossing");
+  assert.deepEqual(north!.genres, []);
+  assert.equal(await c.artist("doesNotExist"), null);
+
+  const day = await spotifyClient(urls["fake-spotify"]).artist();
+  assert.equal(day.name, "Nora Quill Band");
 });

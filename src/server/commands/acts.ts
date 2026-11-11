@@ -13,6 +13,7 @@ import { bandNotesBy, createNoted, updateNoted, withBandNote } from "../bandNote
 import { ActInput, ACT_RELATIONSHIPS, RELATIONSHIP_LABEL, type ActRelationship } from "@/schema";
 import { actListed, actStats, type ActFilter, type EvLike, type VenueLike } from "@/lib/acts";
 import { dateInBandZone } from "@/lib/timezone";
+import { lookUpAct, type LookupResult } from "../assistant/actLookup";
 
 const ROLES = ["admin", "mcp"] as const;
 const ActIn = ActInput.extend({ contactIds: z.array(z.string().min(1)).optional() });
@@ -52,7 +53,7 @@ export const actsFind = defineCommand({
     "rooms (every venue it's on a calendar at, with headliner/support), next (its next show), openedAt (venue ids on our list where it played support), " +
     "tour (2+ Colorado rooms within four weeks, from today), cities, and this band's take: shortlist, relationship (openFor = bigger than us, we want to open for them; " +
     "peer = about our size, trade shows; notFit), note. filter: shortlist | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
-    "Not-a-fit acts are left out unless q names them. count is every match.",
+    "Not-a-fit acts are left out unless q names them. count is every match. Acts aren't in search: find an act by name here, with q.",
   input: z.strictObject({
     q: z.string().optional(), filter: z.enum(FILTERS).default("all"), city: z.string().min(1).optional(),
     limit: z.number().int().min(1).max(5000).default(25),
@@ -91,7 +92,8 @@ export const actsUpdate = defineCommand({
 
 export const actsShortlist = defineCommand({
   name: "acts.shortlist", roles: [...ROLES],
-  description: "Put an act on this band's shortlist (on: true) or take it off (on: false). Find the act's id with acts.find.",
+  description: "Put an act on this band's shortlist (on: true) or take it off (on: false), only when the person asks to shortlist or star it. " +
+    "Saying what an act is to us (bigger than us, a peer, not a fit) or a note is acts.note, not a shortlist. Find the act's id with acts.find.",
   input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
   run: (ctx, { id, on }) => run(ctx, (w) => updateNoted(ctx, w, "acts", id, { shortlist: on })),
 });
@@ -100,7 +102,8 @@ export const actsNote = defineCommand({
   name: "acts.note", roles: [...ROLES],
   description:
     "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), peer (about our size: we open for them, they open for us) " +
-    "or notFit (hidden from the Acts list), null clears it; and/or note, which replaces the note (read it with acts.find first to add to it; \"\" clears). Find the act's id with acts.find.",
+    "or notFit (hidden from the Acts list), null clears it; and/or note, which replaces the note (read it with acts.find first to add to it; \"\" clears). Find the act's id with acts.find. " +
+    "\"They're bigger than us\" or \"we'd love to open for them\" is relationship openFor alone: no note (unless they give one) and no shortlist (unless they ask).",
   input: z.strictObject({ id: z.string().min(1), relationship: z.enum(ACT_RELATIONSHIPS).nullable().optional(), note: z.string().nullable().optional() }),
   run: (ctx, { id, relationship, note }) => run(ctx, async (w) => {
     if (relationship === undefined && note === undefined) throw new AppError("invalid_input", "Say a relationship or a note", 400);
@@ -108,4 +111,41 @@ export const actsNote = defineCommand({
   }),
 });
 
-export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote];
+export const actsLookup = defineCommand({
+  name: "acts.lookup", roles: ["admin"],
+  description:
+    "Look an act up on Spotify and the web (Google, through Gemini's search grounding) and fill its shared About facts where they are blank: links " +
+    "(website, Instagram, Bandcamp, YouTube, Spotify; only links a search source shows), hometown, genres, description and photo. Sets lookedUpAt and sources. " +
+    "When several Spotify artists share the name, it stores lookupCandidates and returns state \"pick\": call again with spotifyId (a candidate's id) " +
+    "or spotifyId null (none of these). The act page's Look up button; not Roadie's.",
+  input: z.strictObject({ id: z.string().min(1), spotifyId: z.string().min(1).nullable().optional() }),
+  run: (ctx, { id, spotifyId }) => lookUpAct(ctx, id, { spotifyId }),
+});
+
+// Look up is admin-only, not MCP's or Roadie's: it searches the web and Spotify on a click on the act page or the Acts tab.
+
+/** Acts looked up per click of "Look up shortlist": each one is a web search, an extraction and a Spotify search. */
+export const SHORTLIST_LOOKUPS = 20;
+
+export const actsLookupShortlist = defineCommand({
+  name: "acts.lookupShortlist", roles: ["admin"],
+  description: `Run acts.lookup for every act on this band's shortlist that hasn't been looked up yet, ${SHORTLIST_LOOKUPS} at most per call (left says how many remain). The Acts tab's "Look up shortlist" button.`,
+  input: z.strictObject({}),
+  async run(ctx) {
+    const todo = (await findActs(ctx, { filter: "shortlist" })).filter(({ a }) => !a.lookedUpAt && !a.lookupCandidates).map(({ a }) => a.id);
+    const results: LookupResult[] = [];
+    const failed: string[] = [];
+    const batch = todo.slice(0, SHORTLIST_LOOKUPS);
+    // Three at a time: quick enough for a click, gentle on the model and Spotify's rate limit.
+    for (let i = 0; i < batch.length; i += 3) {
+      const done = await Promise.allSettled(batch.slice(i, i + 3).map((id) => lookUpAct(ctx, id)));
+      done.forEach((d, j) => { if (d.status === "fulfilled") results.push(d.value); else { failed.push(batch[i + j]); console.error("acts.lookupShortlist", batch[i + j], d.reason); } });
+    }
+    return {
+      lookedUp: results.length, found: results.filter((r) => r.state === "found").length, pick: results.filter((r) => r.state === "pick").length,
+      nothing: results.filter((r) => r.state === "nothing").length, failed: failed.length, left: Math.max(0, todo.length - batch.length), results,
+    };
+  },
+});
+
+export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote, actsLookup, actsLookupShortlist];

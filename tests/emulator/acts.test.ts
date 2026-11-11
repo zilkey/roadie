@@ -1,4 +1,8 @@
-import { test, beforeEach } from "node:test";
+import { test, before, after, beforeEach } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { startAll } from "../../fakes/run-all";
 import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
@@ -16,6 +20,16 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
 };
 const noteId = (actId: string) => `${TEST_ARTIST}__${actId}`;
 const take = (actId: string) => db.get("actNotes", noteId(actId));
+
+let stopFakes: () => Promise<void>;
+let fakesDir: string;
+before(async () => {
+  fakesDir = fs.mkdtempSync(path.join(os.tmpdir(), "fakes-"));
+  const s = await startAll({ dataDir: fakesDir, ephemeral: true });
+  stopFakes = s.close;
+  process.env.SPOTIFY_BASE_URL = s.running["fake-spotify"].url;
+});
+after(async () => { await stopFakes(); fs.rmSync(fakesDir, { recursive: true, force: true }); });
 
 beforeEach(async () => {
   await resetEmulators();
@@ -196,4 +210,120 @@ test("another band's take on an act is not seen", async () => {
   assert.equal(r.rows[0].id, a.id);
   assert.equal(r.rows[0].shortlist, false);
   assert.equal((await cmd("acts.find", { filter: "shortlist" }, ctx2)).count, 0);
+});
+
+// ---------- Look up (#78) ----------
+
+test("acts.lookup A Brother's Fountain: web facts land, the made-up YouTube link does not, two Spotify artists ask 'same band?'", async () => {
+  const a = await cmd("acts.create", { name: "A Brother's Fountain" });
+  const r = await cmd("acts.lookup", { id: a.id });
+  assert.equal(r.state, "pick");
+  assert.equal(r.candidates, 2);
+  const got = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.equal(got.links.website, "https://abrothersfountain.example/");
+  assert.equal(got.links.instagram, "https://www.instagram.com/abrothersfountain/");
+  assert.equal(got.links.bandcamp, "https://abrothersfountain.bandcamp.com/");
+  assert.equal(got.links.youtube, undefined, "made-up link not stored");
+  assert.equal(got.links.spotify, undefined, "not until someone picks");
+  assert.equal(got.hometown, "Fort Collins, CO");
+  assert.deepEqual(got.genres, ["folk", "americana"]);
+  assert.match(got.description, /folk and Americana/);
+  assert.equal(got.lookupCandidates.length, 2);
+  assert.ok(got.lookedUpAt);
+  assert.equal(got.imageUrl, undefined);
+
+  // Pick the Colorado one.
+  const p = await cmd("acts.lookup", { id: a.id, spotifyId: "4BrothersFountainCO01" });
+  assert.equal(p.state, "found");
+  const after = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.equal(after.links.spotify, "https://open.spotify.com/artist/4BrothersFountainCO01");
+  assert.equal(after.imageUrl, "https://i.scdn.example/4BrothersFountainCO01-320.jpg");
+  assert.ok(!after.lookupCandidates, "candidates cleared");
+  assert.deepEqual(after.genres, ["folk", "americana"], "genres already set are kept");
+  assert.equal(after.links.website, "https://abrothersfountain.example/");
+  assert.ok(after.sources.some((s: any) => s.url === "https://open.spotify.com/artist/4BrothersFountainCO01"));
+});
+
+test("acts.lookup with spotifyId null: none of these, candidates cleared, the rest stays", async () => {
+  const a = await cmd("acts.create", { name: "A Brother's Fountain" });
+  await cmd("acts.lookup", { id: a.id });
+  await cmd("acts.lookup", { id: a.id, spotifyId: null });
+  const got = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.ok(!got.lookupCandidates);
+  assert.equal(got.links.spotify, undefined);
+  assert.equal(got.imageUrl, undefined);
+  assert.equal(got.hometown, "Fort Collins, CO");
+  assert.deepEqual(got.genres, ["folk", "americana"]);
+  assert.equal(got.links.website, "https://abrothersfountain.example/");
+});
+
+test("acts.lookup North Fork Crossing: one Spotify match is taken straight away", async () => {
+  const a = await cmd("acts.create", { name: "North Fork Crossing" });
+  const r = await cmd("acts.lookup", { id: a.id });
+  assert.equal(r.state, "found");
+  const got = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.equal(got.links.spotify, "https://open.spotify.com/artist/NorthForkCrossing0001");
+  assert.equal(got.imageUrl, "https://i.scdn.example/NorthForkCrossing0001-320.jpg");
+  assert.ok(!got.genres || got.genres.length === 0, "Spotify gives no genres");
+  assert.ok(got.lookedUpAt);
+  assert.ok(!got.lookupCandidates);
+  assert.ok(got.sources.some((s: any) => s.url === "https://open.spotify.com/artist/NorthForkCrossing0001"));
+  assert.equal(got.hometown, undefined, "the fake web knows nothing of them");
+});
+
+test("acts.lookup Wheelwright: a Spotify artist with a different name is not used; only lookedUpAt is written", async () => {
+  const a = await cmd("acts.create", { name: "Wheelwright" });
+  const r = await cmd("acts.lookup", { id: a.id });
+  assert.equal(r.state, "nothing");
+  const got = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.ok(got.lookedUpAt);
+  assert.ok(!got.links || Object.keys(got.links).length === 0);
+  assert.ok(!got.genres || got.genres.length === 0);
+  assert.equal(got.imageUrl, undefined);
+  assert.equal(got.hometown, undefined);
+  assert.equal(got.description, undefined);
+  assert.ok(!got.lookupCandidates);
+  assert.ok(!got.sources || got.sources.length === 0);
+});
+
+test("acts.lookup fills blanks only: what a person set stays", async () => {
+  const a = await cmd("acts.create", { name: "A Brother's Fountain" });
+  await cmd("acts.update", { id: a.id, patch: { hometown: "Boulder, CO", description: "Our friends.", genres: ["rock"] } });
+  await cmd("acts.lookup", { id: a.id });
+  const got = (await db.get("acts", a.id))! as Record<string, any>;
+  assert.equal(got.hometown, "Boulder, CO");
+  assert.equal(got.description, "Our friends.");
+  assert.deepEqual(got.genres, ["rock"]);
+  assert.equal(got.links.website, "https://abrothersfountain.example/", "blank links are still filled");
+});
+
+test("acts.lookup: an unknown id is not_found", async () => {
+  await assert.rejects(cmd("acts.lookup", { id: "nope" }), (e: any) => e.code === "not_found");
+  await assert.rejects(cmd("acts.lookup", { id: "nope", spotifyId: null }), (e: any) => e.code === "not_found");
+});
+
+test("acts.lookupShortlist looks up only shortlisted acts not yet looked up; a second call does nothing", async () => {
+  const north = await cmd("acts.create", { name: "North Fork Crossing", shortlist: true });
+  const wheel = await cmd("acts.create", { name: "Wheelwright", shortlist: true });
+  const fountain = await cmd("acts.create", { name: "A Brother's Fountain", shortlist: true });
+  const other = await cmd("acts.create", { name: "Denson" });
+  const done = await cmd("acts.create", { name: "Already Done", shortlist: true });
+  await db.update(ctx, "acts", done.id, { lookedUpAt: "2026-11-01T00:00:00.000Z" });
+
+  const r = await cmd("acts.lookupShortlist", {});
+  assert.equal(r.lookedUp, 3);
+  assert.equal(r.found, 1);
+  assert.equal(r.pick, 1);
+  assert.equal(r.nothing, 1);
+  assert.equal(r.failed, 0);
+  assert.equal(r.left, 0);
+  assert.ok((await db.get("acts", north.id))!.lookedUpAt);
+  assert.ok((await db.get("acts", wheel.id))!.lookedUpAt);
+  assert.ok((await db.get("acts", fountain.id))!.lookedUpAt);
+  assert.equal((await db.get("acts", other.id))!.lookedUpAt, undefined, "not on the shortlist");
+  assert.equal((await db.get("acts", done.id))!.lookedUpAt, "2026-11-01T00:00:00.000Z", "already looked up");
+
+  const again = await cmd("acts.lookupShortlist", {});
+  assert.equal(again.lookedUp, 0);
+  assert.equal(again.left, 0);
 });

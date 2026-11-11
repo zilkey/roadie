@@ -183,12 +183,17 @@ export async function fetchPage(u: string): Promise<WebPage> {
 
 type Grounding = { groundingChunks?: { web?: { uri?: string; title?: string; domain?: string } }[] };
 
-/** A short answer from Google search, with the pages it came from. A separate model call, so search never mixes with Roadie's own tools. */
-export async function searchWeb(q: string): Promise<WebAnswer> {
+const SEARCH_SYSTEM = "Search the web and answer in at most five short sentences: facts only (names, addresses, capacities, booking contacts, dates). Say when you couldn't find something.";
+
+/**
+ * A short answer from Google search, with the pages it came from. A separate model call, so search never mixes with Roadie's own tools.
+ * `system` replaces the default instructions (an act's Look up asks for links and genres instead of addresses); `max` caps the sources.
+ */
+export async function searchWeb(q: string, opts: { system?: string; max?: number } = {}): Promise<WebAnswer> {
   const { ai, model } = await getAi();
   const res = await ai.generate({
     model: model as never,
-    system: "Search the web and answer in at most five short sentences: facts only (names, addresses, capacities, booking contacts, dates). Say when you couldn't find something.",
+    system: opts.system ?? SEARCH_SYSTEM,
     prompt: q,
     config: modelMode() === "vertex" ? { googleSearchRetrieval: {} } : { googleSearch: true },
   });
@@ -201,7 +206,31 @@ export async function searchWeb(q: string): Promise<WebAnswer> {
     seen.add(url);
     sources.push({ title: c.web?.title ?? c.web?.domain ?? new URL(url).hostname, url });
   }
-  return { answer: res.text.trim(), sources: sources.slice(0, 8) };
+  return { answer: res.text.trim(), sources: sources.slice(0, opts.max ?? 8) };
+}
+
+/** Google's grounding links are redirects (vertexaisearch.cloud.google.com/grounding-api-redirect/…) to the page itself. */
+export const isGroundingRedirect = (u: string) => { const n = normalizeUrl(u); return !!n && /^vertexaisearch\.cloud\.google\.com$/i.test(new URL(n).hostname); };
+
+/**
+ * The page a grounding source points at: one request to the redirect, its Location read and nothing downloaded. Any other URL is
+ * returned as it is. Undefined when the redirect can't be followed, so a source that can't be checked never vouches for a link.
+ */
+export function resolveSource(u: string): Promise<string | undefined> {
+  if (!isGroundingRedirect(u)) return Promise.resolve(normalizeUrl(u));
+  let url: URL;
+  try { url = checkUrl(u); } catch { return Promise.resolve(undefined); }
+  return new Promise((resolve) => {
+    const req = https.request(url, { method: "GET", lookup: publicLookup, timeout: TIMEOUT_MS, headers: { "user-agent": "RoadieBot/1.0 (band booking assistant)" } }, (res) => {
+      const loc = res.headers.location;
+      res.destroy();
+      if (!loc || (res.statusCode ?? 0) < 300 || (res.statusCode ?? 0) >= 400) return resolve(undefined);
+      try { resolve(normalizeUrl(new URL(loc, url).href)); } catch { resolve(undefined); }
+    });
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(undefined));
+    req.end();
+  });
 }
 
 export const FAKE_SOURCE = "https://example.com/roadie-fake-result";

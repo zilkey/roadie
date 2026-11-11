@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { sessionFor, type Who } from "@/server/assistant/confirm";
-import { BAND_SETTINGS, needsConfirm, pastDate, refusal } from "@/server/assistant/policy";
+import { BAND_SETTINGS, isEligible, needsConfirm, pastDate, refusal } from "@/server/assistant/policy";
 import { execTool, readback } from "@/server/assistant/tools";
 import { contextNow, searchAll } from "@/server/assistant/context";
 import { ensureThread, newThreadId } from "@/server/assistant/threads";
@@ -172,4 +172,10 @@ test("help.explain with no arguments explains the page the person is on, tab inc
   assert.equal((out.output as { untrustedContent: { topic: { id: string } } }).untrustedContent.topic.id, "canceledShows");
   const named = await execTool(s, "help.explain", { topic: "pitch" }, noop);
   assert.equal((named.output as { untrustedContent: { topic: { id: string } } }).untrustedContent.topic.id, "pitch");
+});
+
+test("an act's Look up is never Roadie's: acts.lookup and acts.lookupShortlist are not eligible", () => {
+  assert.equal(isEligible("acts.lookup", "admin"), false);
+  assert.equal(isEligible("acts.lookupShortlist", "admin"), false);
+  assert.equal(isEligible("acts.find", "admin"), true);
 });
