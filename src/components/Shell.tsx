@@ -62,7 +62,7 @@ function Dropdown({ label, testid, trigger, className, listTestid, left, childre
 }
 
 /**
- * The avatar menu's rows: your name, your profile, Customize menu, Claude Code (admins), Sign out. On desktop, band
+ * The avatar menu's rows: your name, your profile, Customize menu, Integrations (admins), Sign out. On desktop, band
  * settings and the switcher live in the band menu; the phone bar has no band menu, so `phone` puts Switch band and
  * Artist settings (admins) here instead.
  */
@@ -76,7 +76,7 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onE
       <div className="menu-sep" role="separator" />
       <Link href="/me" role="menuitem" data-testid="side-me" aria-current={on("/me") ? "page" : undefined} className={`menu-item${on("/me") ? " text-accent" : ""}`}>Your profile</Link>
       <button type="button" role="menuitem" className="menu-item" data-testid="account-edit-menu" onClick={onEdit}>Customize menu</button>
-      {role === "admin" && <Link href="/admin/mcp" role="menuitem" data-testid="side-admin-mcp" aria-current={on("/admin/mcp") ? "page" : undefined} className={`menu-item${on("/admin/mcp") ? " text-accent" : ""}`}>Claude Code</Link>}
+      {role === "admin" && <Link href="/admin/mcp" role="menuitem" data-testid="side-admin-mcp" aria-current={on("/admin/mcp") ? "page" : undefined} className={`menu-item${on("/admin/mcp") ? " text-accent" : ""}`}>Integrations</Link>}
       <div className="menu-sep" role="separator" />
       <button type="button" role="menuitem" className="menu-item" data-testid={signoutTestid} onClick={signOut}>Sign out</button>
     </>
