@@ -1,0 +1,245 @@
+"use client";
+/**
+ * A venue's Events tab (issue #60): the room's upcoming shows as its own calendar lists them, with the bill, a badge when it
+ * looks like an open opener slot, and this band's take on each; past shows collapsed below (who plays the room); the calendar
+ * source, when it last refreshed, and Refresh. No design-canvas board exists for this tab yet: it follows the venue page's cards.
+ */
+import { useMemo, useState } from "react";
+import { useArtist } from "@/lib/artist";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
+import { Dialog, ErrorBox, useCommand } from "@/components/ui";
+import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
+import { CALENDAR_LABEL, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, titleSaysMore } from "@/lib/venueEvents";
+import { EventActs, EventBadges, TakePicker, TicketLink, type Ev } from "@/components/booking/VenueEventBits";
+import { dateInBandZone } from "@/lib/timezone";
+import { CALENDAR_TYPES, PRESETS, type CalendarType, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
+
+function ago(iso?: string) {
+  if (!iso) return "never";
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.round(min / 60);
+  if (h < 36) return `${h} hour${h === 1 ? "" : "s"} ago`;
+  const d = Math.round(h / 24);
+  return `${d} day${d === 1 ? "" : "s"} ago`;
+}
+
+export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }; admin: boolean }) {
+  const { artistId } = useArtist();
+  const events = useCollection<VenueEvent>("venueEvents", { where: [["venueId", "==", venue.id]], includeDeleted: true });
+  const { doc: health } = useDoc<VenueEventSource>("venueEventSources", venue.id, { includeDeleted: true });
+  const notes = useCollection<VenueEventNote>("venueEventNotes", { where: [["artistId", "==", artistId], ["venueId", "==", venue.id]], skip: !admin });
+  const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
+  const today = dateInBandZone();
+  const all = useMemo(() => [...(events.rows ?? [])].sort(byWhen), [events.rows]);
+  const upcoming = all.filter((e) => isUpcoming(e, today));
+  const past = all.filter((e) => e.date < today).reverse();
+  const [setup, setSetup] = useState(false);
+  const cal = venue.calendar;
+
+  return (
+    <>
+      <CardGroup kind="shared">
+        <SourceCard venue={venue} cal={cal} health={health} admin={admin} onSetup={() => setSetup(true)} />
+        {cal?.type !== "manual" && (
+          <DetailCard title={`Upcoming shows${events.rows ? ` (${upcoming.length})` : ""}`} testid="venue-events-upcoming">
+            {!events.rows ? <div className="s">Loading…</div>
+              : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
+              : <div className="grid gap-3" data-testid="venue-events-list">{upcoming.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} />)}</div>}
+          </DetailCard>
+        )}
+        {past.length > 0 && (
+          <DetailCard title={`Past shows (${past.length})`} testid="venue-events-past">
+            <details>
+              <summary className="cursor-pointer text-sm font-semibold" data-testid="venue-events-past-toggle">Who has played here</summary>
+              <div className="mt-2 grid gap-1">
+                {past.map((e) => (
+                  <div key={e.id} className="flex flex-wrap items-baseline gap-x-3 text-sm" data-testid={`venue-event-past-${e.id}`}>
+                    <b className="whitespace-nowrap">{fmtEventYear(e.date)}</b>
+                    <span>{e.acts.length ? e.acts.map((a) => a.name).join(", ") : e.title}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          </DetailCard>
+        )}
+      </CardGroup>
+      {admin && <CalendarSetup venue={venue} open={setup} onClose={() => setSetup(false)} />}
+    </>
+  );
+}
+
+function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { id: string }; cal?: VenueCalendar; health: VenueEventSource | null; admin: boolean; onSetup(): void }) {
+  const { call, error, busy } = useCommand();
+  const href = cal ? calendarHref(cal) : undefined;
+  const broken = !!health?.lastError;
+  const zero = !broken && health?.lastSuccessAt && health.lastCount === 0;
+  return (
+    <DetailCard title="Calendar" testid="venue-calendar-card" headerExtra={admin ? <button type="button" className="btn ghost sm" onClick={onSetup} data-testid="venue-calendar-setup">{cal ? "Change source" : "Set up"}</button> : undefined}>
+      <ErrorBox error={error} />
+      {!cal ? <div className="s" data-testid="venue-calendar-none">No calendar set up for this venue.</div>
+        : cal.type === "manual" ? <div data-testid="venue-calendar-manual">{cal.note}</div>
+        : (
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span data-testid="venue-calendar-type">{CALENDAR_LABEL[cal.type]}</span>
+              {href && <a className="underline text-sm" href={href} target="_blank" rel="noreferrer">Open the calendar ↗</a>}
+            </div>
+            <div className="s" data-testid="venue-calendar-health">
+              {health ? <>Refreshed {ago(health.lastSuccessAt ?? health.lastRunAt)}{health.lastCount !== undefined ? ` · found ${health.lastCount} show${health.lastCount === 1 ? "" : "s"}` : ""}</> : "Not refreshed yet."}
+            </div>
+            {broken && <div className="d-warn" role="note" data-testid="venue-calendar-error"><span><b>The calendar didn&apos;t load last time.</b> {health!.lastError}</span></div>}
+            {zero && <div className="d-warn" role="note" data-testid="venue-calendar-zero"><span>The calendar answered but no shows came through. It may have changed; check the source.</span></div>}
+            {!!health?.lastUnparsed && <div className="s" data-testid="venue-calendar-unparsed">{health.lastUnparsed} listing{health.lastUnparsed === 1 ? "" : "s"} had a date Roadie couldn&apos;t read.</div>}
+            <div><button type="button" className="btn ghost sm" disabled={busy} data-testid="venue-calendar-refresh" onClick={() => call("venueEvents.refresh", { venueId: venue.id })}>{busy ? "Refreshing…" : "Refresh"}</button></div>
+          </div>
+        )}
+    </DetailCard>
+  );
+}
+
+function EventImage({ src, alt }: { src?: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <div className="h-16 w-16 shrink-0 rounded-lg bg-[var(--soft)]" aria-hidden data-testid="venue-event-noimage" />;
+  // Remote hosts are arbitrary (every venue's own CDN), so a plain img, not next/image with an allowlist.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="h-16 w-16 shrink-0 rounded-lg object-cover" />;
+}
+
+function EventRow({ e, admin, take, artistId }: { e: Ev; admin: boolean; take?: VenueEventNote; artistId: string }) {
+  const time = eventTime(e);
+  return (
+    <div className="flex gap-3" data-testid={`venue-event-${e.id}`}>
+      <EventImage src={e.imageUrl} alt={e.title} />
+      <div className="grid min-w-0 flex-1 gap-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <b className="whitespace-nowrap">{fmtEventDay(e.date)}</b>
+          {time && <span className="s">{time}</span>}
+          <EventBadges e={e} />
+        </div>
+        <EventActs e={e} />
+        {titleSaysMore(e) ? <div className="s">{e.title}</div> : null}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <TicketLink e={e} />
+          {admin && <TakePicker e={e} take={take} artistId={artistId} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- setting a calendar up ----------
+
+type Preview = { count: number; unparsed: number; dropped: number; raw: number; events: Omit<VenueEvent, "id" | "venueId" | "source" | "firstSeenAt" | "lastSeenAt">[]; notes?: string; calendar?: VenueCalendar };
+
+const URL_FIELD: Partial<Record<CalendarType, "url" | "baseUrl" | "siteId" | "slug" | "organizerId" | "note">> = {
+  squarespace: "url", ics: "url", jsonld: "url", plot: "url", wix: "url", selectors: "url", tribe: "baseUrl", aeg: "siteId", "venue-network": "slug", eventbrite: "organizerId", manual: "note",
+};
+const FIELD_LABEL = { url: "Calendar URL", baseUrl: "Site address", siteId: "AEG site id", slug: "venue.network slug", organizerId: "Eventbrite organizer id", note: "What the venue has instead" };
+
+/** Pick how the calendar is read, try it (Gemini proposes selectors for a plain page), look at the rows, then Save. */
+function CalendarSetup({ venue, open, onClose }: { venue: Venue & { id: string }; open: boolean; onClose(): void }) {
+  const start = venue.calendar;
+  const [type, setType] = useState<CalendarType>(start?.type ?? "selectors");
+  const [main, setMain] = useState<string>(() => (start ? String((start as Record<string, unknown>)[URL_FIELD[start.type]!] ?? "") : venue.website ?? ""));
+  const [category, setCategory] = useState(start?.type === "tribe" ? start.category ?? "" : "");
+  const sel = start?.type === "selectors" ? start : undefined;
+  const [preset, setPreset] = useState<string>(sel?.preset ?? "");
+  const [selectors, setSelectors] = useState(sel?.item ? JSON.stringify({ item: sel.item, fields: sel.fields, ...(sel.dateFormat ? { dateFormat: sel.dateFormat } : {}) }, null, 1) : "");
+  const f = start && "filter" in start ? start.filter : undefined;
+  const [venueName, setVenueName] = useState(f?.venueName ?? "");
+  const [include, setInclude] = useState(f?.include ?? "");
+  const [exclude, setExclude] = useState(f?.exclude ?? "");
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const { call, error, busy } = useCommand();
+
+  function build(): VenueCalendar | null {
+    setParseError(null);
+    const filter = { ...(venueName.trim() ? { venueName: venueName.trim() } : {}), ...(include.trim() ? { include: include.trim() } : {}), ...(exclude.trim() ? { exclude: exclude.trim() } : {}) };
+    const fl = Object.keys(filter).length ? { filter } : {};
+    const v = main.trim();
+    switch (type) {
+      case "manual": return { type, note: v };
+      case "tribe": return { type, baseUrl: v, ...(category.trim() ? { category: category.trim() } : {}), ...fl };
+      case "aeg": return { type, siteId: v, ...fl };
+      case "venue-network": return { type, slug: v, ...fl };
+      case "eventbrite": return { type, organizerId: v, ...fl };
+      case "selectors": {
+        let s: Record<string, unknown> = {};
+        if (selectors.trim()) { try { s = JSON.parse(selectors); } catch { setParseError("The selectors aren't valid JSON."); return null; } }
+        return { type, url: v, ...(preset ? { preset: preset as (typeof PRESETS)[number] } : {}), ...s, ...fl } as VenueCalendar;
+      }
+      default: return { type, url: v, ...fl } as VenueCalendar;
+    }
+  }
+  async function suggest() {
+    const r = await call<Preview>("venueEvents.suggestSelectors", { venueId: venue.id, url: main.trim() });
+    if (!r?.calendar || r.calendar.type !== "selectors") return;
+    setSelectors(JSON.stringify({ item: r.calendar.item, fields: r.calendar.fields, ...(r.calendar.dateFormat ? { dateFormat: r.calendar.dateFormat } : {}) }, null, 1));
+    setPreview(r);
+  }
+  async function tryIt() { const c = build(); if (c && c.type !== "manual") setPreview((await call<Preview>("venueEvents.preview", { venueId: venue.id, calendar: c })) ?? null); }
+  async function save() {
+    const c = build();
+    if (!c) return;
+    if (!(await call("venues.setCalendar", { id: venue.id, calendar: c }))) return;
+    if (c.type !== "manual") await call("venueEvents.refresh", { venueId: venue.id });
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} title={`${venue.name}'s calendar`} testid="calendar-setup">
+      <p className="s">Shared with every band on Roadie. Roadie reads this calendar when someone presses Refresh.</p>
+      <label className="grid gap-1"><span className="text-sm font-semibold">How it&apos;s read</span>
+        <select className="select" value={type} onChange={(e) => { setType(e.target.value as CalendarType); setPreview(null); }} data-testid="calendar-type">
+          {CALENDAR_TYPES.map((t) => <option key={t} value={t}>{CALENDAR_LABEL[t]}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1"><span className="text-sm font-semibold">{FIELD_LABEL[URL_FIELD[type]!]}</span>
+        <input className="input" value={main} onChange={(e) => setMain(e.target.value)} data-testid="calendar-main" />
+      </label>
+      {type === "tribe" && <label className="grid gap-1"><span className="text-sm font-semibold">Category (optional)</span><input className="input" value={category} onChange={(e) => setCategory(e.target.value)} /></label>}
+      {type === "selectors" && (
+        <>
+          <label className="grid gap-1"><span className="text-sm font-semibold">Shared template</span>
+            <select className="select" value={preset} onChange={(e) => setPreset(e.target.value)} data-testid="calendar-preset">
+              <option value="">None: this page&apos;s own selectors</option>
+              {PRESETS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          {!preset && (
+            <div className="grid gap-1">
+              <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">Selectors</span>
+                <button type="button" className="btn ghost sm" disabled={busy || !main.trim()} onClick={suggest} data-testid="calendar-suggest">{busy ? "Asking Gemini…" : "Suggest with Gemini"}</button></div>
+              <textarea className="input font-mono text-xs" rows={7} value={selectors} onChange={(e) => setSelectors(e.target.value)} data-testid="calendar-selectors" />
+            </div>
+          )}
+        </>
+      )}
+      {type !== "manual" && (
+        <div className="grid gap-2 sm:grid-cols-3">
+          <label className="grid gap-1"><span className="text-sm font-semibold">Room name on the page</span><input className="input" value={venueName} onChange={(e) => setVenueName(e.target.value)} placeholder="Only for shared pages" /></label>
+          <label className="grid gap-1"><span className="text-sm font-semibold">Keep titles matching</span><input className="input" value={include} onChange={(e) => setInclude(e.target.value)} placeholder="music|live" /></label>
+          <label className="grid gap-1"><span className="text-sm font-semibold">Drop titles matching</span><input className="input" value={exclude} onChange={(e) => setExclude(e.target.value)} placeholder="trivia|yoga" /></label>
+        </div>
+      )}
+      <ErrorBox error={parseError ?? error} />
+      {preview && (
+        <div className="grid gap-1" data-testid="calendar-preview">
+          <span className="text-sm font-semibold">{preview.count} show{preview.count === 1 ? "" : "s"} found{preview.unparsed ? `, ${preview.unparsed} with dates Roadie couldn't read` : ""}{preview.dropped ? `, ${preview.dropped} left out (not music, or another room)` : ""}</span>
+          {preview.notes && <span className="s">Gemini: {preview.notes}</span>}
+          <div className="max-h-64 overflow-auto rounded border border-[var(--divider)] text-sm">
+            {preview.events.map((e) => <div key={e.sourceId} className="border-b border-[var(--divider)] px-2 py-1"><b>{fmtEventDay(e.date)}</b> {fmtClock(e.start)} · {e.acts.length ? e.acts.map((a) => `${a.name}${a.role === "support" ? " (support)" : ""}`).join(", ") : e.title}</div>)}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {type !== "manual" && <button type="button" className="btn ghost" disabled={busy || !main.trim()} onClick={tryIt} data-testid="calendar-try">Try it</button>}
+        <button type="button" className="btn acc" disabled={busy || !main.trim()} onClick={save} data-testid="calendar-save">Save</button>
+        <button type="button" className="btn ghost" onClick={onClose} data-testid="calendar-cancel">Cancel</button>
+      </div>
+    </Dialog>
+  );
+}

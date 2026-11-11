@@ -1,0 +1,869 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+
+<title>Band App Money</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one long spec page in the booking kit's look; sticky section nav; schema as compact field tables; wireframes as a grid of phone frames */
+:root{
+  --bg:#EDF0F7; --panel:#FFFFFF; --ink:#1B2140; --muted:#5A6283; --line:#D5DAE8; --soft:#E3E7F1;
+  --accent:#D93A7A; --accent-soft:#FBE3EE; --blue:#2E5FD9; --blue-soft:#DCE6FC; --ok:#1E9B6A; --ok-soft:#D9F1E7; --warn:#B07A00;
+  --wire:#9AA1BC;
+  --f-display:"Bricolage Grotesque",Figtree,system-ui,sans-serif;
+  --f-body:Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544;
+  --wire:#5E668C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12162B; --panel:#1B2140; --ink:#EEF1FB; --muted:#A3AACB; --line:#2E355A; --soft:#232A4D;
+  --accent:#FF6AA5; --accent-soft:#43203A; --blue:#7EA2FF; --blue-soft:#223263; --ok:#4FD19A; --ok-soft:#1C3B33; --warn:#F2B544;
+  --wire:#5E668C; color-scheme:dark}
+*,*::before,*::after{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 80px}
+h1,h2,h3,h4{font-family:var(--f-display);margin:0;letter-spacing:-.01em;text-wrap:balance}
+h1{font-size:clamp(36px,7vw,58px);font-weight:800;line-height:.95}
+h2{font-size:30px;font-weight:800;margin-bottom:6px}
+h3{font-size:19px;font-weight:600}
+p{margin:0}
+.lede{color:var(--muted);margin-top:10px;max-width:66ch}
+code,.mono{font-family:var(--f-mono);font-size:12.5px}
+a{color:var(--blue)}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);margin:22px 0 0;padding:10px 0;display:flex;gap:6px;flex-wrap:wrap}
+nav.toc a{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel)}
+nav.toc a:hover{border-color:var(--ink)}
+
+section.sec{padding-top:44px;scroll-margin-top:60px}
+.sec-intro{color:var(--muted);max-width:68ch;margin-bottom:18px}
+
+/* glossary */
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:14px}
+.gloss div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:2px}
+.gloss b{font-size:15px}
+.gloss span{font-size:13px;color:var(--muted)}
+
+/* rules list */
+.rules{display:grid;gap:8px;margin:0;padding:0;list-style:none;max-width:76ch}
+.rules li{padding-left:18px;position:relative}
+.rules li::before{content:"";position:absolute;left:0;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--accent)}
+
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;overflow-x:auto}
+.diagram pre.mermaid{margin:0;min-width:640px;background:transparent}
+
+/* schema */
+.groups{display:grid;gap:28px}
+.group h3{margin-bottom:10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.group h3 small{font-family:var(--f-body);font-size:13px;font-weight:500;color:var(--muted)}
+.colls{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,470px),1fr));gap:12px}
+.coll{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0;display:flex;flex-direction:column}
+.coll-h{padding:12px 14px 8px;display:grid;gap:4px;border-bottom:1px solid var(--line)}
+.coll-t{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.coll-t h4{font-size:17px;font-weight:600}
+.coll-t code{color:var(--muted)}
+.coll-h p{font-size:13.5px;color:var(--muted)}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{font-size:11.5px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.chip.a{background:var(--accent-soft);color:var(--accent)}
+.chip.m{background:var(--blue-soft);color:var(--blue)}
+.chip.ai{background:var(--ok-soft);color:var(--ok)}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td{padding:5px 14px 5px 0;vertical-align:top;border-top:1px solid var(--soft)}
+tr:first-child td{border-top:0}
+td:first-child{padding-left:14px;font-family:var(--f-mono);font-size:12.5px;white-space:nowrap;font-weight:500}
+td.t{font-family:var(--f-mono);font-size:12px;color:var(--blue);white-space:nowrap}
+td.n{color:var(--muted);min-width:150px}
+.common{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:12px 0 6px;margin-bottom:22px}
+.common h4{font-size:15px;padding:0 14px 6px}
+.legend{font-size:13px;color:var(--muted);margin:0 0 18px;display:flex;flex-wrap:wrap;gap:6px 16px}
+.legend code{color:var(--blue)}
+
+/* access table */
+.access{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.access table{font-size:13.5px;min-width:620px}
+.access th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);font-weight:700}
+.access td{padding:8px 14px;border-top:1px solid var(--soft);font-family:var(--f-body);font-size:13.5px;white-space:normal}
+.access td:first-child{font-weight:600}
+.y{color:var(--ok);font-weight:700}
+.no{color:var(--muted)}
+
+/* stories */
+.stories{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:12px}
+.story{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:8px;align-content:start}
+.story h3{font-size:17px}
+.story ul{margin:0;padding:0;list-style:none;display:grid;gap:7px}
+.story li{display:grid;grid-template-columns:62px 1fr;gap:8px;font-size:14px;align-items:baseline}
+.story li .chip{justify-self:start}
+
+/* wireframes */
+.screens{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:26px 18px}
+.screen{display:grid;gap:10px;align-content:start;justify-items:center;min-width:0}
+.cap{width:100%;max-width:290px}
+.cap h3{font-size:16px}
+.cap p{font-size:13px;color:var(--muted);margin-top:2px}
+.phone{width:100%;max-width:290px;min-height:520px;background:var(--panel);border:2px solid var(--wire);border-radius:30px;padding:14px 12px 0;display:flex;flex-direction:column;gap:10px;position:relative;overflow:hidden}
+.phone::before{content:"";width:70px;height:6px;border-radius:6px;background:var(--line);align-self:center;margin-bottom:2px}
+.ph-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ph-top b{font-family:var(--f-display);font-size:21px;font-weight:800}
+.ph-top .back{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:2px}
+.ph-body{display:flex;flex-direction:column;gap:8px;flex:1}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.card{border:1.5px solid var(--line);border-radius:12px;padding:10px;display:grid;gap:4px}
+.card.hi{border-color:var(--accent);background:var(--accent-soft)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px;padding:7px 2px;border-bottom:1px solid var(--soft)}
+.row:last-child{border-bottom:0}
+.row .s{font-size:12px;color:var(--muted)}
+.row .grow{flex:1;min-width:0}
+.row .grow b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.pill.b{background:var(--blue-soft);color:var(--blue)}
+.pill.g{background:var(--ok-soft);color:var(--ok)}
+.pill.p{background:var(--accent-soft);color:var(--accent)}
+.ibtn{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--accent);color:var(--accent);display:grid;place-items:center;flex:none}
+.ibtn.on{background:var(--accent);color:var(--panel)}
+.ibtn svg,.tab svg,.big svg,.ico{width:18px;height:18px}
+.big{background:var(--ink);color:var(--panel);border-radius:12px;padding:11px;font-weight:700;font-size:14px;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px}
+.big.acc{background:var(--accent)}
+.big.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.search{border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px;color:var(--muted)}
+.segs{display:flex;gap:4px;flex-wrap:wrap}
+.segs span{font-size:12px;font-weight:600;padding:4px 9px;border-radius:999px;border:1.5px solid var(--line);color:var(--muted)}
+.segs span.on{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.field{display:grid;gap:3px}
+.field .box{border:1.5px solid var(--line);border-radius:9px;padding:7px 9px;font-size:13px}
+.field .box.ph{color:var(--muted)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:5px 0}
+.cb{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--wire);flex:none;display:grid;place-items:center}
+.cb.on{background:var(--ok);border-color:var(--ok);color:var(--panel)}
+.cb svg{width:12px;height:12px}
+.bar{height:6px;border-radius:6px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok)}
+.steps{display:flex;gap:3px}
+.steps i{flex:1;height:6px;border-radius:4px;background:var(--soft)}
+.steps i.on{background:var(--blue)}
+.feed{font-size:12.5px;display:grid;gap:6px}
+.feed div{display:grid;grid-template-columns:auto 1fr;gap:6px;align-items:start}
+.feed .ico{width:14px;height:14px;color:var(--muted);margin-top:2px}
+.note{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.note svg{width:13px;height:13px;flex:none}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--panel);border-top:2px solid var(--wire);border-radius:22px 22px 0 0;padding:14px 12px 16px;display:grid;gap:9px;box-shadow:0 -10px 30px rgb(0 0 0 / .12)}
+.dim{position:absolute;inset:0;background:var(--ink);opacity:.18}
+.tabbar{margin:auto -12px 0;border-top:1.5px solid var(--line);display:flex;justify-content:space-around;padding:8px 4px 12px}
+.tab{display:grid;justify-items:center;gap:2px;font-size:10.5px;font-weight:600;color:var(--muted)}
+.tab.on{color:var(--accent)}
+.money{display:grid;grid-template-columns:1fr auto;gap:6px 10px;font-size:13.5px;align-items:center}
+.money .amt{font-family:var(--f-mono);font-size:13px;border:1.5px solid var(--line);border-radius:8px;padding:4px 8px;min-width:76px;text-align:right}
+.stars{color:var(--warn);letter-spacing:2px;font-size:15px}
+.drag{color:var(--wire);font-size:14px;letter-spacing:-2px}
+.mono-s{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.sum{display:flex;justify-content:space-between;font-size:13px;font-weight:600}
+.screen.web{grid-column:1/-1;justify-items:stretch}
+.screen.web .cap{max-width:none}
+.cap-t{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.vt{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--panel);flex:none}
+.vt button{border:0;background:none;font:inherit;font-size:12px;font-weight:600;color:var(--muted);padding:4px 10px;cursor:pointer}
+.vt button[aria-pressed=true]{background:var(--ink);color:var(--panel)}
+.desk-wrap{width:100%;overflow-x:auto}
+.desk{min-width:640px;max-width:880px;border:2px solid var(--wire);border-radius:14px;background:var(--panel);display:grid;grid-template-columns:170px minmax(0,1fr);min-height:400px;overflow:hidden}
+.side{border-right:1.5px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:3px}
+.side .brand{font-family:var(--f-display);font-weight:800;font-size:15px;line-height:1.1;margin:0 6px 10px}
+.side .nav{display:flex;gap:8px;align-items:center;font-size:13.5px;font-weight:600;color:var(--muted);padding:7px 8px;border-radius:8px}
+.side .nav svg{width:16px;height:16px}
+.side .nav.on{background:var(--accent-soft);color:var(--accent)}
+.side .who{margin-top:auto;font-size:12px;color:var(--muted);padding:0 8px}
+.desk main{padding:16px 20px 20px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;align-items:start}
+.col{display:flex;flex-direction:column;gap:8px;min-width:0}
+.times{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:4px}
+.times span{display:grid;font-size:11px;color:var(--muted)}
+.times b{font-family:var(--f-mono);font-size:13px;color:var(--ink);font-weight:500}
+.avail{display:flex;gap:4px;flex-wrap:wrap}
+.av{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.av.y{background:var(--ok-soft);color:var(--ok)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.txt{font-size:13.5px}
+.screens-bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:18px;font-size:14px;color:var(--muted)}
+.callout{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:12px 14px;font-size:14px;max-width:76ch}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;margin:6px 0 20px}
+.flow span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-weight:600}
+.flow em{color:var(--muted);font-style:normal}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
+    <symbol id="i-money" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+  </defs>
+</svg>
+<style>
+/* Tours add-on: same tokens as the blueprint, plus warn-soft and kind colors for the itinerary */
+:root{--warn-soft:#FBEFD2;--lodge:#1E9B6A;--lodge-soft:#D9F1E7}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--warn-soft:#3B3117;--lodge:#4FD19A;--lodge-soft:#1C3B33}}
+:root[data-theme="dark"]{--warn-soft:#3B3117;--lodge:#4FD19A;--lodge-soft:#1C3B33}
+.eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.diff{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+.diff table{min-width:640px;font-size:13.5px}
+.diff th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--line);font-weight:700}
+.diff td{padding:8px 14px;border-top:1px solid var(--soft);font-family:var(--f-body);font-size:13.5px;white-space:normal;font-weight:400}
+.diff td:first-child{font-family:var(--f-mono);font-size:12.5px;font-weight:600;white-space:nowrap}
+.diff td code{color:var(--blue)}
+.plus{color:var(--ok);font-weight:700;font-family:var(--f-mono)}
+.tilde{color:var(--warn);font-weight:700;font-family:var(--f-mono)}
+.cmds{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr));gap:8px;margin-top:10px}
+.cmds div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;display:grid;gap:2px}
+.cmds code{color:var(--blue);font-weight:500}
+.cmds span{font-size:13px;color:var(--muted)}
+.chip.new{background:var(--ok-soft);color:var(--ok)}
+.chip.chg{background:var(--warn-soft);color:var(--warn)}
+
+/* itinerary */
+.dayh{display:flex;align-items:center;gap:9px;margin-top:4px}
+.dayh .dn{font-family:var(--f-display);font-size:28px;font-weight:800;line-height:1;min-width:32px;text-align:center;font-variant-numeric:tabular-nums}
+.dayh .dl{display:grid;line-height:1.2;min-width:0}
+.dayh .dl b{font-size:13.5px}
+.dayh .dl span{font-size:12px;color:var(--muted)}
+.dayh .pill{margin-left:auto}
+.ent{display:grid;grid-template-columns:40px minmax(0,1fr);gap:7px;align-items:start}
+.ent .tm{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);padding-top:8px;text-align:right;font-variant-numeric:tabular-nums}
+.blk{border-radius:10px;padding:7px 9px;border:1.5px solid transparent;display:grid;gap:1px;font-size:13px;min-width:0}
+.blk .k{display:flex;gap:6px;align-items:center;font-weight:600;min-width:0}
+.blk .k svg{width:14px;height:14px;flex:none}
+.blk .k .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.blk .k .pill{margin-left:auto}
+.blk .s{font-size:11.5px;color:var(--muted)}
+.blk.show{background:var(--accent-soft);border-color:var(--accent)}
+.blk.show .k svg{color:var(--accent)}
+.blk.pitch{border:1.5px dashed var(--blue)}
+.blk.pitch .k svg{color:var(--blue)}
+.blk.travel{background:var(--soft)}
+.blk.lodge{background:var(--lodge-soft)}
+.blk.lodge .k svg{color:var(--lodge)}
+.blk.gap{border:1.5px dashed var(--warn);background:var(--warn-soft)}
+.blk.gap .k svg{color:var(--warn)}
+.blk.mine{outline:2px solid var(--ink);outline-offset:1px}
+.leave{font-size:11.5px;font-weight:700;color:var(--blue)}
+.route{display:flex;align-items:flex-start;overflow-x:auto;padding:4px 2px 2px}
+.stop{display:grid;justify-items:center;gap:3px;flex:none;font-size:11px;font-weight:700}
+.stop i{width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid var(--panel);box-shadow:0 0 0 1.5px var(--accent)}
+.stop.home i{background:var(--ink);box-shadow:0 0 0 1.5px var(--ink)}
+.stop.open i{background:var(--panel);box-shadow:0 0 0 1.5px var(--blue)}
+.stop span{color:var(--muted);font-weight:500;font-size:10px}
+.leg{flex:1 0 38px;display:grid;justify-items:center;gap:3px;padding-top:5px}
+.leg::before{content:"";height:2px;width:100%;background:var(--line)}
+.leg span{font-family:var(--f-mono);font-size:10px;color:var(--muted);white-space:nowrap}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stat{border:1.5px solid var(--line);border-radius:10px;padding:7px 9px;display:grid;gap:0}
+.stat b{font-family:var(--f-display);font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat span{font-size:11.5px;color:var(--muted)}
+.alert{display:grid;grid-template-columns:auto 1fr;gap:7px;align-items:start;font-size:12.5px;background:var(--warn-soft);border-radius:9px;padding:7px 9px}
+.alert svg{width:14px;height:14px;color:var(--warn);margin-top:2px}
+.alert.info{background:var(--soft)}
+.alert.info svg{color:var(--muted)}
+.choice{display:grid;grid-template-columns:auto 1fr;gap:9px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:9px 10px}
+.choice svg{width:20px;height:20px}
+.choice b{display:block;font-size:14px}
+.choice span{font-size:12px;color:var(--muted)}
+.rank{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--blue-soft);color:var(--blue);flex:none}
+.ros{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:4px 8px;align-items:center;font-size:13px;padding:5px 2px;border-bottom:1px solid var(--soft)}
+.ros:last-child{border-bottom:0}
+.ros .tm{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}
+.ros .s{font-size:11.5px;color:var(--muted)}
+.ros.us{background:var(--accent-soft);border-radius:8px;border-bottom-color:transparent;padding-inline:6px;margin-inline:-4px}
+.ros.act{color:var(--muted)}
+.ros.now{box-shadow:inset 3px 0 0 var(--blue);padding-left:8px}
+.ok{color:var(--ok);display:inline-flex}
+.ok svg{width:13px;height:13px}
+.est{font-size:10.5px;font-weight:700;color:var(--warn)}
+.tbox{font-family:var(--f-mono);font-size:12px;border:1.5px solid var(--line);border-radius:7px;padding:3px 7px}
+.times.five{grid-template-columns:repeat(5,1fr)}
+.modal{border:2px solid var(--wire);border-radius:16px;padding:14px;display:grid;gap:9px;box-shadow:0 10px 30px rgb(0 0 0 / .12)}
+.desk.wide{max-width:1120px;min-width:980px}
+.board{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px}
+.bcol{display:flex;flex-direction:column;gap:6px;min-width:0}
+.bcol .dayh .dn{font-size:22px;min-width:24px}
+.bcol .blk{font-size:12px}
+.bcol .blk .k .t{white-space:normal}
+.sel{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--ink);color:var(--panel);border-radius:12px;padding:8px 8px 8px 12px;font-size:13px;font-weight:600}
+.sel .big{background:var(--accent);padding:7px 12px}
+
+/* v2 itinerary: day bands, entries with icon discs, + lines between entries */
+.dayband{display:flex;align-items:center;gap:10px;padding:6px 0 2px;border-bottom:2px solid var(--ink)}
+.dayband .dn{font-family:var(--f-display);font-size:30px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.dayband .dl{display:grid;line-height:1.2;min-width:0}
+.dayband .dl b{font-size:13.5px}
+.dayband .dl span{font-size:12px;color:var(--muted)}
+.dayband > :last-child:not(.dl){margin-left:auto}
+.net{font-family:var(--f-mono);font-size:12px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--ok-soft);color:var(--ok)}
+.net.neg{background:var(--accent-soft);color:var(--accent)}
+.dayitems{display:flex;flex-direction:column}
+.ins{display:flex;align-items:center;gap:6px;height:22px;color:var(--wire)}
+.ins::before,.ins::after{content:"";flex:1;height:1px;background:var(--line)}
+.ins .pb{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--wire);background:var(--panel);display:grid;place-items:center;color:var(--muted)}
+.ins .pb svg{width:11px;height:11px}
+.it{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:9px;align-items:start;padding:8px;border-radius:12px;border:1.5px solid var(--line);background:var(--panel)}
+.it .disc{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--ink)}
+.it .disc svg{width:16px;height:16px}
+.it .body{display:grid;gap:2px;min-width:0}
+.it .ttl{display:flex;gap:6px;align-items:center;min-width:0;font-size:13.5px}
+.it .ttl b{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.it .s{font-size:11.5px;color:var(--muted)}
+.it .tm{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);padding-top:6px;font-variant-numeric:tabular-nums}
+.it.show{border-color:var(--accent);background:var(--accent-soft)}
+.it.show .disc{background:var(--accent);color:var(--panel)}
+.it.travel{border-color:transparent;background:var(--soft)}
+.it.travel .disc{background:var(--panel)}
+.it.lodge .disc{background:var(--lodge-soft);color:var(--lodge)}
+.it.gap{border:1.5px dashed var(--warn);background:var(--warn-soft)}
+.it.gap .disc{background:var(--panel);color:var(--warn)}
+.it.mine{outline:2px solid var(--ink);outline-offset:1px}
+.exp,.earn,.addexp{display:inline-flex;align-items:center;gap:5px;justify-self:start;font-size:11.5px;margin-top:3px;padding:2px 8px 2px 6px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
+.exp svg,.addexp svg{width:12px;height:12px;color:var(--muted)}
+.exp b,.earn b{font-family:var(--f-mono);font-weight:500}
+.exp i{font-style:normal;color:var(--muted)}
+.earn{background:var(--ok-soft);border-color:transparent;color:var(--ok)}
+.addexp{color:var(--blue);border-style:dashed;border-color:var(--blue)}
+.addexp svg{color:var(--blue)}
+.opts{border:1.5px dashed var(--blue);border-radius:12px;padding:8px;display:grid;gap:6px}
+.opts-h{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--blue)}
+.opts-h svg{width:12px;height:12px}
+.opt{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:13px}
+.opt .body{display:grid;min-width:0}
+.opt .s{font-size:11.5px;color:var(--muted)}
+.strip{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;align-items:end}
+.sd{display:grid;justify-items:center;gap:2px;font-size:10px;color:var(--muted)}
+.sd b{font-family:var(--f-display);font-size:17px;color:var(--ink);line-height:1}
+.sd i{display:block;width:70%;height:var(--h);min-height:4px;border-radius:4px 4px 2px 2px;background:var(--blue)}
+.sd.booked i{background:var(--accent)}
+.sd.none i{background:var(--soft)}
+.sd em{font-style:normal;font-size:9.5px;white-space:nowrap}
+.dchips{display:flex;gap:4px;flex-wrap:wrap;margin-top:2px}
+.dchips span{font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;background:var(--blue-soft);color:var(--blue)}
+.dchips.big2 span{font-size:13px;padding:4px 10px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cw{font-size:10.5px;font-weight:700;color:var(--muted)}
+.cd{font-size:13px;padding:7px 0;border-radius:8px;border:1.5px solid var(--line);position:relative;font-variant-numeric:tabular-nums}
+.cd.on{background:var(--blue);border-color:var(--blue);color:var(--panel);font-weight:700}
+.cd.show::after{content:"";position:absolute;left:50%;bottom:3px;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--accent)}
+.cd.out{opacity:.45}
+.choices{display:grid;gap:6px}
+.tally{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tally div{border:1.5px solid var(--line);border-radius:10px;padding:7px 9px;display:grid}
+.tally span{font-size:11px;color:var(--muted)}
+.tally b{font-family:var(--f-display);font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+.tally .hi{background:var(--ok-soft);border-color:transparent}
+.tally .hi b{color:var(--ok)}
+.bcol .dayband .dn{font-size:22px}
+.bcol .it{grid-template-columns:24px minmax(0,1fr);padding:6px}
+.bcol .it .disc{width:24px;height:24px}
+.bcol .it .disc svg{width:13px;height:13px}
+.bcol .it .tm{grid-column:2;padding-top:0;order:-1}
+
+/* split simulator */
+.sim{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:22px}
+@media (max-width:760px){.sim{grid-template-columns:minmax(0,1fr)}}
+.sim-in{display:grid;gap:12px;align-content:start}
+.sim-in label{display:grid;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+.sim-in label output{font-family:var(--f-mono);font-size:13px;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+.sim-in input[type=range]{width:100%;accent-color:var(--accent)}
+.sim-basis{display:grid;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
+.segbtn{display:flex;flex-wrap:wrap;gap:4px}
+.segbtn button{font:inherit;font-size:12.5px;font-weight:600;padding:5px 10px;border-radius:999px;border:1.5px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer}
+.segbtn button[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.sim-out{display:grid;gap:14px;align-content:start;min-width:0}
+.sim-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.tile{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;gap:1px}
+.tile span{font-size:12px;color:var(--muted);font-weight:600}
+.tile b{font-family:var(--f-display);font-size:28px;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile em{font-style:normal;font-size:12px;color:var(--muted)}
+.tile.hi{background:var(--accent-soft);border-color:transparent}
+.tile.hi b{color:var(--accent)}
+.sim-chart{width:100%;min-width:0}
+.sim-chart svg,.mini svg{display:block;width:100%;height:auto}
+.sim-chart .g{stroke:var(--soft);stroke-width:1}
+.sim-chart .ax,.sim-chart .lab{fill:var(--muted);font:11px var(--f-mono)}
+.sim-chart .lab{fill:var(--blue);font-weight:500}
+.sim-chart .vs,.mini .vs{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.sim-chart .pct,.mini .pct{stroke:var(--blue);stroke-width:1.5;stroke-dasharray:2 3}
+.sim-chart .deal,.mini .deal{stroke:var(--accent);stroke-width:3;stroke-linejoin:round}
+.sim-chart .be,.mini .be{stroke:var(--ok);stroke-width:1.5}
+.sim-chart .dot,.mini .dot{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.sim-math{display:flex;flex-wrap:wrap;gap:4px 14px;font-family:var(--f-mono);font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;font-variant-numeric:tabular-nums}
+.sim-math b{color:var(--ink);font-weight:500}
+.mini{border:1.5px solid var(--line);border-radius:12px;padding:6px}
+.slider{position:relative;height:8px;border-radius:8px;background:var(--soft);margin:6px 0}
+.slider i{position:absolute;inset:0 auto 0 0;border-radius:8px;background:var(--accent)}
+.slider b{position:absolute;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:var(--panel);border:2px solid var(--accent)}
+
+/* talk to claude */
+.say-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:22px 0 14px;font-size:13.5px;color:var(--muted)}
+.says{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,480px),1fr));gap:14px}
+.sayg{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;display:grid;gap:10px;align-content:start}
+.sayg h3{font-size:17px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.sayg h3 small{font-family:var(--f-body);font-size:12px;font-weight:600;color:var(--muted)}
+.say{display:grid;gap:4px;padding-top:10px;border-top:1px solid var(--soft)}
+.say:first-of-type{border-top:0;padding-top:0}
+.say q{quotes:none;justify-self:start;max-width:100%;background:var(--blue-soft);color:var(--ink);font-weight:600;font-size:14.5px;padding:6px 12px;border-radius:14px 14px 14px 4px}
+.say p{font-size:13.5px;color:var(--muted);padding-left:12px;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+.say p .chip{font-size:10.5px}
+.say p code{font-size:11.5px;color:var(--blue)}
+
+/* tour sheet */
+.sheet-tools{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:22px 0 12px}
+.sheetframe{background:var(--panel);border:2px solid var(--wire);border-radius:14px;overflow:hidden}
+.sheetbar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 14px;border-bottom:1.5px solid var(--line);font-size:13px;color:var(--muted)}
+.sheetbar b{font-family:var(--f-display);font-size:18px;color:var(--ink)}
+.sheetbar .sb-r{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.sheetwrap{overflow:auto;max-height:620px}
+.tsheet{border-collapse:separate;border-spacing:0;width:100%;min-width:1240px;font-size:12.5px}
+.tsheet th,.tsheet td{padding:7px 9px;border-right:1px solid var(--soft);border-bottom:1px solid var(--soft);text-align:left;vertical-align:top;white-space:normal;font-family:var(--f-body);font-weight:400}
+.tsheet thead th{position:sticky;top:0;z-index:2;background:var(--panel);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.tsheet thead tr.grp th{top:0;color:var(--ink);font-size:10.5px;border-bottom:2px solid var(--ink)}
+.tsheet thead tr.cols th{top:29px}
+.tsheet th:first-child,.tsheet td:first-child{position:sticky;left:0;z-index:1;background:var(--panel);border-right:2px solid var(--line)}
+.tsheet thead th:first-child{z-index:3}
+.tsheet td.num,.tsheet th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tsheet .mono{font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tsheet .dd{display:grid;line-height:1.15}
+.tsheet .dd b{font-family:var(--f-display);font-size:15px;font-weight:800}
+.tsheet .dd span{font-size:11px;color:var(--muted)}
+.tsheet .ln{display:flex;gap:6px;align-items:baseline;line-height:1.35}
+.tsheet .ln + .ln{margin-top:4px;padding-top:4px;border-top:1px dashed var(--soft)}
+.tsheet .ln svg{width:12px;height:12px;flex:none;align-self:center;color:var(--muted)}
+.tsheet .ln .sub{color:var(--muted);font-size:11.5px}
+.tsheet .rk{width:16px;height:16px;border-radius:50%;background:var(--blue-soft);color:var(--blue);font-size:10px;font-weight:700;display:inline-grid;place-items:center;flex:none;align-self:center}
+.tsheet .clash{color:var(--warn);font-weight:600}
+.tsheet tr.off td{color:var(--muted);background:color-mix(in srgb,var(--soft) 40%,var(--panel))}
+.tsheet tr.off td:first-child{background:color-mix(in srgb,var(--soft) 40%,var(--panel))}
+.tsheet td.warn{background:var(--warn-soft);color:var(--ink)}
+.tsheet td.open{background:color-mix(in srgb,var(--blue-soft) 60%,var(--panel))}
+.tsheet td.showc{background:color-mix(in srgb,var(--accent-soft) 70%,var(--panel))}
+.tsheet .pos{color:var(--ok)} .tsheet .neg{color:var(--accent)}
+.tsheet tr.dayhead td{background:var(--soft);font-weight:600;color:var(--ink);border-bottom:1.5px solid var(--line)}
+.tsheet tr.dayhead td:first-child{background:var(--soft)}
+.tsheet tfoot td{position:sticky;bottom:0;background:var(--panel);border-top:2px solid var(--ink);font-weight:700;z-index:1}
+.tsheet tfoot td:first-child{z-index:2}
+.tsheet .edit{border-bottom:1px dotted var(--wire);cursor:text}
+.sheetfoot{border-top:1.5px solid var(--line);padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px}
+.sheetfoot b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+
+/* post-show interview */
+.interview{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start;margin-bottom:8px}
+@media (max-width:760px){.interview{grid-template-columns:minmax(0,1fr)}}
+.chat{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:7px}
+.msg{max-width:85%;padding:7px 12px;border-radius:14px;font-size:14px;line-height:1.4}
+.msg.me{align-self:flex-end;background:var(--ink);color:var(--panel);border-bottom-right-radius:4px}
+.msg.ai{align-self:flex-start;background:var(--soft);border-bottom-left-radius:4px}
+.msg.sum{background:var(--ok-soft);max-width:100%}
+.msg.sum b{color:var(--ok)}
+.iv-side{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;gap:10px}
+.iv-side h4{font-family:var(--f-display);font-size:17px;margin:0}
+.iv-side .note{font-size:13px;color:var(--muted)}
+.ivq{margin:0;padding-left:22px;display:grid;gap:6px}
+.ivq li{font-size:14px}
+.ivq li span{display:block;font-size:12.5px;color:var(--muted)}
+
+/* printable setlist */
+.paperwrap{overflow-x:auto;padding:4px 0}
+.paper{width:612px;max-width:100%;min-width:520px;aspect-ratio:8.5/11;background:#FFFFFF;color:#111;border-radius:4px;box-shadow:0 10px 30px rgb(0 0 0 / .18);padding:34px 38px;display:flex;flex-direction:column;gap:14px;margin:0 auto;font-family:var(--f-body)}
+.paper-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-bottom:3px solid #111;padding-bottom:10px}
+.paper-h b{display:block;font-family:var(--f-display);font-size:30px;font-weight:800;line-height:1}
+.paper-h span{font-size:12px;color:#555}
+.paper-who{font-size:11px!important;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border:1.5px solid #111;border-radius:999px;padding:3px 10px;color:#111!important}
+.sl{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;flex:1;justify-content:space-between}
+.sl li{display:grid;grid-template-columns:28px minmax(0,1fr) 42px 140px 150px;gap:8px;align-items:baseline;padding:3px 0;border-bottom:1px solid #e3e3e3}
+.sl li::before{counter-increment:s;content:counter(s);font-family:var(--f-mono);font-size:11px;color:#888}
+.sl li.talk::before,.sl li.brk::before{content:"";counter-increment:none}
+.sl .t{font-family:var(--f-display);font-size:21px;font-weight:800;line-height:1.1}
+.sl .k{font-family:var(--f-mono);font-size:13px;font-weight:500}
+.sl .f{font-size:12px;color:#333}
+.sl .n{font-size:12px;color:#B0225E;font-style:italic}
+.sl li.seg .t::after{content:" →";color:#B0225E}
+.sl li.talk .t,.sl li.brk .t{grid-column:2 / -1;font-family:var(--f-body);font-size:13px;font-weight:600;font-style:italic;color:#555}
+.sl li.brk{border-top:2px dashed #bbb;border-bottom:2px dashed #bbb}
+.paper-f{display:flex;justify-content:space-between;font-size:10.5px;color:#777;border-top:1px solid #ccc;padding-top:6px}
+
+/* module switcher shared by every module page */
+.modnav{position:relative;margin:0 0 16px;z-index:20}
+.modnav summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font:600 13px/1 var(--f-body,system-ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.modnav summary::-webkit-details-marker{display:none}
+.modnav summary b{font-weight:800}
+.modnav summary .car{color:var(--muted);font-size:11px}
+.modnav[open] summary{border-color:var(--ink)}
+.modnav .menu{position:absolute;top:calc(100% + 6px);left:0;width:min(340px,calc(100vw - 32px));background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgb(0 0 0 / .18);padding:6px;display:grid}
+.modnav .menu a{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:9px;color:var(--ink);text-decoration:none;font:500 14px/1.3 var(--f-body,system-ui)}
+.modnav .menu a:hover{background:var(--soft)}
+.modnav .menu a.on{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.modnav .menu a span{color:var(--muted);font-size:12px}
+.modnav .menu hr{border:0;border-top:1px solid var(--line);margin:4px 6px}
+
+.banner{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}
+.banner span{font-size:12.5px;font-weight:700;padding:4px 11px;border-radius:999px;background:var(--panel);border:1px solid var(--line)}
+.banner a{font-size:12.5px;font-weight:700;padding:4px 11px}
+.pt td{font-family:var(--f-body)!important;font-size:13px!important;white-space:normal!important;font-weight:400!important}
+.pt td:first-child{font-weight:700!important}
+.pt td.v{color:var(--muted)}
+.stage{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+.stage .n{font-family:var(--f-display);font-weight:800;font-size:15px;color:var(--panel);background:var(--ink);border-radius:8px;padding:1px 8px}
+.chip.sw{background:var(--warn-soft);color:var(--warn)}
+.shownlist{display:grid;gap:8px;margin:0;padding:0;list-style:none;max-width:80ch}
+.shownlist li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:14.5px}
+.hidenote{max-width:78ch;margin-top:10px}
+.checklist{counter-reset:c;display:grid;gap:10px;margin:0;padding:0;list-style:none;max-width:82ch}
+.checklist li{counter-increment:c;display:grid;grid-template-columns:34px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.checklist li::before{content:counter(c);font-family:var(--f-display);font-weight:800;font-size:24px;color:var(--accent);line-height:1}
+.mod-foot{margin-top:50px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V4M4 20h16M8 16l4-5 3 3 5-7"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V9l2-4h11l3 4h2v7"/><path d="M3 16h18"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13l8-2 4-8 2 1-2 7 6-1 2 2-6 3 1 6-2 1-3-6-8 1z"/></symbol>
+    <symbol id="i-bed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19V6M3 15h18v4M21 15v-3a3 3 0 0 0-3-3h-8v6"/><circle cx="6.5" cy="11.5" r="1.8"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  </defs>
+</svg>
+
+
+
+<div class="wrap">
+  <details class="modnav"><summary>Band App · <b>Money</b> <span class="car">▼ modules</span></summary><div class="menu"><a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy" class="">Vision & principles<span>1</span></a><a href="https://claude.ai/artifact/EeZsUjppseXzHE2xMUfQiK" class="">Roadie & MCP<span>2</span></a><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9" class="">Definition of done<span>3</span></a><a href="https://claude.ai/artifact/UbHKoZ2dvyod6sT1ZujwU2" class="">Account<span>4</span></a><a href="https://claude.ai/artifact/6u9FDMH7x2enQhyShxxSXZ" class="">Booking<span>5</span></a><a href="https://claude.ai/artifact/3E3mU89UCLQk4hN8cZNAR2" class="">Shows<span>6</span></a><a href="https://claude.ai/artifact/QuYVPDGSJjZEZhPMrvJiug" class="on">Money<span>7</span></a><a href="https://claude.ai/artifact/AdRLZVjthucWsNpQrtVzD8" class="">Set lists<span>8</span></a><a href="https://claude.ai/artifact/4JzBNYFXbFLKZutSTfWrA3" class="">Touring<span>9</span></a><a href="https://claude.ai/artifact/GsW2DtXMVUHFKtCSsDzNAy" class="">Promotion<span>10</span></a><hr><a href="https://claude.ai/artifact/7HGyaWUMa95HTYXnaypqJd" class="">Business plan<span>11</span></a><a href="https://claude.ai/artifact/UR6pX9H5s1GrxmXa3JAjvd" class="">Later<span>12</span></a><hr><a href="https://claude.ai/code/artifact/553a7d8e-f2c2-40aa-9bb9-5ab7ce1a26e3">Original blueprint<span>archive</span></a></div></details>
+  <header>
+    <p class="eyebrow">Band App · module</p>
+    <h1 style="margin-top:8px">Money</h1>
+    <p class="lede">Projects are the buckets; income, expenses and payouts land in them. Income comes to the band, payouts go to people, and owed vs paid works the same both ways. Totals are worked out when read.</p>
+    <p class="callout" style="margin-top:16px"><b>Supersedes the ledger design (#26). Built in #39.</b> The one <code>ledger</code> collection, settle, payouts owed on the deal and income lines on the deal are replaced by projects, income and payouts. Accounts, balances and transfers were cut: a payment records a method and a date.</p>
+    <div class="banner"><span>Roadie and MCP first</span><span>Drafts and autosave</span><span>Hidden until needed</span><span>Checked against the principles</span><a href="https://claude.ai/artifact/VhQHoC3ZHJWsdHgmt7chL9">What done means ↗</a></div>
+  </header>
+  <nav class="toc" aria-label="Sections"><a href="#principles">Principles</a><a href="#talk">1 · Talk to Roadie</a><a href="#read">2 · Read views</a><a href="#edit">3 · Editing by hand</a><a href="#shown">Shown when</a><a href="#how">How it works</a><a href="#model">Model</a><a href="#access">Who sees what</a><a href="#screens">Screens</a><a href="#changes">Changes</a></nav>
+
+  <section class="sec" id="principles">
+    <h2>Against the principles</h2>
+    <p class="sec-intro">Every feature in this module, checked against the <a href="https://claude.ai/artifact/9Q8HoU1aQrAKyBzMPu9SYy">product principles</a>. ✓ says how it serves the principle; ~ marks a tension we accept.</p>
+    <div class="access pt"><table><thead><tr><th>Feature</th><th>1 · Serve musicians</th><th>2 · Never waste time</th><th>3 · AI first</th><th>4 · Never lose data</th><th>Notes</th></tr></thead><tbody><tr><td>Projects</td><td>✓ a bucket per album, tour or video, so the band sees what each costs</td><td>✓ Band is the default; nobody has to pick</td><td>✓ &quot;put the $750 video shoot on the Lighthouse video project&quot;</td><td>✓ closed, never removed</td><td class="v">Every record sits on exactly one project.</td></tr><tr><td>Income</td><td>✓ guarantees and Bandcamp both land</td><td>✓ owed to us until it arrives; one tap when it does</td><td>✓ &quot;Pine Hollow still owes us the $400 guarantee&quot;</td><td>✓ a show is context, not the owner</td><td class="v">Admins only. Members never read it.</td></tr><tr><td>Payouts</td><td>✓ players, other bands and videographers get paid</td><td>✓ Split evenly fills one unpaid payout per player</td><td>✓ &quot;we paid Felix $100 for Friday&#x27;s show&quot;</td><td>✓ read back before writing</td><td class="v">A payout to a person, never to an account.</td></tr><tr><td>Owed vs paid</td><td>✓ nobody is left wondering who owes whom</td><td>✓ no date means open; one Mark paid closes it</td><td>✓ &quot;who do we owe?&quot;</td><td>✓ both directions use the same rule</td><td class="v">No receivedAt: owed to us. No paidAt or unpaid pay-back: we owe.</td></tr><tr><td>Expenses</td><td>✓ members keep adding their own</td><td>✓ amount, what, project, receipt</td><td>✓ &quot;we owe Felix $42 for gas&quot;</td><td>✓ the owner changes it until it is paid back</td><td class="v">Admins can log one in Felix&#x27;s name.</td></tr><tr><td>Reports</td><td>✓ see what each project did</td><td>✓ computed when read</td><td>✓ &quot;what did the album cost so far?&quot;</td><td>✓ nothing stored but the show totals cache</td><td class="v">Members see only their own money.</td></tr></tbody></table></div>
+  </section>
+
+  <section class="sec" id="talk">
+    <div class="stage"><span class="n">1</span><h2>Talk to Roadie</h2></div>
+    <p class="sec-intro">Built first. What you can say to Roadie in the app, or to Claude, Gemini or another assistant through the MCP server, and what it writes or answers. The commands behind these exist before any form does.</p>
+    <div class="says" id="talkGrid"><article class="sayg"><h3>Spending money<small>6</small></h3><div class="say"><q>We owe Felix $42 for gas.</q><p><span class="chip ai">writes</span><span>An expense in Felix's name, category travel, pay back on. The same record Felix would make himself. It shows under We owe Felix.</span><code>expenses.add</code></p></div><div class="say"><q>I just spent 50 on gas.</q><p><span class="chip ai">writes</span><span>An expense in your name on tonight's show and its project. Nothing to ask unless the amount is missing.</span><code>expenses.add</code></p></div><div class="say"><q>We paid Felix $100 for Friday's show.</q><p><span class="chip ai">writes</span><span>A payout to Felix, kind pay, on Friday's show, paid today. Asks how once (Venmo, cash...) if you didn't say.</span><code>payouts.add</code></p></div><div class="say"><q>We owe Wren $200 for the show.</q><p><span class="chip ai">writes</span><span>A payout to Wren with no paidAt, so it sits under We owe until someone marks it paid.</span><code>payouts.add</code></p></div><div class="say"><q>Pay Felix back for gas.</q><p><span class="chip ai">writes</span><span>Lists Felix's open pay-back expenses and the total, then on a yes marks them paid back and writes one reimbursement payout.</span><code>expenses.payPerson</code></p></div><div class="say"><q>Mark Wren's $200 paid, Venmo.</q><p><span class="chip ai">writes</span><span>Settles the open payout with a method and today's date.</span><code>payouts.markPaid</code></p></div></article><article class="sayg"><h3>Money in<small>3</small></h3><div class="say"><q>Pine Hollow still owes us the $400 guarantee.</q><p><span class="chip ai">writes</span><span>Income, category guarantee, from Pine Hollow, no receivedAt: owed to us. Attached to the Pine Hollow show if one matches.</span><code>income.add</code></p></div><div class="say"><q>Pine Hollow paid.</q><p><span class="chip ai">writes</span><span>Fills in receivedAt on the owed income (today unless you say a date).</span><code>income.setReceived</code></p></div><div class="say"><q>Bandcamp sent $86 for October.</q><p><span class="chip ai">writes</span><span>Income from Bandcamp with no show, received today, on Band unless you name a project.</span><code>income.add</code></p></div></article><article class="sayg"><h3>Projects<small>4</small></h3><div class="say"><q>Put the $750 video shoot on the Lighthouse video project.</q><p><span class="chip ai">writes</span><span>An expense (category video) with projectId matched by name from the open projects. Leave the project out and it lands on Band.</span><code>expenses.add</code></p></div><div class="say"><q>Start a project for the new album.</q><p><span class="chip ai">writes</span><span>Creates a project of kind album. Dates and a budget are optional; Roadie adds what it finds and doesn't refuse over blanks.</span><code>projects.create</code></p></div><div class="say"><q>Close the Fall 2025 run.</q><p><span class="chip ai">writes</span><span>Closes it: still readable, nothing new can land on it. Projects are closed, never removed.</span><code>projects.close</code></p></div><div class="say"><q>Make the Duo gig a Duo project show.</q><p><span class="chip ai">writes</span><span>Changes the show's project. The show's money follows what is entered next, not what was already entered.</span><code>shows.update</code></p></div></article><article class="sayg"><h3>Looking back<small>4</small></h3><div class="say"><q>Who do we owe?</q><p><span class="chip m">answers</span><span>Groups what we owe by person: unpaid payouts and unreimbursed pay-back expenses, biggest first.</span><code>weOwe</code></p></div><div class="say"><q>Who still owes us?</q><p><span class="chip m">answers</span><span>Income with no receivedAt, oldest first, with the total.</span><code>owedToUs</code></p></div><div class="say"><q>What has the Wild Hearts album cost so far?</q><p><span class="chip m">answers</span><span>The project's in, out, net and budget, with what is still owed each way.</span><code>projectTotals</code></p></div><div class="say"><q>What did we make in October?</q><p><span class="chip m">answers</span><span>In, out and left over the new sources, by month, show, project or category.</span><code>reports</code></p></div></article><article class="sayg"><h3>Members<small>2</small></h3><div class="say"><q>I paid $24 for strings.</q><p><span class="chip ai">writes</span><span>Your own expense on the show's or rehearsal's project, else Band. A member can only write their own.</span><code>expenses.add</code></p></div><div class="say"><q>What does the band owe me?</q><p><span class="chip m">answers</span><span>Your own unpaid pay-back expenses and unpaid payouts to you. Never anyone else's, never income.</span><code>My money</code></p></div></article><article class="story"><h3>How Roadie behaves</h3><ul><li><span class="chip ai">MCP</span><span>Adds what it finds, even when optional fields are blank; asks once, with a list, only for what is required (an amount, who).</span></li><li><span class="chip ai">MCP</span><span>Money writes show a confirm line before they run, and payouts and paying back read the total back.</span></li><li><span class="chip ai">MCP</span><span>Admins only: income, payouts, projects and logging an expense in someone else's name. A member's Roadie can only write their own expenses.</span></li><li><span class="chip ai">MCP</span><span>Amounts are cents. A closed project takes nothing new.</span></li></ul></article></div>
+  </section>
+
+  <section class="sec" id="read">
+    <div class="stage"><span class="n">2</span><h2>Read views</h2></div>
+    <p class="sec-intro">Built with the commands, so people can see what Roadie and the MCP server did. Updates show live.</p>
+    <div class="stories" id="readGrid"><article class="story"><h3>A show's Finances tab</h3><ul><li><span class="chip a">admin</span><span>See the show's project, set by its configuration (Full band: Band; Duo: Duo).</span></li><li><span class="chip a">admin</span><span>See Money in: each line Received or Owed to us.</span></li><li><span class="chip a">admin</span><span>See Paid out: each payout Paid or We owe, with Mark paid.</span></li><li><span class="chip a">admin</span><span>See the show's expenses, with who paid and whether the band owes them.</span></li><li><span class="chip a">admin</span><span>See the net card: in, paid out, expenses, net to the project, still owed to us, we still owe.</span></li></ul></article><article class="story"><h3>The Money page</h3><ul><li><span class="chip a">admin</span><span>See In, Out and Left over the year.</span></li><li><span class="chip a">admin</span><span>See Owed to us, each line with what it was for.</span></li><li><span class="chip a">admin</span><span>See We owe grouped by person, each with a Pay button.</span></li><li><span class="chip a">admin</span><span>See Recently: the latest income, expenses and payouts, each with its project.</span></li><li><span class="chip a">admin</span><span>Browse by Overview, Projects, By show or By category.</span></li></ul></article><article class="story"><h3>Projects</h3><ul><li><span class="chip a">admin</span><span>See every project with In, Out, Net and Budget.</span></li><li><span class="chip a">admin</span><span>Open a project: budget spent, in so far, net, we owe, every record on it, spent by category.</span></li><li><span class="chip m">member</span><span>See the project names, kinds and dates, so an expense can pick one. No totals.</span></li></ul></article><article class="story"><h3>My money</h3><ul><li><span class="chip m">member</span><span>See what the band owes me.</span></li><li><span class="chip m">member</span><span>See my expenses: waiting, paid back or no pay back.</span></li><li><span class="chip m">member</span><span>See Paid to me: payouts made to me that are paid.</span></li></ul></article></div>
+  </section>
+
+  <section class="sec" id="edit">
+    <div class="stage"><span class="n">3</span><h2>Editing by hand</h2></div>
+    <p class="sec-intro">Forms come after, generated from the same schemas. New records need an explicit Add or Save, and Cancel throws the draft away. Existing records edit in place and autosave; there is no page-level Edit.</p>
+    <div class="stories" id="editGrid"><article class="story"><h3>Money in (modal)</h3><ul><li><span class="chip a">admin</span><span>Choose Owed to us or We got it.</span></li><li><span class="chip a">admin</span><span>Pick what for, who from, the amount, the project, an optional show.</span></li><li><span class="chip a">admin</span><span>When we got it, add how and when. Nothing else is asked.</span></li><li><span class="chip a">admin</span><span>Read the sentence back, then Save. Cancel throws the draft away.</span></li></ul></article><article class="story"><h3>Money out (modal)</h3><ul><li><span class="chip a">admin</span><span>Choose We owe or We paid, then the kind: pay back something they bought, pay for playing, another band's cut, other.</span></li><li><span class="chip a">admin</span><span>Pick who (band people first, then contacts), amount, what for, project, optional show.</span></li><li><span class="chip a">admin</span><span>When we paid, add how and when.</span></li><li><span class="chip a">admin</span><span>Read it back with a line on what it saves: pay back is an expense in their name, everything else is a payout.</span></li></ul></article><article class="story"><h3>Owed and paid</h3><ul><li><span class="chip a">admin</span><span>Tap Received on income that came in, or Mark paid on a payout.</span></li><li><span class="chip a">admin</span><span>Split evenly on the Paid out card fills one unpaid payout per player on the show (net divided by players); edit each before saving.</span></li><li><span class="chip a">admin</span><span>Pay a person from We owe: opens Money out set to We paid with their open items.</span></li></ul></article><article class="story"><h3>Projects and shows</h3><ul><li><span class="chip a">admin</span><span>Add a project with an explicit Add; Cancel discards the draft.</span></li><li><span class="chip a">admin</span><span>Close or reopen a project. Edit its name, dates and budget in place.</span></li><li><span class="chip a">admin</span><span>Change a show's project from its Finances tab.</span></li></ul></article><article class="story"><h3>Expense form</h3><ul><li><span class="chip m">member</span><span>Add an expense with a Project picker (open projects; defaults to the show's or rehearsal's project, else Band).</span></li><li><span class="chip m">member</span><span>Keep The band should pay me back, or untick it for the band's own money.</span></li><li><span class="chip m">member</span><span>Change or remove my own expense until it is paid back.</span></li><li><span class="chip a">admin</span><span>Edit any value in place; changes autosave.</span></li></ul></article></div>
+  </section>
+
+  <section class="sec" id="shown">
+    <h2>Shown when</h2>
+    <p class="sec-intro">What stays hidden until it's needed in this module.</p>
+    <ul class="shownlist" id="shownList"><li><span class="chip sw">shown when</span><span>If the Money section is off in Settings, the Money tab, a show's Finances tab and every amount are hidden, and Roadie's interviews skip money.</span></li><li><span class="chip sw">shown when</span><span>A member's Money starts in More as My money: their own expenses, what the band owes them, Paid to me.</span></li><li><span class="chip sw">shown when</span><span>Income, payouts to other people, project totals and the net card never reach a member.</span></li><li><span class="chip sw">shown when</span><span>The Project picker on a form lists open projects only; closed ones stay readable.</span></li><li><span class="chip sw">shown when</span><span>The Project card on a show is admin-only and sits on the Finances tab.</span></li><li><span class="chip sw">shown when</span><span>Split evenly shows only when the show has players who have no payout yet.</span></li><li><span class="chip sw">shown when</span><span>How and When appear only once an item is paid or received.</span></li><li><span class="chip sw">shown when</span><span>A tour or album, when built (#11, #12), is attached to a project; the project is what money hangs off.</span></li></ul>
+    <p class="callout hidenote"><b>Hidden never means blocked.</b> Roadie and the post-show interview skip questions about hidden fields and features that are off. If someone says it anyway, Roadie records it, or offers to turn the feature on.</p>
+  </section>
+
+  <section class="sec" id="how">
+    <h2>How it works</h2>
+    <ul class="rules"><li><b>Integer cents.</b> Every amount is whole cents. No floats anywhere.</li><li><b>One project each.</b> Every income, expense and payout belongs to exactly one project; none means Band. A new show takes its configuration's <code>defaultProjectId</code> and an admin can change it. A new record defaults to its show's project, else the default. A closed project takes nothing new; a project is closed, never removed.</li><li><b>Owed vs paid, both ways.</b> Income with no <code>receivedAt</code> is owed to us. A payout with no <code>paidAt</code>, or a pay-back expense with no <code>paidBackAt</code>, is what we owe. <code>payBack: false</code> is the band's own money: nothing owed.</li><li><b>No accounts.</b> A payment records a method (cash, Venmo, check...) and a date, not which account. How much is in the bank is the bank app's job.</li><li><b>Members handle their own expenses.</b> They add, change and remove their own until it is paid back, now with a project picker. An admin can log one in a bandmate's name: &quot;we owe Felix $42 for gas&quot; is the same record Felix would make.</li><li><b>Paying someone back</b> (<code>expenses.payPerson</code>) writes one <code>reimbursement</code> payout listing <code>expenseIds</code> and stamps each expense <code>paidBackAt</code>, <code>paidBackBy</code> and <code>reimbursedBy</code>.</li><li><b>Player pay is entered by hand</b> as a <code>pay</code> payout per player. Split evenly on the Paid out card fills one unpaid payout per player (net ÷ players) for the admin to edit; no split rules are stored.</li><li><b>Computed when read.</b> <code>weOwe</code> (by person), <code>owedToUs</code>, <code>projectTotals</code> and <code>showTotals</code> live in <code>src/lib/money.ts</code>. Project net = income − payouts − expenses over that <code>projectId</code>, owed amounts included. The one stored cache is <code>showDeals.totals</code> (<code>income</code>, <code>paidOut</code>, <code>expenses</code>), refreshed whenever a record on the show is written.</li><li><b>Roadie confirms money writes</b> and reads back the total before paying.</li><li><b>Tours and albums attach to a project.</b> Creating one later (#11, #12) creates its project; a project carries no tracks, routes or files.</li></ul><h3 style="margin:22px 0 8px">Migration</h3>
+<ol class="checklist"><li><span>Run <code>npm run migrate:money -- --dry-run</code> against the emulator. It walks the real data through the writer overlay, writes nothing, and prints a &quot;what won't land cleanly&quot; list for sign-off.</span></li><li><span>Run it against production once signed off (it needs <code>--yes</code> there). Projects Band (default) and Duo are created if missing and each configuration gets a <code>defaultProjectId</code>.</span></li><li><span>Every show gets a <code>projectId</code> (its billed-as configuration's, else Band); every expense gets one (its show's, else Band). Legacy income categories on expenses are rewritten to <code>other</code> and reported.</span></li><li><span>Each <code>showDeals.income[]</code> line becomes an <code>income</code> doc with the show, its project, <code>from</code> the venue and <code>receivedAt</code> the show date when it was received. The deal's <code>income[]</code> is left as legacy data and the totals refreshed, so every show's net is unchanged. A rerun is safe (keyed by <code>sourceKey</code>).</span></li></ol><h3 style="margin:22px 0 8px">Words</h3><div class="gloss"><div><b>Project</b><span><code>projects</code>. A bucket money belongs to; Band is the default.</span></div><div><b>Income</b><span><code>income</code>. Money coming to the band; a show is optional context.</span></div><div><b>Payout</b><span><code>payouts</code>. Money from the band to a person.</span></div><div><b>Owed to us</b><span>Income with no <code>receivedAt</code>.</span></div><div><b>We owe</b><span>Unpaid payouts and unreimbursed pay-back expenses.</span></div><div><b>Reimbursement</b><span>A payout that lists the expenses it paid back.</span></div></div>
+    <p class="callout hidenote" style="margin-top:16px"><b>Reimbursements count once.</b> A reimbursement payout repays an expense that already counts as spent, so <code>projectTotals</code>, <code>showTotals</code>, <code>moneyRows</code> and <code>showDeals.totals</code> leave it out of paid out. It still shows in the lists.</p>
+  </section>
+
+  <section class="sec" id="model">
+    <h2>Model and schema</h2>
+    <p class="sec-intro">Band data lives under <code>artists/{artistId}</code>. Collections changed since the first blueprint are marked, with their new fields. Read rules match <code>firestore.rules</code>; writes go through the commands.</p>
+    <div class="diagram"><pre class="mermaid">
+erDiagram
+  PROJECT ||--o{ EXPENSE : projectId
+  PROJECT ||--o{ INCOME : projectId
+  PROJECT ||--o{ PAYOUT : projectId
+  PROJECT ||--o{ SHOW : projectId
+  CONFIGURATION }o--o| PROJECT : defaultProjectId
+  SHOW ||--o| SHOW_DEAL : "deal terms and totals"
+  SHOW |o--o{ INCOME : "showId?"
+  SHOW |o--o{ EXPENSE : "showId?"
+  SHOW |o--o{ PAYOUT : "showId?"
+  PAYOUT ||--o{ EXPENSE : "expenseIds (reimbursement)"
+
+</pre></div>
+    <div style="height:14px"></div>
+    <div class="groups" id="groups"><p class="legend">Every document also carries the common fields: <code>id</code>, <code>schemaVersion</code>, <code>createdAt</code>, <code>updatedAt</code>, <code>createdBy</code>, <code>updatedBy</code>, <code>rev</code> and <code>createdVia / updatedVia</code>. The old <code>ledger</code> collection is not built: see What changed.</p><div class="common"><h4>Categories and methods</h4><div class="tbl"><table><tr><td>incomeCategory</td><td class=>guarantee, door, tips, merch, streaming, sync, grant, gearSale, other</td></tr><tr><td>expenseCategory</td><td class=>gear, travel, lodging, food, recording, mixing, mastering, pressing, artwork, photo, video, space, marketing, fees, other</td></tr><tr><td>paymentMethod</td><td class=>cash, venmo, check, square, card, bank, other. A method and a date, never an account.</td></tr><tr><td>ledgerCategory</td><td class=>DEPRECATED. The old one list, now split into incomeCategory and expenseCategory. Kept as an alias until nothing imports it; legacy income values on old expenses read as other.</td></tr></table></div></div><div class="colls"><article class="coll"><div class="coll-h"><div class="coll-t"><h4>projects</h4><code>artists/{a}/projects/{id}</code></div><p>A bucket every income, expense and payout belongs to: Band (the default), Duo, an album, a tour, a video. Carries no tracks, routes or files.</p><div class="chips"><span class="chip new">new</span><span class="chip m">read: the band</span><span class="chip a">write: admin</span></div></div><div class="tbl"><table><tr><td>artistId</td><td class="t">id</td><td class=></td></tr><tr><td>kind</td><td class="t">band|duo|album|tour|video|other</td><td class=></td></tr><tr><td>name</td><td class="t">str</td><td class=>min 1 char</td></tr><tr><td>start / end</td><td class="t">date?</td><td class=>YYYY-MM-DD</td></tr><tr><td>status</td><td class="t">open|closed</td><td class=>closed: readable, takes nothing new</td></tr><tr><td>budget</td><td class="t">cents?</td><td class=>planned spend</td></tr><tr><td>isDefault</td><td class="t">bool?</td><td class=>exactly one: Band</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>income</h4><code>artists/{a}/income/{id}</code></div><p>Money coming to the band. A show is optional context, not the owner. No receivedAt means owed to us.</p><div class="chips"><span class="chip new">new</span><span class="chip a">read + write: admin</span></div></div><div class="tbl"><table><tr><td>artistId</td><td class="t">id</td><td class=></td></tr><tr><td>date</td><td class="t">date</td><td class=></td></tr><tr><td>amount</td><td class="t">cents</td><td class=>&gt; 0</td></tr><tr><td>category</td><td class="t">incomeCategory</td><td class=>guarantee, door, tips, merch, streaming, sync, grant, gearSale, other</td></tr><tr><td>method</td><td class="t">paymentMethod?</td><td class=></td></tr><tr><td>from</td><td class="t">str</td><td class=>free text: the venue, Bandcamp, a grant</td></tr><tr><td>projectId</td><td class="t">id</td><td class=>exactly one project</td></tr><tr><td>showId</td><td class="t">id?</td><td class=>optional context</td></tr><tr><td>receivedAt</td><td class="t">date?</td><td class=>missing = owed to us</td></tr><tr><td>notes</td><td class="t">str?</td><td class=></td></tr><tr><td>sourceKey</td><td class="t">str?</td><td class=>set by the migration: showId:lineId</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>payouts</h4><code>artists/{a}/payouts/{id}</code></div><p>Money from the band to a person: a player's pay, another band's cut, paying someone back, a videographer. No paidAt means we owe.</p><div class="chips"><span class="chip new">new</span><span class="chip a">read + write: admin</span><span class="chip m">read: payouts made to them</span></div></div><div class="tbl"><table><tr><td>artistId</td><td class="t">id</td><td class=></td></tr><tr><td>to</td><td class="t">{musicianId, name} | {userId, name} | {contactId, name} | {name}</td><td class=>exactly one shape; the server copies the name</td></tr><tr><td>kind</td><td class="t">pay|split|reimbursement|other</td><td class=></td></tr><tr><td>amount</td><td class="t">cents</td><td class=>&gt; 0</td></tr><tr><td>what</td><td class="t">str?</td><td class=>"the Pine Hollow show"</td></tr><tr><td>projectId</td><td class="t">id</td><td class=>exactly one project</td></tr><tr><td>showId</td><td class="t">id?</td><td class=></td></tr><tr><td>dueDate</td><td class="t">date?</td><td class=></td></tr><tr><td>paidAt</td><td class="t">date?</td><td class=>missing = we owe</td></tr><tr><td>method</td><td class="t">paymentMethod?</td><td class=></td></tr><tr><td>expenseIds</td><td class="t">id[]?</td><td class=>kind reimbursement: the expenses it paid back</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>expenses</h4><code>artists/{a}/expenses/{id}</code></div><p>Unchanged in kind: a member adds their own; an admin can log one in a bandmate's name. Now on a project.</p><div class="chips"><span class="chip chg">changed</span><span class="chip m">read: own</span><span class="chip a">read: all</span><span class="chip m">write: own, until paid back</span><span class="chip a">write: anyone's</span></div></div><div class="tbl"><table><tr><td>userId</td><td class="t">id</td><td class=>who paid</td></tr><tr><td>date</td><td class="t">date</td><td class=></td></tr><tr><td>amount</td><td class="t">cents</td><td class=></td></tr><tr><td>category</td><td class="t">expenseCategory</td><td class=>old docs may still hold a legacy ledger value until the migration</td></tr><tr><td>what</td><td class="t">str</td><td class=></td></tr><tr><td>projectId <span class="chip new" style="font-size:9.5px">new</span></td><td class="t">id?</td><td class=>optional until the migration has run; missing reads as Band</td></tr><tr><td>showId / rehearsalId</td><td class="t">id?</td><td class=></td></tr><tr><td>gas</td><td class="t">{...}?</td><td class=>frozen estimate when category is travel</td></tr><tr><td>receipt</td><td class="t">driveRef?</td><td class=></td></tr><tr><td>payBack</td><td class="t">bool?</td><td class=>false = the band's own money, nothing owed; missing = true</td></tr><tr><td>paidBackAt / paidBackBy</td><td class="t">date? / uid?</td><td class=>set when paid back</td></tr><tr><td>reimbursedBy <span class="chip new" style="font-size:9.5px">new</span></td><td class="t">id?</td><td class=>the reimbursement payout that paid it</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>showDeals</h4><code>artists/{a}/showDeals/{showId}</code></div><p>Slimmed to deal terms and the server-kept totals. Money lines moved out.</p><div class="chips"><span class="chip chg">slimmed</span><span class="chip a">read + write: admin</span></div></div><div class="tbl"><table><tr><td>deal, doorSplitPct, ticketPrice, paidAttendance</td><td class="t">...</td><td class=>deal terms</td></tr><tr><td>pitchId, promoterId, editionId, contactIds</td><td class="t">...</td><td class=></td></tr><tr><td>crowd, rating</td><td class="t">...</td><td class=>how it went</td></tr><tr><td>totals</td><td class="t">{income, paidOut?, expenses, updatedAt}</td><td class=>the one stored cache: sums over income, payouts and expenses with this showId, owed included</td></tr><tr><td>income[], incomeNotes</td><td class="t">LEGACY</td><td class=>left as data once the migration has run; never read or written</td></tr><tr><td>settled, owedPayouts, guarantee</td><td class="t">LEGACY</td><td class=>from the ledger era; kept as data, never read or written</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>shows</h4><code>artists/{a}/shows/{id}</code></div><p>A show belongs to a project.</p><div class="chips"><span class="chip chg">changed</span><span class="chip a">write: admin</span></div></div><div class="tbl"><table><tr><td>projectId <span class="chip new" style="font-size:9.5px">new</span></td><td class="t">id?</td><td class=>its configuration's defaultProjectId at creation; an admin can change it; missing reads as Band</td></tr></table></div></article><article class="coll"><div class="coll-h"><div class="coll-t"><h4>artists.configurations[]</h4><code>artists/{a}</code></div><p>Which project a new show of this configuration takes.</p><div class="chips"><span class="chip chg">changed</span><span class="chip a">write: admin</span></div></div><div class="tbl"><table><tr><td>defaultProjectId <span class="chip new" style="font-size:9.5px">new</span></td><td class="t">id?</td><td class=>Full band: Band. Duo: Duo. Missing = the default project</td></tr></table></div></article></div></div>
+  </section>
+
+  <section class="sec" id="access">
+    <h2>Who sees what</h2>
+    <p class="sec-intro">Admins and members for now; later, roles. Roadie and the MCP server act as the person using them. Income stays admin-only, and so does every payout except the ones made to you.</p>
+    <div class="access"><table id="accessTbl"><thead><tr><th>Data</th><th>Admins</th><th>Members</th><th>MCP and Roadie</th></tr></thead><tbody><tr><td>Projects</td><td>Read + write</td><td>Read: names, kinds, dates. No totals</td><td>Read; create, update, close and reopen as an admin</td></tr><tr><td>Income</td><td>Read + write</td><td><span class="no">—</span></td><td>Read + write as an admin</td></tr><tr><td>Payouts</td><td>Read + write</td><td>Read only payouts made to them (as the user or as the player)</td><td>Read + write as an admin</td></tr><tr><td>Expenses</td><td>Everyone's; can log one in someone's name</td><td>Own: add; change or remove until paid back</td><td>As the person speaking</td></tr><tr><td>Pay people back (expenses.payPerson)</td><td><span class="y">Yes</span></td><td><span class="no">—</span></td><td>As an admin</td></tr><tr><td>Show Finances tab, net card, show totals</td><td><span class="y">Yes</span></td><td><span class="no">—</span></td><td>Read as an admin</td></tr><tr><td>Money page and project pages</td><td><span class="y">Yes</span></td><td><span class="no">—</span></td><td>Read as an admin</td></tr><tr><td>My money (own owed, own expenses, Paid to me)</td><td><span class="y">Yes</span></td><td><span class="y">Yes</span></td><td>As the person</td></tr><tr><td>Money settings (section on/off)</td><td>Admins</td><td>Own view only</td><td>—</td></tr></tbody></table></div>
+  </section>
+
+  <section class="sec" id="screens">
+    <h2>Screens</h2>
+    <p class="sec-intro">Phone and web for each. Roadie sits in a column on the left on desktop; see Roadie &amp; MCP.</p>
+    <div class="screens-bar"><span>Show all as</span><div class="vt allv" role="group" aria-label="View all screens" data-grid="modGrid"><button type="button" data-m="mobile" aria-pressed="true">Mobile</button><button type="button" data-m="web" aria-pressed="false">Web</button></div><span>or switch each screen on its own.</span></div>
+    <div class="screens" id="modGrid"></div>
+  </section>
+  <section class="sec" id="changes"><h2>What changed since the first blueprint</h2><p class="sec-intro">For Claude Code: what this module adds to or changes in the original blueprint it started from. Entries marked superseded are replaced by the money design built in #39.</p><div class="diff"><table><thead><tr><th>Collection</th><th>Change</th><th>Why</th></tr></thead><tbody><tr><td>ledger, settle, payouts owed on the deal, income lines on showDeals</td><td><span class="chip sw">superseded</span> The ledger design (#26): one <code>ledger</code> collection of never-edited entries, <code>shows.settle</code>, <code>owedPayouts</code> on the deal, and income lines on <code>showDeals.income[]</code>. Replaced by projects, income and payouts (#39). Not built as designed.</td><td>Income could only exist on a show, and musicians' pay and other bands' cuts weren't recorded. Owed vs paid now works the same both ways.</td></tr><tr><td>projects</td><td><span class="plus">+ new</span> <code>kind</code>, <code>name</code>, <code>start</code>, <code>end</code>, <code>status</code>, <code>budget</code>, <code>isDefault</code></td><td>The bucket every income, expense and payout belongs to. Band is the default; Duo exists; albums, tours and videos are attached later (#11, #12).</td></tr><tr><td>income</td><td><span class="plus">+ new</span> admin-only collection with <code>showId</code> optional and <code>receivedAt</code> (missing = owed to us)</td><td>Income is its own thing, not a line on a show's deal.</td></tr><tr><td>payouts</td><td><span class="plus">+ new</span> <code>to</code> (musician, user, contact or name), <code>kind</code> pay / split / reimbursement / other, <code>paidAt</code> (missing = we owe), <code>method</code>, <code>expenseIds</code></td><td>Money to a person. A member reads only those made to them.</td></tr><tr><td>expenses</td><td><span class="tilde">~ changed</span> <code>projectId</code>, <code>reimbursedBy</code>; <code>category</code> is now <code>expenseCategory</code>; an admin may log one in another person's name</td><td>Members keep handling their own expenses, plus a project picker. Paying back writes a reimbursement payout and stamps the expenses.</td></tr><tr><td>showDeals</td><td><span class="tilde">~ changed</span> slimmed: <code>income[]</code>, <code>incomeNotes</code>, <code>settled</code>, <code>owedPayouts</code> are LEGACY; <code>totals</code> gains <code>paidOut</code></td><td>The one stored cache is the show totals. Everything else is computed when read.</td></tr><tr><td>shows, configurations</td><td><span class="tilde">~ changed</span> <code>shows.projectId</code>, <code>configurations[].defaultProjectId</code></td><td>A new show takes its configuration's project (Full band: Band, Duo: Duo).</td></tr><tr><td>ledgerCategory</td><td><span class="tilde">~ changed</span> split into <code>incomeCategory</code> and <code>expenseCategory</code>; <code>paymentMethod</code> lifted out of the income line</td><td>Income and expense have different categories. Kept as a deprecated alias.</td></tr><tr><td>migration</td><td><span class="plus">+ new</span> <code>npm run migrate:money -- --dry-run</code>, then the real run</td><td>Stamps projects on shows and expenses, copies each deal's <code>income[]</code> line into an income doc. Idempotent.</td></tr><tr><td>ledger, expenses (first blueprint)</td><td><span class="chip chg">partly superseded</span> <span class="plus">+</span> <code>tourId</code>, <code>tourEntryId</code></td><td>Expenses still hang off tour entries (gas on a drive, a ticket on a flight). The <code>ledger</code> half of this entry is superseded: a tour is attached to a project, and its money is that project's income, expenses and payouts.</td></tr></tbody></table></div></section>
+  <p class="mod-foot">Nora Quill Band · Boulder, CO · CC0. Copy it.</p>
+</div>
+<script>
+(() => {
+const ic = (id, cls="") => `<svg class="${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
+const NAV = [["home","Home"],["cal","Shows"],["flag","Booking"],["note","Songs"],["money","Money"]];
+const navItems = member => NAV.filter(n => !(member && n[1]==="Booking")).map(([i,l]) => [i, member && l==="Money" ? "My money" : l]);
+const tabbar = (on, member) => `<div class="tabbar">${navItems(member).map(([i,l]) => `<div class="tab${l===on?" on":""}">${ic(i)}${l}</div>`).join("")}</div>`;
+const sidebar = (on, member) => `<aside class="side"><div class="brand">Nora Quill Band</div>${navItems(member).map(([i,l]) => `<div class="nav${l===on?" on":""}">${ic(i)}${l}</div>`).join("")}<div class="who">${member?"Hugo":"Rudy"}</div></aside>`;
+const head = (title, back) => `<div class="ph-top">${back?`<span class="back">‹ ${back}</span>`:""}<b>${title}</b><span></span></div>`;
+const row = (title, sub, right="") => `<div class="row"><span class="grow"><b>${title}</b>${sub?`<span class="s">${sub}</span>`:""}</span>${right}</div>`;
+const mono = s => `<span class="mono">${s}</span>`;
+const pill = (t, k="") => `<span class="pill ${k}">${t}</span>`;
+const chips = (list, on) => `<div class="segs">${list.map(x => `<span${x===on?' class="on"':""}>${x}</span>`).join("")}</div>`;
+const fld = (l, v, ph) => `<div class="field"><span class="lbl">${l}</span><div class="box${ph?" ph":""}">${v}</div></div>`;
+const sum = (a, b) => `<div class="sum"><span>${a}</span><span class="mono">${b}</span></div>`;
+
+const frame = (x, mode) => {
+  if (mode === "web") {
+    const inner = `<div class="cols">${x.cols.map(c=>`<div class="col">${c}</div>`).join("")}${x.sheet?`<div class="col"><div class="modal">${x.sheet}</div></div>`:""}</div>`;
+    return `<div class="desk-wrap"><div class="desk">${sidebar(x.nav, x.member)}<main>${head(x.title, x.back)}${inner}</main></div></div>`;
+  }
+  return `<div class="phone">${head(x.title, x.back)}<div class="ph-body">${x.cols.join("")}</div>${tabbar(x.nav, x.member)}${x.sheet?`<div class="dim"></div><div class="sheet">${x.sheet}</div>`:""}</div>`;
+};
+const wire = (gridId, list) => {
+  const grid = document.getElementById(gridId);
+  const draw = () => {
+    grid.innerHTML = list.map((x,i) => {
+      const mode = x.mode || "mobile";
+      return `<div class="screen ${mode}" data-i="${i}">
+        <div class="cap"><div class="cap-t"><h3>${x.t}</h3><div class="vt" role="group" aria-label="View"><button type="button" data-m="mobile" aria-pressed="${mode==="mobile"}">Mobile</button><button type="button" data-m="web" aria-pressed="${mode==="web"}">Web</button></div></div><p>${x.d}</p></div>
+        ${frame(x, mode)}</div>`;
+    }).join("");
+  };
+  grid.addEventListener("click", e => {
+    const b = e.target.closest("button[data-m]"); if(!b) return;
+    list[+b.closest(".screen").dataset.i].mode = b.dataset.m; draw();
+  });
+  document.querySelectorAll(`.allv[data-grid="${gridId}"] button`).forEach(b => b.addEventListener("click", () => {
+    list.forEach(x => x.mode = b.dataset.m);
+    document.querySelectorAll(`.allv[data-grid="${gridId}"] button`).forEach(o => o.setAttribute("aria-pressed", o===b));
+    draw();
+  }));
+  draw();
+};
+
+const SCR = [];
+const add = (t, d, o) => SCR.push({t, d, ...o});
+
+add("Show · Finances tab", "Admin only. The project (set by the configuration, changeable), Money in, Paid out with Split evenly, the show's expenses, and the net card. Members never see this tab.", {nav:"Shows", back:"Shows", title:"Pine Hollow · Nov 14", cols:[`
+  ${chips(["Show Details","Setlist","Finances"],"Finances")}
+  <div class="card hi"><span class="lbl">Project</span><b>Band</b><span class="s mono-s">set by the Full band configuration</span></div>
+  <div class="sum"><span class="lbl">Money in</span><span class="pill p">+ Money in</span></div>
+  ${row("Door","cash",`${mono("$600")}${pill("Received","g")}`)}
+  ${row("Guarantee","check",`${mono("$400")}${pill("Owed to us","p")}`)}
+  ${row("Merch at the table","Venmo",`${mono("$85")}${pill("Received","g")}`)}`,`
+  <div class="sum"><span class="lbl">Paid out</span><span class="pill p">+ Money out</span></div>
+  ${row("Felix · the show","Venmo · Nov 15",`${mono("$100")}${pill("Paid","g")}`)}
+  ${row("Hugo · the show","",`${mono("$100")}${pill("We owe","p")}`)}
+  ${row("The Moonlighters","their 30% of the door",`${mono("$180")}${pill("We owe","p")}`)}
+  <div class="big ghost">Split evenly</div>
+  <div class="lbl">Expenses</div>
+  ${row("Gas · Felix paid","64 mi",`${mono("$42")}${pill("We owe Felix","p")}`)}
+  ${row("Strings","band card",`${mono("$12")}${pill("Band's money")}`)}`,`
+  <div class="card"><div class="lbl">This show</div>${sum("In","$1,085")}${sum("Paid out","−$380")}${sum("Expenses","−$54")}${sum("Net to Band","$651")}${sum("Still owed to us","$400")}${sum("We still owe","$322")}</div>`]});
+
+add("Money out", "A modal on a show or the Money page. We owe or We paid; the kind picks what gets saved. The sentence at the bottom reads it back. No account picker.", {nav:"Shows", back:"Shows", title:"Pine Hollow · Nov 14", cols:[`
+  ${chips(["Show Details","Setlist","Finances"],"Finances")}
+  <div class="sum"><span class="lbl">Paid out</span><span class="pill p">+ Money out</span></div>
+  ${row("Felix · the show","Venmo · Nov 15",`${mono("$100")}${pill("Paid","g")}`)}`], sheet:`
+  <b style="font-size:16px">Money out</b>
+  ${chips(["We owe","We paid"],"We owe")}
+  <span class="lbl">What kind</span>
+  ${chips(["Pay back something they bought","Pay for playing","Another band's cut","Other"],"Pay back something they bought")}
+  ${fld("Who","Felix")}${fld("Amount","$42.00")}${fld("What did they buy?","gas")}
+  ${fld("Project","Band")}${fld("Show (optional)","Pine Hollow · Nov 14")}
+  <div class="note">How and When appear once it is paid.</div>
+  <div class="card hi"><b>We owe Felix $42.00 for gas</b><span class="s mono-s">Saves an expense in Felix's name, marked pay back. It shows up under We owe.</span></div>
+  <div class="pair"><div class="big ghost">Cancel</div><div class="big acc">Save</div></div>`});
+
+add("Money in", "Admin only. Owed to us or We got it; How and When only when we got it. A show is optional, so Bandcamp and grants work.", {nav:"Shows", back:"Shows", title:"Pine Hollow · Nov 14", cols:[`
+  ${chips(["Show Details","Setlist","Finances"],"Finances")}
+  <div class="sum"><span class="lbl">Money in</span><span class="pill p">+ Money in</span></div>
+  ${row("Door","cash",`${mono("$600")}${pill("Received","g")}`)}`], sheet:`
+  <b style="font-size:16px">Money in</b><span class="note">Only admins see income</span>
+  ${chips(["Owed to us","We got it"],"Owed to us")}
+  <span class="lbl">What for</span>
+  ${chips(["Guarantee","Door","Tips","Merch","Streaming","Sync fee","Grant","Gear sold","Other"],"Guarantee")}
+  ${fld("From","Pine Hollow")}${fld("Amount","$400.00")}${fld("Project","Band")}${fld("Show (optional)","Pine Hollow · Nov 14")}
+  <div class="card hi"><b>Pine Hollow owes us $400.00 guarantee</b></div>
+  <div class="pair"><div class="big ghost">Cancel</div><div class="big acc">Save</div></div>`});
+
+add("Money · Overview", "Admin only. In, Out and Left; Owed to us; We owe grouped by person with a Pay button; Recently; open projects. Tabs: Overview, Projects, By show, By category.", {nav:"Money", title:"Money", cols:[`
+  <div class="pair"><div class="big acc">${ic("plus")}Money in</div><div class="big ghost">${ic("plus")}Money out</div></div>
+  ${chips(["Overview","Projects","By show","By category"],"Overview")}
+  <div class="card">${sum("In","$6,210")}${sum("Out","$4,370")}${sum("Left","$1,840")}</div>
+  <div class="lbl">Owed to us · $486</div>
+  ${row("Pine Hollow","guarantee · Nov 14 show",`${mono("$400")}`)}
+  ${row("Bandcamp","October sales · Wild Hearts LP",`${mono("$86")}`)}
+  <div class="lbl">We owe · $254</div>
+  ${row("Felix","gas · Spring West Tour",`${mono("$42")}${pill("Pay Felix","p")}`)}
+  ${row("Hugo","food on the drive",`${mono("$32")}${pill("Pay Hugo","p")}`)}
+  ${row("The Moonlighters","their 30% of the door",`${mono("$180")}${pill("Pay them","p")}`)}`,`
+  <div class="lbl">Recently</div>
+  ${row("We paid Felix for the show","Nov 15 · Band · Venmo",mono("−$100"))}
+  ${row("Door","Nov 14 · Band · cash",mono("+$600"))}
+  ${row("Music video shoot","Nov 10 · Lighthouse video",mono("−$750"))}
+  <div class="lbl">Open projects</div>
+  ${row("Band","default",mono("net +$1,840"))}
+  ${row("Wild Hearts LP","Album",mono("net −$3,120"))}
+  ${row("Spring West Tour","Tour",mono("net +$265"))}`]});
+
+add("Projects", "Admins see In, Out, Net and Budget. Closed projects fold away. New project uses an explicit Add.", {nav:"Money", title:"Projects", cols:[`
+  <div class="big acc">${ic("plus")}New project</div>
+  ${chips(["Overview","Projects","By show","By category"],"Projects")}
+  ${row("Band","default · ongoing",`${mono("+$1,840")}`)}
+  ${row("Duo","Duo · ongoing",`${mono("+$410")}`)}
+  ${row("Wild Hearts LP","Album · Sep – Apr",`${mono("−$3,120")}`)}
+  ${row("Spring West Tour","Tour · Nov 12 – 22",`${mono("+$265")}`)}
+  ${row("Lighthouse video","Video · Nov",`${mono("−$750")}`)}
+  <div class="note">Closed projects (1). Members see names, kinds and dates only.</div>`]});
+
+add("Project", "Budget, in, net, what we owe, every record on the project, and spent by category. Album and tour pages (#11, #12) link from here.", {nav:"Money", back:"Projects", title:"Wild Hearts LP", cols:[`
+  <span class="s mono-s">Album · Sep 1 – Apr 30 · open</span>
+  <div class="pair"><div class="big acc">${ic("plus")}Money in</div><div class="big ghost">${ic("plus")}Money out</div></div>
+  <div class="card"><div class="lbl">Spent of budget</div>${sum("$3,206","/ $5,000")}<div class="bar"><i style="width:64%"></i></div></div>
+  <div class="card">${sum("In so far","$86")}${sum("Net","−$3,120")}${sum("We owe","$250")}</div>`,`
+  <div class="lbl">Everything on this project</div>
+  ${row("Studio, three days","recording · Sep 20",`${mono("−$1,800")}${pill("Paid","g")}`)}
+  ${row("Mix engineer","mixing · Venmo · Oct 18",`${mono("−$900")}${pill("Paid","g")}`)}
+  ${row("Mastering engineer","due Dec 1",`${mono("−$250")}${pill("We owe","p")}`)}
+  ${row("Bandcamp pre-orders","streaming",`${mono("+$86")}${pill("Owed to us","p")}`)}`]});
+
+add("Add an expense", "Members and admins. Short on purpose, now with a Project (open projects; defaults to the show's or rehearsal's, else Band). The owner can change it until it is paid back.", {nav:"My money", member:true, back:"My money", title:"Add an expense", cols:[`
+  ${fld("Amount","$42.00")}
+  <span class="lbl">What</span>${chips(["Gas","Food","Gear","Lodging","Other"],"Gas")}
+  ${fld("Project","Spring West Tour")}${fld("Show or rehearsal (optional)","Fort Collins · Nov 13")}
+  <div class="chk"><span class="cb on">${ic("check")}</span>The band should pay me back</div>
+  <div class="big ghost">${ic("doc")}Photo of the receipt</div>
+  <div class="big acc">Save</div>`]});
+
+add("My money", "Members. What the band owes me, my expenses (waiting, paid back, no pay back) and Paid to me. Only their own payouts, never income.", {nav:"My money", member:true, title:"My money", cols:[`
+  <div class="big acc">${ic("plus")}Add an expense</div>
+  <div class="card hi"><span class="lbl">The band owes you</span><b>$42.00</b><span class="s mono-s">for 1 expense</span></div>
+  <div class="lbl">My expenses</div>
+  ${row("Gas to Fort Collins","Spring West Tour · Nov 13",`${mono("$42")}${pill("waiting","p")}`)}
+  ${row("Strings","Band · Oct 28",`${mono("$24")}${pill("paid back Nov 2","g")}`)}
+  ${row("Parking","Lighthouse video · Nov 10",`${mono("$15")}${pill("no pay back")}`)}`,`
+  <div class="lbl">Paid to me</div>
+  ${row("Pine Hollow show","Venmo · Nov 15",mono("$100"))}
+  ${row("Paid back: strings","Venmo · Nov 2",mono("$24"))}`]});
+
+wire("modGrid", SCR);
+})();
+
+</script>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+
+</body></html>

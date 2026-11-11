@@ -1,0 +1,36 @@
+/**
+ * Stage plot gear icons, copied unchanged from junk.stories/band-app-stage-plots.html.
+ * 48x48 top-view symbols centered on 0,0, front facing down (audience). They paint with `currentColor` (lines) and
+ * `var(--ic-fill)` (fills): the host SVG sets both.
+ */
+const S = 'stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"';
+const F = 'fill="var(--ic-fill)"', D = 'fill="currentColor"', N = 'fill="none"';
+export const ICONS = {
+  performer:{name:"Performer", note:"Head and shoulders, nose toward the audience", svg:`<ellipse cx="0" cy="3" rx="15" ry="7.5" ${F} ${S}/><circle cx="0" cy="1" r="7" ${F} ${S}/><path d="M-2.5 7.5 0 11 2.5 7.5" ${N} ${S}/>`},
+  vocalMic:{name:"Vocal mic", note:"Boom stand, capsule toward the singer", svg:`<path d="M0 8 0 18M0 8-9 3M0 8 9 3" ${N} ${S}/><path d="M0 8V-9" ${N} stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><rect x="-3.5" y="-17" width="7" height="9" rx="3.5" ${D}/><circle cx="0" cy="8" r="2.2" ${D}/>`},
+  instMic:{name:"Instrument mic", note:"Short boom, for amps and drums", svg:`<path d="M0 10 0 17M0 10-7 6M0 10 7 6" ${N} ${S}/><path d="M0 10V-6" ${N} stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M-3-6h6l-1-9h-4z" ${D} stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>`},
+  di:{name:"DI box", note:"One channel", svg:`<rect x="-13" y="-8" width="26" height="16" rx="2.5" ${F} ${S}/><text x="0" y="1" text-anchor="middle" dominant-baseline="central" font-family="Figtree,Arial,sans-serif" font-weight="800" font-size="10" fill="currentColor">DI</text>`},
+  diStereo:{name:"Stereo DI", note:"Two channels, L and R", svg:`<rect x="-16" y="-9" width="32" height="18" rx="2.5" ${F} ${S}/><path d="M0-9v18" ${N} ${S}/><text x="-8" y="1" text-anchor="middle" dominant-baseline="central" font-family="Figtree,Arial,sans-serif" font-weight="800" font-size="9" fill="currentColor">L</text><text x="8" y="1" text-anchor="middle" dominant-baseline="central" font-family="Figtree,Arial,sans-serif" font-weight="800" font-size="9" fill="currentColor">R</text>`},
+  amp:{name:"Guitar amp", note:"Combo; grille faces the audience", svg:`<rect x="-19" y="-11" width="38" height="22" rx="2.5" ${F} ${S}/><rect x="-19" y="6" width="38" height="5" rx="1.5" ${D}/><rect x="-6" y="-6" width="12" height="4" rx="2" ${N} ${S}/>`},
+  bassAmp:{name:"Bass amp", note:"Head on a cab", svg:`<rect x="-19" y="-15" width="38" height="30" rx="2.5" ${F} ${S}/><rect x="-19" y="9" width="38" height="6" rx="1.5" ${D}/><rect x="-15" y="-11" width="30" height="8" rx="1.5" ${N} ${S}/>`},
+  kit:{name:"Drum kit", note:"Throne upstage, kick toward the audience", svg:`<circle cx="0" cy="-19" r="4" ${F} ${S}/><circle cx="-16" cy="2" r="8.5" ${N} stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/><circle cx="17" cy="1" r="7.5" ${N} stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/><rect x="-9" y="-4" width="18" height="13" rx="2" ${F} ${S}/><circle cx="-13" cy="-9" r="6.5" ${F} ${S}/><circle cx="-2" cy="-9" r="4.5" ${F} ${S}/><circle cx="9" cy="-11" r="5.5" ${F} ${S}/><circle cx="18" cy="-11" r="4.5" ${F} ${S}/><circle cx="18" cy="-11" r="1.2" ${D}/>`},
+  keyboard:{name:"Keyboard", note:"Keys on the player's side", svg:`<rect x="-23" y="-7" width="46" height="14" rx="2" ${F} ${S}/><path d="M-21-7v6h42v-6" ${N} ${S}/><path d="M-15-7v4M-11-7v4M-5-7v4M-1-7v4M3-7v4M9-7v4M13-7v4M19-7v4" ${N} stroke="currentColor" stroke-width="1.8"/><circle cx="-16" cy="3.5" r="1.4" ${D}/><circle cx="-11" cy="3.5" r="1.4" ${D}/>`},
+  acoustic:{name:"Acoustic guitar", note:"On a stand", svg:`<path d="M0-6c-4 0-7 2.5-7 6 0 1.6.7 2.8 1.6 3.6C-8.6 5-10 7.6-10 10.5-10 16-5.6 20 0 20s10-4 10-9.5C10 7.6 8.6 5 5.4 3.6 6.3 2.8 7 1.6 7 0c0-3.5-3-6-7-6z" ${F} ${S}/><circle cx="0" cy="6" r="2.6" ${N} ${S}/><rect x="-1.8" y="-22" width="3.6" height="16" rx="1" ${D}/><rect x="-3" y="-24" width="6" height="4" rx="1" ${D}/>`},
+  electric:{name:"Electric guitar", note:"On a stand", svg:`<path d="M-3-4c-6 0-9 4-9 9 0 3 1 5 1 7 0 5 4 8 9 8 6 0 10-3 10-8 0-2-1-4 0-6l4-6c-2-1-4 0-5 1-1-3-5-5-10-5z" ${F} ${S}/><path d="M-4 5h7M-4 10h7" ${N} ${S}/><rect x="-1.4" y="-22" width="3" height="18" rx="1" ${D}/><rect x="-2.6" y="-24" width="5" height="4" rx="1" ${D}/>`},
+  bass:{name:"Bass guitar", note:"Long neck, on a stand", svg:`<path d="M-2 0c-6 0-9 4-9 9 0 2.5 1 4 1 5.5 0 4 3.5 6.5 8 6.5 5.5 0 9-2.5 9-6.5 0-1.6-.7-3 0-4.6L10.5 4C8.5 3 7 4 6 5 5 2 2 0-2 0z" ${F} ${S}/><path d="M-3 9h6M-3 13h6" ${N} ${S}/><rect x="-1.4" y="-24" width="2.8" height="24" rx="1" ${D}/>`},
+  wedge:{name:"Monitor wedge", note:"Speaker face toward the performer", svg:`<path d="M-15-8h30l4 16h-38z" ${F} ${S}/><path d="M-12-4h24" ${N} stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M-9 1h18" ${N} stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`},
+  iem:{name:"In-ear pack", note:"Wireless monitor receiver", svg:`<rect x="-7" y="-8" width="14" height="19" rx="3" ${F} ${S}/><path d="M4-8v-9" ${N} ${S}/><circle cx="4" cy="-17" r="1.6" ${D}/><circle cx="0" cy="3" r="3" ${N} ${S}/>`},
+  power:{name:"Power drop", note:"Where we need an outlet", svg:`<rect x="-10" y="-10" width="20" height="20" rx="3" ${F} ${S}/><path d="M2-7-4 1h4l-2 7 6-8H0z" ${D} stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>`},
+  riser:{name:"Riser", note:"Drawn behind everything else", svg:`<rect x="-22" y="-22" width="44" height="44" rx="2" ${N} stroke="currentColor" stroke-width="1.8" stroke-dasharray="5 3"/><path d="M-22-22 22 22M22-22-22 22" ${N} stroke="currentColor" stroke-width=".8" opacity=".35"/>`},
+  stool:{name:"Stool", note:"Seated player", svg:`<circle cx="0" cy="0" r="10" ${F} ${S}/><circle cx="0" cy="0" r="4" ${N} ${S}/>`},
+  musicStand:{name:"Music stand", note:"For charts or an iPad", svg:`<path d="M-12-5h24l-2 6h-20z" ${F} ${S}/><path d="M0 1v7M0 8-5 13M0 8 5 13" ${N} ${S}/>`},
+  pedalboard:{name:"Pedalboard", note:"On the floor at the player's feet", svg:`<rect x="-18" y="-8" width="36" height="16" rx="2.5" ${F} ${S}/><rect x="-14" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/><rect x="-3.5" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/><rect x="7" y="-4" width="7" height="8" rx="1.5" ${N} ${S}/>`},
+  laptop:{name:"Laptop / playback", note:"Tracks, click, or a sampler", svg:`<rect x="-14" y="-10" width="28" height="9" rx="1.5" ${D}/><rect x="-16" y="-1" width="32" height="12" rx="2" ${F} ${S}/><path d="M-11 3h22M-11 6.5h22" ${N} stroke="currentColor" stroke-width="1.4"/>`},
+};
+
+export type IconType = keyof typeof ICONS;
+export const ICON_TYPES = Object.keys(ICONS) as [IconType, ...IconType[]];
+/** Each icon's size in feet (its 48-unit box scales to this). */
+export const SIZE: Record<IconType, number> = {performer:2,vocalMic:2.3,instMic:1.6,di:1.1,diStereo:1.3,amp:2.4,bassAmp:2.9,kit:6.4,keyboard:4.6,acoustic:2.8,electric:2.8,bass:3.4,wedge:2.3,iem:1.1,power:1,riser:8,stool:1.4,musicStand:1.9,pedalboard:2.4,laptop:1.6};
+/** The gear tray, in order. */
+export const TRAY: IconType[] = ["riser","stool","pedalboard","musicStand","wedge","power","acoustic","electric","bass","amp","instMic","vocalMic"];;

@@ -1,0 +1,150 @@
+/**
+ * Answering a confirm card, and the Undo on a read-back line. Both run server-side from what the server stored:
+ * the pending action's command and input come from the thread, never from the request.
+ */
+import { authenticate } from "../commands/dispatch";
+import { db } from "../db";
+import { AppError, invalid } from "../errors";
+import { newRunId, type Role } from "../ctx";
+import { ConfirmRequest, UndoRequest, type CardField } from "@/schema/assistant";
+import { isEligible, voiceConfirmable } from "./policy";
+import { modelLabel } from "./ai";
+import type { Session } from "./run";
+import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
+import { newTypeLabel, setPath } from "./card";
+import { makeCtx, runAs } from "./run";
+import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending, type Pending } from "./threads";
+
+export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
+
+/** The session for a write outside the chat stream (a confirmed card, an Undo tap). */
+export function sessionFor(who: Who, threadId: string, replyId = newMessageId(), now?: Date): Session {
+  return { ...who, threadId, runId: newRunId(), replyId, model: modelLabel(), now };
+}
+
+const HERE = { route: "calendar" };
+
+async function requireOwner(who: Who, threadId: string) {
+  if (who.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
+  if ((await ownerOf(threadId)) !== who.uid) throw new AppError("not_found", "No such conversation", 404);
+}
+
+export type Answer = { status: "done"; runId?: string; label?: string } | { status: "canceled" } | { status: "failed"; message: string };
+
+/** Yes runs the stored command with the stored input as Roadie (`via: "assistant"`). Cancel discards it. Expired or answered cards refuse. */
+export async function answerPending(who: Who, req: ConfirmRequest, now = new Date()): Promise<Answer> {
+  await requireOwner(who, req.threadId);
+  const card = (a: { kind: string; pendingId?: string }) => a.kind === "confirm" && a.pendingId === req.pendingId;
+  const pending = await getPending(req.threadId, req.pendingId);
+  if (!pending) throw new AppError("not_found", "No such ask", 404);
+
+  if (req.decision === "cancel") {
+    if (pending.status !== "pending") throw new AppError("already_answered", `That ask was already ${pending.status}`, 409);
+    await setPending(req.threadId, req.pendingId, { status: "canceled" });
+    await patchMessageAction(req.threadId, pending.messageId, card, { status: "canceled" });
+    await addAssistantMessage({ threadId: req.threadId, text: "Okay. I left it alone.", actions: [], pageContext: HERE });
+    return { status: "canceled" };
+  }
+
+  // A spoken yes only for cards that allow one (the browser checks too; this is the rule). A spoken cancel is always fine.
+  if (req.by === "voice" && !voiceConfirmable(pending.command, pending.input, !!pending.picks?.length)) {
+    throw new AppError("not_allowed", "This one needs a tap: use Yes on the card", 403);
+  }
+  let input = withPicks(pending, req.picks);
+  try {
+    await claimPending(req.threadId, req.pendingId, now);
+  } catch (e) {
+    if (e instanceof AppError && e.code === "expired") await patchMessageAction(req.threadId, pending.messageId, card, { status: "expired" });
+    throw e;
+  }
+  const resultId = newMessageId();
+  const s = sessionFor(who, req.threadId, resultId, now);
+  try {
+    if (!isEligible(pending.command, who.role)) throw new AppError("not_allowed", `Roadie can't use ${pending.command}`, 403);
+    input = await addNewTypes(s, pending, input);
+    const r = await runCommandTool(s, pending.command, input, new Set());
+    await setPending(req.threadId, req.pendingId, { status: "done", runId: r.runId, ...(pending.picks?.length ? { input } : {}) });
+    await patchMessageAction(req.threadId, pending.messageId, card, { status: "done", ...(pending.fields ? { fields: picked(pending.fields, req.picks) } : {}) });
+    const see = seePitch(pending.command, r.result);
+    await addAssistantMessage({
+      id: resultId, threadId: req.threadId, text: see ? `Done. ${SEE_PITCH}` : "Done.", pageContext: HERE,
+      actions: [...(r.wrote ? [{ kind: "readback" as const, label: r.label!, runId: r.runId }] : []), ...(see ? [see] : [])],
+    });
+    return { status: "done", runId: r.wrote ? r.runId : undefined, label: r.label };
+  } catch (e) {
+    const message = e instanceof AppError ? e.message : "Something went wrong";
+    if (!(e instanceof AppError)) console.error(e);
+    await setPending(req.threadId, req.pendingId, { status: "failed" });
+    await patchMessageAction(req.threadId, pending.messageId, card, { status: "failed" });
+    await addAssistantMessage({ threadId: req.threadId, text: `Couldn't do that: ${message}`, actions: [], pageContext: HERE });
+    return { status: "failed", message };
+  }
+}
+
+/** The stored input with the person's dropdown picks filled in. Every pick the card asked for must be answered from its own options; nothing else may be set. */
+function withPicks(p: Pending, picks: Record<string, string> = {}): unknown {
+  const asked = p.picks ?? [];
+  for (const k of Object.keys(picks)) if (!asked.some((a) => a.path === k)) throw new AppError("invalid_input", "That card has no such choice", 400);
+  let input = p.input;
+  for (const a of asked) {
+    const v = picks[a.path];
+    if (v === undefined) throw new AppError("invalid_input", `Pick the ${a.path.split(".").pop()} first`, 400);
+    if (!a.options.includes(v)) throw new AppError("invalid_input", `"${v}" isn't one of the choices`, 400);
+    input = setPath(input, a.path, v);
+  }
+  return input;
+}
+/** A pick of "Add X as a new type" on a venue card: the type goes on the list first (same run, so one Undo takes both back), and its key goes in the input. */
+async function addNewTypes(s: Session, p: Pending, input: unknown): Promise<unknown> {
+  for (const a of p.picks ?? []) {
+    const v = getPathValue(input, a.path);
+    const label = typeof v === "string" ? newTypeLabel(v) : undefined;
+    if (!label) continue;
+    const r = await runAs(makeCtx(s), "venueTypes.add", { label });
+    input = setPath(input, a.path, (r.result as { id: string }).id);
+  }
+  return input;
+}
+const getPathValue = (o: unknown, path: string): unknown => path.split(".").reduce<unknown>((x, k) => (x && typeof x === "object" ? (x as Record<string, unknown>)[k] : undefined), o);
+/** The card's rows once answered: each dropdown becomes the label of what was picked. */
+const picked = (fields: CardField[], picks: Record<string, string> = {}): CardField[] =>
+  fields.map((f) => (f.options && f.path ? { label: f.label, value: f.options.find((o) => o.value === picks[f.path!])?.label ?? picks[f.path] ?? f.value } : f));
+
+/** Undo one of this conversation's runs. Anything else is refused. */
+export async function undoRunOf(who: Who, req: UndoRequest): Promise<{ undone: number }> {
+  await requireOwner(who, req.threadId);
+  const u = await undoInThread(sessionFor(who, req.threadId), { runId: req.runId }, "app");
+  return { undone: u.undone.length };
+}
+
+async function who(authHeader: string | null, artistHeader?: string | null): Promise<Who> {
+  const ctx = await authenticate(authHeader, artistHeader);
+  if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
+  const u = await db.get("users", ctx.uid);
+  return { uid: ctx.uid, role: ctx.role, artistId: ctx.artistId, musicianId: ctx.musicianId, name: (u?.name as string | undefined) ?? "Someone" };
+}
+
+async function respond(f: () => Promise<unknown>): Promise<Response> {
+  try { return Response.json(await f()); } catch (e) {
+    if (e instanceof AppError) return Response.json(e.toJSON(), { status: e.status });
+    console.error(e);
+    return Response.json({ error: { code: "internal", message: "Something went wrong" } }, { status: 500 });
+  }
+}
+
+/** POST /api/assistant/confirm: admins only. */
+export const handleConfirm = (authHeader: string | null, body: unknown, artistHeader?: string | null) => respond(async () => {
+  const w = await who(authHeader, artistHeader);
+  const p = ConfirmRequest.safeParse(body ?? {}); // strict: there is no place to put input
+  if (!p.success) throw invalid(p.error);
+  return answerPending(w, p.data);
+});
+
+/** POST /api/assistant/undo: admins only. */
+export const handleUndo = (authHeader: string | null, body: unknown, artistHeader?: string | null) => respond(async () => {
+  const w = await who(authHeader, artistHeader);
+  const p = UndoRequest.safeParse(body ?? {});
+  if (!p.success) throw invalid(p.error);
+  return undoRunOf(w, p.data);
+});
+

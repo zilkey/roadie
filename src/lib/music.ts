@@ -1,0 +1,192 @@
+/** Pure helpers for the Music tab (shared by server commands, UI and tests). */
+
+export const MIME_GDOC = "application/vnd.google-apps.document";
+/** A Drive file the song and rehearsal pages read inline: a Google Doc (not Word, PDF, Sheets or Slides, which stay links). */
+export const isGoogleDoc = (f: { mimeType?: string; driveFileId?: string }) => f.mimeType === MIME_GDOC && !!f.driveFileId;
+export const MIME_WORD = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export type MimeGroup = "audio" | "video" | "doc" | "pdf" | "other";
+
+export function mimeGroup(mime?: string): MimeGroup {
+  if (!mime) return "other";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime.startsWith("video/")) return "video";
+  if (mime === MIME_GDOC || mime === MIME_WORD || mime === "application/msword") return "doc";
+  if (mime === "application/pdf") return "pdf";
+  return "other";
+}
+/** Drive search only offers audio, video, Docs and Word files. */
+export const isAttachable = (mime?: string) => ["audio", "video", "doc"].includes(mimeGroup(mime));
+
+
+export type Provider = "drive" | "spotify" | "youtube" | "web";
+export const PROVIDER_LABEL: Record<Provider, string> = { drive: "Drive", spotify: "Spotify", youtube: "YouTube", web: "Web" };
+/** Where a link goes, from its host. Anything unrecognised (or unparseable) is just "web". */
+export function providerFor(url: string): Provider {
+  let h = "";
+  try { h = new URL(url).hostname.toLowerCase(); } catch { return "web"; }
+  const is = (d: string) => h === d || h.endsWith("." + d);
+  if (is("open.spotify.com")) return "spotify";
+  if (is("youtube.com") || is("youtu.be")) return "youtube";
+  if (is("drive.google.com") || is("docs.google.com")) return "drive";
+  return "web";
+}
+
+export type SongStatus = "active" | "learning" | "retired" | "writing";
+/** A song's status as the app names it. */
+export const STATUS_LABEL: Record<SongStatus, string> = { active: "Playing", learning: "Learning", retired: "Retired", writing: "Writing" };
+/** The order the song page's status dropdown lists them in. */
+export const STATUS_ORDER: SongStatus[] = ["active", "learning", "writing", "retired"];
+
+export type FileKind = "chart" | "demo" | "rehearsal" | "recording" | "lyrics" | "stems" | "other" | "mix" | "master" | "session" | "artwork" | "liner" | "promo" | "poster";
+/** The kinds a song's files come in (the release kinds live on releases and their tracks, see lib/releases). */
+export const KIND_ORDER: FileKind[] = ["chart", "demo", "recording", "rehearsal", "lyrics", "stems", "other"];
+export const KIND_LABEL: Record<FileKind, string> = {
+  chart: "Charts", demo: "Demos", recording: "Recordings", rehearsal: "Rehearsal takes", lyrics: "Lyrics", stems: "Stems", other: "Other",
+  mix: "Mixes", master: "Masters", session: "Session files", artwork: "Artwork", liner: "Liner notes and credits", promo: "Promo", poster: "Posters",
+};
+
+/**
+ * What icon a file gets. The mimeType wins when it says something; files that never got one (imported from the song list) fall back to
+ * what kind of file they are, so a chart is a document and a demo is audio instead of an unknown box.
+ */
+export function fileGroup(f: { mimeType?: string; kind?: FileKind }): MimeGroup {
+  const g = mimeGroup(f.mimeType);
+  if (g !== "other") return g;
+  if (f.kind === "chart" || f.kind === "lyrics") return "doc";
+  if (f.kind === "demo" || f.kind === "rehearsal" || f.kind === "recording" || f.kind === "stems" || f.kind === "mix" || f.kind === "master") return "audio";
+  return "other";
+}
+
+/** Best guess at what a file or link is from its name, type and (for links) provider. */
+export function guessKind(name: string, mime?: string, provider?: Provider): FileKind {
+  const n = name.toLowerCase();
+  if (/\bchart\b/.test(n)) return "chart";
+  if (/lyric/.test(n)) return "lyrics";
+  if (/rehearsal/.test(n)) return "rehearsal";
+  if (/\bstems?\b/.test(n)) return "stems";
+  if (/\bdemo\b/.test(n)) return "demo";
+  const g = mimeGroup(mime);
+  if (g === "video") return "recording";
+  if (/\blive\b/.test(n)) return "recording";
+  if (g === "audio") return "demo";
+  // A streaming link is usually a released/recorded track, not a demo.
+  if (provider === "spotify" || provider === "youtube") return "recording";
+  return "other";
+}
+
+/** "Glass Coast chart F#m.docx" -> "F#m". Looks for a key right after the word chart. */
+export function guessKey(name: string): string | undefined {
+  const m = /\bchart\s+([A-G][#b]?m?)(?=[\s.()_-]|$)/i.exec(name);
+  if (!m) return undefined;
+  const k = m[1];
+  return k[0].toUpperCase() + k.slice(1);
+}
+
+/** m:ss for seconds. */
+export const fmtLen = (sec?: number | null) => (sec == null ? "" : `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}`);
+/** "3:52" or "232" -> seconds; undefined if blank or invalid. */
+export function parseLen(s: string): number | undefined {
+  const t = s.trim();
+  if (!t) return undefined;
+  const m = /^(\d+):([0-5]?\d)$/.exec(t);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  return /^\d+$/.test(t) ? Number(t) : undefined;
+}
+
+/** The average song-to-song gap a show's setlist length allows for (Show.transitionSec), and the choices offered. */
+export const TRANSITION_CHOICES = [15, 30, 60, 90] as const;
+export const DEFAULT_TRANSITION_SEC = 30;
+export const transitionOf = (show?: { transitionSec?: number }) => show?.transitionSec ?? DEFAULT_TRANSITION_SEC;
+/** "15s", "30s", "1m", "1m 30s". */
+export const fmtTransition = (sec: number) => [Math.floor(sec / 60) && `${Math.floor(sec / 60)}m`, sec % 60 && `${sec % 60}s`].filter(Boolean).join(" ");
+/** One transition between each two songs next to each other; a break takes the transition's place. */
+export const transitionCount = (items: { type?: string }[]) => items.filter((i, j) => j > 0 && i.type === "song" && items[j - 1].type === "song").length;
+/** Songs + breaks + transitions. */
+export const setlistTotal = (items: { type?: string; lengthSec?: number }[], transitionSec = 0) =>
+  items.reduce((n, i) => n + (i.lengthSec ?? 0), 0) + transitionCount(items) * transitionSec;
+/** One step of a set's tempo strip: a song with its BPM (none when the song has no BPM: a gap), or a break. */
+export type BpmStep = { kind: "song"; title: string; bpm?: number } | { kind: "break"; title: string };
+/**
+ * The set's tempos in order, for the BPM strip on the setlist and show pages. BPM is read live from the song
+ * (items don't carry a copy); min and max cover the songs that have one, missing counts the ones that don't.
+ */
+export function bpmStrip(items: { type?: string; songId?: string; title: string }[], bpmOf: (songId: string) => number | undefined) {
+  const steps: BpmStep[] = items.map((i) => (i.type === "break" ? { kind: "break", title: i.title } : { kind: "song", title: i.title, bpm: i.songId ? bpmOf(i.songId) : undefined }));
+  const bpms = steps.flatMap((s) => (s.kind === "song" && s.bpm != null ? [s.bpm] : []));
+  const missing = steps.filter((s) => s.kind === "song" && s.bpm == null).length;
+  return { steps, min: bpms.length ? Math.min(...bpms) : undefined, max: bpms.length ? Math.max(...bpms) : undefined, missing };
+}
+/** Positive when under the set length, negative when over. */
+export const setlistSlack = (totalSec: number, setLengthSec?: number) => (setLengthSec ? setLengthSec - totalSec : undefined);
+
+export function move<T>(list: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;
+  const out = list.slice();
+  const [x] = out.splice(from, 1);
+  out.splice(to, 0, x);
+  return out;
+}
+
+/**
+ * How to show a file. A direct media URL (by extension) plays in an audio/video tag; a Drive "view" link
+ * plays in Drive's embedded preview; anything else just opens the link.
+ */
+export function playerFor(f: { url: string; mimeType?: string }): { mode: "audio" | "video" | "embed" | "link"; src: string } {
+  const g = mimeGroup(f.mimeType);
+  if (g !== "audio" && g !== "video") return { mode: "link", src: f.url };
+  let u: URL | null = null;
+  try { u = new URL(f.url); } catch { /* not a URL */ }
+  if (!u) return { mode: "link", src: f.url };
+  const drive = /^\/file\/d\/([^/]+)/.exec(u.pathname);
+  if (u.hostname === "drive.google.com" && drive) return { mode: "embed", src: `https://drive.google.com/file/d/${drive[1]}/preview` };
+  if (/\.(mp3|m4a|wav|ogg|aac|flac|mp4|webm|mov)$/i.test(u.pathname)) return { mode: g, src: f.url };
+  return { mode: "link", src: f.url };
+}
+
+/** Audio the inline player can play: a Drive file (streamed through the app) or a direct link to an audio file. */
+export function playsInline(f: { url: string; mimeType?: string; driveFileId?: string }): boolean {
+  return mimeGroup(f.mimeType) === "audio" && (!!f.driveFileId || playerFor(f).mode === "audio");
+}
+
+/** Latest rehearsal date (YYYY-MM-DD) that ran each song. */
+export function lastRehearsed(rehearsals: { date: string; songs: { songId: string }[] }[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rehearsals) for (const s of r.songs) if (!out[s.songId] || out[s.songId] < r.date) out[s.songId] = r.date;
+  return out;
+}
+
+export function daysAgoLabel(date: string, today: string): string {
+  const d = Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(date + "T00:00:00Z")) / 86400000);
+  return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`;
+}
+
+// ---------- merging songs ----------
+
+/** How much hangs off one song, for the Merge dialog and Roadie's card. A setlist counts once however many times the song is on it (as a song or an alternate). */
+export interface SongRefs { files: number; setlists: number; rehearsals: number; releases: number }
+export interface SongRefSources {
+  files: { songId?: string }[];
+  /** Show setlists and setlist templates together. */
+  lists: { items: { songId?: string; alts?: { songId: string }[] }[] }[];
+  rehearsals: { songs: { songId: string }[] }[];
+  tracks: { songId: string; releaseId: string }[];
+}
+export function songRefs(songId: string, src: SongRefSources): SongRefs {
+  return {
+    files: src.files.filter((f) => f.songId === songId).length,
+    setlists: src.lists.filter((l) => l.items.some((i) => i.songId === songId || i.alts?.some((a) => a.songId === songId))).length,
+    rehearsals: src.rehearsals.filter((r) => r.songs.some((s) => s.songId === songId)).length,
+    releases: new Set(src.tracks.filter((t) => t.songId === songId).map((t) => t.releaseId)).size,
+  };
+}
+export const refsTotal = (r: SongRefs) => r.files + r.setlists + r.rehearsals + r.releases;
+/** "3 files · 12 setlists · 2 rehearsals · 1 release", or "Nothing attached" when there is none. */
+export function refsLabel(r: SongRefs): string {
+  const part = (n: number, one: string, many: string) => (n ? [`${n} ${n === 1 ? one : many}`] : []);
+  const parts = [...part(r.files, "file", "files"), ...part(r.setlists, "setlist", "setlists"), ...part(r.rehearsals, "rehearsal", "rehearsals"), ...part(r.releases, "release", "releases")];
+  return parts.join(" · ") || "Nothing attached";
+}
+/** The song to keep by default: the one with the most references (ties: the first in the list). */
+export function defaultKeep<T extends { id: string }>(songs: T[], refs: (id: string) => SongRefs): T {
+  return songs.reduce((best, s) => (refsTotal(refs(s.id)) > refsTotal(refs(best.id)) ? s : best), songs[0]);
+}

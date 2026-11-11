@@ -1,0 +1,22 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Venue Calendar//EN
+BEGIN:VEVENT
+UID:example-2031-03-14-a@example.com
+SUMMARY:The Example Band with Sample Support
+DTSTART:20310314T200000
+URL:https://tickets.example.com/shows/example-band
+END:VEVENT
+BEGIN:VEVENT
+UID:example-2031-04-04-b@example.com
+SUMMARY:Lone Example Act
+DTSTART:20310404T190000
+URL:https://tickets.example.com/shows/lone-act
+END:VEVENT
+BEGIN:VEVENT
+UID:example-2031-05-09-c@example.com
+SUMMARY:Headline Example Trio with special guests
+DTSTART:20310509T200000
+URL:https://tickets.example.com/shows/headline-trio
+END:VEVENT
+END:VCALENDAR

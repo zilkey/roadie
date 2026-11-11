@@ -1,0 +1,66 @@
+import type { HelpTopic } from "./types";
+
+/** Help for the Booking pages. Every sentence is checked against the Booking UI and booking commands. */
+export const BOOKING_TOPICS: HelpTopic[] = [
+  {
+    id: "booking",
+    title: "Booking: finding a place to pitch",
+    text:
+      "Booking is home base for every place you might play, and it opens on the \"Pitch List\" tab. The tabs are \"Pitch List\", \"Venues\", \"Festivals & series\" (a festival or series with each year under it), \"Promoters\" and \"Venue calendars\". People have their own section: \"Contacts\" (in the menu, or under \"More\"). The number on \"Pitch List\" counts your active pitches. Use the other tabs to find a place to pitch.\n\n" +
+      "Type in the search box (\"Search places, festivals, contacts…\") and the tab's list is replaced by one card for each kind that matched: Venues, \"Festivals & series\", Promoters and Contacts. The matched text is highlighted, a filled flag is a place already on your Pitch List and an empty flag adds it, and \"All venues\" (or festivals, promoters) in a card's header opens that whole tab and clears the search; \"All contacts\" opens the Contacts page. The cards are compact: no Phone column, and Festivals shows only the dates, deadline and city. \"Clear\" in the search box, or deleting the text, brings the tab back. The search stays when you switch tabs. On the Venues tab, venues go first, with the ones your band has notes, a pitch or a show on at the top, then the rest of the shared directory by name.\n\n" +
+      "The little flag on a row means the place is on your Pitch List. A filled flag is an active pitch, and clicking it opens that pitch. On the Venues, \"Festivals & series\" and Promoters tabs a place with an active pitch opens the pitch when you click its name, and a small \"Venue page\", \"Festival page\" or \"Promoter page\" link under the name opens the place itself. An empty flag adds it: a window asks for the lineup, possible dates and an optional first comment, then \"Add to Pitch List\". Flags are on venues, festival years and promoters, not contacts.\n\n" +
+      "\"+ Add\" at the top adds a place, a festival or series or a promoter. A venue's type comes from one list every band shares: pick \"Other…\" to add a new one (Artist settings → Venue types renames or removes them).\n\n" +
+      "The \"Festivals & series\" tab shows each year's dates and application deadline. Tap the Dates or Deadline header to sort by it (again to flip it); years without one go last. It shows 80 rows at a time, then \"Load more\".\n\n" +
+      "The \"Venue calendars\" tab lists every venue's upcoming shows, soonest first, as each venue's own calendar lists them: the date and time, the bill (headliner \"with\" the support acts), the venue and its city. \"Open slot?\" marks a show that looks like it has room for an opener (no support listed where the calendar usually lists one, or support still to be announced); sold out and cancelled shows say so. \"Tickets and details\" opens the venue's listing, and \"Our take\" (Not a fit, Interested, Pitched) is only for your band. A venue's name opens its Events tab, where \"Refresh\" reads its calendar again. It shows 50 shows at a time, then \"Load more\".",
+    related: ["pitch", "venueSharing", "pitchStatuses"],
+  },
+  {
+    id: "pitch",
+    title: "Pitches and the Pitch List",
+    text:
+      "A pitch is a venue, promoter or festival year you want to play, tracked on the Pitch List. Flag a place on any Booking tab to start one. It begins as \"To Pitch\". The \"Pitch List\" is the first tab of Booking, and clicking a name on it opens the pitch. It shows active pitches with their type, city, configuration and dates, the date of last contact, and the next step (with \"by\" its date), and has \"Filter by\" menus: one status, a category (venues, festivals or promoters), a city or state, and a venue type (hidden when you pick festivals).\n\n" +
+      "Open a pitch to work it. \"Status\" has \"Where it's at\" and a \"Next step\" (words plus a date). The \"Email\" card lists the Gmail threads on the venue, promoter or festival, newest first, with a \"New reply\" mark on the ones that have an answer you haven't opened. \"New email\" opens the compose page: the venue's contacts are chips at the top (booking contacts first), tap one to put them on To, or type any address. An address that isn't a contact offers \"Add as contact\" so the next email finds them. \"Start from a template\" fills the subject and message, the formatting bar gives bold, italic, links and lists, and your Gmail signature is added under the message (untick it to leave it off). \"Send\" goes from your own Gmail and the thread appears in the list; \"Save draft in Gmail\" keeps it there unsent, and Cancel throws the draft away. \"Search Gmail\" looks in your Gmail for mail about the place. Its \"Threads\" tab finds mail from or to the place's contacts, or matching words you type. \"Link to venue\" (or festival, or promoter) puts a thread on the Email card, and \"Reply from Roadie\" links it and opens it. Its \"People\" tab finds who you have emailed with, by a name, an address or a domain, shows the title and phone number from their signature, and \"Add as contact\" saves them on the place. Nothing is copied from Gmail until you link a thread or add a contact. Click a thread to open it as a page: older messages are folded to one line, quoted text hides behind \"···\", and you can reply right under the messages (Reply or Reply all, with your Gmail signature and basic formatting), save the reply as a Gmail draft, or send it. \"Open in Gmail\" and \"Unlink\" are at the top of the thread page, and the pitch's Activity rows for emails have a \"read it\" link. Threads belong to the place, so they stay when the pitch closes. New replies show up on their own when you open the pitch, and \"Check now\" looks again and adds them to the timeline. \"Lineup\" sets the configuration, who's on it and who's handling it. \"Dates & shows\" holds the possible dates.\n\n" +
+      "\"Activity\" is the timeline. Post a \"Comment\" for the band talking it over, or log a \"Call\". Calls, emails and sends count as contact. Comments don't.\n\n" +
+      "\"Booked it\" is a button in the page header. It opens a form under the header: pick the date, the final configuration, whether to send calendar invitations and whether to copy the comments. The pitch moves to Booked once the show is created. \"Abandon pitch\" at the bottom of the page moves it to Dropped.\n\n" +
+      "A pitch needs a nudge when its next step is due or overdue, or when it is Pitched or Talking with no contact for 14 days. Those rows turn yellow on the Pitch List, and a quiet one says how many days it has been quiet under its last contact date. A line under each table says what a click does.",
+    related: ["pitchStatuses", "booking", "upcomingShows", "showPage"],
+  },
+  {
+    id: "pitchStatuses",
+    title: "Pitch statuses",
+    text:
+      "Every pitch is in one of seven statuses:\n" +
+      "- \"Future Pitch\": a place you're thinking about.\n" +
+      "- \"To Pitch\": on the list, nothing sent yet.\n" +
+      "- \"Pitched\": you sent it and are waiting to hear back.\n" +
+      "- \"Talking\": in conversation.\n" +
+      "- \"Booked\": you got the gig.\n" +
+      "- \"Declined\": they said no.\n" +
+      "- \"Dropped\": you stopped.\n\n" +
+      "Active ones are Future Pitch, To Pitch, Pitched and Talking. They show a filled flag and count on the \"Pitch List\" tab. Booked, Declined and Dropped are past. Declined means they said no, and Dropped means you walked away.\n\n" +
+      "Moving a pitch to Pitched or Talking counts as contact today, so the quiet clock restarts. Other moves don't. Each move is logged on the pitch's \"Activity\" timeline.",
+    related: ["pitch", "booking"],
+  },
+  {
+    id: "contacts",
+    title: "Contacts: the people you deal with",
+    text:
+      "Contacts is its own section (admins only, and it starts under \"More\" in the menu). It lists everyone you deal with. Search matches a name, an email, a role or the name of a place they are linked to. The filter buttons \"Venue\", \"Festival\", \"Promoter\", \"Host\" and \"Has email\" narrow the list, and you can turn on several at once. \"Works with\" shows the first two places a person is linked to, then \"+N\" for the rest.\n\n" +
+      "\"+ Add contact\" opens a form. Nothing is created until you press \"Add contact\", and Cancel throws the draft away. A contact's page has \"Contact info\", \"Works with\" (venue rows say \"books\" or \"day-of\" when that is their role there; a plus links another place, an × unlinks one), your private \"Our notes\", a \"Shows\" card (shows where they are on the deal, the day-of contact or the host) and a \"Money\" card (payouts and expenses made out to them). The search box on Booking also finds contacts and links to their page. Contacts are your band's own: other bands on Roadie never see them, or who you work with.",
+    related: ["booking", "venueSharing"],
+  },
+  {
+    id: "venueSharing",
+    title: "Venue pages: shared and private",
+    text:
+      "A venue page has two groups. \"Shared with every band on Roadie\" is the \"About the room\" card: name, address, type, capacity and website. There is one shared venue directory, so other bands using the app see these details, and an edit changes them for all of them. Your name goes in the history. The card warns: \"Every band on Roadie sees these details.\"\n\n" +
+      "The pitch is a small card at the very top, above both groups. It says \"On the Pitch List\" with the status, configuration, dates, last contact and next step, and \"View pitch\" opens the pitch page. Or it says \"Not on the Pitch List\" with \"Add to Pitch List\". A line underneath lists earlier pitches (\"Pitched before\"). All the work on a pitch happens on the pitch page.\n\n\"Only <your band> sees this\" holds your contacts, \"Our notes\" (booked by, load-in, notes) and \"Our shows here\". Other bands never see those.\n\n" +
+      "\"Our notes\" edits where it sits: tap the load-in or notes text (or \"Add…\" when it's empty), type, and click away; it saves, and a green \"Saved\" shows for a moment. Escape puts it back. The plus after \"Booked by\" (\"Link a promoter\") lists the promoters you can link; the × after one you linked unlinks it. Contact, promoter, festival and year pages have the same \"Our notes\" card.\n\n" +
+      "On the \"Contacts\" card, the plus (\"Add a contact\") opens a window. \"Already in Contacts\" finds someone you have by name, email or where they work: pick them and press \"Add to venue\". \"New person\" takes their name, role, emails and phones and adds them with \"Add contact\"; a half-finished one is kept as a draft, and the window opens on it next time you visit the venue. Both ask for their \"Role at this venue\". On the card, tap a person's \"Booking\" chip for whoever you pitch and book with and \"Day-of\" for whoever to call on the day of a show; tap again to turn it off. One person can have both, and several people can share one. Pitch emails go to the booking contacts first. The × at the end of a row takes the person off this venue; they stay in Contacts. A contact with an email has an \"Email\" button that opens a new email to them. A new show here gets the first day-of contact. Promoter and festival pages have the same \"Contacts\" card and plus, without the roles.\n\n" +
+      "The other lists work the same way: a plus on the card adds, an × at the end of a row takes it off. On a contact's page, \"Works with\" lists the venues, promoters and festivals they're on; its plus finds one by name or city and \"Link\" puts them on it, and the × takes them off (both stay). On a promoter's page, \"Venues they book\" has a plus that finds a venue and \"Link venue\", and the × unlinks one. On a festival's page, \"Years\" has a plus (\"Add a year\") that opens a window with the year's label, dates and application deadline; press \"Add year\" to make it. A half-finished year is kept as a draft and the window opens on it next time you visit; Cancel throws it away. The × on a year deletes it, so it asks first. Change a year's dates on its own page.\n\n" +
+      "\"Archive venue\" (in \"More\") hides it from your lists only. Other bands keep it. You can bring it back later.\n\n" +
+      "\"Merge into another venue…\" fixes duplicates, and it affects every band. Their shows, pitches and notes move to the venue you keep. The other one is archived, and you can undo it from History.\n\n" +
+      "Adding a new venue says: \"Other bands will see this venue's name, address and details.\"",
+    related: ["booking", "pitch"],
+  },
+];

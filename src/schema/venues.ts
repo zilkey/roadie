@@ -1,0 +1,58 @@
+import { z } from "zod";
+import { entity, serverMask, id, region, sound, sourcesShape } from "./common";
+import { VenueCalendar } from "./venueEvents";
+
+const isTimeZone = (tz: string) => { try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; } };
+
+/**
+ * A venue is split in two documents (docs/venue-access-proposal.md). This one, `venues/{id}`, is the shared directory record:
+ * facts about the room that every signed-in band user may read and fix. What one band knows privately (load-in notes, notes,
+ * contacts, promoters) lives in that band's `venueNotes/{artistId}__{venueId}` (see venueNotes.ts).
+ */
+const sharedShape = {
+  name: z.string().min(1),
+  /** A key of venueTypes (src/schema/venueTypes.ts): "brewery", "listening", or one a band added. */
+  type: z.string().min(1),
+  address: z.strictObject({
+    street: z.string().optional(), city: z.string().min(1), state: z.string().min(1), zip: z.string().optional(),
+  }),
+  region,
+  capacity: z.number().int().optional(),
+  ages: z.enum(["all", "18", "21"]).optional(),
+  sound: sound.optional(),
+  website: z.string().optional(),
+  instagram: z.string().optional(),
+  /** IANA time zone of the room (America/Los_Angeles), picked by hand. Missing = the band's time zone. */
+  timeZone: z.string().refine(isTimeZone, "Not a time zone").optional(),
+  matchKey: z.string().min(1),
+  /** Set by venues.mergeInto: the room this duplicate was merged into (the doc is soft-deleted; its page redirects there). */
+  mergedInto: id.optional(),
+  /** Where the room's own event calendar is and how to read it (issue #60). Set with venues.setCalendar, not venues.update. */
+  calendar: VenueCalendar.optional(),
+  ...sourcesShape,
+};
+
+/** The band-private fields. They are NOT on `venues` any more: `venues.create` / `venues.update` still accept them and write them to the band's venueNotes. */
+export const venuePrivateShape = {
+  loadInNotes: z.string().optional(),
+  notes: z.string().optional(),
+  contactIds: z.array(id),
+  promoterIds: z.array(id),
+};
+export const VENUE_PRIVATE_FIELDS = Object.keys(venuePrivateShape) as (keyof typeof venuePrivateShape)[];
+/**
+ * Also band-private: which of the band's contacts for the room handle booking and
+ * who to call on the day. Each is a subset of contactIds, in the order they were ticked; a person may have both roles.
+ */
+export const venueRoleShape = {
+  bookingContactIds: z.array(id).optional(),
+  dayOfContactIds: z.array(id).optional(),
+};
+export const VENUE_ROLE_FIELDS = Object.keys(venueRoleShape) as (keyof typeof venueRoleShape)[];
+
+export const Venue = entity(sharedShape);
+/** What db.ts validates for `venues`: the shared fields only. */
+export const VenueRecord = Venue.omit({ ...serverMask, matchKey: true });
+/** What the venues commands accept: the shared fields and the band's private ones together. The command splits them across the two docs. */
+export const VenueInput = VenueRecord.omit({ mergedInto: true, calendar: true }).extend({ ...venuePrivateShape, ...venueRoleShape });
+export type Venue = z.infer<typeof Venue>;

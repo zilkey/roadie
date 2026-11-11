@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run migrate:*)",
+      "Bash(npm run -s migrate:*)",
+      "Bash(GCLOUD_PROJECT=roadie-prod-iab npm run migrate:*)",
+      "Bash(npm run import:*)",
+      "Bash(npm run -s import:*)",
+      "Bash(GCLOUD_PROJECT=roadie-prod-iab npm run import:*)",
+      "Bash(npm run check:roadie*)",
+      "Bash(npm run eval:roadie*)"
+    ]
+  }
+}

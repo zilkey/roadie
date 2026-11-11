@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["dom", "dom.iterable", "esnext"], "allowJs": false, "skipLibCheck": true,
+    "strict": true, "noEmit": true, "esModuleInterop": true, "module": "esnext", "moduleResolution": "bundler",
+    "resolveJsonModule": true, "isolatedModules": true, "jsx": "react-jsx", "incremental": true,
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", ".next-test/types/**/*.ts", ".next-test/dev/types/**/*.ts",
+    // One pair per e2e shard (scripts/e2e.ts): listed here so `next dev` finds them and leaves this file alone.
+    ".next-test-1/types/**/*.ts", ".next-test-1/dev/types/**/*.ts", ".next-test-2/types/**/*.ts", ".next-test-2/dev/types/**/*.ts", ".next-test-3/types/**/*.ts", ".next-test-3/dev/types/**/*.ts", ".next-test-4/types/**/*.ts", ".next-test-4/dev/types/**/*.ts", ".next-test-5/types/**/*.ts", ".next-test-5/dev/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

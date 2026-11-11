@@ -1,0 +1,24 @@
+{
+  "indexes": [
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "runId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.uid", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "runId", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "history", "queryScope": "COLLECTION_GROUP", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "actor.via", "order": "ASCENDING" }, { "fieldPath": "entity.kind", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "entries", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "visibility", "order": "ASCENDING" }, { "fieldPath": "date", "order": "ASCENDING" }, { "fieldPath": "position", "order": "ASCENDING" }] },
+    { "collectionGroup": "tours", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "startDate", "order": "ASCENDING" }] }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "tracks", "fieldPath": "deletedAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "tracks", "fieldPath": "songId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "unsubmittedDrafts", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "history", "fieldPath": "runId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "history", "fieldPath": "createdAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] }
+  ]
+}

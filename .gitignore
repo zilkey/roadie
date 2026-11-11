@@ -1,0 +1,41 @@
+.next
+node_modules
+.fake-data
+.emulator-data
+*-debug.log
+test-results*
+playwright-report
+.env*.local
+next-env.d.ts
+tsconfig.tsbuildinfo
+backups
+backup-out
+backup-repo
+
+# Service-account keys and other secrets: never committed (public repo)
+.secrets
+*firebase-adminsdk*.json
+
+# Real booking data pulled from the claude.ai trackers (contacts: never committed, public repo)
+.booking-kit/
+# The real band: names and Google addresses (never committed, public repo).
+# Copy src/lib/band.example.ts to src/lib/band.ts and fill it in; the dev sign-in buttons and scripts/leak-check.ts read it.
+src/lib/band.ts
+firebase-export-*
+# Test runs keep their own Next build and fake-service state (never dev's)
+.next-test*
+.fake-data-test*
+
+# Local notes
+TODO.md
+
+# Scratch output from one-off runs (junk.stories/, junk.e2e.txt): never committed
+junk*
+
+# Worktree test-port claims (shared by every worktree, lives in the main checkout) and each worktree's emulator config
+emulators
+firebase.worktree.json
+firebase.e2e-*.json
+
+# npm run test:all keeps each suite's errors here
+test-output
