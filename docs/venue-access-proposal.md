@@ -246,7 +246,7 @@ Keep `contactIds` and `promoterIds` on the shared venue |
 Leaks who a band talks to. Contacts and promoters are admin-only and unpartitioned today; putting the links on the private doc keeps today's privacy and prepares the same split for those collections.
 
 ## Decisions
-Rudy answered the open questions on 2026-10-23. The sections above reflect these answers.
+The developer answered the open questions on 2026-10-23. The sections above reflect these answers.
  | 
 Question | 
 Decision

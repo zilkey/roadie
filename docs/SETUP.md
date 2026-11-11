@@ -210,13 +210,13 @@ Gmail, Drive and Calendar have real clients: they turn on once the Google OAuth 
 
 Posts publishes to the band's Instagram through **Instagram API with Unified login** (Instagram use case › API setup with Unified login). Meta's dashboard calls the Facebook Login path legacy; Unified login is the one that gets new features (Reels, trial reels, Stories). One Meta app covers every band; for now it stays in development mode, which is enough for our own band.
 
-**Portfolios:** the Meta app sits in Rudy's own business portfolio, because it's for every band. Each band's Instagram sits in that band's portfolio (ours: Nora's). Unified login needs the app to be owned by a portfolio (otherwise the "API setup with Unified login" tab doesn't show), and the person connecting needs access to the portfolio that owns the band's Instagram. A Facebook Page isn't needed.
+**Portfolios:** the Meta app sits in the developer's own business portfolio, because it's for every band. Each band's Instagram sits in that band's portfolio (ours: the band admin's). Unified login needs the app to be owned by a portfolio (otherwise the "API setup with Unified login" tab doesn't show), and the person connecting needs access to the portfolio that owns the band's Instagram. A Facebook Page isn't needed.
 
 **The app** (developers.facebook.com › My Apps, app 1839984933676596):
 
-1. Type **Business**, owned by Rudy's business portfolio. Leave it in development mode.
+1. Type **Business**, owned by the developer's business portfolio. Leave it in development mode.
 2. Instagram use case › **API setup with Unified login**: create its configuration with content publishing (and the basic access it requires; Meta's default configuration also asks for messages and comments). Pick one labelled "Instagram Login Compatible", or people can only log in with Facebook. Its id goes in `apphosting.yaml` as `META_CONFIG_ID` (a plain value). The configuration also sets the token's expiry; the preview shows it.
-3. App roles: Rudy as admin, Nora as tester (App roles › Roles). In development mode, people with a role on the app get every permission without App Review. Other bands need Advanced Access and Live mode later (#19 stage 14).
+3. App roles: the developer as admin, the band's admin as tester (App roles › Roles). In development mode, people with a role on the app get every permission without App Review. Other bands need Advanced Access and Live mode later (#19 stage 14).
 4. Permissions posting needs: `instagram_basic` and `instagram_content_publish` (on an Instagram User token: `instagram_business_basic`, `instagram_business_content_publish`). Roadie refuses a connection that's missing either and says which.
 5. Valid OAuth redirect URIs, on the app and in the configuration:
    - `https://app.myroadie.online/api/meta/callback`

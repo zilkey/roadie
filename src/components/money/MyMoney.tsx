@@ -55,7 +55,7 @@ export function MyMoney() {
       <div className="grid content-start gap-2" data-testid="my-expenses">
         <span className="lbl">My expenses</span>
         {mine.map((x) => <MyExpense key={x.id} x={x} project={projectName(x)} projects={(projects.rows ?? []).filter((pr) => pr.status === "open" || pr.id === x.projectId)} />)}
-        <span className="s">You can edit or remove an expense until it's been paid back. After that, ask Rudy or Nora to fix mistakes.</span>
+        <span className="s">You can edit or remove an expense until it's been paid back. After that, ask an admin to fix mistakes.</span>
       </div>
       <div className="grid content-start gap-2" data-testid="paid-to-me">
         <span className="lbl">Paid to me</span>

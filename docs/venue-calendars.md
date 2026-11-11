@@ -30,7 +30,7 @@ Images are referenced by the source's own URL, never copied.
 
 ## Refreshing
 
-There is no scheduled job (Rudy, 2026-11-11: no big nightly runs). A venue's shows are read when someone presses Refresh on
+There is no scheduled job (the developer, 2026-11-11: no big nightly runs). A venue's shows are read when someone presses Refresh on
 its Events tab. To fill or refresh every venue at once, run `refreshAll()` (`src/server/events/refresh.ts`) as a one-off
 from a checkout against the target Firestore (the prod service-account key for production); Gemini, for new selector
 setups, is the same Vertex model Roadie uses. It refreshes four venues at a time and shares a fetch between rooms on one page.

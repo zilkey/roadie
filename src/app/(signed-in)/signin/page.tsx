@@ -36,7 +36,7 @@ export default function SignIn() {
     <main className="mx-auto grid min-h-dvh max-w-md content-center gap-5 px-4 py-10">
       <div className="grid gap-1">
         <h1 className="m-0"><img src="/logo-signin.svg" alt="Roadie" width={260} height={190} /></h1>
-        <p className="s">Nora Quill Band. Sign in with the Google account we invited.</p>
+        <p className="s">Sign in with the Google account we invited.</p>
       </div>
       {(err || (state.status === "signedOut" && state.error)) && <div className="err">{err ?? (state as { error?: string }).error}</div>}
       <button className="btn acc" data-testid="google-signin" onClick={() => go(signInWithGoogle)}>Sign in with Google</button>

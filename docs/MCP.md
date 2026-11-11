@@ -5,7 +5,7 @@ The Roadie MCP server lets Claude (or any MCP client) read and update the band's
 ## 1. Get a key
 
 1. An admin turns on **AI access** for the person (Admin > Users, "AI access" box).
-2. Admin > **AI keys** > label it (for example "Rudy · Claude Code") > Create key.
+2. Admin > **AI keys** > label it (for example "Laptop · Claude Code") > Create key.
 3. Copy the key (`btk_...`) now. It is shown once; only its SHA-256 hash is stored. You can revoke it on the same page; a revoked key stops working immediately, even inside a running session. The page shows when each key was last used.
 
 ## 2. Where the server runs

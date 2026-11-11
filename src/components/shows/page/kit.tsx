@@ -114,5 +114,5 @@ export function AutoGrowTextarea({ className, value, onChange, ...rest }: Omit<R
   return <textarea ref={ref} rows={1} {...rest} className={`input grow${className ? ` ${className}` : ""}`} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
-/** Initials for the round avatar ("Nora Quill" -> "IA", "Rudy" -> "J"). */
+/** Initials for the round avatar ("Nora Quill" -> "NQ", "Rudy" -> "R"). */
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");

@@ -65,7 +65,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
 ];
 /**
  * Cards that need a tap even when the person is talking to Roadie: they change who can see things (Drive sharing,
- * public links) or fold records together. Rudy, 2026-11-10: money, plain writes, cancels, archives, sends and the
+ * public links) or fold records together. The developer, 2026-11-10: money, plain writes, cancels, archives, sends and the
  * calendar may be answered by voice; sharing and merges may not. A card with a dropdown always needs a tap.
  */
 export const VOICE_TAP_ONLY: readonly string[] = [

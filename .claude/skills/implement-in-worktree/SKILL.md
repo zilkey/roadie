@@ -1,6 +1,6 @@
 ---
 name: implement-in-worktree
-description: Implement a story or feature in its own git worktree with its own test ports, run the unit and e2e suites there until green, then squash it onto main and fast-forward main for Rudy to test by hand. Use when asked to "implement in a worktree", "build this in a worktree", or to work on a story in parallel with other sessions.
+description: Implement a story or feature in its own git worktree with its own test ports, run the unit and e2e suites there until green, then squash it onto main and fast-forward main for the developer to test by hand. Use when asked to "implement in a worktree", "build this in a worktree", or to work on a story in parallel with other sessions.
 ---
 
 # Implement in a worktree
@@ -54,7 +54,7 @@ writes `firebase.worktree.json` in the worktree, and prints the env prefix, e.g.
 (Firestore 8280, Auth 9319, Next 3100, fakes 3201-3207). Running claim again from the same worktree reuses the
 claim; `npm run worktree:ports -- env` prints the prefix again; `-- list` shows every claim.
 
-If every offset is taken, run `-- list` and tell Rudy which claims look stale (worktree gone, branch merged).
+If every offset is taken, run `-- list` and tell the developer which claims look stale (worktree gone, branch merged).
 Don't delete other sessions' lines yourself.
 
 ## 3. Implement
@@ -127,7 +127,7 @@ git -C ~/workspace/roadie merge --ff-only <slug>
 ls -la ~/workspace/roadie/.secrets ~/workspace/roadie/src/lib/band.ts   # still real files, not links
 ```
 
-- If main has uncommitted changes, stop and ask Rudy; don't stash or commit them.
+- If main has uncommitted changes, stop and ask the developer; don't stash or commit them.
 - If `--ff-only` fails because main moved, go back to step 5 (rebase, rerun the suites if anything changed, squash
   again).
 - Don't push.
@@ -141,5 +141,5 @@ git worktree remove ../roadie-<slug>     # it holds no unmerged work now
 git branch -d <slug>
 ```
 
-Then tell Rudy: the commit on main, what to try in the running dev app (pages, flows, seed data needed), and which
+Then tell the developer: the commit on main, what to try in the running dev app (pages, flows, seed data needed), and which
 specs were added or changed. If anything was skipped or still fails, say so with the output.

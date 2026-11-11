@@ -14,7 +14,7 @@ Restore **never** targets real Firestore from this skill. `npm run restore` refu
 
 ## 1. Back up prod
 
-Needs Application Default Credentials. If the backup fails with `invalid_rapt` or a credential error, ask Rudy to
+Needs Application Default Credentials. If the backup fails with `invalid_rapt` or a credential error, ask the developer to
 run `gcloud auth application-default login` and stop; do not lift tokens from the Firebase CLI's config.
 
 ```sh
@@ -49,7 +49,7 @@ npm run align-auth
   **"Account is not active"**. The script deletes each local account and recreates it with the users doc id as uid,
   then syncs claims. It refuses to run without an Auth emulator host.
 
-Then tell Rudy to **sign out and back in**: the browser's ID token still carries the old uid until he does.
+Then tell the developer to **sign out and back in**: the browser's ID token still carries the old uid until they do.
 
 ## 3. Back up the emulator
 
