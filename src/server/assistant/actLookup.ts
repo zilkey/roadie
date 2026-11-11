@@ -102,7 +102,9 @@ const FactsOut = gz.object({
   genres: gz.array(gz.string()).describe("One to four genres, lowercase (\"americana\", \"indie folk\"). Empty when unknown"),
   description: gz.string().nullable().describe("One or two plain sentences about the act that name its genre. No hype, no ticket info. Null when nothing was found"),
 });
-const EXTRACT_SYSTEM =
+// A function, not a constant: web.ts → ai.ts → … → the command registry → acts.ts → here is an import cycle, so WEB_NOTICE may not
+// be initialized yet while this module loads.
+const extractSystem = () =>
   "You pull facts about one music act out of a web search answer and its source list. Use only what they say; null for anything they don't. " +
   "Every link must be one of the listed sources (or a page the answer names on one of those sites); never make up a URL or a handle. " +
   WEB_NOTICE;
@@ -141,7 +143,9 @@ export async function webFacts(name: string, hint: string): Promise<WebFound> {
     if (!/fountain/i.test(name)) return { facts: { links: {}, genres: [] }, sources: [] };
     return { facts: factsFrom(FAKE_FOUNTAIN.out, FAKE_FOUNTAIN.sources.map((s) => s.url)), sources: FAKE_FOUNTAIN.sources };
   }
-  const found = await searchWeb(`"${name}" band${hint ? ` (${hint})` : ""}: hometown, genre, official website, Instagram, Bandcamp, YouTube, Spotify`, { system: SEARCH_SYSTEM, max: 10 });
+  // Retried like every model call: Vertex answers 429 RESOURCE_EXHAUSTED in bursts (2026-11-11: prod's first Look up got Spotify only).
+  const q = `"${name}" band${hint ? ` (${hint})` : ""}: hometown, genre, official website, Instagram, Bandcamp, YouTube, Spotify`;
+  const found = await withModelRetry(() => searchWeb(q, { system: SEARCH_SYSTEM, max: 10 }));
   const resolved = await Promise.all(found.sources.map(async (s) => ({ title: s.title, url: await resolveSource(s.url) })));
   const sources = resolved.filter((s): s is WebSource => !!s.url);
   if (!found.answer && !sources.length) return { facts: { links: {}, genres: [] }, sources: [] };
@@ -150,7 +154,7 @@ export async function webFacts(name: string, hint: string): Promise<WebFound> {
     `Act: ${name}${hint ? ` (${hint})` : ""}.`, `<search_answer>${found.answer}</search_answer>`,
     `<sources>\n${sources.map((s) => `${s.url} (${s.title})`).join("\n")}\n</sources>`,
   ].join("\n\n");
-  const res = await withModelRetry(() => ai.generate({ model: model as never, system: EXTRACT_SYSTEM, prompt, output: { schema: FactsOut } }));
+  const res = await withModelRetry(() => ai.generate({ model: model as never, system: extractSystem(), prompt, output: { schema: FactsOut } }));
   return { facts: factsFrom(res.output, sources.map((s) => s.url)), sources };
 }
 
