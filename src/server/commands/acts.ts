@@ -66,7 +66,8 @@ export const actsFind = defineCommand({
       rows: rows.slice(0, i.limit).map(({ a, take, s }) => ({
         id: a.id, name: a.name,
         ...(a.description ? { description: a.description } : {}), ...(a.genres ? { genres: a.genres } : {}), ...(a.hometown ? { hometown: a.hometown } : {}),
-        ...(a.links ? { links: a.links } : {}), ...(a.imageUrl ? { imageUrl: a.imageUrl } : {}),
+        ...(a.links ? { links: a.links } : {}), // An Instagram photo is a data URL (#78): kilobytes of base64 that mean nothing to Roadie.
+        ...(a.imageUrl && !String(a.imageUrl).startsWith("data:") ? { imageUrl: a.imageUrl } : {}),
         rooms: s?.rooms ?? [], ...(s?.next ? { next: s.next } : {}),
         openedAt: s?.openedAt ?? [], openedAtNames: (s?.openedAt ?? []).map((id) => venueName.get(id) ?? id),
         tour: !!s?.tour, cities: s?.cities ?? [],

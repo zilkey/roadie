@@ -136,7 +136,7 @@ export function ActsTab() {
               <th className="name">Act</th>
               <th>Seen at</th>
               <th>Next show</th>
-              <th>Sounds like</th>
+              <th className="sl">Sounds like</th>
               <th>Our take</th>
             </tr></thead>
             <tbody>
@@ -169,7 +169,7 @@ export function ActsTab() {
                         : <span className="dash">—</span>}
                     </td>
                     <td className="nw">{f?.next ? <>{fmtEventDay(f.next.date)}<span className="sub">{f.next.name}</span></> : <span className="dash">—</span>}</td>
-                    <td><span className="s">{a.description || "Not looked up"}</span></td>
+                    <td className="sl">{a.description ? <span className="s line-clamp-2" title={a.description}>{a.description}</span> : <span className="s">{a.lookedUpAt ? "Nothing found" : "Not looked up"}</span>}</td>
                     <td>{take?.relationship ? RELATIONSHIP_LABEL[take.relationship as ActRelationship] : <span className="dash">—</span>}</td>
                   </tr>
                 );

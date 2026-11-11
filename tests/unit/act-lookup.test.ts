@@ -1,7 +1,8 @@
 // An act's Look up (#78): the pure parts, no emulator, no network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asHttps, groundedLink, cleanGenres, factsFrom, sameName, FAKE_FOUNTAIN, MAX_GENRES } from "@/server/assistant/actLookup";
+import { asHttps, groundedLink, cleanGenres, factsFrom, sameName, FAKE_FOUNTAIN, MAX_GENRES, ogImage, spotifyIdsIn, isInstagramPhoto, ownPages, socialLinksIn, ownProfile } from "@/server/assistant/actLookup";
+import { actSearchUrl } from "@/lib/acts";
 import { isGroundingRedirect, resolveSource } from "@/server/assistant/web";
 import { spotifyArtistId, pickImage, catalogHosts, toHit } from "@/server/integrations/spotify";
 
@@ -124,4 +125,56 @@ test("isGroundingRedirect and resolveSource", async () => {
   assert.equal(isGroundingRedirect("https://vertexaisearch.cloud.google.com.evil.example/x"), false);
   assert.equal(isGroundingRedirect("nonsense"), false);
   assert.equal(await resolveSource("https://abrothersfountain.example/about"), "https://abrothersfountain.example/about");
+});
+
+test("ogImage: the og:image content either way round, with entities decoded", () => {
+  assert.equal(ogImage('<head><meta property="og:image" content="https://scontent.cdninstagram.com/v/a.jpg?x=1&amp;y=2" /></head>'), "https://scontent.cdninstagram.com/v/a.jpg?x=1&y=2");
+  assert.equal(ogImage("<meta content='https://x.fbcdn.net/p.jpg' property='og:image'>"), "https://x.fbcdn.net/p.jpg");
+  assert.equal(ogImage('<meta property="og:title" content="Nope">'), undefined);
+});
+
+test("isInstagramPhoto: only Instagram's own image hosts", () => {
+  assert.ok(isInstagramPhoto("https://scontent-dfw5-2.cdninstagram.com/v/t51/p.jpg"));
+  assert.ok(isInstagramPhoto("https://scontent.xx.fbcdn.net/p.jpg"));
+  assert.ok(!isInstagramPhoto("https://static.cdninstagram.com.evil.example/logo.png"));
+  assert.ok(!isInstagramPhoto("not a url"));
+});
+
+test("spotifyIdsIn: artist links on a page, with or without a locale, each once", () => {
+  const html = '<a href="https://open.spotify.com/artist/4BrothersFountainCO01x?si=1">x</a> <a href="https://open.spotify.com/intl-de/artist/4BrothersFountainCO01x">y</a> ' +
+    '<a href="https://open.spotify.com/album/4BrothersFountainCO01y">album</a>';
+  assert.deepEqual(spotifyIdsIn(html), ["4BrothersFountainCO01x"]);
+});
+
+test("ownPages: website, Bandcamp and link-in-bio sources, at most four", () => {
+  assert.deepEqual(
+    ownPages({ website: "https://band.example/", bandcamp: "https://band.bandcamp.com/", instagram: "https://www.instagram.com/band/" },
+      ["https://linktr.ee/band", "https://www.westword.com/music/band", "https://band.example/"]),
+    ["https://band.example/", "https://band.bandcamp.com/", "https://linktr.ee/band"],
+  );
+  assert.deepEqual(ownPages({}, []), []);
+});
+
+test("actSearchUrl: the quoted name, band, and up to two cities it played", () => {
+  assert.equal(actSearchUrl("Sunshowers", ["Denver", "Denver", "Boulder", "Fort Collins"]), `https://www.google.com/search?q=${encodeURIComponent('"Sunshowers" band Denver Boulder')}`);
+  assert.equal(actSearchUrl("AWAY"), `https://www.google.com/search?q=${encodeURIComponent('"AWAY" band')}`);
+});
+
+test("socialLinksIn: profiles only, not posts, share buttons or the pixel", () => {
+  const html = '<a href="https://www.instagram.com/SunShowersBand/">ig</a> <a href="https://instagram.com/p/Cx1/">post</a> ' +
+    '<a href="https://www.facebook.com/sunshowersband">fb</a> <a href="https://www.facebook.com/sharer/sharer.php?u=x">share</a> ' +
+    '<img src="https://www.facebook.com/tr?id=1&amp;ev=PageView"> <a href="https://m.facebook.com/profile.php?id=12345&amp;ref=x">p</a>';
+  assert.deepEqual(socialLinksIn(html), {
+    instagram: ["https://www.instagram.com/sunshowersband/"],
+    facebook: ["https://www.facebook.com/sunshowersband/", "https://www.facebook.com/profile.php?id=12345"],
+  });
+});
+
+test("ownProfile: the only one, else the one named like the act, else none", () => {
+  const ig = (h: string) => `https://www.instagram.com/${h}/`;
+  assert.equal(ownProfile([ig("whatever")], "Sunshowers"), ig("whatever"));
+  assert.equal(ownProfile([ig("hidivedenver"), ig("sunshowersband")], "Sunshowers"), ig("sunshowersband"));
+  assert.equal(ownProfile([ig("thebandname"), ig("label")], "The Band Name"), ig("thebandname"));
+  assert.equal(ownProfile([ig("one"), ig("two")], "Sunshowers"), undefined);
+  assert.equal(ownProfile([], "Sunshowers"), undefined);
 });

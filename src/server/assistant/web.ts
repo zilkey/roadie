@@ -179,6 +179,38 @@ export async function fetchPage(u: string): Promise<WebPage> {
   }
 }
 
+/**
+ * Raw bytes from one https URL, for Look up's Instagram photo and an act's own pages: the same public-address guard and
+ * hand-followed redirects as fetchPage, with the caller's user agent, a type test and a size cap. Errors throw.
+ */
+export async function fetchBytes(u: string, opts: { ua: string; accept: string; type: RegExp; max: number }): Promise<{ url: string; type: string; body: Buffer }> {
+  let url = checkUrl(u);
+  for (let hop = 0; ; hop++) {
+    const r = await new Promise<{ status: number; location?: string; type: string; body: Buffer }>((resolve, reject) => {
+      const req = https.get(url, { lookup: publicLookup, timeout: TIMEOUT_MS, headers: { "user-agent": opts.ua, accept: opts.accept } }, (res) => {
+        const status = res.statusCode ?? 0;
+        const type = String(res.headers["content-type"] ?? "");
+        if (status >= 300 && status < 400) { res.resume(); return resolve({ status, location: res.headers.location, type, body: Buffer.alloc(0) }); }
+        if (status >= 400 || !opts.type.test(type)) { res.destroy(); return reject(new AppError("fetch_failed", `Got ${status} ${type}`, 502)); }
+        let size = 0;
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => {
+          size += c.length;
+          if (size > opts.max) { res.destroy(); reject(new AppError("too_large", "Too big", 413)); return; }
+          chunks.push(c);
+        });
+        res.on("end", () => resolve({ status, type, body: Buffer.concat(chunks) }));
+        res.on("error", reject);
+      });
+      req.on("timeout", () => req.destroy(new AppError("timeout", "Took too long", 504)));
+      req.on("error", reject);
+    });
+    if (r.location === undefined) return { url: url.href, type: r.type, body: r.body };
+    if (hop >= MAX_REDIRECTS) throw new AppError("fetch_failed", "Too many redirects", 502);
+    url = checkUrl(new URL(r.location, url).href);
+  }
+}
+
 // ---------- searching ----------
 
 type Grounding = { groundingChunks?: { web?: { uri?: string; title?: string; domain?: string } }[] };

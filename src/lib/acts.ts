@@ -147,3 +147,12 @@ export function actListed(a: { name: string }, s: ActStats | undefined, take: Ac
   if (f.filter === "tour") return !!s?.tour;
   return true;
 }
+
+/**
+ * A Google search for the act, with what tells it apart from same-named bands: "band", and the cities it has played (where it
+ * plays is usually near home). `"Sunshowers" band Denver`.
+ */
+export function actSearchUrl(name: string, cities: string[] = []): string {
+  const where = [...new Set(cities.filter(Boolean))].slice(0, 2).join(" ");
+  return `https://www.google.com/search?q=${encodeURIComponent(`"${name}" band${where ? ` ${where}` : ""}`)}`;
+}

@@ -2,7 +2,8 @@
 /**
  * An act's page (issue #77, board "DetailAct" on the booking canvas). About and Where they've played are shared with every band
  * (acts/{id} and venue calendars); Our take and Contacts are this band's (actNotes). Look up (#78) fills About from Spotify and the web (and asks "same band?"
- * when Spotify has several of that name); the about fields are click-to-edit once anything is in them.
+ * when Spotify has several of that name, next to what the web found and the show posters); the about fields are click-to-edit once
+ * anything is in them. Search Google is always there, and each show in Where they've played links to the venue's event page.
  */
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -15,7 +16,8 @@ import { CardGroup, DetailCard, DetailPage, KV } from "@/components/booking/Deta
 import { AddContactDialog } from "@/components/booking/AddContactDialog";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { ActThumb, StarIcon } from "@/components/booking/ActsTab";
-import { actStats, type EvLike } from "@/lib/acts";
+import { EventPoster } from "@/components/booking/VenueEventBits";
+import { actSearchUrl, actStats, type EvLike } from "@/lib/acts";
 import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
 import { dateInBandZone, fmtInstant } from "@/lib/timezone";
 import { ACT_RELATIONSHIPS, ARTIST_LINKS, RELATIONSHIP_HINT, RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship, type ArtistLinkKey, type Show, type VenueEvent } from "@/schema";
@@ -80,7 +82,10 @@ function ActPage() {
       }>
       <ErrorBox error={error} />
       <CardGroup kind="shared">
-        <About id={id} act={act} error={error} update={update} rooms={[...new Set(played.map((e) => venues.get(e.venueId)?.name).filter((n): n is string => !!n))]} />
+        <About id={id} act={act} error={error} update={update}
+          rooms={[...new Set(played.map((e) => venues.get(e.venueId)?.name).filter((n): n is string => !!n))]}
+          cities={played.map((e) => venues.get(e.venueId)?.address.city).filter((c): c is string => !!c)}
+          posters={played.filter((e) => e.imageUrl).slice(0, 3).map((e) => ({ id: e.id, src: e.imageUrl!, url: e.ticketUrl, label: `${venues.get(e.venueId)?.name ?? "The"} show, ${shortDay(e.date)}` }))} />
         <DetailCard title="Where they've played" testid="act-played" headerExtra={<span className="s">From venue calendars</span>}>
           {!events.rows ? <span className="s">Loading…</span>
             : played.length === 0 ? <div className="empty"><span>Not on any venue calendar in Roadie.</span></div>
@@ -91,11 +96,16 @@ function ActPage() {
                   const others = e.acts.filter((a) => a.actId !== id).map((a) => a.name);
                   const v = venues.get(e.venueId);
                   return (
-                    <div key={e.id} className="d-row grid grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-3" data-testid={`act-played-${e.id}`}>
-                      <b className="whitespace-nowrap">{e.date >= today ? fmtEventDay(e.date) : fmtEventYear(e.date)}</b>
+                    <div key={e.id} className="d-row grid grid-cols-[48px_110px_minmax(0,1fr)_auto] items-center gap-3 max-sm:grid-cols-[48px_minmax(0,1fr)_auto]" data-testid={`act-played-${e.id}`}>
+                      {e.ticketUrl
+                        ? <a href={e.ticketUrl} target="_blank" rel="noreferrer" aria-label={`${e.title}: the event page`}><EventPoster src={e.imageUrl} alt="" size={48} testid="played-poster" /></a>
+                        : <EventPoster src={e.imageUrl} alt="" size={48} testid="played-poster" />}
+                      <b className="whitespace-nowrap max-sm:hidden">{e.date >= today ? fmtEventDay(e.date) : fmtEventYear(e.date)}</b>
                       <span className="min-w-0">
+                        <b className="sm:hidden">{e.date >= today ? fmtEventDay(e.date) : fmtEventYear(e.date)} · </b>
                         {v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`}>{v.name}</Link> : "A venue"}
                         <span className="s">{v?.address.city ? ` · ${v.address.city}` : ""}{others.length ? ` · with ${others.join(", ")}` : ""}</span>
+                        {e.ticketUrl && <> <a className="s whitespace-nowrap" href={e.ticketUrl} target="_blank" rel="noreferrer" data-testid={`played-link-${e.id}`}>Event page ↗</a></>}
                       </span>
                       {me?.role === "support" ? <span className="chip">Opening</span> : <span className="chip dk">Headlining</span>}
                     </div>
@@ -132,8 +142,16 @@ function ActPage() {
   );
 }
 
-/** About: what Look up (#78) finds, each value click-to-edit. Nothing yet: the empty box with Look up. */
-function About({ id, act, error, update, rooms }: { id: string; act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean>; rooms: string[] }) {
+/** A show poster from a venue calendar, for "same band?": the poster often shows the band. */
+interface Poster { id: string; src: string; url?: string; label: string }
+
+/**
+ * About: what Look up (#78) finds, each value click-to-edit. Nothing yet: the empty box with Look up. When Spotify has several
+ * artists by the name, the "same band?" question sits under what the web found, with the show posters to compare against.
+ */
+function About({ id, act, error, update, rooms, cities, posters }: {
+  id: string; act: ActDoc; error: string | null; update(patch: Record<string, unknown>): Promise<boolean>; rooms: string[]; cities: string[]; posters: Poster[];
+}) {
   const lookup = useCommand();
   const run = (spotifyId?: string | null) => void lookup.call("acts.lookup", { id, ...(spotifyId !== undefined ? { spotifyId } : {}) });
   const [addingGenre, setAddingGenre] = useState(false);
@@ -145,45 +163,55 @@ function About({ id, act, error, update, rooms }: { id: string; act: ActDoc; err
   const lookBtn = (label: string, cls: string) => (
     <button type="button" className={`btn ${cls} sm`} disabled={lookup.busy} onClick={() => run()} data-testid="act-lookup">{lookup.busy ? "Looking up…" : label}</button>
   );
+  const google = (
+    <a className="btn ghost sm" href={actSearchUrl(act.name, cities)} target="_blank" rel="noreferrer" data-testid="act-google">Search Google ↗</a>
+  );
   const lookErr = <ErrorBox error={lookup.error} />;
-  if (cands.length) {
-    const the = rooms.map((r) => `the ${r}`);
-    const where = the.length ? `Which one played ${the.length > 1 ? `${the.slice(0, -1).join(", ")} and ${the[the.length - 1]}` : the[0]}?` : "Which one is it?";
-    return (
-      <DetailCard title="About" testid="act-about">
-        <div className="grid gap-3" data-testid="act-same-band">
-          <span>More than one band goes by this name. {where}</span>
-          {cands.map((c) => (
-            <div key={c.id} className="flex flex-wrap items-center gap-3" data-testid={`act-cand-${c.id}`}>
-              <ActThumb src={c.imageUrl} size={56} />
-              <span className="min-w-0 flex-1">
-                <b>{c.name}</b>
-                <span className="s block">{c.genres?.length ? <>{c.genres.join(" · ")} · </> : null}<a href={c.url} target="_blank" rel="noreferrer">Listen on Spotify ↗</a></span>
-              </span>
-              <button type="button" className="btn acc sm" disabled={lookup.busy} onClick={() => run(c.id)} data-testid={`act-cand-pick-${c.id}`}>This one</button>
-            </div>
-          ))}
-          <span><button type="button" className="btn ghost sm" disabled={lookup.busy} onClick={() => run(null)} data-testid="act-cand-none">None of these</button></span>
-          {lookErr}
+
+  const the = rooms.map((r) => `the ${r}`);
+  const where = the.length ? `Which one played ${the.length > 1 ? `${the.slice(0, -1).join(", ")} and ${the[the.length - 1]}` : the[0]}?` : "Which one is it?";
+  const picker = cands.length > 0 && (
+    <div className="grid gap-3 rounded-xl border border-[var(--divider)] p-3" data-testid="act-same-band">
+      <span>More than one band goes by this name. {where}</span>
+      <span className="s">Spotify has {cands.length} artists called {act.name}. Compare their pictures with {empty ? "" : "what the web found above and "}{posters.length ? "the show poster" : "a Google search"}, or open one to hear it.</span>
+      {posters.length > 0 && (
+        <span className="flex flex-wrap gap-2" data-testid="act-posters">
+          {posters.map((p) => p.url
+            ? <a key={p.id} href={p.url} target="_blank" rel="noreferrer" title={`${p.label}: the event page`}><EventPoster src={p.src} alt={p.label} size={120} testid="act-poster" /></a>
+            : <EventPoster key={p.id} src={p.src} alt={p.label} size={120} testid="act-poster" />)}
+        </span>
+      )}
+      {cands.map((c) => (
+        <div key={c.id} className="flex flex-wrap items-center gap-3" data-testid={`act-cand-${c.id}`}>
+          <ActThumb src={c.imageUrl} size={56} />
+          <span className="min-w-0 flex-1">
+            <b>{c.name}</b>
+            <span className="s block">{c.genres?.length ? <>{c.genres.join(" · ")} · </> : null}<a href={c.url} target="_blank" rel="noreferrer">Listen on Spotify ↗</a></span>
+          </span>
+          <button type="button" className="btn acc sm" disabled={lookup.busy} onClick={() => run(c.id)} data-testid={`act-cand-pick-${c.id}`}>This one</button>
         </div>
-      </DetailCard>
-    );
-  }
+      ))}
+      <span><button type="button" className="btn ghost sm" disabled={lookup.busy} onClick={() => run(null)} data-testid="act-cand-none">None of these</button></span>
+    </div>
+  );
+
   if (empty) {
     return (
-      <DetailCard title="About" testid="act-about">
-        <div className="empty grid justify-items-start gap-2.5" data-testid="act-about-empty">
-          <span>Nothing about this act yet. Look up searches the web for their links, where they&apos;re from and what they sound like. You can fix anything it gets wrong.</span>
-          {act.lookedUpAt && <span data-testid="act-lookup-nothing">Look up found nothing for {act.name}. Add what you know by hand.</span>}
-          {lookBtn(`Look up ${act.name}`, "acc")}
-          {lookErr}
-        </div>
+      <DetailCard title="About" testid="act-about" headerExtra={google}>
+        {picker || (
+          <div className="empty grid justify-items-start gap-2.5" data-testid="act-about-empty">
+            <span>Nothing about this act yet. Look up searches the web for their links, photo, where they&apos;re from and what they sound like. You can fix anything it gets wrong.</span>
+            {act.lookedUpAt && <span data-testid="act-lookup-nothing">Look up found nothing for {act.name}. Try Search Google, and add what you know by hand.</span>}
+            {lookBtn(`Look up ${act.name}`, "acc")}
+          </div>
+        )}
+        {lookErr}
       </DetailCard>
     );
   }
   const setGenres = (next: string[]) => update({ genres: next.length ? next : null });
   return (
-    <DetailCard title="About" testid="act-about" headerExtra={lookBtn(act.lookedUpAt ? "Look up again" : "Look up", "soft")}>
+    <DetailCard title="About" testid="act-about" headerExtra={<span className="flex flex-wrap items-center gap-2">{google}{lookBtn(act.lookedUpAt ? "Look up again" : "Look up", "soft")}</span>}>
       {lookErr}
       <KV rows={[
         ["Sounds like", <InlineValue key="d" testid="act-description" label="Sounds like" kind="textarea" value={act.description ?? ""} canEdit error={error} onSave={(v) => update({ description: v.trim() || null })} />],
@@ -209,6 +237,7 @@ function About({ id, act, error, update, rooms }: { id: string; act: ActDoc; err
           </span>
         )],
       ]} />
+      {picker}
       <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}Click anything to fix it.</span>
     </DetailCard>
   );

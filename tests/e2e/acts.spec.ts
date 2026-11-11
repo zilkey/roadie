@@ -71,6 +71,7 @@ test("an act's page lists where they've played, and the shortlist, relationship 
   await expect(played).toContainText("Bluebird Room");
   await expect(played).toContainText("with The Example Band");
   await expect(played).toContainText("Opening");
+  await expect(played.getByTestId(/^played-link-/)).toHaveAttribute("href", "https://tickets.example.com/shows/example-band");
   // the headliner: the same show, Headlining
   await page.goto(href.headliner);
   await expect(page.getByTestId(/^act-played-/)).toContainText("Headlining");
@@ -220,6 +221,9 @@ test("Look up on a name Spotify shares asks which band: None of these keeps the 
   // two Spotify artists share the name, so the card asks
   await expect(page.getByTestId("act-same-band")).toBeVisible();
   await expect(page.getByTestId("act-same-band")).toContainText("More than one band goes by this name. Which one is it?");
+  // what the web found shows while it asks, with a Google search to settle it
+  await expect(page.getByTestId("act-hometown")).toHaveText("Fort Collins, CO");
+  await expect(page.getByTestId("act-google")).toHaveAttribute("href", /google\.com\/search\?q=.*Brother/);
   for (const c of [CO, UK]) {
     await expect(page.getByTestId(`act-cand-${c}`)).toContainText("Listen on Spotify");
     await expect(page.getByTestId(`act-cand-${c}`)).not.toContainText("No genres");

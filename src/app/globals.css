@@ -270,6 +270,8 @@ fieldset.sec { margin: 0; }
 .book-table.wn td.pitch > .pw { min-width: 220px; }
 .book-table.wn th.name, .book-table.wn td.name { width: 100%; white-space: nowrap; }
 .book-table td.nw { white-space: nowrap; }
+/* Acts tab: Sounds like holds two lines at a readable width, so a looked-up act's row stays as short as the rest (full text on hover) */
+.book-table th.sl, .book-table td.sl { min-width: 280px; max-width: 380px; }
 /* Pitch List: the Last contact column, and a light-yellow row once a Pitched or Talking pitch has had no contact for two weeks */
 .book-table th.lc, .book-table td.lc { white-space: nowrap; padding-right: 22px; }
 /* Festivals tab: a header that sorts (festivals.page) */
