@@ -94,6 +94,8 @@ export const VenueEvent = z.strictObject({
   supportTba: z.boolean().optional(),
   /** Nights in a row the same headliner plays the room (2+: a run), found at refresh. */
   nights: z.number().int().optional(),
+  /** On tour (#79): how many Colorado rooms the headliner plays within a few weeks of this show (2+), set after each refresh. */
+  tourStops: z.number().int().optional(),
   imageUrl: z.string().optional(),
   ticketUrl: z.string().optional(),
   status: eventStatus,

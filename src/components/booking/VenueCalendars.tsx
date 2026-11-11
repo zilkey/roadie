@@ -12,17 +12,20 @@
  * client, so a page can come up short; "Load more" still reads further.
  * The filters are remembered per viewer on this device (localStorage, like the stage plot paper size).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
-import { useCollection } from "@/lib/firestore-hooks";
+import { useCollection, useDocs } from "@/lib/firestore-hooks";
+import { runCommand } from "@/lib/commands";
 import { clientAuth } from "@/lib/firebase-client";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, TakePicker, TicketLink } from "@/components/booking/VenueEventBits";
+import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, TakePicker, TicketLink, type Ev } from "@/components/booking/VenueEventBits";
+import { PitchShowDialog, PitchThisButton, type PitchShow } from "@/components/booking/PitchShowDialog";
+import { useOurGenres } from "@/components/booking/useOurGenres";
 import { byWhen, CALENDAR_WHEN, eventTime, fmtEventDay, isUpcoming, nextCalendarLimit, openerChance, titleSaysMore, whenUntil, type CalendarWhen } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
 import { dateInBandZone } from "@/lib/timezone";
-import type { VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
+import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
 
 /** Shows per page. e2e sets a small one (NEXT_PUBLIC_VENUE_CALENDARS_PAGE) so its three fixture shows span two pages. */
 export const CALENDARS_PAGE = Number(process.env.NEXT_PUBLIC_VENUE_CALENDARS_PAGE) || 50;
@@ -52,6 +55,40 @@ function useCalendarFilter(): [CalendarFilter, (f: CalendarFilter) => void] {
   return [f, (v) => { set(v); try { localStorage.setItem(filterKey(), JSON.stringify(v)); } catch { /* private mode: lasts for this page */ } }];
 }
 
+/**
+ * "New since you last looked" (#79), per viewer: when they last opened this tab (venueEvents.looked, userPrefs), read once on
+ * mount, so the chips stay put while they look. Null on their first look: nothing is new then.
+ */
+function useLastLooked(): string | null {
+  const [since, setSince] = useState<string | null>(null);
+  const asked = useRef(false);
+  useEffect(() => {
+    if (asked.current) return;
+    asked.current = true;
+    runCommand<{ previous: string | null }>("venueEvents.looked", {}).then((r) => setSince(r.previous), () => undefined);
+  }, []);
+  return since;
+}
+
+/**
+ * The looked-up genres of these acts, for genre fit (#79). The map only grows (a bigger read keeps what the last one found), so
+ * the "Likely" filter doesn't drop rows while a new set of acts loads.
+ */
+function useActGenres(ids: string[], skip: boolean): Map<string, string[] | undefined> {
+  const { rows } = useDocs<ActDoc>("acts", ids, { skip });
+  const [map, setMap] = useState<Map<string, string[] | undefined>>(() => new Map());
+  useEffect(() => {
+    setMap((m) => {
+      const changed = rows.filter((r) => !m.has(r.id) || (m.get(r.id) ?? []).join("|") !== (r.genres ?? []).join("|"));
+      if (!changed.length) return m;
+      const n = new Map(m);
+      for (const r of changed) n.set(r.id, r.genres);
+      return n;
+    });
+  }, [rows]);
+  return map;
+}
+
 export function VenueCalendars() {
   const { artistId } = useArtist();
   const b = useBooking();
@@ -72,12 +109,20 @@ export function VenueCalendars() {
   // back full may have more behind it.
   const raw = events.rows;
   const upcoming = useMemo(() => (raw ?? []).filter((e) => isUpcoming(e, today)).sort(byWhen), [raw, today]);
+  // Genre fit: only read the headliners' acts when the band has genres of its own to compare.
+  const ours = useOurGenres();
+  const headIds = useMemo(() => [...new Set(upcoming.flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)))], [upcoming]);
+  const actGenres = useActGenres(headIds, !ours.length);
+  const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const rows = useMemo(() => upcoming.filter((e) => {
     if (f.show === "hide" && takes.get(e.id)?.take === "notFit") return false;
-    if (f.show === "likely" && openerChance(e, records.get(e.venueId), today).chance !== "likely") return false;
+    if (f.show === "likely" && openerChance(e, records.get(e.venueId), today, genres).chance !== "likely") return false;
     if (f.region) { const v = venues.get(e.venueId); if (v?.region !== f.region) return false; }
     return true;
-  }), [upcoming, f, takes, records, venues, today]);
+  }), [upcoming, f, takes, records, venues, today, genres]);
+  const since = useLastLooked();
+  const [pitching, setPitching] = useState<PitchShow | null>(null);
+  const openPitch = (e: Ev) => setPitching({ e, venueName: venues.get(e.venueId)?.name ?? "the venue" });
   // The limit the server answered `raw` for. A new limit keeps the last rows on screen until its snapshot lands, and its first
   // snapshot may come from the cache with only the last read's shows: that one must not count, or it reads as "that's all" (the
   // empty "match" note flashed once a round in prod).
@@ -130,6 +175,7 @@ export function VenueCalendars() {
               <th>Venue</th>
               <th>City</th>
               <th>Our take</th>
+              <th><span className="sr-only">Pitch</span></th>
             </tr></thead>
             <tbody>
               {shown.map((e) => {
@@ -139,13 +185,14 @@ export function VenueCalendars() {
                     <td className="w-14"><EventPoster src={e.imageUrl} alt={e.title} size={48} testid="calendar-show-poster" /></td>
                     <td className="nw" data-testid="calendar-show-date"><b>{fmtEventDay(e.date)}</b>{time && <span className="sub">{time}</span>}</td>
                     <td className="name">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} stats={records.get(e.venueId)} today={today} /></div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} stats={records.get(e.venueId)} today={today} genres={genres} isNew={!!since && e.firstSeenAt > since} /></div>
                       {titleSaysMore(e) && <span className="sub">{e.title}</span>}
                       {e.ticketUrl && <span className="sub"><TicketLink e={e} /></span>}
                     </td>
                     <td>{v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`} className="nm" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link> : <span className="dash">—</span>}</td>
                     <td className="nw">{v?.address.city || <span className="dash">—</span>}</td>
                     <td><TakePicker e={e} take={takes.get(e.id)} artistId={artistId} label={false} /></td>
+                    <td className="text-right">{takes.get(e.id)?.take !== "pitched" && <PitchThisButton e={e} onOpen={openPitch} />}</td>
                   </tr>
                 );
               })}
@@ -155,6 +202,7 @@ export function VenueCalendars() {
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
+      <PitchShowDialog show={pitching} onClose={() => setPitching(null)} />
       {hasMore && !filling && (
         <button type="button" className="btn ghost justify-self-center" onClick={() => { setPages((n) => n + 1); if (rows.length <= want + CALENDARS_PAGE) setLimit((n) => n + CALENDARS_PAGE); }} data-testid="venue-calendars-more">
           Load more

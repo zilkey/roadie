@@ -21,6 +21,7 @@ test("nameFromAddress title-cases the local part", () => {
 test("parseTarget reads kind:id and nothing else", () => {
   assert.deepEqual(parseTarget("venue:abc"), { kind: "venue", id: "abc" });
   assert.deepEqual(parseTarget("edition:e_1"), { kind: "edition", id: "e_1" });
+  assert.deepEqual(parseTarget("act:a_1"), { kind: "act", id: "a_1" });
   assert.equal(parseTarget("show:abc"), null);
   assert.equal(parseTarget(null), null);
 });

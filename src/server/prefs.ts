@@ -77,3 +77,13 @@ export async function dismissDayOf(uid: string, artistId: string, key: string): 
   await ref(uid).set({ uid, dayOfDismissed: { [artistId]: next } }, { merge: true });
   return next;
 }
+
+/**
+ * When the caller last opened Booking's Venue calendars in this artist (#79, the "New" chips): stores now and returns the time
+ * stored before, null on their first look.
+ */
+export async function lookAtCalendars(uid: string, artistId: string, now: string): Promise<string | null> {
+  const prev = (await ref(uid).get()).data()?.calendarsLookedAt?.[artistId];
+  await ref(uid).set({ uid, calendarsLookedAt: { [artistId]: now } }, { merge: true });
+  return typeof prev === "string" ? prev : null;
+}

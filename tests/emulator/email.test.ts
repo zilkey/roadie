@@ -177,3 +177,16 @@ test("email commands are admin only, and Roadie neither reads the mail nor sends
   for (const n of ["email.link", "email.sync", "email.thread"]) assert.ok(isExcluded(n), `${n} reads the band's mail`);
   assert.ok(needsConfirm("email.send", {}));
 });
+
+test("an act is a thread target: email.send lands the thread on the act, email.search reads its linked contacts, and a missing act is a 404", async () => {
+  const actx: Ctx = { ...ctx, artistId: TEST_ARTIST };
+  const act = await cmd("acts.create", { name: "Sample Support" }, actx);
+  const c = await cmd("contacts.create", { name: "Sam Booker", emails: ["sam@support.example"], attachTo: { kind: "acts", id: act.id } }, actx);
+  assert.ok(c.id);
+  const sent = await cmd("email.send", { target: { kind: "act", id: act.id }, to: ["sam@support.example"], subject: "Open for us?", body: "Hello" }, actx);
+  assert.deepEqual((await thread(sent.threadId)).target, { kind: "act", id: act.id, name: "Sample Support" });
+  assert.deepEqual(await cmd("email.sync", { target: { kind: "act", id: act.id } }, actx), { added: 0, threads: 1 });
+  const hits = (await cmd("email.search", { target: { kind: "act", id: act.id } }, actx)) as unknown as { threadId: string; linkedId?: string }[];
+  assert.equal(hits.find((h) => h.threadId === sent.threadId)?.linkedId, emailThreadId(TEST_ARTIST, sent.threadId));
+  await assert.rejects(cmd("email.send", { target: { kind: "act", id: "nope" }, to: ["a@x.example"], subject: "Hi", body: "x" }, actx), /not found/);
+});

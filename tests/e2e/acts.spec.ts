@@ -279,3 +279,36 @@ test("Look up shortlist on the Acts tab looks up every shortlisted act not yet l
   await expect(page.getByTestId("act-same-band")).toHaveCount(0);
   await expect(page.getByTestId("act-lookup")).toHaveText("Look up again");
 });
+
+test("Pitch them: disabled with nothing to go on, then opens a new email to the act's contact", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const name = `Pitchable Trio ${Date.now() % 100000}`;
+  await addAct(page, name);
+  const actUrl = page.url();
+
+  // no contact and no link yet
+  await expect(page.getByTestId("act-pitch")).toBeDisabled();
+  await expect(page.getByTestId("act-pitch")).toHaveAttribute("title", "Add a contact or a link first");
+
+  // a contact with an email turns it into the compose link
+  await page.getByTestId("contact-add").click();
+  await page.getByTestId("contact-add-new").check();
+  await page.getByTestId("contact-form-name").fill("Tess Booker");
+  await page.getByTestId("contact-form-emails").fill("tess@pitchable.example");
+  await page.getByTestId("contact-add-submit").click();
+  await expect(page.getByTestId("contact-Tess Booker")).toBeVisible();
+  await expect(page.getByTestId("act-pitch")).toHaveAttribute("href", /\/booking\/email\/new\?target=act:/);
+  await page.getByTestId("act-pitch").click();
+
+  await expect(page.getByTestId("compose-page")).toBeVisible();
+  await expect(page.getByTestId("compose-page")).toContainText(`Starts a thread on ${name}`);
+  await expect(page.getByTestId("contact-pick-Tess Booker")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("to-chip-tess@pitchable.example")).toContainText("Tess Booker");
+  await expect(page.getByTestId("reply-instead")).toHaveCount(0);
+  await expect(page.getByTestId("mark-pitched")).toHaveCount(0);
+  await expect(page.getByTestId("email-note")).toContainText("The thread lands on this act");
+
+  // Cancel goes back to the act
+  await page.getByTestId("email-cancel").click();
+  await expect(page).toHaveURL(actUrl);
+});

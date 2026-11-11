@@ -26,7 +26,7 @@ export function nameFromAddress(address: string): string {
 }
 
 /** "venue:abc" -> {kind, id}; null for anything else. */
-export function parseTarget(v: string | null): { kind: "venue" | "promoter" | "festival" | "edition"; id: string } | null {
-  const m = /^(venue|promoter|festival|edition):(.+)$/.exec(v ?? "");
+export function parseTarget(v: string | null): { kind: "venue" | "promoter" | "festival" | "edition" | "act"; id: string } | null {
+  const m = /^(venue|promoter|festival|edition|act):(.+)$/.exec(v ?? "");
   return m ? { kind: m[1] as "venue", id: m[2] } : null;
 }

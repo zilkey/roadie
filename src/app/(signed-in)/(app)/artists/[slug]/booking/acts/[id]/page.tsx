@@ -64,6 +64,8 @@ function ActPage() {
 
   const opened = stats?.openedAt.length ?? 0;
   const next = stats?.next;
+  const reachable = contactIds.some((cid) => b.contacts.find((c) => c.id === cid)?.emails.length);
+  const social = act.links?.instagram ? { url: act.links.instagram, where: "Instagram" } : act.links?.website ? { url: act.links.website, where: "their website" } : null;
   const lonely = played.filter((e) => e.date >= today && e.acts.length === 1 && e.acts[0].actId === id);
 
   return (
@@ -75,11 +77,16 @@ function ActPage() {
           {next && <span className="chip" data-testid="act-next-chip">{next.role === "headliner" ? "Headlining" : "Opening at"} {next.name} {shortDay(next.date)}</span>}
         </span>
       )}
-      more={
+      more={<>
         <button type="button" className={on ? "btn soft" : "btn"} aria-pressed={on} data-on={on ? "1" : "0"} disabled={busy} onClick={() => void call("acts.shortlist", { id, on: !on })} data-testid="act-shortlist">
           <StarIcon on={on} size={16} />{on ? "Shortlisted" : "Shortlist"}
         </button>
-      }>
+        {reachable
+          ? <Link href={`/booking/email/new?target=act:${id}`} className="btn acc" data-testid="act-pitch">Pitch them</Link>
+          : social
+            ? <a href={social.url} target="_blank" rel="noreferrer" className="btn acc" title={`No contact with an email yet: message them on ${social.where}`} data-testid="act-pitch">Pitch them ↗</a>
+            : <button type="button" className="btn acc" disabled title="Add a contact or a link first" data-testid="act-pitch">Pitch them</button>}
+      </>}>
       <ErrorBox error={error} />
       <CardGroup kind="shared">
         <About id={id} act={act} error={error} update={update}

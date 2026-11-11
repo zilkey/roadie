@@ -45,7 +45,11 @@ const THEMED: [RegExp, string][] = [
 const RUN = /\bnight [1-9]\b|\b(?:two|three|four|2|3|4)[- ](?:night|day)\b|\b(?:two|three|2|3) nights\b/i;
 
 /** What a signal sees: the show, the room's record and the day it is (the band's zone). Later signals add to this. */
-export interface OpenerCtx { stats?: { supportShare?: number; billsSeen?: number } | null; today: string; daysOut: number }
+export interface OpenerCtx {
+  stats?: { supportShare?: number; billsSeen?: number } | null; today: string; daysOut: number;
+  /** Genre fit (#79): our genres, and each act's looked-up genres by act id (acts/{id}.genres, lowercase). */
+  genres?: { ours: readonly string[]; acts: ReadonlyMap<string, readonly string[] | undefined> } | null;
+}
 export type OpenerEvent = Pick<VenueEvent, "acts" | "bill" | "title" | "date" | "status"> & Partial<Pick<VenueEvent, "supportTba" | "nights">>;
 /** One reason: points for (+) or against (−) an open opener slot. "stop" settles it (cancelled, gone, past). */
 export interface OpenerSignal { points: number; reason: string; stop?: boolean }
@@ -76,9 +80,26 @@ export const OPENER_SIGNALS: ((e: OpenerEvent, c: OpenerCtx) => OpenerSignal | n
   (_e, c) => c.daysOut < 14 ? { points: -3, reason: "Under 2 weeks out" } : c.daysOut >= 21 && c.daysOut <= 70 ? { points: 1, reason: "3\u201310 weeks out, a good time to ask" } : null,
 ];
 
-/** A guess from the listing: likely, maybe or unlikely that the show still has room for an opener, and why. */
-export function openerChance(e: OpenerEvent, stats?: OpenerCtx["stats"], today: string = dateInBandZone()): { chance: OpenerChance; score: number; reasons: string[] } {
-  const ctx: OpenerCtx = { stats, today, daysOut: days(today, e.date) };
+const words = (g: string) => g.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/** Two genres fit when one's words are all in the other: "folk" fits "indie folk", "indie rock" doesn't fit "indie folk". */
+const genreFits = (a: string, b: string) => {
+  const [x, y] = [words(a), words(b)].sort((p, q) => p.length - q.length);
+  return x.length > 0 && x.every((w) => y.includes(w));
+};
+/** The headliner's looked-up genres that fit ours, in theirs' order. */
+export function genreFit(e: Pick<VenueEvent, "acts">, g: OpenerCtx["genres"]): string[] {
+  if (!g?.ours.length) return [];
+  const theirs = e.acts.filter((a) => a.role === "headliner" && a.actId).flatMap((a) => g.acts.get(a.actId!) ?? []);
+  return [...new Set(theirs.filter((t) => g.ours.some((o) => genreFits(o, t))))];
+}
+const STEP_UP: Record<OpenerChance, OpenerChance> = { unlikely: "maybe", maybe: "likely", likely: "likely" };
+
+/**
+ * A guess from the listing: likely, maybe or unlikely that the show still has room for an opener, and why. A headliner whose
+ * genres fit ours moves the show up a step (unlikely to maybe, maybe to likely): an opener that fits the bill is an easier yes.
+ */
+export function openerChance(e: OpenerEvent, stats?: OpenerCtx["stats"], today: string = dateInBandZone(), genres?: OpenerCtx["genres"]): { chance: OpenerChance; score: number; reasons: string[] } {
+  const ctx: OpenerCtx = { stats, today, daysOut: days(today, e.date), genres };
   const got: OpenerSignal[] = [];
   for (const sig of OPENER_SIGNALS) {
     const s = sig(e, ctx);
@@ -87,7 +108,26 @@ export function openerChance(e: OpenerEvent, stats?: OpenerCtx["stats"], today: 
     got.push(s);
   }
   const score = got.reduce((n, s) => n + s.points, 0);
-  return { chance: score >= 3 ? "likely" : score >= 1 ? "maybe" : "unlikely", score, reasons: got.map((s) => s.reason) };
+  const chance: OpenerChance = score >= 3 ? "likely" : score >= 1 ? "maybe" : "unlikely";
+  const fit = genreFit(e, genres);
+  if (!fit.length) return { chance, score, reasons: got.map((s) => s.reason) };
+  return { chance: STEP_UP[chance], score, reasons: [...got.map((s) => s.reason), `Genre fit: they play ${fit.join(", ")}, like us`] };
+}
+
+// ---------- on tour (#79) ----------
+
+/** Shows this many days apart or closer count as one swing through Colorado. */
+export const TOUR_WINDOW_DAYS = 21;
+/** A Colorado room (the "On tour" chip counts only these): state "CO" or "Colorado". */
+export const isColorado = (state?: string) => !!state && /^(?:co|colorado)$/i.test(state.trim());
+/**
+ * On tour: for each of one act's headline shows, how many different rooms it headlines within TOUR_WINDOW_DAYS of that show,
+ * the show's own room included. 2 or more is a run through the state, which usually needs a local opener in each town.
+ */
+export function tourStops(shows: { id: string; venueId: string; date: string }[], window = TOUR_WINDOW_DAYS): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const s of shows) out.set(s.id, new Set(shows.filter((o) => Math.abs(days(s.date, o.date)) <= window).map((o) => o.venueId)).size);
+  return out;
 }
 
 /** Is this show a themed night (for the room's record, which leaves them out)? */

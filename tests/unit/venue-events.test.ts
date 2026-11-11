@@ -6,7 +6,7 @@ import { extract } from "@/server/events/selectors";
 import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenUntil, nextCalendarLimit } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenUntil, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
 import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
@@ -647,5 +647,62 @@ describe("nextCalendarLimit (Venue calendars reading on past filtered-out shows)
       assert.ok(reads < 20, "the limit never settles");
     }
     assert.ok(reads <= 7, `took ${reads} reads`);
+  });
+});
+
+describe("genre fit (#79)", () => {
+  const TODAY = "2026-11-11";
+  const ev = (o: Record<string, unknown> = {}) => ({ acts: [{ name: "A", role: "headliner", actId: "a1" }], bill: "title" as const, title: "A", date: "2026-12-16", status: "onsale" as const, ...o }) as Parameters<typeof openerChance>[0];
+  const g = (ours: string[], theirs?: string[]) => ({ ours, acts: new Map([["a1", theirs]]) });
+  test("an overlapping headliner moves the show up a step and says so", () => {
+    const plain = openerChance(ev(), null, TODAY);
+    assert.equal(plain.chance, "maybe");
+    const fit = openerChance(ev(), null, TODAY, g(["americana", "folk"], ["indie folk", "rock"]));
+    assert.equal(fit.chance, "likely");
+    assert.equal(fit.score, plain.score);
+    assert.match(fit.reasons.at(-1)!, /^Genre fit: they play indie folk, like us$/);
+  });
+  test("unlikely becomes maybe; likely stays likely", () => {
+    const sup = ev({ acts: [{ name: "A", role: "headliner", actId: "a1" }, { name: "B", role: "support" }], bill: "full" });
+    assert.equal(openerChance(sup, null, TODAY).chance, "unlikely");
+    assert.equal(openerChance(sup, null, TODAY, g(["folk"], ["folk"])).chance, "maybe");
+    assert.equal(openerChance(ev({ supportTba: true }), null, TODAY, g(["folk"], ["folk"])).chance, "likely");
+  });
+  test("no fit, no genres, no act id, or a stop reason: nothing changes", () => {
+    assert.equal(openerChance(ev(), null, TODAY, g(["folk"], ["indie rock"])).chance, "maybe");
+    assert.equal(openerChance(ev(), null, TODAY, g([], ["folk"])).chance, "maybe");
+    assert.equal(openerChance(ev(), null, TODAY, g(["folk"])).chance, "maybe");
+    assert.equal(openerChance(ev({ acts: [{ name: "A", role: "headliner" }] }), null, TODAY, g(["folk"], ["folk"])).chance, "maybe");
+    assert.deepEqual(openerChance(ev({ status: "cancelled" }), null, TODAY, g(["folk"], ["folk"])), { chance: "unlikely", score: -99, reasons: ["Cancelled"] });
+  });
+  test("genres match on whole words, either way round, ignoring case", () => {
+    assert.deepEqual(genreFit(ev(), g(["Indie Folk"], ["folk", "indie rock", "folk-pop"])), ["folk"]);
+    assert.deepEqual(genreFit(ev(), g(["rock"], ["rockabilly", "indie rock"])), ["indie rock"]);
+    assert.deepEqual(genreFit(ev({ acts: [{ name: "B", role: "support", actId: "a1" }] }), g(["folk"], ["folk"])), [], "only the headliner counts");
+  });
+});
+
+describe("tourStops (#79)", () => {
+  test("counts different rooms within the window, the show's own included", () => {
+    const m = tourStops([
+      { id: "a", venueId: "v1", date: "2027-01-10" },
+      { id: "b", venueId: "v2", date: "2027-01-20" },
+      { id: "c", venueId: "v3", date: "2027-02-05" },
+      { id: "d", venueId: "v1", date: "2027-01-11" },
+      { id: "e", venueId: "v4", date: "2027-06-01" },
+    ]);
+    assert.equal(m.get("a"), 2); // v1, v2 (c is 26 days on)
+    assert.equal(m.get("b"), 3); // v1, v2, v3
+    assert.equal(m.get("c"), 2); // v2, v3
+    assert.equal(m.get("e"), 1);
+  });
+  test("two nights at one room is not a tour", () => {
+    assert.equal(tourStops([{ id: "a", venueId: "v1", date: "2027-01-10" }, { id: "b", venueId: "v1", date: "2027-01-11" }]).get("a"), 1);
+  });
+  test("isColorado", () => {
+    assert.equal(isColorado("CO"), true);
+    assert.equal(isColorado(" colorado "), true);
+    assert.equal(isColorado("WY"), false);
+    assert.equal(isColorado(undefined), false);
   });
 });

@@ -78,6 +78,47 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
     .locator('select[data-testid^="venue-event-take-"]')).toHaveValue("pitched");
 });
 
+test("Pitch this on a show starts the venue's pitch with the show's date, marks it Pitched and goes on to the headliner's act page", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  await everyShow(page);
+  await page.getByTestId("venue-calendars-more").click();
+  const trio = shows(page).filter({ hasText: "Headline Example Trio" });
+  // nothing is "new" on a viewer's first look
+  await expect(page.getByTestId("venue-event-new")).toHaveCount(0);
+  // the first test pitched the trio by hand: clear it so Pitch this shows
+  const take = trio.locator('select[data-testid^="venue-event-take-"]');
+  await take.selectOption("");
+  await expect(take).toHaveValue("");
+  await trio.getByTestId(/^pitch-this-/).click();
+
+  const form = page.getByTestId("pitch-show-form");
+  await expect(form.getByRole("heading")).toHaveText(/^Pitch Bluebird Room for \w{3}, \w{3} \d+$/);
+  await expect(page.getByTestId("pitch-show-show")).toContainText("Headline Example Trio");
+  await expect(page.getByTestId("pitch-show-ask").locator("option")).toHaveText(["Open for Headline Example Trio", "Play another night"]);
+  await expect(page.getByTestId("pitch-show-reach")).toBeChecked();
+  // another night: nothing to tell the headliner, so no checkbox
+  await page.getByTestId("pitch-show-ask").selectOption("another");
+  await expect(page.getByTestId("pitch-show-reach")).toHaveCount(0);
+  await page.getByTestId("pitch-show-ask").selectOption("open");
+  // Cancel closes without pitching
+  await page.getByTestId("pitch-show-cancel").click();
+  await expect(form).toHaveCount(0);
+  await expect(take).toHaveValue("");
+
+  await trio.getByTestId(/^pitch-this-/).click();
+  await page.getByTestId("pitch-show-start").click();
+  await expect(page).toHaveURL(/\/booking\/acts\/[^/]+$/);
+  await expect(page.getByTestId("act-page")).toContainText("Headline Example Trio");
+  await expect(page.getByTestId("act-pitch")).toBeVisible();
+
+  // back on the list: Pitched, and no Pitch this
+  await page.goBack();
+  await page.getByTestId("venue-calendars-more").click();
+  await expect(take).toHaveValue("pitched");
+  await expect(trio.getByTestId(/^pitch-this-/)).toHaveCount(0);
+});
+
 test("a search on the Venue calendars tab shows the search cards, and clearing it brings the shows back", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/calendars"));

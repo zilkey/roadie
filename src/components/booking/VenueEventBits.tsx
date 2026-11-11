@@ -6,7 +6,7 @@
 import { Fragment, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
 import { useCommand } from "@/components/ui";
-import { billParts, openerChance } from "@/lib/venueEvents";
+import { billParts, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx } from "@/lib/venueEvents";
 import { EVENT_TAKES, TAKE_LABEL, venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 export type Ev = VenueEvent & { id: string };
@@ -14,10 +14,14 @@ export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | 
 
 export const OPENER_DISCLAIMER = "A guess from the listing, not perfect.";
 
-/** Likely opener slot / Maybe (the reasons and the disclaimer as its title), Sold out, Cancelled. */
-export function EventBadges({ e, stats, today }: { e: Ev; stats?: RoomRecord; today?: string }) {
-  const o = openerChance(e, stats, today);
+/** Likely opener slot / Maybe (the reasons and the disclaimer as its title), On tour, New, Sold out, Cancelled. */
+export function EventBadges({ e, stats, today, isNew, genres }: { e: Ev; stats?: RoomRecord; today?: string; /** New since the viewer last looked (Venue calendars only) */ isNew?: boolean; genres?: OpenerCtx["genres"] }) {
+  const o = openerChance(e, stats, today, genres);
   return (<>
+    {(e.tourStops ?? 0) >= 2 && (
+      <span className="chip y" data-testid="venue-event-tour" title={`The headliner plays ${e.tourStops} Colorado rooms within ${TOUR_WINDOW_DAYS / 7} weeks of this show: a run like that usually needs a local opener in each town.`}>On tour</span>
+    )}
+    {isNew && <span className="chip a" data-testid="venue-event-new" title="New on the venue's calendar since you last looked">New</span>}
     {o.chance !== "unlikely" && (
       <span className={`chip${o.chance === "likely" ? " a" : ""}`} data-testid="venue-event-chance" data-chance={o.chance}
         title={`${o.reasons.join(". ")}. ${OPENER_DISCLAIMER}`}>

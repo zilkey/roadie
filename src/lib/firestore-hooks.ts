@@ -42,10 +42,11 @@ export function useCollection<T = Record<string, unknown>>(path: string, opts: {
   return { rows, error, loading, fromCache };
 }
 
-/** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc, with its `deletedAt`). */
-export function useDoc<T = Record<string, unknown>>(path: string, id: string, opts: { includeDeleted?: boolean } = {}) {
+/** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc, with its `deletedAt`). `skip` (or a blank id) reads nothing: doc null, not loading. */
+export function useDoc<T = Record<string, unknown>>(path: string, id: string, opts: { includeDeleted?: boolean; skip?: boolean } = {}) {
   const { state } = useAuth();
-  const ready = state.status === "ready";
+  const skip = !!opts.skip || !id;
+  const ready = state.status === "ready" && !skip;
   const [value, setValue] = useState<{ doc: Row<T> | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -56,9 +57,9 @@ export function useDoc<T = Record<string, unknown>>(path: string, id: string, op
       (e) => setError(e.message),
     );
   }, [ready, path, id, opts.includeDeleted]); // eslint-disable-line react-hooks/exhaustive-deps
-  const loading = value === null && !error;
+  const loading = !skip && value === null && !error;
   useBusyWhile(loading);
-  return { doc: value?.doc ?? null, loading, error };
+  return { doc: skip ? null : value?.doc ?? null, loading, error };
 }
 
 /**

@@ -62,7 +62,7 @@ function ThreadPage() {
   const pitch = t.pitchId ? b.pitches.find((p) => p.id === t.pitchId) : undefined;
   const placeHref = hrefFor(t.target.kind, t.target.id);
   const backHref = t.pitchId ? `/booking/pitches/${t.pitchId}` : placeHref;
-  const placeWord = t.target.kind === "festival" ? "Festival" : t.target.kind === "promoter" ? "Promoter" : "Venue";
+  const placeWord = t.target.kind === "festival" ? "Festival" : t.target.kind === "promoter" ? "Promoter" : t.target.kind === "act" ? "Act" : "Venue";
   const cell = pitch ? pitchCellText(pitch, artist?.configurations ?? []) : null;
   const names = t.participants.map((a) => nameOf(a));
 

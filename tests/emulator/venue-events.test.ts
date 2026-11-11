@@ -11,7 +11,7 @@ import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
 import { roomStats } from "@/lib/venueEvents";
 import { refreshAll, refreshVenue, eventId } from "@/server/events/refresh";
 import { venueEventNoteId } from "@/schema";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST } from "./helpers";
 
 let ctx: Ctx;
 const NOW = new Date("2026-11-10T18:00:00Z"); // 2026-11-10 at the venue (Denver)
@@ -271,6 +271,82 @@ describe("venueEvents.setTake", () => {
   test("members cannot set a take (admin-only command)", () => {
     assert.deepEqual(registry["venueEvents.setTake"].roles, ["admin"]);
     assert.ok(registry["venueEvents.refresh"].roles.includes("member"));
+  });
+});
+
+describe("venueEvents.pitch (#79)", () => {
+  const seed = async () => {
+    await makeArtist("Nora Quill Band", "nora-quill-band");
+    const v = await makeVenue({ calendar: CAL });
+    rows = [{ path: "/e/1", title: "Tin Cup Jane", date: "Fri, Dec 18" }];
+    await refresh(v);
+    return { v, e: await byTitle(v, "Tin Cup Jane") };
+  };
+  const pitchesOf = async (v: string) => (await db.list("pitches", (q) => q.where("target.id", "==", v))).filter((p) => !p.deletedAt);
+  const notesOf = async (id: string) => (await db.list(`pitches/${id}/activity`)).filter((a) => a.type === "note").map((a) => a.text);
+
+  test("asking to open: a venue pitch with the show's date, a timeline note, our take Pitched and the pitch linked", async () => {
+    const { v, e } = await seed();
+    const r = await cmd("venueEvents.pitch", { eventId: e.id, ask: "open" });
+    assert.equal(r.existing, false);
+    const [p] = await pitchesOf(v);
+    assert.equal(p.id, r.pitchId);
+    assert.deepEqual([p.target.kind, p.status, p.dates], ["venue", "toPitch", ["2026-12-18"]]);
+    assert.deepEqual(await notesOf(p.id), ["Asking to open for Tin Cup Jane on Fri, Dec 18 (from the venue's calendar)"]);
+    const n = (await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
+    assert.deepEqual([n.take, n.pitchId, n.venueId], ["pitched", p.id, v]);
+  });
+  test("an open pitch on the venue is reused and gets the date; another night adds no date", async () => {
+    const { v, e } = await seed();
+    const first = await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });
+    const r = await cmd("venueEvents.pitch", { eventId: e.id, ask: "open" });
+    assert.deepEqual([r.pitchId, r.existing], [first.id, true]);
+    assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
+    await cmd("venueEvents.pitch", { eventId: e.id, ask: "another" });
+    assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
+    assert.equal((await pitchesOf(v)).length, 1);
+    assert.match((await notesOf(first.id)).join("\n"), /asking to play another night/);
+  });
+  test("an unknown show is not found; admin only; a bad ask is refused", async () => {
+    await assert.rejects(cmd("venueEvents.pitch", { eventId: "nope", ask: "open" }), /not found/i);
+    assert.deepEqual(registry["venueEvents.pitch"].roles, ["admin"]);
+    assert.throws(() => registry["venueEvents.pitch"].input.parse({ eventId: "x", ask: "headline" }));
+  });
+});
+
+describe("On tour (#79)", () => {
+  test("a headliner at 2+ Colorado rooms within 3 weeks gets tourStops on each show; a later refresh drops it when the run is gone", async () => {
+    const byUrl: Record<string, Row[]> = {};
+    setFetcher(async (url: string): Promise<RawPage> => ({ url, status: 200, type: "text/html", body: `<ul>${(byUrl[url] ?? []).map((r) => `<li class="ev"><a class="t" href="${r.path}"><span class="name">${r.title}</span></a><span class="when">${r.date}</span></li>`).join("")}</ul>` }));
+    const cal = (u: string) => ({ ...CAL, url: u });
+    const a = (await db.create(ctx, "venues", venue("Aggie Theatre", "Fort Collins", { calendar: cal("https://a.example.com/") }))).id;
+    const b = (await db.create(ctx, "venues", venue("Bluebird Theater", "Denver", { calendar: cal("https://b.example.com/") }))).id;
+    const w = (await db.create(ctx, "venues", venue("Cowboy Bar", "Cheyenne", { calendar: cal("https://w.example.com/"), address: { city: "Cheyenne", state: "WY" } }))).id;
+    byUrl["https://a.example.com/"] = [{ path: "/1", title: "Arlo", date: "Fri, Jan 15" }, { path: "/2", title: "Twin Fin", date: "Sat, Jan 16" }];
+    byUrl["https://b.example.com/"] = [{ path: "/1", title: "Arlo", date: "Thu, Jan 28" }];
+    byUrl["https://w.example.com/"] = [{ path: "/1", title: "Arlo", date: "Sun, Jan 17" }, { path: "/2", title: "Twin Fin", date: "Mon, Jan 18" }];
+    await refresh(a);
+    assert.equal((await byTitle(a, "Arlo")).tourStops, undefined, "one Colorado room so far");
+    await refresh(w);
+    await refresh(b);
+    assert.equal((await byTitle(a, "Arlo")).tourStops, 2, "the other room's refresh marks this one too");
+    assert.equal((await byTitle(b, "Arlo")).tourStops, 2);
+    assert.equal((await byTitle(w, "Arlo")).tourStops, undefined, "Wyoming isn't counted or marked");
+    assert.equal((await byTitle(a, "Twin Fin")).tourStops, undefined);
+    // Arlo drops off the Bluebird's calendar (gone): the Aggie show is no longer part of a run
+    byUrl["https://b.example.com/"] = [{ path: "/9", title: "Someone Else", date: "Thu, Jan 28" }];
+    await refresh(b);
+    assert.equal((await byTitle(a, "Arlo")).tourStops, undefined);
+  });
+});
+
+describe("venueEvents.looked (#79)", () => {
+  test("returns the previous look (null the first time) and stores now, per artist", async () => {
+    assert.deepEqual(await cmd("venueEvents.looked", {}), { previous: null });
+    const t = (await firestore().doc(`userPrefs/${ctx.uid}`).get()).data()!.calendarsLookedAt[TEST_ARTIST];
+    assert.match(t, /^\d{4}-\d{2}-\d{2}T/);
+    assert.deepEqual(await cmd("venueEvents.looked", {}), { previous: t });
+    assert.ok(registry["venueEvents.looked"].roles.includes("member"));
   });
 });
 

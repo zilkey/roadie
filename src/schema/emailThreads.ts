@@ -11,7 +11,7 @@ export const EmailThread = entity({
   /** The admin's mailbox the thread is in (whose token reads it). */
   account: email,
   threadId: z.string().min(1),
-  target: z.strictObject({ kind: z.enum(["venue", "promoter", "festival"]), id, name: z.string().min(1) }),
+  target: z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "act"]), id, name: z.string().min(1) }),
   /** The pitch it was sent from or linked to, if any. */
   pitchId: id.optional(),
   subject: z.string(),

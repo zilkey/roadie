@@ -17,6 +17,7 @@ import { parseDateText, parseTime, resolveStartsAt, todayIn } from "./dates";
 import type { RawEvent, ReaderCtx, ReaderResult } from "./types";
 import { READERS } from "./readers";
 import { linkActs } from "./acts";
+import { markTours } from "./onTour";
 
 export type EventDraft = Omit<VenueEvent, "id" | "venueId" | "source" | "firstSeenAt" | "lastSeenAt">;
 export interface ReadOutcome { events: EventDraft[]; unparsed: number; dropped: number; raw: number; bill: ReaderResult["bill"] }
@@ -159,6 +160,8 @@ export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Dat
     // The room's record, over every stored show (past ones too), now that this run's are written.
     const stored = await db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
     const record = roomStats(stored as unknown as VenueEvent[], today);
+    // On tour: this room's upcoming headliners (gone ones too, so a run that broke up is unmarked), across every room listing them.
+    await markTours((stored as unknown as VenueEvent[]).filter((e) => e.date >= today).flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)), today);
     Object.assign(health, { lastSuccessAt: health.lastRunAt, lastCount: out.events.length, lastUnparsed: out.unparsed, ...record });
     await firestore().doc(`venueEventSources/${venueId}`).set(health);
     return { ...base, type: cal.type, count: out.events.length, upcoming: out.events.filter((e) => e.date >= today).length, added, gone, unparsed: out.unparsed, dropped: out.dropped };

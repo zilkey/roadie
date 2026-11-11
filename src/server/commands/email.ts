@@ -1,5 +1,5 @@
 /**
- * Email on places. A Gmail thread belongs to the place (venue, promoter or festival), not to one pitch, so it stays when the
+ * Email on places. A Gmail thread belongs to the place (venue, promoter, festival or act), not to one pitch, so it stays when the
  * pitch closes. Firestore keeps a summary per thread (`emailThreads`); message bodies are never stored, they come from Gmail
  * on demand. The pitch commands (pitches.sendEmail, draftEmail, checkReplies) are wrappers over the functions here.
  */
@@ -25,10 +25,10 @@ export const gmailFail = (e: unknown): never => {
   throw e;
 };
 
-export type Place = { kind: "venue" | "promoter" | "festival"; id: string; name: string };
-const targetIn = z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "edition"]), id: z.string().min(1) });
+export type Place = { kind: "venue" | "promoter" | "festival" | "act"; id: string; name: string };
+const targetIn = z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "edition", "act"]), id: z.string().min(1) });
 type TargetIn = z.infer<typeof targetIn>;
-const COLL = { venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions" } as const;
+const COLL = { venue: "venues", promoter: "promoters", festival: "festivals", edition: "editions", act: "acts" } as const;
 
 /** The place a thread belongs to: an edition's threads go on its festival. */
 export async function resolvePlace(t: TargetIn): Promise<Place> {
@@ -297,8 +297,8 @@ async function placeContacts(place: Place, artistId: string): Promise<Doc[]> {
     ids = [...(fields.contactIds as string[])].sort((a, b) => Number(booking.includes(b)) - Number(booking.includes(a)));
   } else {
     // A promoter's or festival's contacts are the band's notes on it (an edition has none of its own).
-    const kind = place.kind === "promoter" ? "promoters" : place.kind === "festival" ? "festivals" : null;
-    ids = kind ? withBandNote(kind, rec, await db.get(BAND_NOTES[kind].coll, bandNoteId(artistId, rec.id))).contactIds ?? [] : [];
+    const kind = ({ promoter: "promoters", festival: "festivals", act: "acts" } as const)[place.kind];
+    ids = withBandNote(kind, rec, await db.get(BAND_NOTES[kind].coll, bandNoteId(artistId, rec.id))).contactIds ?? [];
   }
   const docs = await Promise.all(ids.map((id) => db.get("contacts", id)));
   return docs.filter((c): c is Doc => !!c && !c.deletedAt && c.artistId === artistId && ((c.emails as string[] | undefined)?.length ?? 0) > 0);

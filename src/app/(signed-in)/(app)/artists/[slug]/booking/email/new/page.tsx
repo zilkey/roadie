@@ -18,7 +18,7 @@ import { htmlToText, textToHtml } from "@/lib/email-html";
 import { fieldsInWords, nameFromAddress, parseTarget } from "@/lib/email-compose";
 import { ROLE_LABEL, rolesOf, roleFirst, type ContactRole } from "@/lib/venues";
 import { statsTemplateFields } from "@/lib/stats";
-import { email as emailSchema, type Contact, type EmailTemplate, type EmailThread, type StatSnapshot } from "@/schema";
+import { email as emailSchema, type ActDoc, type ActNote, type Contact, type EmailTemplate, type EmailThread, type StatSnapshot } from "@/schema";
 
 export default function Page() {
   return <AdminOnly><Suspense fallback={null}><Compose /></Suspense></AdminOnly>;
@@ -37,15 +37,15 @@ function WithThread({ id }: { id: string }) {
   return <ComposeForm thread={doc} />;
 }
 
-type Kind = "venue" | "promoter" | "festival" | "edition";
+type Kind = "venue" | "promoter" | "festival" | "edition" | "act";
 type Form = { to: string[] | null; cc: string[]; ccOpen: boolean; subject: string | null; html: string; tpl: string };
 const BLANK: Form = { to: null, cc: [], ccOpen: false, subject: null, html: "", tpl: "" };
-const PLURAL = { venue: "venues", promoter: "promoters", festival: "festivals" } as const;
+const PLURAL = { venue: "venues", promoter: "promoters", festival: "festivals", act: "acts" } as const;
 
 function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   const params = useSearchParams();
   const router = useRouter();
-  const { doc: artist } = useArtist();
+  const { doc: artist, artistId } = useArtist();
   const profile = useProfile();
   const b = useBooking();
   const { call, error, busy } = useCommand();
@@ -57,8 +57,14 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   const pitchId = params.get("pitch") ?? thread?.pitchId ?? "";
   const pitch = b.pitches.find((p) => p.id === pitchId);
   const target = parseTarget(params.get("target")) ?? (thread ? { kind: thread.target.kind, id: thread.target.id } : pitch ? { kind: pitch.target.kind as Kind, id: pitch.target.id } : null);
+  // An act is shared across bands; its contacts are this band's own (actNotes), read here only for an act target.
+  const actId = target?.kind === "act" ? target.id : "";
+  const { doc: act, loading: actLoading } = useDoc<ActDoc>("acts", actId, { skip: !actId });
+  const actNotes = useCollection<ActNote>("actNotes", { where: [["artistId", "==", artistId], ["actId", "==", actId]], skip: !actId });
+  const actContactIds = actNotes.rows?.[0]?.contactIds;
   const place = useMemo(() => {
     if (!target) return null;
+    if (target.kind === "act") return act && !act.deletedAt ? { kind: "act" as const, id: act.id, name: act.name, contactIds: actContactIds ?? [], booking: [] as string[], v: null } : null;
     if (target.kind === "venue") {
       const v = b.venues.find((x) => x.id === target.id);
       return v ? { kind: "venue" as const, id: v.id, name: v.name, contactIds: v.contactIds, booking: v.bookingContactIds, v } : null;
@@ -70,7 +76,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
     const festivalId = target.kind === "edition" ? b.editions.find((e) => e.id === target.id)?.festivalId : target.id;
     const f = b.festivals.find((x) => x.id === festivalId);
     return f ? { kind: "festival" as const, id: f.id, name: f.name, contactIds: f.contactIds, booking: [] as string[], v: null } : null;
-  }, [target?.kind, target?.id, b.venues, b.promoters, b.festivals, b.editions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [target?.kind, target?.id, b.venues, b.promoters, b.festivals, b.editions, act, actContactIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const draft = useDraft(pitchId ? draftPath.newUnder("pitches", pitchId, "emails") : draftPath.newIn("emails"), BLANK,
     { title: (v) => `Email to ${place?.name ?? "a place"}${v.subject ? ` · ${v.subject}` : ""}` });
@@ -100,6 +106,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
 
   // Templates
   const kind: Kind = target?.kind ?? "venue";
+  // An act only gets the generic templates (none of the templates' target kinds is "act").
   const templates = allTemplates.filter((t) => !t.targetKinds.length || (t.targetKinds as string[]).includes(kind) || (kind === "festival" && t.targetKinds.includes("edition")));
   const chosen = templates.find((t) => t.id === f.tpl);
   const applied = useRef<{ subject: string; html: string } | null>(null);
@@ -209,17 +216,17 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
     router.push(back);
   }
 
-  if (!target || (b.venues.length + b.promoters.length + b.festivals.length > 0 && !place)) {
-    return <div className="empty" data-testid="compose-missing">Pick a venue, promoter or festival to write to. <Link href="/booking" className="underline">Back to Booking</Link></div>;
+  if (!target || (target.kind === "act" ? !actLoading && !place : b.venues.length + b.promoters.length + b.festivals.length > 0 && !place)) {
+    return <div className="empty" data-testid="compose-missing">Pick a venue, promoter, festival or act to write to. <Link href="/booking" className="underline">Back to Booking</Link></div>;
   }
-  const word = place?.kind === "festival" ? "festival" : place?.kind === "promoter" ? "promoter" : "venue";
+  const word = place?.kind === "festival" ? "festival" : place?.kind === "promoter" ? "promoter" : place?.kind === "act" ? "act" : "venue";
   const words = chosen ? fieldsInWords(chosen.subject, chosen.body) : "";
 
   return (
     <div className="show-page" data-testid="compose-page">
       <PageTitle back={<BackLink href={back} label={backLabel} />} title={thread ? "Reply" : "New email"}
         sub={thread ? <>Reply on {thread.subject} · from {profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {profile.email}</>}
-        actions={<Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
+        actions={place?.kind === "act" ? undefined : <Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
       <ErrorBox error={error} />
 
       <section className="card">
