@@ -5,7 +5,7 @@ import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { runCommandFull } from "@/lib/commands";
 import { useDragReorder } from "@/lib/drag-reorder";
-import { applyOrder, buildBoard, columnCount, dismissedLists, movedOrder, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type TodoLike } from "@/lib/todos";
+import { applyOrder, buildBoard, columnCount, dismissedLists, movedOrder, type AddTarget, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type TodoLike } from "@/lib/todos";
 import type { ChecklistLike } from "@/lib/shows";
 import type { Musician } from "@/schema";
 import { PageTitle } from "@/components/ui";
@@ -27,7 +27,8 @@ async function act(name: string, input: unknown, ok?: { text: string; undo?: boo
 }
 
 /**
- * To Dos: everything open across shows, releases, the Social Media sidebar, booking and Our list, one column per source.
+ * To Dos: everything open across shows, releases, the Social Media sidebar, booking, Our list and the band's own lists, one column
+ * per source. "Add list" at the end makes a new list (a "board" checklist in todoLists/{artistId}); every list but Booking adds to-dos at its bottom.
  * Order (of items and of the columns), Focus and Dismiss are this person's own (userPrefs, Focus just for the visit);
  * ticking, pinning and Our list are the band's.
  */
@@ -41,6 +42,7 @@ export function TodoBoard() {
   const todos = useCollection<TodoLike>("todos", mineOf);
   const musicians = useCollection<Musician>("musicians").rows ?? [];
   const social = useDoc<{ checklists?: ChecklistLike[] }>("socialChecklists", artistId).doc;
+  const lists = useDoc<{ checklists?: ChecklistLike[] }>("todoLists", artistId).doc;
   const prefs = useDoc<{ todoOrder?: Record<string, string[]>; todoColumns?: string[]; todoDismissed?: string[] }>("userPrefs", p.uid).doc;
 
   const [mine, setMine] = useState(false);
@@ -57,7 +59,7 @@ export function TodoBoard() {
   const order = { ...(prefs?.todoOrder ?? {}), ...moved };
   const dismissed = prefs?.todoDismissed ?? [];
   const input = {
-    artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], social: social?.checklists ?? [], pitches: pitches.rows ?? [], todos: todos.rows ?? [],
+    artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], social: social?.checklists ?? [], lists: lists?.checklists ?? [], pitches: pitches.rows ?? [], todos: todos.rows ?? [],
     order, dismissed, mine: mine ? { musicianId: p.musicianId, userId: p.userId } : null, showDone,
   };
   const cols = applyOrder(buildBoard(input), movedCols ?? prefs?.todoColumns);
@@ -116,17 +118,18 @@ export function TodoBoard() {
         <div className="td-board" data-focus={focused ? "" : undefined}>
           {shown.map((c) => {
             const i = cols.indexOf(c);
-            return <Column key={c.key} col={c} on={c.key === at} musicians={musicians} onOrder={(keys) => setOrder(c, keys)}
+            return <Column key={c.key} col={c} on={c.key === at} musicians={musicians} onOrder={(keys) => setOrder(c, keys)} artistId={artistId}
               focused={!!focused} onFocus={() => setFocus(focused ? null : c.key)} drag={focused ? null : { row: colDrag.row(i), handle: colDrag.handle(i) }} />;
           })}
+          {!focused && <AddList artistId={artistId} onAdded={(listId) => setPhoneCol(`list:${listId}`)} />}
         </div>
       )}
     </div>
   );
 }
 
-function Column({ col, on, musicians, onOrder, focused, onFocus, drag }: {
-  col: BoardColumn; on: boolean; musicians: Row<Musician>[]; onOrder(keys: string[]): void;
+function Column({ col, on, musicians, onOrder, artistId, focused, onFocus, drag }: {
+  col: BoardColumn; on: boolean; musicians: Row<Musician>[]; onOrder(keys: string[]): void; artistId: string;
   focused: boolean; onFocus(): void; drag: { row: object; handle: object } | null;
 }) {
   const empty = !col.groups.some((g) => g.items.length);
@@ -138,10 +141,11 @@ function Column({ col, on, musicians, onOrder, focused, onFocus, drag }: {
         <h2 id={id}>{col.href ? <Link href={col.href}>{col.title}</Link> : col.title}</h2>
         <button type="button" className="td-focus" aria-pressed={focused} aria-label={focused ? "Show all columns" : `Focus on ${col.title}`}
           data-testid={`todos-focus-${col.key}`} onClick={onFocus}>{focused ? "Show all" : "Focus"}</button>
+        {col.board && <button type="button" className="td-focus" aria-label={`Delete list ${col.title}`} data-testid={`todos-list-remove-${col.key}`}
+          onClick={() => act("checklists.remove", { kind: "board", id: artistId, listId: col.board!.listId }, { text: `Deleted list: ${col.title}`, undo: true })}>Delete</button>}
       </div>
       {col.caption && <p className="td-cs">{col.caption}</p>}
-      {col.key === "our" && <AddTodo />}
-      {empty && col.key !== "our" && <p className="td-none">{col.key === "pinned" ? "Nothing pinned. Pin an item on any checklist to see it here." : "Nothing to do here."}</p>}
+      {empty && col.key !== "our" && !col.board && <p className="td-none">{col.key === "pinned" ? "Nothing pinned. Pin an item on any checklist to see it here." : "Nothing to do here."}</p>}
       {col.groups.map((g, gi) => <Group key={g.key ?? gi} col={col} g={g} gi={gi} musicians={musicians} onOrder={onOrder} />)}
       {col.key === "booking" && <p className="td-tip">Ticking a next step marks it done on the pitch. Ticking a quiet pitch logs a follow up today, so it leaves until it goes quiet again.</p>}
       {col.key === "our" && <p className="td-tip">Click the text to edit it and pick who. Clear the text to remove it.</p>}
@@ -152,7 +156,7 @@ function Column({ col, on, musicians, onOrder, focused, onFocus, drag }: {
 function Group({ col, g, gi, musicians, onOrder }: { col: BoardColumn; g: BoardGroup; gi: number; musicians: Row<Musician>[]; onOrder(keys: string[]): void }) {
   const move = (from: number, to: number) => onOrder(movedOrder(col, gi, from, to));
   const drag = useDragReorder(move);
-  if (!g.items.length && col.key !== "our") return null;
+  if (!g.items.length && !g.add) return null;
   return (
     <>
       {g.title && (
@@ -171,6 +175,7 @@ function Group({ col, g, gi, musicians, onOrder }: { col: BoardColumn; g: BoardG
           </li>
         ))}
       </ul>
+      {g.add && <AddItem target={g.add} testid={`todos-additem-${g.key ?? col.key}`} />}
     </>
   );
 }
@@ -216,7 +221,9 @@ function Card({ item, musicians, grip, onUp, onDown }: { item: BoardItem; musici
             onToggle={(d) => tick(item, d)}
             onSave={(n) => act("todos.edit", { id: a.id, label: n.label, ownerId: n.ownerId })}
             onRemove={() => act("todos.remove", { id: a.id }, { text: `Removed: ${item.label}`, undo: true })} />
+          {item.source && <div className="td-meta"><span data-testid="todos-source">{item.source.text}</span></div>}
         </div>
+        {!item.done && <PinButton item={item} onPin={(pinned) => act("todos.pin", { id: a.id, pinned })} />}
         <MoveButtons label={item.label} onUp={onUp} onDown={onDown} />
       </div>
     );
@@ -229,18 +236,13 @@ function Card({ item, musicians, grip, onUp, onDown }: { item: BoardItem; musici
       <div className="td-tx">
         <label className="td-label" htmlFor={cid}>{item.label}</label>
         <div className="td-meta">
-          {item.source && <Link href={item.source.href} data-testid="todos-source">{item.source.text}</Link>}
+          {item.source && (item.source.href ? <Link href={item.source.href} data-testid="todos-source">{item.source.text}</Link> : <span data-testid="todos-source">{item.source.text}</span>)}
           {a.type === "checklist" && (item.ownerId ? <span className="td-who">{nameOf(musicians, item.ownerId)}</span> : <span>Unassigned</span>)}
           {item.chip && <span className={`chip ${item.chip.tone}`}>{item.chip.text}</span>}
           {item.note && <span>{item.note}</span>}
         </div>
       </div>
-      {a.type === "checklist" && !item.done && (
-        <button type="button" className="td-pin" aria-pressed={!!item.pinned} aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.label}`} title={item.pinned ? "Unpin" : "Pin to the top"}
-          data-testid={`todos-pin-${item.key}`} onClick={() => act("checklists.pin", { kind: a.kind, id: a.id, listId: a.listId, itemId: a.itemId, pinned: !item.pinned })}>
-          <PinIcon on={item.pinned} />
-        </button>
-      )}
+      {a.type === "checklist" && !item.done && <PinButton item={item} onPin={(pinned) => act("checklists.pin", { kind: a.kind, id: a.id, listId: a.listId, itemId: a.itemId, pinned })} />}
       <MoveButtons label={item.label} onUp={onUp} onDown={onDown} />
     </div>
   );
@@ -256,22 +258,64 @@ function TickBox({ id, item }: { id: string; item: BoardItem }) {
   );
 }
 
-/** "Add a to do" at the top of Our list. */
-function AddTodo() {
+function PinButton({ item, onPin }: { item: BoardItem; onPin(pinned: boolean): void }) {
+  return (
+    <button type="button" className="td-pin" aria-pressed={!!item.pinned} aria-label={`${item.pinned ? "Unpin" : "Pin"} ${item.label}`} title={item.pinned ? "Unpin" : "Pin to the top"}
+      data-testid={`todos-pin-${item.key}`} onClick={() => onPin(!item.pinned)}>
+      <PinIcon on={item.pinned} />
+    </button>
+  );
+}
+
+/**
+ * A "+" button that opens a one-line form: nothing is made until Add is pressed, and Cancel (or Escape) throws the draft away.
+ * After an Add the form stays open and empty, ready for the next one.
+ */
+function AddForm({ open: openLabel, placeholder, testid, className, onAdd }: { open: string; placeholder: string; testid: string; className?: string; onAdd(text: string): Promise<unknown> }) {
+  const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const cancel = () => { setText(""); setOpen(false); };
   async function add() {
-    const label = text.trim();
-    if (!label || busy) return;
+    const t = text.trim();
+    if (!t || busy) return;
     setBusy(true);
-    const r = await act("todos.add", { label });
+    const r = await onAdd(t);
     setBusy(false);
     if (r) setText("");
   }
+  if (!open) return (
+    <button type="button" className={`td-addbtn ${className ?? ""}`} onClick={() => setOpen(true)} data-testid={testid}>
+      <span aria-hidden>+</span> {openLabel}
+    </button>
+  );
   return (
-    <form className="td-add" onSubmit={(e) => { e.preventDefault(); void add(); }}>
-      <input className="input min-w-0 grow" placeholder="Add a to do" aria-label="New to do" value={text} onChange={(e) => setText(e.target.value)} data-testid="todos-add-input" />
-      <button type="submit" className="btn" disabled={busy || !text.trim()} data-testid="todos-add">Add</button>
+    <form className={`td-addform ${className ?? ""}`} data-testid={`${testid}-form`} onSubmit={(e) => { e.preventDefault(); void add(); }}
+      onKeyDown={(e) => { if (e.key === "Escape") cancel(); }}>
+      <input className="input" autoFocus placeholder={placeholder} aria-label={placeholder} value={text} onChange={(e) => setText(e.target.value)} data-testid={`${testid}-input`} />
+      <div className="flex gap-2">
+        <button type="submit" className="btn sm" disabled={busy || !text.trim()} data-testid={`${testid}-add`}>Add</button>
+        <button type="button" className="btn sm ghost" onClick={cancel} data-testid={`${testid}-cancel`}>Cancel</button>
+      </div>
     </form>
   );
+}
+
+/** "+ Add a to do" at the bottom of a list: onto its checklist, or Our list (Pinned's go in pinned). */
+function AddItem({ target, testid }: { target: AddTarget; testid: string }) {
+  const add = (label: string) => target.type === "checklist"
+    ? act("checklists.addItem", { kind: target.kind, id: target.id, listId: target.listId, label })
+    : act("todos.add", { label, ...(target.pinned ? { pinned: true } : {}) });
+  return <AddForm open="Add a to do" placeholder="New to do" testid={testid} onAdd={add} />;
+}
+
+/** "+ Add list" after the last column: a new list of the band's own, its own column. */
+function AddList({ artistId, onAdded }: { artistId: string; onAdded(listId: string): void }) {
+  const add = async (name: string) => {
+    const r = await act("checklists.add", { kind: "board", id: artistId, name });
+    const listId = (r?.result as { listId?: string } | undefined)?.listId;
+    if (listId) onAdded(listId);
+    return r;
+  };
+  return <div className="td-newcol"><AddForm open="Add list" placeholder="List name" testid="todos-add-list" onAdd={add} /></div>;
 }

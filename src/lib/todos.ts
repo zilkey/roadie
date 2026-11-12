@@ -1,15 +1,16 @@
 /**
- * To Dos: one board of everything open across shows, releases, the Social Media sidebar, booking and Our list. Pure (no server or
+ * To Dos: one board of everything open across shows, releases, the Social Media sidebar, booking, Our list and the band's own lists
+ * (todoLists/{artistId}, checklists of kind "board", one column each). Pure (no server or
  * browser imports): the page builds its columns with `buildBoard`, the server checks keys with the patterns.
  *
  * Item keys: show:{showId}:{listId}:{itemId}, release:{releaseId}:{listId}:{itemId}, social:{artistId}:{listId}:{itemId},
- * pitch:{pitchId}, todo:{id}. A checklist's key (what Dismiss stores) is the item key without the item: show:{showId}:{listId}.
- * Column keys: pinned, booking, show:{showId}, releases, social, our.
+ * board:{artistId}:{listId}:{itemId}, pitch:{pitchId}, todo:{id}. A checklist's key (what Dismiss stores) is the item key without the item: show:{showId}:{listId}.
+ * Column keys: pinned, booking, show:{showId}, releases, social, our, list:{listId}.
  */
 import { followUpFor, fmtPitchDate, STATUS_LABEL, todayStr, type FollowUpPitchLike, type Status } from "./booking";
 import { isOff, showName, type ChecklistItem, type ChecklistKind, type ChecklistLike, type ShowPlaceLike } from "./shows";
 
-export const TODO_COLUMN_KEY = /^(pinned|booking|releases|social|our|show:[^:\s]+)$/;
+export const TODO_COLUMN_KEY = /^(pinned|booking|releases|social|our|(show|list):[^:\s]+)$/;
 export const TODO_CHECKLIST_KEY = /^(show|release|social):[^:\s]+:[^:\s]+$/;
 
 export const checklistKey = (kind: ChecklistKind, id: string, listId: string) => `${kind}:${id}:${listId}`;
@@ -21,6 +22,11 @@ export type BoardAction =
   | { type: "pitch"; id: string; due: boolean }
   | { type: "todo"; id: string };
 
+/** Where a group's "Add a to do" puts the new item: a checklist, or Our list (pinned: straight into Pinned). Booking has none. */
+export type AddTarget =
+  | { type: "checklist"; kind: ChecklistKind; id: string; listId: string }
+  | { type: "todo"; pinned?: boolean };
+
 export interface BoardItem {
   key: string;
   label: string;
@@ -30,8 +36,8 @@ export interface BoardItem {
   /** Booking cards: the pitch's assignee (a user id). */
   assigneeId?: string;
   pinned?: boolean;
-  /** Where it lives, as a link ("Sat Nov 14 Hi-Dive › Advance"): Pinned and Booking cards. */
-  source?: { text: string; href: string };
+  /** Where it lives, as a link ("Sat Nov 14 Hi-Dive › Advance"), or plain text when it lives on To Dos itself: Pinned and Booking cards. */
+  source?: { text: string; href?: string };
   /** A small chip: "Due Mon, Nov 9" (red when overdue), "Due today", "21 days quiet". */
   chip?: { text: string; tone: "r" | "y" | "a" };
   /** Extra plain text in the meta row (a pitch's status). */
@@ -47,6 +53,8 @@ export interface BoardGroup {
   done?: number;
   total?: number;
   items: BoardItem[];
+  /** Where "Add a to do" (at the group's bottom) adds. */
+  add?: AddTarget;
 }
 export interface BoardColumn {
   key: string;
@@ -56,18 +64,22 @@ export interface BoardColumn {
   chip: string;
   caption?: string;
   groups: BoardGroup[];
+  /** One of the band's own lists (list:{listId}): it can be deleted from the board. */
+  board?: { listId: string };
 }
 
 export interface ShowLike extends ShowPlaceLike { id: string; date: string; status: string; checklists?: ChecklistLike[]; deletedAt?: unknown }
 export interface ReleaseLike { id: string; title: string; checklists?: ChecklistLike[] }
 export interface PitchLike extends FollowUpPitchLike { id: string; target: { kind: string; id: string; name: string }; assigneeId?: string; nextStep?: { text: string; due: string } | null }
-export interface TodoLike { id: string; label: string; done: boolean; ownerId?: string }
+export interface TodoLike { id: string; label: string; done: boolean; ownerId?: string; pinnedAt?: string }
 
 export interface BoardInput {
   artistId: string;
   shows: ShowLike[];
   releases: ReleaseLike[];
   social: ChecklistLike[];
+  /** The band's own lists (todoLists/{artistId}), in order. */
+  lists?: ChecklistLike[];
   pitches: PitchLike[];
   todos: TodoLike[];
   /** The caller's saved order per column (userPrefs todoOrder). */
@@ -101,7 +113,7 @@ export function movedOrder(col: BoardColumn, group: number, from: number, to: nu
   });
 }
 
-function checklistItems(kind: ChecklistKind, id: string, list: ChecklistLike, keep: (i: ChecklistItem) => boolean, source?: { text: string; href: string }): BoardItem[] {
+function checklistItems(kind: ChecklistKind, id: string, list: ChecklistLike, keep: (i: ChecklistItem) => boolean, source?: BoardItem["source"]): BoardItem[] {
   return list.items.filter(keep).map((i) => ({
     key: itemKey(kind, id, list.id, i.id), label: i.label, done: i.done, ownerId: i.ownerId, pinned: !!i.pinnedAt,
     ...(source ? { source } : {}), action: { type: "checklist", kind, id, listId: list.id, itemId: i.id },
@@ -121,11 +133,18 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   const showTitle = (s: ShowLike) => `${shortDate(s.date)} ${showName(s)}`;
   const releaseHref = (r: ReleaseLike) => `/releases/${r.id}`;
 
-  // Pinned: every pinned item, from any list (dismissed or not), in source order: shows, releases, Social Media.
+  const lists = b.lists ?? [];
+  const todoItem = (t: TodoLike, source?: BoardItem["source"]): BoardItem => ({
+    key: `todo:${t.id}`, label: t.label, done: t.done, ownerId: t.ownerId, pinned: !!t.pinnedAt, ...(source ? { source } : {}), action: { type: "todo", id: t.id },
+  });
+
+  // Pinned: every pinned item, from any list (dismissed or not), in source order: shows, releases, Social Media, the band's lists, Our list.
   const pinned: BoardItem[] = [
     ...live.flatMap((s) => (s.checklists ?? []).flatMap((l) => checklistItems("show", s.id, l, (i) => !!i.pinnedAt, { text: `${showTitle(s)} › ${l.name}`, href: `/shows/${s.id}` }))),
     ...b.releases.flatMap((r) => (r.checklists ?? []).flatMap((l) => checklistItems("release", r.id, l, (i) => !!i.pinnedAt, { text: `${r.title} › ${l.name}`, href: releaseHref(r) }))),
     ...b.social.flatMap((l) => checklistItems("social", b.artistId, l, (i) => !!i.pinnedAt, { text: `Social Media › ${l.name}`, href: "/posts" })),
+    ...lists.flatMap((l) => checklistItems("board", b.artistId, l, (i) => !!i.pinnedAt, { text: l.name })),
+    ...b.todos.filter((t) => t.pinnedAt).map((t) => todoItem(t, { text: "Our list" })),
   ];
 
   const booking: BoardItem[] = b.pitches.flatMap((p) => {
@@ -145,7 +164,10 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   const group = (kind: ChecklistKind, id: string, l: ChecklistLike, extra: Partial<BoardGroup> = {}): BoardGroup[] => {
     const key = checklistKey(kind, id, l.id);
     if (dismissed.has(key)) return [];
-    return [{ key, title: l.name, done: l.items.filter((i) => i.done).length, total: l.items.length, items: checklistItems(kind, id, l, (i) => !i.pinnedAt), ...extra }];
+    return [{
+      key, title: l.name, done: l.items.filter((i) => i.done).length, total: l.items.length, items: checklistItems(kind, id, l, (i) => !i.pinnedAt),
+      add: { type: "checklist", kind, id, listId: l.id }, ...extra,
+    }];
   };
   const nonEmpty = (gs: BoardGroup[]) => gs.filter((g) => g.items.length);
 
@@ -155,7 +177,7 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   })).filter((c) => c.groups.length);
 
   return [
-    { key: "pinned", title: "Pinned", chip: "Pinned", caption: "Pinned from any checklist. Unpin to send it back.", groups: ordered("pinned", [{ items: pinned }]) },
+    { key: "pinned", title: "Pinned", chip: "Pinned", caption: "Pinned from any checklist. Unpin to send it back.", groups: ordered("pinned", [{ items: pinned, add: { type: "todo", pinned: true } }]) },
     { key: "booking", title: "Booking", chip: "Booking", href: "/booking/pitches", caption: "Pitches that need a follow up: a next step that's due, or 14+ days quiet.", groups: ordered("booking", [{ items: booking }]) },
     ...showCols,
     {
@@ -165,8 +187,16 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
     { key: "social", title: "Social Media", chip: "Social", href: "/posts", groups: nonEmpty(ordered("social", b.social.flatMap((l) => group("social", b.artistId, l)))) },
     {
       key: "our", title: "Our list", chip: "Our list", caption: "For the band, not tied to any show or release.",
-      groups: ordered("our", [{ items: b.todos.map((t) => ({ key: `todo:${t.id}`, label: t.label, done: t.done, ownerId: t.ownerId, action: { type: "todo", id: t.id } as const })) }]),
+      groups: ordered("our", [{ items: b.todos.filter((t) => !t.pinnedAt).map((t) => todoItem(t)), add: { type: "todo" } }]),
     },
+    // The band's own lists: one column each, shown even when empty (that's where their first to-do goes).
+    ...lists.map((l): BoardColumn => {
+      const key = `list:${l.id}`;
+      return {
+        key, title: l.name, chip: l.name, board: { listId: l.id },
+        groups: ordered(key, [{ key: checklistKey("board", b.artistId, l.id), items: checklistItems("board", b.artistId, l, (i) => !i.pinnedAt), add: { type: "checklist", kind: "board", id: b.artistId, listId: l.id } }]),
+      };
+    }),
   ];
 }
 

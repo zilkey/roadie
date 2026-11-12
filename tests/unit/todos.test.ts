@@ -67,3 +67,35 @@ test("saved order first, the rest after in natural order; moving stays inside a 
   assert.deepEqual(keys(hi), ["show:s1:l1:i3", "show:s1:l1:i2", "show:s1:l2:p1"]);
   assert.deepEqual(movedOrder(hi, 0, 0, 1), ["show:s1:l1:i2", "show:s1:l1:i3", "show:s1:l2:p1"]);
 });
+
+test("the band's own lists: a column each (even empty), after Our list; their pins go to Pinned", () => {
+  const lists = [
+    { id: "b1", name: "Van stuff", items: [item("v1", "Oil change"), item("v2", "New tires", { pinnedAt: "x" })] },
+    { id: "b2", name: "Merch", items: [] },
+  ];
+  const cols = buildBoard(base({ lists }));
+  assert.deepEqual(cols.map((c) => c.key).slice(-3), ["our", "list:b1", "list:b2"]);
+  const van = col(cols, "list:b1");
+  assert.deepEqual([van.title, van.chip, van.board], ["Van stuff", "Van stuff", { listId: "b1" }]);
+  assert.deepEqual(keys(van), ["board:a1:b1:v1"]);
+  assert.equal(van.groups[0].title, undefined, "no group title, so no Dismiss: the list is the column");
+  assert.deepEqual(van.groups[0].add, { type: "checklist", kind: "board", id: "a1", listId: "b1" });
+  assert.deepEqual(col(cols, "list:b2").groups.map((g) => g.items.length), [0], "an empty list keeps its group, to add to");
+  const pin = col(cols, "pinned").groups[0].items.find((i) => i.key === "board:a1:b1:v2")!;
+  assert.deepEqual([pin.source, pin.action], [{ text: "Van stuff" }, { type: "checklist", kind: "board", id: "a1", listId: "b1", itemId: "v2" }]);
+});
+
+test("every list adds to-dos except Booking: checklists add to themselves, Our list to todos, Pinned to todos pinned", () => {
+  const cols = buildBoard(base({ todos: [{ id: "t1", label: "Renew ASCAP", done: false }, { id: "t2", label: "Book the van", done: false, pinnedAt: "x" }] }));
+  assert.equal(col(cols, "booking").groups[0].add, undefined);
+  assert.deepEqual(col(cols, "pinned").groups[0].add, { type: "todo", pinned: true });
+  assert.deepEqual(col(cols, "our").groups[0].add, { type: "todo" });
+  assert.deepEqual(col(cols, "show:s1").groups.map((g) => g.add), [
+    { type: "checklist", kind: "show", id: "s1", listId: "l1" }, { type: "checklist", kind: "show", id: "s1", listId: "l2" },
+  ]);
+  assert.deepEqual(col(cols, "releases").groups[0].add, { type: "checklist", kind: "release", id: "r1", listId: "l1" });
+  assert.deepEqual(col(cols, "social").groups[0].add, { type: "checklist", kind: "social", id: "a1", listId: "l9" });
+  assert.deepEqual(keys(col(cols, "our")), ["todo:t1"], "a pinned to-do leaves Our list");
+  const p = col(cols, "pinned").groups[0].items.find((i) => i.key === "todo:t2")!;
+  assert.deepEqual([p.pinned, p.source], [true, { text: "Our list" }]);
+});

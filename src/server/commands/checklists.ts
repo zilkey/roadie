@@ -5,25 +5,28 @@ import { idInput } from "./util";
 import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { templateKind, type ChecklistItem, type ChecklistKind, type ChecklistLike } from "@/lib/shows";
-import { checklistKind } from "@/schema";
+import { checklistKind, templateAppliesTo } from "@/schema";
 
-// Checklists live on a show (shows/{id}.checklists), a release (releases/{id}.checklists) or the Social Media sidebar
-// (socialChecklists/{artistId}.checklists, one per artist, made by its first list). The checklists.* commands take {kind, id};
+// Checklists live on a show (shows/{id}.checklists), a release (releases/{id}.checklists), the Social Media sidebar
+// (socialChecklists/{artistId}.checklists) or the band's own To Dos lists (todoLists/{artistId}.checklists, kind "board"); the last two
+// are one doc per artist, made by its first list. The checklists.* commands take {kind, id};
 // the older shows.* checklist commands are the same commands with kind "show". Members can tick, add, edit and remove items on
 // shows only (they can't read releases or Social Media); lists themselves, pins and templates are admins'.
 
 const newId = () => randomUUID().slice(0, 8);
-const COLLECTION: Record<ChecklistKind, string> = { show: "shows", release: "releases", social: "socialChecklists" };
-const NOUN: Record<ChecklistKind, string> = { show: "Show", release: "Release", social: "Social Media" };
+const COLLECTION: Record<ChecklistKind, string> = { show: "shows", release: "releases", social: "socialChecklists", board: "todoLists" };
+const NOUN: Record<ChecklistKind, string> = { show: "Show", release: "Release", social: "Social Media", board: "To Dos" };
+/** Kinds whose lists are one doc per artist (id = the artist's). */
+const perArtist = (kind: ChecklistKind) => kind === "social" || kind === "board";
 
 interface Host { kind: ChecklistKind; id: string; artistId: string | undefined; lists: ChecklistLike[]; exists: boolean }
 
-/** The show, release or Social Media sidebar a checklist call is for, checked against the caller's band. */
+/** The show, release, Social Media sidebar or To Dos lists a checklist call is for, checked against the caller's band. */
 async function bandHost(w: Writer, kind: ChecklistKind, id: string): Promise<Host> {
   if (kind !== "show" && w.ctx.role === "member") throw new AppError("forbidden", `Only admins can change ${NOUN[kind]} checklists`, 403);
-  if (kind === "social") {
-    if (w.ctx.artistId && id !== w.ctx.artistId) throw new AppError("not_found", "Social Media checklists not found", 404);
-    const d = await w.get(COLLECTION.social, id);
+  if (perArtist(kind)) {
+    if (w.ctx.artistId && id !== w.ctx.artistId) throw new AppError("not_found", `${NOUN[kind]} checklists not found`, 404);
+    const d = await w.get(COLLECTION[kind], id);
     return { kind, id, artistId: id, lists: ((d?.checklists ?? []) as ChecklistLike[]), exists: !!d };
   }
   const d = await w.get(COLLECTION[kind], id);
@@ -31,7 +34,7 @@ async function bandHost(w: Writer, kind: ChecklistKind, id: string): Promise<Hos
   return { kind, id, artistId: d.artistId as string | undefined, lists: ((d.checklists ?? []) as ChecklistLike[]), exists: true };
 }
 function writeLists(w: Writer, h: Host, lists: ChecklistLike[]) {
-  if (h.kind === "social" && !h.exists) return w.create(COLLECTION.social, { artistId: h.id, checklists: lists }, { id: h.id });
+  if (perArtist(h.kind) && !h.exists) return w.create(COLLECTION[h.kind], { artistId: h.id, checklists: lists }, { id: h.id });
   return w.update(COLLECTION[h.kind], h.id, { checklists: lists });
 }
 function listOf(lists: ChecklistLike[], listId: string) {
@@ -81,7 +84,7 @@ const ITEM_ROLES: Command["roles"] = ["admin", "member"];
 
 export const checklistsSet = defineCommand({
   name: "checklists.set", roles: ["admin"],
-  description: "Replaces every list on a show, release or the Social Media sidebar (kind show|release|social; for social, id is the artist's): prefer the per-list and per-item commands. In order: [{id?, name, templateId? (null = none), items: [{id?, label, done, ownerId? (musician; none = unassigned)}]}]. Lists and items without an id get one. Pins on items that are kept stay.",
+  description: "Replaces every list on a show, release or the Social Media sidebar (kind show|release|social|board; for social and board, id is the artist's): prefer the per-list and per-item commands. In order: [{id?, name, templateId? (null = none), items: [{id?, label, done, ownerId? (musician; none = unassigned)}]}]. Lists and items without an id get one. Pins on items that are kept stay.",
   input: z.strictObject({ ...kindIn, checklists: z.array(checklistIn) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const h = await bandHost(w, i.kind, i.id);
@@ -99,7 +102,7 @@ export const checklistsSet = defineCommand({
 
 export const checklistsAdd = defineCommand({
   name: "checklists.add", roles: ["admin"],
-  description: "Add a list at the end of a show's, release's or the Social Media sidebar's checklists: from a template that applies to that kind (its name and items, not done, unassigned; templateId set), or a blank list by name.",
+  description: "Add a list at the end of a show's, release's, the Social Media sidebar's or To Dos' own (board: a new column) checklists: from a template that applies to that kind (its name and items, not done, unassigned; templateId set), or a blank list by name.",
   input: z.union([
     z.strictObject({ ...kindIn, templateId: z.string().min(1) }),
     z.strictObject({ ...kindIn, name: z.string().trim().min(1) }),
@@ -191,6 +194,7 @@ export const checklistsSaveAsTemplate = defineCommand({
   description: "Make a new checklist template (last in order, applying to this list's kind) from one checklist: its name and item text (no assignees, nothing done). The list is linked to it (templateId).",
   input: z.strictObject(listIn),
   run: (ctx, i) => run(ctx, async (w) => {
+    if (i.kind === "board") throw new AppError("invalid_input", "To Dos lists can't be saved as templates", 400);
     const h = await bandHost(w, i.kind, i.id);
     const list = listOf(h.lists, i.listId);
     const artistId = (await artistFor(w, h.artistId)).id;
@@ -259,7 +263,7 @@ export const checklistTemplatesList = defineCommand({
 export const checklistTemplatesCreate = defineCommand({
   name: "checklistTemplates.create", roles: ["admin", "mcp"],
   description: "Add a checklist template (last in order): name, appliesTo (show, release or social; default show) and items [{label}]. Lists of that kind can then add it.",
-  input: z.strictObject({ name: z.string().trim().min(1), appliesTo: checklistKind.default("show"), items: templateItems.default([]) }),
+  input: z.strictObject({ name: z.string().trim().min(1), appliesTo: templateAppliesTo.default("show"), items: templateItems.default([]) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const artistId = (await artistFor(w)).id;
     return w.create("checklistTemplates", { artistId, name: i.name, appliesTo: i.appliesTo, order: nextOrder(await liveTemplates(w, artistId)), items: withItemIds(i.items) });
@@ -268,7 +272,7 @@ export const checklistTemplatesCreate = defineCommand({
 export const checklistTemplatesUpdate = defineCommand({
   name: "checklistTemplates.update", roles: ["admin", "mcp"],
   description: "Edit a checklist template: name, appliesTo (show|release|social: moves it to that kind), items (the whole list, in order: [{id?, label}]). Call checklistTemplates.list first and keep each existing item's id, or the item is recreated with a new one. Lists already made from it are not touched.",
-  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), appliesTo: checklistKind.optional(), items: templateItems.optional() }) }),
+  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), appliesTo: templateAppliesTo.optional(), items: templateItems.optional() }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requireTemplate(w, id);
     return w.update("checklistTemplates", id, { ...(patch.name ? { name: patch.name } : {}), ...(patch.appliesTo ? { appliesTo: patch.appliesTo } : {}), ...(patch.items ? { items: withItemIds(patch.items) } : {}) });

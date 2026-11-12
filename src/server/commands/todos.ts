@@ -27,11 +27,12 @@ function artistOf(w: Writer) {
 }
 
 export const todosAdd = defineCommand({
-  name: "todos.add", roles: [...ROLES], description: "Add a to-do to To Dos › Our list (the band's own, not tied to a show or release), optionally assigned to a musician.",
-  input: z.strictObject({ label: z.string().trim().min(1), ownerId: owner.optional() }),
+  name: "todos.add", roles: [...ROLES], description: "Add a to-do to To Dos › Our list (the band's own, not tied to a show or release), optionally assigned to a musician. pinned: true pins it (it shows in Pinned).",
+  input: z.strictObject({ label: z.string().trim().min(1), ownerId: owner.optional(), pinned: z.boolean().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     if (i.ownerId) await requireMusician(w, i.ownerId);
-    return w.create("todos", { artistId: artistOf(w), label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}) });
+    const pin = i.pinned ? { pinnedAt: w.now.toDate().toISOString(), pinnedBy: ctx.uid } : {};
+    return w.create("todos", { artistId: artistOf(w), label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}), ...pin });
   }),
 });
 
@@ -54,6 +55,16 @@ export const todosCheck = defineCommand({
   }),
 });
 
+export const todosPin = defineCommand({
+  name: "todos.pin", roles: [...ROLES], description: "Pin an Our list to-do to To Dos › Pinned (pinned: true) or unpin it back to Our list. Pins are shared by every admin.",
+  input: z.strictObject({ id: z.string().min(1), pinned: z.boolean() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const t = await requireTodo(w, i.id);
+    if (i.pinned) return t.pinnedAt ? t : w.update("todos", i.id, { pinnedAt: w.now.toDate().toISOString(), pinnedBy: ctx.uid });
+    return w.update("todos", i.id, { pinnedAt: null, pinnedBy: null });
+  }),
+});
+
 export const todosRemove = defineCommand({
   name: "todos.remove", roles: [...ROLES], input: idInput, description: "Remove an Our list to-do (Undo puts it back).",
   run: (ctx, { id }) => run(ctx, async (w) => { await requireTodo(w, id); return w.softDelete("todos", id); }),
@@ -61,14 +72,14 @@ export const todosRemove = defineCommand({
 
 export const todosSetOrder = defineCommand({
   name: "todos.setOrder", roles: [...ROLES],
-  description: "Save the caller's order of one To Dos column (pinned, booking, show:{showId}, releases, social, our): keys are item keys, top first. Personal: it changes only this page, only for the caller.",
+  description: "Save the caller's order of one To Dos column (pinned, booking, show:{showId}, releases, social, our, list:{listId}): keys are item keys, top first. Personal: it changes only this page, only for the caller.",
   input: z.strictObject({ column: z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column"), keys: z.array(z.string().min(1).max(200)).max(1000) }),
   async run(ctx, i) { return { column: i.column, keys: await setTodoOrder(ctx.uid, i.column, i.keys) }; },
 });
 
 export const todosSetColumns = defineCommand({
   name: "todos.setColumns", roles: [...ROLES],
-  description: "Save the caller's order of the To Dos columns themselves (pinned, booking, show:{showId}, releases, social, our), left first. Personal: it changes only this page, only for the caller.",
+  description: "Save the caller's order of the To Dos columns themselves (pinned, booking, show:{showId}, releases, social, our, list:{listId}), left first. Personal: it changes only this page, only for the caller.",
   input: z.strictObject({ keys: z.array(z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column")).max(500) }),
   async run(ctx, i) { return { columns: await setTodoColumns(ctx.uid, i.keys) }; },
 });
@@ -86,4 +97,4 @@ export const todosUndismiss = defineCommand({
   async run(ctx, i) { return { dismissed: await setTodoDismissed(ctx.uid, i.key, false) }; },
 });
 
-export const todoCommands = [todosAdd, todosEdit, todosCheck, todosRemove, todosSetOrder, todosSetColumns, todosDismiss, todosUndismiss];
+export const todoCommands = [todosAdd, todosEdit, todosCheck, todosPin, todosRemove, todosSetOrder, todosSetColumns, todosDismiss, todosUndismiss];

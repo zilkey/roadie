@@ -79,6 +79,8 @@ service cloud.firestore {
     match /socialChecklists/{id} { allow read: if roleIn(id) == 'admin'; }
     // To Dos › Our list: that artist's admins only, like posts. Lists must filter where('artistId', '==', ...).
     match /todos/{id}            { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    // The band's own To Dos lists (Add list), one doc per artist like socialChecklists: its admins only.
+    match /todoLists/{id}        { allow read: if roleIn(id) == 'admin'; }
     // Stage plots: the band reads; the server writes. The engineer link is a server route, not a rule.
     match /stagePlots/{id}       { allow read: if band(); }
 

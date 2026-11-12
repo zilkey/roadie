@@ -5,8 +5,11 @@ export type Sound = { provider: "venueProvided" | "bandProvided"; notes?: string
 export type Needs = { poster: boolean; backline: boolean; merch: boolean };
 export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; doneAt?: string; doneBy?: string; pinnedAt?: string; pinnedBy?: string }
 export interface ChecklistLike { id: string; name: string; templateId?: string | null; items: ChecklistItem[] }
-/** What a checklist hangs off. "social" is the Social Media sidebar: one set of lists per artist, its id the artist's. */
-export type ChecklistKind = "show" | "release" | "social";
+/**
+ * What a checklist hangs off. "social" is the Social Media sidebar and "board" the band's own lists on To Dos (each one a column):
+ * one set of lists per artist for both, their id the artist's.
+ */
+export type ChecklistKind = "show" | "release" | "social" | "board";
 export interface ChecklistTemplateLike { id: string; name: string; order: number; appliesTo?: ChecklistKind; items: { id: string; label: string }[] }
 /** Which kind of list a template makes (templates from before releases had lists are show templates). */
 export const templateKind = (t: { appliesTo?: ChecklistKind }): ChecklistKind => t.appliesTo ?? "show";
