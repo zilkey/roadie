@@ -22,6 +22,7 @@ import { authenticateToken, mintKey } from "./auth";
 import { adminAuth } from "@/server/admin";
 import { db } from "@/server/db";
 import { mcpIn, type Membership } from "@/schema/users";
+import { AUTH_URL, exchangeCode, googleConfigured, redirectUri } from "@/server/google/oauth";
 import { sessionSecret } from "./secret";
 
 const CODE_TTL_MS = 5 * 60_000;
@@ -41,7 +42,11 @@ type Sealed =
   | { t: "req"; c: string; r: string; p: string; s: string; n?: string; e: number }
   /** Approved: who (users doc id) and which artist. The key is minted when Claude redeems it. */
   | { t: "code"; u: string; a: string; n?: string; c: string; r: string; p: string; e: number }
-  | { t: "refresh"; k: string; c: string };
+  | { t: "refresh"; k: string; c: string }
+  /** Google sign-in in progress for /connect: the sealed req to come back to. */
+  | { t: "login"; q: string; e: number }
+  /** Who Google said signed in (users doc id, or none when no live user has that email), for /connect to show. */
+  | { t: "who"; u?: string; m: string; h: string; e: number };
 
 const aesKey = () => createHash("sha256").update(`roadie-mcp-oauth:${sessionSecret()}`).digest();
 
@@ -156,11 +161,69 @@ export async function authorize(req: Request): Promise<Response> {
   const r = readAuthParams(new URL(req.url).searchParams);
   if ("page" in r) return html(400, errorPage(r.page));
   if ("redirect" in r) return redirect(r.redirect);
-  return redirect(`${issuer()}/connect?req=${seal(r.ok)}`);
+  return redirect(signInUrl(seal(r.ok)));
+}
+
+/**
+ * Where the person signs in. With Google OAuth configured (production): Google's own page, by plain redirects, then
+ * /api/google/callback (googleCallback below) -> /connect. No popup and no Firebase in the browser: in Claude's in-app
+ * sign-in window on iPhone, Firebase's popup never reports back and its sign-in state can take seconds to load.
+ * Without it (dev, tests): /connect, which signs in with Firebase (the emulator's dev buttons).
+ */
+function signInUrl(sealedReq: string, hint?: string): string {
+  if (!googleConfigured()) return `${issuer()}/connect?req=${sealedReq}`;
+  const q = new URLSearchParams({
+    client_id: process.env.GOOGLE_OAUTH_CLIENT_ID!, redirect_uri: redirectUri(), response_type: "code", scope: "openid email",
+    prompt: "select_account", state: seal({ t: "login", q: sealedReq, e: Date.now() + REQ_TTL_MS }), ...(hint ? { login_hint: hint } : {}),
+  });
+  return `${AUTH_URL}?${q}`;
+}
+
+/** Binds a sign-in to the one request it was made for, so a `who` can't be paired with someone else's request. */
+const reqHash = (sealedReq: string) => createHash("sha256").update(sealedReq).digest("base64url").slice(0, 22);
+
+/** GET /oauth/login?req=: sign in again (another account) for a pending request. */
+export async function login(req: Request): Promise<Response> {
+  const sealedReq = new URL(req.url).searchParams.get("req") ?? "";
+  const r = unseal(sealedReq, "req");
+  if (!r || r.e < Date.now()) return html(400, errorPage("This sign-in link has expired. Start again from Claude."));
+  return redirect(signInUrl(sealedReq));
+}
+
+/** Is this Google callback state one of ours (a /connect sign-in) rather than Settings > Google's? */
+export const isLoginState = (state: string | null) => !!unseal(state, "login");
+
+/** Google came back from a /connect sign-in: learn the email from the id_token, then go on to /connect. */
+export async function googleCallback(q: URLSearchParams): Promise<Response> {
+  const st = unseal(q.get("state"), "login");
+  if (!st || st.e < Date.now()) return html(400, errorPage("This sign-in link has expired. Start again from Claude."));
+  const r = unseal(st.q, "req");
+  if (!r) return html(400, errorPage("This sign-in link has expired. Start again from Claude."));
+  if (q.get("error")) return redirect(withParams(r.r, { error: "access_denied", error_description: "Google sign-in was cancelled", state: r.s }));
+  let claims: { email?: string; email_verified?: boolean };
+  try {
+    const t = await exchangeCode(q.get("code") ?? "");
+    claims = JSON.parse(Buffer.from(t.id_token?.split(".")[1] ?? "", "base64url").toString("utf8"));
+  } catch (e) {
+    console.error(e);
+    return html(502, errorPage("Google sign-in didn't finish. Go back to Claude and try again."));
+  }
+  const email = claims.email?.trim().toLowerCase();
+  if (!email || claims.email_verified === false) return html(400, errorPage("Google didn't share a verified email address."));
+  const user = (await db.list("users", (x) => x.where("email", "==", email).limit(5))).find((u) => !u.deletedAt);
+  const who = seal({ t: "who", ...(user ? { u: user.id } : {}), m: email, h: reqHash(st.q), e: Date.now() + REQ_TTL_MS });
+  return redirect(`${issuer()}/connect?${new URLSearchParams({ req: st.q, who })}`);
 }
 
 /** Who is signing in on /connect: their Firebase ID token, matched to a users doc by uid, else by verified email. */
-async function personFrom(authHeader: string | null) {
+async function personFrom(authHeader: string | null, whoSealed: string | undefined, sealedReq: string) {
+  if (whoSealed) {
+    const w = unseal(whoSealed, "who");
+    if (!w || w.e < Date.now() || w.h !== reqHash(sealedReq)) throw new AppError("unauthenticated", "Your sign-in has expired. Sign in again.", 401);
+    const u = w.u ? await db.get("users", w.u) : null;
+    if (!u || u.deletedAt) throw new AppError("not_invited", `${w.m} isn't on any band in Roadie. Sign in with the Google account Roadie invited.`, 403);
+    return u;
+  }
   const m = /^Bearer (.+)$/.exec(authHeader ?? "");
   if (!m) throw new AppError("unauthenticated", "Sign in first", 401);
   let decoded;
@@ -184,14 +247,14 @@ async function personFrom(authHeader: string | null) {
 const own = (status: number, body: unknown) => json(status, body, {});
 
 export async function approve(req: Request): Promise<Response> {
-  let body: { req?: string; artistId?: string; cancel?: boolean };
+  let body: { req?: string; who?: string; artistId?: string; cancel?: boolean };
   try { body = (await req.json()) as typeof body; }
   catch { return own(400, new AppError("invalid_input", "Body must be JSON").toJSON()); }
   const r = unseal(body.req, "req");
   if (!r || r.e < Date.now()) return own(400, new AppError("expired", "This sign-in link has expired. Start again from Claude.").toJSON());
   if (body.cancel) return own(200, { redirect: withParams(r.r, { error: "access_denied", error_description: "Sign-in was cancelled", state: r.s }) });
   try {
-    const user = await personFrom(req.headers.get("authorization"));
+    const user = await personFrom(req.headers.get("authorization"), body.who, body.req!);
     const ms = (user.artists ?? []) as Membership[];
     if (!body.artistId) {
       const docs = await Promise.all(ms.map((m) => db.get("artists", m.artistId)));
@@ -199,7 +262,7 @@ export async function approve(req: Request): Promise<Response> {
         const a = docs[i];
         return a && !a.deletedAt ? [{ artistId: m.artistId, name: a.name as string, ai: mcpIn(user, m.artistId) }] : [];
       }).sort((a, b) => a.name.localeCompare(b.name));
-      return own(200, { client: r.n ?? "Claude", returnTo: new URL(r.r).host, name: user.name, artists });
+      return own(200, { client: r.n ?? "Claude", returnTo: new URL(r.r).host, name: user.name, email: user.email, artists });
     }
     if (!ms.some((m) => m.artistId === body.artistId)) throw new AppError("not_a_member", "You're not a member of this artist", 403);
     if (!mcpIn(user, body.artistId)) throw new AppError("forbidden", "You don't have AI access in this artist. Ask a band admin to turn it on for you in People.", 403);

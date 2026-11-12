@@ -15,7 +15,7 @@ import { hashToken } from "@/server/availability";
 import { authenticateToken } from "../../mcp/auth";
 import { callTool, toolList } from "../../mcp/tools";
 import { handleMcpRequest, sessionIdFor, SESSION_HEADER } from "../../mcp/web";
-import { approve, authorizationServerMetadata, authorize, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
+import { approve, authorizationServerMetadata, authorize, login, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
 import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
 
@@ -404,6 +404,7 @@ const routes: Record<string, (req: Request) => Response | Promise<Response>> = {
   "/oauth/authorize": authorize,
   "/oauth/approve": approve,
   "/oauth/token": tokenEndpoint,
+  "/oauth/login": login,
 };
 const app: typeof fetch = async (input, init) => {
   const req = new Request(input, init);
@@ -547,4 +548,74 @@ test("OAuth: an AI-only login can connect; unknown clients and return addresses 
   assert.equal((await approveAs(expiredReq, bot.token)).status, 400);
   const expiredCode = seal({ t: "code", u: bot.uid, a: TEST_ARTIST, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() - 1 });
   assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: expiredCode, code_verifier: verifier })).json()).error, "invalid_grant");
+});
+
+test("OAuth with Google configured: authorize goes to Google, the callback learns who, /connect needs no Firebase", async (t) => {
+  useAppUrl(t);
+  const env = { GOOGLE_OAUTH_CLIENT_ID: process.env.GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET: process.env.GOOGLE_OAUTH_CLIENT_SECRET };
+  process.env.GOOGLE_OAUTH_CLIENT_ID = "test-client.apps.googleusercontent.com";
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-secret";
+  const realFetch = globalThis.fetch;
+  let googleEmail = "rudy@example.com";
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).startsWith("https://oauth2.googleapis.com/token")) {
+      const idt = `x.${Buffer.from(JSON.stringify({ email: googleEmail, email_verified: true })).toString("base64url")}.y`;
+      return new Response(JSON.stringify({ access_token: "g", expires_in: 3600, scope: "openid email", id_token: idt }), { headers: { "content-type": "application/json" } });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  t.after(() => {
+    globalThis.fetch = realFetch;
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  });
+  const { GET: googleCallbackRoute } = await import("@/app/api/google/callback/route");
+  await makeArtist("The Test Band", "test-band");
+
+  const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT], client_name: "Claude" }) })).json();
+  const verifier = "w".repeat(50);
+  const challenge = (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url");
+  const authorizeUrl = `http://app.test/oauth/authorize?${new URLSearchParams({ response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: "S256", state: "st" })}`;
+  const toGoogle = async () => {
+    const r = await app(authorizeUrl, { redirect: "manual" });
+    const g = new URL(r.headers.get("location")!);
+    assert.equal(g.origin, "https://accounts.google.com");
+    assert.equal(g.searchParams.get("redirect_uri"), "http://app.test/api/google/callback");
+    assert.equal(g.searchParams.get("scope"), "openid email");
+    return g.searchParams.get("state")!;
+  };
+  const back = async (q: Record<string, string>) => {
+    const r = await googleCallbackRoute(new Request(`http://app.test/api/google/callback?${new URLSearchParams(q)}`));
+    return { status: r.status, to: r.headers.get("location") ? new URL(r.headers.get("location")!) : undefined };
+  };
+
+  // Signed in at Google: on to /connect with who; approve lists the artists without any Firebase token.
+  const st = await toGoogle();
+  const { to } = await back({ code: "g-code", state: st });
+  assert.equal(to!.pathname, "/connect");
+  const req = to!.searchParams.get("req")!, who = to!.searchParams.get("who")!;
+  const info = await approveAs(req, null, { who });
+  assert.equal(info.status, 200);
+  assert.equal(info.body.email, "rudy@example.com");
+  const ok = await approveAs(req, null, { who, artistId: TEST_ARTIST });
+  const code = new URL(ok.body.redirect).searchParams.get("code")!;
+  const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
+  const tok = await (await tokenReq({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: REDIRECT })).json();
+  assert.equal((await authenticateToken(tok.access_token)).uid, adminUid);
+
+  // A who is only good for the request it came with.
+  const other = (await back({ code: "g-code", state: await toGoogle() })).to!;
+  assert.equal((await approveAs(other.searchParams.get("req")!, null, { who })).status, 401);
+  // A Google account nobody invited: told so.
+  googleEmail = "stranger@example.com";
+  const stranger = (await back({ code: "g-code", state: await toGoogle() })).to!;
+  const refused = await approveAs(stranger.searchParams.get("req")!, null, { who: stranger.searchParams.get("who")! });
+  assert.equal(refused.status, 403);
+  assert.match(refused.body.error.message, /stranger@example.com isn't on any band/);
+  // Cancelled at Google: back to Claude with access_denied.
+  const cancelled = await back({ error: "access_denied", state: await toGoogle() });
+  assert.equal(cancelled.to!.origin + cancelled.to!.pathname, REDIRECT);
+  assert.equal(cancelled.to!.searchParams.get("error"), "access_denied");
+  // "Use a different account" goes back to Google for the same request.
+  const again = await app(`http://app.test/oauth/login?${new URLSearchParams({ req })}`, { redirect: "manual" });
+  assert.equal(new URL(again.headers.get("location")!).origin, "https://accounts.google.com");
 });

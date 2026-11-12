@@ -1,9 +1,15 @@
 "use client";
 /**
- * Connecting Claude (or another MCP client) to Roadie: /oauth/authorize sends the browser here with the sealed request
- * in `?req=`. You sign in with Google (or are already signed in), pick the artist, and we go back to the client with a
- * code (mcp/oauth.ts). Outside the (signed-in) group on purpose: AuthProvider turns away AI-only logins, and those are
- * exactly the people who connect this way. It only reads Firebase's sign-in, never /api/session.
+ * Connecting Claude (or another MCP client) to Roadie: you pick the artist here, and we go back to the client with a
+ * code (mcp/oauth.ts). `?req=` is the sealed request.
+ *
+ * Who you are comes one of two ways:
+ * - Production: you already signed in on Google's own page (server-side, by redirects) and arrive with `?who=`. No
+ *   Firebase in the browser at all, because in Claude's in-app sign-in window on iPhone Firebase's popup never reports
+ *   back and its sign-in state can take many seconds to load.
+ * - Dev and tests (no Google OAuth client): Firebase sign-in on this page, with the emulator's dev buttons.
+ * Outside the (signed-in) group on purpose: AuthProvider turns away AI-only logins, and those are exactly the people
+ * who connect this way. It never calls /api/session.
  */
 import { useCallback, useEffect, useState } from "react";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signInWithRedirect, signOut, type User } from "firebase/auth";
@@ -11,13 +17,15 @@ import { clientAuth, usingEmulators } from "@/lib/firebase-client";
 import type { DevSignInPerson } from "@/app/api/dev-people/route";
 
 interface Artist { artistId: string; name: string; ai: boolean }
-interface Info { client: string; returnTo: string; name: string; artists: Artist[] }
+interface Info { client: string; returnTo: string; name: string; email?: string; artists: Artist[] }
+/** Who is connecting: Google already said (sealed `who` from the server), or a Firebase sign-in on this page. */
+type Id = { who: string } | { user: User };
 type State =
   | { s: "loading" }
   | { s: "signedOut"; note?: string }
-  | { s: "choose"; user: User; info: Info }
+  | { s: "choose"; id: Id; info: Info }
   | { s: "going" }
-  | { s: "error"; message: string; user?: User; retry?: boolean };
+  | { s: "error"; message: string; id?: Id; retry?: boolean };
 
 /** In-app browsers (Claude on a phone) can leave Firebase's sign-in or token refresh hanging: never wait forever. */
 class Stalled extends Error {}
@@ -28,8 +36,10 @@ const report = (step: string, detail = "") => {
   try { navigator.sendBeacon("/oauth/log", JSON.stringify({ step, detail: detail.slice(0, 200), ua: navigator.userAgent.slice(0, 200) })); } catch { /* best effort */ }
 };
 
-async function approve(req: string, user: User | null, extra: Record<string, unknown> = {}) {
+async function approve(req: string, id: Id | null, extra: Record<string, unknown> = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" };
+  if (id && "who" in id) extra = { ...extra, who: id.who };
+  const user = id && "user" in id ? id.user : null;
   if (user) headers.authorization = `Bearer ${await within(user.getIdToken(), 15_000, "token")}`;
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), 20_000);
@@ -44,31 +54,37 @@ async function approve(req: string, user: User | null, extra: Record<string, unk
 
 export default function Connect() {
   const [req, setReq] = useState<string | null>(null);
+  const [who, setWho] = useState<string>("");
   const [state, setState] = useState<State>({ s: "loading" });
   const [picked, setPicked] = useState<string>("");
   const [people, setPeople] = useState<DevSignInPerson[]>([]);
 
-  useEffect(() => { setReq(new URLSearchParams(location.search).get("req") ?? ""); }, []);
+  useEffect(() => {
+    const q = new URLSearchParams(location.search);
+    setWho(q.get("who") ?? "");
+    setReq(q.get("req") ?? "");
+  }, []);
 
-  const load = useCallback(async (user: User) => {
+  const load = useCallback(async (id: Id) => {
     if (!req) return;
     setState({ s: "loading" });
     try {
-      const info = (await approve(req, user)) as Info;
+      const info = (await approve(req, id)) as Info;
       setPicked(info.artists.find((a) => a.ai)?.artistId ?? "");
-      setState({ s: "choose", user, info });
+      setState({ s: "choose", id, info });
     } catch (e) {
       if (e instanceof Stalled) {
         report(e.message);
-        return setState({ s: "error", message: "Roadie is taking too long to answer. Check your connection and try again.", user, retry: true });
+        return setState({ s: "error", message: "Roadie is taking too long to answer. Check your connection and try again.", id, retry: true });
       }
-      setState({ s: "error", message: e instanceof Error ? e.message : "Something went wrong", user });
+      setState({ s: "error", message: e instanceof Error ? e.message : "Something went wrong", id });
     }
   }, [req]);
 
   useEffect(() => {
     if (req === null) return;
     if (!req) return setState({ s: "error", message: "This page opens from Claude when you connect Roadie. Start again from Claude." });
+    if (who) { void load({ who }); return; }
     const auth = clientAuth();
     let settled = false;
     // If Firebase never says who is signed in (it can hang in an in-app browser), offer sign-in instead of "Checking…" forever.
@@ -81,10 +97,10 @@ export default function Connect() {
       settled = true;
       clearTimeout(t);
       if (!user) return setState((st) => (st.s === "signedOut" ? st : { s: "signedOut" }));
-      void load(user);
+      void load({ user });
     });
     return () => { clearTimeout(t); off(); };
-  }, [req, load]);
+  }, [req, who, load]);
 
   useEffect(() => {
     if (!usingEmulators) return;
@@ -104,19 +120,24 @@ export default function Connect() {
   const dev = (p: DevSignInPerson) =>
     signInWithCredential(clientAuth(), GoogleAuthProvider.credential(JSON.stringify({ sub: `dev-${p.key}`, email: p.email, email_verified: true, name: p.name })));
 
-  const go = async (extra: Record<string, unknown>, user: User | null) => {
+  const go = async (extra: Record<string, unknown>, id: Id | null) => {
     if (!req) return;
     setState({ s: "going" });
     try {
-      const { redirect } = await approve(req, user, extra);
+      const { redirect } = await approve(req, id, extra);
       location.assign(redirect);
     } catch (e) {
       if (e instanceof Stalled) report(e.message, "connect");
       const message = e instanceof Stalled ? "Roadie is taking too long to answer. Check your connection and try again." : e instanceof Error ? e.message : "Something went wrong";
-      setState({ s: "error", message, user: user ?? undefined, retry: e instanceof Stalled });
+      setState({ s: "error", message, id: id ?? undefined, retry: e instanceof Stalled });
     }
   };
-  const switchAccount = async () => { await signOut(clientAuth()); setState({ s: "signedOut" }); };
+  /** Google's account chooser again (production), or sign out of Firebase (dev). */
+  const switchAccount = async () => {
+    if (who && req) return location.assign(`/oauth/login?${new URLSearchParams({ req })}`);
+    await signOut(clientAuth());
+    setState({ s: "signedOut" });
+  };
 
   return (
     <main className="mx-auto grid min-h-dvh max-w-md content-center gap-5 px-4 py-10" data-testid="connect">
@@ -146,13 +167,13 @@ export default function Connect() {
       )}
 
       {state.s === "choose" && (() => {
-        const { info, user } = state;
+        const { info, id } = state;
         const usable = info.artists.filter((a) => a.ai);
         return (
           <>
             <div className="grid gap-1">
               <h2 className="font-display text-xl font-bold m-0">Connect Roadie to {info.client}</h2>
-              <p className="s">Signed in as <b>{user.email ?? info.name}</b>. <button className="link" onClick={switchAccount} data-testid="connect-switch">Not you?</button></p>
+              <p className="s">Signed in as <b>{info.email ?? info.name}</b>. <button className="link" onClick={switchAccount} data-testid="connect-switch">Not you?</button></p>
             </div>
             {usable.length === 0 ? (
               <div className="err" data-testid="connect-no-access">
@@ -174,8 +195,8 @@ export default function Connect() {
               It can draft emails but never send them. You&apos;ll go back to <b>{info.returnTo}</b>.
             </p>
             <div className="flex gap-2">
-              <button className="btn ghost flex-1" onClick={() => go({ cancel: true }, user)} data-testid="connect-cancel">Cancel</button>
-              <button className="btn acc flex-1" disabled={!picked} onClick={() => go({ artistId: picked }, user)} data-testid="connect-allow">Connect</button>
+              <button className="btn ghost flex-1" onClick={() => go({ cancel: true }, id)} data-testid="connect-cancel">Cancel</button>
+              <button className="btn acc flex-1" disabled={!picked} onClick={() => go({ artistId: picked }, id)} data-testid="connect-allow">Connect</button>
             </div>
           </>
         );
@@ -184,8 +205,8 @@ export default function Connect() {
       {state.s === "error" && (
         <>
           <div className="err" data-testid="connect-error">{state.message}</div>
-          {state.retry && state.user && <button className="btn acc" data-testid="connect-retry" onClick={() => load(state.user!)}>Try again</button>}
-          {state.user && <button className="btn ghost" onClick={switchAccount}>Use a different account</button>}
+          {state.retry && state.id && <button className="btn acc" data-testid="connect-retry" onClick={() => load(state.id!)}>Try again</button>}
+          {(state.id || who) && <button className="btn ghost" onClick={switchAccount} data-testid="connect-other-account">Use a different account</button>}
         </>
       )}
     </main>
