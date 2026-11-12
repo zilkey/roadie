@@ -11,7 +11,7 @@ import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEven
 import { noteOf, requireContact, setContactRoles } from "../venues";
 import { dayOfContactOf } from "@/lib/venues";
 import { addDays, calendarInvitees, isOff, joinNames, showCity, showFilter, showName, SHOW_FILTERS, type ArtistLike, type ChecklistItem, type ChecklistLike } from "@/lib/shows";
-import { dateStr, timeStr, sound as soundSchema, cents, showKind } from "@/schema";
+import { dateStr, timeStr, sound as soundSchema, cents, showKind, ShowFanPage } from "@/schema";
 import { defaultProjectIdFor, requireOpenProject } from "./projects";
 import { refreshDealTotals } from "../dealTotals";
 import { checklistCommands } from "./checklists";
@@ -243,6 +243,7 @@ const showPatch = z.strictObject({
   publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
   transitionSec: z.union([z.literal(15), z.literal(30), z.literal(60), z.literal(90)]).optional(),
   projectId: z.string().min(1).optional(),
+  fanPage: ShowFanPage.optional(),
 });
 
 export const showsUpdate = defineCommand({
@@ -251,7 +252,7 @@ export const showsUpdate = defineCommand({
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; to cancel or drop use shows.setStatus / shows.cancel / shows.drop, which ask first; 'played' is set here or by shows.afterShow), reason (why it was canceled or dropped; null clears), kind, " +
     "venueId (from a venue search; null = no venue: needs place), place {city, address?} (null clears), hostContactIds ([] clears), editionId (null unlinks; sets editionName), " +
     "times {loadIn, soundcheck, doors, showStart, set, setLengthSec (seconds)} and sound REPLACE the whole object: send every key you want to keep. personnel and docs REPLACE the lists: read the show first and resend them all. " +
-    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30), projectId (the project its money belongs to, an open one from context.now projects; money already recorded stays where it is). A status change is added to statusHistory. " +
+    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, fanPage {on, name?, amountCents?, button: ticket|donation} (the show's Venmo line on the public fan page, shown while on from 1h before the show time to 3h after; REPLACES the whole object), dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30), projectId (the project its money belongs to, an open one from context.now projects; money already recorded stays where it is). A status change is added to statusHistory. " +
     "Checklists are not touched (use the shows.*Checklist* commands). " +
     "Changing date, time, venue, people, status or publishToBandsintown re-syncs Bandsintown (canceled or dropped takes it off). Google Calendar is never touched: resend the event with shows.calendar.",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),

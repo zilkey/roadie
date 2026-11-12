@@ -117,6 +117,14 @@ export function recentAndUpcoming<S extends PickableShow>(shows: readonly S[], n
 /** When a show with no times is assumed to start, for signupShow. */
 export const DEFAULT_SHOW_START = "19:00";
 
+/** The instant of a show's time: showStart, else the set, else doors, else DEFAULT_SHOW_START, wall-clock in `zone`. */
+export function showTimeAt(show: PickableShow, zone: string = BAND_TIME_ZONE): number {
+  const time = show.times?.showStart ?? show.times?.set ?? show.times?.doors ?? DEFAULT_SHOW_START;
+  return wallToInstant(show.date, time, zone);
+}
+/** Whether `now` is from 1 hour before the show time `at` to 3 hours after (signups and the show's fan page line). */
+export const inFanWindow = (at: number, now: number | Date) => +now >= at - HOUR && +now <= at + 3 * HOUR;
+
 /**
  * The show a fan list signup at `now` belongs to: one whose show time is at most 1 hour away before now, up to 3 hours after.
  * The show time is showStart, else the set, else doors, else DEFAULT_SHOW_START, wall-clock in the show's zone. Only confirmed and
@@ -127,9 +135,8 @@ export function signupShow<S extends PickableShow>(shows: readonly S[], now: num
   let best: { show: S; at: number } | null = null;
   for (const show of shows) {
     if (!COUNTS.has(show.status)) continue;
-    const time = show.times?.showStart ?? show.times?.set ?? show.times?.doors ?? DEFAULT_SHOW_START;
-    const at = wallToInstant(show.date, time, opts.zoneOf?.(show) ?? BAND_TIME_ZONE);
-    if (t < at - HOUR || t > at + 3 * HOUR) continue;
+    const at = showTimeAt(show, opts.zoneOf?.(show));
+    if (!inFanWindow(at, t)) continue;
     if (!best || Math.abs(t - at) < Math.abs(t - best.at) || (Math.abs(t - at) === Math.abs(t - best.at) && at > best.at)) best = { show, at };
   }
   return best?.show ?? null;

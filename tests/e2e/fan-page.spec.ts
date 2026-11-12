@@ -13,7 +13,7 @@ async function signIn(page: Page, key = "rudy") {
 const saved = (page: Page) => expect(page.getByTestId("save-status").first()).toHaveText("Saved");
 const values = (page: Page, testid: string) => page.getByTestId(testid).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
 const tab = async (page: Page, k: string) => { await page.getByTestId(`fan-page-tab-${k}`).click(); await expect(page).toHaveURL(new RegExp(`tab=${k}`)); };
-type View = { artistName: string; logo: string | null; style: { theme: string; accent: string | null }; links: { name: string; url: string }[]; donation: unknown };
+type View = { artistName: string; logo: string | null; style: { theme: string; accent: string | null }; links: { name: string; url: string }[]; shows: unknown };
 const view = async (page: Page) => (await (await page.request.get(`${APP}/api/public/${ARTIST_SLUG}/list`)).json()) as View;
 
 test("tabs, with Preview on every one; the old Merch page lands on Price list; members only get Fans", async ({ page, browser }) => {
@@ -87,29 +87,64 @@ test("links: a name and a full URL, reorderable, on the public page in order", a
   await expect.poll(async () => (await view(page)).links).toEqual([]);
 });
 
-test("suggested donation: future shows only, amount, show name, on and off", async ({ page }) => {
+test("a show's Fan Page card: on, name, amount, button, preview link; the Suggested donation tab lists it", async ({ page }) => {
   await signIn(page);
-  await page.goto(A("/fans?tab=donation"));
-  // Only shows from today on are offered (the seed has some ahead).
-  await expect.poll(() => page.getByTestId("donation-show").locator("option").count()).toBeGreaterThan(1);
-  await page.getByTestId("donation-show").selectOption({ index: 1 });
-  await expect(page.getByTestId("donation-name")).not.toHaveValue("");
-  await page.getByTestId("donation-name").fill("Jennifer House Concert");
-  await page.getByTestId("donation-amount").fill("20");
-  await saved(page);
-  expect((await view(page)).donation).toBeNull(); // still off
-  await page.getByTestId("donation-on").check();
-  await saved(page);
-  // The seeded artist has no Venmo link, so the public page shows no button (tests/emulator/fans.test.ts covers the view); the saved fields are checked here.
+  await page.goto(A("/shows"));
+  await page.getByTestId("shows-row").filter({ hasText: "Marisol" }).filter({ hasText: "Dec 12" }).first().locator("td.date a").click();
+  await page.getByTestId("show-tab-promotion").click();
+  const card = page.getByTestId("show-fan-page");
+  await expect(card.getByTestId("show-fan-when")).toHaveText("This will appear on the Fan Page 1 hour before the show and 3 hours after.");
+  await expect(card.getByTestId("show-fan-preview-none")).toBeVisible();
+  const showId = await page.getByTestId("show-page").getAttribute("data-show-id");
+
+  await card.getByTestId("show-fan-on").check();
+  await expect(card.getByTestId("show-fan-on")).toBeChecked();
+  await card.getByTestId("show-fan-name").click();
+  await card.getByTestId("show-fan-name-input").fill("Marisol Late Show");
+  await card.getByTestId("show-fan-name-input").press("Enter");
+  await expect(card.getByTestId("show-fan-name")).toHaveText(/Marisol Late Show/);
+  await card.getByTestId("show-fan-amount").click();
+  await card.getByTestId("show-fan-amount-input").fill("0.50");
+  await card.getByTestId("show-fan-amount-input").press("Enter");
+  await expect(card.getByTestId("show-fan-amount-error")).toBeVisible();
+  await card.getByTestId("show-fan-amount-input").fill("15");
+  await card.getByTestId("show-fan-amount-input").press("Enter");
+  await expect(card.getByTestId("show-fan-amount")).toHaveText(/\$15/);
+  await expect(card.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
+  await card.getByTestId("show-fan-button-donation").click();
+  await expect(card.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
+  await expect(card.getByTestId("show-fan-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
+
   await page.reload();
-  await expect(page.getByTestId("donation-on")).toBeChecked();
-  await expect(page.getByTestId("donation-amount")).toHaveValue("20");
-  await expect(page.getByTestId("donation-name")).toHaveValue("Jennifer House Concert");
-  await page.getByTestId("donation-on").uncheck();
-  await page.getByTestId("donation-amount").fill("");
-  await page.getByTestId("donation-name").fill("");
-  await page.getByTestId("donation-show").selectOption("");
-  await saved(page);
+  await expect(page.getByTestId("show-fan-on")).toBeChecked();
+  await expect(page.getByTestId("show-fan-amount")).toHaveText(/\$15/);
+  await expect(page.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
+
+  // The Fan Page tab lists it with the same preview link; the preview asks the public view for that show.
+  await page.goto(A("/fans?tab=donation"));
+  const row = page.getByTestId("donation-show").filter({ hasText: "Marisol Late Show" });
+  await expect(row).toContainText("$15");
+  await expect(row).toContainText("Suggested Donation");
+  await expect(row.getByTestId("donation-show-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
+  const asked = page.waitForRequest((r) => r.url().includes(`/api/public/${ARTIST_SLUG}/list?showId=${showId}`));
+  await page.goto(`/f/${ARTIST_SLUG}?showId=${showId}`);
+  await asked;
+
+  // Put it back.
+  await page.goBack();
+  await page.getByTestId("donation-show-link").filter({ hasText: "Marisol Late Show" }).click();
+  const c2 = page.getByTestId("show-fan-page");
+  await c2.getByTestId("show-fan-on").uncheck();
+  await expect(c2.getByTestId("show-fan-on")).not.toBeChecked();
+  await c2.getByTestId("show-fan-name").click();
+  await c2.getByTestId("show-fan-name-input").fill("");
+  await c2.getByTestId("show-fan-name-input").press("Enter");
+  await c2.getByTestId("show-fan-amount").click();
+  await c2.getByTestId("show-fan-amount-input").fill("");
+  await c2.getByTestId("show-fan-amount-input").press("Enter");
+  await expect(c2.getByTestId("show-fan-preview-none")).toBeVisible();
+  await c2.getByTestId("show-fan-button-ticket").click();
+  await expect(c2.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("settings: logo upload replaces the name, name and style reach the public page", async ({ page }) => {

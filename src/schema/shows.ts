@@ -19,6 +19,17 @@ export const checklistItem = z.strictObject({
 export const checklist = z.strictObject({ id, name: z.string().min(1), templateId: id.nullable(), items: z.array(checklistItem) });
 export type ShowChecklist = z.infer<typeof checklist>;
 
+/** A show's line on the public fan page. name: what fans see and the Venmo note (blank = the show's public name). */
+export const ShowFanPage = z.strictObject({
+  on: z.boolean(),
+  name: z.string().trim().max(80).optional(),
+  amountCents: z.number().int().min(100, "Use at least $1").max(1_000_000).optional(),
+  button: z.enum(["ticket", "donation"]).optional(),
+});
+export type ShowFanPage = z.infer<typeof ShowFanPage>;
+/** The fan page button's label for each kind. Missing = ticket. */
+export const FAN_PAGE_BUTTONS = { ticket: "Ticket", donation: "Suggested Donation" } as const;
+
 export const Show = entity({
   date: dateStr,
   status: showStatus,
@@ -75,6 +86,11 @@ export const Show = entity({
   /** Publish to Bandsintown: listed there once the show is confirmed (src/server/showSync.ts). Missing = not published. */
   publishToBandsintown: z.boolean().optional(),
   ticketUrl: z.string().optional(),
+  /**
+   * The show's line on the public fan page (/f/{slug}): a name, an amount, a +/- count and a Venmo button labeled Ticket or
+   * Suggested Donation. While `on`, it shows from 1 hour before the show time to 3 hours after (fanPageWindow). Missing = off.
+   */
+  fanPage: ShowFanPage.optional(),
   listings: z.strictObject({
     bandsintown: z.strictObject({
       eventId: z.string().optional(), state: z.enum(["pending", "listed", "error"]),

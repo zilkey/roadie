@@ -16,6 +16,7 @@ import { SoundCard } from "@/components/shows/page/SoundCard";
 import { StagePlotCard } from "@/components/shows/page/StagePlotCard";
 import { SetlistTab } from "@/components/shows/page/SetlistTab";
 import { CustomFieldsCard } from "@/components/shows/page/CustomFieldsCard";
+import { FanPageCard } from "@/components/shows/page/FanPageCard";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
 import { PostersCard } from "@/components/shows/page/PostersCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
@@ -81,6 +82,7 @@ function ShowView({ show }: { show: ShowRow }) {
             {tab === "promotion" && <>
               <PostersCard show={show} admin={admin} />
               <PromotionCard show={show} admin={admin} />
+              {admin && <FanPageCard show={show} />}
             </>}
             {tab === "finances" && <>
               {admin && <ProjectCard show={show} />}

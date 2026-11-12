@@ -10,8 +10,9 @@ import { AppError } from "./errors";
 import { newRunId, type Ctx } from "./ctx";
 import { geocodeCity, zipPlace } from "./geocode";
 import { roleIn } from "@/schema/users";
-import { signupShow, type PickableShow } from "@/lib/pickShow";
-import { ARTIST_LINKS, normalizeInstagramUrl, paymentAppOf, type FanDonation, type FanLink, type MerchItem } from "@/schema/artists";
+import { inFanWindow, showTimeAt, signupShow, type PickableShow } from "@/lib/pickShow";
+import { ARTIST_LINKS, normalizeInstagramUrl, paymentAppOf, type FanLink, type MerchItem } from "@/schema/artists";
+import type { ShowFanPage } from "@/schema/shows";
 import { withScheme } from "@/lib/links";
 import { dateInBandZone } from "@/lib/timezone";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
@@ -81,6 +82,9 @@ async function showPlace(s: Doc): Promise<CityLike | undefined> {
 
 type ShowDoc = Doc & PickableShow & { id: string };
 
+/** One show's line on the fan page: what fans see and the Venmo note, the amount each, and the button's kind. */
+export interface FanShowLine { id: string; name: string; amountCents: number; button: "ticket" | "donation" }
+
 export interface ListView {
   /** The artist's public name (publicName, else name). */
   artistName: string;
@@ -91,8 +95,8 @@ export interface ListView {
   current: { showId: string; label: string; date: string } | null;
   /** The merch price list and the Venmo handle to pay; null when merch is off or there is no Venmo link. */
   merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null;
-  /** The suggested donation (see FanDonation), or null when it isn't showing. */
-  donation: { venmo: string; title: string; amountCents: number } | null;
+  /** Shows with their fan page line on and in its window (see showsOnPage), each a Venmo button; null when there are none or no Venmo link. */
+  shows: { venmo: string; items: FanShowLine[] } | null;
   /** The fan page's own links, in order. */
   links: { id: string; name: string; url: string }[];
   /** The artist's public links (Instagram, Spotify, website...), in ARTIST_LINKS order, for the footer. */
@@ -118,18 +122,25 @@ async function currentShow(artistId: string, now: Date): Promise<ShowDoc | null>
   return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE });
 }
 
-/** The donation the page shows: on, with an amount, and its show (if one is picked) not over yet in the band's zone. */
-async function donationOf(artist: Doc, venmo: string, now: Date): Promise<ListView["donation"]> {
-  const d = artist.donation as FanDonation | undefined;
-  if (!d?.on || !d.amountCents) return null;
-  if (d.showId) {
-    const s = await db.get("shows", d.showId);
-    if (!s || s.deletedAt || s.artistId !== artist.id || (s.date as string) < dateInBandZone(now)) return null;
-  }
-  return { venmo, title: d.showName?.trim() || "Suggested donation", amountCents: d.amountCents };
+/**
+ * The shows whose fan page line shows at `now`: on, with an amount, not canceled, dropped or archived, and `now` from 1 hour before
+ * the show time to 3 hours after (in the venue's zone). `previewId` (the Preview link on a show) adds that show's line whatever the
+ * time or checkbox, as long as it is this artist's and has an amount.
+ */
+async function showsOnPage(artistId: string, now: Date, previewId?: string): Promise<FanShowLine[]> {
+  const live = (s: Doc) => !s.deletedAt && s.status !== "canceled" && s.status !== "dropped" && !!(s.fanPage as ShowFanPage | undefined)?.amountCents;
+  const all = (await artistShows(artistId)).filter(live) as ShowDoc[];
+  const zones = await venueZones(all);
+  const picked = all
+    .filter((s) => s.id === previewId || ((s.fanPage as ShowFanPage).on && inFanWindow(showTimeAt(s, zones.get(s.venue?.id) ?? BAND_TIME_ZONE), now)))
+    .sort((a, b) => a.date.localeCompare(b.date) || showTimeAt(a) - showTimeAt(b));
+  return picked.map((s) => {
+    const f = s.fanPage as ShowFanPage;
+    return { id: s.id, name: f.name?.trim() || publicShowName(s as unknown as ShowPlaceLike), amountCents: f.amountCents!, button: f.button ?? "ticket" };
+  });
 }
 
-export async function listView(slug: string, now: Date = new Date()): Promise<ListView> {
+export async function listView(slug: string, now: Date = new Date(), previewShowId?: string): Promise<ListView> {
   const artist = await listArtist(slug);
   const hit = await currentShow(artist.id, now);
   const pay = typeof artist.paymentUrl === "string" ? paymentAppOf(artist.paymentUrl) : null;
@@ -149,7 +160,7 @@ export async function listView(slug: string, now: Date = new Date()): Promise<Li
     wording: wordingOf(artist),
     current: hit ? { showId: hit.id, label: showLabel(hit), date: hit.date as string } : null,
     merch: merchOn && items.length ? { venmo: pay!.handle, items } : null,
-    donation: pay?.app === "venmo" ? await donationOf(artist, pay.handle, now) : null,
+    shows: pay?.app === "venmo" ? await showsOnPage(artist.id, now, previewShowId).then((items) => (items.length ? { venmo: pay.handle, items } : null)) : null,
     links,
     socials,
     style: { theme: style.theme ?? "auto", accent: style.accent ?? null },

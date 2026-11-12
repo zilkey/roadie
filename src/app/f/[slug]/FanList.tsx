@@ -3,13 +3,14 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { cartNote, cartTotal, money, onColor, venmoPayUrl, type Cart } from "@/lib/merch";
 import css from "./fans.module.css";
 
-// The public fan page, top to bottom: the email list, the suggested donation, merch, the page's links, then the artist's socials. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
+// The public fan page, top to bottom: the email list, tonight's shows (Ticket or Suggested Donation), merch, the page's links, then the artist's socials. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
 interface Item { id: string; name: string; priceCents: number }
+interface ShowLine { id: string; name: string; amountCents: number; button: "ticket" | "donation" }
 interface View {
   artistName: string; logo: string | null; wording: string;
   current: { showId: string; label: string; date: string } | null;
   merch: { venmo: string; items: Item[] } | null;
-  donation: { venmo: string; title: string; amountCents: number } | null;
+  shows: { venmo: string; items: ShowLine[] } | null;
   links: { id: string; name: string; url: string }[];
   socials: { key: string; label: string; url: string }[];
   style: { theme: "auto" | "light" | "dark"; accent: string | null };
@@ -36,14 +37,33 @@ function Name({ view, eyebrow }: { view: View; eyebrow: string }) {
   );
 }
 
-/** The suggested donation: one Venmo button with the amount and the show's name as the note (fans can change the amount in Venmo). */
-function Donation({ d }: { d: NonNullable<View["donation"]> }) {
+/** The Venmo button's words and note for `n` of a show's line: "Buy 2 Tickets · $40" / "Suggested Donation · $20". */
+function showButton(l: ShowLine, n: number): { label: string; note: string } {
+  const total = money(l.amountCents * n);
+  if (l.button === "donation") return { label: `Suggested Donation · ${total}`, note: n > 1 ? `${l.name} (${n} people)` : l.name };
+  const word = n === 1 ? "Ticket" : "Tickets";
+  return { label: `Buy ${n} ${word} · ${total}`, note: `${n} ${word.toLowerCase()}, ${l.name}` };
+}
+
+/** One show's line: the name and price each, + and − like merch, and a Venmo button with the total and the show as the note. */
+function ShowPay({ l, venmo }: { l: ShowLine; venmo: string }) {
+  const [n, setN] = useState(1);
+  const b = showButton(l, n);
+  const what = l.button === "donation" ? "person" : "ticket";
   return (
-    <section className={css.merch} aria-labelledby="donate-h" data-testid="fans-donation">
-      <h2 id="donate-h" className={css.eyebrow}>Suggested donation</h2>
-      <div className={css.item}><span className={css.itemName} data-testid="fans-donation-title">{d.title}</span><span className={css.price}>{money(d.amountCents)}</span></div>
-      <a className={css.btn} href={venmoPayUrl(d.venmo, d.amountCents, d.title)} target="_blank" rel="noopener noreferrer" data-testid="fans-donate">Donate {money(d.amountCents)} with Venmo</a>
-      <p className={css.fine}>Pays @{d.venmo}. You can change the amount in Venmo.</p>
+    <section className={css.merch} aria-label={l.name} data-testid="fans-show-line" data-show-id={l.id}>
+      <h2 className={css.eyebrow}>{l.button === "donation" ? "Suggested donation" : "Tickets"}</h2>
+      <div className={css.item}>
+        <span className={css.itemName} data-testid="fans-show-name">{l.name}</span>
+        <span className={css.price}>{money(l.amountCents)}</span>
+        <span className={css.qty}>
+          <button type="button" className={css.step} aria-label={`One less ${what}`} disabled={n <= 1} onClick={() => setN((x) => Math.max(1, x - 1))} data-testid="fans-show-minus">−</button>
+          <b aria-live="polite" data-testid="fans-show-count">{n}</b>
+          <button type="button" className={css.step} aria-label={`One more ${what}`} disabled={n >= 20} onClick={() => setN((x) => Math.min(20, x + 1))} data-testid="fans-show-plus">+</button>
+        </span>
+      </div>
+      <a className={css.btn} href={venmoPayUrl(venmo, l.amountCents * n, b.note)} target="_blank" rel="noopener noreferrer" data-testid="fans-show-pay">{b.label}</a>
+      <p className={css.fine}>Pays @{venmo} on Venmo{l.button === "donation" ? ". You can change the amount there." : "."}</p>
     </section>
   );
 }
@@ -95,7 +115,7 @@ function Merch({ merch }: { merch: NonNullable<View["merch"]> }) {
   );
 }
 
-export function FanList({ slug }: { slug: string }) {
+export function FanList({ slug, showId }: { slug: string; showId?: string }) {
   const [load, setLoad] = useState<Load>({ s: "loading" });
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -106,7 +126,7 @@ export function FanList({ slug }: { slug: string }) {
 
   useEffect(() => {
     let live = true;
-    fetch(`/api/public/${encodeURIComponent(slug)}/list`)
+    fetch(`/api/public/${encodeURIComponent(slug)}/list${showId ? `?showId=${encodeURIComponent(showId)}` : ""}`)
       .then(async (r) => {
         if (r.status === 404) return { s: "missing" } as Load;
         if (!r.ok) return { s: "failed" } as Load;
@@ -115,7 +135,7 @@ export function FanList({ slug }: { slug: string }) {
       .catch(() => ({ s: "failed" }) as Load)
       .then((l) => { if (live) setLoad(l); });
     return () => { live = false; };
-  }, [slug]);
+  }, [slug, showId]);
 
   if (load.s === "loading") return <main className={css.page} data-testid="fans-page" aria-busy="true" />;
   if (load.s === "missing") {
@@ -157,7 +177,7 @@ export function FanList({ slug }: { slug: string }) {
 
   const rest = (
     <>
-      {view.donation ? <Donation d={view.donation} /> : null}
+      {view.shows?.items.map((l) => <ShowPay key={l.id} l={l} venmo={view.shows!.venmo} />)}
       {view.merch ? <Merch merch={view.merch} /> : null}
       {view.links.length ? <Links links={view.links} /> : null}
       {view.socials.length ? (

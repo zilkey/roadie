@@ -70,7 +70,7 @@ test("list: 404 when the artist doesn't exist or fans are off; shows only public
   assert.equal(v.artistName, "Nora Quill Band");
   assert.deepEqual(v.socials, [{ key: "instagram", label: "Instagram", url: "https://instagram.com/noraquill" }]);
   assert.equal(v.logo, null);
-  assert.equal(v.donation, null);
+  assert.equal(v.shows, null);
   assert.deepEqual(v.links, []);
   assert.equal(v.wording, DEFAULT_LIST_WORDING);
   assert.equal(v.merch, null);
@@ -104,17 +104,24 @@ test("list: public name, merch price list with the Venmo handle, and style", asy
   await assert.rejects(cmd("artists.update", { id: TEST_ARTIST, patch: { merchItems: [{ id: "x", name: "", priceCents: 5 }] } }), "an item needs a name");
 });
 
-test("list: suggested donation while on and before its show; links in order; socials in the artist's order; the logo", async () => {
-  const at = new Date("2026-11-13T18:00:00Z"); // the day before the show
-  await cmd("artists.update", { id: TEST_ARTIST, patch: { paymentUrl: "@Nora-Quill", donation: { on: true, showId, amountCents: 2000, showName: "Jennifer House Concert" } } });
-  assert.deepEqual((await listView("nora-quill-band", at)).donation, { venmo: "Nora-Quill", title: "Jennifer House Concert", amountCents: 2000 });
-  assert.equal((await listView("nora-quill-band", new Date("2026-11-16T18:00:00Z"))).donation, null, "gone once the show has passed");
-  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: true, amountCents: 1500 } } });
-  assert.deepEqual((await listView("nora-quill-band", NEVER)).donation, { venmo: "Nora-Quill", title: "Suggested donation", amountCents: 1500 }, "no show: no end");
-  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: false, amountCents: 1500 } } });
-  assert.equal((await listView("nora-quill-band", NEVER)).donation, null);
-  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: true, amountCents: 1500 }, paymentUrl: null } });
-  assert.equal((await listView("nora-quill-band", NEVER)).donation, null, "no Venmo, no button");
+test("list: a show's fan page line from 1h before the show to 3h after; ?showId= previews it; links in order; socials in the artist's order; the logo", async () => {
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { paymentUrl: "@Nora-Quill" } });
+  await cmd("shows.update", { id: showId, patch: { fanPage: { on: true, amountCents: 2000, button: "donation", name: "Jennifer House Concert" } } });
+  const line = { id: showId, name: "Jennifer House Concert", amountCents: 2000, button: "donation" };
+  assert.deepEqual((await listView("nora-quill-band", DURING)).shows, { venmo: "Nora-Quill", items: [line] });
+  assert.ok((await listView("nora-quill-band", new Date("2026-11-15T02:59:00Z"))).shows === null, "not yet: more than 1h before the set");
+  assert.ok((await listView("nora-quill-band", new Date("2026-11-15T07:00:00Z"))).shows, "still there 3h after");
+  assert.equal((await listView("nora-quill-band", new Date("2026-11-15T07:01:00Z"))).shows, null, "gone after 3h");
+  assert.deepEqual((await listView("nora-quill-band", NEVER, showId)).shows?.items, [line], "the preview link shows it any time");
+  await cmd("shows.update", { id: showId, patch: { fanPage: { on: false, amountCents: 2000 } } });
+  assert.equal((await listView("nora-quill-band", DURING)).shows, null, "unchecked");
+  assert.deepEqual((await listView("nora-quill-band", DURING, showId)).shows?.items, [{ ...line, name: "Deep End", button: "ticket" }], "preview ignores the checkbox; defaults: venue name, Ticket");
+  await cmd("shows.update", { id: showId, patch: { fanPage: { on: true } } });
+  assert.equal((await listView("nora-quill-band", DURING, showId)).shows, null, "no amount, no line");
+  await cmd("shows.update", { id: showId, patch: { fanPage: { on: true, amountCents: 1500 } } });
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { paymentUrl: null } });
+  assert.equal((await listView("nora-quill-band", DURING)).shows, null, "no Venmo, no button");
+  await assert.rejects(cmd("shows.update", { id: showId, patch: { fanPage: { on: true, amountCents: 50 } } }), "at least $1");
 
   const links = [{ id: "b", name: "Tour poster", url: "https://example.com/poster" }, { id: "a", name: "New single", url: "https://example.com/single" }];
   await cmd("artists.update", { id: TEST_ARTIST, patch: { fanLinks: links, links: { website: "noraquill.com", instagram: "https://instagram.com/noraquill", spotify: "https://open.spotify.com/artist/x" } } });

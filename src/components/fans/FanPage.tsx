@@ -11,9 +11,11 @@ import { useDragReorder } from "@/lib/drag-reorder";
 import { useCollection } from "@/lib/firestore-hooks";
 import { moved } from "@/components/shows/checklists/shared";
 import { money, parsePrice } from "@/lib/merch";
-import { fmtLong, showName } from "@/lib/shows";
+import { fmtLong, publicShowName } from "@/lib/shows";
 import { dateInBandZone } from "@/lib/timezone";
-import { FanLink, MAX_LOGO_CHARS, paymentAppOf, type Artist, type FanDonation, type FanPageStyle, type MerchItem } from "@/schema/artists";
+import { FanLink, MAX_LOGO_CHARS, paymentAppOf, type Artist, type FanPageStyle, type MerchItem } from "@/schema/artists";
+import { FAN_PAGE_BUTTONS } from "@/schema/shows";
+import { fanPreviewHref } from "@/components/shows/page/FanPageCard";
 import type { Show } from "@/schema";
 import { FansTab } from "./FansPage";
 
@@ -163,8 +165,6 @@ export function FanPage() {
   const [links, setLinks] = useState<Line[]>([]);
   const [publicName, setPublicName] = useState("");
   const [style, setStyle] = useState<FanPageStyle>({});
-  const [donation, setDonation] = useState<FanDonation>({ on: false });
-  const [amount, setAmount] = useState("");
   const [logo, setLogo] = useState<string | null>(null);
   const [logoError, setLogoError] = useState("");
   const [origin, setOrigin] = useState("");
@@ -173,16 +173,16 @@ export function FanPage() {
     setItems((a.merchItems ?? []).map((i) => ({ id: i.id, a: i.name, b: priceText(i.priceCents) })));
     setLinks((a.fanLinks ?? []).map((l) => ({ id: l.id, a: l.name, b: l.url })));
     setPublicName(a.publicName ?? ""); setStyle(a.fanPageStyle ?? {}); setLogo(a.logo?.dataUrl ?? null);
-    setDonation(a.donation ?? { on: false }); setAmount(a.donation?.amountCents ? priceText(a.donation.amountCents) : "");
   };
   const as = useAutosave({ command: "artists.update", id: admin ? artist?.id ?? "" : "", rev: artist?.rev, scope: "fan-page", title: "Fan Page", onUseTheirs: () => artist && resetFrom(artist) });
-  const liveKey = JSON.stringify(artist ? [artist.merchItems, artist.fanLinks, artist.publicName, artist.fanPageStyle, artist.donation, artist.logo?.dataUrl.length] : null);
+  const liveKey = JSON.stringify(artist ? [artist.merchItems, artist.fanLinks, artist.publicName, artist.fanPageStyle, artist.logo?.dataUrl.length] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shows = useCollection<Show>("shows", { where: [["artistId", "==", ctx.artistId]], skip: !admin });
-  const futureShows = useMemo(() => {
+  /** Upcoming shows with their fan page line on (the Fan Page card on each show), soonest first. */
+  const onPage = useMemo(() => {
     const today = dateInBandZone();
-    return (shows.rows ?? []).filter((s) => s.date >= today && s.status !== "canceled" && s.status !== "dropped").sort((a, b) => a.date.localeCompare(b.date));
+    return (shows.rows ?? []).filter((s) => s.fanPage?.on && s.date >= today && s.status !== "canceled" && s.status !== "dropped").sort((a, b) => a.date.localeCompare(b.date));
   }, [shows.rows]);
 
   if (!artist) return null;
@@ -207,16 +207,6 @@ export function FanPage() {
     const bad = out.find((l) => !FanLink.safeParse(l).success);
     if (bad) return as.hold(bad.name ? `the link ${bad.name} needs a full web address (https://...)` : "each link needs a name (or delete it)");
     as.patch({ fanLinks: out });
-  }
-  function editDonation(next: FanDonation, amountText = amount) {
-    setDonation(next); setAmount(amountText);
-    const cents = amountText.trim() ? parsePrice(amountText) : null;
-    if (amountText.trim() && (cents === null || cents < 100)) return as.hold("the suggested donation needs to be a dollar amount of at least 1");
-    as.patch({ donation: { on: next.on, showId: next.showId || null, amountCents: cents, showName: next.showName?.trim() || null } });
-  }
-  function pickShow(id: string) {
-    const s = futureShows.find((x) => x.id === id);
-    editDonation({ ...donation, showId: id || null, showName: donation.showName?.trim() || (s ? showName(s) : "") });
   }
   async function upload(file: File | undefined) {
     if (!file) return;
@@ -274,25 +264,23 @@ export function FanPage() {
 
       {tab === "donation" && (
         <section className="card" data-testid="fan-donation">
-          <p className="s">A Venmo button with the amount filled in, right under the email list. It goes away by itself once the show has passed.</p>
-          {!venmo && <p className="s">Add your Venmo link (Payment app) in {general}: the donation needs it.</p>}
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={donation.on} onChange={(e) => editDonation({ ...donation, on: e.target.checked })} data-testid="donation-on" />Show the suggested donation
-          </label>
-          <label className="grid gap-1"><span className="lbl">Show</span>
-            <select className="select" value={donation.showId ?? ""} onChange={(e) => pickShow(e.target.value)} data-testid="donation-show">
-              <option value="">No show</option>
-              {futureShows.map((s) => <option key={s.id} value={s.id}>{`${showName(s)} · ${fmtLong(s.date)}`}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1"><span className="lbl">Suggested donation</span>
-            <span className="flex items-center gap-1"><span className="text-muted">$</span>
-              <input className="input w-28" inputMode="decimal" placeholder="20" value={amount} onChange={(e) => editDonation(donation, e.target.value)} data-testid="donation-amount" /></span>
-          </label>
-          <label className="grid gap-1"><span className="lbl">Show name</span>
-            <input className="input" placeholder="Jennifer House Concert" value={donation.showName ?? ""} onChange={(e) => editDonation({ ...donation, showName: e.target.value })} data-testid="donation-name" />
-            <span className="s">What fans see, and the note on the Venmo payment.</span>
-          </label>
+          <p className="s">Shows with “Show on Fan Page” checked, from today on. Each one appears on the fan page 1 hour before the show and 3 hours after, with + and − and a Venmo button. Set it up in the Fan Page section of the show&apos;s Promotion tab.</p>
+          {!venmo && <p className="s" data-testid="donation-no-venmo">Add your Venmo link (Payment app) in {general}: the fan page needs it to show these.</p>}
+          {shows.rows === null ? null : onPage.length ? (
+            <ul className="m-0 grid list-none gap-2 p-0">
+              {onPage.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center justify-between gap-2" data-testid="donation-show" data-show-id={s.id}>
+                  <span className="grid min-w-0">
+                    <Link href={`/shows/${s.id}?tab=promotion`} className="link font-semibold" data-testid="donation-show-link">{s.fanPage?.name?.trim() || publicShowName(s)}</Link>
+                    <span className="s">{fmtLong(s.date)} · {s.fanPage?.amountCents ? money(s.fanPage.amountCents) : "No amount yet"} · {FAN_PAGE_BUTTONS[s.fanPage?.button ?? "ticket"]}</span>
+                  </span>
+                  {s.fanPage?.amountCents
+                    ? <a className="btn outline sm" href={fanPreviewHref(artist.slug, s.id)} target="_blank" rel="noopener noreferrer" data-testid="donation-show-preview">Preview</a>
+                    : <span className="s">Add an amount to show it</span>}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="s" data-testid="donation-none">No upcoming shows are on the fan page.</p>}
         </section>
       )}
 
