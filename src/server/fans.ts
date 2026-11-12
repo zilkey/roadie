@@ -8,9 +8,10 @@ import { firestore } from "./admin";
 import { db, run, type Doc, type Writer } from "./db";
 import { AppError } from "./errors";
 import { newRunId, type Ctx } from "./ctx";
-import { geocodeCity } from "./geocode";
+import { geocodeCity, zipPlace } from "./geocode";
 import { roleIn } from "@/schema/users";
-import { pickShow, recentAndUpcoming, type PickableShow } from "@/lib/pickShow";
+import { signupShow, type PickableShow } from "@/lib/pickShow";
+import { paymentAppOf, type MerchItem } from "@/schema/artists";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { publicShowName, showCity, type ShowPlaceLike } from "@/lib/shows";
 import { DEFAULT_LIST_WORDING, mergeCities, parseCity, sameCity, type CityLike } from "@/lib/fans";
@@ -79,11 +80,15 @@ async function showPlace(s: Doc): Promise<CityLike | undefined> {
 type ShowDoc = Doc & PickableShow & { id: string };
 
 export interface ListView {
+  /** The artist's public name (publicName, else name). */
   artistName: string;
   instagram: string | null;
   wording: string;
-  current: { showId: string; label: string; date: string; mode: "during" | "morning-after" } | null;
-  choices: { showId: string; label: string; date: string }[];
+  /** The show a signup right now belongs to (signupShow), or null. */
+  current: { showId: string; label: string; date: string } | null;
+  /** The merch price list and the Venmo handle to pay; null when merch is off or there is no Venmo link. */
+  merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null;
+  style: { theme: "auto" | "light" | "dark"; accent: string | null };
 }
 
 /** Artist by URL slug, with the fan list switched on. Same 404 for "no such band" and "list is off", so nothing is revealed. */
@@ -94,20 +99,29 @@ export async function listArtist(slug: string): Promise<Doc> {
   return a;
 }
 const wordingOf = (a: Doc) => (typeof a.listWording === "string" && a.listWording.trim() ? a.listWording.trim() : DEFAULT_LIST_WORDING);
+/** The name fans see: publicName, else the artist's name. */
+export const publicNameOf = (a: Doc): string => (typeof a.publicName === "string" && a.publicName.trim() ? a.publicName.trim() : a.name);
+
+/** The show a signup at `now` belongs to (signupShow over the artist's confirmed and played shows, each in its venue's zone). */
+async function currentShow(artistId: string, now: Date): Promise<ShowDoc | null> {
+  const shows = (await artistShows(artistId)).filter(countable) as ShowDoc[];
+  const zones = await venueZones(shows);
+  return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE });
+}
 
 export async function listView(slug: string, now: Date = new Date()): Promise<ListView> {
   const artist = await listArtist(slug);
-  const shows = (await artistShows(artist.id)).filter(countable) as ShowDoc[];
-  const zones = await venueZones(shows);
-  const zoneOf = (s: ShowDoc) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE;
-  const hit = pickShow(shows, now, { zoneOf });
-  const brief = (s: ShowDoc) => ({ showId: s.id, label: showLabel(s), date: s.date as string });
+  const hit = await currentShow(artist.id, now);
+  const pay = typeof artist.paymentUrl === "string" ? paymentAppOf(artist.paymentUrl) : null;
+  const merchOn = (artist.features as { merch?: boolean } | undefined)?.merch === true && pay?.app === "venmo";
+  const style = (artist.fanPageStyle ?? {}) as { theme?: "auto" | "light" | "dark"; accent?: string };
   return {
-    artistName: artist.name,
+    artistName: publicNameOf(artist),
     instagram: (artist.links?.instagram as string | undefined) || null,
     wording: wordingOf(artist),
-    current: hit ? { ...brief(hit.show), mode: hit.mode } : null,
-    choices: recentAndUpcoming(shows, now, 8, { zoneOf }).map(brief),
+    current: hit ? { showId: hit.id, label: showLabel(hit), date: hit.date as string } : null,
+    merch: merchOn ? { venmo: pay!.handle, items: ((artist.merchItems ?? []) as MerchItem[]).map(({ id, name, priceCents }) => ({ id, name, priceCents })) } : null,
+    style: { theme: style.theme ?? "auto", accent: style.accent ?? null },
   };
 }
 
@@ -121,6 +135,8 @@ export interface FanWrite {
   artistId: string;
   email: string;
   firstName?: string;
+  /** A US zip code (public page): stored as the fan's latest zip. */
+  zip?: string;
   cities: CityLike[];
   showIds: string[];
   source: "list" | "paper";
@@ -151,7 +167,7 @@ export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; cr
     const cur = await w.get("fans", id);
     if (!cur) {
       await w.create("fans", {
-        artistId: a.artistId, email, ...(a.firstName ? { firstName: a.firstName } : {}), cities: mergeCities([], cities), showIds: [...new Set(a.showIds)],
+        artistId: a.artistId, email, ...(a.firstName ? { firstName: a.firstName } : {}), ...(a.zip ? { zip: a.zip } : {}), cities: mergeCities([], cities), showIds: [...new Set(a.showIds)],
         source: a.source, ...(a.consent ? { consent: a.consent } : {}), lastSeenAt: w.now,
       }, { id });
       return { id, created: true };
@@ -162,6 +178,7 @@ export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; cr
       cities: mergeCities((cur.cities ?? []) as CityLike[], cities),
       showIds: [...new Set([...(cur.showIds ?? []), ...a.showIds])],
       ...(cur.firstName || !a.firstName ? {} : { firstName: a.firstName }),
+      ...(a.zip ? { zip: a.zip } : {}),
       ...(cur.consent || !a.consent ? {} : { consent: a.consent }),
       lastSeenAt: w.now,
     });
@@ -188,20 +205,28 @@ export async function citiesFor(show: Doc | undefined, typed?: { city?: string; 
 
 export const SignupBody = z.strictObject({
   email: z.string().trim().toLowerCase().max(254).pipe(z.string().email("Enter a valid email address")),
-  firstName: z.string().trim().max(60).optional(),
-  showId: z.string().trim().min(1).max(100).optional(),
-  city: z.string().trim().max(80).optional(),
+  /** Stored as the fan's firstName (the field's old key). */
+  name: z.string().trim().max(60).optional(),
+  zip: z.string().trim().regex(/^\d{5}$/, "Use a 5-digit zip code").optional(),
   page: z.string().trim().min(1).max(300),
 });
 export type SignupBody = z.infer<typeof SignupBody>;
 
-/** The public signup. Always {ok: true} for a valid request, so the answer never says whether the address was already on the list. */
+/**
+ * The public signup. The show is never sent by the page: it is the one whose time is 1 hour ahead to 3 hours behind `now`
+ * (signupShow). The fan's towns: the show's, plus the one their zip is in. Always {ok: true} for a valid request, so the answer
+ * never says whether the address was already on the list.
+ */
 export async function signup(slug: string, body: SignupBody, now: Date = new Date()): Promise<{ ok: true }> {
   const artist = await listArtist(slug);
-  const show = body.showId ? await countableShow(artist.id, body.showId) : undefined;
-  const cities = await citiesFor(show, { city: body.city });
+  const show = (await currentShow(artist.id, now)) ?? undefined;
+  const cities = await citiesFor(show);
+  if (body.zip) {
+    const z = await zipPlace(body.zip);
+    if (z && !cities.some((c) => sameCity(c, z))) cities.push(z);
+  }
   await upsertFan(publicCtx(artist.id, now), {
-    artistId: artist.id, email: body.email, ...(body.firstName ? { firstName: body.firstName } : {}),
+    artistId: artist.id, email: body.email, ...(body.name ? { firstName: body.name } : {}), ...(body.zip ? { zip: body.zip } : {}),
     cities, showIds: show ? [show.id] : [], source: "list",
     consent: { text: wordingOf(artist), at: now.toISOString(), page: body.page },
   });

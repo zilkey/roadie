@@ -349,7 +349,7 @@ export const artistsCreate = defineCommand({
 export const artistsUpdate = defineCommand({
   name: "artists.update",
   roles: ["admin"],
-  description: "Edit this artist: name, slug (its URL name, unique), configurations (name, billingName, musicianIds), links, genres (what the band plays, lowercase strings; null clears), signalGroupUrl, paymentUrl (Venmo link or @handle), features ({fans, merch} on/off), listWording (the fan list opt-in line).",
+  description: "Edit this artist: name, slug (its URL name, unique), configurations (name, billingName, musicianIds), links, genres (what the band plays, lowercase strings; null clears), signalGroupUrl, paymentUrl (Venmo link or @handle), features ({fans, merch} on/off), listWording (the fan list opt-in line), publicName (the name on the public fan page; null = the artist name), merchItems (the whole merch price list in order: [{id, name, priceCents}]; a new item needs a new short id), fanPageStyle ({theme: auto|light|dark, accent: \"#rrggbb\"}).",
   input: patchInput(ArtistIn),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     if (ctx.artistId && id !== ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);

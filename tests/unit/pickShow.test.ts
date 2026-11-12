@@ -104,3 +104,40 @@ test("recentAndUpcoming: nearest first, 30 days each way, only confirmed or play
   assert.deepEqual(recentAndUpcoming(list, now, 10).map((s) => s.id), ["tonight", "last-week", "next-week", "next-month"]);
   assert.deepEqual(recentAndUpcoming(list, now, 2).map((s) => s.id), ["tonight", "last-week"]);
 });
+
+// ---------- signupShow: 1 hour before the show time to 3 hours after ----------
+
+test("signupShow: an hour before to three hours after showStart, edges included", async () => {
+  const { signupShow } = await import("@/lib/pickShow");
+  // 2026-11-14 is MST (UTC-7): showStart 20:00 = 03:00Z on the 15th.
+  const s = { id: "a", date: "2026-11-14", status: "confirmed", times: { doors: "19:00", showStart: "20:00", set: "21:30" } };
+  const at = (iso: string) => signupShow([s], new Date(iso))?.id ?? null;
+  assert.equal(at("2026-11-15T02:00:00Z"), "a", "exactly 1h before");
+  assert.equal(at("2026-11-15T01:59:59Z"), null);
+  assert.equal(at("2026-11-15T06:00:00Z"), "a", "exactly 3h after");
+  assert.equal(at("2026-11-15T06:00:01Z"), null);
+});
+
+test("signupShow: the show time is showStart, else set, else doors, else 19:00; holds never count", async () => {
+  const { signupShow } = await import("@/lib/pickShow");
+  const one = (times: Record<string, string>, status = "confirmed") => [{ id: "x", date: "2026-11-14", status, times }];
+  // 19:00 MST = 02:00Z on the 15th; 1h before is 01:00Z.
+  assert.equal(signupShow(one({}), new Date("2026-11-15T01:00:00Z"))?.id, "x");
+  assert.equal(signupShow(one({}), new Date("2026-11-15T00:59:00Z")), null);
+  assert.equal(signupShow(one({ doors: "18:00" }), new Date("2026-11-15T00:00:00Z"))?.id, "x", "doors 18:00: from 17:00");
+  assert.equal(signupShow(one({ doors: "18:00", set: "22:00" }), new Date("2026-11-15T00:30:00Z")), null, "set beats doors: from 21:00");
+  assert.equal(signupShow(one({}, "hold"), new Date("2026-11-15T02:00:00Z")), null);
+  assert.equal(signupShow(one({}, "played"), new Date("2026-11-15T02:00:00Z"))?.id, "x");
+});
+
+test("signupShow: two windows, the nearer show time wins; the venue zone moves it", async () => {
+  const { signupShow } = await import("@/lib/pickShow");
+  const early = { id: "early", date: "2026-11-14", status: "confirmed", times: { showStart: "17:00" } };
+  const late = { id: "late", date: "2026-11-14", status: "confirmed", times: { showStart: "20:00" } };
+  // 19:00 MST = 02:00Z: 2h after early, 1h before late.
+  assert.equal(signupShow([early, late], new Date("2026-11-15T02:00:00Z"))?.id, "late");
+  assert.equal(signupShow([early, late], new Date("2026-11-15T01:00:00Z"))?.id, "early");
+  // 20:00 MST is 03:00Z (window to 06:00Z); 20:00 Pacific is 04:00Z (to 07:00Z). 06:30Z is inside only the Pacific one.
+  assert.equal(signupShow([late], new Date("2026-11-15T06:30:00Z")), null);
+  assert.equal(signupShow([late], new Date("2026-11-15T06:30:00Z"), { zoneOf: () => "America/Los_Angeles" })?.id, "late");
+});

@@ -21,6 +21,8 @@ function spot(text: string): [number, number] {
 const routes: Route<State>[] = [
   ["GET", "/geocode/search", ({ query }) => {
     const text = query.get("text") ?? "";
+    // A zip code names a town: 80302 is Boulder, any other zip is Denver.
+    if (/^\d{5}$/.test(text.trim())) return { features: [feature(`${text}, USA`, spot(text), { locality: text.trim() === "80302" ? "Boulder" : "Denver" })] };
     return { features: text.trim() ? [feature(`${text}, USA`, spot(text))] : [] };
   }],
   ["GET", "/geocode/autocomplete", () => ({ features: [CHAMPA, LOFT, HOME] })],
@@ -30,6 +32,6 @@ const routes: Route<State>[] = [
 
 export const fakeOrs = defineFake<State>({
   name: "fake-ors", defaultPort: 3206, initial: () => ({}), routes,
-  page: () => `<p>Fixed OpenRouteService answers: autocomplete returns 3 Denver places, search returns one deterministic point per text, reverse returns Denver County, CO, directions is always 18.4 mi (29611.93 m) and 26 min (1560 s).</p>`,
+  page: () => `<p>Fixed OpenRouteService answers: autocomplete returns 3 Denver places, search returns one deterministic point per text (a zip also names its town: 80302 Boulder, else Denver), reverse returns Denver County, CO, directions is always 18.4 mi (29611.93 m) and 26 min (1560 s).</p>`,
 });
 runIfMain(import.meta, fakeOrs);

@@ -16,7 +16,10 @@ export const FanCity = z.strictObject({
 export const Fan = entity({
   artistId: id,
   email,
+  /** The name they gave. The public page asks for "Name" (older signups gave a first name); the field keeps its old key. */
   firstName: z.string().max(60).optional(),
+  /** The US zip code they gave on the public page, the latest one. Their town (cities) is looked up from it. */
+  zip: z.string().regex(/^\d{5}$/).optional(),
   /** Every place they signed up from, oldest first; the last one is the most recent (it names their Bandzoogle group). */
   cities: z.array(FanCity),
   /** Every show they signed up at. */

@@ -1,28 +1,71 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { cartNote, cartTotal, money, onColor, venmoPayUrl, type Cart } from "@/lib/merch";
 import css from "./fans.module.css";
 
-// The public fan list page. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
-interface Show { showId: string; label: string; date: string }
+// The public fan page: the email list and the merch price list. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
+interface Item { id: string; name: string; priceCents: number }
 interface View {
   artistName: string; instagram: string | null; wording: string;
-  current: (Show & { mode: "during" | "morning-after" }) | null;
-  choices: Show[];
+  current: { showId: string; label: string; date: string } | null;
+  merch: { venmo: string; items: Item[] } | null;
+  style: { theme: "auto" | "light" | "dark"; accent: string | null };
 }
 type Load = { s: "loading" } | { s: "missing" } | { s: "failed" } | { s: "ok"; view: View };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+const ZIP = /^\d{5}$/;
 const instagramUrl = (v: string) => (/^https?:\/\//i.test(v) ? v : `https://instagram.com/${v.replace(/^@/, "")}`);
+
+/** The page's colors: data-theme picks light or dark (auto follows the phone), --brand overrides the accent. */
+function look(style: View["style"] | undefined): { "data-theme"?: string; style?: CSSProperties } {
+  if (!style) return {};
+  const vars = style.accent ? ({ "--brand": style.accent, "--on-brand": onColor(style.accent) } as CSSProperties) : undefined;
+  return { "data-theme": style.theme, ...(style.accent ? { "data-brand": "" } : {}), style: vars };
+}
+
+/** The price list with a plus/minus per item and one Venmo button that carries the total and a note. */
+function Merch({ merch }: { merch: NonNullable<View["merch"]> }) {
+  const [cart, setCart] = useState<Cart>({});
+  const total = cartTotal(merch.items, cart);
+  const note = cartNote(merch.items, cart);
+  const bump = (id: string, by: number) => setCart((c) => ({ ...c, [id]: Math.max(0, Math.min(20, (c[id] ?? 0) + by)) }));
+  return (
+    <section className={css.merch} aria-labelledby="merch-h" data-testid="fans-merch">
+      <h2 id="merch-h" className={css.eyebrow}>Merch</h2>
+      {merch.items.length ? (
+        <ul className={css.items}>
+          {merch.items.map((i) => {
+            const n = cart[i.id] ?? 0;
+            return (
+              <li key={i.id} className={css.item} data-testid="fans-merch-item">
+                <span className={css.itemName}>{i.name}</span>
+                <span className={css.price}>{money(i.priceCents)}</span>
+                <span className={css.qty}>
+                  <button type="button" className={css.step} aria-label={`One less ${i.name}`} disabled={!n} onClick={() => bump(i.id, -1)} data-testid="fans-merch-minus">−</button>
+                  <b aria-live="polite" data-testid="fans-merch-count">{n}</b>
+                  <button type="button" className={css.step} aria-label={`One more ${i.name}`} onClick={() => bump(i.id, 1)} data-testid="fans-merch-plus">+</button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      <a className={css.btn} href={venmoPayUrl(merch.venmo, total, note)} target="_blank" rel="noopener noreferrer" data-testid="fans-venmo">
+        {total ? `Pay ${money(total)} with Venmo` : "Pay with Venmo"}
+      </a>
+      <p className={css.fine} data-testid="fans-venmo-fine">
+        {total ? <>Venmo opens with {money(total)} to @{merch.venmo} and the note “{note}”.</> : <>Pay @{merch.venmo} on Venmo.</>}
+      </p>
+    </section>
+  );
+}
 
 export function FanList({ slug }: { slug: string }) {
   const [load, setLoad] = useState<Load>({ s: "loading" });
-  // undefined = the page's own pick (view.current); null = "Not at a show"; else a show id.
-  const [picked, setPicked] = useState<string | null | undefined>(undefined);
-  const [picking, setPicking] = useState(false);
   const [email, setEmail] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [city, setCity] = useState("");
+  const [name, setName] = useState("");
+  const [zip, setZip] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -58,31 +101,19 @@ export function FanList({ slug }: { slug: string }) {
   }
 
   const { view } = load;
-  const showId = picked === undefined ? view.current?.showId ?? null : picked;
-  const show = showId ? [view.current, ...view.choices].find((s) => s?.showId === showId) ?? null : null;
-  const isCurrent = !!show && show.showId === view.current?.showId;
-  const when = !show ? "" : isCurrent ? (view.current!.mode === "during" ? "Tonight" : "Last night") : dayLabel(show.date);
-  const pitch = !show
-    ? "Show news and new music, about once a month."
-    : isCurrent && view.current!.mode === "during"
-      ? "You're at our show tonight. Leave your email and we'll tell you when we're back."
-      : isCurrent
-        ? "Thanks for coming last night. Leave your email and we'll tell you when we're back."
-        : "Leave your email and we'll tell you when we're back.";
+  const show = view.current;
+  const pitch = show ? "You're at our show tonight. Leave your email and we'll tell you when we're back." : "Show news and new music, about once a month.";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    const em = email.trim();
+    const em = email.trim(), z = zip.trim();
     if (!EMAIL.test(em)) { setError(em ? "That email doesn't look right. Check for a typo." : "Type your email to join."); return; }
+    if (z && !ZIP.test(z)) { setError("Use a 5-digit zip code, or leave it blank."); return; }
     setError(""); setBusy(true);
     try {
       const res = await fetch(`/api/public/${encodeURIComponent(slug)}/signup`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: em, page: `/f/${slug}`,
-          ...(firstName.trim() ? { firstName: firstName.trim() } : {}),
-          ...(show ? { showId: show.showId } : city.trim() ? { city: city.trim() } : {}),
-        }),
+        body: JSON.stringify({ email: em, page: `/f/${slug}`, ...(name.trim() ? { name: name.trim() } : {}), ...(z ? { zip: z } : {}) }),
       });
       if (res.ok) { setDone(true); return; }
       const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -90,62 +121,47 @@ export function FanList({ slug }: { slug: string }) {
     } catch { setError("Couldn't reach the server. Try again."); } finally { setBusy(false); }
   }
 
+  const merch = view.merch ? <Merch merch={view.merch} /> : null;
   if (done) {
-    const name = firstName.trim();
+    const first = name.trim().split(/\s+/)[0];
     return (
-      <main className={css.page} data-testid="fans-page"><div className={css.col}>
+      <main className={css.page} data-testid="fans-page" {...look(view.style)}><div className={css.col}>
         <h1 className={css.name}><span className={css.eyebrow}>You&apos;re on the list</span>{view.artistName}</h1>
         <div className={css.thanks} data-testid="fans-thanks">
-          <div className={css.big}>Thanks{name ? <>, <span>{name}</span></> : null}.</div>
+          <div className={css.big}>Thanks{first ? <>, <span>{first}</span></> : null}.</div>
           <p className={css.pitch}>We&apos;ll write when there&apos;s a new song or a show.</p>
-          {view.instagram ? <a className={css.btn} href={instagramUrl(view.instagram)} target="_blank" rel="noopener noreferrer" data-testid="fans-instagram">Follow on Instagram</a> : null}
+          {view.instagram ? <a className={`${css.btn} ${css.ghost}`} href={instagramUrl(view.instagram)} target="_blank" rel="noopener noreferrer" data-testid="fans-instagram">Follow on Instagram</a> : null}
         </div>
+        {merch}
       </div></main>
     );
   }
 
   return (
-    <main className={css.page} data-testid="fans-page"><div className={css.col}>
-      <h1 className={css.name}><span className={css.eyebrow}>Get on the list</span>{view.artistName}</h1>
-      {picking ? (
-        <div className={css.choose} role="group" aria-label="Which show">
-          {view.choices.map((c) => (
-            <button key={c.showId} type="button" className={css.choice} aria-pressed={showId === c.showId} data-testid="fans-choice"
-              onClick={() => { setPicked(c.showId); setPicking(false); }}>
-              <b>{c.label}</b><span>{dayLabel(c.date)}</span>
-            </button>
-          ))}
-          <button type="button" className={css.choice} aria-pressed={!showId} data-testid="fans-choice" data-none="true"
-            onClick={() => { setPicked(null); setPicking(false); }}>
-            <b>Not at a show</b><span>Just want news</span>
-          </button>
-        </div>
-      ) : show ? (
+    <main className={css.page} data-testid="fans-page" {...look(view.style)}><div className={css.col}>
+      <h1 className={css.name} data-testid="fans-name"><span className={css.eyebrow}>Get on the list</span>{view.artistName}</h1>
+      {show ? (
         <div className={css.show} data-testid="fans-show">
           <span className={css.dot} />
-          <div><b>{show.label}</b><span className={css.sub}>{when}</span></div>
-          {view.choices.length ? <button type="button" className={css.change} data-testid="fans-change" onClick={() => setPicking(true)}>Change</button> : null}
+          <div><b>{show.label}</b><span className={css.sub}>Tonight</span></div>
         </div>
-      ) : view.choices.length ? (
-        <button type="button" className={css.change} style={{ marginLeft: 0, justifySelf: "start" }} data-testid="fans-change" onClick={() => setPicking(true)}>At a show? Pick it</button>
       ) : null}
       <p className={css.pitch}>{pitch}</p>
       <form className={css.form} onSubmit={submit} noValidate>
         <label className={css.field}>Email
           <input type="email" autoComplete="email" inputMode="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="fans-email" />
         </label>
-        <label className={css.field}>First name · optional
-          <input type="text" autoComplete="given-name" placeholder="So we can say hi" value={firstName} onChange={(e) => setFirstName(e.target.value)} data-testid="fans-first-name" />
+        <label className={css.field}>Name · optional
+          <input type="text" autoComplete="name" placeholder="So we can say hi" value={name} onChange={(e) => setName(e.target.value)} data-testid="fans-first-name" />
         </label>
-        {!show ? (
-          <label className={css.field}>Your city · optional
-            <input type="text" autoComplete="address-level2" placeholder="Boulder" value={city} onChange={(e) => setCity(e.target.value)} data-testid="fans-city" />
-          </label>
-        ) : null}
+        <label className={css.field}>Zip code · optional
+          <input type="text" autoComplete="postal-code" inputMode="numeric" maxLength={5} placeholder="80302" value={zip} onChange={(e) => setZip(e.target.value.replace(/\D/g, ""))} data-testid="fans-zip" />
+        </label>
         {error ? <p className={css.error} role="alert" data-testid="fans-error">{error}</p> : null}
         <button type="submit" className={css.btn} disabled={busy} data-testid="fans-join">Join the list</button>
         <p className={css.fine}>{view.wording}</p>
       </form>
+      {merch}
     </div></main>
   );
 }

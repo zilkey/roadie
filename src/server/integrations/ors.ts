@@ -22,6 +22,8 @@ export interface OrsService {
   autocomplete(q: string): Promise<OrsPlace[]>;
   /** The best match for a place name ("Boise, ID"), or null when ORS knows none. Used for fans' cities and venue towns. */
   geocode(text: string): Promise<{ lat: number; lng: number } | null>;
+  /** The town a US zip code is in ({city, state: "CO"}, with its coordinates), or null when nothing knows it. */
+  zip(zip: string): Promise<{ city: string; state?: string; lat: number; lng: number } | null>;
   reverse(lat: number, lng: number): Promise<{ county?: string; state?: string } | null>;
   /** One-way driving distance in miles and time in minutes (driving-car). */
   directions(from: { lat: number; lng: number }, to: { lat: number; lng: number }): Promise<{ oneWayMiles: number; minutes: number }>;
@@ -29,7 +31,7 @@ export interface OrsService {
 
 interface PeliasFeature {
   geometry: { coordinates: [number, number] };
-  properties: { label?: string; name?: string; county?: string; region_a?: string; layer?: string };
+  properties: { label?: string; name?: string; county?: string; region_a?: string; layer?: string; locality?: string };
 }
 
 const METERS_PER_MILE = 1609.344;
@@ -54,6 +56,12 @@ export function orsClient(baseUrl = process.env.ORS_BASE_URL ?? "http://127.0.0.
       const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/search", { query: { text, api_key: key, size: "1", "boundary.country": "US" } });
       const f = r.features[0];
       return f ? { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] } : null;
+    },
+    async zip(zip) {
+      const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/search", { query: { text: zip, api_key: key, size: "1", "boundary.country": "US" } });
+      const f = r.features[0];
+      if (!f?.properties.locality) return null;
+      return { city: f.properties.locality, ...(f.properties.region_a ? { state: f.properties.region_a } : {}), lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0] };
     },
     async reverse(lat, lng) {
       const r = await call<{ features: PeliasFeature[] }>("GET", "/geocode/reverse", { query: { "point.lat": String(lat), "point.lon": String(lng), api_key: key } });

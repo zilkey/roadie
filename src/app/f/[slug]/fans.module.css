@@ -1,3 +1,22 @@
+/* Theme: data-theme="light" or "dark" pins the page's colors (the artist's choice on the Merch page); "auto" follows the phone (globals.css). */
+.page[data-theme="light"] {
+  color-scheme: light;
+  --accent: #3a46c4; --accent-soft: #eceefc; --accent-text: #3a46c4; --on-accent: #ffffff;
+  --ink: #1c1b22; --muted: #5f5d6b; --page: #f7f6f3; --surface: #ffffff; --input-bg: #ffffff; --border: #e6e3dc; --input-border: #d9d6ce;
+  --danger: #A8281A; --danger-soft: #FBE1DD;
+}
+.page[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #5561e8; --accent-soft: #262a52; --accent-text: #8f99ff; --on-accent: #ffffff;
+  --ink: #ecebf2; --muted: #a3a1b0; --page: #15151b; --surface: #1e1e26; --input-bg: #15151b; --border: #2e2d38; --input-border: #3a3945;
+  --danger: #FF9C90; --danger-soft: #4A2326;
+}
+/* The artist's accent color (--brand, with --on-brand black or white), mixed toward the page for the soft and text shades. */
+.page[data-brand] {
+  --accent: var(--brand); --on-accent: var(--on-brand);
+  --accent-soft: color-mix(in srgb, var(--brand) 22%, var(--page));
+  --accent-text: color-mix(in srgb, var(--brand) 70%, var(--ink));
+}
 .page { min-height: 100dvh; display: flex; justify-content: center; padding: 28px 20px calc(28px + env(safe-area-inset-bottom)); background: var(--page); color: var(--ink); }
 .col { width: 100%; max-width: 420px; display: grid; gap: 14px; align-content: start; }
 .eyebrow { display: block; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text); margin-bottom: 4px; }
@@ -6,12 +25,6 @@
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); flex: none; }
 .show b { display: block; font-size: 15px; }
 .show span.sub { font-size: 13px; color: var(--muted); }
-.change { margin-left: auto; font: inherit; font-size: 13px; font-weight: 600; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; min-height: 36px; cursor: pointer; }
-.choose { display: grid; gap: 6px; }
-.choice { font: inherit; text-align: left; color: var(--ink); background: var(--surface); border: 1.5px solid var(--border); border-radius: 14px; padding: 10px 12px; cursor: pointer; display: grid; gap: 1px; min-height: 48px; }
-.choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
-.choice b { font-size: 14.5px; }
-.choice span { font-size: 12.5px; color: var(--muted); }
 .pitch { font-size: 16px; line-height: 1.4; margin: 0; }
 .form { display: grid; gap: 10px; }
 .field { display: grid; gap: 5px; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
@@ -21,10 +34,20 @@
 .error { margin: 0; font-size: 14px; font-weight: 600; color: var(--danger); background: var(--danger-soft); border-radius: 10px; padding: 8px 12px; }
 .btn { font: inherit; font-size: 17px; font-weight: 800; border: 1.5px solid transparent; border-radius: 14px; padding: 14px; cursor: pointer; background: var(--accent); color: var(--on-accent); min-height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; }
 .btn:disabled { opacity: .6; cursor: default; }
-.btn:focus-visible, .change:focus-visible, .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:focus-visible, .step:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ghost { background: transparent; color: var(--ink); border-color: var(--border); }
 .fine { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
 .thanks { display: grid; gap: 12px; }
 .big { font-size: 40px; line-height: .95; font-weight: 800; text-transform: uppercase; overflow-wrap: anywhere; }
 .big span { color: var(--accent-text); }
 .note { margin: 0; color: var(--muted); }
+.merch { display: grid; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.merch h2 { margin: 0; }
+.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.item { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 8px 8px 8px 14px; min-height: 56px; }
+.itemName { flex: 1; min-width: 0; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.price { font-size: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.qty { display: flex; align-items: center; gap: 4px; }
+.qty b { width: 22px; text-align: center; font-variant-numeric: tabular-nums; }
+.step { font: inherit; font-size: 22px; line-height: 1; font-weight: 700; width: 40px; height: 40px; border-radius: 999px; border: 1.5px solid var(--border); background: transparent; color: var(--ink); cursor: pointer; }
+.step:disabled { opacity: .35; cursor: default; }

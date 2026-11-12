@@ -113,3 +113,24 @@ export function recentAndUpcoming<S extends PickableShow>(shows: readonly S[], n
     .slice(0, n)
     .map((c) => c.show);
 }
+
+/** When a show with no times is assumed to start, for signupShow. */
+export const DEFAULT_SHOW_START = "19:00";
+
+/**
+ * The show a fan list signup at `now` belongs to: one whose show time is at most 1 hour away before now, up to 3 hours after.
+ * The show time is showStart, else the set, else doors, else DEFAULT_SHOW_START, wall-clock in the show's zone. Only confirmed and
+ * played shows count. When two windows contain now, the show whose time is nearest wins (a tie goes to the later one). Pure.
+ */
+export function signupShow<S extends PickableShow>(shows: readonly S[], now: number | Date, opts: Zoned<S> = {}): S | null {
+  const t = +now;
+  let best: { show: S; at: number } | null = null;
+  for (const show of shows) {
+    if (!COUNTS.has(show.status)) continue;
+    const time = show.times?.showStart ?? show.times?.set ?? show.times?.doors ?? DEFAULT_SHOW_START;
+    const at = wallToInstant(show.date, time, opts.zoneOf?.(show) ?? BAND_TIME_ZONE);
+    if (t < at - HOUR || t > at + 3 * HOUR) continue;
+    if (!best || Math.abs(t - at) < Math.abs(t - best.at) || (Math.abs(t - at) === Math.abs(t - best.at) && at > best.at)) best = { show, at };
+  }
+  return best?.show ?? null;
+}

@@ -34,7 +34,7 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
 };
 const refused = (p: Promise<unknown>, code = "forbidden") => assert.rejects(p, (e: AppError) => e.code === code);
 
-// Saturday 2026-11-14, set 21:00 Denver (UTC-7). 03:30Z on the 15th is 20:30 MST: inside the window.
+// Saturday 2026-11-14, set 21:00 Denver (UTC-7) = 04:00Z on the 15th: signups from 03:00Z to 07:00Z belong to it.
 const DURING = new Date("2026-11-15T03:30:00Z");
 const NOON_AFTER = new Date("2026-11-15T19:00:00Z");
 const NEVER = new Date("2027-06-01T12:00:00Z");
@@ -66,15 +66,16 @@ beforeEach(async () => {
 test("list: 404 when the artist doesn't exist or fans are off; shows only public facts", async () => {
   await refused(listView("nobody", DURING), "not_found");
   const v = await listView("nora-quill-band", DURING);
-  assert.deepEqual(v.current, { showId, label: "Deep End · Denver", date: "2026-11-14", mode: "during" });
+  assert.deepEqual(v.current, { showId, label: "Deep End · Denver", date: "2026-11-14" });
   assert.equal(v.artistName, "Nora Quill Band");
   assert.equal(v.instagram, "noraquill");
   assert.equal(v.wording, DEFAULT_LIST_WORDING);
-  assert.deepEqual(v.choices, [{ showId, label: "Deep End · Denver", date: "2026-11-14" }]);
+  assert.equal(v.merch, null);
+  assert.deepEqual(v.style, { theme: "auto", accent: null });
   const json = JSON.stringify(v);
   for (const secret of ["7 S Broadway", "40000", "guarantee", "personnel"]) assert.ok(!json.includes(secret), secret);
 
-  assert.equal((await listView("nora-quill-band", NOON_AFTER)).current?.mode, "morning-after");
+  assert.equal((await listView("nora-quill-band", NOON_AFTER)).current, null, "no morning-after: only the signup window counts");
   assert.equal((await listView("nora-quill-band", NEVER)).current, null);
 
   await db.update(ctx, "artists", TEST_ARTIST, { listWording: "Join the list" });
@@ -83,27 +84,43 @@ test("list: 404 when the artist doesn't exist or fans are off; shows only public
   await refused(listView("nora-quill-band", DURING), "not_found");
 });
 
+test("list: public name, merch price list with the Venmo handle, and style", async () => {
+  const items = [{ id: "a", name: "Coozie", priceCents: 500 }, { id: "b", name: "T-Shirt", priceCents: 2500 }];
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { publicName: "Nora Quill", merchItems: items, fanPageStyle: { theme: "dark", accent: "#e8590c" } } });
+  let v = await listView("nora-quill-band", NEVER);
+  assert.equal(v.artistName, "Nora Quill");
+  assert.equal(v.merch, null, "merch off and no payment link: no price list");
+  assert.deepEqual(v.style, { theme: "dark", accent: "#e8590c" });
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { features: { fans: true, merch: true }, paymentUrl: "@Nora-Quill" } });
+  v = await listView("nora-quill-band", NEVER);
+  assert.deepEqual(v.merch, { venmo: "Nora-Quill", items });
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { publicName: null } });
+  assert.equal((await listView("nora-quill-band", NEVER)).artistName, "Nora Quill Band");
+  await assert.rejects(cmd("artists.update", { id: TEST_ARTIST, patch: { merchItems: [{ id: "x", name: "", priceCents: 5 }] } }), "an item needs a name");
+});
+
 test("list: the venue's time zone moves the window", async () => {
-  // Set 21:00 for an hour: the window runs 18:00 to 01:00 (the next night) in the venue's own zone.
+  // Set 21:00 Pacific = 05:00Z on the 6th: the window runs 04:00Z to 08:00Z.
   const pacific = (await cmd("venues.create", venue("Crocodile", "Seattle", { address: { city: "Seattle", state: "WA" } }))).id;
   await db.update(ctx, "venues", pacific, { timeZone: "America/Los_Angeles" });
   const s2 = (await cmd("shows.create", { date: "2026-12-05", venueId: pacific, status: "confirmed", times: { set: "21:00", setLengthSec: 3600 }, sendInvites: false })).id;
-  // 08:30Z on the 6th is 00:30 PST (still inside) but 01:30 MST (half an hour past the Denver-zone window).
-  const at = new Date("2026-12-06T08:30:00Z");
-  assert.deepEqual((await listView("nora-quill-band", at)).current, { showId: s2, label: "Crocodile · Seattle", date: "2026-12-05", mode: "during" });
+  // 07:30Z is 23:30 PST (inside) but 00:30 MST (half an hour past the Denver-zone window, 03:00Z to 07:00Z).
+  const at = new Date("2026-12-06T07:30:00Z");
+  assert.deepEqual((await listView("nora-quill-band", at)).current, { showId: s2, label: "Crocodile · Seattle", date: "2026-12-05" });
   await db.update(ctx, "venues", pacific, { timeZone: null });
-  assert.equal((await listView("nora-quill-band", at)).current?.mode, "morning-after", "no zone on the venue = the band's");
+  assert.equal((await listView("nora-quill-band", at)).current, null, "no zone on the venue = the band's");
 });
 
 // ---------- public signup ----------
 
-test("signup at a show: city from the venue doc, geocoded, consent set once, merges on the second visit", async () => {
-  const body = SignupBody.parse({ email: "Fan@Example.com", firstName: "Fran", showId, page: "/f/nora-quill-band" });
+test("signup at a show: the show comes from the time, city from the venue doc, consent set once, merges on the second visit", async () => {
+  const body = SignupBody.parse({ email: "Fan@Example.com", name: "Fran Lee", page: "/f/nora-quill-band" });
   assert.deepEqual(await signup("nora-quill-band", body, DURING), { ok: true });
   const id = fanId(TEST_ARTIST, "fan@example.com");
   let fan = (await db.get("fans", id))!;
   assert.equal(fan.email, "fan@example.com");
   assert.equal(fan.source, "list");
+  assert.equal(fan.firstName, "Fran Lee", "the name is stored under firstName");
   assert.deepEqual(fan.showIds, [showId]);
   assert.equal(fan.cities.length, 1);
   assert.equal(fan.cities[0].city, "Denver"); assert.equal(fan.cities[0].state, "CO");
@@ -114,10 +131,13 @@ test("signup at a show: city from the venue doc, geocoded, consent set once, mer
 
   await db.update(ctx, "artists", TEST_ARTIST, { listWording: "New wording" });
   const later = new Date(DURING.getTime() + 86_400_000);
-  await signup("nora-quill-band", SignupBody.parse({ email: "fan@example.com", city: "boise, id", page: "/f/other" }), later);
+  await signup("nora-quill-band", SignupBody.parse({ email: "fan@example.com", zip: "80302", page: "/f/other" }), later);
   fan = (await db.get("fans", id))!;
-  assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Denver", "CO"], ["Boise", "ID"]]);
-  assert.equal(fan.firstName, "Fran");
+  assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Denver", "CO"], ["Boulder", "CO"]], "the zip names a town");
+  assert.equal(typeof fan.cities[1].lat, "number");
+  assert.equal(fan.zip, "80302");
+  assert.deepEqual(fan.showIds, [showId], "a day later is no show");
+  assert.equal(fan.firstName, "Fran Lee");
   assert.equal(fan.consent.text, DEFAULT_LIST_WORDING, "consent is only set on the first join");
   assert.equal((await db.list("fans")).length, 1);
   // The change log carries the artist, so rules keep it to that artist's admins.
@@ -125,26 +145,34 @@ test("signup at a show: city from the venue doc, geocoded, consent set once, mer
   assert.ok(hist.length >= 2 && hist.every((h) => h.artistId === TEST_ARTIST));
 });
 
-test("signup: refuses a show that isn't countable or isn't this band's; a geocode outage doesn't fail it", async () => {
-  const hold = (await cmd("shows.create", { date: "2026-12-01", venueId, status: "hold", times: {}, sendInvites: false })).id;
-  await refused(signup("nora-quill-band", SignupBody.parse({ email: "a@b.co", showId: hold, page: "/f/x" })), "invalid_input");
-  await refused(signup("nora-quill-band", SignupBody.parse({ email: "a@b.co", showId: "nope", page: "/f/x" })), "invalid_input");
+test("signup: the page can't pick a show; bad zips are refused; a lookup outage doesn't fail it", async () => {
+  assert.equal(SignupBody.safeParse({ email: "a@b.co", showId, page: "/f/x" }).success, false);
+  assert.equal(SignupBody.safeParse({ email: "a@b.co", city: "Boise", page: "/f/x" }).success, false);
+  assert.equal(SignupBody.safeParse({ email: "a@b.co", zip: "8030", page: "/f/x" }).success, false);
   await refused(signup("not-a-band", SignupBody.parse({ email: "a@b.co", page: "/f/x" })), "not_found");
-  assert.equal((await db.list("fans")).length, 0);
+  // A hold on tonight doesn't count.
+  await cmd("shows.update", { id: showId, patch: { status: "hold" } });
+  await signup("nora-quill-band", SignupBody.parse({ email: "hold@example.com", page: "/f/x" }), DURING);
+  assert.deepEqual((await db.get("fans", fanId(TEST_ARTIST, "hold@example.com")))!.showIds, []);
 
   const was = process.env.ORS_BASE_URL;
   process.env.ORS_BASE_URL = "http://127.0.0.1:1";
-  try { await signup("nora-quill-band", SignupBody.parse({ email: "down@example.com", city: "Moab, UT", page: "/f/x" })); } finally { process.env.ORS_BASE_URL = was; }
+  try { await signup("nora-quill-band", SignupBody.parse({ email: "down@example.com", zip: "84532", page: "/f/x" })); } finally { process.env.ORS_BASE_URL = was; }
   const fan = (await db.get("fans", fanId(TEST_ARTIST, "down@example.com")))!;
-  assert.deepEqual(fan.cities, [{ city: "Moab", state: "UT" }]);
+  assert.deepEqual(fan.cities, []);
+  assert.equal(fan.zip, "84532");
 });
 
-test("signup at a house show: city only, no state", async () => {
+test("signup at a house show with no times (assumed 19:00): city only, no state", async () => {
   const house = (await cmd("shows.create", { date: "2026-12-12", kind: "house", place: { city: "Nederland", address: "1 Secret Ln" }, status: "confirmed", times: {}, sendInvites: false })).id;
-  const v = await listView("nora-quill-band", new Date("2026-12-12T20:00:00Z"));
+  // 19:00 MST on the 12th = 02:00Z on the 13th.
+  const at = new Date("2026-12-13T02:30:00Z");
+  const v = await listView("nora-quill-band", at);
+  assert.equal(v.current?.showId, house);
   assert.equal(v.current?.label, "House concert · Nederland");
   assert.ok(!JSON.stringify(v).includes("Secret"));
-  await signup("nora-quill-band", SignupBody.parse({ email: "h@example.com", showId: house, page: "/f/x" }));
+  assert.equal((await listView("nora-quill-band", new Date("2026-12-12T20:00:00Z"))).current, null, "midday is not the show");
+  await signup("nora-quill-band", SignupBody.parse({ email: "h@example.com", page: "/f/x" }), at);
   const fan = (await db.get("fans", fanId(TEST_ARTIST, "h@example.com")))!;
   assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Nederland", undefined]]);
 });
@@ -212,19 +240,19 @@ test("fans are scoped to the caller's artist", async () => {
 // ---------- counts, near, newSince ----------
 
 test("fans.counts: totals by city and show, no addresses; fans.list filters", async () => {
-  await signup("nora-quill-band", SignupBody.parse({ email: "a@example.com", showId, page: "/f/x" }), DURING);
-  await signup("nora-quill-band", SignupBody.parse({ email: "b@example.com", city: "Boise, ID", page: "/f/x" }), DURING);
+  await signup("nora-quill-band", SignupBody.parse({ email: "a@example.com", page: "/f/x" }), DURING);
+  await signup("nora-quill-band", SignupBody.parse({ email: "b@example.com", zip: "80302", page: "/f/x" }), NEVER);
   await cmd("fans.add", { email: "c@example.com" });
   const c = await cmd("fans.counts", { since: "2000-01-01" });
   assert.equal(c.total, 3);
-  assert.deepEqual(c.byCity, { "Boise, ID": 1, "Denver, CO": 1, "No city": 1 });
+  assert.deepEqual(c.byCity, { "Boulder, CO": 1, "Denver, CO": 1, "No city": 1 });
   assert.deepEqual(c.byShow.map((s: any) => [s.showId, s.label, s.count]), [[showId, "Deep End · Denver · 2026-11-14", 1]]);
   assert.equal(c.notInBandzoogle, 3);
   assert.equal(c.newSince, 3);
   assert.equal((await cmd("fans.counts", { since: "2999-01-01" })).newSince, 0);
 
   assert.deepEqual((await cmd("fans.list", { showId })).fans.map((f: any) => f.email), ["a@example.com"]);
-  assert.deepEqual((await cmd("fans.list", { city: "boise" })).fans.map((f: any) => f.email), ["b@example.com"]);
+  assert.deepEqual((await cmd("fans.list", { city: "boulder" })).fans.map((f: any) => f.email), ["b@example.com"]);
   assert.equal((await cmd("fans.list", { notInBandzoogle: true })).count, 3);
 });
 
@@ -250,9 +278,9 @@ test("fans.near: haversine over geocoded cities, nearest first, venue and place 
 });
 
 test("fans.newSince counts the fans a show added that aren't in Bandzoogle yet", async () => {
-  await signup("nora-quill-band", SignupBody.parse({ email: "a@example.com", showId, page: "/f/x" }), DURING);
-  await signup("nora-quill-band", SignupBody.parse({ email: "b@example.com", showId, page: "/f/x" }), DURING);
-  await signup("nora-quill-band", SignupBody.parse({ email: "c@example.com", city: "Boise", page: "/f/x" }), DURING);
+  await signup("nora-quill-band", SignupBody.parse({ email: "a@example.com", page: "/f/x" }), DURING);
+  await signup("nora-quill-band", SignupBody.parse({ email: "b@example.com", page: "/f/x" }), DURING);
+  await signup("nora-quill-band", SignupBody.parse({ email: "c@example.com", zip: "80302", page: "/f/x" }), NEVER);
   assert.deepEqual(await cmd("fans.newSince", { showId }, mctx), { showId, label: "Deep End · Denver", date: "2026-11-14", added: 2, notInBandzoogle: 2, totalNotInBandzoogle: 3 });
   await cmd("fans.markSynced", { ids: [fanId(TEST_ARTIST, "a@example.com")] });
   const n = await cmd("fans.newSince", { showId });

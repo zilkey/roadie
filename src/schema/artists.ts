@@ -120,6 +120,21 @@ export const paymentUrl = z.string().transform((v, ctx) => {
   return z.NEVER;
 });
 
+/** One line of the merch price list on the public fan page (/f/{slug}). Order is the list's order. Money is integer cents. */
+export const MerchItem = z.strictObject({
+  id: z.string().min(1).max(40),
+  name: z.string().trim().min(1, "Give the item a name").max(60),
+  priceCents: z.number().int().min(0).max(1_000_000),
+});
+export type MerchItem = z.infer<typeof MerchItem>;
+/** The look of the public fan page. Missing = follow the phone's light/dark setting and Roadie's blue. */
+export const FanPageStyle = z.strictObject({
+  theme: z.enum(["auto", "light", "dark"]).optional(),
+  /** "#rrggbb": buttons, the eyebrow and the dot. */
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Use a color like #5561e8").optional(),
+});
+export type FanPageStyle = z.infer<typeof FanPageStyle>;
+
 /** The opt-in line on the public list page when the artist hasn't written their own. */
 export const DEFAULT_LIST_WORDING = "By joining you'll get email from us about shows and music, about once a month. Unsubscribe from any email.";
 
@@ -142,6 +157,11 @@ export const Artist = entity({
   features: z.strictObject({ fans: z.boolean().optional(), merch: z.boolean().optional() }).optional(),
   /** The opt-in wording fans see on the public list page (saved with each signup). Missing = DEFAULT_LIST_WORDING. */
   listWording: z.string().optional(),
+  /** The name the public fan page shows ("Ingrid Avison" for "Ingrid Avison Band"). Missing = name. */
+  publicName: z.string().trim().max(80).optional(),
+  /** The merch price list on the public fan page, in order. Shown when features.merch is on and paymentUrl is set. */
+  merchItems: z.array(MerchItem).max(50).optional(),
+  fanPageStyle: FanPageStyle.optional(),
   driveFolderId: z.string(),
   /** Where recordings uploaded from a rehearsal go, one "{date} Rehearsal" folder per rehearsal inside it. Set only by google.setRehearsalFolder. */
   rehearsalFolderId: z.string().optional(),

@@ -34,24 +34,25 @@ async function cmd<T = Record<string, any>>(name: string, input: unknown): Promi
   return ((await res.json()) as { result: T }).result;
 }
 
-/** A date in the band's zone, `plus` days from today. */
-const bandDay = (plus = 0) => {
-  const d = new Date(Date.now() + plus * 86_400_000);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+/** Today's date and the wall time now, in the band's zone. */
+const bandNow = () => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 };
 
-interface View { instagram: string | null; current: { showId: string; label: string } | null; choices: { showId: string; label: string }[] }
+interface View { instagram: string | null; current: { showId: string; label: string } | null; merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null }
 const listView = async () => (await (await api.get(`${APP}/api/public/${ARTIST_SLUG}/list`)).json()) as View;
+const ITEMS = [{ id: "cz", name: "Coozie", priceCents: 500 }, { id: "ts", name: "T-Shirt", priceCents: 2500 }];
 
 test.beforeAll(async ({ playwright }) => {
   api = await playwright.request.newContext();
   token = await tokenFor("rudy", "Rudy");
   artistId = await artistIdOf(ARTIST_SLUG);
-  // Today's show has no times, so its window is the whole day; the other one is a few days out for the Change picker.
-  for (const [plus, city] of [[0, "Fanville"], [3, "Pickton"]] as const) {
-    const { id } = await cmd<{ id: string }>("shows.create", { date: bandDay(plus), status: "confirmed", place: { city } });
-    madeShows.push(id);
-  }
+  // A show starting now: signups from an hour before to three hours after belong to it.
+  const { date, time } = bandNow();
+  const { id } = await cmd<{ id: string }>("shows.create", { date, status: "confirmed", place: { city: "Fanville" }, times: { showStart: time } });
+  madeShows.push(id);
 });
 
 test.afterAll(async () => {
@@ -61,7 +62,7 @@ test.afterAll(async () => {
 
 const go = (page: import("@playwright/test").Page) => page.goto(`/f/${ARTIST_SLUG}`);
 
-test("during a show: email only, then the thank-you; the page loads no sign-in code", async ({ page }) => {
+test("during a show: the show is picked by the time, then the thank-you; the page loads no sign-in code", async ({ page }) => {
   const view = await listView();
   expect(view.current).toBeTruthy();
   const urls: string[] = [];
@@ -70,36 +71,50 @@ test("during a show: email only, then the thank-you; the page loads no sign-in c
   await expect(page.getByTestId("fans-page")).toBeVisible();
   await expect(page.getByTestId("fans-show")).toContainText(view.current!.label);
   await expect(page.getByTestId("fans-show")).toContainText("Tonight");
-  await expect(page.getByTestId("fans-city")).toHaveCount(0);
+  await expect(page.getByText("At a show?")).toHaveCount(0);
   const signup = page.waitForRequest((r) => r.url().endsWith("/signup") && r.method() === "POST");
   await page.getByTestId("fans-email").fill("fan-during@example.com");
-  await page.getByTestId("fans-first-name").fill("Wren");
+  await page.getByTestId("fans-first-name").fill("Wren Avery");
+  await page.getByTestId("fans-zip").fill("80302");
   await page.getByTestId("fans-join").click();
   const body = (await signup).postDataJSON();
-  expect(body).toMatchObject({ email: "fan-during@example.com", firstName: "Wren", showId: view.current!.showId, page: `/f/${ARTIST_SLUG}` });
+  expect(body).toEqual({ email: "fan-during@example.com", name: "Wren Avery", zip: "80302", page: `/f/${ARTIST_SLUG}` });
   await expect(page.getByTestId("fans-thanks")).toContainText("Wren");
   await expect(page.getByTestId("fans-instagram")).toHaveCount(view.instagram ? 1 : 0);
+  await expect(page.getByTestId("fans-merch")).toHaveCount(view.merch ? 1 : 0);
   expect(urls.filter((u) => /identitytoolkit|securetoken|\/api\/session/.test(u))).toEqual([]);
 });
 
-test("Change picks another show", async ({ page }) => {
-  const view = await listView();
-  const other = view.choices.find((c) => c.showId !== view.current?.showId);
-  expect(other).toBeTruthy();
+test("merch: plus and minus build the Venmo link with the total and a note; the name and colors come from the view", async ({ page }) => {
+  // The seeded artist has merch off (the Merch nav item would show up in other specs), so the view gets a price list here.
+  // The server side of merch, the public name and the style is covered in tests/emulator/fans.test.ts.
+  await page.route(`**/api/public/${ARTIST_SLUG}/list`, async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, json: { ...(await res.json()), artistName: "Test Band", merch: { venmo: "Test-Band", items: ITEMS }, style: { theme: "light", accent: "#f0b400" } } });
+  });
   await go(page);
-  await page.getByTestId("fans-change").click();
-  await expect(page.getByTestId("fans-choice").first()).toBeVisible();
-  await page.getByTestId("fans-choice").filter({ hasText: other!.label }).first().click();
-  await expect(page.getByTestId("fans-show")).toContainText(other!.label);
-  await expect(page.getByTestId("fans-show")).not.toContainText("Tonight");
-  const signup = page.waitForRequest((r) => r.url().endsWith("/signup"));
-  await page.getByTestId("fans-email").fill("fan-change@example.com");
-  await page.getByTestId("fans-join").click();
-  expect((await signup).postDataJSON()).toMatchObject({ showId: other!.showId });
-  await expect(page.getByTestId("fans-thanks")).toBeVisible();
+  await expect(page.getByTestId("fans-name")).toContainText("Test Band");
+  await expect(page.getByTestId("fans-page")).toHaveAttribute("data-theme", "light");
+  await expect(page.getByTestId("fans-venmo")).toHaveCSS("color", "rgb(0, 0, 0)");
+  const items = page.getByTestId("fans-merch-item");
+  await expect(items).toHaveCount(2);
+  await expect(items.nth(0)).toContainText("Coozie");
+  await expect(items.nth(0)).toContainText("$5");
+  const venmo = page.getByTestId("fans-venmo");
+  await expect(venmo).toHaveText("Pay with Venmo");
+  await expect(venmo).toHaveAttribute("href", "https://venmo.com/Test-Band");
+  await items.nth(0).getByTestId("fans-merch-plus").click();
+  await items.nth(0).getByTestId("fans-merch-plus").click();
+  await items.nth(1).getByTestId("fans-merch-plus").click();
+  await expect(items.nth(0).getByTestId("fans-merch-count")).toHaveText("2");
+  await expect(venmo).toHaveText("Pay $35 with Venmo");
+  await expect(venmo).toHaveAttribute("href", "https://venmo.com/Test-Band?txn=pay&amount=35.00&note=2%20Coozie%2C%201%20T-Shirt");
+  await items.nth(1).getByTestId("fans-merch-minus").click();
+  await expect(venmo).toHaveText("Pay $10 with Venmo");
+  await expect(items.nth(1).getByTestId("fans-merch-minus")).toBeDisabled();
 });
 
-test("no show: a city is optional", async ({ page }) => {
+test("no show: name and zip are optional, and a bad zip is caught", async ({ page }) => {
   // Same data as the server gave, minus today's show.
   await page.route(`**/api/public/${ARTIST_SLUG}/list`, async (route) => {
     const res = await route.fetch();
@@ -107,20 +122,14 @@ test("no show: a city is optional", async ({ page }) => {
   });
   await go(page);
   await expect(page.getByTestId("fans-show")).toHaveCount(0);
-  await expect(page.getByTestId("fans-city")).toBeVisible();
+  await page.getByTestId("fans-email").fill("fan-zip@example.com");
+  await page.getByTestId("fans-zip").fill("803");
+  await page.getByTestId("fans-join").click();
+  await expect(page.getByTestId("fans-error")).toContainText("5-digit");
+  await page.getByTestId("fans-zip").fill("");
   const signup = page.waitForRequest((r) => r.url().endsWith("/signup"));
-  await page.getByTestId("fans-email").fill("fan-city@example.com");
-  await page.getByTestId("fans-city").fill("Boulder, CO");
   await page.getByTestId("fans-join").click();
-  const body = (await signup).postDataJSON();
-  expect(body).toMatchObject({ city: "Boulder, CO" });
-  expect(body.showId).toBeUndefined();
-  await expect(page.getByTestId("fans-thanks")).toBeVisible();
-
-  // And skipping the city works too.
-  await go(page);
-  await page.getByTestId("fans-email").fill("fan-nocity@example.com");
-  await page.getByTestId("fans-join").click();
+  expect((await signup).postDataJSON()).toEqual({ email: "fan-zip@example.com", page: `/f/${ARTIST_SLUG}` });
   await expect(page.getByTestId("fans-thanks")).toBeVisible();
 });
 

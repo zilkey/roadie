@@ -46,6 +46,15 @@ export function googleMapsClient(
       const r = (await geocodeCall({ address: text, components: "country:US" }))[0];
       return r ? { lat: r.geometry.location.lat, lng: r.geometry.location.lng } : null;
     },
+    async zip(zip) {
+      const r = (await geocodeCall({ components: `postal_code:${zip}|country:US` }))[0];
+      if (!r) return null;
+      const find = (type: string, f: "long_name" | "short_name") => r.address_components.find((c) => c.types.includes(type))?.[f];
+      const city = find("locality", "long_name") ?? find("postal_town", "long_name") ?? find("sublocality", "long_name") ?? find("administrative_area_level_3", "long_name");
+      if (!city) return null;
+      const state = find("administrative_area_level_1", "short_name");
+      return { city, ...(state ? { state } : {}), lat: r.geometry.location.lat, lng: r.geometry.location.lng };
+    },
     async reverse(lat, lng) {
       const results = await geocodeCall({ latlng: `${lat},${lng}` });
       if (!results.length) return null;
