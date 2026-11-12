@@ -89,3 +89,4 @@ These need the owner or production access. Record them as manual steps:
 **Manual steps for the owner**
 - Set the `SIGNED_URL_SECRET` App Hosting secret before deploying anything from this branch (`apphosting.yaml` now references it; command in `docs/SETUP.md`).
 - Local dev: a persisted `.fake-data/fake-drive.json` predates the Socials seed; reset the fake (its page's Reset button, or delete the file) to get it.
+- Next session (phase 2): `session_01MmV83WH51qR8HAz7wiZSxj`, started and running.
