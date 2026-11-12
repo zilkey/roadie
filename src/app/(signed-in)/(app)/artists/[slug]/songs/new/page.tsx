@@ -40,7 +40,7 @@ function Form() {
 
   return (
     <form className="grid gap-5" onSubmit={save} data-testid="add-song">
-      <PageTitle back={<BackLink href={writing ? "/songs?seg=writing" : "/songs"} label="All songs" />} title="Add a song" sub="Type the title and the app searches Drive for audio, video and docs." />
+      <PageTitle back={<BackLink href={writing ? "/songs?seg=writing" : "/songs"} label="All songs" />} title="New song" sub="Type the title and the app searches Drive for audio, video and docs." />
       <div className="card">
       <label className="grid gap-1"><span className="lbl">Title</span>
         <input className="input" value={title} onChange={(e) => set({ title: e.target.value })} required disabled={!draft.ready} data-testid="song-title" />
@@ -51,7 +51,7 @@ function Form() {
         <label className="grid gap-1"><span className="lbl">Length</span><input className="input" placeholder="3:52" value={len} onChange={(e) => set({ len: e.target.value })} disabled={!draft.ready} data-testid="song-length" /></label>
       </div>
       <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-      <button className="btn acc" disabled={busy || !draft.ready || !title.trim()} data-testid="save-song">Add song{picks.length ? ` with ${picks.length} file${picks.length === 1 ? "" : "s"}` : ""}</button>
+      <button className="btn acc" disabled={busy || !draft.ready || !title.trim()} data-testid="save-song">Create song{picks.length ? ` with ${picks.length} file${picks.length === 1 ? "" : "s"}` : ""}</button>
       <ErrorBox error={error} />
       </div>
     </form>

@@ -208,7 +208,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   // Calendar, tours, songs, the shows list, the Booking lists, email templates, Social Media and To Dos use the full width, and so does a show's page (its checklists are a column on the right edge);
   // every other page (other detail pages too) keeps the 1240px column.
   const showPage = path.startsWith(full("/shows/")) && !path.startsWith(full("/shows/new")) && path.split("/").length === full("/shows/x").split("/").length;
-  const wide = showPage || ["/calendar", "/tours", "/songs", "/shows", "/booking", "/booking/pitches", "/booking/venues", "/booking/festivals", "/booking/promoters", "/booking/calendars", "/booking/acts", "/booking/templates", "/contacts", "/posts", "/posts/photos", "/todos"].some((p) => path === full(p));
+  const wide = showPage || ["/calendar", "/tours", "/songs", "/shows", "/booking", "/booking/campaigns", "/booking/campaigns/ongoing", "/booking/venues", "/booking/festivals", "/booking/promoters", "/booking/calendars", "/booking/acts", "/booking/templates", "/contacts", "/posts", "/posts/photos", "/todos"].some((p) => path === full(p)) || path.startsWith(full("/booking/campaigns/"));
 
   const barLink = (n: NavItem, testid?: string) => (
     <Link key={n.key} href={n.href} data-testid={testid} aria-current={on(n.href) ? "page" : undefined}
@@ -257,7 +257,7 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
                 <span className="flex-1 truncate">{a.name}</span>{a.slug === artist.slug && <span aria-label="Current artist">✓</span>}
               </NextLink>
             ))}
-            <button type="button" role="menuitem" aria-disabled="true" className="menu-item" data-testid="band-menu-add-artist" onClick={(e) => e.stopPropagation()}><span className="flex-1">Add an artist</span><span className="s">Not ready yet</span></button>
+            <button type="button" role="menuitem" aria-disabled="true" className="menu-item" data-testid="band-menu-add-artist" onClick={(e) => e.stopPropagation()}><span className="flex-1">+ New artist</span><span className="s">Not ready yet</span></button>
           </Dropdown>
           <Dropdown label="Account menu" testid="account-menu" className="grid h-11 w-11 place-items-center rounded-full bg-accent-soft text-[0.9375rem] font-bold text-accent hover:brightness-95"
             trigger={initials(profile.name).slice(0, 1)}>

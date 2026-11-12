@@ -34,14 +34,22 @@ export { fmtPhone } from "@/lib/venues";
 /**
  * The rows for one tab. `hit` is the set of `kind:id` the search matched (null = no search); editions follow their festival.
  * `ours` = venue ids this band has something on; they come first.
- * `status` (Pitch List filter): rows carry the pitch in that status instead of the active one, so closed pitches can be listed too.
+ * `status` (campaign page filter): rows carry the pitch in that status instead of the active one, so closed pitches can be listed
+ * too; "all" takes any status (an active pitch first, else the newest).
+ * `scope` (a campaign page) narrows the pitches *before* each place picks its one, so a place with pitches in two campaigns shows
+ * the right one on each page (M9).
  */
-export function listRows(b: Booking, seg: ListSeg, ours: Set<string>, hit: Set<string> | null, status?: string): ListRow[] {
+export function listRows(b: Pick<Booking, "venues" | "promoters" | "festivals" | "editions" | "contacts" | "pitches">, seg: ListSeg, ours: Set<string>, hit: Set<string> | null, status?: string, scope?: (p: PitchRow) => boolean): ListRow[] {
   const byName = <T extends { name: string }>(x: T[]) => [...x].sort((a, c) => a.name.localeCompare(c.name));
   const contact = (id?: string) => b.contacts.find((c) => c.id === id);
   const reach = (id?: string) => { const c = contact(id); return { email: c?.emails[0], phone: c?.phones[0] }; };
-  const active = (kind: string, id: string) =>
-    b.pitches.find((p) => p.target.kind === kind && p.target.id === id && (status ? p.status === status : isActive(p.status)));
+  const pool = scope ? b.pitches.filter(scope) : b.pitches;
+  const newest = (x: PitchRow, y: PitchRow) => Number(isActive(y.status)) - Number(isActive(x.status)) || (y.createdAt?.toMillis() ?? 0) - (x.createdAt?.toMillis() ?? 0);
+  const active = (kind: string, id: string) => {
+    const mine = pool.filter((p) => p.target.kind === kind && p.target.id === id);
+    if (status === "all") return [...mine].sort(newest)[0];
+    return mine.find((p) => (status ? p.status === status : isActive(p.status)));
+  };
   const placesOf = (venueIds: string[]) => venueIds.flatMap((id) => { const a = b.venues.find((v) => v.id === id)?.address; return a ? [{ city: a.city, state: a.state }] : []; });
   const cityOfVenue = (venueIds: string[]) => [...new Set(placesOf(venueIds).map((p) => p.city))].join(", ");
   const festCity = (f: (typeof b.festivals)[number]) => f.address?.city ?? "";

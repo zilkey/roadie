@@ -57,7 +57,7 @@ function People() {
   return (
     <div className="grid gap-5">
       <PageTitle title="People" sub={<><b>Band Members</b> play in the band. The <b>Team</b> can sign in to Roadie.</>}
-        actions={<button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="people-add-open">+ Add a person</button>} />
+        actions={<button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="people-add-open">+ New person</button>} />
 
       {adding && <AddPerson onClose={() => setAdding(false)} />}
       <ErrorBox error={act.error} />

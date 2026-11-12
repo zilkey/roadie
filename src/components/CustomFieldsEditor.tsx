@@ -84,7 +84,7 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
           <input className="input" placeholder="What it holds (optional)" aria-label="Description" value={desc} onChange={(e) => setDesc(e.target.value)} data-testid={`new-${kind}-field-description`} />
           <div className="cfg-actions">
             <button type="button" className="btn text" onClick={() => { setAdding(false); setLabel(""); setDesc(""); }}>Cancel</button>
-            <button className="btn acc" disabled={busy || !label.trim()} data-testid={`new-${kind}-field-add`}>Add field</button>
+            <button className="btn acc" disabled={busy || !label.trim()} data-testid={`new-${kind}-field-add`}>Create field</button>
           </div>
         </form>
       )}

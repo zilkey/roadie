@@ -10,7 +10,7 @@ async function openPitch(page: Page, place: string) {
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: place }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
 }
 type Sent = { subject: string; to: string[]; html?: string; body: string };
 
@@ -19,7 +19,7 @@ test("compose: contacts as chips, a template, an unknown address becomes a conta
   await signInAs(page, "rudy");
   await openPitch(page, "Pine Hollow Lounge");
   const pitchUrl = page.url();
-  const venueHref = await page.getByTestId("target-link").getAttribute("href");
+  const venueHref = A(`/booking/venues/${await page.getByTestId("venue-page").getAttribute("data-record-id")}`); // the venue's one page (#82)
   await page.getByTestId("email-new").click();
   await expect(page.getByTestId("compose-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("New email");
@@ -103,7 +103,7 @@ test("compose: a bare address stays bare on Not now, Move to Pitched, and Cancel
   await expect(page.getByTestId("email-subject")).toHaveValue("Half written");
   await expect(page.getByTestId("to-chip-talent@marisol.example")).toBeVisible();
   await page.getByTestId("email-cancel").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   await page.getByTestId("email-new").click();
   await expect(page.getByTestId("email-subject")).toHaveValue("");
   await expect(page.getByTestId("to-chip-talent@marisol.example")).toHaveCount(0);

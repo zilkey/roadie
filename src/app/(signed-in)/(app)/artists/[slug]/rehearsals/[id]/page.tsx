@@ -229,7 +229,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
       meta={<span data-testid="reh-times">{[timeLine, loc?.name ?? loc?.address ?? "", fullBand ? "Full band" : ""].filter(Boolean).join(" · ")}</span>}
       more={<div className="flex flex-wrap items-center gap-2">
         {admin && <SaveStatus {...as.statusProps} />}
-        {!admin && <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ Add an expense</Link>}
+        {!admin && <Link href={`/money/expense?rehearsalId=${existing.id}`} className="btn acc" data-testid="reh-add-expense">+ New expense</Link>}
         {admin && <Menu label="More actions" testid="reh" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
           items={[{ key: "archive", label: "Archive", danger: true, disabled: busy, onSelect: archive }]} />}
       </div>}>

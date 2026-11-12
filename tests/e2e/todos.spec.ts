@@ -57,11 +57,17 @@ test("Our list: add a to do, click to edit it and pick who", async ({ page }) =>
   await our.getByTestId("todos-additem-our-add").click();
   await expect(our.getByTestId("todos-additem-our-input")).toHaveValue(""); // stays open for the next one
   await our.getByTestId("todos-additem-our-cancel").click();
-  await our.getByText("Order more stickers").click();
-  await our.getByTestId("checklist-edit-input").fill("Order 500 stickers");
-  await our.getByTestId("checklist-edit-owner").selectOption({ label: "Hugo" });
-  await our.getByTestId("checklist-edit-input").press("Enter");
-  const item = our.locator('[data-testid^="todos-item-todo:"]').filter({ hasText: "Order 500 stickers" });
+  // Its card is like every other: the text is click-to-edit, who's on it is a click-to-pick under it (Jeff, 2026-11-12).
+  const card = our.locator('[data-testid^="todos-item-todo:"]').filter({ hasText: "Order more stickers" }).first(); // a retry adds another
+  const text = card.getByTestId(/^todos-text-[A-Za-z0-9]+$/);
+  const textId = (await text.getAttribute("data-testid"))!; // held: once the text is an input, the card no longer matches by its words
+  await text.click();
+  await page.getByTestId(`${textId}-input`).fill("Order 500 stickers");
+  await page.getByTestId(`${textId}-input`).press("Enter");
+  const item = our.locator('[data-testid^="todos-item-todo:"]').filter({ hasText: "Order 500 stickers" }).first();
+  const whoId = textId.replace("todos-text-", "todos-who-");
+  await page.getByTestId(whoId).click();
+  await page.getByTestId(`${whoId}-input`).selectOption({ label: "Hugo" });
   await expect(item).toBeVisible();
   await expect(item.getByText("Hugo", { exact: true })).toBeVisible();
   await expect(our.getByText("Order more stickers")).toHaveCount(0);
@@ -104,45 +110,6 @@ test("Focus shows one column; columns drag into my own order, which sticks", asy
   await expect.poll(keys).toEqual(after);
   await page.reload();
   await expect.poll(keys).toEqual(after);
-});
-
-test("Add list: nothing is made until Add; Cancel throws the draft away; the new list takes to-dos and can be deleted", async ({ page }) => {
-  await signInAs(page, "rudy");
-  await page.goto(A("/todos"));
-  await expect(page.getByTestId("todos-col-our")).toBeVisible();
-  const lists = page.locator('[data-testid^="todos-col-list:"]');
-  await expect(lists).toHaveCount(0);
-
-  await page.getByTestId("todos-add-list").click();
-  await page.getByTestId("todos-add-list-input").fill("Never mind");
-  await page.getByTestId("todos-add-list-cancel").click();
-  await page.getByTestId("todos-add-list").click();
-  await expect(page.getByTestId("todos-add-list-input")).toHaveValue(""); // Cancel discarded the draft
-  await expect(lists).toHaveCount(0);
-
-  await page.getByTestId("todos-add-list-input").fill("Van stuff");
-  await page.getByTestId("todos-add-list-add").click();
-  const van = lists.filter({ hasText: "Van stuff" });
-  await expect(van).toHaveCount(1);
-  await expect(van.getByRole("heading", { name: "Van stuff" })).toBeVisible();
-
-  const add = van.locator('[data-testid^="todos-additem-board:"]').first();
-  await add.click();
-  await van.locator('[data-testid$="-input"]').fill("Oil change");
-  await van.locator('[data-testid$="-input"]').press("Enter");
-  const card = van.locator('[data-testid^="todos-item-board:"]').filter({ hasText: "Oil change" });
-  await expect(card).toBeVisible();
-  await card.getByRole("button", { name: "Pin Oil change" }).click();
-  const pinned = page.getByTestId("todos-col-pinned").locator('[data-testid^="todos-item-board:"]').filter({ hasText: "Oil change" });
-  await expect(pinned.getByTestId("todos-source")).toHaveText("Van stuff");
-  await expect(card).toHaveCount(0);
-
-  await page.reload();
-  await expect(lists.filter({ hasText: "Van stuff" })).toHaveCount(1);
-  await page.getByRole("button", { name: "Delete list Van stuff" }).click();
-  await expect(page.getByTestId("toast-text").filter({ hasText: "Deleted list: Van stuff" })).toBeVisible();
-  await expect(lists).toHaveCount(0);
-  await expect(pinned).toHaveCount(0);
 });
 
 test("every list but Booking adds a to-do at its bottom: a show's checklist, and Pinned (pinned to-do on Our list)", async ({ page }) => {

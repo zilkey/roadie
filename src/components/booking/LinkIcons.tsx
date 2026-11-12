@@ -27,7 +27,7 @@ export function LinkIcons({ links, name, testid }: { links?: Partial<Record<Arti
   return (
     <span className="link-icons" data-testid={testid}>
       {have.map((k) => (
-        <a key={k} href={links![k]} target="_blank" rel="noreferrer" title={LABEL[k]} aria-label={`${name} on ${LABEL[k]}`} data-testid={testid && `${testid}-${k}`}>
+        <a key={k} href={links![k]} target="_blank" rel="noopener noreferrer" title={LABEL[k]} aria-label={`${name} on ${LABEL[k]}`} data-testid={testid && `${testid}-${k}`}>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>{GLYPH[k]}</svg>
         </a>
       ))}

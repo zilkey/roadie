@@ -36,11 +36,11 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await page.getByTestId("booking-search").fill("Bluebird Room");
   await page.getByTestId(/^row-venue-/).filter({ hasText: "Bluebird Room" }).first().getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
-  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  if (/\/booking\/pitches\//.test(page.url())) await page.getByTestId("venue-tab-details").click(); // a venue's pitch opens the venue's one page on its Pitch tab (#82)
   await page.getByTestId("venue-tab-events").click();
   await page.getByTestId("venue-calendar-refresh").click();
   await expect(page.getByTestId("venue-calendar-health")).toContainText("found 3 shows");
-  const venuePath = new URL(page.url()).pathname;
+  const venuePath = `/booking/venues/${await page.getByTestId("venue-page").getAttribute("data-record-id")}`; // its own route (#82)
 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-calendars").click();
@@ -98,7 +98,8 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await page.getByTestId("crumb-1").click();
   await expect(page).toHaveURL(/\/booking\/calendars\?show=all$/);
   await expect(shows(page)).toHaveCount(3);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
+  // Where it was, or as far down as the list now goes (its New chips clear once it has been looked at, so it can come back shorter).
+  await expect.poll(() => page.evaluate((was) => window.scrollY === Math.min(was, document.documentElement.scrollHeight - window.innerHeight), y)).toBe(true);
 });
 
 test("Pitch this: one click adds the show to the venue's pitch; the filled flag asks to take the show off the pitch or the venue off the Pitch List", async ({ page }) => {
@@ -270,9 +271,9 @@ test("the act cell lists the act's links, each in a new tab; the city sits under
   const actId = (await trio.getByTestId(/^act-name-/).first().getAttribute("data-testid"))!.replace(/^act-name-/, "");
   await setActLinks(request, actId, { instagram: "https://instagram.com/exampletrio", website: "https://trio.example.com/" });
   const site = trio.getByTestId(`calendar-act-link-${actId}-website`), ig = trio.getByTestId(`calendar-act-link-${actId}-instagram`);
-  await expect(site).toHaveText("Website ↗");
+  await expect(site).toHaveAttribute("title", "Website"); // icons now, as on the Acts table (#82)
   await expect(site).toHaveAttribute("href", "https://trio.example.com/");
-  await expect(ig).toHaveText("Instagram ↗");
+  await expect(ig).toHaveAttribute("title", "Instagram");
   await expect(ig).toHaveAttribute("href", "https://instagram.com/exampletrio");
   for (const a of [site, ig, trio.getByRole("link", { name: /Tickets and details/ })]) {
     await expect(a).toHaveAttribute("target", "_blank");

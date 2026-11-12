@@ -16,7 +16,7 @@ import { snippetOf } from "@/lib/email-text";
 import { sanitizeHtml, htmlToText } from "@/lib/email-html";
 import { signatureOf } from "@/lib/email-signature";
 import { e164 } from "@/schema/normalize";
-import { BAND_NOTES, bandNoteId, emailThreadId, venueNoteId, email as emailSchema } from "@/schema";
+import { BAND_NOTES, bandNoteId, emailThreadId, threadPitchIds, venueNoteId, email as emailSchema } from "@/schema";
 import { withBandNote } from "@/lib/bandNotes";
 import { callerArtistId, privateOf } from "../venues";
 import { bookingMailOf } from "../google/band";
@@ -89,20 +89,37 @@ export function summarize(thread: MailThread, account: string) {
   };
 }
 
-/** Create the thread's doc, or refresh it (and bring back an unlinked one when `place` is given). */
-async function upsertThread(w: Writer, a: { artistId: string; account: string; thread: MailThread; place?: Place; pitchId?: string; sentBy?: { messageId: string; uid: string } }) {
+/**
+ * Create the thread's doc, or refresh it (and bring back an unlinked one when `place` is given). `pitchIds` are added to the
+ * pitches the thread covers (#82 S8): never replaced, so linking a second pitch no longer moves the thread off the first.
+ * `pitchId` stays the first pitch (what older readers use); `pitchIds` is written once a thread covers more than one.
+ */
+async function upsertThread(w: Writer, a: { artistId: string; account: string; thread: MailThread; place?: Place; pitchIds?: string[]; sentBy?: { messageId: string; uid: string } }) {
   const id = emailThreadId(a.artistId, a.thread.id);
   const existing = await w.get("emailThreads", id);
   const sum = { ...summarize(a.thread, a.account), ...(a.sentBy ? { sentBy: { ...(existing?.sentBy ?? {}), [a.sentBy.messageId]: a.sentBy.uid } } : {}) };
+  const had = existing ? threadPitchIds(existing as { pitchId?: string; pitchIds?: string[] }) : [];
+  const all = [...new Set([...had, ...(a.pitchIds ?? [])])];
+  const pitches = all.length ? { pitchId: (existing?.pitchId as string | undefined) ?? all[0], ...(all.length > 1 ? { pitchIds: all } : {}) } : {};
   if (!existing) {
     if (!a.place) throw new AppError("invalid_input", "Which place does this thread belong to?", 400);
-    await w.create("emailThreads", { artistId: a.artistId, account: a.account, threadId: a.thread.id, target: a.place, ...(a.pitchId ? { pitchId: a.pitchId } : {}), ...sum, syncedAt: w.now }, { id });
+    await w.create("emailThreads", { artistId: a.artistId, account: a.account, threadId: a.thread.id, target: a.place, ...pitches, ...sum, syncedAt: w.now }, { id });
   } else {
     if (existing.deletedAt) await w.restore("emailThreads", id);
-    await w.update("emailThreads", id, { ...sum, syncedAt: w.now, ...(a.place ? { target: a.place } : {}), ...(a.pitchId ? { pitchId: a.pitchId } : {}) });
+    const grew = all.length > had.length;
+    await w.update("emailThreads", id, { ...sum, syncedAt: w.now, ...(a.place ? { target: a.place } : {}), ...(grew ? pitches : {}) });
   }
   return id;
 }
+
+/** Every pitch named, live and this band's, checked before anything is sent (S8: N pitches, one email). */
+async function requirePitches(ids: string[], artistId: string | undefined): Promise<void> {
+  for (const id of ids) {
+    const p = await requirePitchDoc(id);
+    if (artistId && p.artistId && p.artistId !== artistId) throw new AppError("not_found", "Pitch not found", 404);
+  }
+}
+const allPitches = (i: { pitchId?: string; pitchIds?: string[] }) => [...new Set([...(i.pitchId ? [i.pitchId] : []), ...(i.pitchIds ?? [])])];
 
 /** Add an emailReply to the pitch's timeline for each received message that isn't there yet. Returns how many. */
 async function addReplies(w: Writer, pitchId: string, messages: MailMessage[]): Promise<number> {
@@ -122,13 +139,15 @@ async function addReplies(w: Writer, pitchId: string, messages: MailMessage[]): 
 
 // ---------- the work, shared with the pitch wrappers ----------
 
-export async function linkThread(ctx: Ctx, i: { threadId: string; place: Place; pitchId?: string; account?: string }) {
+export async function linkThread(ctx: Ctx, i: { threadId: string; place: Place; pitchId?: string; pitchIds?: string[]; account?: string }) {
   const [artistId, account] = [await artistIdFor(ctx), i.account ?? (await accountOf(ctx))];
-  if (i.pitchId) await requirePitchDoc(i.pitchId);
+  const ids = allPitches(i);
+  await requirePitches(ids, ctx.artistId);
   const thread = await gmailClient().getThread(i.threadId, account).catch(gmailFail);
   return run(ctx, async (w) => {
-    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchId: i.pitchId });
-    const added = i.pitchId ? await addReplies(w, i.pitchId, thread.messages) : 0;
+    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchIds: ids });
+    let added = 0;
+    for (const p of ids) added += await addReplies(w, p, thread.messages);
     return { id, added };
   });
 }
@@ -147,7 +166,7 @@ export async function syncPlace(ctx: Ctx, place: Place): Promise<{ added: number
     let n = 0;
     for (const { d, thread } of live) {
       await upsertThread(w, { artistId, account: d.account, thread });
-      if (d.pitchId) n += await addReplies(w, d.pitchId, thread.messages).catch((e) => (e instanceof AppError && e.status === 404 ? 0 : Promise.reject(e)));
+      for (const p of threadPitchIds(d as { pitchId?: string; pitchIds?: string[] })) n += await addReplies(w, p, thread.messages).catch((e) => (e instanceof AppError && e.status === 404 ? 0 : Promise.reject(e)));
     }
     return n;
   });
@@ -155,46 +174,54 @@ export async function syncPlace(ctx: Ctx, place: Place): Promise<{ added: number
 }
 
 const mailIn = {
-  pitchId: z.string().min(1).optional(), threadId: z.string().min(1).optional(), html: z.string().optional(),
+  pitchId: z.string().min(1).optional(), pitchIds: z.array(z.string().min(1)).optional(), threadId: z.string().min(1).optional(), html: z.string().optional(),
   to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(), subject: z.string().min(1), body: z.string().min(1),
 };
 
-export async function sendMail(ctx: Ctx, i: { place: Place; pitchId?: string; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string; markPitched?: boolean }) {
+export async function sendMail(ctx: Ctx, i: { place: Place; pitchId?: string; pitchIds?: string[]; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string; markPitched?: boolean }) {
   const missing = unfilledFields(`${i.subject}\n${i.body}`);
   if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before sending`, 400);
-  if (i.pitchId) await requirePitchDoc(i.pitchId);
   const [artistId, account] = [await artistIdFor(ctx), await accountOf(ctx)];
+  // Every pitch is checked before Gmail is called: a bad id must not leave a sent email half logged (S8-a).
+  const ids = allPitches(i);
+  await requirePitches(ids, ctx.artistId);
   const gmail = gmailClient();
   const msg = await gmail.send({ account, to: i.to, cc: i.cc, subject: i.subject, body: i.body, html: i.html && sanitizeHtml(i.html), threadId: i.threadId }).catch(gmailFail);
   const thread = await gmail.getThread(msg.threadId, account).catch((): MailThread => ({ id: msg.threadId, subject: msg.subject, messages: [msg], lastDate: msg.date }));
   return run(ctx, async (w) => {
-    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchId: i.pitchId, sentBy: { messageId: msg.id, uid: ctx.uid } });
+    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchIds: ids, sentBy: { messageId: msg.id, uid: ctx.uid } });
     let activityId: string | undefined;
-    if (i.pitchId) {
-      const p = (await w.get("pitches", i.pitchId))!;
-      activityId = (await w.create(`pitches/${i.pitchId}/activity`, {
+    // The same emailSent on every pitch the email covers; logging is keyed on the message id, so a re-run never doubles it.
+    for (const pitchId of ids) {
+      const p = (await w.get("pitches", pitchId))!;
+      const logged = (await w.query(`pitches/${pitchId}/activity`, (q) => q)).find((a) => a.gmail?.messageId === msg.id);
+      const act = logged ?? await w.create(`pitches/${pitchId}/activity`, {
         type: "emailSent", text: i.body, gmail: { messageId: msg.id, threadId: msg.threadId, to: i.to.join(", "), subject: i.subject, account },
-      })).id;
-      await w.update("pitches", i.pitchId, { lastContactAt: w.now });
+      });
+      if (pitchId === ids[0]) activityId = act.id as string;
+      await w.update("pitches", pitchId, { lastContactAt: w.now });
       if (i.markPitched && (p.status === "idea" || p.status === "toPitch")) {
-        await w.update("pitches", i.pitchId, { status: "pitched" });
-        await w.create(`pitches/${i.pitchId}/activity`, { type: "status", fromStatus: p.status, toStatus: "pitched" });
+        await w.update("pitches", pitchId, { status: "pitched" });
+        await w.create(`pitches/${pitchId}/activity`, { type: "status", fromStatus: p.status, toStatus: "pitched" });
       }
     }
     return { id, activityId, messageId: msg.id, threadId: msg.threadId };
   });
 }
 
-export async function draftMail(ctx: Ctx, i: { pitchId?: string; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string }) {
+export async function draftMail(ctx: Ctx, i: { pitchId?: string; pitchIds?: string[]; threadId?: string; to: string[]; cc?: string[]; subject: string; body: string; html?: string }) {
   const missing = unfilledFields(`${i.subject}\n${i.body}`);
   if (missing.length) throw new AppError("unfilled_fields", `Fill in ${missing.map((m) => `{{${m}}}`).join(", ")} before drafting`, 400);
-  if (i.pitchId) await requirePitchDoc(i.pitchId);
+  const ids = allPitches(i);
+  await requirePitches(ids, ctx.artistId);
   const account = await accountOf(ctx);
   const draft = await gmailClient().createDraft({ account, to: i.to, cc: i.cc, subject: i.subject, body: i.body, html: i.html && sanitizeHtml(i.html), threadId: i.threadId }).catch(gmailFail);
-  const act = i.pitchId
-    ? await db.create(ctx, `pitches/${i.pitchId}/activity`, { type: "note", text: `Email drafted (not sent) to ${i.to.join(", ")}: ${i.subject}\n\n${i.body}` })
-    : undefined;
-  return { id: act?.id, draftId: draft.id, sent: false as const };
+  let id: string | undefined;
+  for (const pitchId of ids) {
+    const act = await db.create(ctx, `pitches/${pitchId}/activity`, { type: "note", text: `Email drafted (not sent) to ${i.to.join(", ")}: ${i.subject}\n\n${i.body}` });
+    id ??= act.id as string;
+  }
+  return { id, draftId: draft.id, sent: false as const };
 }
 
 /** The pitch-level "check for replies": link the threads this pitch's timeline already mentions (older pitches), then sync the place. */
@@ -246,10 +273,10 @@ async function ownThread(ctx: Ctx, id: string): Promise<Doc> {
 
 export const emailLink = defineCommand({
   name: "email.link", roles: ["admin"],
-  description: "Put a Gmail thread on a venue, promoter or festival (an edition's threads go on its festival), and start watching it for replies. With pitchId, replies not yet on that pitch's timeline are added.",
-  input: z.strictObject({ threadId: z.string().min(1), target: targetIn, pitchId: z.string().min(1).optional() }),
+  description: "Put a Gmail thread on a venue, promoter or festival (an edition's threads go on its festival), and start watching it for replies. With pitchId (and pitchIds, every pitch one email covers), replies not yet on those pitches' timelines are added; the thread keeps the pitches it already had.",
+  input: z.strictObject({ threadId: z.string().min(1), target: targetIn, pitchId: z.string().min(1).optional(), pitchIds: z.array(z.string().min(1)).optional() }),
   async run(ctx, i) {
-    const r = await linkThread(ctx, { threadId: i.threadId, place: await resolvePlace(i.target), pitchId: i.pitchId });
+    const r = await linkThread(ctx, { threadId: i.threadId, place: await resolvePlace(i.target), pitchId: i.pitchId, pitchIds: i.pitchIds });
     return { id: r.id };
   },
 });
@@ -281,7 +308,7 @@ export const emailThread = defineCommand({
 const sendIn = z.strictObject({ target: targetIn, ...mailIn, markPitched: z.boolean().default(false) });
 export const emailSend = defineCommand({
   name: "email.send", roles: ["admin"],
-  description: "Send an already filled-in email from the booking mailbox, or the caller's own Gmail when the band has none (a reply when threadId is given). The thread lands on the place; with pitchId it is logged on that pitch's timeline and sets lastContactAt.",
+  description: "Send an already filled-in email from the booking mailbox, or the caller's own Gmail when the band has none (a reply when threadId is given). The thread lands on the place; with pitchId it is logged on that pitch's timeline and sets lastContactAt. pitchIds: more pitches the same email covers (one email to a promoter about several venues); each gets the same log.",
   input: sendIn,
   async run(ctx, i) {
     const { target, ...rest } = i;

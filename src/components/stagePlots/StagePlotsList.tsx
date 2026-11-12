@@ -58,7 +58,7 @@ function NewPlot({ plots, onClose }: { plots: (StagePlot & { id: string })[]; on
           <input className="input" type="number" min={0} max={64} inputMode="numeric" value={v.inputs} onChange={(e) => set({ inputs: e.target.value })} data-testid="new-plot-inputs" aria-label="How many inputs?" /></label>
       )}
       <div className="flex gap-2">
-        <button className="btn acc" disabled={busy || !draft.ready || !v.name.trim() || (!copying && !okCount)} data-testid="new-plot-add">Add</button>
+        <button className="btn acc" disabled={busy || !draft.ready || !v.name.trim() || (!copying && !okCount)} data-testid="new-plot-add">Create</button>
         <button type="button" className="btn ghost" onClick={cancel} data-testid="new-plot-cancel">Cancel</button>
       </div>
       <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
@@ -88,7 +88,7 @@ export function StagePlotsList() {
         pill={lineups.length > 0 && rows.length > 0 && (
           <div className="w-56"><Select value={lineup} options={[...lineups.map((c) => [c.id, c.name] as const), ["none", "No lineup"] as const]} placeholder="All lineups" onChange={setLineup} testid="plot-filter" label="Filter by lineup" /></div>
         )}
-        actions={admin && !adding && <button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="add-plot">Add a stage plot</button>}
+        actions={admin && !adding && <button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="add-plot">+ New stage plot</button>}
       />
       {admin && adding && <NewPlot plots={rows} onClose={() => setAdding(false)} />}
       {!col.loading && rows.length === 0 && <div className="empty"><span>No stage plots yet.</span></div>}

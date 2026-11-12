@@ -16,7 +16,7 @@ async function openVenue(page: Page, search: string) {
   await page.getByTestId("booking-search").fill(search);
   await page.getByTestId(/^row-venue-/).filter({ hasText: search }).first().getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
-  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  if (/\/booking\/pitches\//.test(page.url())) await page.getByTestId("venue-tab-details").click(); // a venue's pitch opens the venue's one page on its Pitch tab (#82)
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 

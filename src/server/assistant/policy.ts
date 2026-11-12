@@ -28,7 +28,6 @@ export const EXCLUDED: readonly string[] = [
   "venueEvents.",     // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview
   "venues.setCalendar",
   "acts.lookup", "acts.lookupShortlist", "acts.findTeam", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
-  "campaigns.", "pitches.setCampaign", // booking campaigns (#82): data only until the campaign pages ship (S4a) expose them with a confirm on close
   "dayOf.",           // hiding a row of the day-of banner (#66): the banner's own ×, personal to whoever taps it
 ];
 /** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */
@@ -63,6 +62,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "songs.merge",                                                                         // folds duplicate songs into one: their files, setlists, rehearsals and release tracks move
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
   "tours.book", "tours.removeItem",                                                      // books a show (and can drop other options); takes a show or pitch off a tour (tours.remove asks too: *.remove)
+  "campaigns.close",                                                                     // closes a booking campaign: its active pitches go back to Ongoing
   "posts.setup", "posts.publish", "posts.deleteDraft", "posts.removeFromDraft",         // shares Socials with the band; posts to Instagram; moves photos back in Drive
 ];
 /**
@@ -160,6 +160,9 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "musicians.removeFromBand": (i) => `Take ${i.label ?? "this person"} out of the band (they keep their sign-in)`,
   "artists.removeSongField": () => "Delete the song field: every song loses its value",
   "artists.removeShowField": () => "Delete the show field: every show loses its value",
+  "campaigns.close": (i) => `Close the campaign${i.label ? ` ${i.label}` : ""}: its active pitches go back to Ongoing (Reopen undoes it)`,
+  "campaigns.rename": (i) => `Rename the campaign${i.label ? ` ${i.label}` : ""} to ${i.name}`,
+  "pitches.setCampaign": (i) => i.campaignId ? `Move ${Array.isArray(i.ids) && i.ids.length > 1 ? `${i.ids.length} pitches` : "the pitch"} to another campaign` : `Move ${Array.isArray(i.ids) && i.ids.length > 1 ? `${i.ids.length} pitches` : "the pitch"} back to Ongoing`,
   "shows.cancel": (i) => `Cancel the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.drop": (i) => `Drop the show${i.label ? ` ${i.label}` : ""}${i.reason ? ` (${i.reason})` : ""}`,
   "shows.setStatus": (i) => `Change the show${i.label ? ` ${i.label}` : ""} to ${i.status}${i.reason ? ` (${i.reason})` : ""}`,

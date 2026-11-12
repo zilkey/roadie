@@ -23,7 +23,7 @@ const BY_ROUTE: Record<string, string | ((tab?: string) => string)> = {
   showSetlist: "setlists", showFinances: "income", showAfter: "showPage", newShow: "showPage",
   booking: "pitch", bookingVenues: "booking", bookingFestivals: "booking", bookingPromoters: "booking", bookingCalendars: "booking", bookingActs: "booking", contacts: "contacts",
   promoter: "booking", festival: "booking", edition: "booking", contact: "contacts",
-  bookingPitches: "pitch", pitch: "pitch", venue: "venueSharing",
+  bookingPitches: "campaigns", bookingCampaigns: "campaigns", campaign: "campaigns", pitch: "pitch", venue: "venueSharing",
   releases: "releases", newRelease: "releases", release: (tab) => (tab === "money" ? "releaseMoney" : tab === "files" ? "releaseFiles" : "releasePage"), releaseMoney: "releaseMoney", releaseFiles: "releaseFiles", releaseTrack: "releaseTrack",
   songs: "songs", song: "songs", setlists: "setlistTemplates", setlist: "setlistTemplates",
   tours: "tours", newTour: "tours", tour: "tours",
@@ -37,6 +37,7 @@ export function topicForPage(route: string, tab?: string): HelpTopic | undefined
 
 /** A topic named in someone's words ("what's a pitch?", "explain the pitch statuses"). Most specific first. */
 const WORDS: [RegExp, string][] = [
+  [/\bcampaigns?\b/, "campaigns"],
   [/\bpitch(?:es)? status(?:es)?\b|\bstatus(?:es)? (?:of|on) (?:a )?pitch|\b(?:pitched|declined)\b/, "pitchStatuses"],
   [/\bshared\b|\bevery band\b|\bother bands\b/, "venueSharing"],
   [/\bfans?\b|\bmailing list\b|\bemail list\b|\bbandzoogle\b/, "fans"],

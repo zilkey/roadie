@@ -17,7 +17,7 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
   // a venue with an active pitch opens the pitch from its name; "Venue page" on the pitch page is the place
   await row.getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
-  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  if (/\/booking\/pitches\//.test(page.url())) await page.getByTestId("venue-tab-details").click(); // a venue's pitch opens the venue's one page on its Pitch tab (#82)
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 
@@ -135,7 +135,7 @@ test("venue contacts: the plus adds someone already in Contacts or a new person 
   await page.getByTestId("contact-form-emails").fill(`dayof${STAMP}@marisol.example`);
   await page.getByTestId("contact-add-booking").uncheck();
   await page.getByTestId("contact-add-dayOf").check();
-  await expect(page.getByTestId("contact-add-submit")).toHaveText("Add contact");
+  await expect(page.getByTestId("contact-add-submit")).toHaveText("Create contact");
   await page.getByTestId("contact-add-submit").click();
   await expect(dialog).toBeHidden();
   const added = panel.getByTestId(`contact-${name}`);
@@ -154,23 +154,21 @@ test("venue contacts: the plus adds someone already in Contacts or a new person 
   await expect(page.getByTestId(/^row-contact-/).filter({ hasText: name })).toHaveCount(1);
 });
 
-test("a venue page opens with a slim pitch card: the active pitch with View pitch, or Not on the Pitch List with what came before", async ({ page }) => {
+test("a venue is one page with tabs (#82): Pitch shows the active pitch, or Start a pitch with the past ones; Abandon is in the ⋮ menu", async ({ page }) => {
   await signInAs(page, "rudy");
   await openVenue(page, A, "Pine Hollow Lounge"); // Heron Theatre gets booked by the shows spec; this pitch stays open
-  const card = page.getByTestId("venue-pitch-card");
-  await expect(card).toContainText("On the Pitch List");
-  await expect(card.getByTestId("status-chip")).toBeVisible();
-  await expect(card).toContainText("Trio");
-  await expect(card).toContainText("Rosa"); // the next step: Follow up with Rosa
-  await expect(page.getByTestId("pitch-abandon")).toHaveCount(0); // the work happens on the pitch page
-  await card.getByTestId("view-pitch").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId("venue-tab-details")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("venue-tab-pitch").click();
+  await expect(page.getByTestId("pitch-body")).toBeVisible(); // the pitch's own content, under the venue's one header
+  await expect(page.getByTestId("pitch-status-card")).toBeVisible();
+  await expect(page.getByTestId("booked-it")).toBeVisible();
+  await page.getByTestId("venue-actions").click();
   await expect(page.getByTestId("pitch-abandon")).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await openVenue(page, A, "Deep End", "Deep End");
-  const none = page.getByTestId("venue-pitch-card");
-  await expect(none.getByTestId("not-on-pitch-list")).toContainText("Not on the Pitch List");
-  await expect(none.getByTestId("past-pitches")).toContainText("Pitched before");
-  await expect(none.getByTestId("past-pitches")).toContainText("Became a show");
-  await expect(none.getByTestId(/^flag-/).first()).toContainText("Add to Pitch List");
+  await page.getByTestId("venue-tab-pitch").click();
+  await expect(page.getByTestId("venue-no-pitch")).toContainText("Start a pitch");
+  await expect(page.getByTestId("venue-past-pitches")).toBeVisible(); // what came before, each opening its own pitch
+  await expect(page.getByTestId(/^venue-past-pitch-/).first()).toBeVisible();
 });

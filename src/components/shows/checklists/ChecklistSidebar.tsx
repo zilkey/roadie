@@ -71,7 +71,7 @@ export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
       <button type="button" className="btn acc" disabled={busy || !name.trim()} onClick={addBlank} data-testid="new-list-add">Add</button>
     </>
   ) : (
-    <Menu label="New list" testid="new-list" trigger={<>New list <span aria-hidden>▾</span></>} items={[
+    <Menu label="New list" testid="new-list" trigger={<>+ New list <span aria-hidden>▾</span></>} items={[
       ...templates.map((t) => ({ key: `template-${t.id}`, label: t.name, onSelect: () => void addTemplate(t.id) })),
       { key: "blank", label: "Blank list", divider: templates.length > 0, onSelect: () => setNaming(true) },
     ]} />

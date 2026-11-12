@@ -14,6 +14,11 @@ import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { draftPath } from "@/schema/drafts";
+import { decodeQueue, queueHref } from "@/lib/emailQueue";
+import { ROUTES } from "@/lib/routes";
+import { PersonalTouches } from "@/components/booking/PersonalTouches";
+
+const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 import { buildTemplateContext, fillTemplate, unfilledFields } from "@/lib/booking";
 import { htmlToText, textToHtml } from "@/lib/email-html";
 import { fieldsInWords, nameFromAddress, parseTarget } from "@/lib/email-compose";
@@ -29,7 +34,9 @@ export default function Page() {
 function Compose() {
   const params = useSearchParams();
   const thread = params.get("thread");
-  return thread ? <WithThread id={thread} /> : <ComposeForm thread={null} />;
+  // Keyed by the query, so each email of a Write emails queue (#82 S9) starts as its own form with its own draft.
+  const key = params.toString();
+  return thread ? <WithThread key={key} id={thread} /> : <ComposeForm key={key} thread={null} />;
 }
 function WithThread({ id }: { id: string }) {
   const { doc, loading } = useDoc<EmailThread>("emailThreads", id);
@@ -57,6 +64,14 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   // Where this email goes: ?target=venue:<id>, else the pitch's target, else the thread's place.
   const pitchId = params.get("pitch") ?? thread?.pitchId ?? "";
   const pitch = b.pitches.find((p) => p.id === pitchId);
+  // ?pitches=a,b: more pitches this one email covers (#82 S8: one email to a promoter about several venues). Each gets the same log.
+  const morePitches = (params.get("pitches") ?? "").split(",").filter((x) => x && x !== pitchId && /^[\w-]+$/.test(x));
+  const covered = b.pitches.filter((p) => morePitches.includes(p.id));
+  // Write emails (#82 S9): the queue from a campaign page, this email's place in it, and where it started.
+  const queue = decodeQueue(params.get("queue"));
+  const at = Math.max(0, Number(params.get("at")) || 0);
+  const queueBack = params.get("back")?.startsWith("/booking/") ? params.get("back")! : ROUTES.bookingPitches.path;
+  const nextInQueue = () => router.push(queueHref(queue, at + 1, queueBack) ?? queueBack);
   const target = parseTarget(params.get("target")) ?? (thread ? { kind: thread.target.kind, id: thread.target.id } : pitch ? { kind: pitch.target.kind as Kind, id: pitch.target.id } : null);
   // An act is shared across bands; its contacts are this band's own (actNotes), read here only for an act target.
   const actId = target?.kind === "act" ? target.id : "";
@@ -127,7 +142,8 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
     if (!t) { set({ tpl: "" }); return; }
     if (dirty && !confirm("Replace what you've written with this template?")) return;
     const ctx = context();
-    const next = { subject: fillTemplate(t.subject, ctx), html: textToHtml(fillTemplate(t.body, ctx)) };
+    // A follow-up in the queue replies in its thread: the template fills the message, the subject stays "Re: …".
+    const next = { subject: thread ? subject : fillTemplate(t.subject, ctx), html: textToHtml(fillTemplate(t.body, ctx)) };
     applied.current = next;
     set({ tpl: id, ...next });
   }
@@ -197,7 +213,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   const query = `target=${target ? `${target.kind}:${target.id}` : ""}${pitchId ? `&pitch=${pitchId}` : ""}`;
 
   const payload = () => ({
-    target: target!, ...(pitchId ? { pitchId } : {}), ...(thread ? { threadId: thread.threadId } : {}),
+    target: target!, ...(pitchId ? { pitchId } : {}), ...(morePitches.length ? { pitchIds: morePitches } : {}), ...(thread ? { threadId: thread.threadId } : {}),
     to, ...(cc.length ? { cc } : {}), subject: subject.trim(), body: htmlToText(html).trim(), html,
   });
   const ready = draft.ready && !!target && !!place;
@@ -206,7 +222,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   async function send() {
     await draft.settle();
     const r = await call<{ id: string }>("email.send", { ...payload(), ...(canMark ? { markPitched } : {}) }, { clientMutationId: sendId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); router.push(`/booking/email/${r.id}`); }
+    if (r?.id) { await draft.clear(); if (queue.length) nextInQueue(); else router.push(`/booking/email/${r.id}`); }
   }
   async function saveDraft() {
     setDrafted(false);
@@ -228,6 +244,13 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
       <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined) : []), ...(thread ? [{ label: thread.subject || "Thread", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
         sub={thread ? <>Reply on {thread.subject} · from {profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {profile.email}</>}
         actions={place?.kind === "act" ? undefined : <Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
+      {queue.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#1c1b22] px-3 py-2 text-white" data-testid="email-queue">
+          <b className="mr-auto" data-testid="email-queue-step">{thread ? "Follow-up" : "Email"} {at + 1} of {queue.length}{place ? ` · ${place.name}` : ""}</b>
+          <button type="button" className="btn" onClick={nextInQueue} data-testid="email-queue-skip">{at + 1 < queue.length ? "Skip" : "Skip, done"}</button>
+          <Link href={queueBack} className="btn" data-testid="email-queue-stop">Stop</Link>
+        </div>
+      )}
       <ErrorBox error={error} />
 
       <section className="card">
@@ -301,7 +324,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
           <input className="input" value={subject} onChange={(e) => set({ subject: e.target.value })} data-testid="email-subject" disabled={!draft.ready} />
         </label>
 
-        {!thread && (
+        {(!thread || queue.length > 0) && (
           <div className="grid gap-1.5">
             <span className="lbl">Start from a template</span>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -321,6 +344,8 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
         </div>
         {missing.length > 0 && <div className="note s" data-testid="email-missing">Still to fill in: {missing.map((m) => `{{${m}}}`).join(", ")}</div>}
 
+        {place?.kind === "venue" && pitch && <PersonalTouches venueId={place.id} venueName={place.name} pitchId={pitch.id} onInsert={(t) => set({ html: `${f.html}<p>${escapeHtml(t)}</p>` })} />}
+        {covered.length > 0 && <div className="note s" data-testid="email-covers">This email covers {[...(pitch ? [pitch] : []), ...covered].map((p) => p.target.name).join(", ")}: it is logged on each of their pitches.</div>}
         <div className="note s" data-testid="email-note">
           {artist?.bookingMail ? <>Sends from the booking mailbox ({artist.bookingMail.email}), so it shows in Sent there too.</> : "Sends from your Gmail, so it shows in Sent there too."} {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
         </div>

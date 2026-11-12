@@ -45,7 +45,7 @@ export function VenueTypesEditor() {
           <input className="input" autoFocus placeholder="e.g. Winery" aria-label="Type name" value={label} onChange={(e) => setLabel(e.target.value)} data-testid="new-venue-type-label" />
           <div className="cfg-actions">
             <button type="button" className="btn text" onClick={() => { setAdding(false); setLabel(""); }}>Cancel</button>
-            <button className="btn acc" disabled={busy || !label.trim()} data-testid="new-venue-type-add">Add type</button>
+            <button className="btn acc" disabled={busy || !label.trim()} data-testid="new-venue-type-add">Create type</button>
           </div>
         </form>
       )}

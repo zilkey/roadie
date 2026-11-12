@@ -12,7 +12,7 @@ export default function ProjectsPage() {
   return (
     <div className="grid gap-5">
       <PageTitle title="Projects" back={<Link href="/money" className="back-link" data-testid="back">‹ Money</Link>}
-        actions={admin && !adding ? <button className="btn acc" data-testid="new-project" onClick={() => setAdding(true)}>New project</button> : undefined} />
+        actions={admin && !adding ? <button className="btn acc" data-testid="new-project" onClick={() => setAdding(true)}>+ New project</button> : undefined} />
       <Projects admin={admin} adding={adding} onDoneAdding={() => setAdding(false)} />
     </div>
   );

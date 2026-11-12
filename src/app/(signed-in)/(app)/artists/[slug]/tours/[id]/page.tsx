@@ -84,7 +84,7 @@ function TourView({ tour }: { tour: TourRow }) {
       meta={meta ? <span data-testid="tour-meta">{meta}</span> : undefined}
       more={!admin ? <div className="flex flex-wrap items-center gap-2">
         {form.startDate && form.startDate <= today && today <= (form.endDate || form.startDate) && <Link href={`/tours/${tour.id}/day/${today}`} className="btn outline" data-testid="tour-todays-sheet">Today&apos;s sheet</Link>}
-        <Link href={`/money/expense?tourId=${tour.id}${todays ? `&tourEntryId=${todays.id}` : ""}`} className="btn outline" data-testid="tour-add-expense">+ Add an expense</Link></div> : <div className="flex flex-wrap items-center gap-2">
+        <Link href={`/money/expense?tourId=${tour.id}${todays ? `&tourEntryId=${todays.id}` : ""}`} className="btn outline" data-testid="tour-add-expense">+ New expense</Link></div> : <div className="flex flex-wrap items-center gap-2">
         <SaveStatus {...as.statusProps} />
         <TourAsk tour={tour} musicians={musicians} />
         <Menu label="More actions" testid="tour" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[

@@ -17,12 +17,12 @@ async function openVenue(page: Page, search: string) {
   await page.getByTestId("booking-search").fill(search);
   await page.getByTestId(/^row-venue-/).filter({ hasText: search }).first().getByTestId(/^venue-full-/).click();
   await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
-  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  if (/\/booking\/pitches\//.test(page.url())) await page.getByTestId("venue-tab-details").click(); // a venue's pitch opens the venue's one page on its Pitch tab (#82)
   await expect(page.getByTestId("venue-page")).toBeVisible();
 }
 const DOCS = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents`;
 const OWNER = { authorization: "Bearer owner" };
-const shows = (page: Page) => page.getByTestId("venue-events-list").locator(":scope > div");
+const shows = (page: Page) => page.getByTestId("venue-events-list").locator("tbody tr"); // the Venue calendars table, minus the venue (#82)
 /** A show's flag and X (data-take: "notFit" or ""). */
 const takeIn = (row: Locator) => row.locator('[data-testid^="venue-event-take-"]');
 
@@ -35,7 +35,7 @@ let bluebirdUrl = "";
 test("an admin refreshes the Bluebird Room's calendar and sees the bills, the opener guess, the posters, and the past shows folded away", async ({ page }) => {
   await signInAs(page, "rudy");
   await openVenue(page, "Bluebird Room");
-  bluebirdUrl = new URL(page.url()).pathname;
+  bluebirdUrl = A(`/booking/venues/${await page.getByTestId("venue-page").getAttribute("data-record-id")}`); // the venue's own route: a member on its pitch route gets Can you play? (#82)
   await expect(page.getByTestId("venue-tab-details")).toHaveAttribute("aria-selected", "true");
   await page.getByTestId("venue-tab-events").click();
   await expect(page).toHaveURL(/tab=events/);
@@ -78,8 +78,8 @@ test("an admin refreshes the Bluebird Room's calendar and sees the bills, the op
   // the room's record: two settled bills (the 2020 shows) are not enough to say
   await expect(page.getByTestId("venue-calendar-openers")).toHaveText("Books openers: not enough shows yet");
   // the poster from the feed, a plain square for the shows without one
-  await expect(guests.getByTestId("venue-event-image")).toHaveAttribute("src", "/icon-192.png");
-  await expect(withSupport.getByTestId("venue-event-noimage")).toBeVisible();
+  await expect(guests.getByTestId("calendar-show-poster-image")).toHaveAttribute("src", "/icon-192.png");
+  await expect(withSupport.getByTestId("calendar-show-poster-noimage")).toBeVisible();
 
   // past shows: a collapsed card, who played the room
   await expect(page.getByTestId("venue-events-past")).toContainText("Past shows (2)");

@@ -65,7 +65,7 @@ export function FansTab() {
     <div className="grid gap-5" data-testid="fans-page">
       {admin ? (
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn outline" onClick={() => setAdding((a) => !a)} data-testid="fan-add">Add a fan</button>
+          <button type="button" className="btn outline" onClick={() => setAdding((a) => !a)} data-testid="fan-add">+ New fan</button>
           <button type="button" className="btn acc" onClick={() => setBz(true)} data-testid="bandzoogle-open">Send to Bandzoogle{counts ? ` · ${counts.notInBandzoogle}` : ""}</button>
         </div>
       ) : <p className="s">Counts only. Admins see the addresses.</p>}

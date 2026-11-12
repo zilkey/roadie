@@ -14,7 +14,7 @@ const BUCKETS: { seg: Exclude<Seg, "pitches">; title: string; all: string }[] = 
   { seg: "contacts", title: "Contacts", all: "All contacts" },
 ];
 
-/** What a search shows in place of the tab: one card per kind that matched. */
+/** What a search shows in place of the tab: a section per kind that matched, a plain heading over its table. */
 export function SearchBuckets({ q, ours, onFlag, onLeave }: { q: string; ours: Set<string>; onFlag(t: PitchTarget): void; onLeave(): void }) {
   const b = useBooking();
   const buckets = useMemo(() => {
@@ -29,9 +29,10 @@ export function SearchBuckets({ q, ours, onFlag, onLeave }: { q: string; ours: S
     <div className="grid min-w-0 gap-4" data-testid="search-buckets">
       <p className="s" data-testid="search-summary">{total} {total === 1 ? "result" : "results"} for &ldquo;{q.trim()}&rdquo; · flag anything to add it to the Pitch List</p>
       {buckets.map((k) => (
-        <section key={k.seg} className="card grid min-w-0 gap-2" data-testid={`bucket-${k.seg}`}>
+        // No card around a bucket (Jeff, 2026-11-12: no box inside a box): the heading sits on the page, the table is the only container.
+        <section key={k.seg} className="grid min-w-0 gap-2" data-testid={`bucket-${k.seg}`}>
           <header className="flex flex-wrap items-center gap-2">
-            <h2 className="font-semibold">{k.title}</h2>
+            <h2 className="text-base font-bold">{k.title}</h2>
             <span className="chip a" data-testid={`bucket-count-${k.seg}`}>{k.rows.length}</span>
             <Link href={k.seg === "contacts" ? "/contacts" : `/booking/${k.seg}`} onClick={onLeave} className="s ml-auto" data-testid={`bucket-all-${k.seg}`}>{k.all}</Link>
           </header>

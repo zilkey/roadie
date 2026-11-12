@@ -51,9 +51,9 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchId = page.url().split("/").pop()!.split("?")[0];
-  const venueId = (await page.getByTestId("target-link").getAttribute("href"))!.split("/").pop()!;
+  const venueId = (await page.getByTestId("venue-page").getAttribute("data-record-id"))!; // the venue's one page (#82)
 
   // A first email from the venue, then a follow-up that quotes it.
   const subject = `Dec 11 at Pine Hollow ${Date.now()}`;
@@ -76,7 +76,7 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   await card.getByTestId(`thread-${linked.id}`).click();
   await expect(page.getByTestId("thread-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText(subject);
-  await expect(page.getByTestId("crumb-1")).toHaveText("Pitch List"); // Booking › Pitch List › the pitch › this thread
+  await expect(page.getByTestId("crumb-1")).toHaveText("Campaigns"); // Booking › Campaigns › the pitch › this thread (#82)
   await expect(page.getByTestId("crumb-current")).toHaveText(subject);
   await expect(page.getByTestId("thread-page")).toContainText("2 messages · Rosa Jackson");
   await expect(page.getByTestId("thread-private")).toContainText("sent and received from rudy@example.com");
@@ -119,9 +119,9 @@ test("unlinking a thread takes it off the place and returns to the pitch", async
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchId = page.url().split("/").pop()!.split("?")[0];
-  const venueId = (await page.getByTestId("target-link").getAttribute("href"))!.split("/").pop()!;
+  const venueId = (await page.getByTestId("venue-page").getAttribute("data-record-id"))!; // the venue's one page (#82)
   const subject = `Unlink me ${Date.now()}`;
   const m = (await (await request.post(`${GMAIL}/messages/receive`, { data: { from: "rosa@pinehollow.example", to: ["rudy@example.com"], subject, body: "Hello" } })).json()) as { threadId: string };
   const linked = await cmd<{ id: string }>("email.link", { threadId: m.threadId, target: { kind: "venue", id: venueId }, pitchId });

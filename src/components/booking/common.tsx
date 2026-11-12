@@ -12,9 +12,10 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useAutosave } from "@/lib/autosave";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId, type CommandMeta } from "@/lib/commands";
-import type { Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
+import type { Campaign, Venue, VenueNote, Promoter, Festival, Edition, Contact, Pitch, Comment, FestivalNote, EditionNote, PromoterNote, ContactNote } from "@/schema";
 import { VenueTypeSelect } from "@/components/booking/VenueTypeSelect";
 import { linkLabel, withScheme } from "@/lib/links";
+import { campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
@@ -50,6 +51,8 @@ export function useBooking() {
   const eNotes = useCollection<EditionNote>("editionNotes", mine);
   const pNotes = useCollection<PromoterNote>("promoterNotes", mine);
   const cNotes = useCollection<ContactNote>("contactNotes", mine);
+  // Booking campaigns (#82): admins only, like pitches. Archived ones (an undone campaigns.create) are left out.
+  const campaigns = useCollection<Campaign>("campaigns", mine);
   const venueNotes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.venueId, n])), [notes.rows]);
   const venueRows = useMemo<VenueRow[]>(
     () => (venues.rows ?? []).filter((v) => !venueNotes.get(v.id)?.deletedAt).map((v) => withNotes(v, venueNotes.get(v.id)) as VenueRow),
@@ -67,8 +70,8 @@ export function useBooking() {
     contacts: (contacts.rows ?? []).map((d) => withBandNote("contacts", d, bandNotes.contacts.get(d.id)) as Noted<Row<Contact>>),
   }), [promoters.rows, festivals.rows, editions.rows, contacts.rows, bandNotes]);
   return {
-    venues: venueRows, venueNotes, bandNotes, ...noted, pitches: pitches.rows ?? [],
-    loading: [venues, notes, promoters, festivals, editions, contacts, pitches, fNotes, eNotes, pNotes, cNotes].some((c) => c.loading),
+    venues: venueRows, venueNotes, bandNotes, ...noted, pitches: pitches.rows ?? [], campaigns: campaigns.rows ?? [],
+    loading: [venues, notes, promoters, festivals, editions, contacts, pitches, fNotes, eNotes, pNotes, cNotes, campaigns].some((c) => c.loading),
   };
 }
 
@@ -99,9 +102,9 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
   return <button type="button" className="btn ghost sm" onClick={copy} data-testid="copy-email" data-copy={text}>{done ? "Copied" : label}</button>;
 }
 
-export function StatusChip({ status }: { status: string }) {
+export function StatusChip({ status, label }: { status: string; /** Instead of the status's name ("3 Pitched"). */ label?: string }) {
   const cls = status === "booked" ? "g" : status === "declined" || status === "dropped" ? "" : status === "idea" || status === "toPitch" ? "a" : "m";
-  return <span className={`chip ${cls}`} data-testid="status-chip">{STATUS_LABEL[status as Status] ?? status}</span>;
+  return <span className={`chip ${cls}`} data-testid="status-chip">{label ?? STATUS_LABEL[status as Status] ?? status}</span>;
 }
 
 /** The status shown beside a page title: neutral pill, green when booked. */
@@ -207,15 +210,16 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
   const formOpen = showForm && !open;
 
   function close() { setShowForm(false); setPitchedAs(""); setComment(""); setDates([]); btn.current?.focus(); }
-  function tap(e: React.MouseEvent) {
+  const fc = useFlagCampaign();
+  async function tap(e: React.MouseEvent) {
     e.preventDefault(); e.stopPropagation();
     if (open) return router.push(`/booking/pitches/${open.id}`);
     if (formOpen) return close();
-    setShowForm(true);
+    if (await fc.ask()) setShowForm(true); // which campaign (#82), once per page
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
-    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(dates.length ? { dates } : {}), ...(pitchedAs ? { pitchedAs } : {}) });
+    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(dates.length ? { dates } : {}), ...(pitchedAs ? { pitchedAs } : {}), ...campaignArg(fc.chosen) });
     if (!r) return;
     // the first comment is a real comment on the new pitch (its timeline), not the pitch's notes field
     if (comment.trim()) await call("pitches.comment", { id: r.id, body: comment.trim() });
@@ -247,7 +251,7 @@ function useFlag(kind: "venue" | "promoter" | "edition", id: string, pitches: Pi
           </label>
           <div className="flex flex-wrap justify-end gap-2">
             <button type="button" className="btn ghost" onClick={close} data-testid={`flag-cancel-${id}`}>Cancel</button>
-            <button type="submit" className="btn acc" disabled={busy} data-testid={`flag-submit-${id}`}>Add to pitch list</button>
+            <button type="submit" className="btn acc" disabled={busy} data-testid={`flag-submit-${id}`}>Add to {fc.chosen ? fc.label(fc.chosen) : "Ongoing"}</button>
           </div>
         </form>
       )}

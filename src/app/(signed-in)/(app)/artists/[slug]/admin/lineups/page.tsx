@@ -97,7 +97,7 @@ function LineupsEditor() {
             <DraftNote restoredAt={cfgDraft.restoredAt} status={cfgDraft.status} onStartOver={() => void cfgDraft.clear({ reset: true })} />
             <div className="cfg-actions">
               <button type="button" className="btn text" data-testid="new-config-cancel" onClick={() => { void cfgDraft.clear({ reset: true }); setForm(null); }}>Cancel</button>
-              <button className="btn acc" disabled={busy || !dv.name.trim()} data-testid="new-config-add">Add configuration</button>
+              <button className="btn acc" disabled={busy || !dv.name.trim()} data-testid="new-config-add">Create configuration</button>
             </div>
           </form>
         )}

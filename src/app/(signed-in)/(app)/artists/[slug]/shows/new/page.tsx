@@ -99,7 +99,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
       <PageTitle back={<BackLink href={pitchId ? `/booking/pitches/${pitchId}` : "/shows"} label={pitchId ? "Pitch" : "All shows"} />} title="New show" sub={t ? `From the pitch to ${t.name}` : "Add a show that didn't come from the Pitch List."} />
       {!draft.ready ? null : <>
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />
-        <ShowForm value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Add ${chosen.length} shows` : "Add show"} onSubmit={save}
+        <ShowForm value={{ ...blank, ...s }} onChange={draft.setValue} venues={venues} contacts={contacts} editions={editions} artist={artist} musicians={musicians} error={error} busy={busy || (pitchDates.length > 0 && chosen.length === 0)} submitLabel={chosen.length > 1 ? `Create ${chosen.length} shows` : "Create show"} onSubmit={save}
           dateSlot={pitchDates.length ? (
             <div className="grid gap-1.5" data-testid="pitch-date-picker">
               <span className="lbl">Which dates are shows?</span>

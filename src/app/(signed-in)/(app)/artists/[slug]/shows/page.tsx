@@ -49,13 +49,13 @@ export default function Shows() {
         body={p.role === "admin"
           ? "Every gig lives here: dates, venues, who's playing, set times and what you got paid. Add your next show and it can go straight onto the band calendar."
           : "Every gig lives here: dates, venues, who's playing and set times. Once the band books one, it'll show up here."}
-        actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">New show</Link> : undefined} />
+        actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">+ New show</Link> : undefined} />
     );
   }
   return (
     <div className="grid gap-5" data-testid="shows-page">
       <PageTitle title="Shows" center
-        actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">New show</Link> : undefined} />
+        actions={p.role === "admin" ? <Link href="/shows/new" className="btn acc" data-testid="new-show-btn">+ New show</Link> : undefined} />
       <Tabs<ShowFilter> testid="shows-filter" value={filter} onChange={pick}
         options={filters.map((f) => [f, b.loading ? SHOW_FILTER_LABEL[f] : `${SHOW_FILTER_LABEL[f]} · ${count(f)}`])} />
       {!b.loading && <ShowTable tab={filter} shows={shown} setlists={b.setlists} admin={p.role === "admin"} fields={showFields ?? []} />}

@@ -58,7 +58,7 @@ export const search = defineCommand({
 /** What an AI may read. Not users, AI keys or history. Musicians are whole for admins (contact details, userId); mcp gets names and ids only. */
 const READABLE = [
   "venues", "venueTypes", "promoters", "acts", "festivals", "editions", "contacts", "pitches", "emailTemplates", "shows", "showDeals", "availability",
-  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "stagePlots", "rehearsals", "expenses", "statSnapshots", "artists", "musicians", "projects", "income", "payouts", "releases", "tours",
+  "checklistTemplates", "setlistTemplates", "songs", "files", "setlists", "stagePlots", "rehearsals", "expenses", "statSnapshots", "artists", "musicians", "projects", "income", "payouts", "releases", "tours", "campaigns",
 ] as const;
 const kindEnum = z.enum(READABLE);
 
@@ -86,6 +86,8 @@ function withLength(d: Doc, show?: Doc | null): Doc {
  * Everything else isn't partitioned by artist yet (one band per project today), so it is visible to every member.
  */
 function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, unknown>) {
+  // Booking campaigns (#82) are admins' only, like the rules: never through MCP, never another band's.
+  if (kind === "campaigns") return (ctx as { role?: string }).role === "admin" && (!ctx.artistId || d.artistId === ctx.artistId);
   if (!ctx.artistId) return true;
   if (kind === "artists") return d.id === ctx.artistId;
   if (kind === "shows" || kind === "pitches" || kind === "tours") return !d.artistId || d.artistId === ctx.artistId;

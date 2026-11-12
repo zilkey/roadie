@@ -110,7 +110,7 @@ function NewTemplate({ onDone }: { onDone(): void }) {
       <textarea className="input" rows={7} placeholder="Message" value={v.body} onChange={(e) => d.setValue({ ...v, body: e.target.value })} data-testid="template-body" />
       <Kinds value={v.targetKinds} onChange={(targetKinds) => d.setValue({ ...v, targetKinds })} />
       <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
-      <div className="flex gap-2"><button className="btn acc" disabled={busy} data-testid="template-save">Add template</button><button type="button" className="btn ghost" onClick={onDone}>Close</button></div>
+      <div className="flex gap-2"><button className="btn acc" disabled={busy} data-testid="template-save">Create template</button><button type="button" className="btn ghost" onClick={onDone}>Close</button></div>
     </form>
   );
 }

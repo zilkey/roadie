@@ -54,7 +54,7 @@ export function AddFan({ open, onOpen, onClose }: { open: boolean; onOpen(): voi
 
   return (
     <form onSubmit={submit} noValidate className="card" style={{ maxWidth: 760 }} data-testid="fan-add-form" aria-labelledby="fan-add-title">
-      <h2 id="fan-add-title" className="card-h">Add a fan</h2>
+      <h2 id="fan-add-title" className="card-h">New fan</h2>
       <p className="s">From a paper signup sheet. Only the email is needed.</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="grid gap-1"><span className="lbl">Email</span>

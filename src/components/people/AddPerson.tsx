@@ -49,7 +49,7 @@ export function AddPerson({ onClose }: { onClose(): void }) {
   return (
     <form onSubmit={submit} noValidate className="card" style={{ maxWidth: 760 }} data-testid="add-user" aria-labelledby="add-title">
       <div className="flex items-center justify-between gap-2">
-        <h2 id="add-title" className="text-lg">Add a person</h2>
+        <h2 id="add-title" className="text-lg">New person</h2>
         <button type="button" className="icon-btn" aria-label="Close" onClick={onClose} data-testid="user-close"><CloseIcon /></button>
       </div>
       <ErrorBox error={error} />
@@ -101,7 +101,7 @@ export function AddPerson({ onClose }: { onClose(): void }) {
 
       <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => { void d.clear({ reset: true }); setLocal({}); reset(); }} />
       <div className="flex items-center gap-3">
-        <button className="btn acc" disabled={busy} data-testid="user-add">Add person</button>
+        <button className="btn acc" disabled={busy} data-testid="user-add">Create person</button>
         <button type="button" className="btn text" onClick={() => void cancel()} data-testid="user-cancel">Cancel</button>
       </div>
     </form>

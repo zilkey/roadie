@@ -21,7 +21,7 @@ export function WelcomeArt({ variant = 0 }: { variant?: 0 | 1 | 2 }) {
 /**
  * What a section shows when it has no data at all: it replaces ALL the page's normal UI (search, chips, tabs, lists, add buttons).
  * `actions` are the page's primary create buttons; `children` render below the card (e.g. the open "new X" form).
- *   if (!loading && nothingAtAll) return <WelcomeEmpty section="booking" title="Welcome to Booking!" body="..." actions={<button className="btn acc">+ Add a place</button>}>{form}</WelcomeEmpty>;
+ *   if (!loading && nothingAtAll) return <WelcomeEmpty section="booking" title="Welcome to Booking!" body="..." actions={<button className="btn acc">+ New venue</button>}>{form}</WelcomeEmpty>;
  */
 export function WelcomeEmpty({ section, title, body, actions, children, variant, hideable = true }: {
   section: SectionId; title: string; body: ReactNode; actions?: ReactNode; children?: ReactNode; variant?: 0 | 1 | 2; hideable?: boolean;

@@ -118,7 +118,7 @@ function DaySheet({ tour, date }: { tour: Tour & { id: string }; date: string })
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Link href={`/money/expense?tourId=${tour.id}${pin ? `&tourEntryId=${pin.id}` : ""}`} className="btn acc justify-center" data-testid="day-sheet-expense">+ Add an expense</Link>
+        <Link href={`/money/expense?tourId=${tour.id}${pin ? `&tourEntryId=${pin.id}` : ""}`} className="btn acc justify-center" data-testid="day-sheet-expense">+ New expense</Link>
         <Link href={`/tours/${tour.id}`} className="btn outline justify-center" data-testid="day-sheet-whole-tour">Whole tour</Link>
       </div>
     </div>

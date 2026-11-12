@@ -62,10 +62,10 @@ function Contacts() {
   }
   const form = adding && (
     <EntityForm testid="new-contact" fields={contactForm.fields} initial={contactForm.blank} build={contactForm.build}
-      submitLabel="Add contact" onSubmit={create} onCancel={() => setAdd(false)}
+      submitLabel="Create contact" onSubmit={create} onCancel={() => setAdd(false)}
       draft={{ path: draftPath.newIn("contacts"), route: "/contacts", title: (v) => `New contact${v.name ? ` · ${v.name}` : ""}` }} />
   );
-  const addButton = <button type="button" className="btn acc" data-testid="add-contact" onClick={() => setAdd(!adding)}>+ Add contact</button>;
+  const addButton = <button type="button" className="btn acc" data-testid="add-contact" onClick={() => setAdd(!adding)}>+ New contact</button>;
 
   if (!b.loading && b.contacts.length === 0) {
     return (

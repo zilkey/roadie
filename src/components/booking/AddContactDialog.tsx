@@ -140,12 +140,12 @@ function NewPersonForm({ path, formId, busy, rolesBox, onCreate, onCancel }: {
     <>
       <form id={formId} onSubmit={submit} className="grid gap-2" data-testid="contact-form">
         <FormFields fields={contactForm.fields} v={d.value} set={(k, val) => d.setValue((x) => ({ ...x, [k]: val }))} testid="contact-form" />
-        <span className="s">Half-finished? It&apos;s kept as a draft until you press Add contact.</span>
+        <span className="s">Half-finished? It&apos;s kept as a draft until you press Create contact.</span>
         <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
       </form>
       {rolesBox}
       <DialogFoot onCancel={onCancel}>
-        <button type="submit" form={formId} className="btn acc" disabled={busy || sending} data-testid="contact-add-submit">Add contact</button>
+        <button type="submit" form={formId} className="btn acc" disabled={busy || sending} data-testid="contact-add-submit">Create contact</button>
       </DialogFoot>
     </>
   );

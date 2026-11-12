@@ -19,7 +19,10 @@ export const ROUTES = {
   showAfter: { title: "After the show", path: "/shows/:id/after", params: ["id"] },
   newShow: { title: "New show", path: "/shows/new" },
   booking: { title: "Booking", path: "/booking" },
-  bookingPitches: { title: "Pitch List", path: "/booking/pitches" },
+  // The full Pitch List went away (#82 Q1): campaign pages replace it. bookingPitches is Ongoing, where every pitch with no campaign is.
+  bookingPitches: { title: "Ongoing", path: "/booking/campaigns/ongoing" },
+  bookingCampaigns: { title: "Campaigns", path: "/booking/campaigns" },
+  campaign: { title: "Campaign", path: "/booking/campaigns/:id", params: ["id"] },
   bookingVenues: { title: "Venues", path: "/booking/venues" },
   bookingFestivals: { title: "Festivals & series", path: "/booking/festivals" },
   bookingPromoters: { title: "Promoters", path: "/booking/promoters" },
@@ -74,7 +77,7 @@ export const ROUTES = {
 /** Record pages: route name -> the collection its `id` param lives in (what `records.get` takes). */
 export const RECORD_ROUTES = {
   show: "shows", venue: "venues", promoter: "promoters", act: "acts", festival: "festivals", edition: "editions", contact: "contacts",
-  pitch: "pitches", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
+  pitch: "pitches", campaign: "campaigns", emailThread: "emailThreads", song: "songs", setlist: "setlistTemplates", rehearsal: "rehearsals", stagePlot: "stagePlots", showAfter: "shows",
   showSetlist: "shows", showFinances: "shows", project: "projects", release: "releases", tour: "tours", releaseMoney: "releases", releaseFiles: "releases",
 } as const satisfies Partial<Record<keyof typeof ROUTES, string>>;
 /** The page for one record of a collection (null when there is none). */

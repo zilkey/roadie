@@ -96,7 +96,7 @@ function FestivalPage() {
           ]} />
         </DetailCard>
 
-        <DetailCard title="Years" testid="festival-years" headerExtra={<PlusButton label="Add a year" testid="add-edition" onClick={() => setAddingEd(true)} />}>
+        <DetailCard title="Years" testid="festival-years" headerExtra={<PlusButton label="New year" testid="add-edition" onClick={() => setAddingEd(true)} />}>
           {editions.length === 0 ? <div className="empty">No dates yet.</div> : (
             <div>
               {editions.map((e) => {
@@ -163,7 +163,7 @@ function AddEditionDialog({ festival, path, open, onClose }: { festival: Festiva
   const formId = useId();
   const close = () => { setError(null); onClose(); };
   return (
-    <Dialog open={open} onClose={close} title="Add a year" testid="year-add-dialog">
+    <Dialog open={open} onClose={close} title="New year" testid="year-add-dialog">
       <DialogClose onClose={close} testid="year-add-close" />
       <span className="s -mt-2">To {festival.name}</span>
       <NewEditionForm path={path} formId={formId} busy={busy} festivalName={festival.name} onCancel={close}
@@ -194,11 +194,11 @@ function NewEditionForm({ path, formId, busy, festivalName, onCreate, onCancel }
     <>
       <form id={formId} onSubmit={submit} className="grid gap-2" data-testid="new-edition">
         <FormFields fields={editionForm.fields} v={d.value} set={(k, val) => d.setValue((x) => ({ ...x, [k]: val }))} testid="new-edition" />
-        <span className="s">Half-finished? It&apos;s kept as a draft until you press Add year.</span>
+        <span className="s">Half-finished? It&apos;s kept as a draft until you press Create year.</span>
         <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
       </form>
       <DialogFoot cancelTestid="new-edition-cancel" onCancel={onCancel}>
-        <button type="submit" form={formId} className="btn acc" disabled={busy || sending} data-testid="new-edition-submit">Add year</button>
+        <button type="submit" form={formId} className="btn acc" disabled={busy || sending} data-testid="new-edition-submit">Create year</button>
       </DialogFoot>
     </>
   );

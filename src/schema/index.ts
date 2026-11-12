@@ -31,7 +31,7 @@ import { TourInput, TourEntryInput } from "./tours";
 import { CampaignInput } from "./campaigns";
 import { PostInput } from "./posts";
 import { SocialChecklistsInput } from "./socialChecklists";
-import { TodoInput, TodoListsInput } from "./todos";
+import { TodoInput } from "./todos";
 import { IncomeInput } from "./income";
 import { PayoutInput } from "./payouts";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -142,7 +142,6 @@ export const collections: Record<string, CollectionDef> = {
   posts: { input: PostInput },
   socialChecklists: { input: SocialChecklistsInput },
   todos: { input: TodoInput },
-  todoLists: { input: TodoListsInput },
   income: { input: IncomeInput },
   payouts: { input: PayoutInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },

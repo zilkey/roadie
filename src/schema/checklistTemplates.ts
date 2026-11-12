@@ -4,11 +4,9 @@ import { entity, serverMask, id } from "./common";
 /** One to-do on a template: just its text (a list made from it gets new item ids, not done, unassigned). */
 export const templateItem = z.strictObject({ id, label: z.string().min(1) });
 
-/** What a checklist hangs off: a show, a release, the band's Social Media sidebar or the band's own To Dos lists (one set per artist each). */
-export const checklistKind = z.enum(["show", "release", "social", "board"]);
+/** What a checklist hangs off: a show, a release, or the band's Social Media sidebar (one per artist). */
+export const checklistKind = z.enum(["show", "release", "social"]);
 export type ChecklistKind = z.infer<typeof checklistKind>;
-/** What a template can apply to: not "board" (To Dos lists start blank). */
-export const templateAppliesTo = z.enum(["show", "release", "social"]);
 
 /**
  * A named checklist an artist's admins keep (Artist settings › Checklist templates). "New list" on a show, a release or the
@@ -18,7 +16,7 @@ export const templateAppliesTo = z.enum(["show", "release", "social"]);
 export const ChecklistTemplate = entity({
   artistId: id,
   name: z.string().min(1),
-  appliesTo: templateAppliesTo.optional(),
+  appliesTo: checklistKind.optional(),
   order: z.number().int(),
   items: z.array(templateItem),
 });

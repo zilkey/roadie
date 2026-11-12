@@ -35,7 +35,7 @@ test("Booked it turns a pitch into a show with a set length, show start and a de
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Heron Theatre" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchUrl = page.url();
   await page.goto(pitchUrl.replace("/booking/pitches/", "/shows/new?pitch=")); // Booked it's form lives on the pitch page; this route stays for Roadie
 
@@ -151,7 +151,7 @@ test("Ask who's free: one email per person for every date, a sub answers each da
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Creamery Arts Center" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchUrl = page.url();
   await page.getByTestId("pitch-dates-date").fill("2027-03-06");
   await page.getByTestId("pitch-dates-add").click();

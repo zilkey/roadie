@@ -38,8 +38,10 @@ test("script: 'pitch list' opens the pitch list", () => {
 });
 
 test("routes: booking tabs, show tabs and shows filters resolve", () => {
-  assert.equal(resolveRoute("bookingPitches")?.href, "/booking/pitches");
-  assert.equal(resolveRoute("bookingPitches")?.title, "Pitch List");
+  // The Pitch List went away (#82 Q1): "bookingPitches" is Ongoing; campaigns have their own routes.
+  assert.equal(resolveRoute("bookingPitches")?.href, "/booking/campaigns/ongoing");
+  assert.equal(resolveRoute("bookingPitches")?.title, "Ongoing");
+  assert.equal(resolveRoute("campaign", { id: "c1" })?.href, "/booking/campaigns/c1");
   assert.equal(resolveRoute("bookingVenues", {}, "nora-quill")?.href, "/artists/nora-quill/booking/venues");
   assert.equal(resolveRoute("showSetlist", { id: "abc" })?.href, "/shows/abc?tab=setlist");
   assert.equal(resolveRoute("showFinances", { id: "abc" }, "nora-quill")?.href, "/artists/nora-quill/shows/abc?tab=finances");
@@ -50,7 +52,8 @@ test("routes: booking tabs, show tabs and shows filters resolve", () => {
 });
 
 test("routes: reverse lookup ignores query and hash and keeps the plain route", () => {
-  assert.deepEqual(routeForPath("/booking/pitches"), { route: "bookingPitches", params: {} });
+  assert.deepEqual(routeForPath("/booking/campaigns/ongoing"), { route: "bookingPitches", params: {} });
+  assert.deepEqual(routeForPath("/booking/campaigns/c1"), { route: "campaign", params: { id: "c1" } });
   assert.deepEqual(routeForPath("/shows/abc?tab=setlist"), { route: "show", params: { id: "abc" } });
   assert.deepEqual(routeForPath("/artists/nora-quill/shows/abc?tab=finances"), { route: "show", params: { id: "abc" }, artist: "nora-quill" });
   assert.deepEqual(routeForPath("/shows#played"), { route: "shows", params: {} });

@@ -14,6 +14,11 @@ export const EmailThread = entity({
   target: z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "act"]), id, name: z.string().min(1) }),
   /** The pitch it was sent from or linked to, if any. */
   pitchId: id.optional(),
+  /**
+   * Every pitch the thread covers (#82 S8: one email to a promoter about several venues). Read as `pitchIds ?? [pitchId]`
+   * (threadPitchIds); written as a union, never shrunk by a send or link. No backfill: older threads have pitchId only.
+   */
+  pitchIds: z.array(id).optional(),
   subject: z.string(),
   /** First ~160 characters of the last message's text, quoted part stripped. */
   snippet: z.string(),
@@ -34,6 +39,8 @@ export const EmailThread = entity({
 export const EmailThreadInput = EmailThread.omit(serverMask);
 export type EmailThread = z.infer<typeof EmailThread>;
 export const emailThreadId = (artistId: string, threadId: string) => `${artistId}__${threadId}`;
+/** The pitches a thread covers: `pitchIds`, or the one `pitchId` of a thread from before S8. */
+export const threadPitchIds = (t: { pitchId?: string | null; pitchIds?: readonly string[] | null }): string[] => t.pitchIds ? [...t.pitchIds] : t.pitchId ? [t.pitchId] : [];
 
 /** "New reply": the last message came in and nobody has opened the thread since. */
 export function hasNewReply(t: { lastDirection: string; lastDate: string; lastSeenAt?: { toMillis(): number } | Date | null }): boolean {

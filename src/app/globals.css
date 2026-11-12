@@ -243,6 +243,7 @@ fieldset.sec { margin: 0; }
 /* A search box in the page actions, left of the primary button. Fixed width on purpose: Chrome sizes a wrapping flex row
    by its widest item, so a flexible box here pushes the button onto its own line. Full width on phones. */
 .search-field { position: relative; display: block; flex: none; width: 320px; }
+.search-field.narrow { width: 220px; }
 .search-field .search-ic { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
 .search-field .input { padding-left: 38px; }
 .search-field .input:has(+ .search-clear) { padding-right: 76px; }
@@ -285,6 +286,19 @@ fieldset.sec { margin: 0; }
 .book-table a.em { font-size: 0.875rem; color: var(--accent-text); text-decoration: none; }
 .book-table a.ph { font-size: 0.875rem; color: var(--nav-text); text-decoration: none; }
 .book-table .dash { color: var(--muted); opacity: .7; }
+/* Campaign pages (#82): Name wraps at a sensible width, Next step gets room. */
+.book-table.camp th.name, .book-table.camp td.name { min-width: 200px; max-width: 300px; white-space: normal; }
+.book-table.camp th.ns, .book-table.camp td.ns { min-width: 240px; }
+/* Booking sidebar (#82): Ongoing and the campaigns hang under All campaigns as a small file tree (desktop only). */
+@media (min-width: 900px) {
+  .nav-kid { position: relative; margin-left: 22px; width: calc(100% - 22px); overflow: visible; }
+  .nav-kid::before { content: ""; position: absolute; left: -12px; top: 0; height: 50%; width: 9px; border-left: 1.5px solid var(--input-border); border-bottom: 1.5px solid var(--input-border); border-bottom-left-radius: 6px; }
+  .nav-kid:not([data-last])::after { content: ""; position: absolute; left: -12px; top: 50%; bottom: 0; border-left: 1.5px solid var(--input-border); }
+}
+/* Campaign pages: a promoter group row and the venues nested under it (#82). */
+.book-table tr.grp td { background: var(--empty); border-bottom-style: dashed; }
+.book-table td.name.child { padding-left: 52px; position: relative; }
+.book-table td.name.child::before { content: ""; position: absolute; left: 24px; top: 0; height: 24px; width: 18px; border-left: 1.5px solid var(--input-border); border-bottom: 1.5px solid var(--input-border); border-bottom-left-radius: 6px; }
 .book-table .pc { font-size: 0.875rem; font-weight: 700; color: var(--ink); }
 .book-table .pd { font-size: 0.875rem; color: var(--nav-text); margin-left: 8px; }
 /* Songs list: one table, like the booking lists. The lyrics link and the title are the only targets. */
@@ -820,6 +834,7 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .td-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 0.75rem; color: var(--muted); }
 .td-meta a { color: var(--muted); }
 .td-who { font-weight: 700; color: var(--ink); }
+.td-tx > span:first-child, .td-tx .val.td-label { width: 100%; text-align: left; }
 .td-pin { width: 28px; height: 28px; flex: none; border: 0; border-radius: 7px; background: none; color: var(--muted); opacity: .7; display: grid; place-items: center; cursor: pointer; margin: -4px -2px 0 0; }
 .td-pin:hover { background: var(--divider); color: var(--ink); opacity: 1; }
 .td-pin[aria-pressed=true] { color: var(--accent); opacity: 1; }
@@ -830,8 +845,10 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .td-addbtn:hover { background: var(--divider); color: var(--ink); }
 .td-addbtn > span { font-size: 1.1rem; line-height: 1; }
 .td-addform { display: grid; gap: 6px; }
-.td-newcol { flex: 0 0 296px; background: var(--soft); border-radius: 14px; padding: 6px; }
-.td-newcol .td-addform { padding: 4px; }
+/* A column's "+ Add list" (show, releases, Social Media) and a list's fold chevron (Jeff, 2026-11-12). */
+.td-addlist { display: grid; gap: 6px; margin-top: 4px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.td-fold { flex: none; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--muted); display: grid; place-items: center; cursor: pointer; margin-left: -4px; }
+.td-fold:hover { background: var(--divider); color: var(--ink); }
 .td-none { padding: 14px 8px; text-align: center; font-size: 0.8125rem; color: var(--muted); border: 1.5px dashed var(--line); border-radius: 10px; margin: 0; }
 .chip.r { background: var(--danger-soft); color: var(--danger); }
 .td-chips { display: none; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
@@ -844,7 +861,6 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
   .td-board { display: block; overflow: visible; }
   .td-col { display: none; background: none; padding: 0; }
   .td-col[data-on] { display: flex; }
-  .td-newcol { margin-top: 12px; }
   .td-col > .td-ch { display: none; }
   .td-mv { display: flex; }
   .td-grip { display: none; }

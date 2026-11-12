@@ -84,7 +84,7 @@ export function ExpensesCardFor({ target, admin }: { target: ExpenseTarget; admi
 
   const nobody = rows.length === 0;
   // The full form (category, gas estimate, logging for a bandmate), filed under this show or rehearsal.
-  const fullForm = <Link href={`/money/expense?${target.kind === "show" ? "show" : "rehearsalId"}=${encodeURIComponent(target.id)}`} className="btn ghost" data-testid="expenses-full-form">+ Add expense</Link>;
+  const fullForm = <Link href={`/money/expense?${target.kind === "show" ? "show" : "rehearsalId"}=${encodeURIComponent(target.id)}`} className="btn ghost" data-testid="expenses-full-form">+ New expense</Link>;
   return (
     <EditableCard title="Expenses" testid="expenses" ed={ed} onSave={save} busy={busy} error={error}>
       {ed.editing ? (

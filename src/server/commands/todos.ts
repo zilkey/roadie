@@ -72,14 +72,14 @@ export const todosRemove = defineCommand({
 
 export const todosSetOrder = defineCommand({
   name: "todos.setOrder", roles: [...ROLES],
-  description: "Save the caller's order of one To Dos column (pinned, booking, show:{showId}, releases, social, our, list:{listId}): keys are item keys, top first. Personal: it changes only this page, only for the caller.",
+  description: "Save the caller's order of one To Dos column (pinned, booking, campaign:{campaignId}, show:{showId}, releases, social, our): keys are item keys, top first. Personal: it changes only this page, only for the caller.",
   input: z.strictObject({ column: z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column"), keys: z.array(z.string().min(1).max(200)).max(1000) }),
   async run(ctx, i) { return { column: i.column, keys: await setTodoOrder(ctx.uid, i.column, i.keys) }; },
 });
 
 export const todosSetColumns = defineCommand({
   name: "todos.setColumns", roles: [...ROLES],
-  description: "Save the caller's order of the To Dos columns themselves (pinned, booking, show:{showId}, releases, social, our, list:{listId}), left first. Personal: it changes only this page, only for the caller.",
+  description: "Save the caller's order of the To Dos columns themselves (pinned, booking, campaign:{campaignId}, show:{showId}, releases, social, our), left first. Personal: it changes only this page, only for the caller.",
   input: z.strictObject({ keys: z.array(z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column")).max(500) }),
   async run(ctx, i) { return { columns: await setTodoColumns(ctx.uid, i.keys) }; },
 });

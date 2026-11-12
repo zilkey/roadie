@@ -16,7 +16,9 @@ import { linkify } from "@/lib/linkify";
 import { htmlToText } from "@/lib/email-html";
 import { initialsOf, paragraphsOf, previewOf, replyRecipients, splitQuoted } from "@/lib/email-text";
 import { pitchCellText } from "@/lib/booking";
-import { hasNewReply, type EmailThread } from "@/schema";
+import { hasNewReply, threadPitchIds, type EmailThread } from "@/schema";
+import { StatusChip } from "@/components/booking/common";
+import { isActive } from "@/lib/booking";
 
 type Message = { id: string; threadId: string; direction: "sent" | "received"; from: string; fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string };
 
@@ -82,6 +84,7 @@ function ThreadPage() {
         </div>} />
       <p className="s" data-testid="thread-private">Only {artist?.name ?? "your band"} sees this · sent and received from {t.account}</p>
       <ErrorBox error={error} />
+      <CoversCard t={t} />
       {messages !== null && (
         <div className="grid gap-3" data-testid="thread-messages">
           {messages.map((m, n) => <MessageView key={m.id} m={m} n={n} last={n === messages.length - 1} isNew={n === messages.length - 1 && m.direction === "received" && fresh === true} account={t.account} sentBy={sentBy[m.id]} nameOf={nameOf} />)}
@@ -212,6 +215,49 @@ function ReplyCard({ t, messages, nameOf, busy, onSent }: { t: Row<EmailThread>;
         <button type="button" className="btn" onClick={draft} disabled={!canSend} data-testid="reply-draft">Save draft in Gmail</button>
         <button type="button" className="btn acc" onClick={send} disabled={!canSend} data-testid="reply-send">Send</button>
       </div>
+    </section>
+  );
+}
+
+/**
+ * "This email covers" (#82 S8b): every pitch the thread is logged on (pitchIds ?? [pitchId]), each linking to its pitch with
+ * its status. "Add a pitch" puts one more of the band's active pitches on it (email.link with pitchIds): its replies then reach
+ * that pitch too. A thread on no pitch shows the card only to add one.
+ */
+function CoversCard({ t }: { t: Row<EmailThread> }) {
+  const b = useBooking();
+  const { call, error, busy } = useCommand();
+  const [adding, setAdding] = useState("");
+  const ids = threadPitchIds(t);
+  const on = ids.map((id) => b.pitches.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
+  const more = b.pitches.filter((p) => isActive(p.status) && !ids.includes(p.id)).sort((x, y) => x.target.name.localeCompare(y.target.name));
+  const target = { kind: t.target.kind === "act" ? "act" : t.target.kind, id: t.target.id } as { kind: "venue" | "promoter" | "festival" | "act"; id: string };
+  async function add(pitchId: string) {
+    if (!pitchId) return;
+    setAdding(pitchId);
+    await call("email.link", { threadId: t.threadId, target, pitchIds: [pitchId] });
+    setAdding("");
+  }
+  return (
+    <section className="card" data-testid="thread-covers">
+      <div className="card-head"><h2>This email covers</h2></div>
+      {on.length === 0 ? <span className="s">No pitch yet.</span> : (
+        <ul className="grid gap-1.5" data-testid="thread-covers-list">
+          {on.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-2" data-testid={`covers-${p.id}`}>
+              <Link href={`/booking/pitches/${p.id}`} className="font-semibold">{p.target.name}</Link><StatusChip status={p.status} />
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="s font-semibold">Add a pitch</span>
+        <select className="select w-auto" value={adding} disabled={busy} onChange={(e) => void add(e.target.value)} aria-label="Add a pitch this email covers" data-testid="thread-covers-add">
+          <option value="">Pick one…</option>
+          {more.map((p) => <option key={p.id} value={p.id}>{p.target.name}</option>)}
+        </select>
+      </label>
+      <ErrorBox error={error} />
     </section>
   );
 }

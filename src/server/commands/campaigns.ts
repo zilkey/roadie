@@ -7,7 +7,7 @@ import { artistFor } from "./projects";
 // Booking campaigns (#82): a campaign is a tag on pitches, like a tour (pitches.campaignId). Every pitch is in one campaign;
 // "Ongoing" is the virtual default, computed in memory: active pitches with no campaignId or whose campaign is closed.
 // Closing only sets status (pitches keep campaignId, so a closed campaign keeps its history) and campaigns.reopen undoes it.
-// Admins only, and not MCP. Kept out of Roadie (assistant/policy.ts EXCLUDED) until the campaign pages ship.
+// Admins only, and not MCP. Roadie has them (its "campaigns" tool group); campaigns.close asks first (assistant/policy.ts ALWAYS_CONFIRM).
 
 const ROLES = ["admin"] as const;
 const id1 = z.string().min(1);

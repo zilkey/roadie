@@ -13,6 +13,7 @@ import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
 import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, openerChance, showListed, titleSaysMore, whenFrom, type OpenerCtx, type ShowFilter } from "@/lib/venueEvents";
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
+import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { dateInBandZone } from "@/lib/timezone";
@@ -37,17 +38,20 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
   const today = dateInBandZone();
   const all = useMemo(() => [...(events.rows ?? [])].sort(byWhen), [events.rows]);
-  const upcoming = useMemo(() => all.filter((e) => isUpcoming(e, today)).reverse(), [all, today]);
+  // Furthest out first, as Venue calendars sorts.
+  const upcoming = useMemo(() => all.filter((e) => isUpcoming(e, today)).sort(latestFirst), [all, today]);
   const past = all.filter((e) => e.date < today).reverse();
   const [setup, setSetup] = useState(false);
   const cal = venue.calendar;
   const openers = useMemo(() => whoOpens(all), [all]);
-  const pitches = useCollection<{ status: string }>("pitches", { where: [["artistId", "==", artistId]], skip: !admin });
+  const pitches = useCollection<{ status: string; campaignId?: string; target: { kind: string; id: string } }>("pitches", { where: [["artistId", "==", artistId]], skip: !admin });
   // The headliners' looked-up genres: the genre filter, and genre fit when the band has genres of its own.
   const ours = useOurGenres();
-  const headIds = useMemo(() => [...new Set(upcoming.flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)))], [upcoming]);
-  const acts = useDocs<ActDoc>("acts", headIds);
+  // Every act on the upcoming bills: the headliners' genres (filter, fit) and every act's link icons, as on Venue calendars.
+  const actIds = useMemo(() => [...new Set(upcoming.flatMap((e) => e.acts.filter((a) => a.actId).map((a) => a.actId!)))], [upcoming]);
+  const acts = useDocs<ActDoc>("acts", actIds);
   const actGenres = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.genres])), [acts.rows]);
+  const actLinks = useMemo(() => new Map(acts.rows.map((a) => [a.id, a.links])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   const [f, setF] = useShowFilter("venueEventsShows", {});
@@ -65,7 +69,8 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
             {!events.rows ? <div className="s">Loading…</div>
               : upcoming.length === 0 ? <div className="empty" data-testid="venue-events-empty">{cal ? "No upcoming shows on the venue's calendar." : "Shows appear here once the venue's calendar is set up."}</div>
               : shown.length === 0 ? <div className="empty" data-testid="venue-events-none">No upcoming shows here match these filters.</div>
-              : <div className="grid gap-3" data-testid="venue-events-list">{shown.map((e) => <EventRow key={e.id} e={e} admin={admin} take={takes.get(e.id)} artistId={artistId} stats={health} today={today} genres={genres} pitches={pitches.rows ?? []} venueName={venue.name} />)}</div>}
+              : <div data-testid="venue-events-list"><CalendarShowsTable shows={shown} venues={new Map([[venue.id, venue]])} takes={takes} pitches={pitches.rows ?? []} records={new Map([[venue.id, health]])}
+                  today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} showVenue={false} admin={admin} /></div>}
             {!!upcoming.length && <div className="mt-3"><OpenerNote /></div>}
           </DetailCard>
         )}
@@ -152,28 +157,6 @@ function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { i
           </div>
         )}
     </DetailCard>
-  );
-}
-
-function EventRow({ e, admin, take, stats, today, genres, pitches, venueName }: { e: Ev; admin: boolean; take?: VenueEventNote; artistId: string; stats: RoomRecord; today: string; genres: OpenerCtx["genres"]; pitches: { id: string; status: string }[]; venueName: string }) {
-  const time = eventTime(e);
-  return (
-    <div className="flex gap-3" data-testid={`venue-event-${e.id}`}>
-      <EventPoster src={e.imageUrl} alt={e.title} />
-      <div className="grid min-w-0 flex-1 gap-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <b className="whitespace-nowrap">{fmtEventDay(e.date)}</b>
-          {time && <span className="s">{time}</span>}
-          <EventBadges e={e} stats={stats} today={today} genres={genres} />
-        </div>
-        <EventActs e={e} />
-        {titleSaysMore(e) ? <div className="s">{e.title}</div> : null}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <TicketLink e={e} />
-          {admin && <ShowActions e={e} take={take} pitches={pitches} venueName={venueName} />}
-        </div>
-      </div>
-    </div>
   );
 }
 

@@ -59,7 +59,7 @@ test("Pitch List filters: category, city or state, venue type (hidden for festiv
 test("Festivals tab: deadline and dates columns sort on the server, kept in ?sort=", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/festivals"));
-  const names = page.getByTestId("booking-list").locator("tbody tr td.name");
+  const names = page.getByTestId("booking-list").locator("tbody tr td.name > a.nm"); // the festival name (its city sits under it, #82)
   await expect(names).toHaveText(["Levitt Pavilion Summer Series", "Riverbend Music Fest", "Rocky Mountain Folks Festival"]);
 
   await page.getByTestId("sort-deadline").click();
@@ -75,7 +75,7 @@ test("Festivals tab: deadline and dates columns sort on the server, kept in ?sor
   await page.reload();
   await expect(names).toHaveText(["Riverbend Music Fest", "Rocky Mountain Folks Festival", "Levitt Pavilion Summer Series"]);
   await page.getByTestId("booking-search").fill("anika");
-  await expect(page.getByTestId("bucket-festivals").locator("tbody tr td.name")).toHaveText(["Riverbend Music Fest"]);
+  await expect(page.getByTestId("bucket-festivals").locator("tbody tr td.name > a.nm")).toHaveText(["Riverbend Music Fest"]);
 });
 
 test("venue type: Other… adds a type for everyone; Settings lists it", async ({ page }) => {

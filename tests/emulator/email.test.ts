@@ -226,3 +226,41 @@ test("booking mailbox: accountOf is the caller's own Gmail without it and the bo
   await db.update({ ...ctx, artistId: TEST_ARTIST }, "artists", TEST_ARTIST, { bookingMail: null });
   assert.equal(await accountOf(noraCtx), "nora@example.com", "cleared: back to each admin's own");
 });
+
+test("S8 (#82): one email covers several pitches: each logged once, replies reach each, linking adds and never moves, older threads still read", async () => {
+  const { venueId: v1, pitchId: p1 } = await pineHollow();
+  const v2 = (await cmd("venues.create", venue("Southern Sun"))).id as string;
+  const p2 = (await cmd("pitches.flag", { kind: "venue", id: v2 })).id as string;
+
+  // A bad id is refused before Gmail is called: nothing is sent.
+  await assert.rejects(cmd("pitches.sendEmail", { id: p1, pitchIds: [p2, "nope"], to: ["kate@sun.example"], subject: "Spring", body: "Hi Kate" }), /not found/i);
+  assert.equal((await db.list("emailThreads")).length, 0);
+
+  const sent = await cmd("pitches.sendEmail", { id: p1, pitchIds: [p2], to: ["kate@sun.example"], subject: "Spring", body: "Hi Kate", markPitched: true });
+  const t = await thread(sent.threadId);
+  assert.deepEqual([t.pitchId, t.pitchIds], [p1, [p1, p2]]);
+  for (const p of [p1, p2]) {
+    assert.equal((await db.list(`pitches/${p}/activity`)).filter((a) => a.type === "emailSent").length, 1, p);
+    const doc = (await db.get("pitches", p))!;
+    assert.equal(doc.status, "pitched");
+    assert.ok(doc.lastContactAt);
+  }
+  // Sync reads the thread from its place and credits every pitch on it.
+  await gmailClient().simulateReply!(sent.threadId, { from: "kate@sun.example", body: "Yes to both" });
+  assert.deepEqual(await cmd("email.sync", { target: { kind: "venue", id: v1 } }), { added: 2, threads: 1 });
+  for (const p of [p1, p2]) assert.equal((await db.list(`pitches/${p}/activity`)).filter((a) => a.type === "emailReply").length, 1, p);
+
+  // Linking the thread to a third pitch adds it; the first stays (it used to be overwritten).
+  const v3 = (await cmd("venues.create", venue("Vine Street"))).id as string;
+  const p3 = (await cmd("pitches.flag", { kind: "venue", id: v3 })).id as string;
+  await cmd("email.link", { threadId: sent.threadId, target: { kind: "venue", id: v1 }, pitchId: p3 });
+  const linked = await thread(sent.threadId);
+  assert.deepEqual([linked.pitchId, linked.pitchIds], [p1, [p1, p2, p3]]);
+
+  // An older single-pitch thread (pitchId only) keeps working: a plain send, a reply, a sync.
+  const old = await cmd("pitches.sendEmail", { id: p2, to: ["kate@sun.example"], subject: "Fall", body: "Hi again" });
+  const ot = await thread(old.threadId);
+  assert.deepEqual([ot.pitchId, ot.pitchIds], [p2, undefined]);
+  await gmailClient().simulateReply!(old.threadId, { from: "kate@sun.example", body: "Maybe" });
+  assert.equal((await cmd("email.sync", { target: { kind: "venue", id: v2 } })).added, 1);
+});

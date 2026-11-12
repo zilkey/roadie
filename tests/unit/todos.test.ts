@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyOrder, buildBoard, dismissedLists, movedOrder, type BoardInput } from "@/lib/todos";
+import { applyOrder, buildBoard, dismissedLists, movedOrder, TODO_COLUMN_KEY, type BoardInput } from "@/lib/todos";
 
 const item = (id: string, label: string, extra: Record<string, unknown> = {}) => ({ id, label, done: false, ...extra });
 const base = (over: Partial<BoardInput> = {}): BoardInput => ({
@@ -60,6 +60,19 @@ test("Booking: due next steps and quiet pitches, Mine by assignee", () => {
   assert.deepEqual(keys(col(buildBoard(base({ pitches, mine: { userId: "u1" } })), "booking")), ["pitch:p2"]);
 });
 
+test("campaigns (#82 S12): a column per active campaign after Ongoing; a closed campaign's active pitches are Ongoing's", () => {
+  const at = (d: string) => ({ toMillis: () => Date.parse(d + "T18:00:00Z") });
+  const quiet = (id: string, campaignId?: string) => ({ id, status: "pitched", target: { kind: "venue", id: `v${id}`, name: id }, lastContactAt: at("2026-10-01"), campaignId });
+  const campaigns = [{ id: "spring", name: "Spring", status: "active" as const }, { id: "winter", name: "Winter", status: "closed" as const }];
+  const cols = buildBoard(base({ pitches: [quiet("a"), quiet("b", "spring"), quiet("c", "winter")], campaigns }));
+  assert.deepEqual(cols.map((c) => c.key).slice(0, 3), ["pinned", "booking", "campaign:spring"]);
+  assert.equal(col(cols, "booking").title, "Ongoing");
+  assert.deepEqual(keys(col(cols, "booking")), ["pitch:a", "pitch:c"]);
+  assert.deepEqual(keys(col(cols, "campaign:spring")), ["pitch:b"]);
+  assert.equal(col(cols, "campaign:spring").href, "/booking/campaigns/spring");
+  assert.ok(TODO_COLUMN_KEY.test("campaign:spring"));
+});
+
 test("saved order first, the rest after in natural order; moving stays inside a group", () => {
   assert.deepEqual(applyOrder([{ key: "a" }, { key: "b" }, { key: "c" }], ["c", "zz", "a"]).map((x) => x.key), ["c", "a", "b"]);
   const cols = buildBoard(base({ order: { "show:s1": ["show:s1:l1:i3"] } }));
@@ -68,21 +81,22 @@ test("saved order first, the rest after in natural order; moving stays inside a 
   assert.deepEqual(movedOrder(hi, 0, 0, 1), ["show:s1:l1:i2", "show:s1:l1:i3", "show:s1:l2:p1"]);
 });
 
-test("the band's own lists: a column each (even empty), after Our list; their pins go to Pinned", () => {
-  const lists = [
-    { id: "b1", name: "Van stuff", items: [item("v1", "Oil change"), item("v2", "New tires", { pinnedAt: "x" })] },
-    { id: "b2", name: "Merch", items: [] },
-  ];
-  const cols = buildBoard(base({ lists }));
-  assert.deepEqual(cols.map((c) => c.key).slice(-3), ["our", "list:b1", "list:b2"]);
-  const van = col(cols, "list:b1");
-  assert.deepEqual([van.title, van.chip, van.board], ["Van stuff", "Van stuff", { listId: "b1" }]);
-  assert.deepEqual(keys(van), ["board:a1:b1:v1"]);
-  assert.equal(van.groups[0].title, undefined, "no group title, so no Dismiss: the list is the column");
-  assert.deepEqual(van.groups[0].add, { type: "checklist", kind: "board", id: "a1", listId: "b1" });
-  assert.deepEqual(col(cols, "list:b2").groups.map((g) => g.items.length), [0], "an empty list keeps its group, to add to");
-  const pin = col(cols, "pinned").groups[0].items.find((i) => i.key === "board:a1:b1:v2")!;
-  assert.deepEqual([pin.source, pin.action], [{ text: "Van stuff" }, { type: "checklist", kind: "board", id: "a1", listId: "b1", itemId: "v2" }]);
+test("+ Add list (Jeff, 2026-11-12): show, releases and Social Media columns say where a new list goes; no other column does", () => {
+  const cols = buildBoard(base());
+  assert.deepEqual(col(cols, "show:s1").newList, { kind: "show", targets: [{ id: "s1", label: "Sat Nov 14 Hi-Dive" }] });
+  assert.equal(col(cols, "releases").newList?.kind, "release");
+  assert.deepEqual(col(cols, "releases").newList?.targets.map((t) => t.id), ["r1"]);
+  assert.deepEqual(col(cols, "social").newList, { kind: "social", targets: [{ id: "a1", label: "Social Media" }] });
+  for (const k of ["pinned", "booking", "our"]) assert.equal(col(cols, k).newList, undefined, k);
+  assert.ok(!TODO_COLUMN_KEY.test("list:b1"), "the board's own lists are gone");
+});
+
+test("a brand-new empty list stays on the board (somewhere to add its first to-do); a finished one leaves", () => {
+  const b0 = base();
+  const shows = b0.shows.map((s) => s.id === "s1" ? { ...s, checklists: [...(s.checklists ?? []), { id: "new", name: "New list", items: [] }, { id: "fin", name: "Finished", items: [item("f1", "Done thing", { done: true })] }] } : s);
+  const groups = col(buildBoard({ ...b0, shows }), "show:s1").groups.map((g) => g.title);
+  assert.ok(groups.includes("New list"));
+  assert.ok(!groups.includes("Finished"));
 });
 
 test("every list adds to-dos except Booking: checklists add to themselves, Our list to todos, Pinned to todos pinned", () => {

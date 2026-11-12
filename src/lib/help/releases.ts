@@ -8,7 +8,7 @@ export const RELEASE_TOPICS: HelpTopic[] = [
     text: [
       "Releases sits next to Songs in the menu (it starts in More; the Edit menu dialog moves it up). A release is a record the band is making or has made: a full-length album, an EP or a single.",
       "The Releases page is a table: Release (the cover and title, with the kind under it), Progress (Tracked, Mixed and Mastered out of the tracks, or Released once the release date has passed), Tracks (how many and how long), Release (the target date, or \"Not set\"), Spent and Earned.",
-      "Admins get \"+ Add\", which opens the New release card: title, kind, a target release date and the release folder (search the band's Drive by name or paste a folder link; it can be anywhere in Drive, and can be left for later). \"Create release\" makes the release and its money project together, with no tracks yet: the tracklist is built on the release page. Cancel throws the draft away.",
+      "Admins get \"+ New\", which opens the New release card: title, kind, a target release date and the release folder (search the band's Drive by name or paste a folder link; it can be anywhere in Drive, and can be left for later). \"Create release\" makes the release and its money project together, with no tracks yet: the tracklist is built on the release page. Cancel throws the draft away.",
     ].join("\n\n"),
     related: ["releasePage", "releaseTrack", "releaseMoney", "releaseFiles", "songs"],
   },

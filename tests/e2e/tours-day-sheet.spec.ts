@@ -66,7 +66,7 @@ test.describe.serial("tours: the member's day sheet", () => {
     await expect(drive.getByTestId("day-sheet-maps")).toHaveAttribute("target", "_blank");
     await expect(page.getByTestId("day-sheet-stay")).toContainText("Motel 6");
     await expect(page.getByTestId("day-sheet-stay")).toContainText("check-in after 4:00 pm");
-    await expect(page.getByTestId("day-sheet-expense")).toHaveText("+ Add an expense");
+    await expect(page.getByTestId("day-sheet-expense")).toHaveText("+ New expense");
     await expect(page.getByTestId("day-sheet-whole-tour")).toHaveText("Whole tour");
 
     // Opening the calendar again (a fresh page load, so no in-app history) is not bounced back to the sheet: once a day per session.

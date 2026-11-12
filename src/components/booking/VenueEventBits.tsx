@@ -11,6 +11,9 @@ import { InlineValue } from "@/components/InlineValue";
 import { isActive } from "@/lib/booking";
 import { XIcon } from "@/components/booking/ActsTab";
 import { FlagIcon } from "@/components/booking/common";
+import { LinkIcons } from "@/components/booking/LinkIcons";
+import { campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
+import { ONGOING } from "@/lib/campaigns";
 import { venueEventNoteId, type Act, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 export type Ev = VenueEvent & { id: string };
@@ -75,15 +78,11 @@ export function ActLinksLine({ groups, eventId }: { groups: ShowActLinks[]; even
   if (!groups.length) return null;
   return (
     <span className="sub" data-testid={`calendar-show-links-${eventId}`}>
+      {/* Icons, not words (Jeff, 2026-11-12): the Acts table's LinkIcons. */}
       {groups.map((g) => (
-        <span key={g.actId} className="mr-3 inline-block" data-testid={`calendar-act-links-${g.actId}`}>
-          {groups.length > 1 && <>{g.name}: </>}
-          {g.links.map((l, j) => (
-            <Fragment key={l.key}>{j > 0 && " · "}
-              <a className="underline" href={l.url} target="_blank" rel="noopener noreferrer" aria-label={`${g.name} on ${l.label} (opens in a new tab)`}
-                data-testid={`calendar-act-link-${g.actId}-${l.key}`}>{l.label} ↗</a>
-            </Fragment>
-          ))}
+        <span key={g.actId} className="mr-3 inline-flex items-center gap-1.5" data-testid={`calendar-act-links-${g.actId}`}>
+          {groups.length > 1 && <>{g.name}:</>}
+          <LinkIcons links={Object.fromEntries(g.links.map((l) => [l.key, l.url]))} name={g.name} testid={`calendar-act-link-${g.actId}`} />
         </span>
       ))}
     </span>
@@ -116,8 +115,22 @@ export function TicketLink({ e }: { e: Ev }) {
  * isn't, adds the show's date); on a filled flag it asks whether to take this show off the pitch or the venue off the Pitch List.
  * The X marks the show Not a fit, again clears it. The wrapper carries data-pitched and data-take for tests.
  */
-export function ShowActions({ e, take, pitches, venueName }: { e: Ev; take?: VenueEventNote; pitches: readonly { id: string; status: string }[]; venueName: string }) {
+export function ShowActions({ e, take, pitches, venueName }: { e: Ev; take?: VenueEventNote; pitches: readonly { id: string; status: string; campaignId?: string | null; target?: { kind: string; id: string } }[]; venueName: string }) {
   const { call, error, busy } = useCommand();
+  const fc = useFlagCampaign();
+  /**
+   * Pitch this (#82 S6): new pitches go in the page's campaign (asked on the first flag). A venue already pitched in another
+   * campaign asks every time: keep the pitch there, or move it here (Q2).
+   */
+  async function pitchThis() {
+    const into = await fc.ask();
+    if (!into) return;
+    const open = pitches.find((p) => p.target?.kind === "venue" && p.target.id === e.venueId && isActive(p.status));
+    const keep = open ? await fc.keepOrMove(open, into, venueName) : "keep";
+    if (!keep) return;
+    const r = await call<{ pitchId: string }>("venueEvents.pitch", { eventId: e.id, ...campaignArg(into) });
+    if (r && open && keep === "move") await call("pitches.setCampaign", { ids: [open.id], campaignId: into === ONGOING ? null : into });
+  }
   const { name, artistId } = useArtist();
   const [asking, setAsking] = useState(false);
   const pitch = take?.pitchId ? pitches.find((p) => p.id === take.pitchId && isActive(p.status)) : undefined;
@@ -128,7 +141,7 @@ export function ShowActions({ e, take, pitches, venueName }: { e: Ev; take?: Ven
       data-note-id={venueEventNoteId(artistId, e.id)}>
       <button type="button" className="flag-ic" data-flagged={pitch ? "1" : "0"} aria-pressed={!!pitch} disabled={busy}
         aria-label={pitch ? `On the Pitch List: ${venueName}` : "Pitch this"} title={pitch ? "On the pitch: click to remove" : `Pitch this: add it to ${venueName}'s pitch`}
-        onClick={() => (pitch ? setAsking(true) : void call("venueEvents.pitch", { eventId: e.id }))} data-testid={`pitch-this-${e.id}`}><FlagIcon filled={!!pitch} /></button>
+        onClick={() => (pitch ? setAsking(true) : void pitchThis())} data-testid={`pitch-this-${e.id}`}><FlagIcon filled={!!pitch} /></button>
       <button type="button" className="flag-ic dismiss-ic" aria-pressed={notFit} data-on={notFit ? "1" : "0"} disabled={busy}
         aria-label={notFit ? "Not a fit (click to clear)" : "Not a fit"} title={notFit ? "Not a fit (click to clear)" : "Not a fit"}
         onClick={() => void call("venueEvents.setTake", { eventId: e.id, take: notFit ? null : "notFit" })} data-testid={`venue-event-notfit-${e.id}`}><XIcon size={16} /></button>

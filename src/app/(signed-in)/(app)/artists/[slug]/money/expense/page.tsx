@@ -136,7 +136,7 @@ function AddExpense() {
 
   return (
     <div className="grid max-w-xl gap-5" data-testid="add-expense">
-      <PageTitle back={<BackLink href={returnTo} label={tourId ? tour?.name ?? "Tour" : rehearsalId ? "Rehearsal" : fromShow ? "Show" : fromRelease ? fromRelease.title : "My money"} />} title="Add an expense"
+      <PageTitle back={<BackLink href={returnTo} label={tourId ? tour?.name ?? "Tour" : rehearsalId ? "Rehearsal" : fromShow ? "Show" : fromRelease ? fromRelease.title : "My money"} />} title="New expense"
         sub={rehearsal ? `Rehearsal · ${fmtLong(rehearsal.date)}` : showDoc ? showName(showDoc) : undefined} />
       {!draft.ready ? null : <div className="card">
         <CategoryField value={cat} options={CATEGORIES} onChange={(k) => patch({ cat: k })} testid="exp-cat" />

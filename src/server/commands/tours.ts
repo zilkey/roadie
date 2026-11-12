@@ -366,13 +366,13 @@ export const toursAddShow = defineCommand({
 
 export const toursAddPitch = defineCommand({
   name: "tours.addPitch", roles: [...ADMIN],
-  description: "Put a pitch on a tour as options (\"add Velour for the 9th or 10th\"): pitchId (from search), or venueId (from search) to use the band's open pitch for that venue, flagging it onto the Pitch List if there is none. " +
+  description: "Put a pitch on a tour as options (\"add Velour for the 9th or 10th\"): pitchId (from search), or venueId (from search) to use the band's open pitch for that venue, flagging it onto the Pitch List if there is none (into campaignId, a booking campaign, when given). " +
     "dates [YYYY-MM-DD, ...] are added to the pitch's possible dates. One option entry per date on the pitch; a pitch with no dates sits in the \"No date yet\" bucket. Options are admins only. Returns { pitchId, entryIds }.",
-  input: z.strictObject({ tourId: id1, pitchId: id1.optional(), venueId: id1.optional(), dates: z.array(dateStr).default([]) })
+  input: z.strictObject({ tourId: id1, pitchId: id1.optional(), venueId: id1.optional(), dates: z.array(dateStr).default([]), campaignId: id1.optional() })
     .refine((v) => !!v.pitchId !== !!v.venueId, "Give pitchId or venueId"),
   run: (ctx, i) => run(ctx, async (w) => {
     const tour = await requireTour(w, i.tourId);
-    const pitchId = i.pitchId ?? (await flagPitch(w, ctx, { kind: "venue", id: i.venueId! })).id;
+    const pitchId = i.pitchId ?? (await flagPitch(w, ctx, { kind: "venue", id: i.venueId!, ...(i.campaignId ? { campaignId: i.campaignId } : {}) })).id;
     const pitch = await w.get("pitches", pitchId);
     if (!pitch || pitch.deletedAt || (ctx.artistId && pitch.artistId !== ctx.artistId)) throw new AppError("not_found", "Pitch not found", 404);
     return { pitchId, ...(await addPitchTo(w, tour, pitch, i.dates)) };

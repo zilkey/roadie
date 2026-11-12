@@ -95,6 +95,8 @@ const SCENARIOS: Scenario[] = [
   ...POST_SHOW.map((p): Scenario => ({ name: p.name, turns: p.turns, postShow: p })),
   // Acts (#77). The Aggie (Fort Collins) and the Bluebird (Denver) have calendars: North Fork Crossing opens at both within two weeks (on tour),
   // Wheelwright headlines the Bluebird, The Brothers Comatose the Aggie (see seedActs).
+  // Booking campaigns (#82, S4a): starting one is a plain add; closing one always asks.
+  { name: "campaign-create", turns: [{ say: "start a booking campaign called Breweries Spring 2027", calls: [/campaigns\.create/], args: [[/campaigns\.create/, /Breweries Spring 2027/]], noText: REFUSES }] },
   { name: "acts-tour", turns: [{ say: "which acts are on tour around here right now?", calls: [/acts\.find/], text: /North Fork Crossing/, noText: REFUSES }] },
   // #78: acts aren't in search, so the first lookup is acts.find; and a relationship or a note writes only that (in #77's run Roadie also shortlisted Wheelwright).
   { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },

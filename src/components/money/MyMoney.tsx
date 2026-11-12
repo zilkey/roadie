@@ -37,14 +37,14 @@ export function MyMoney() {
     return (
       <WelcomeEmpty section="money" variant={0} hideable={false} title="Welcome to your money page!"
         body="Anything you spend for the band, like gas, strings or a rental, goes here so you get paid back."
-        actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>} />
+        actions={<Link href="/money/expense" className="btn acc" data-testid="add-expense-link">+ New expense</Link>} />
     );
   }
   return (
     <div className="grid max-w-xl gap-5" data-testid="my-money">
       <PageTitle title="My money" />
       <div className="flex flex-wrap gap-2">
-        <Link href="/money/expense" className="btn acc" data-testid="add-expense-link">Add an expense</Link>
+        <Link href="/money/expense" className="btn acc" data-testid="add-expense-link">+ New expense</Link>
         <Link href="/money/projects" className="btn ghost" data-testid="projects-link">Projects</Link>
       </div>
       <div className="card" data-testid="my-owed">

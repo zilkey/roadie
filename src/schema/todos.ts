@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { entity, serverMask, id } from "./common";
-import { checklist } from "./shows";
 
 /**
  * todos/{id}: one item on To Dos › Our list, the band's own to-dos not tied to any show, release or post. Admins only (for now).
@@ -20,13 +19,3 @@ export const Todo = entity({
 export const TodoInput = Todo.omit(serverMask);
 export type Todo = z.infer<typeof Todo>;
 
-/**
- * todoLists/{artistId}: the lists a band adds on To Dos ("Add list"), each one its own column. One doc per artist (its id is the
- * artist's), made by the first list, shaped like socialChecklists: the checklists.* commands run them as kind "board". Admins only.
- */
-export const TodoLists = entity({
-  artistId: id,
-  checklists: z.array(checklist).default([]),
-});
-export const TodoListsInput = TodoLists.omit(serverMask);
-export type TodoLists = z.infer<typeof TodoLists>;

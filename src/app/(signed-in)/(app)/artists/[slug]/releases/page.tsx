@@ -47,14 +47,14 @@ function Releases() {
       <div data-testid="releases-empty">
         <WelcomeEmpty section="releases" title="No releases yet" hideable={false}
           body="Keep a record's tracks, mixes, artwork, costs and sales in one place. Start from a setlist you already have, or pick songs."
-          actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="start-release-btn">Start a release</Link> : undefined} />
+          actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="start-release-btn">+ New release</Link> : undefined} />
       </div>
     );
   }
 
   return (
     <div className="grid gap-5" data-testid="releases-page">
-      <PageTitle title="Releases" center actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="add-release-btn">+ Add</Link> : undefined} />
+      <PageTitle title="Releases" center actions={admin ? <Link href="/releases/new" className="btn acc" data-testid="add-release-btn">+ New</Link> : undefined} />
       <div className="song-tw" data-testid="releases-list">
         <table className="song-table">
           <thead>

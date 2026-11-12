@@ -68,7 +68,7 @@ export function Projects({ admin, adding, onDoneAdding }: { admin: boolean; addi
   return (
     <div className="grid gap-4" data-testid="projects">
       {!admin && <span className="s">Pick a project when you add an expense.</span>}
-      {admin && adding === undefined && !isAdding && <div className="flex justify-end"><button className="btn acc" data-testid="new-project" onClick={() => setOwnAdding(true)}>New project</button></div>}
+      {admin && adding === undefined && !isAdding && <div className="flex justify-end"><button className="btn acc" data-testid="new-project" onClick={() => setOwnAdding(true)}>+ New project</button></div>}
       {admin && isAdding && <NewProject onDone={done} />}
       {open.length === 0 && projects.rows && <div className="empty"><span>No open projects.</span></div>}
       {open.length > 0 && table(open, "projects-table")}
@@ -102,7 +102,7 @@ function NewProject({ onDone }: { onDone(): void }) {
       </div>
       <ErrorBox error={msg ?? error} />
       <div className="flex gap-2">
-        <button type="submit" className="btn acc" disabled={busy} data-testid="np-add">Add</button>
+        <button type="submit" className="btn acc" disabled={busy} data-testid="np-add">Create</button>
         <button type="button" className="btn outline" data-testid="np-cancel" onClick={onDone}>Cancel</button>
       </div>
     </form>

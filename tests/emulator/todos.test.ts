@@ -72,31 +72,6 @@ test("Our list pins: add straight into Pinned, pin and unpin (shared, keeps the 
   assert.equal((await db.get("todos", plain))!.pinnedAt, undefined);
 });
 
-test("the band's own lists (Add list): kind board in todoLists/{artistId}, made by the first list; items add, tick, pin; admins only", async () => {
-  await makeArtist("Nora Quill Band", "nora-quill-band");
-  assert.equal(await db.get("todoLists", TEST_ARTIST), null);
-  const { listId } = await cmd("checklists.add", { kind: "board", id: TEST_ARTIST, name: "Van stuff" }, admin());
-  const { itemId } = await cmd("checklists.addItem", { kind: "board", id: TEST_ARTIST, listId, label: "Oil change" }, admin());
-  await cmd("checklists.add", { kind: "board", id: TEST_ARTIST, name: "Merch" }, admin());
-  await cmd("checklists.check", { kind: "board", id: TEST_ARTIST, listId, itemId, done: true }, admin());
-  await cmd("checklists.pin", { kind: "board", id: TEST_ARTIST, listId, itemId, pinned: true }, admin());
-  const doc = (await db.get("todoLists", TEST_ARTIST))!;
-  assert.equal(doc.artistId, TEST_ARTIST);
-  assert.deepEqual(doc.checklists.map((l: { name: string }) => l.name), ["Van stuff", "Merch"]);
-  const it = doc.checklists[0].items[0];
-  assert.deepEqual([it.label, it.done, it.doneBy, it.pinnedBy], ["Oil change", true, "u-admin", "u-admin"]);
-  assert.equal(await db.get("socialChecklists", TEST_ARTIST), null, "Social Media's lists are separate");
-
-  await assert.rejects(cmd("checklists.add", { kind: "board", id: "someone-else", name: "X" }, admin()), /not found/);
-  await assert.rejects(cmd("checklists.saveAsTemplate", { kind: "board", id: TEST_ARTIST, listId }, admin()), /can't be saved as templates/);
-  const member: Ctx = { ...admin("u-member"), role: "member" };
-  await assert.rejects(registry["checklists.addItem"].run(member, { kind: "board", id: TEST_ARTIST, listId, label: "x" } as never), /Only admins/);
-  await assert.rejects(cmd("checklistTemplates.create", { name: "X", appliesTo: "board" }, admin()), "templates don't apply to board lists");
-
-  await cmd("checklists.remove", { kind: "board", id: TEST_ARTIST, listId }, admin());
-  assert.deepEqual((await db.get("todoLists", TEST_ARTIST))!.checklists.map((l: { name: string }) => l.name), ["Merch"]);
-});
-
 test("another artist's to-do is not found", async () => {
   await makeArtist("Nora Quill Band", "nora-quill-band");
   const { id } = await cmd("todos.add", { label: "Renew ASCAP" }, admin());
@@ -116,9 +91,10 @@ test("order and Dismiss are per person, in userPrefs, and touch nothing else", a
   await assert.rejects(cmd("todos.setOrder", { column: "nope", keys: [] }, admin(rudy.uid)));
   await cmd("todos.setColumns", { keys: ["our", "show:s1", "pinned", "our"] }, admin(rudy.uid));
   const hugo = await makeUser("hugo@example.com", "admin");
-  await cmd("todos.setOrder", { column: "list:b1", keys: ["board:a1:b1:i1"] }, admin(hugo.uid));
-  await cmd("todos.setColumns", { keys: ["list:b1", "our"] }, admin(hugo.uid));
-  assert.deepEqual(await todoPrefs(hugo.uid), { order: { "list:b1": ["board:a1:b1:i1"] }, columns: ["list:b1", "our"], dismissed: [] }, "the band's lists are columns too");
+  await cmd("todos.setOrder", { column: "campaign:c1", keys: ["pitch:p1"] }, admin(hugo.uid));
+  await cmd("todos.setColumns", { keys: ["campaign:c1", "our"] }, admin(hugo.uid));
+  assert.deepEqual(await todoPrefs(hugo.uid), { order: { "campaign:c1": ["pitch:p1"] }, columns: ["campaign:c1", "our"], dismissed: [] }, "campaign columns (#82) are columns too");
+  await assert.rejects(cmd("todos.setColumns", { keys: ["list:b1"] }, admin(hugo.uid)), /Not a To Dos column/, "the board's own lists are gone");
   await assert.rejects(cmd("todos.setColumns", { keys: ["nope"] }, admin(rudy.uid)), /Not a To Dos column/);
 
   await cmd("todos.dismiss", { key: "show:s1:l1" }, admin(rudy.uid));

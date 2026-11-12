@@ -23,6 +23,8 @@ import { hrefFor, useBooking } from "@/components/booking/common";
 import { ActLinksLine, EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, ShowNote, TicketLink } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
+import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
+import { FlagCampaignSelect } from "@/components/booking/FlagCampaign";
 import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
 import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
@@ -125,6 +127,7 @@ export function VenueCalendars() {
             <option value="">Anywhere</option>
             {(Object.keys(REGION_LABEL) as Region[]).map((r) => <option key={r} value={r}>{REGION_LABEL[r]}</option>)}
           </select>
+          <FlagCampaignSelect />
         </ShowFilterBar>
         <p className="s" data-testid="opener-disclaimer">Opener chance is {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover a badge for why.</p>
       </div>
@@ -132,41 +135,7 @@ export function VenueCalendars() {
       {raw && readAll && upcoming.length === 0 && f.when === "any" && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
       {raw && readAll && !filling && rows.length === 0 && (upcoming.length > 0 || f.when !== "any") && <div className="empty" data-testid="venue-calendars-none"><span>No upcoming shows match these filters.</span></div>}
       {shown.length > 0 && !settling && (
-        <div className="book-tw">
-          <table className="book-table wn">
-            <thead><tr>
-              <th className="flag"><span className="sr-only">Pitch this, or not a fit</span></th>
-              <th aria-label="Poster" />
-              <th className="nw">Date</th>
-              <th className="name">Show</th>
-              <th>Venue</th>
-              <th>Notes</th>
-            </tr></thead>
-            <tbody>
-              {shown.map((e) => {
-                const v = venues.get(e.venueId), time = eventTime(e);
-                return (
-                  <tr key={e.id} data-testid={`calendar-show-${e.id}`}>
-                    <td className="flag"><ShowActions e={e} take={takes.get(e.id)} pitches={b.pitches} venueName={v?.name ?? "the venue"} /></td>
-                    <td className="w-14"><EventPoster src={e.imageUrl} alt={e.title} size={48} testid="calendar-show-poster" /></td>
-                    <td className="nw" data-testid="calendar-show-date"><b>{fmtEventDay(e.date)}</b>{time && <span className="sub">{time}</span>}</td>
-                    <td className="name">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} stats={records.get(e.venueId)} today={today} genres={genres} isNew={!!since && e.firstSeenAt > since} /></div>
-                      {titleSaysMore(e) && <span className="sub">{e.title}</span>}
-                      {e.ticketUrl && <span className="sub"><TicketLink e={e} /></span>}
-                      <ActLinksLine groups={showActLinks(e.acts, actLinks)} eventId={e.id} />
-                    </td>
-                    <td>
-                      {v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`} className="nm" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link> : <span className="dash">—</span>}
-                      {v?.address.city && <span className="sub whitespace-nowrap" data-testid={`calendar-show-city-${e.id}`}>{v.address.city}</span>}
-                    </td>
-                    <td className="note"><ShowNote e={e} take={takes.get(e.id)} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} records={records} today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} since={since} />
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}

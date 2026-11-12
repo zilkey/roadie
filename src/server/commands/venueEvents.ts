@@ -106,12 +106,13 @@ const showName = (ev: Doc) => (ev.acts as Act[]).find((a) => a.role === "headlin
 export const venueEventsPitch = defineCommand({
   name: "venueEvents.pitch", roles: ["admin"],
   description: "Pitch this: add one of a venue's shows to the venue's pitch. Puts the venue on the Pitch List when it isn't (or uses its open pitch), " +
-    "adds the show's date to the pitch's dates, logs it on the pitch's timeline and links the pitch to the show (clearing a Not a fit take).",
-  input: z.strictObject({ eventId: z.string().min(1) }),
-  run: (ctx, { eventId }) => run(ctx, async (w) => {
+    "adds the show's date to the pitch's dates, logs it on the pitch's timeline and links the pitch to the show (clearing a Not a fit take). " +
+    "campaignId: the booking campaign a new pitch goes in (never moves the venue's existing pitch; pitches.setCampaign does). Returns { pitchId, existing, campaignId } (the pitch's campaign).",
+  input: z.strictObject({ eventId: z.string().min(1), campaignId: z.string().min(1).optional() }),
+  run: (ctx, { eventId, campaignId }) => run(ctx, async (w) => {
     const ev = await requireEvent(eventId);
     const date = String(ev.date);
-    const r = await flagPitch(w, ctx, { kind: "venue", id: String(ev.venueId), dates: [date] });
+    const r = await flagPitch(w, ctx, { kind: "venue", id: String(ev.venueId), dates: [date], ...(campaignId ? { campaignId } : {}) });
     if (r.existing) {
       const p = await w.get("pitches", r.id);
       const dates = (p?.dates as string[] | undefined) ?? [];
@@ -120,7 +121,7 @@ export const venueEventsPitch = defineCommand({
     await w.create(`pitches/${r.id}/activity`, { type: "note", text: `Added ${showName(ev)} on ${fmtEventDay(date)} (from the venue's calendar)` });
     const note = await w.get("venueEventNotes", venueEventNoteId(await artistIdOf(w), eventId));
     await setEventNote(w, ev, { pitchId: r.id, ...(note?.take ? { take: null } : {}) });
-    return { pitchId: r.id, existing: r.existing };
+    return { pitchId: r.id, existing: r.existing, campaignId: r.campaignId };
   }),
 });
 

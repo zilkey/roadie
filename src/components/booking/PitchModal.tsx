@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useCommand, ErrorBox } from "@/components/ui";
 import { ConfigurationPicker, PitchDatesField } from "@/components/booking/common";
+import { campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
 
 export interface PitchTarget { kind: "venue" | "promoter" | "edition"; id: string; name: string; meta: string }
 
-/** The "Add to Pitch List" modal opened from a flag on the Booking tables; `target === null` is closed, a save calls `onClose()`. */
+/** The "Add to <campaign>" modal opened from a flag on the Booking tables (the page asks which campaign first: FlagCampaign); `target === null` is closed, a save calls `onClose()`. */
 export function PitchModal({ target, onClose }: { target: PitchTarget | null; onClose(): void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const open = !!target;
@@ -29,10 +30,13 @@ function PitchForm({ target, onClose }: { target: PitchTarget; onClose(): void }
   const [pitchedAs, setPitchedAs] = useState("");
   const [comment, setComment] = useState("");
   const [dates, setDates] = useState<string[]>([]);
+  // The page's campaign (#82): asked before this opened, so it's there unless no campaign is active (Ongoing).
+  const fc = useFlagCampaign();
+  const into = fc.chosen ? fc.label(fc.chosen) : "Ongoing";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault(); e.stopPropagation();
-    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(dates.length ? { dates } : {}), ...(pitchedAs ? { pitchedAs } : {}) });
+    const r = await call<{ id: string }>("pitches.flag", { kind, id, ...(dates.length ? { dates } : {}), ...(pitchedAs ? { pitchedAs } : {}), ...campaignArg(fc.chosen) });
     if (!r) return;
     // the first comment is a real comment on the new pitch (its timeline), not a notes field
     if (comment.trim()) await call("pitches.comment", { id: r.id, body: comment.trim() });
@@ -46,7 +50,7 @@ function PitchForm({ target, onClose }: { target: PitchTarget; onClose(): void }
           <path d="M5 21V4M5 4h12l-2.5 4L17 12H5" />
         </svg>
         <div className="grid min-w-0 flex-1">
-          <span className="text-[0.8125rem] font-semibold text-muted">Add to the Pitch List</span>
+          <span className="text-[0.8125rem] font-semibold text-muted" data-testid="flag-into">Add to {into}</span>
           <h2 id="pitch-modal-title" className="text-[1.25rem] font-extrabold leading-[1.3]">{name}</h2>
           <span className="text-[0.875rem] text-muted">{meta}</span>
         </div>
@@ -67,7 +71,7 @@ function PitchForm({ target, onClose }: { target: PitchTarget; onClose(): void }
       <ErrorBox error={error} />
       <div className="flex flex-wrap justify-end gap-[10px] border-t border-divider" style={{ padding: "16px 22px 20px" }}>
         <button type="button" className="btn ghost" onClick={onClose} data-testid={`flag-cancel-${id}`}>Cancel</button>
-        <button type="submit" className="btn acc" disabled={busy} data-testid={`flag-submit-${id}`}>Add to Pitch List</button>
+        <button type="submit" className="btn acc" disabled={busy} data-testid={`flag-submit-${id}`}>Add to {into}</button>
       </div>
     </form>
   );

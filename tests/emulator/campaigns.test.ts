@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { isExcluded } from "@/server/assistant/policy";
+import { isExcluded, needsConfirm } from "@/server/assistant/policy";
+import { groupOf } from "@/server/assistant/toolset";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 const OTHER = "other-band";
@@ -34,11 +35,15 @@ beforeEach(async () => {
   v2 = (await cmd("venues.create", venue("Kilby Court", "Salt Lake City"))).id;
 });
 
-test("roles and Roadie: admin only, not MCP, and kept out of Roadie for now", () => {
+test("roles and Roadie: admin only, not MCP; Roadie has them, and closing asks first", () => {
   for (const n of ["campaigns.create", "campaigns.rename", "campaigns.close", "campaigns.reopen", "pitches.setCampaign"]) {
     assert.deepEqual(registry[n].roles, ["admin"], n);
-    assert.ok(isExcluded(n), n);
+    assert.ok(!isExcluded(n), n);
+    assert.equal(groupOf(n), "campaigns", n);
   }
+  assert.ok(needsConfirm("campaigns.close", { id: "c1" }));
+  assert.ok(!needsConfirm("campaigns.create", { name: "Spring" }));
+  assert.ok(!needsConfirm("pitches.setCampaign", { ids: ["a", "b"], campaignId: "c1" }));
 });
 
 test("create, rename, close, reopen: names unique per band; close only sets status", async () => {
@@ -105,6 +110,27 @@ test("pitches.move: no second active pitch for the same place", async () => {
   await cmd("pitches.move", { id: now.id, status: "declined" });
   await cmd("pitches.move", { id: old, status: "talking" });
   assert.equal((await db.get("pitches", old))!.status, "talking");
+});
+
+test("pitches.flag and tours.addPitch take campaignId: only a new pitch goes in; never a closed or another band's campaign", async () => {
+  const c = (await cmd("campaigns.create", { name: "Breweries" })).id;
+  const p = await cmd("pitches.flag", { kind: "venue", id: v1, campaignId: c });
+  assert.deepEqual([p.existing, p.campaignId], [false, c]);
+  assert.equal((await db.get("pitches", p.id))!.campaignId, c);
+  const again = await cmd("pitches.flag", { kind: "venue", id: v1 });
+  assert.deepEqual([again.id, again.existing, again.campaignId], [p.id, true, c]);
+  const plain = await cmd("pitches.flag", { kind: "venue", id: v2 });
+  assert.equal((await db.get("pitches", plain.id))!.campaignId, undefined, "no campaign: Ongoing");
+  await cmd("pitches.move", { id: plain.id, status: "dropped" });
+  await cmd("campaigns.close", { id: c });
+  await fails(cmd("pitches.flag", { kind: "venue", id: v2, campaignId: c }), 409);
+  const theirs = (await cmd("campaigns.create", { name: "Theirs" }, octx)).id;
+  await fails(cmd("pitches.flag", { kind: "venue", id: v2, campaignId: theirs }), 404);
+  await cmd("campaigns.reopen", { id: c });
+  const proj = (await cmd("projects.create", { kind: "band", name: "Band", isDefault: true })).id;
+  const tour = (await cmd("tours.create", { name: "West", projectId: proj, startDate: "2026-11-05", endDate: "2026-11-08" })).id;
+  const t = await cmd("tours.addPitch", { tourId: tour, venueId: v2, campaignId: c });
+  assert.equal((await db.get("pitches", t.pitchId))!.campaignId, c);
 });
 
 test("history.undoRun puts back what a campaign command changed", async () => {

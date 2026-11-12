@@ -95,7 +95,7 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   const cell = row.getByTestId(/^pitch-cell-/);
   await expect(cell).toContainText("Duo");
   await expect(cell).toContainText("Fri, May 1"); // dates are text like "Sat, Nov 21"
-  await expect(page.getByTestId("pitch-count")).toBeVisible();
+  await expect(page.getByTestId("booking-seg-pitches")).toBeVisible(); // Ongoing, under All campaigns (no count: #82)
 
   await page.getByTestId("booking-search").fill("");
   await page.getByTestId("booking-seg-pitches").click();
@@ -103,7 +103,7 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(swallow).toHaveCount(1);
   await swallow.locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
 
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
   await expect(page.getByTestId("person-Nora")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("person-Hugo")).toHaveAttribute("aria-pressed", "false");
@@ -134,25 +134,26 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
   await expect(page.getByTestId("comment-input")).toHaveValue("");
 });
 
-test("Pitch List: last contact column, quiet rows turn yellow, statuses without Waiting", async ({ page }) => {
+test("Ongoing (was the Pitch List): email and status columns, quiet rows turn yellow, statuses without Waiting", async ({ page }) => {
   await signInAs(page, "rudy");
-  await page.goto("/booking/pitches");
+  await page.goto(A("/booking/pitches")); // the old address opens Ongoing (#82 Q1)
+  await expect(page).toHaveURL(/\/booking\/campaigns\/ongoing$/);
   const list = page.getByTestId("pitch-list");
-  await expect(list.locator("th:not(.flag)")).toHaveText(["Name", "Type", "City", "Pitch", "Last contact", "Next step"]);
+  await expect(list.locator("th:not(.flag)")).toHaveText(["Name", "Initial email", "Follow-up", "Status", "Next step"]);
   const creamery = list.locator("tr", { hasText: "Creamery Arts Center" }).first();
   await expect(creamery.getByTestId(/^next-step-/)).toContainText("Fill out the spring submission form");
   await expect(creamery.getByTestId(/^next-step-/)).toContainText("by Nov 5");
   // seed: Bluebird pitched, last contact 20 days ago; Fox talking, 3 days ago; Marisol a Future Pitch, never contacted
   const bluebird = list.locator("tr", { hasText: "Bluebird Room" });
   await expect(bluebird).toHaveAttribute("data-quiet", "1");
-  await expect(bluebird.getByTestId(/^last-contact-/)).toContainText("days quiet");
+  await expect(bluebird.getByTestId(/^follow-up-due-/)).toContainText("days quiet"); // the follow-up it owes
   await expect(list.getByTestId("table-caption")).toHaveText("Names and flags open the pitch. Yellow rows have gone quiet.");
   const fox = list.locator("tr", { hasText: "Heron Theatre" });
-  await expect(fox.getByTestId(/^last-contact-/)).toHaveText(/^[A-Z][a-z]{2} \d{1,2}$/);
   await expect(fox).not.toHaveAttribute("data-quiet", "1");
+  await expect(fox.getByTestId(/^follow-up-due-/)).toHaveCount(0);
   const marisol = list.locator("tr", { hasText: "Marisol" });
   await expect(marisol.getByTestId("status-chip")).toHaveText("Future Pitch");
-  await expect(marisol.getByTestId(/^last-contact-/)).toHaveText("—");
+  await expect(marisol.getByTestId(/^write-initial-/)).toHaveText("Write it"); // a Future Pitch with no email yet
   await expect(marisol).not.toHaveAttribute("data-quiet", "1");
   const filter = page.getByTestId("pitch-status-filter");
   await expect(filter.locator("option", { hasText: "Waiting" })).toHaveCount(0);
@@ -165,11 +166,11 @@ test("names open the pitch when there is one, the place page one click under; no
   await expect(page.getByTestId("booking-seg-all")).toHaveCount(0);
   const lost = (p: Page) => p.getByTestId(/^row-venue-/).filter({ hasText: "Pine Hollow Lounge" });
   await lost(page).getByTestId(/^venue-full-/).click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
 
   await page.goto(A("/booking/venues"));
   await lost(page).getByTestId(/^venue-full-/).click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   await page.goto(A("/booking/venues"));
   await lost(page).getByTestId(/^page-link-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
@@ -196,7 +197,7 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchUrl = page.url();
   await page.getByTestId("email-new").click();
   await expect(page).toHaveURL(/\/booking\/email\/new\?/);
@@ -359,11 +360,11 @@ test("Email templates: create one and edit it", async ({ page }) => {
   await expect(page.getByTestId(`template-Tpl ${stamp}`)).toContainText("Hello again");
 });
 
-test("the pitch page has Booked it in its header (a form under it) and Abandon pitch at the foot", async ({ page }) => {
+test("the pitch has Booked it in its header (a form under it) and Abandon pitch in the ⋮ menu", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/pitches"));
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await expect(page.getByTestId("pitch-page")).toBeVisible();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const status = (await page.getByTestId("status-chip").textContent()) ?? "";
   await page.getByTestId("booked-it").click();
   await expect(page.getByTestId("book-form")).toBeVisible();
@@ -371,6 +372,7 @@ test("the pitch page has Booked it in its header (a form under it) and Abandon p
   await page.getByTestId("book-cancel").click();
   await expect(page.getByTestId("book-form")).toHaveCount(0);
   page.once("dialog", (d) => void d.dismiss()); // look, don't abandon: other specs use this pitch
+  await page.getByTestId("venue-actions").click(); // the ⋮ menu on the venue's one page (#82)
   await page.getByTestId("pitch-abandon").click();
   await expect(page.getByTestId("status-chip")).toHaveText(status);
 });
@@ -379,16 +381,14 @@ test("the Booking sub-nav: grouped beside the page, a sideways row on a phone, a
   await signInAs(page, "rudy");
   await page.goto(A("/booking/venues"));
   const nav = page.getByTestId("booking-nav");
-  for (const head of ["Pitches", "Places", "Discover", "Set up"]) await expect(nav).toContainText(head);
+  for (const head of ["Campaigns", "Places", "Discover", "Set up"]) await expect(nav).toContainText(head);
   await expect(page.getByTestId("booking-seg-venues")).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("page-title")).toHaveText("Venues");
   await expect(page.getByTestId("booking-seg-contacts")).toHaveAttribute("href", /\/contacts$/); // Contacts is its own section
   await expect(page.getByTestId("booking-seg-templates")).toHaveAttribute("href", /\/booking\/templates$/);
 
   // a record page: Booking › Venues › the venue, and the section crumb goes back to the list
-  await page.getByTestId(/^venue-full-/).first().click();
-  await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
-  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  await page.getByTestId(/^page-link-/).first().click(); // "Venue page": the venue's own route (its name opens its pitch, #82)
   await expect(page.getByTestId("venue-page")).toBeVisible();
   await expect(page.getByTestId("crumbs")).toBeVisible();
   await expect(page.getByTestId("crumb-0")).toHaveText("Booking");

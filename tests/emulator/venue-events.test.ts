@@ -308,6 +308,17 @@ describe("venueEvents.pitch (#79)", () => {
     assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
     assert.equal((await pitchesOf(v)).length, 1);
   });
+  test("campaignId (#82): a new pitch goes in that campaign; an existing pitch keeps its own and says which", async () => {
+    const { v, e } = await seed();
+    const spring = (await cmd("campaigns.create", { name: "Spring" })).id;
+    const r = await cmd("venueEvents.pitch", { eventId: e.id, campaignId: spring });
+    assert.deepEqual([r.existing, r.campaignId], [false, spring]);
+    assert.equal((await db.get("pitches", r.pitchId))!.campaignId, spring);
+    const fall = (await cmd("campaigns.create", { name: "Fall" })).id;
+    const again = await cmd("venueEvents.pitch", { eventId: e.id, campaignId: fall });
+    assert.deepEqual([again.pitchId, again.existing, again.campaignId], [r.pitchId, true, spring], "never moved: the page asks first (Q2)");
+    assert.equal((await db.get("pitches", r.pitchId))!.campaignId, spring);
+  });
   test("unpitch takes the show and its date off the pitch, logs it, and leaves the pitch on the Pitch List", async () => {
     const { v, e } = await seed();
     await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });

@@ -68,7 +68,7 @@ function Songs() {
     return (
       <WelcomeEmpty section="songs" variant={2} title="Welcome to Songs!"
         body="Everything we play, with its key and length. Charts and recordings, and the songs we're learning or just thinking about, all live here too."
-        actions={admin ? <Link href="/songs/new" className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined}>
+        actions={admin ? <Link href="/songs/new" className="btn acc" data-testid="add-song-btn">+ New song</Link> : undefined}>
         <ErrorBox error={error} />
       </WelcomeEmpty>
     );
@@ -77,7 +77,7 @@ function Songs() {
   return (
     <div className="grid gap-5" data-testid="songs-page">
       <PageTitle title="Songs" center
-        actions={admin ? <Link href={seg === "writing" ? "/songs/new?status=writing" : "/songs/new"} className="btn acc" data-testid="add-song-btn">Add a song</Link> : undefined} />
+        actions={admin ? <Link href={seg === "writing" ? "/songs/new?status=writing" : "/songs/new"} className="btn acc" data-testid="add-song-btn">+ New song</Link> : undefined} />
       <Tabs<SegKey> testid="songs-seg" value={seg} onChange={setSeg}
         options={SEGS.map(([k, label]) => [k, <>{label} <span className="chip a ml-1">{count(k)}</span></>])} />
       <input className="input" placeholder="Search songs…" value={q} onChange={(e) => setQ(e.target.value)} data-testid="songs-filter" aria-label="Filter songs" />

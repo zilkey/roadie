@@ -1,16 +1,17 @@
 /**
- * To Dos: one board of everything open across shows, releases, the Social Media sidebar, booking, Our list and the band's own lists
- * (todoLists/{artistId}, checklists of kind "board", one column each). Pure (no server or
+ * To Dos: one board of everything open across shows, releases, the Social Media sidebar, booking and Our list. Pure (no server or
  * browser imports): the page builds its columns with `buildBoard`, the server checks keys with the patterns.
  *
  * Item keys: show:{showId}:{listId}:{itemId}, release:{releaseId}:{listId}:{itemId}, social:{artistId}:{listId}:{itemId},
- * board:{artistId}:{listId}:{itemId}, pitch:{pitchId}, todo:{id}. A checklist's key (what Dismiss stores) is the item key without the item: show:{showId}:{listId}.
- * Column keys: pinned, booking, show:{showId}, releases, social, our, list:{listId}.
+ * pitch:{pitchId}, todo:{id}. A checklist's key (what Dismiss stores) is the item key without the item: show:{showId}:{listId}.
+ * Column keys: pinned, booking (Ongoing), campaign:{campaignId}, show:{showId}, releases, social, our.
+ * Booking campaigns (#82 S12): a column per active campaign; Ongoing is just another campaign there (the old "booking" key, so saved orders hold).
  */
 import { followUpFor, fmtPitchDate, STATUS_LABEL, todayStr, type FollowUpPitchLike, type Status } from "./booking";
+import { homeOf, liveCampaigns, ONGOING, sortCampaigns, type CampaignLike } from "./campaigns";
 import { isOff, showName, type ChecklistItem, type ChecklistKind, type ChecklistLike, type ShowPlaceLike } from "./shows";
 
-export const TODO_COLUMN_KEY = /^(pinned|booking|releases|social|our|(show|list):[^:\s]+)$/;
+export const TODO_COLUMN_KEY = /^(pinned|booking|releases|social|our|(show|campaign):[^:\s]+)$/;
 export const TODO_CHECKLIST_KEY = /^(show|release|social):[^:\s]+:[^:\s]+$/;
 
 export const checklistKey = (kind: ChecklistKind, id: string, listId: string) => `${kind}:${id}:${listId}`;
@@ -64,13 +65,16 @@ export interface BoardColumn {
   chip: string;
   caption?: string;
   groups: BoardGroup[];
-  /** One of the band's own lists (list:{listId}): it can be deleted from the board. */
-  board?: { listId: string };
+  /**
+   * Columns that hold checklists (a show, the releases, Social Media) end in "+ Add list" (Jeff, 2026-11-12): the record page's
+   * "New list" (a template or a blank list) for `kind`; with several targets (the releases) it asks which one first.
+   */
+  newList?: { kind: ChecklistKind; targets: { id: string; label: string }[] };
 }
 
 export interface ShowLike extends ShowPlaceLike { id: string; date: string; status: string; checklists?: ChecklistLike[]; deletedAt?: unknown }
 export interface ReleaseLike { id: string; title: string; checklists?: ChecklistLike[] }
-export interface PitchLike extends FollowUpPitchLike { id: string; target: { kind: string; id: string; name: string }; assigneeId?: string; nextStep?: { text: string; due: string } | null }
+export interface PitchLike extends FollowUpPitchLike { id: string; target: { kind: string; id: string; name: string }; assigneeId?: string; nextStep?: { text: string; due: string } | null; campaignId?: string | null }
 export interface TodoLike { id: string; label: string; done: boolean; ownerId?: string; pinnedAt?: string }
 
 export interface BoardInput {
@@ -78,9 +82,9 @@ export interface BoardInput {
   shows: ShowLike[];
   releases: ReleaseLike[];
   social: ChecklistLike[];
-  /** The band's own lists (todoLists/{artistId}), in order. */
-  lists?: ChecklistLike[];
   pitches: PitchLike[];
+  /** The band's campaigns (admins; #82): a column for each active one. */
+  campaigns?: CampaignLike[];
   todos: TodoLike[];
   /** The caller's saved order per column (userPrefs todoOrder). */
   order: Record<string, string[]>;
@@ -133,21 +137,20 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   const showTitle = (s: ShowLike) => `${shortDate(s.date)} ${showName(s)}`;
   const releaseHref = (r: ReleaseLike) => `/releases/${r.id}`;
 
-  const lists = b.lists ?? [];
   const todoItem = (t: TodoLike, source?: BoardItem["source"]): BoardItem => ({
     key: `todo:${t.id}`, label: t.label, done: t.done, ownerId: t.ownerId, pinned: !!t.pinnedAt, ...(source ? { source } : {}), action: { type: "todo", id: t.id },
   });
 
-  // Pinned: every pinned item, from any list (dismissed or not), in source order: shows, releases, Social Media, the band's lists, Our list.
+  // Pinned: every pinned item, from any list (dismissed or not), in source order: shows, releases, Social Media, Our list.
   const pinned: BoardItem[] = [
     ...live.flatMap((s) => (s.checklists ?? []).flatMap((l) => checklistItems("show", s.id, l, (i) => !!i.pinnedAt, { text: `${showTitle(s)} › ${l.name}`, href: `/shows/${s.id}` }))),
     ...b.releases.flatMap((r) => (r.checklists ?? []).flatMap((l) => checklistItems("release", r.id, l, (i) => !!i.pinnedAt, { text: `${r.title} › ${l.name}`, href: releaseHref(r) }))),
     ...b.social.flatMap((l) => checklistItems("social", b.artistId, l, (i) => !!i.pinnedAt, { text: `Social Media › ${l.name}`, href: "/posts" })),
-    ...lists.flatMap((l) => checklistItems("board", b.artistId, l, (i) => !!i.pinnedAt, { text: l.name })),
     ...b.todos.filter((t) => t.pinnedAt).map((t) => todoItem(t, { text: "Our list" })),
   ];
 
-  const booking: BoardItem[] = b.pitches.flatMap((p) => {
+  const camps = liveCampaigns(b.campaigns ?? []);
+  const booking: (BoardItem & { home: string })[] = b.pitches.flatMap((p) => {
     const f = followUpFor(p, today);
     if (!f) return [];
     const href = `/booking/pitches/${p.id}`;
@@ -157,8 +160,9 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
         chip: p.nextStep!.due < today ? { text: `Due ${shortDate(p.nextStep!.due)}`, tone: "r" } : { text: "Due today", tone: "y" }, action: { type: "pitch", id: p.id, due: true } }
       : { key: `pitch:${p.id}`, label: `Follow up with ${p.target.name}`, done: false, assigneeId: p.assigneeId, source: { text: p.target.name, href },
         chip: { text: `${days} days quiet`, tone: "y" }, note: STATUS_LABEL[p.status as Status], action: { type: "pitch", id: p.id, due: false } };
-    return [{ ...item, days }];
+    return [{ ...item, days, home: homeOf(p, camps) }];
   }).sort((x, y) => y.days - x.days).map(({ days: _d, ...i }) => i);
+  const followUps = (home: string): BoardItem[] => booking.filter((i) => i.home === home).map(({ home: _h, ...i }) => i);
 
   /** A checklist as a group of its unpinned items, unless dismissed. */
   const group = (kind: ChecklistKind, id: string, l: ChecklistLike, extra: Partial<BoardGroup> = {}): BoardGroup[] => {
@@ -169,34 +173,34 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
       add: { type: "checklist", kind, id, listId: l.id }, ...extra,
     }];
   };
-  const nonEmpty = (gs: BoardGroup[]) => gs.filter((g) => g.items.length);
+  // A list with nothing left to show leaves the board; a brand-new empty one stays, so its first to-do has somewhere to go.
+  const nonEmpty = (gs: BoardGroup[]) => gs.filter((g) => g.items.length || g.total === 0);
 
   const showCols: BoardColumn[] = shows.map((s) => ({
     key: `show:${s.id}`, title: `${shortDate(s.date)} · ${showName(s)}`, chip: showName(s), href: `/shows/${s.id}`,
+    newList: { kind: "show" as const, targets: [{ id: s.id, label: showTitle(s) }] },
     groups: nonEmpty(ordered(`show:${s.id}`, (s.checklists ?? []).flatMap((l) => group("show", s.id, l)))),
   })).filter((c) => c.groups.length);
 
   return [
     { key: "pinned", title: "Pinned", chip: "Pinned", caption: "Pinned from any checklist. Unpin to send it back.", groups: ordered("pinned", [{ items: pinned, add: { type: "todo", pinned: true } }]) },
-    { key: "booking", title: "Booking", chip: "Booking", href: "/booking/pitches", caption: "Pitches that need a follow up: a next step that's due, or 14+ days quiet.", groups: ordered("booking", [{ items: booking }]) },
+    // Ongoing is just another campaign here (#82 Q10): its column keeps the old "booking" key, so saved orders and positions hold.
+    { key: "booking", title: "Ongoing", chip: "Ongoing", href: "/booking/campaigns/ongoing", caption: "Pitches that need a follow up: a next step that's due, or 14+ days quiet.", groups: ordered("booking", [{ items: followUps(ONGOING) }]) },
+    ...sortCampaigns(camps.values()).active.map((c): BoardColumn => ({
+      key: `campaign:${c.id}`, title: c.name, chip: c.name, href: `/booking/campaigns/${c.id}`, caption: "Follow-ups due in this campaign.",
+      groups: ordered(`campaign:${c.id}`, [{ items: followUps(c.id) }]),
+    })),
     ...showCols,
     {
       key: "releases", title: "Releases", chip: "Releases", href: "/releases",
+      newList: { kind: "release", targets: b.releases.map((r) => ({ id: r.id, label: r.title })) },
       groups: nonEmpty(ordered("releases", b.releases.flatMap((r) => (r.checklists ?? []).flatMap((l) => group("release", r.id, l, { titleLink: { text: r.title, href: releaseHref(r) } }))))),
     },
-    { key: "social", title: "Social Media", chip: "Social", href: "/posts", groups: nonEmpty(ordered("social", b.social.flatMap((l) => group("social", b.artistId, l)))) },
+    { key: "social", title: "Social Media", chip: "Social", href: "/posts", newList: { kind: "social", targets: [{ id: b.artistId, label: "Social Media" }] }, groups: nonEmpty(ordered("social", b.social.flatMap((l) => group("social", b.artistId, l)))) },
     {
       key: "our", title: "Our list", chip: "Our list", caption: "For the band, not tied to any show or release.",
       groups: ordered("our", [{ items: b.todos.filter((t) => !t.pinnedAt).map((t) => todoItem(t)), add: { type: "todo" } }]),
     },
-    // The band's own lists: one column each, shown even when empty (that's where their first to-do goes).
-    ...lists.map((l): BoardColumn => {
-      const key = `list:${l.id}`;
-      return {
-        key, title: l.name, chip: l.name, board: { listId: l.id },
-        groups: ordered(key, [{ key: checklistKey("board", b.artistId, l.id), items: checklistItems("board", b.artistId, l, (i) => !i.pinnedAt), add: { type: "checklist", kind: "board", id: b.artistId, listId: l.id } }]),
-      };
-    }),
   ];
 }
 

@@ -248,7 +248,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
                     {es.length === 0 && (
                       <div className="tp-empty">
                         Nothing yet.{admin && <span className="tp-desk"> Drag something here, or <PlusMenu testid={`plan-plus-${d.date}-0`} label={`Add on ${dayLabel(d.date)}`} onPick={(k) => startNew(k, d.date, {})}
-                          trigger={<span className="text-[0.8125rem] font-bold">+ Add</span>} triggerClass="btn ghost sm" /></span>}
+                          trigger={<span className="text-[0.8125rem] font-bold">+ New</span>} triggerClass="btn ghost sm" /></span>}
                       </div>
                     )}
                     {es.length > 0 && plus(0)}
@@ -261,7 +261,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
                     {noStay.has(d.date) && (
                       <div className="todo row tp-gap-box" data-testid="plan-no-stay">
                         <b>No stay tonight.</b>
-                        {admin && <button type="button" className="btn ghost sm" onClick={() => setOpen({ kind: "stay", date: d.date, slot: { after: es[es.length - 1]?.id } })} data-testid="plan-add-stay">Add a stay</button>}
+                        {admin && <button type="button" className="btn ghost sm" onClick={() => setOpen({ kind: "stay", date: d.date, slot: { after: es[es.length - 1]?.id } })} data-testid="plan-add-stay">+ New stay</button>}
                       </div>
                     )}
                     {admin && over?.date === d.date && drag && (drag.type === "venue" || drag.type === "pitch") && (
