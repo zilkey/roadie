@@ -176,7 +176,7 @@ test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the captio
   await dlg.getByTestId("add-to-draft-go").click();
 
   // The editor, in pick order.
-  await expect(page).toHaveURL(/\/posts\/[^/]+$/);
+  await expect(page).toHaveURL(/\/posts\/(?!photos)[^/?]+$/);
   const id = page.url().split("/").pop()!;
   await expect(page.getByTestId("editor-title")).toHaveText("Hi-Dive announcement");
   const order = () => page.getByTestId("editor-photos").locator("li").evaluateAll((ls) => ls.map((l) => l.getAttribute("data-testid")!.replace("editor-photo-", "")));
