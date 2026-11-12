@@ -8,7 +8,7 @@ Socials/                                   the folder set in Settings › Google
 │   └── IMG_2201.HEIC
 ├── IMG_4413.HEIC                          a photo loose anywhere in the inbox has not been used
 └── Posts/                                 Roadie keeps this folder: one folder per post
-    ├── 2026-11-12 - Hi-Dive announcement/ a draft (status lives in Firestore)
+    ├── DRAFT - Hi-Dive announcement/      a draft (status lives in Firestore)
     │   ├── IMG_4410.HEIC
     │   └── IMG_4412.HEIC
     └── 2026-11-03 - Thanks, Denver/       posted
@@ -19,8 +19,8 @@ Socials/                                   the folder set in Settings › Google
 ## Rules
 
 - **The inbox** is the Socials folder and every folder under it except `Posts/`. Photos can be loose or in any subfolder, so a whole phone dump works as it is.
-- **Make the draft** creates `Posts/YYYY-MM-DD - <name>` and moves the chosen photos into it. The date is the day the draft was made, in the band's timezone. Each photo's original folder is recorded on the post so it can go back there.
-- **When the post goes out**, Roadie renames the folder to the day it posted (`YYYY-MM-DD - <name>`, band timezone). Files keep their original names; the carousel order lives only in Roadie. If the post fails, nothing in Drive changes.
+- **Make the draft** creates `Posts/DRAFT - <name>` (no date) and moves the chosen photos into it. Each photo's original folder is recorded on the post so it can go back there. Renaming the draft renames the folder.
+- **When the post goes out**, Roadie renames the folder to `YYYY-MM-DD - <name>`, the day it posted in the band's timezone. Files keep their original names; the carousel order lives only in Roadie. If the post fails, nothing in Drive changes.
 - **Taking a photo out of a draft** moves it back to the folder it came from. If that folder is gone, it goes to the Socials root.
 - **Delete draft** moves every photo back, then trashes the post folder only if it is empty. If it isn't (someone added a file in Drive), Roadie leaves the folder and says so.
 - **Status** (`draft`, `publishing`, `posted`, `failed`) lives only on the `posts` doc in Firestore. Roadie writes no tags or appProperties into Drive. The `posts` doc is the source of truth, and the folders mirror it.
