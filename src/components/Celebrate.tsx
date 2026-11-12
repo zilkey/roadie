@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 
 /** Confetti and a message for the big moments (a pitch becomes a show, a song leaves Writing). `celebrate()` from anywhere; <CelebrateHost /> sits next to <ToastHost />. */
 export interface Celebration { title: string; text?: string }
+/** `title` empty: confetti only, no card (a ticked To Dos item). */
 let current: (Celebration & { n: number }) | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
@@ -21,6 +22,8 @@ export const celebrateSong = (title: string, label: string) =>
 /** Money in was recorded: received now, or owed to us (`received` false). `amount` is formatted ("$250.00"). */
 export const celebrateMoneyIn = (amount: string, from: string, received = true) =>
   celebrate({ title: received ? "Money in!" : "Money on the way!", text: received ? `${amount} from ${from}` : `${from} owes us ${amount}` });
+/** Just the confetti, no card: a To Dos item ticked done. Each call starts a fresh burst. */
+export const confetti = () => celebrate({ title: "" });
 /** A post just went up on Instagram. */
 export const celebratePost = (title: string) => celebrate({ title: "Posted!", text: `${title} is on Instagram` });
 
@@ -65,7 +68,7 @@ function Confetti() {
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
   }, []);
-  return <canvas ref={ref} className="celebrate-canvas" aria-hidden="true" />;
+  return <canvas ref={ref} className="celebrate-canvas" aria-hidden="true" data-testid="confetti" />;
 }
 
 export function CelebrateHost() {
@@ -83,10 +86,10 @@ export function CelebrateHost() {
   return (
     <div className="celebrate" key={c.n} ref={box} popover="manual">
       {!still && <Confetti />}
-      <button type="button" className="celebrate-card" role="status" aria-live="polite" onClick={dismiss} data-testid="celebration">
+      {c.title && <button type="button" className="celebrate-card" role="status" aria-live="polite" onClick={dismiss} data-testid="celebration">
         <span className="celebrate-title" data-testid="celebration-title">{c.title}</span>
         {c.text && <span className="celebrate-text" data-testid="celebration-text">{c.text}</span>}
-      </button>
+      </button>}
     </div>
   );
 }

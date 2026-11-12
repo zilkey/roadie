@@ -784,7 +784,16 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .td-ch h2 { flex: 1; min-width: 0; margin: 0; font-size: 0.9375rem; font-weight: 800; }
 .td-ch h2 a { color: var(--ink); text-decoration: none; }
 .td-ch h2 a:hover { text-decoration: underline; }
-.td-n { font-size: 0.75rem; font-weight: 800; color: var(--muted); background: var(--panel); border-radius: 999px; padding: 0 8px; min-width: 24px; text-align: center; }
+.td-focus { flex: none; border: 0; background: var(--panel); color: var(--muted); font: inherit; font-weight: 700; font-size: 0.75rem; min-height: 28px; padding: 0 10px; border-radius: 999px; cursor: pointer; }
+.td-focus:hover { color: var(--ink); }
+.td-focus[aria-pressed=true] { background: var(--strong); color: var(--on-strong); }
+.td-ch .td-grip { margin: 0 -4px 0 -2px; }
+/* Columns move left and right: the drop line is vertical. */
+.td-col[data-drag="above"]::before, .td-col[data-drag="below"]::after { top: 0; bottom: 0; height: auto; width: 3px; }
+.td-col[data-drag="above"]::before { left: -9px; right: auto; }
+.td-col[data-drag="below"]::after { right: -9px; left: auto; }
+/* Focus: one column, given the room. */
+.td-board[data-focus] .td-col { flex: 1 1 auto; max-width: 760px; }
 .td-cs, .td-tip { padding: 0 6px 4px; font-size: 0.78rem; color: var(--muted); margin: 0; }
 .td-grp { display: flex; align-items: center; gap: 8px; padding: 8px 6px 0; }
 .td-grp h3 { flex: 1; min-width: 0; margin: 0; font-size: 0.8125rem; font-weight: 800; color: var(--ink); }

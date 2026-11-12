@@ -88,18 +88,24 @@ export async function lookAtCalendars(uid: string, artistId: string, now: string
   return typeof prev === "string" ? prev : null;
 }
 
-/** To Dos (#todos): the caller's own order of each column (column key -> item keys, top first) and the checklists they dismissed. */
-export interface TodoPrefs { order: Record<string, string[]>; dismissed: string[] }
+/** To Dos (#todos): the caller's own order of each column (column key -> item keys, top first), of the columns themselves (left first), and the checklists they dismissed. */
+export interface TodoPrefs { order: Record<string, string[]>; columns: string[]; dismissed: string[] }
 const strings = (v: unknown) => (Array.isArray(v) ? v.filter((k): k is string => typeof k === "string") : []);
 export async function todoPrefs(uid: string): Promise<TodoPrefs> {
   const d = (await ref(uid).get()).data();
   const o = (d?.todoOrder ?? {}) as Record<string, unknown>;
-  return { order: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, strings(v)])), dismissed: strings(d?.todoDismissed) };
+  return { order: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, strings(v)])), columns: strings(d?.todoColumns), dismissed: strings(d?.todoDismissed) };
 }
 /** Saves one column's order for the caller; other columns and other people's are untouched. */
 export async function setTodoOrder(uid: string, column: string, keys: string[]): Promise<string[]> {
   const next = [...new Set(keys)];
   await ref(uid).set({ uid, todoOrder: { [column]: next } }, { merge: true });
+  return next;
+}
+/** Saves the caller's order of the columns themselves (left first); columns not listed go after, in their usual order. */
+export async function setTodoColumns(uid: string, keys: string[]): Promise<string[]> {
+  const next = [...new Set(keys)];
+  await ref(uid).set({ uid, todoColumns: next }, { merge: true });
   return next;
 }
 /** Dismisses (or, with on=false, brings back) one checklist on the caller's To Dos. */

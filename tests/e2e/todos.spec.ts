@@ -35,6 +35,7 @@ test("pin a show item, see it in Pinned with its source, tick it; Show done brin
   await expect(show.getByText("Keys rig")).toHaveCount(0); // pinned items live in Pinned, not in their show
 
   await card.getByRole("checkbox").check();
+  await expect(page.getByTestId("confetti")).toBeVisible(); // every tick gets confetti
   await expect(page.getByTestId("toast-text").filter({ hasText: "Done: Keys rig" })).toBeVisible();
   await expect(card).toHaveCount(0); // done items are hidden
   await page.getByTestId("todos-show-done").check();
@@ -78,4 +79,27 @@ test("dismiss a checklist from my To Dos, then show it again", async ({ page }) 
   await list.getByRole("button", { name: "Show again" }).click();
   await expect(pineHollow(page).getByText("Bass rig")).toBeVisible();
   await expect(page.getByTestId("todos-dismissed")).toHaveText("Dismissed (0)");
+});
+
+test("Focus shows one column; columns drag into my own order, which sticks", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/todos"));
+  const cols = page.locator('[data-testid^="todos-col-"]:not([data-testid^="todos-col-grip"])');
+  const keys = () => cols.evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")!.replace("todos-col-", "")));
+  await expect(page.getByTestId("todos-col-our")).toBeVisible();
+
+  await page.getByTestId("todos-focus-booking").click();
+  await expect(cols).toHaveCount(1);
+  await expect(page.getByTestId("todos-col-booking")).toBeVisible();
+  await expect(page.getByTestId("todos-focus-booking")).toHaveText("Show all");
+  await page.getByTestId("todos-focus-booking").click();
+  await expect(page.getByTestId("todos-col-our")).toBeVisible();
+
+  const before = await keys();
+  expect(before.slice(0, 2)).toEqual(["pinned", "booking"]);
+  const after = ["booking", "pinned", ...before.slice(2)];
+  await page.getByTestId("todos-col-grip-booking").dragTo(page.getByTestId("todos-col-pinned"));
+  await expect.poll(keys).toEqual(after);
+  await page.reload();
+  await expect.poll(keys).toEqual(after);
 });

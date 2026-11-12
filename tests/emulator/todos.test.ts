@@ -17,7 +17,7 @@ const cmd = async (name: string, input: unknown, c: Ctx) => {
 };
 const admin = (uid = "u-admin"): Ctx => ({ uid, role: "admin", artistId: TEST_ARTIST, via: "app", runId: newRunId() });
 
-const TODOS = ["todos.add", "todos.edit", "todos.check", "todos.remove", "todos.setOrder", "todos.dismiss", "todos.undismiss"];
+const TODOS = ["todos.add", "todos.edit", "todos.check", "todos.remove", "todos.setOrder", "todos.setColumns", "todos.dismiss", "todos.undismiss"];
 
 test("todos.* are admin-only and not Roadie's", () => {
   for (const n of TODOS) assert.deepEqual(registry[n].roles, ["admin"], n);
@@ -72,6 +72,8 @@ test("order and Dismiss are per person, in userPrefs, and touch nothing else", a
   await cmd("todos.setOrder", { column: "show:s1", keys: ["show:s1:l1:i2"] }, admin(rudy.uid));
   await cmd("todos.setOrder", { column: "pinned", keys: ["pitch:p1", "todo:b"] }, admin(rudy.uid));
   await assert.rejects(cmd("todos.setOrder", { column: "nope", keys: [] }, admin(rudy.uid)));
+  await cmd("todos.setColumns", { keys: ["our", "show:s1", "pinned", "our"] }, admin(rudy.uid));
+  await assert.rejects(cmd("todos.setColumns", { keys: ["nope"] }, admin(rudy.uid)), /Not a To Dos column/);
 
   await cmd("todos.dismiss", { key: "show:s1:l1" }, admin(rudy.uid));
   await cmd("todos.dismiss", { key: "social:a1:l2" }, admin(rudy.uid));
@@ -79,10 +81,10 @@ test("order and Dismiss are per person, in userPrefs, and touch nothing else", a
   await assert.rejects(cmd("todos.dismiss", { key: "show:s1" }, admin(rudy.uid)), /checklist key/);
   await assert.rejects(cmd("todos.dismiss", { key: "pitch:p1:x" }, admin(rudy.uid)), /checklist key/);
 
-  assert.deepEqual(await todoPrefs(rudy.uid), { order: { pinned: ["pitch:p1", "todo:b"], "show:s1": ["show:s1:l1:i2"] }, dismissed: ["show:s1:l1", "social:a1:l2"] });
+  assert.deepEqual(await todoPrefs(rudy.uid), { order: { pinned: ["pitch:p1", "todo:b"], "show:s1": ["show:s1:l1:i2"] }, columns: ["our", "show:s1", "pinned"], dismissed: ["show:s1:l1", "social:a1:l2"] });
   const r = await cmd("todos.undismiss", { key: "show:s1:l1" }, admin(rudy.uid));
   assert.deepEqual(r.dismissed, ["social:a1:l2"]);
-  assert.deepEqual(await todoPrefs(ingrid.uid), { order: {}, dismissed: [] }, "someone else's view is untouched");
+  assert.deepEqual(await todoPrefs(ingrid.uid), { order: {}, columns: [], dismissed: [] }, "someone else's view is untouched");
   assert.deepEqual((await firestore().doc(`userPrefs/${rudy.uid}`).get()).data()?.hiddenSections, ["money"], "other prefs are kept");
 });
 

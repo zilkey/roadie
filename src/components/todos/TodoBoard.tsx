@@ -5,11 +5,12 @@ import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { runCommandFull } from "@/lib/commands";
 import { useDragReorder } from "@/lib/drag-reorder";
-import { buildBoard, columnCount, dismissedLists, movedOrder, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type TodoLike } from "@/lib/todos";
+import { applyOrder, buildBoard, columnCount, dismissedLists, movedOrder, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type TodoLike } from "@/lib/todos";
 import type { ChecklistLike } from "@/lib/shows";
 import type { Musician } from "@/schema";
 import { PageTitle } from "@/components/ui";
 import { toast, UNDO_MS } from "@/components/Toasts";
+import { confetti } from "@/components/Celebrate";
 import { ChecklistItem, PinIcon } from "@/components/shows/checklists/ChecklistItem";
 import { activePeople } from "@/components/shows/checklists/shared";
 import { nameOf } from "@/components/shows/common";
@@ -27,7 +28,8 @@ async function act(name: string, input: unknown, ok?: { text: string; undo?: boo
 
 /**
  * To Dos: everything open across shows, releases, the Social Media sidebar, booking and Our list, one column per source.
- * Order and Dismiss are this person's own (userPrefs); ticking, pinning and Our list are the band's.
+ * Order (of items and of the columns), Focus and Dismiss are this person's own (userPrefs, Focus just for the visit);
+ * ticking, pinning and Our list are the band's.
  */
 export function TodoBoard() {
   const { artistId } = useArtist();
@@ -39,7 +41,7 @@ export function TodoBoard() {
   const todos = useCollection<TodoLike>("todos", mineOf);
   const musicians = useCollection<Musician>("musicians").rows ?? [];
   const social = useDoc<{ checklists?: ChecklistLike[] }>("socialChecklists", artistId).doc;
-  const prefs = useDoc<{ todoOrder?: Record<string, string[]>; todoDismissed?: string[] }>("userPrefs", p.uid).doc;
+  const prefs = useDoc<{ todoOrder?: Record<string, string[]>; todoColumns?: string[]; todoDismissed?: string[] }>("userPrefs", p.uid).doc;
 
   const [mine, setMine] = useState(false);
   const [showDone, setShowDone] = useState(false);
@@ -47,6 +49,10 @@ export function TodoBoard() {
   const [phoneCol, setPhoneCol] = useState("pinned");
   /** Orders just dragged, shown before userPrefs catches up. */
   const [moved, setMoved] = useState<Record<string, string[]>>({});
+  /** Column order just dragged, shown before userPrefs catches up. */
+  const [movedCols, setMovedCols] = useState<string[] | null>(null);
+  /** The one column shown on its own, or null for all of them. */
+  const [focus, setFocus] = useState<string | null>(null);
 
   const order = { ...(prefs?.todoOrder ?? {}), ...moved };
   const dismissed = prefs?.todoDismissed ?? [];
@@ -54,7 +60,9 @@ export function TodoBoard() {
     artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], social: social?.checklists ?? [], pitches: pitches.rows ?? [], todos: todos.rows ?? [],
     order, dismissed, mine: mine ? { musicianId: p.musicianId, userId: p.userId } : null, showDone,
   };
-  const cols = buildBoard(input);
+  const cols = applyOrder(buildBoard(input), movedCols ?? prefs?.todoColumns);
+  const focused = cols.find((c) => c.key === focus);
+  const shown = focused ? [focused] : cols;
   const gone = dismissedLists(input);
   const loading = [shows, releases, pitches, todos].some((c) => c.loading);
   const at = cols.some((c) => c.key === phoneCol) ? phoneCol : "pinned";
@@ -63,10 +71,17 @@ export function TodoBoard() {
     setMoved((m) => ({ ...m, [col.key]: keys }));
     void act("todos.setOrder", { column: col.key, keys });
   };
+  const moveCol = (from: number, to: number) => {
+    const keys = cols.map((c) => c.key);
+    keys.splice(to, 0, ...keys.splice(from, 1));
+    setMovedCols(keys);
+    void act("todos.setColumns", { keys });
+  };
+  const colDrag = useDragReorder(moveCol);
 
   return (
     <div className="grid gap-4" data-testid="todos-page">
-      <PageTitle title="To Dos" sub="Everything open across shows, releases, Social Media and booking. Drag to reorder: it only changes this page, and only for you."
+      <PageTitle title="To Dos" sub="Everything open across shows, releases, Social Media and booking. Drag cards or column titles to reorder: it only changes this page, and only for you."
         actions={<>
           <div className="seg" role="radiogroup" aria-label="Whose">
             <label><input type="radio" name="todos-whose" checked={!mine} onChange={() => setMine(false)} data-testid="todos-everyone" />Everyone</label>
@@ -98,22 +113,31 @@ export function TodoBoard() {
       </div>
 
       {loading ? <p className="s">Loading…</p> : (
-        <div className="td-board">
-          {cols.map((c) => <Column key={c.key} col={c} on={c.key === at} musicians={musicians} onOrder={(keys) => setOrder(c, keys)} />)}
+        <div className="td-board" data-focus={focused ? "" : undefined}>
+          {shown.map((c) => {
+            const i = cols.indexOf(c);
+            return <Column key={c.key} col={c} on={c.key === at} musicians={musicians} onOrder={(keys) => setOrder(c, keys)}
+              focused={!!focused} onFocus={() => setFocus(focused ? null : c.key)} drag={focused ? null : { row: colDrag.row(i), handle: colDrag.handle(i) }} />;
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function Column({ col, on, musicians, onOrder }: { col: BoardColumn; on: boolean; musicians: Row<Musician>[]; onOrder(keys: string[]): void }) {
+function Column({ col, on, musicians, onOrder, focused, onFocus, drag }: {
+  col: BoardColumn; on: boolean; musicians: Row<Musician>[]; onOrder(keys: string[]): void;
+  focused: boolean; onFocus(): void; drag: { row: object; handle: object } | null;
+}) {
   const empty = !col.groups.some((g) => g.items.length);
   const id = `td-${col.key.replace(/[^a-z0-9]/gi, "-")}`;
   return (
-    <section className="td-col" aria-labelledby={id} data-on={on ? "" : undefined} data-testid={`todos-col-${col.key}`}>
+    <section className="td-col" aria-labelledby={id} data-on={on ? "" : undefined} data-testid={`todos-col-${col.key}`} {...drag?.row}>
       <div className="td-ch">
+        {drag && <Grip {...{ ...drag.handle, title: "Drag to move this column", "data-testid": `todos-col-grip-${col.key}` }} />}
         <h2 id={id}>{col.href ? <Link href={col.href}>{col.title}</Link> : col.title}</h2>
-        <span className="td-n">{columnCount(col)}</span>
+        <button type="button" className="td-focus" aria-pressed={focused} aria-label={focused ? "Show all columns" : `Focus on ${col.title}`}
+          data-testid={`todos-focus-${col.key}`} onClick={onFocus}>{focused ? "Show all" : "Focus"}</button>
       </div>
       {col.caption && <p className="td-cs">{col.caption}</p>}
       {col.key === "our" && <AddTodo />}
@@ -170,6 +194,7 @@ function MoveButtons({ label, onUp, onDown }: { label: string; onUp?(): void; on
 
 function tick(item: BoardItem, done: boolean) {
   const a = item.action;
+  if (done) confetti();
   if (a.type === "checklist") return act("checklists.check", { kind: a.kind, id: a.id, listId: a.listId, itemId: a.itemId, done }, done ? { text: `Done: ${item.label}`, undo: true } : undefined);
   if (a.type === "todo") return act("todos.check", { id: a.id, done }, done ? { text: `Done: ${item.label}`, undo: true } : undefined);
   if (!done) return;

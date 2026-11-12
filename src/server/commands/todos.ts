@@ -3,10 +3,10 @@ import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { run, type Writer } from "../db";
 import { AppError } from "../errors";
-import { setTodoDismissed, setTodoOrder } from "../prefs";
+import { setTodoColumns, setTodoDismissed, setTodoOrder } from "../prefs";
 import { TODO_CHECKLIST_KEY, TODO_COLUMN_KEY } from "@/lib/todos";
 
-// To Dos › Our list (todos/{id}) and each admin's own view of the To Dos page (userPrefs/{uid}: todoOrder, todoDismissed).
+// To Dos › Our list (todos/{id}) and each admin's own view of the To Dos page (userPrefs/{uid}: todoOrder, todoColumns, todoDismissed).
 // Admin-only for now, and not Roadie's (no "mcp").
 
 const ROLES = ["admin"] as const;
@@ -66,6 +66,13 @@ export const todosSetOrder = defineCommand({
   async run(ctx, i) { return { column: i.column, keys: await setTodoOrder(ctx.uid, i.column, i.keys) }; },
 });
 
+export const todosSetColumns = defineCommand({
+  name: "todos.setColumns", roles: [...ROLES],
+  description: "Save the caller's order of the To Dos columns themselves (pinned, booking, show:{showId}, releases, social, our), left first. Personal: it changes only this page, only for the caller.",
+  input: z.strictObject({ keys: z.array(z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column")).max(500) }),
+  async run(ctx, i) { return { columns: await setTodoColumns(ctx.uid, i.keys) }; },
+});
+
 const checklistKey = z.strictObject({ key: z.string().regex(TODO_CHECKLIST_KEY, "Not a checklist key") });
 export const todosDismiss = defineCommand({
   name: "todos.dismiss", roles: [...ROLES],
@@ -79,4 +86,4 @@ export const todosUndismiss = defineCommand({
   async run(ctx, i) { return { dismissed: await setTodoDismissed(ctx.uid, i.key, false) }; },
 });
 
-export const todoCommands = [todosAdd, todosEdit, todosCheck, todosRemove, todosSetOrder, todosDismiss, todosUndismiss];
+export const todoCommands = [todosAdd, todosEdit, todosCheck, todosRemove, todosSetOrder, todosSetColumns, todosDismiss, todosUndismiss];
