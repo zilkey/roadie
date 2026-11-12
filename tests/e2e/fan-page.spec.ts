@@ -90,8 +90,8 @@ test("links: a name and a full URL, reorderable, on the public page in order", a
 test("suggested donation: future shows only, amount, show name, on and off", async ({ page }) => {
   await signIn(page);
   await page.goto(A("/fans?tab=donation"));
-  const dates = await page.getByTestId("donation-show").locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
-  expect(dates.length).toBeGreaterThan(0);
+  // Only shows from today on are offered (the seed has some ahead).
+  await expect.poll(() => page.getByTestId("donation-show").locator("option").count()).toBeGreaterThan(1);
   await page.getByTestId("donation-show").selectOption({ index: 1 });
   await expect(page.getByTestId("donation-name")).not.toHaveValue("");
   await page.getByTestId("donation-name").fill("Jennifer House Concert");
