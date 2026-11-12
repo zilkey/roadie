@@ -4,9 +4,9 @@ import { defineCommand } from "./types";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { driveClient, type DriveFile, type DriveService } from "../integrations";
-import { FOLDER_MIME } from "../integrations/drive";
-import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
+import { driveClient, type DriveFile } from "../integrations";
+import { findOrMakeFolder } from "../driveFolders";
+import { bandFolders, bandmates, inspect, sharingOf } from "../music";
 import { releaseKind, trackStatus, trackCredit, fileKind, dateStr, driveRef } from "@/schema";
 import { guessReleaseKind, guessVersion, sidesFor, sortTracks, trackReached } from "@/lib/releases";
 import { providerFor } from "@/lib/music";
@@ -356,14 +356,6 @@ export interface FolderInfo { id: string; name: string; url: string }
 const info = (f: DriveFile): FolderInfo => ({ id: f.id, name: f.name, url: f.webViewLink });
 const artistIdOf = (ctx: Ctx) => { if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400); return ctx.artistId; };
 
-async function findOrMakeFolder(drive: DriveService, parent: string, name: string, mates: Bandmate[]): Promise<{ folder: DriveFile; made: boolean }> {
-  const there = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name === name);
-  if (there) return { folder: there, made: false };
-  const folder = await drive.createFolder(name, parent);
-  await drive.share(folder.id, mates.map((m) => m.email));
-  return { folder, made: true };
-}
-
 /**
  * "Band folder / Releases / {title}", made (and shared with the band) if it isn't there yet, and remembered on the release:
  * where uploads land. Needs the band folder (Settings > Google).
@@ -375,7 +367,7 @@ export async function ensureReleaseFolder(ctx: Ctx, releaseId: string): Promise<
   if (release.driveFolderId) {
     try { return info(await drive.get(release.driveFolderId as string)); } catch { /* gone from Drive: make it again */ }
   }
-  const mates = await bandmates();
+  const mates = { emails: (await bandmates()).map((m) => m.email) };
   // The Releases folder from Settings > Google; before one was chosen, "Band folder / Releases".
   let parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
   if (!parent) {
@@ -399,7 +391,7 @@ export const releasesFolder = defineCommand({
     if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
     const parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
     if (!parent) throw new AppError("no_releases_folder", NO_RELEASES_FOLDER, 400);
-    const own = await findOrMakeFolder(driveClient({ artistId: artistIdOf(ctx) }), parent, name, await bandmates());
+    const own = await findOrMakeFolder(driveClient({ artistId: artistIdOf(ctx) }), parent, name, { emails: (await bandmates()).map((m) => m.email) });
     await db.update(ctx, "releases", id, { driveFolderId: own.folder.id, driveFolderName: own.folder.name });
     return info(own.folder);
   },

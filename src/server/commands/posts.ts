@@ -11,15 +11,14 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { driveClient, type DriveFile } from "../integrations";
 import { bandmates } from "../music";
-import { findOrMakeFolder } from "./showPosters";
+import { findOrMakeFolder } from "../driveFolders";
+import { PHOTOS_ONLY, photoType } from "@/lib/photos";
 import { graph, GraphError, type Tok } from "../meta/graph";
 import { freshToken } from "../meta/connection";
 import { signMediaUrl } from "../meta/media";
 import { dateInBandZone } from "@/lib/timezone";
 
 export const NO_POSTS_FOLDER = "Choose a Posts folder in Settings › Google";
-export const JPEG_ONLY = "Instagram takes JPEG photos";
-export const JPEG = "image/jpeg";
 
 const artistOf = (ctx: Ctx) => {
   if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
@@ -31,7 +30,7 @@ export async function postsMonthFolder(ctx: Ctx, now = ctx.now ?? new Date()): P
   const artistId = artistOf(ctx);
   const parent = (await db.get("artists", artistId))?.postsFolderId as string | undefined;
   if (!parent) throw new AppError("no_posts_folder", NO_POSTS_FOLDER, 400);
-  return findOrMakeFolder(driveClient({ artistId }), parent, dateInBandZone(now).slice(0, 7), await bandmates());
+  return (await findOrMakeFolder(driveClient({ artistId }), parent, dateInBandZone(now).slice(0, 7), { emails: (await bandmates()).map((m) => m.email) })).folder;
 }
 
 /** How long to wait for Instagram to take the photo. Tests shorten it. */
@@ -50,16 +49,17 @@ async function finished(containerId: string, token: Tok) {
 
 export const postsPublishPhoto = defineCommand({
   name: "posts.publishPhoto", roles: ["admin"],
-  description: "Post one JPEG from the band's Drive (driveFileId) to the band's Instagram now, with a caption. Renews the Instagram sign-in first when it's due. Saves the post with its Instagram link, or with Instagram's reason when it fails.",
+  description: "Post one photo (JPEG, HEIC, PNG or WebP) from the band's Drive (driveFileId) to the band's Instagram now, with a caption. Renews the Instagram sign-in first when it's due. Saves the post with its Instagram link, or with Instagram's reason when it fails.",
   input: z.strictObject({ driveFileId: z.string().min(1), caption: z.string().max(2200) }),
   async run(ctx, { driveFileId, caption }) {
     const artistId = artistOf(ctx);
     const { igId, ...token } = await freshToken(artistId);
     let f: DriveFile;
     try { f = await driveClient({ artistId }).get(driveFileId); } catch { throw new AppError("not_found", "Drive can't find that photo", 404); }
-    if (f.mimeType !== JPEG) throw new AppError("invalid_input", JPEG_ONLY, 400);
+    const mimeType = photoType(f.name, f.mimeType);
+    if (!mimeType) throw new AppError("invalid_input", PHOTOS_ONLY, 400);
     const { id } = await db.create(ctx, "posts", {
-      artistId, caption, media: [{ driveFileId: f.id, mimeType: f.mimeType, url: f.webViewLink }], status: "publishing", createdVia: ctx.via,
+      artistId, caption, media: [{ driveFileId: f.id, mimeType, url: f.webViewLink }], status: "publishing", createdVia: ctx.via,
     });
     try {
       const container = await graph.createImage(igId, token, signMediaUrl(artistId, id), caption);

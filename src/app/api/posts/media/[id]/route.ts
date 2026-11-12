@@ -1,4 +1,5 @@
 import { db } from "@/server/db";
+import { AppError } from "@/server/errors";
 import { driveClient } from "@/server/integrations";
 import { mediaSigOk } from "@/server/meta/media";
 
@@ -10,7 +11,7 @@ const PASS = ["content-type", "content-length"];
 const no = () => new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 
 /**
- * A post's photo for Meta to fetch: no sign-in, only the signed link posts.publishPhoto made (src/server/meta/media.ts),
+ * A post's photo for Meta to fetch: no sign-in, only the signed link posts.publishPhoto made (src/server/meta/media.ts, signed by src/server/signedUrl.ts),
  * for that post of that band, within the hour. Streamed from Drive as the band account; no public copy is made. Anything
  * else is a plain 404, so the link says nothing about what exists.
  */
@@ -28,6 +29,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     for (const h of PASS) { const v = res.headers.get(h); if (v) headers.set(h, v); }
     return new Response(res.body, { status: 200, headers });
   } catch (e) {
+    // No SIGNED_URL_SECRET on a real project (src/server/signedUrl.ts): say so rather than a 404.
+    if (e instanceof AppError && e.status === 503) return new Response(e.message, { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
     console.error(e);
     return no();
   }

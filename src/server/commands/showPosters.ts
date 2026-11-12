@@ -8,9 +8,9 @@ import { defineCommand } from "./types";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { driveClient, type DriveFile, type DriveService } from "../integrations";
-import { FOLDER_MIME } from "../integrations/drive";
-import { bandFolders, bandmates, inspect, sharingOf, showsFolderId, type Bandmate } from "../music";
+import { driveClient, type DriveFile } from "../integrations";
+import { findOrMakeFolder } from "../driveFolders";
+import { bandFolders, bandmates, inspect, sharingOf, showsFolderId } from "../music";
 import { showName } from "@/lib/shows";
 
 export const NO_SHOWS_FOLDER = "Choose the Shows folder on Settings > Google first: the show's folder goes inside it";
@@ -34,14 +34,6 @@ async function requireShow(w: Writer, id: string): Promise<Doc> {
 export const showFolderName = (show: { date: string; venue?: { name: string }; kind?: string; hostName?: string; editionName?: string }) =>
   `${show.date} ${showName(show as never)}`.replace(/[/\\]/g, "-").trim();
 
-export async function findOrMakeFolder(drive: DriveService, parent: string, name: string, mates: Bandmate[]): Promise<DriveFile> {
-  const there = (await drive.search({ parent, mimeType: FOLDER_MIME })).find((f) => f.name === name);
-  if (there) return there;
-  const folder = await drive.createFolder(name, parent);
-  await drive.share(folder.id, mates.map((m) => m.email));
-  return folder;
-}
-
 /**
  * The show's Drive folder, "{date} {venue}" in the Shows folder, made (and shared with the band) if it isn't there yet and
  * remembered on the show: where posters land. Needs the Shows folder (Settings > Google).
@@ -54,7 +46,7 @@ export async function ensureShowFolder(ctx: Ctx, showId: string): Promise<Folder
   }
   const parent = await showsFolderId(ctx.artistId);
   if (!parent) throw new AppError("no_shows_folder", NO_SHOWS_FOLDER, 400);
-  const folder = await findOrMakeFolder(drive, parent, showFolderName(show as never), await bandmates());
+  const { folder } = await findOrMakeFolder(drive, parent, showFolderName(show as never), { emails: (await bandmates()).map((m) => m.email) });
   await db.update(ctx, "shows", showId, { driveFolderId: folder.id, driveFolderName: folder.name });
   return info(folder);
 }

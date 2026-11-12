@@ -6,7 +6,8 @@
  * Config, all server-only (docs/SETUP.md, "Meta (Instagram & Facebook)"):
  * - META_APP_ID: the Meta app. Its presence turns the Instagram & Facebook card on.
  * - META_CONFIG_ID: the Unified login configuration (Instagram use case › API setup with Unified login).
- * - META_APP_SECRET (secret): the code exchange and debug_token, and the HMAC key for `state` and the signed media URLs.
+ * - META_APP_SECRET (secret): the code exchange and debug_token, and the HMAC key for `state`. (The signed media URLs use
+ *   SIGNED_URL_SECRET: src/server/signedUrl.ts.)
  * - META_TOKEN_KEY (secret): 32 bytes, base64; encrypts the stored token (connection.ts).
  * - META_GRAPH_URL / META_IG_URL / META_DIALOG_URL: graph.facebook.com, graph.instagram.com and the sign-in dialog. Unset in
  *   production; dev and tests point them at fakes/fake-meta.

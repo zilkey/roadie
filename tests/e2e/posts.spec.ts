@@ -106,12 +106,12 @@ test("Post now: a JPEG chosen from Drive, then one uploaded (once a Posts folder
   await expect(form).toContainText("Post a photo to @noraquillband");
   await expect(form.getByTestId("post-now")).toBeDisabled();
 
-  // From Drive: a PNG is refused, the JPEG is chosen.
+  // From Drive: a PDF is refused, the JPEG is chosen.
   await form.getByTestId("post-from-drive").click();
-  await form.getByTestId("drive-q").fill("cover");
+  await form.getByTestId("drive-q").fill("Glass Coast chart Am");
   await form.getByTestId("drive-search").click();
-  await form.getByTestId("hit-Wild Hearts cover 3000px.png").getByTestId("hit-check").check();
-  await expect(form.locator(".err")).toContainText("Instagram takes JPEG photos");
+  await form.getByTestId("hit-Glass Coast chart Am.pdf").getByTestId("hit-check").check();
+  await expect(form.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
   await form.getByTestId("drive-q").fill("Roots");
   await form.getByTestId("drive-search").click();
   await form.getByTestId("hit-Roots Music Project stage.jpg").getByTestId("hit-check").check();
@@ -139,8 +139,8 @@ test("Post now: a JPEG chosen from Drive, then one uploaded (once a Posts folder
 
   await page.goto(A("/posts"));
   await expect(form.getByTestId("post-upload-input")).toBeEnabled();
-  await form.getByTestId("post-upload-input").setInputFiles({ name: "notes.png", mimeType: "image/png", buffer: Buffer.from("png") });
-  await expect(form.locator(".err")).toContainText("Instagram takes JPEG photos");
+  await form.getByTestId("post-upload-input").setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(form.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
   await form.getByTestId("post-upload-input").setInputFiles({ name: "Deep End crowd.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
   await expect(form.getByTestId("post-photo-name")).toHaveText("Deep End crowd.jpg");
   await form.getByTestId("post-caption").fill("Deep End, Saturday!");

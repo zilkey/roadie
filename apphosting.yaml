@@ -58,6 +58,10 @@ env:
     secret: META_APP_SECRET
   - variable: META_TOKEN_KEY # 32 random bytes, base64: encrypts the stored Instagram token
     secret: META_TOKEN_KEY
+  # Signs the links to Posts photos (thumbnails in the app, and the photo Meta fetches to post): src/server/signedUrl.ts.
+  # 32 random bytes, base64. Set it before the deploy that adds this line: a referenced-but-missing secret fails the rollout.
+  - variable: SIGNED_URL_SECRET
+    secret: SIGNED_URL_SECRET
   # The canonical address: base of every generated link ("can you play?" emails, MCP URL, share tags). Visits to the
   # old *.hosted.app address redirect here (next.config.ts).
   - variable: APP_URL

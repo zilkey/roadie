@@ -226,6 +226,8 @@ Posts publishes to the band's Instagram through **Instagram API with Unified log
    ```sh
    npx firebase apphosting:secrets:set META_APP_SECRET --project roadie-prod-iab   # App settings › Basic › App secret
    openssl rand -base64 32 | npx firebase apphosting:secrets:set META_TOKEN_KEY --project roadie-prod-iab --data-file -
+   # Signs the links to Posts photos (thumbnails, and the photo Meta fetches): src/server/signedUrl.ts. Needed for Posts › Photos even without Instagram.
+   openssl rand -base64 32 | npx firebase apphosting:secrets:set SIGNED_URL_SECRET --project roadie-prod-iab --data-file -
    ```
 
    and put the App ID in `apphosting.yaml` (`META_APP_ID`, a plain value).

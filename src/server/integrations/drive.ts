@@ -1,6 +1,6 @@
 /**
  * Google Drive. Two implementations of DriveService: the fake's HTTP client (fakes/fake-drive; dev and tests) and the
- * Drive API v3 (files.list/get/create/copy, uploads, permissions.list/create), chosen by driveClient(). The real one runs as the band's
+ * Drive API v3 (files.list/get/create/copy/update, uploads, thumbnails, permissions.list/create), chosen by driveClient(). The real one runs as the band's
  * Google account (the admin named on the artist, see src/server/google/band.ts), so search sees that person's Drive.
  */
 import { IntegrationError, jsonClient } from "./http";
@@ -23,6 +23,26 @@ export interface DriveFile {
    * instead, and clears this when it answers.
    */
   permissionsUnknown?: boolean;
+  /** Bytes, when Drive knows (not for folders or Google Docs). */
+  size?: number;
+  /** imageMediaMetadata. width/height as Drive reports them (before rotation). time is "YYYY:MM:DD HH:MM:SS", camera-local. */
+  image?: { width: number; height: number; time?: string; rotation?: number };
+  /** A short-lived link to Drive's preview image; thumbnail() fetches it at a size. */
+  thumbnailLink?: string;
+  trashed?: boolean;
+}
+
+/** What list() returns: one page. */
+export interface DriveList { files: DriveFile[]; nextPageToken?: string }
+export interface DriveListOpts {
+  /** Files whose parent is any of these. */
+  parents: string[];
+  /** images: mimeType contains "image/", or a photo extension (HEIC often comes as octet-stream). */
+  kind: "folders" | "images" | "all";
+  orderBy?: "createdTime desc";
+  /** Default 1000. */
+  pageSize?: number;
+  pageToken?: string;
 }
 
 export interface DriveService {
@@ -44,6 +64,16 @@ export interface DriveService {
   export(id: string, mimeType: "text/plain"): Promise<string>;
   /** A Google Doc from the Docs API (documents.get, every tab's content): tabs, tables, text runs with bold and italic. */
   document(id: string): Promise<GDocument>;
+  /** One page of non-trashed files whose parent is any of `parents`. */
+  list(opts: DriveListOpts): Promise<DriveList>;
+  /** files.update: a new name and/or parents (a move). */
+  update(id: string, opts: { name?: string; addParents?: string[]; removeParents?: string[] }): Promise<DriveFile>;
+  /** files.update trashed=true. Only for a post folder Roadie made, once it's empty (src/server/postFolder.ts). */
+  trash(id: string): Promise<void>;
+  /** Drive's preview of the file, its long edge `size` px, fetched as the band account. IntegrationError 404 when Drive has no preview yet. */
+  thumbnail(id: string, size: number): Promise<Response>;
+  /** Can the band account move files into and out of this folder (capabilities.canMoveChildrenWithinDrive)? */
+  canMoveIn(folderId: string): Promise<boolean>;
 }
 
 /**
@@ -73,6 +103,15 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     replace: async (id, o) => call("PUT", `${f(id)}/content`, { body: { mimeType: o.mimeType, ...(o.mimeType.startsWith("text/") ? { text: await o.data.text() } : {}) } }),
     share: (id, emails, role = "reader") => call("POST", `${f(id)}/share`, { body: { emails, role } }),
     rename: (id, name) => call("PATCH", f(id), { body: { name } }),
+    list: (o) => call("GET", "/files/list", { query: { parents: o.parents.join(","), kind: o.kind, orderBy: o.orderBy, pageSize: o.pageSize?.toString(), pageToken: o.pageToken } }),
+    update: (id, o) => call("PATCH", f(id), { body: o }),
+    trash: async (id) => { await call("PATCH", f(id), { body: { trashed: true } }); },
+    thumbnail: async (id, size) => {
+      const res = await fetch(`${baseUrl}/thumbnails/${encodeURIComponent(id)}?s=${size}`);
+      if (!res.ok) throw new IntegrationError("drive", res.status, (await res.json().catch(() => undefined))?.error?.message ?? res.statusText);
+      return res;
+    },
+    canMoveIn: async (id) => !!(await call<{ capabilities?: { canMoveChildrenWithinDrive?: boolean } }>("GET", f(id))).capabilities?.canMoveChildrenWithinDrive,
     permissions: (id) => call("GET", `${f(id)}/permissions`),
     download: (id, range) => fetch(`${baseUrl}${f(id)}/content`, { headers: range ? { range } : {} }),
     export: async (id, mimeType) => exportText(await fetch(`${baseUrl}${f(id)}/export?${new URLSearchParams({ mimeType })}`)),
@@ -83,11 +122,14 @@ export function fakeDriveClient(baseUrl: string): DriveService {
 // ---------- the Drive API ----------
 
 interface GPermission { type: "user" | "group" | "domain" | "anyone"; role: string; emailAddress?: string; domain?: string }
-interface GFile { id: string; name: string; mimeType: string; owners?: { emailAddress?: string }[]; parents?: string[]; permissions?: GPermission[]; createdTime?: string; modifiedTime?: string; webViewLink?: string }
+interface GFile {
+  id: string; name: string; mimeType: string; owners?: { emailAddress?: string }[]; parents?: string[]; permissions?: GPermission[]; createdTime?: string; modifiedTime?: string; webViewLink?: string;
+  size?: string; imageMediaMetadata?: { width?: number; height?: number; time?: string; rotation?: number }; thumbnailLink?: string; trashed?: boolean;
+}
 type Sharing = Pick<DriveFile, "permissions" | "anyoneWithLink" | "domains">;
 
 const PERM_FIELDS = "emailAddress,role,type,domain";
-const FILE_FIELDS = `id,name,mimeType,owners(emailAddress),parents,permissions(${PERM_FIELDS}),createdTime,modifiedTime,webViewLink`;
+const FILE_FIELDS = `id,name,mimeType,owners(emailAddress),parents,permissions(${PERM_FIELDS}),createdTime,modifiedTime,webViewLink,size,imageMediaMetadata(width,height,time,rotation),thumbnailLink,trashed`;
 const ALL_DRIVES = { supportsAllDrives: "true" };
 /** Drive query string literal. */
 const lit = (v: string) => `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
@@ -112,7 +154,21 @@ function toFile(f: GFile): DriveFile {
     id: f.id, name: f.name, mimeType: f.mimeType, ownerEmail: f.owners?.[0]?.emailAddress?.toLowerCase() ?? "", parents: f.parents ?? [],
     createdAt: f.createdTime ?? "", ...(f.modifiedTime ? { modifiedTime: f.modifiedTime } : {}), webViewLink: f.webViewLink ?? `https://drive.google.com/open?id=${f.id}`,
     ...sharing(f.permissions ?? []), ...(f.permissions ? {} : { permissionsUnknown: true }),
+    ...(f.size !== undefined ? { size: Number(f.size) } : {}),
+    ...(f.imageMediaMetadata?.width && f.imageMediaMetadata.height ? { image: {
+      width: f.imageMediaMetadata.width, height: f.imageMediaMetadata.height,
+      ...(f.imageMediaMetadata.time ? { time: f.imageMediaMetadata.time } : {}), ...(f.imageMediaMetadata.rotation !== undefined ? { rotation: f.imageMediaMetadata.rotation } : {}),
+    } } : {}),
+    ...(f.thumbnailLink ? { thumbnailLink: f.thumbnailLink } : {}), ...(f.trashed !== undefined ? { trashed: f.trashed } : {}),
   };
+}
+
+/** Drive's query for list(): any of the parents, not trashed, and the kind. */
+export function listQuery(parents: string[], kind: DriveListOpts["kind"]): string {
+  const q = `(${parents.map((p) => `${lit(p)} in parents`).join(" or ")}) and trashed = false`;
+  if (kind === "images") return `${q} and (mimeType contains 'image/' or name contains '.heic' or name contains '.HEIC' or name contains '.heif')`;
+  if (kind === "folders") return `${q} and mimeType = '${FOLDER_MIME}'`;
+  return q;
 }
 
 /** An export's body as text, or an IntegrationError carrying Drive's status (403/404: the band account can't read it). */
@@ -142,6 +198,10 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
     const { permissionsUnknown: _, ...known } = file;
     return { ...known, ...sharing(ps) };
   };
+  const update = async (id: string, o: { name?: string; addParents?: string[]; removeParents?: string[] }) => toFile(await call<GFile>("PATCH", f(id), {
+    query: { fields: FILE_FIELDS, ...ALL_DRIVES, ...(o.addParents?.length ? { addParents: o.addParents.join(",") } : {}), ...(o.removeParents?.length ? { removeParents: o.removeParents.join(",") } : {}) },
+    body: o.name ? { name: o.name } : {},
+  }));
   return {
     async search(o) {
       const q = ["trashed = false", o.q && `name contains ${lit(o.q)}`, o.parent && `${lit(o.parent)} in parents`, o.mimeType && `mimeType = ${lit(o.mimeType)}`].filter(Boolean).join(" and ");
@@ -199,8 +259,32 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
       }
       return get(id);
     },
-    async rename(id, name) {
-      return toFile(await call<GFile>("PATCH", f(id), { query: { fields: FILE_FIELDS, ...ALL_DRIVES }, body: { name } }));
+    rename: (id, name) => update(id, { name }),
+    async list(o) {
+      const r = await call<{ files?: GFile[]; nextPageToken?: string }>("GET", "/files", { query: {
+        q: listQuery(o.parents, o.kind), fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: String(o.pageSize ?? 1000),
+        ...(o.orderBy ? { orderBy: o.orderBy } : {}), ...(o.pageToken ? { pageToken: o.pageToken } : {}), includeItemsFromAllDrives: "true", ...ALL_DRIVES,
+      } });
+      return { files: (r.files ?? []).map(toFile), ...(r.nextPageToken ? { nextPageToken: r.nextPageToken } : {}) };
+    },
+    update,
+    async trash(id) {
+      await call("PATCH", f(id), { query: { fields: "id", ...ALL_DRIVES }, body: { trashed: true } });
+    },
+    async thumbnail(id, size) {
+      const link = (await call<GFile>("GET", f(id), { query: { fields: "thumbnailLink", ...ALL_DRIVES } })).thumbnailLink;
+      if (!link) throw new IntegrationError("drive", 404, "Drive has no preview of this file yet");
+      // The link ends "=s220"; ask for the size we want. It needs the band account's token, like the API.
+      const sized = /=s\d+$/.test(link) ? link.replace(/=s\d+$/, `=s${size}`) : `${link}=s${size}`;
+      const get = async (force: boolean) => fetch(sized, { headers: { authorization: `Bearer ${await token(force)}` } });
+      let res = await get(false);
+      if (res.status === 401) res = await get(true);
+      if (!res.ok) throw new IntegrationError("drive", res.status === 403 ? 404 : res.status, res.statusText || "Drive has no preview of this file");
+      return res;
+    },
+    async canMoveIn(id) {
+      const r = await call<{ capabilities?: { canMoveChildrenWithinDrive?: boolean } }>("GET", f(id), { query: { fields: "capabilities(canMoveChildrenWithinDrive)", ...ALL_DRIVES } });
+      return !!r.capabilities?.canMoveChildrenWithinDrive;
     },
     async permissions(id) {
       return people((await listPermissions(id)).permissions);

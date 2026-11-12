@@ -11,12 +11,11 @@ import { FileIcon, thumbOf } from "@/components/music/common";
 import { Upload } from "@/components/music/Upload";
 import type { MetaStatus } from "@/components/posts/MetaCard";
 import type { Post } from "@/schema";
+import { PHOTO_TYPES, PHOTOS_ONLY, photoType } from "@/lib/photos";
 
 const MAX_CAPTION = 2200;
-const JPEG = "image/jpeg";
-const JPEG_ONLY = "Instagram takes JPEG photos";
 
-/** The photo to post: a JPEG in the band's Drive, picked there or just uploaded to it. */
+/** The photo to post: a photo (photoType) in the band's Drive, picked there or just uploaded to it. */
 interface Photo { driveFileId: string; name: string; mimeType: string; url: string }
 
 /** Posts is admins-only, like Booking: members are sent back to the Calendar. */
@@ -60,7 +59,7 @@ function NewPhotoPost({ username }: { username: string }) {
   function pick(hits: Hit[]) {
     const h = hits[0];
     if (!h) return;
-    if (h.mimeType !== JPEG) { setError(`${h.name}: ${JPEG_ONLY}.`); return; }
+    if (!photoType(h.name, h.mimeType)) { setError(`${h.name}: ${PHOTOS_ONLY}.`); return; }
     setError(null);
     setPhoto({ driveFileId: h.driveFileId, name: h.name, mimeType: h.mimeType, url: h.url });
     setWay(null);
@@ -91,10 +90,10 @@ function NewPhotoPost({ username }: { username: string }) {
         <div className="grid gap-3" data-testid="post-photo-ways">
           <div className="flex flex-wrap items-start gap-2">
             <button type="button" className="btn" aria-expanded={way === "drive"} onClick={() => setWay(way === "drive" ? null : "drive")} data-testid="post-from-drive">Choose from Drive</button>
-            <Upload<Photo> url="/api/posts/upload" label="Upload" accept="image/jpeg" testid="post-upload" disabled={!hasFolder}
+            <Upload<Photo> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")} testid="post-upload" disabled={!hasFolder}
               tooBig="Put it in Drive yourself, then choose it from Drive."
               needsFolder={<Link href="/admin/google" className="underline">Choose a Posts folder in Settings › Google</Link>}
-              check={(f) => (f.type === JPEG ? null : JPEG_ONLY)}
+              check={(f) => (photoType(f.name, f.type) ? null : PHOTOS_ONLY)}
               onUploaded={(p) => { setPhoto({ driveFileId: p.driveFileId, name: p.name, mimeType: p.mimeType, url: p.url }); setWay(null); setError(null); }} />
           </div>
           {way === "drive" && <DrivePicker all single placeholder="Search Drive for a photo…" testid="post-picker" onChange={() => undefined} onPickHits={pick} />}

@@ -57,3 +57,35 @@ These need the owner or production access. Record them as manual steps:
 
 ## Phase log
 <!-- Each session appends below: "### Phase N — done|blocked", then built, deviations, tests (command → result), manual steps, next session id. -->
+
+### Phase 1 — done
+**Built**
+- `src/schema/posts.ts`: the new `Post` (status `draft`, `title`, `aspect`, `media` items with `name`/`width`/`height`/`modifiedTime`/`alt`/`focus`/`from`, max 10, `driveFolderId`, `postedAt`, `driveTidy`); exports `PostMedia`. `src/schema/artists.ts`: `postsFolderId` doc comment for the Socials layout, new `postFoldersId`.
+- `src/lib/photos.ts`: `PHOTO_TYPES`, `photoType(name, mimeType)`, `hashtagCount`, plus `PHOTOS_ONLY` ("Roadie takes JPEG, HEIC, PNG and WebP photos"), `CAPTION_MAX`, `HASHTAG_MAX`.
+- `src/server/integrations/drive.ts`: `DriveFile` gains `size`, `image`, `thumbnailLink`, `trashed`; `FILE_FIELDS` asks for them; `DriveService.list/update/trash/thumbnail/canMoveIn` on the real service and the fake client; `rename` is a wrapper over `update`; exported `listQuery()` builds the real `q`.
+- `src/server/driveFolders.ts`: the merged `findOrMakeFolder(drive, parentId, name, share?)` → `{ folder, made }`. Show posters, releases and `postsMonthFolder` use it (`.folder`).
+- `src/server/postFolder.ts`: `isEmpty`, `uniqueName`, `inboxFolders`, `moveInto`, `moveBack`, plus helpers `listAll` (pages, 20 parents per query) and `socialsOf`.
+- `src/server/signedUrl.ts`: `signUrl` / `signedOk` / `expiryFor` (HMAC with `SIGNED_URL_SECRET`, 503 on a real project without it, a fixed dev key otherwise; exp = hour start + 2 h). `src/server/meta/media.ts` now signs through it (scope `media`, index `"0"`); the existing `[id]` media route answers 503 for that error. Comments in `graph.ts` and `media.ts` updated. `apphosting.yaml` references `SIGNED_URL_SECRET`; `docs/SETUP.md` says how to set it.
+- `JPEG`/`JPEG_ONLY` replaced by `photoType`/`PHOTOS_ONLY` in `posts.ts` (`publishPhoto`), the upload route and `posts/page.tsx`.
+- `fakes/fake-drive/server.ts`: `GET /files/list`, `PATCH /files/:id` (name, addParents/removeParents, trashed, bumps `modifiedTime`), `POST /files` sets `modifiedTime`, `GET /files/:id` adds `capabilities` on folders, `GET /files/:id/content` serves fixture bytes, `GET /thumbnails/:id?s=` (sharp, upright, long edge `s`), `POST /__scenario` (`failMove`, `failRename`, `noMove`, `noThumbnail`), search leaves trashed files out. Seed: `Socials` (`SOCIALS_FOLDER_ID = "fake-folder-socials"`, in the band folder) with `Jeff's phone spring 26/` (6 photos), 3 loose photos, `2026-10/` with one #49 photo, and `Set list.pdf`.
+- `tests/fixtures/photo-rotated.jpg` (1200×900, EXIF 6) and `photo-landscape.jpg` (1600×1000): four coloured quadrants, so crops and rotation show in the pixels.
+- `package.json`: `"sharp": "0.35.5"` (lockfile edited by hand to the minimal change: the local npm is 10, and a full `npm install` rewrote unrelated `libc` fields).
+
+**Deviations**
+- The `postFolder.ts` functions take the `DriveService` as their first argument (`isEmpty(drive, id)`, `inboxFolders(drive, artistId)`, `moveBack(drive, { socialsId, postFolderId }, media)`), so a command makes one client and passes it on. `moveBack` needs the post folder to remove the photo from, so it takes it. `uniqueName` takes an optional `self` folder id so `posts.rename` doesn't clash with its own folder.
+- `inboxFolders` does not include Socials itself (createDraft's check says "or is Socials itself"); it skips Posts/ by `postFoldersId`, and also by the name `Posts` directly under Socials, so it works before Set up.
+- `signUrl` returns `{ exp, sig }` (the query values), not a whole URL; callers build their path (thumb and media routes differ). Until phase 5 the media link keeps its `/api/posts/media/{postId}` path, signed with `v = "0"`.
+- The fake's files use the client's `DriveFile` shape (`image`, not `imageMediaMetadata`), as the fake already did for `createdAt`/`ownerEmail`. `capabilities.canMoveChildrenWithinDrive` is true on every fake folder unless `noMove`.
+- The seed has no past *confirmed* show: the only past show (2026-10-10, Creamery Arts Center) is `played`. The 01:30 photo (`fake-social-late`, `IMG_2210.JPG`) is dated 2026-10-11 01:30 for that show. **Phase 3:** either count `played` shows as labels too, or seed a past confirmed show, and record it.
+- The 2 HEICs: one `image/heic`, one `application/octet-stream` (found by its `.HEIC` name). The loose photos are a JPEG, a HEIC and a PNG.
+- `publishPhoto` now accepts any `photoType` (as the spec says); posting a HEIC or PNG through it would still be refused by Instagram until phase 5's media route converts it.
+- `tests/emulator/posts.test.ts`: the upload and `publishPhoto` refusals now use a PDF (a PNG is a photo now), and the upload test also checks an octet-stream HEIC is kept as `image/heic`. `tests/e2e/posts.spec.ts` got the same change (PDF instead of PNG, new message); not run until phase 5.
+
+**Tests**
+- `npx next typegen && npm run typecheck` → clean (on a fresh clone `tsc` reports missing `PageProps`/`LayoutProps` until `next typegen` has run once).
+- `npx tsx --test tests/unit/photos.test.ts tests/unit/signedUrl.test.ts tests/unit/integrations.test.ts` → 14/14 pass.
+- `npx firebase emulators:exec --config firebase.test.json --only firestore,auth --project demo-band-tracker "npx tsx --test --import ./tests/emulator/setup.mjs tests/emulator/drive-list.test.ts tests/emulator/show-posters.test.ts tests/emulator/releases.test.ts tests/emulator/recordings.test.ts tests/emulator/posts.test.ts tests/emulator/google.test.ts"` → 45/45 pass.
+
+**Manual steps for the owner**
+- Set the `SIGNED_URL_SECRET` App Hosting secret before deploying anything from this branch (`apphosting.yaml` now references it; command in `docs/SETUP.md`).
+- Local dev: a persisted `.fake-data/fake-drive.json` predates the Socials seed; reset the fake (its page's Reset button, or delete the file) to get it.

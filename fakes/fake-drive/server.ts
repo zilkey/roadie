@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import sharp from "sharp";
 import { defineFake, runIfMain, esc, need, required, HttpError, type Route } from "../lib";
 
 export const MIME = {
@@ -10,6 +12,8 @@ export const MIME = {
   video: "video/mp4",
   sheet: "application/vnd.google-apps.spreadsheet",
   jpeg: "image/jpeg",
+  heic: "image/heic",
+  png: "image/png",
 } as const;
 
 export interface DrivePermission { email: string; role: "owner" | "writer" | "reader" }
@@ -22,10 +26,24 @@ export interface DriveFile {
   noAccess?: boolean;
   /** A Google Doc's tabs as the Docs API's documents.get has them (tabs, tables, bold and italic). Without it, the doc is its text as one tab. */
   gdoc?: GDoc;
+  /** Drive's imageMediaMetadata (the client's DriveFile.image): size as stored, before rotation; time is camera-local "YYYY:MM:DD HH:MM:SS". */
+  image?: { width: number; height: number; time?: string; rotation?: number };
+  size?: number;
+  trashed?: boolean;
+  thumbnailLink?: string;
+  /** A file in tests/fixtures whose bytes GET /files/:id/content serves (the seeded photos). */
+  fixture?: string;
 }
-export interface DriveState { seq: number; files: DriveFile[] }
+/**
+ * POST /__scenario: what goes wrong next. failMove: the nth move from now (a PATCH with addParents/removeParents) fails with a 500.
+ * failRename: every rename fails. noMove: capabilities.canMoveChildrenWithinDrive is false. noThumbnail: these files have no preview.
+ */
+export interface DriveScenario { failMove?: number; failRename?: boolean; noMove?: boolean; noThumbnail?: string[] }
+export interface DriveState { seq: number; files: DriveFile[]; scenario?: DriveScenario; moves?: number }
 
 export const BAND_FOLDER_ID = "fake-band-folder";
+/** The seeded Socials folder for Posts (not chosen in the seed): photos to pick, in folders and loose. */
+export const SOCIALS_FOLDER_ID = "fake-folder-socials";
 const MEMBERS = ["rudy", "nora", "hugo", "felix", "iris"].map((n) => `${n}@example.com`);
 const link = (id: string) => `http://localhost:3202/files/${id}`;
 
@@ -75,8 +93,63 @@ function initial(): DriveState {
   add("fake-reh-1", "Rehearsal 2026-10-18 full run.wav", MIME.wav, "rudy@example.com", ["fake-folder-rehearsals"], all.filter((e) => !e.startsWith("iris")));
   add("fake-reh-2", "Rehearsal 2026-10-04 Glass Coast bridge.m4a", MIME.audio, "hugo@example.com", ["root-hugo"], ["rudy@example.com"]);
   add("fake-reh-3", "Rehearsal video Ruby Hill ending.mp4", MIME.video, "felix@example.com", ["fake-folder-rehearsals"], all);
-  return { seq: 0, files };
+  socials(add, files);
+  return { seq: 0, files, scenario: {}, moves: 0 };
 }
+
+/**
+ * The Socials folder (SOCIALS_FOLDER_ID): a phone's folder of 6 photos (2 HEIC, one stored sideways with EXIF orientation 6,
+ * one taken at 01:30 the night after the seeded show played on 2026-10-10), 3 loose photos, the "2026-10" month folder #49 made
+ * holding one posted photo, and a PDF (a post folder holding it isn't empty). Each photo was added a minute after the one before.
+ */
+type Add = (id: string, name: string, mimeType: string, owner: string, parents: string[], sharedWith: string[]) => void;
+function socials(add: Add, files: DriveFile[]) {
+  const all = MEMBERS;
+  add(SOCIALS_FOLDER_ID, "Socials", MIME.folder, "rudy@example.com", [BAND_FOLDER_ID], all);
+  add("fake-folder-socials-phone", "Jeff's phone spring 26", MIME.folder, "rudy@example.com", [SOCIALS_FOLDER_ID], all);
+  add("fake-folder-socials-2026-10", "2026-10", MIME.folder, "rudy@example.com", [SOCIALS_FOLDER_ID], all);
+  const photos: [id: string, name: string, mimeType: string, parent: string, image: NonNullable<DriveFile["image"]>, fixture?: string][] = [
+    ["fake-social-heic-1", "IMG_2201.HEIC", MIME.heic, "fake-folder-socials-phone", { width: 4032, height: 3024, rotation: 1, time: "2026:09:20 19:45:10" }],
+    // Phones and Drive often call a HEIC application/octet-stream: it's a photo by its extension.
+    ["fake-social-heic-2", "IMG_2202.HEIC", "application/octet-stream", "fake-folder-socials-phone", { width: 4032, height: 3024, rotation: 1, time: "2026:09:20 19:46:02" }],
+    ["fake-social-rotated", "photo-rotated.jpg", MIME.jpeg, "fake-folder-socials-phone", { width: 1200, height: 900, rotation: 1, time: "2026:10:10 21:15:00" }, "photo-rotated.jpg"],
+    ["fake-social-late", "IMG_2210.JPG", MIME.jpeg, "fake-folder-socials-phone", { width: 1600, height: 1000, time: "2026:10:11 01:30:00" }, "photo-landscape.jpg"],
+    ["fake-social-phone-5", "IMG_2211.JPG", MIME.jpeg, "fake-folder-socials-phone", { width: 1600, height: 1000, time: "2026:10:11 01:32:40" }, "photo-landscape.jpg"],
+    ["fake-social-phone-6", "IMG_2215.JPG", MIME.jpeg, "fake-folder-socials-phone", { width: 1600, height: 1000 }, "photo-landscape.jpg"],
+    ["fake-social-loose-1", "IMG_4411.JPG", MIME.jpeg, SOCIALS_FOLDER_ID, { width: 1600, height: 1000, time: "2026:11:01 20:10:00" }, "photo-landscape.jpg"],
+    ["fake-social-loose-2", "IMG_4412.HEIC", MIME.heic, SOCIALS_FOLDER_ID, { width: 4032, height: 3024, rotation: 1, time: "2026:11:01 20:12:30" }],
+    ["fake-social-loose-3", "Poster draft.png", MIME.png, SOCIALS_FOLDER_ID, { width: 1080, height: 1350 }],
+    // The photo a #49 post put in its month folder (scripts/migrate-posts-49.ts moves it).
+    ["fake-social-post49", "Roots Music Project stage.jpg", MIME.jpeg, "fake-folder-socials-2026-10", { width: 1600, height: 1000, time: "2026:10:03 22:05:00" }, "photo-landscape.jpg"],
+  ];
+  photos.forEach(([id, name, mimeType, parent, image, fixture], i) => {
+    add(id, name, mimeType, "rudy@example.com", [parent], all);
+    const f = files[files.length - 1];
+    f.createdAt = f.modifiedTime = new Date(Date.parse("2026-11-01T18:00:00.000Z") + i * 60_000).toISOString();
+    Object.assign(f, { image, size: 2_000_000 + i, thumbnailLink: `${link(id)}/thumbnail` }, fixture ? { fixture } : {});
+  });
+  add("fake-social-pdf", "Set list.pdf", MIME.pdf, "rudy@example.com", [SOCIALS_FOLDER_ID], all);
+}
+
+/** The bytes of a fixture photo (tests/fixtures), read once. */
+const fixtures = new Map<string, Buffer>();
+const fixture = (name: string) => fixtures.get(name) ?? fixtures.set(name, fs.readFileSync(new URL(`../../tests/fixtures/${name}`, import.meta.url))).get(name)!;
+
+/** Upright size: Drive's width/height are as stored, so an odd rotation (90° or 270°) swaps them. */
+const upright = (im: { width: number; height: number; rotation?: number }) => ((im.rotation ?? 0) % 2 ? { width: im.height, height: im.width } : { width: im.width, height: im.height });
+
+/** A preview like Drive's: an upright JPEG, its long edge `s`. A plain colour with a darker band across the top, so it isn't uniform. */
+async function thumbnailOf(f: DriveFile, s: number): Promise<Buffer> {
+  const { width, height } = f.image ? upright(f.image) : { width: s, height: s };
+  const k = s / Math.max(width, height);
+  const w = Math.max(1, Math.round(width * k)), h = Math.max(1, Math.round(height * k));
+  const band = await sharp({ create: { width: w, height: Math.max(1, Math.round(h / 5)), channels: 3, background: { r: 40, g: 40, b: 60 } } }).png().toBuffer();
+  return sharp({ create: { width: w, height: h, channels: 3, background: { r: 200, g: 120, b: 80 } } }).composite([{ input: band, top: 0, left: 0 }]).jpeg({ quality: 80 }).toBuffer();
+}
+
+const isFolder = (f: DriveFile) => f.mimeType === MIME.folder;
+/** list()'s kind "images": an image type, or a HEIC/HEIF name (Drive's own query matches the name). */
+const isImage = (f: DriveFile) => f.mimeType.includes("image/") || /\.(heic|HEIC|heif)/.test(f.name);
 
 // ---------- Docs API documents (documents.get with includeTabsContent), the parts Roadie reads ----------
 
@@ -165,16 +238,29 @@ const PIXEL_JPEG = Buffer.from(
 
 /** Hide nothing: the fake has a single flat view. */
 const find = (s: DriveState, id: string) => need(s.files.find((f) => f.id === id), "File");
+/** A file as files.get answers: plus capabilities on a folder (can the band account move files in and out of it). */
+const view = (s: DriveState, f: DriveFile) => (isFolder(f) ? { ...f, capabilities: { canMoveChildrenWithinDrive: !s.scenario?.noMove } } : f);
 const emailsOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : v ? [String(v)] : []);
 
 const routes: Route<DriveState>[] = [
   ["GET", "/files", ({ query }, s) => {
     const q = query.get("q")?.toLowerCase(), parent = query.get("parent"), mime = query.get("mimeType");
-    return s.files.filter((f) => (!q || f.name.toLowerCase().includes(q)) && (!parent || f.parents.includes(parent)) && (!mime || f.mimeType === mime));
+    return s.files.filter((f) => !f.trashed && (!q || f.name.toLowerCase().includes(q)) && (!parent || f.parents.includes(parent)) && (!mime || f.mimeType === mime));
+  }],
+  // DriveService.list: one page of non-trashed files under any of `parents` (comma-separated), by kind, optionally newest added first.
+  ["GET", "/files/list", ({ query }, s) => {
+    const parents = (query.get("parents") ?? "").split(",").filter(Boolean), kind = query.get("kind") ?? "all";
+    if (!parents.length) throw new HttpError(400, "Missing parents");
+    let files = s.files.filter((f) => !f.trashed && f.parents.some((p) => parents.includes(p)) && (kind === "folders" ? isFolder(f) : kind === "images" ? isImage(f) : true));
+    if (query.get("orderBy") === "createdTime desc") files = files.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const size = Math.min(Number(query.get("pageSize") || 1000), 1000), start = Number(query.get("pageToken") || 0);
+    const page = files.slice(start, start + size);
+    return { files: page.map((f) => view(s, f)), ...(start + size < files.length ? { nextPageToken: String(start + size) } : {}) };
   }],
   ["POST", "/files", ({ body }, s) => {
     required(body, "name", "ownerEmail");
-    const f: DriveFile = { id: `fake-new-${++s.seq}`, name: body.name, mimeType: body.mimeType ?? MIME.doc, ownerEmail: body.ownerEmail, parents: emailsOf(body.parents), createdAt: new Date().toISOString(), webViewLink: "", permissions: [{ email: body.ownerEmail, role: "owner" }], ...(typeof body.text === "string" ? { text: body.text } : {}) };
+    const at = new Date().toISOString();
+    const f: DriveFile = { id: `fake-new-${++s.seq}`, name: body.name, mimeType: body.mimeType ?? MIME.doc, ownerEmail: body.ownerEmail, parents: emailsOf(body.parents), createdAt: at, modifiedTime: at, webViewLink: "", permissions: [{ email: body.ownerEmail, role: "owner" }], ...(typeof body.text === "string" ? { text: body.text } : {}) };
     f.webViewLink = link(f.id);
     s.files.push(f);
     return f;
@@ -182,12 +268,42 @@ const routes: Route<DriveState>[] = [
   ["GET", "/files/:id", ({ params }, s) => {
     const f = find(s, params.id);
     if (f.noAccess) throw new HttpError(404, `File not found: ${f.id}.`);
-    return f;
+    return view(s, f);
   }],
+  // files.update: name, a move (addParents/removeParents) and trashed, as the scenario allows.
   ["PATCH", "/files/:id", ({ params, body }, s) => {
     const f = find(s, params.id);
-    if (typeof body.name === "string" && body.name) f.name = body.name;
-    return f;
+    const sc = (s.scenario ??= {});
+    const add = emailsOf(body.addParents), remove = emailsOf(body.removeParents);
+    if (add.length || remove.length) {
+      s.moves = (s.moves ?? 0) + 1;
+      if (sc.failMove && s.moves === sc.failMove) throw new HttpError(500, "Internal Error (fake: failMove)");
+      for (const p of add) if (!isFolder(find(s, p))) throw new HttpError(400, `Not a folder: ${p}`);
+      f.parents = [...f.parents.filter((p) => !remove.includes(p)), ...add.filter((p) => !f.parents.includes(p))];
+    }
+    if (typeof body.name === "string" && body.name) {
+      if (sc.failRename) throw new HttpError(500, "Internal Error (fake: failRename)");
+      f.name = body.name;
+    }
+    if (typeof body.trashed === "boolean") f.trashed = body.trashed;
+    f.modifiedTime = new Date().toISOString();
+    return view(s, f);
+  }],
+  ["POST", "/__scenario", ({ body }, s) => {
+    const sc = (s.scenario ??= {});
+    if (body.failMove !== undefined) { sc.failMove = Number(body.failMove) || undefined; s.moves = 0; }
+    if (body.failRename !== undefined) sc.failRename = !!body.failRename;
+    if (body.noMove !== undefined) sc.noMove = !!body.noMove;
+    if (body.noThumbnail !== undefined) sc.noThumbnail = emailsOf(body.noThumbnail);
+    return { ok: true, scenario: sc };
+  }],
+  // A file's preview at "=s{size}", as the thumbnailLink serves it: an upright JPEG, its long edge `s`.
+  ["GET", "/thumbnails/:id", async ({ params, query }, s) => {
+    const f = find(s, params.id);
+    if (f.trashed || !isImage(f) || s.scenario?.noThumbnail?.includes(f.id)) throw new HttpError(404, "No thumbnail");
+    const size = Number(query.get("s") || 220);
+    if (!Number.isInteger(size) || size < 1 || size > 4000) throw new HttpError(400, "Bad size");
+    return { bytes: await thumbnailOf(f, size), type: MIME.jpeg };
   }],
   ["PUT", "/files/:id/content", ({ params, body }, s) => {
     const f = find(s, params.id);
@@ -198,6 +314,7 @@ const routes: Route<DriveState>[] = [
   ["GET", "/files/:id/content", ({ params }, s) => {
     const f = find(s, params.id);
     if (f.text !== undefined) return { bytes: Buffer.from(f.text), type: "text/csv" };
+    if (f.fixture) return { bytes: fixture(f.fixture), type: f.mimeType };
     if (f.mimeType === MIME.jpeg) return { bytes: PIXEL_JPEG, type: MIME.jpeg };
     if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio and JPEGs");
     return { bytes: tone(), type: "audio/wav" };

@@ -243,14 +243,14 @@ async function upload(token: string, file: File) {
   return { status: res.status, json: (await res.json()) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
-test("upload: refused without a Posts folder, for anything but a JPEG, and for members; else into the month's folder, made once and reused", async () => {
+test("upload: refused without a Posts folder, for anything but a photo, and for members; else into the month's folder, made once and reused", async () => {
   const none = await upload(rudy.token, jpeg());
   assert.equal(none.status, 400);
   assert.match(none.json.error.message, /Choose a Posts folder in Settings › Google/);
   assert.equal((await cmd("google.setPostsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-posts" })).postsFolder.name, "Posts");
-  const png = await upload(rudy.token, jpeg("x.png", "image/png"));
-  assert.equal(png.status, 400);
-  assert.equal(png.json.error.message, "Instagram takes JPEG photos");
+  const pdf = await upload(rudy.token, jpeg("x.pdf", "application/pdf"));
+  assert.equal(pdf.status, 400);
+  assert.equal(pdf.json.error.message, "Roadie takes JPEG, HEIC, PNG and WebP photos");
   assert.equal((await upload(hugo.token, jpeg())).status, 403);
 
   const a = await upload(rudy.token, jpeg("Roots.jpg"));
@@ -266,6 +266,10 @@ test("upload: refused without a Posts folder, for anything but a JPEG, and for m
   assert.equal(f.name, "Roots.jpg");
   assert.deepEqual(f.parents, [a.json.folder.id]);
   assert.ok(f.permissions.some((p) => p.email === "nora@example.com"), "shared with the band");
+  // A HEIC from a phone often comes as octet-stream: it's kept as the photo type its name says.
+  const heic = await upload(rudy.token, jpeg("IMG_2201.HEIC", "application/octet-stream"));
+  assert.equal(heic.status, 200, JSON.stringify(heic.json));
+  assert.equal(heic.json.mimeType, "image/heic");
   assert.equal((await db.list("posts")).length, 0, "nothing is posted yet");
 });
 
@@ -274,7 +278,7 @@ test("upload: refused without a Posts folder, for anything but a JPEG, and for m
 test("publishPhoto: Instagram fetches the photo from the signed link, posts it, and the post keeps its link", async () => {
   await code(cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "Thanks, Roots!" }), "meta_not_connected");
   await connect();
-  await code(cmd("posts.publishPhoto", { driveFileId: "fake-release-cover", caption: "x" }), "invalid_input"); // a PNG
+  await code(cmd("posts.publishPhoto", { driveFileId: "fake-chart-1-b", caption: "x" }), "invalid_input"); // a PDF
   const r = await cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "Thanks, Roots!" });
   assert.equal(r.status, "posted");
   assert.match(r.permalink, /^https:\/\/www\.instagram\.com\/p\/FAKE\d+\/$/);
