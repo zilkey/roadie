@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { entity, serverMask, id, dateStr, cents, driveRef } from "./common";
+import { checklist } from "./shows";
 
 /** A full-length album, an EP or a single. */
 export const releaseKind = z.enum(["album", "ep", "single"]);
@@ -36,6 +37,8 @@ export const Release = entity({
   upc: z.string().optional(),
   /** Free text: "Digital, CD, Vinyl". */
   formats: z.string().optional(),
+  /** Named lists, in order, like a show's (release templates). Admins only, like the release. */
+  checklists: z.array(checklist).default([]),
 });
 export const ReleaseInput = Release.omit(serverMask);
 export type Release = z.infer<typeof Release>;

@@ -53,6 +53,12 @@ test("an admin adds a list from a template, works its to-dos in place, renames a
   await expect(done).toBeChecked();
   await expect(c.getByTestId(`checklist-count-${id}`)).toHaveText("1 of 2");
 
+  // admins pin an open item to To Dos, and unpin it
+  await c.getByRole("button", { name: "Pin Post on social media to To Dos" }).click();
+  await expect(c.getByRole("button", { name: "Unpin Post on social media from To Dos" })).toBeVisible();
+  await expect(c.getByText("On To Dos")).toBeVisible();
+  await expect(c.getByRole("button", { name: /^Pin Bring the big banner/ })).toHaveCount(0); // done items have no pin
+
   // × removes an item; so does saving it empty
   await c.getByRole("button", { name: "Remove Post on social media" }).click();
   await expect(c.getByTestId(`checklist-count-${id}`)).toHaveText("1 of 1");

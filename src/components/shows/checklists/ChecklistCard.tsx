@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import type { ChecklistLike } from "@/lib/shows";
 import { Menu } from "@/components/Menu";
 import { ErrorBox, useCommand } from "@/components/ui";
-import { useBand, type ShowRow } from "../common";
+import { toast } from "@/components/Toasts";
+import { useBand } from "../common";
+import type { ChecklistHost } from "./ChecklistSidebar";
 import { ChecklistItem } from "./ChecklistItem";
 import { AssigneeSelect, activePeople } from "./shared";
 
 export interface ChecklistCardProps {
-  show: ShowRow;
+  host: ChecklistHost;
   list: ChecklistLike;
   admin: boolean;
   /** list.templateId points at a live template of this artist ("Update template"); otherwise "Save as template". */
@@ -17,7 +19,7 @@ export interface ChecklistCardProps {
   autoFocusAdd?: boolean;
 }
 
-export function ChecklistCard({ show, list, admin, templateLive, autoFocusAdd }: ChecklistCardProps) {
+export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }: ChecklistCardProps) {
   const { musicians } = useBand();
   const people = activePeople(musicians);
   const { call, busy, error } = useCommand();
@@ -29,7 +31,7 @@ export function ChecklistCard({ show, list, admin, templateLive, autoFocusAdd }:
   const addRef = useRef<HTMLInputElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const settled = useRef(false);
-  const base = { id: show.id, listId: list.id };
+  const base = { kind: host.kind, id: host.id, listId: list.id };
   const done = list.items.filter((i) => i.done).length;
 
   useEffect(() => { if (autoFocusAdd) addRef.current?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -46,22 +48,25 @@ export function ChecklistCard({ show, list, admin, templateLive, autoFocusAdd }:
     settled.current = true;
     setRenaming(false);
     const next = name.trim();
-    if (save && next && next !== list.name) await call("shows.renameChecklist", { ...base, name: next });
+    if (save && next && next !== list.name) await call("checklists.rename", { ...base, name: next });
   }
   async function remove() {
     if (!confirm(`Delete the list "${list.name}"?`)) return;
-    await call("shows.removeChecklist", base);
+    await call("checklists.remove", base);
   }
   async function template() {
-    if (templateLive && !confirm(`Replace the "${list.name}" template with this list? Lists already on other shows don't change.`)) return;
-    const r = await call(templateLive ? "shows.updateTemplateFromChecklist" : "shows.saveChecklistAsTemplate", base);
+    if (templateLive && !confirm(`Replace the "${list.name}" template with this list? Lists already made from it don't change.`)) return;
+    const r = await call(templateLive ? "checklists.updateTemplate" : "checklists.saveAsTemplate", base);
     if (r) setSaved(true);
+  }
+  async function pin(itemId: string, pinned: boolean) {
+    if (await call("checklists.pin", { ...base, itemId, pinned })) toast({ key: `pin:${itemId}`, text: pinned ? "Pinned to To Dos" : "Unpinned from To Dos" });
   }
   async function add() {
     const label = text.trim();
     if (!label) return;
     setText("");
-    const r = await call("shows.addChecklistItem", { ...base, label, ownerId: owner || null });
+    const r = await call("checklists.addItem", { ...base, label, ownerId: owner || null });
     if (!r) setText(label);
     addRef.current?.focus();
   }
@@ -100,9 +105,10 @@ export function ChecklistCard({ show, list, admin, templateLive, autoFocusAdd }:
           {list.items.map((i) => (
             <li key={i.id}>
               <ChecklistItem item={i} people={people} musicians={musicians} busy={busy}
-                onToggle={(d) => void call("shows.checkItem", { ...base, itemId: i.id, done: d })}
-                onSave={(n) => void call("shows.editChecklistItem", { ...base, itemId: i.id, label: n.label, ownerId: n.ownerId })}
-                onRemove={() => void call("shows.removeChecklistItem", { ...base, itemId: i.id })} />
+                onToggle={(d) => void call("checklists.check", { ...base, itemId: i.id, done: d })}
+                onSave={(n) => void call("checklists.editItem", { ...base, itemId: i.id, label: n.label, ownerId: n.ownerId })}
+                onRemove={() => void call("checklists.removeItem", { ...base, itemId: i.id })}
+                onPin={admin ? (p) => void pin(i.id, p) : undefined} />
             </li>
           ))}
         </ul>

@@ -7,8 +7,14 @@ export type ShowKind = z.infer<typeof showKind>;
 export const showStatus = z.enum(["hold", "confirmed", "played", "canceled", "dropped"]);
 export type ShowStatus = z.infer<typeof showStatus>;
 
-/** One item on a show checklist. ownerId is a musician (missing = unassigned). doneAt (ISO instant) and doneBy (uid) are set when it is ticked. */
-export const checklistItem = z.strictObject({ id, label: z.string().min(1), done: z.boolean(), ownerId: id.optional(), doneAt: z.string().optional(), doneBy: z.string().optional() });
+/**
+ * One item on a checklist (a show's, a release's or the Social Media sidebar's). ownerId is a musician (missing = unassigned).
+ * doneAt (ISO instant) and doneBy (uid) are set when it is ticked. pinnedAt/pinnedBy (uid) are set while an admin has it pinned to To Dos.
+ */
+export const checklistItem = z.strictObject({
+  id, label: z.string().min(1), done: z.boolean(), ownerId: id.optional(), doneAt: z.string().optional(), doneBy: z.string().optional(),
+  pinnedAt: z.string().optional(), pinnedBy: z.string().optional(),
+});
 /** templateId: the checklist template it was made from or saved as (null = none). List order is array order. */
 export const checklist = z.strictObject({ id, name: z.string().min(1), templateId: id.nullable(), items: z.array(checklistItem) });
 export type ShowChecklist = z.infer<typeof checklist>;

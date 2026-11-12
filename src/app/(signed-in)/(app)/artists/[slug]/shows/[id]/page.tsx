@@ -92,7 +92,7 @@ function ShowView({ show }: { show: ShowRow }) {
 
         <aside className="show-side" aria-label="Checklists">
           {tab === "finances" && admin && <div className="mb-3"><NetCard show={show} /></div>}
-          <ChecklistSidebar show={show} admin={admin} />
+          <ChecklistSidebar host={{ kind: "show", id: show.id, artistId: show.artistId, checklists: show.checklists }} admin={admin} />
         </aside>
 
         <div className="show-main show-after">

@@ -2,16 +2,23 @@
 import { useState } from "react";
 import Link from "@/lib/artist";
 import { ErrorBox, useCommand } from "@/components/ui";
-import { checklistCount } from "@/lib/shows";
-import type { ShowRow } from "../common";
+import { checklistCount, templateKind, type ChecklistKind, type ChecklistLike } from "@/lib/shows";
 import { Menu } from "@/components/Menu";
 import { UnfinishedPlaceholder } from "../page/kit";
 import { ChecklistCard } from "./ChecklistCard";
 import { useDragReorder } from "@/lib/drag-reorder";
 import { moved, useChecklistTemplates } from "./shared";
 
+/** What the lists hang off: a show, a release, or the Social Media sidebar (id = the artist's). */
+export interface ChecklistHost {
+  kind: ChecklistKind;
+  id: string;
+  artistId?: string;
+  checklists: ChecklistLike[];
+}
+
 export interface ChecklistSidebarProps {
-  show: ShowRow;
+  host: ChecklistHost;
   admin: boolean;
 }
 
@@ -21,15 +28,17 @@ const Chevron = ({ up }: { up?: boolean }) => (
   </svg>
 );
 
-export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
-  const lists = show.checklists;
-  const { templates } = useChecklistTemplates(show.artistId, admin);
+export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
+  const lists = host.checklists;
+  const { templates: all } = useChecklistTemplates(host.artistId, admin);
+  const templates = all.filter((t) => templateKind(t) === host.kind);
+  const at = { kind: host.kind, id: host.id };
   const { call, busy, error, setError } = useCommand();
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [freshId, setFreshId] = useState<string>();
   const [draft, setDraft] = useState<string[] | null>(null);
-  const liveTemplates = new Set(templates.map((t) => t.id));
+  const liveTemplates = new Set(all.map((t) => t.id));
   const { done, total } = checklistCount(lists);
   // While reordering: the draft order, dropping lists since deleted and appending ones since added.
   const byId = new Map(lists.map((l) => [l.id, l]));
@@ -38,12 +47,12 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
   const dr = useDragReorder((from, to) => setDraft(moved(order, from, to)));
 
   async function addTemplate(templateId: string) {
-    await call("shows.addChecklist", { id: show.id, templateId });
+    await call("checklists.add", { ...at, templateId });
   }
   async function addBlank() {
     const n = name.trim();
     if (!n) return;
-    const r = await call<{ id: string; listId: string }>("shows.addChecklist", { id: show.id, name: n });
+    const r = await call<{ id: string; listId: string }>("checklists.add", { ...at, name: n });
     if (!r) return;
     setFreshId(r.listId);
     setName("");
@@ -70,7 +79,7 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
 
   if (draft) {
     const save = async () => {
-      if (await call("shows.reorderChecklists", { id: show.id, listIds: order })) setDraft(null);
+      if (await call("checklists.reorder", { ...at, listIds: order })) setDraft(null);
     };
     return (
       <section className="card editing" data-testid="checklists" data-reordering="1">
@@ -136,7 +145,7 @@ export function ChecklistSidebar({ show, admin }: ChecklistSidebarProps) {
       ) : (
         <div className="grid gap-4">
           {lists.map((l) => (
-            <ChecklistCard key={l.id} show={show} list={l} admin={admin} templateLive={!!l.templateId && liveTemplates.has(l.templateId)} autoFocusAdd={l.id === freshId} />
+            <ChecklistCard key={l.id} host={host} list={l} admin={admin} templateLive={!!l.templateId && liveTemplates.has(l.templateId)} autoFocusAdd={l.id === freshId} />
           ))}
         </div>
       )}
