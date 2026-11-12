@@ -22,6 +22,8 @@ before(async () => {
     }
     await setDoc(doc(d, "checklistTemplates/y"), { ...live, artistId: "y", name: "Fern Valley's" });
     await setDoc(doc(d, "pitches/y"), { ...live, artistId: "y" });
+    await setDoc(doc(d, "campaigns/cx"), { ...live, artistId: "x", name: "Spring 2027", status: "active" });
+    await setDoc(doc(d, "campaigns/cy"), { ...live, artistId: "y", name: "Fern Valley's push", status: "active" });
     await setDoc(doc(d, "contacts/y"), { ...live, artistId: "y", name: "Fern Valley's booker" });
     await setDoc(doc(d, "pitches/y/comments/c1"), { ...live });
     await setDoc(doc(d, "pitches/y/activity/a1"), { ...live });
@@ -394,6 +396,24 @@ test("pitches: lists must filter by artistId", async () => {
   await assertFails(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "y"))));
   await assertSucceeds(getDocs(collection(admin(), "pitches/x/comments")));
   await assertFails(getDocs(collection(otherAdmin(), "pitches/x/comments")));
+});
+
+// ---------- booking campaigns (#82) ----------
+
+test("campaigns: only that artist's admins read; lists filter by artistId; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "campaigns/cx")));
+  await assertFails(getDoc(doc(admin(), "campaigns/cy")));
+  await assertSucceeds(getDoc(doc(otherAdmin(), "campaigns/cy")));
+  await assertFails(getDoc(doc(otherAdmin(), "campaigns/cx")));
+  await assertFails(getDoc(doc(hugo(), "campaigns/cx")));
+  await assertFails(getDoc(doc(anon(), "campaigns/cx")));
+  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  await assertFails(getDoc(doc(mia, "campaigns/cx"))); // the per-artist role decides
+  await assertFails(getDocs(collection(admin(), "campaigns")));
+  await assertSucceeds(getDocs(query(collection(admin(), "campaigns"), where("artistId", "==", "x"))));
+  await assertFails(setDoc(doc(admin(), "campaigns/new"), { artistId: "x", name: "Nope", status: "active" }));
+  await assertFails(updateDoc(doc(admin(), "campaigns/cx"), { status: "closed" }));
+  await assertFails(deleteDoc(doc(admin(), "campaigns/cx")));
 });
 
 // ---------- festivals, years, promoters, contacts: shared records plus private per-band notes ----------

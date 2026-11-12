@@ -453,6 +453,12 @@ export const pitchesMove = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     const p = await requirePitch(w, i.id);
     if (p.status === i.status) return { id: i.id, changed: false };
+    // One active pitch per place per band (as flagPitch keeps it): reopening a closed pitch can't make a second one.
+    if (isActive(i.status) && !isActive(p.status)) {
+      const other = (await w.query("pitches", (q) => q.where("target.id", "==", p.target.id)))
+        .find((o) => o.id !== p.id && !o.deletedAt && o.artistId === p.artistId && o.target.kind === p.target.kind && isActive(o.status));
+      if (other) throw new AppError("conflict", `${p.target.name} already has an open pitch. Work on that one instead.`, 409);
+    }
     await w.update("pitches", i.id, { status: i.status, ...(["pitched", "talking"].includes(i.status) ? { lastContactAt: w.now } : {}) });
     await w.create(`pitches/${i.id}/activity`, { type: "status", fromStatus: p.status, toStatus: i.status, text: i.text });
     return { id: i.id, changed: true };

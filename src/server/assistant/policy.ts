@@ -28,6 +28,7 @@ export const EXCLUDED: readonly string[] = [
   "venueEvents.",     // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview
   "venues.setCalendar",
   "acts.lookup", "acts.lookupShortlist", "acts.findTeam", // an act's Look up (#78): searches the web and Spotify on a click on the act page or Acts tab, never from chat
+  "campaigns.", "pitches.setCampaign", // booking campaigns (#82): data only until the campaign pages ship (S4a) expose them with a confirm on close
   "dayOf.",           // hiding a row of the day-of banner (#66): the banner's own ×, personal to whoever taps it
 ];
 /** Under an excluded prefix but fine: adding a Band Member (a name on a roster) grants no sign-in or access, unlike the rest of users.*. */

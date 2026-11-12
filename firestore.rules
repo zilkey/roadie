@@ -148,5 +148,8 @@ service cloud.firestore {
       match /comments/{cid}  { allow read: if pitchAdmin(); }
       match /activity/{aid}  { allow read: if pitchAdmin(); }
     }
+    // Booking campaigns (#82): that artist's admins read; no client write (campaigns.* and pitches.setCampaign write through the server).
+    // Lists must filter where('artistId', '==', ...).
+    match /campaigns/{id} { allow read: if roleIn(resource.data.artistId) == 'admin'; }
   }
 }

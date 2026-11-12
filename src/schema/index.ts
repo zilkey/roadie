@@ -28,6 +28,7 @@ import { ExpenseInput } from "./expenses";
 import { ProjectInput } from "./projects";
 import { ReleaseInput, ReleaseTrackInput } from "./releases";
 import { TourInput, TourEntryInput } from "./tours";
+import { CampaignInput } from "./campaigns";
 import { PostInput } from "./posts";
 import { SocialChecklistsInput } from "./socialChecklists";
 import { TodoInput, TodoListsInput } from "./todos";
@@ -73,6 +74,7 @@ export * from "./expenses";
 export * from "./projects";
 export * from "./releases";
 export * from "./tours";
+export * from "./campaigns";
 export * from "./posts";
 export * from "./socialChecklists";
 export * from "./todos";
@@ -136,6 +138,7 @@ export const collections: Record<string, CollectionDef> = {
   tracks: { input: ReleaseTrackInput },
   tours: { input: TourInput },
   entries: { input: TourEntryInput },
+  campaigns: { input: CampaignInput },
   posts: { input: PostInput },
   socialChecklists: { input: SocialChecklistsInput },
   todos: { input: TodoInput },

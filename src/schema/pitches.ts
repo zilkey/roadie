@@ -19,6 +19,8 @@ export const Pitch = entity({
   notes: z.string().optional(),
   /** The tour this pitch is an option on (tours/{id}), set by tours.addPitch. Each of its dates is an option entry there. */
   tourId: id.optional(),
+  /** The booking campaign this pitch is in (campaigns/{id}), set by pitches.setCampaign. Missing = Ongoing. Kept when the campaign closes. */
+  campaignId: id.optional(),
   ...sourcesShape,
 });
 export const PitchInput = Pitch.omit(serverMask);
