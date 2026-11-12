@@ -1,5 +1,5 @@
 "use client";
 import { Suspense } from "react";
-import { FansPage } from "@/components/fans/FansPage";
+import { FanPage } from "@/components/fans/FanPage";
 
-export default function Page() { return <Suspense><FansPage /></Suspense>; }
+export default function Page() { return <Suspense><FanPage /></Suspense>; }

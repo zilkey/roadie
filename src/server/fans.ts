@@ -11,7 +11,9 @@ import { newRunId, type Ctx } from "./ctx";
 import { geocodeCity, zipPlace } from "./geocode";
 import { roleIn } from "@/schema/users";
 import { signupShow, type PickableShow } from "@/lib/pickShow";
-import { paymentAppOf, type MerchItem } from "@/schema/artists";
+import { ARTIST_LINKS, normalizeInstagramUrl, paymentAppOf, type FanDonation, type FanLink, type MerchItem } from "@/schema/artists";
+import { withScheme } from "@/lib/links";
+import { dateInBandZone } from "@/lib/timezone";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { publicShowName, showCity, type ShowPlaceLike } from "@/lib/shows";
 import { DEFAULT_LIST_WORDING, mergeCities, parseCity, sameCity, type CityLike } from "@/lib/fans";
@@ -82,12 +84,19 @@ type ShowDoc = Doc & PickableShow & { id: string };
 export interface ListView {
   /** The artist's public name (publicName, else name). */
   artistName: string;
-  instagram: string | null;
+  /** The logo shown instead of the name (a data URL), or null. */
+  logo: string | null;
   wording: string;
   /** The show a signup right now belongs to (signupShow), or null. */
   current: { showId: string; label: string; date: string } | null;
   /** The merch price list and the Venmo handle to pay; null when merch is off or there is no Venmo link. */
   merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null;
+  /** The suggested donation (see FanDonation), or null when it isn't showing. */
+  donation: { venmo: string; title: string; amountCents: number } | null;
+  /** The fan page's own links, in order. */
+  links: { id: string; name: string; url: string }[];
+  /** The artist's public links (Instagram, Spotify, website...), in ARTIST_LINKS order, for the footer. */
+  socials: { key: string; label: string; url: string }[];
   style: { theme: "auto" | "light" | "dark"; accent: string | null };
 }
 
@@ -109,18 +118,40 @@ async function currentShow(artistId: string, now: Date): Promise<ShowDoc | null>
   return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE });
 }
 
+/** The donation the page shows: on, with an amount, and its show (if one is picked) not over yet in the band's zone. */
+async function donationOf(artist: Doc, venmo: string, now: Date): Promise<ListView["donation"]> {
+  const d = artist.donation as FanDonation | undefined;
+  if (!d?.on || !d.amountCents) return null;
+  if (d.showId) {
+    const s = await db.get("shows", d.showId);
+    if (!s || s.deletedAt || s.artistId !== artist.id || (s.date as string) < dateInBandZone(now)) return null;
+  }
+  return { venmo, title: d.showName?.trim() || "Suggested donation", amountCents: d.amountCents };
+}
+
 export async function listView(slug: string, now: Date = new Date()): Promise<ListView> {
   const artist = await listArtist(slug);
   const hit = await currentShow(artist.id, now);
   const pay = typeof artist.paymentUrl === "string" ? paymentAppOf(artist.paymentUrl) : null;
   const merchOn = (artist.features as { merch?: boolean } | undefined)?.merch === true && pay?.app === "venmo";
   const style = (artist.fanPageStyle ?? {}) as { theme?: "auto" | "light" | "dark"; accent?: string };
+  const items = ((artist.merchItems ?? []) as MerchItem[]).map(({ id, name, priceCents }) => ({ id, name, priceCents }));
+  const links = ((artist.fanLinks ?? []) as FanLink[]).map(({ id, name, url }) => ({ id, name, url }));
+  const socials = ARTIST_LINKS.flatMap(([key, label]) => {
+    const v = (artist.links as Record<string, string | undefined> | undefined)?.[key]?.trim();
+    if (!v) return [];
+    const ig = key === "instagram" ? normalizeInstagramUrl(v) : null;
+    return [{ key, label, url: ig && "url" in ig ? ig.url : withScheme(v) }];
+  });
   return {
     artistName: publicNameOf(artist),
-    instagram: (artist.links?.instagram as string | undefined) || null,
+    logo: (artist.logo?.dataUrl as string | undefined) ?? null,
     wording: wordingOf(artist),
     current: hit ? { showId: hit.id, label: showLabel(hit), date: hit.date as string } : null,
-    merch: merchOn ? { venmo: pay!.handle, items: ((artist.merchItems ?? []) as MerchItem[]).map(({ id, name, priceCents }) => ({ id, name, priceCents })) } : null,
+    merch: merchOn && items.length ? { venmo: pay!.handle, items } : null,
+    donation: pay?.app === "venmo" ? await donationOf(artist, pay.handle, now) : null,
+    links,
+    socials,
     style: { theme: style.theme ?? "auto", accent: style.accent ?? null },
   };
 }

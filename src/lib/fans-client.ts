@@ -19,11 +19,6 @@ export function useFansOn(): boolean {
   return !!useMaybeArtist()?.doc?.features?.fans;
 }
 
-/** Is merch on for the open artist? (`features.merch`; missing = off.) */
-export function useMerchOn(): boolean {
-  return !!useMaybeArtist()?.doc?.features?.merch;
-}
-
 /** Anything that changes who is on the list or in Bandzoogle says so, and the nav badge and the show banners reload. */
 export const FANS_CHANGED = "fans:changed";
 export const announceFansChanged = () => window.dispatchEvent(new Event(FANS_CHANGED));

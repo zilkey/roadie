@@ -68,7 +68,10 @@ test("list: 404 when the artist doesn't exist or fans are off; shows only public
   const v = await listView("nora-quill-band", DURING);
   assert.deepEqual(v.current, { showId, label: "Deep End · Denver", date: "2026-11-14" });
   assert.equal(v.artistName, "Nora Quill Band");
-  assert.equal(v.instagram, "noraquill");
+  assert.deepEqual(v.socials, [{ key: "instagram", label: "Instagram", url: "https://instagram.com/noraquill" }]);
+  assert.equal(v.logo, null);
+  assert.equal(v.donation, null);
+  assert.deepEqual(v.links, []);
   assert.equal(v.wording, DEFAULT_LIST_WORDING);
   assert.equal(v.merch, null);
   assert.deepEqual(v.style, { theme: "auto", accent: null });
@@ -94,9 +97,38 @@ test("list: public name, merch price list with the Venmo handle, and style", asy
   await cmd("artists.update", { id: TEST_ARTIST, patch: { features: { fans: true, merch: true }, paymentUrl: "@Nora-Quill" } });
   v = await listView("nora-quill-band", NEVER);
   assert.deepEqual(v.merch, { venmo: "Nora-Quill", items });
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { merchItems: [] } });
+  assert.equal((await listView("nora-quill-band", NEVER)).merch, null, "no items: no merch section");
   await cmd("artists.update", { id: TEST_ARTIST, patch: { publicName: null } });
   assert.equal((await listView("nora-quill-band", NEVER)).artistName, "Nora Quill Band");
   await assert.rejects(cmd("artists.update", { id: TEST_ARTIST, patch: { merchItems: [{ id: "x", name: "", priceCents: 5 }] } }), "an item needs a name");
+});
+
+test("list: suggested donation while on and before its show; links in order; socials in the artist's order; the logo", async () => {
+  const at = new Date("2026-11-13T18:00:00Z"); // the day before the show
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { paymentUrl: "@Nora-Quill", donation: { on: true, showId, amountCents: 2000, showName: "Jennifer House Concert" } } });
+  assert.deepEqual((await listView("nora-quill-band", at)).donation, { venmo: "Nora-Quill", title: "Jennifer House Concert", amountCents: 2000 });
+  assert.equal((await listView("nora-quill-band", new Date("2026-11-16T18:00:00Z"))).donation, null, "gone once the show has passed");
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: true, amountCents: 1500 } } });
+  assert.deepEqual((await listView("nora-quill-band", NEVER)).donation, { venmo: "Nora-Quill", title: "Suggested donation", amountCents: 1500 }, "no show: no end");
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: false, amountCents: 1500 } } });
+  assert.equal((await listView("nora-quill-band", NEVER)).donation, null);
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { donation: { on: true, amountCents: 1500 }, paymentUrl: null } });
+  assert.equal((await listView("nora-quill-band", NEVER)).donation, null, "no Venmo, no button");
+
+  const links = [{ id: "b", name: "Tour poster", url: "https://example.com/poster" }, { id: "a", name: "New single", url: "https://example.com/single" }];
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { fanLinks: links, links: { website: "noraquill.com", instagram: "https://instagram.com/noraquill", spotify: "https://open.spotify.com/artist/x" } } });
+  const v = await listView("nora-quill-band", NEVER);
+  assert.deepEqual(v.links, links);
+  assert.deepEqual(v.socials.map((x) => [x.key, x.url]), [["website", "https://noraquill.com"], ["spotify", "https://open.spotify.com/artist/x"], ["instagram", "https://instagram.com/noraquill"]]);
+  await assert.rejects(cmd("artists.update", { id: TEST_ARTIST, patch: { fanLinks: [{ id: "c", name: "Bad", url: "example" }] } }), "a link needs a full URL");
+
+  const dataUrl = "data:image/png;base64,iVBORw0KGgo=";
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { logo: { dataUrl } } });
+  assert.equal((await listView("nora-quill-band", NEVER)).logo, dataUrl);
+  await assert.rejects(cmd("artists.update", { id: TEST_ARTIST, patch: { logo: { dataUrl: "data:text/html;base64,PGI+" } } }), "only images");
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { logo: null } });
+  assert.equal((await listView("nora-quill-band", NEVER)).logo, null);
 });
 
 test("list: the venue's time zone moves the window", async () => {

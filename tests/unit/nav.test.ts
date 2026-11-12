@@ -6,11 +6,11 @@ import { DEFAULT_HIDDEN, DEFAULT_SECTION_ORDER, defaultHidden, SECTION_IDS, norm
 const keys = (items: { key: string }[]) => items.map((n) => n.key);
 const label = (items: { key: string; label: string }[], key: string) => items.find((n) => n.key === key)?.label;
 
-test("admin gets Calendar then all fifteen sections in the default order, with Money (Fans and Merch when the artist has them on)", () => {
-  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true, merch: true });
+test("admin gets Calendar then all fourteen sections in the default order, with Money (Fans when the artist has it on)", () => {
+  const nav = navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true });
   assert.deepEqual(keys(nav), ["calendar", ...SECTION_IDS]);
-  assert.equal(SECTION_IDS.length, 15);
-  assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans" && s !== "merch")]);
+  assert.equal(SECTION_IDS.length, 14);
+  assert.deepEqual(keys(navFor("admin", [...DEFAULT_SECTION_ORDER])), ["calendar", ...SECTION_IDS.filter((s) => s !== "fans")]);
   assert.equal(label(nav, "money"), "Money");
 });
 
@@ -21,10 +21,11 @@ test("members don't get booking, contacts, email templates, releases, posts or T
   assert.equal(label(nav, "money"), "My money");
 });
 
-test("Merch is for admins, and only when the artist has it on", () => {
-  assert.ok(keys(navFor("admin", [...DEFAULT_SECTION_ORDER], { merch: true })).includes("merch"));
-  assert.ok(!keys(navFor("admin", [...DEFAULT_SECTION_ORDER])).includes("merch"));
-  assert.ok(!keys(navFor("member", [...DEFAULT_SECTION_ORDER], { merch: true })).includes("merch"));
+test("the Fans item is the Fan Page; a stored Merch section (it lived for a day) becomes it", () => {
+  assert.equal(label(navFor("admin", [...DEFAULT_SECTION_ORDER], { fans: true }), "fans"), "Fan Page");
+  const order = normalizeOrder(["merch", "money", "fans"]);
+  assert.deepEqual(order.slice(0, 2), ["fans", "money"]);
+  assert.equal(order.length, SECTION_IDS.length);
 });
 
 test("members see Fans (counts only) when it is on", () => {
@@ -34,8 +35,8 @@ test("members see Fans (counts only) when it is on", () => {
 
 test("a custom order is respected; sections it leaves out are appended", () => {
   const order = normalizeOrder(["money", "songs"]);
-  assert.deepEqual(order, ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "merch", "posts", "todos"]);
-  assert.deepEqual(keys(navFor("admin", order, { fans: true, merch: true })), ["calendar", ...order]);
+  assert.deepEqual(order, ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"]);
+  assert.deepEqual(keys(navFor("admin", order, { fans: true })), ["calendar", ...order]);
   assert.deepEqual(keys(navFor("member", order)), ["calendar", "money", "songs", "shows", "tours", "setlists", "rehearsals", "stagePlots"]);
 });
 

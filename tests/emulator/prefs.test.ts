@@ -50,12 +50,12 @@ test("sections.setOrder: per user, completed with the default order, duplicates 
   const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
   const rudy = await makeUser("rudy@example.com", "admin");
   const hugo = await makeUser("hugo@example.com", "member");
-  assert.deepEqual(await sectionOrder(rudy.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "merch", "posts", "todos"]);
+  assert.deepEqual(await sectionOrder(rudy.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts", "todos"]);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["money", "songs"] })).status, 200);
-  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "merch", "posts", "todos"]);
-  assert.deepEqual(await sectionOrder(hugo.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "merch", "posts", "todos"], "someone else's menu is untouched");
+  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"]);
+  assert.deepEqual(await sectionOrder(hugo.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts", "todos"], "someone else's menu is untouched");
   await call(rudy.token, "sections.setHidden", { section: "booking", hidden: true });
-  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "merch", "posts", "todos"], "hiding keeps the order");
+  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"], "hiding keeps the order");
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["money", "money"] })).status, 400);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["home"] })).status, 400);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["calendar"] })).status, 400);

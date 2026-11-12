@@ -41,7 +41,7 @@ const bandNow = () => {
   return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
 };
 
-interface View { instagram: string | null; current: { showId: string; label: string } | null; merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null }
+interface View { socials: { key: string }[]; current: { showId: string; label: string } | null; merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null }
 const listView = async () => (await (await api.get(`${APP}/api/public/${ARTIST_SLUG}/list`)).json()) as View;
 const ITEMS = [{ id: "cz", name: "Coozie", priceCents: 500 }, { id: "ts", name: "T-Shirt", priceCents: 2500 }];
 
@@ -80,7 +80,7 @@ test("during a show: the show is picked by the time, then the thank-you; the pag
   const body = (await signup).postDataJSON();
   expect(body).toEqual({ email: "fan-during@example.com", name: "Wren Avery", zip: "80302", page: `/f/${ARTIST_SLUG}` });
   await expect(page.getByTestId("fans-thanks")).toContainText("Wren");
-  await expect(page.getByTestId("fans-instagram")).toHaveCount(view.instagram ? 1 : 0);
+  await expect(page.getByTestId("fans-socials")).toHaveCount(view.socials.length ? 1 : 0);
   await expect(page.getByTestId("fans-merch")).toHaveCount(view.merch ? 1 : 0);
   expect(urls.filter((u) => /identitytoolkit|securetoken|\/api\/session/.test(u))).toEqual([]);
 });
@@ -90,10 +90,23 @@ test("merch: plus and minus build the Venmo link with the total and a note; the 
   // The server side of merch, the public name and the style is covered in tests/emulator/fans.test.ts.
   await page.route(`**/api/public/${ARTIST_SLUG}/list`, async (route) => {
     const res = await route.fetch();
-    await route.fulfill({ response: res, json: { ...(await res.json()), artistName: "Test Band", merch: { venmo: "Test-Band", items: ITEMS }, style: { theme: "light", accent: "#f0b400" } } });
+    await route.fulfill({ response: res, json: {
+      ...(await res.json()), artistName: "Test Band", merch: { venmo: "Test-Band", items: ITEMS }, style: { theme: "light", accent: "#f0b400" },
+      donation: { venmo: "Test-Band", title: "Jennifer House Concert", amountCents: 2000 },
+      links: [{ id: "l1", name: "New single", url: "https://example.com/single" }],
+      socials: [{ key: "website", label: "Website", url: "https://example.com" }, { key: "instagram", label: "Instagram", url: "https://instagram.com/x" }],
+    } });
   });
   await go(page);
   await expect(page.getByTestId("fans-name")).toContainText("Test Band");
+  // Top to bottom: the email list, the donation, merch, links, then the socials.
+  const order = await page.locator('form, [data-testid="fans-donation"], [data-testid="fans-merch"], [data-testid="fans-links"], [data-testid="fans-socials"]')
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid") ?? "form"));
+  expect(order).toEqual(["form", "fans-donation", "fans-merch", "fans-links", "fans-socials"]);
+  await expect(page.getByTestId("fans-donate")).toHaveText("Donate $20 with Venmo");
+  await expect(page.getByTestId("fans-donate")).toHaveAttribute("href", "https://venmo.com/Test-Band?txn=pay&amount=20.00&note=Jennifer%20House%20Concert");
+  await expect(page.getByTestId("fans-link")).toHaveAttribute("href", "https://example.com/single");
+  await expect(page.getByTestId("fans-social-instagram")).toHaveAttribute("href", "https://instagram.com/x");
   await expect(page.getByTestId("fans-page")).toHaveAttribute("data-theme", "light");
   await expect(page.getByTestId("fans-venmo")).toHaveCSS("color", "rgb(0, 0, 0)");
   const items = page.getByTestId("fans-merch-item");
@@ -112,6 +125,17 @@ test("merch: plus and minus build the Venmo link with the total and a note; the 
   await items.nth(1).getByTestId("fans-merch-minus").click();
   await expect(venmo).toHaveText("Pay $10 with Venmo");
   await expect(items.nth(1).getByTestId("fans-merch-minus")).toBeDisabled();
+});
+
+test("a logo replaces the name", async ({ page }) => {
+  const logo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  await page.route(`**/api/public/${ARTIST_SLUG}/list`, async (route) => {
+    const res = await route.fetch();
+    await route.fulfill({ response: res, json: { ...(await res.json()), artistName: "Test Band", logo } });
+  });
+  await go(page);
+  await expect(page.getByTestId("fans-logo")).toHaveAttribute("alt", "Test Band");
+  await expect(page.getByTestId("fans-name")).not.toContainText("Test Band");
 });
 
 test("no show: name and zip are optional, and a bad zip is caught", async ({ page }) => {

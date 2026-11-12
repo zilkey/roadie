@@ -51,3 +51,8 @@
 .qty b { width: 22px; text-align: center; font-variant-numeric: tabular-nums; }
 .step { font: inherit; font-size: 22px; line-height: 1; font-weight: 700; width: 40px; height: 40px; border-radius: 999px; border: 1.5px solid var(--border); background: transparent; color: var(--ink); cursor: pointer; }
 .step:disabled { opacity: .35; cursor: default; }
+.logo { display: block; max-width: 100%; max-height: 180px; width: auto; height: auto; object-fit: contain; }
+.merch .btn + .btn { margin-top: 0; }
+.socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 14px; }
+.socials a { color: var(--muted); text-decoration: none; font-weight: 600; }
+.socials a:hover, .socials a:focus-visible { color: var(--accent-text); text-decoration: underline; }

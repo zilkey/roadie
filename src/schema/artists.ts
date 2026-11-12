@@ -127,6 +127,26 @@ export const MerchItem = z.strictObject({
   priceCents: z.number().int().min(0).max(1_000_000),
 });
 export type MerchItem = z.infer<typeof MerchItem>;
+/** One of the fan page's own links ("New single", "Tour poster"): a name and an http(s) URL. Order is the list's order. */
+export const FanLink = z.strictObject({
+  id: z.string().min(1).max(40),
+  name: z.string().trim().min(1, "Give the link a name").max(60),
+  url: z.string().trim().max(500).regex(/^https?:\/\/\S+\.\S+$/i, "Use a full web address, like https://example.com"),
+});
+export type FanLink = z.infer<typeof FanLink>;
+/**
+ * The suggested donation on the fan page: a Venmo button with the amount filled in, under the email list. Shown while `on`, an amount
+ * is set, the artist has a Venmo link, and the show (when one is picked) hasn't passed. showName is what fans see and the Venmo note.
+ */
+export const FanDonation = z.strictObject({
+  on: z.boolean(),
+  showId: z.string().min(1).nullable().optional(),
+  amountCents: z.number().int().min(100, "Suggest at least $1").max(1_000_000).nullable().optional(),
+  showName: z.string().trim().max(80).nullable().optional(),
+});
+export type FanDonation = z.infer<typeof FanDonation>;
+/** The longest logo data URL the artist document takes (about 200 KB of image). */
+export const MAX_LOGO_CHARS = 280_000;
 /** The look of the public fan page. Missing = follow the phone's light/dark setting and Roadie's blue. */
 export const FanPageStyle = z.strictObject({
   theme: z.enum(["auto", "light", "dark"]).optional(),
@@ -162,6 +182,16 @@ export const Artist = entity({
   /** The merch price list on the public fan page, in order. Shown when features.merch is on and paymentUrl is set. */
   merchItems: z.array(MerchItem).max(50).optional(),
   fanPageStyle: FanPageStyle.optional(),
+  /** The fan page's own links, in order, listed under merch. */
+  fanLinks: z.array(FanLink).max(30).optional(),
+  /**
+   * The logo the fan page shows instead of the name: a small image as a data URL (the Fan Page shrinks it in the browser before
+   * saving, so it stays well under the document limit). Missing = the name in big letters.
+   */
+  logo: z.strictObject({
+    dataUrl: z.string().max(MAX_LOGO_CHARS, "That image is too big. Try a smaller one.").regex(/^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/, "Use a PNG, WebP or JPEG image"),
+  }).optional(),
+  donation: FanDonation.optional(),
   driveFolderId: z.string(),
   /** Where recordings uploaded from a rehearsal go, one "{date} Rehearsal" folder per rehearsal inside it. Set only by google.setRehearsalFolder. */
   rehearsalFolderId: z.string().optional(),

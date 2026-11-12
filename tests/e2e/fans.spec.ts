@@ -21,7 +21,7 @@ async function as(browser: Browser, key: string) {
 }
 async function openFans(page: Page) {
   await page.goto(A("/fans"));
-  await expect(page.getByTestId("page-title")).toHaveText("Fans");
+  await expect(page.getByTestId("page-title")).toHaveText("Fan Page");
 }
 /** Start a clean "Add a fan" form (a draft from an earlier test is thrown away). */
 async function openAdd(page: Page) {
@@ -64,7 +64,7 @@ test("admin adds a fan with Add (Cancel clears the draft), edits the first name 
   await page.getByTestId("fan-add-cancel").click();
   await expect(page.getByTestId("fan-add-form")).toHaveCount(0);
   await page.reload();
-  await expect(page.getByTestId("page-title")).toHaveText("Fans");
+  await expect(page.getByTestId("page-title")).toHaveText("Fan Page");
   await expect(page.getByTestId("fan-add-form")).toHaveCount(0);
   await page.getByTestId("fan-add").click();
   await expect(page.getByTestId("fan-add-email")).toHaveValue("");

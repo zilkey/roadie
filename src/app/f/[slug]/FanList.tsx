@@ -3,25 +3,59 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { cartNote, cartTotal, money, onColor, venmoPayUrl, type Cart } from "@/lib/merch";
 import css from "./fans.module.css";
 
-// The public fan page: the email list and the merch price list. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
+// The public fan page, top to bottom: the email list, the suggested donation, merch, the page's links, then the artist's socials. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
 interface Item { id: string; name: string; priceCents: number }
 interface View {
-  artistName: string; instagram: string | null; wording: string;
+  artistName: string; logo: string | null; wording: string;
   current: { showId: string; label: string; date: string } | null;
   merch: { venmo: string; items: Item[] } | null;
+  donation: { venmo: string; title: string; amountCents: number } | null;
+  links: { id: string; name: string; url: string }[];
+  socials: { key: string; label: string; url: string }[];
   style: { theme: "auto" | "light" | "dark"; accent: string | null };
 }
 type Load = { s: "loading" } | { s: "missing" } | { s: "failed" } | { s: "ok"; view: View };
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const ZIP = /^\d{5}$/;
-const instagramUrl = (v: string) => (/^https?:\/\//i.test(v) ? v : `https://instagram.com/${v.replace(/^@/, "")}`);
 
 /** The page's colors: data-theme picks light or dark (auto follows the phone), --brand overrides the accent. */
 function look(style: View["style"] | undefined): { "data-theme"?: string; style?: CSSProperties } {
   if (!style) return {};
   const vars = style.accent ? ({ "--brand": style.accent, "--on-brand": onColor(style.accent) } as CSSProperties) : undefined;
   return { "data-theme": style.theme, ...(style.accent ? { "data-brand": "" } : {}), style: vars };
+}
+
+/** The heading: the logo when there is one (its alt text is the name), else the name in big letters. */
+function Name({ view, eyebrow }: { view: View; eyebrow: string }) {
+  return (
+    <h1 className={css.name} data-testid="fans-name">
+      <span className={css.eyebrow}>{eyebrow}</span>
+      {view.logo ? <img className={css.logo} src={view.logo} alt={view.artistName} data-testid="fans-logo" /> : view.artistName}
+    </h1>
+  );
+}
+
+/** The suggested donation: one Venmo button with the amount and the show's name as the note (fans can change the amount in Venmo). */
+function Donation({ d }: { d: NonNullable<View["donation"]> }) {
+  return (
+    <section className={css.merch} aria-labelledby="donate-h" data-testid="fans-donation">
+      <h2 id="donate-h" className={css.eyebrow}>Suggested donation</h2>
+      <div className={css.item}><span className={css.itemName} data-testid="fans-donation-title">{d.title}</span><span className={css.price}>{money(d.amountCents)}</span></div>
+      <a className={css.btn} href={venmoPayUrl(d.venmo, d.amountCents, d.title)} target="_blank" rel="noopener noreferrer" data-testid="fans-donate">Donate {money(d.amountCents)} with Venmo</a>
+      <p className={css.fine}>Pays @{d.venmo}. You can change the amount in Venmo.</p>
+    </section>
+  );
+}
+
+/** The page's own links, as buttons. */
+function Links({ links }: { links: View["links"] }) {
+  return (
+    <section className={css.merch} aria-labelledby="links-h" data-testid="fans-links">
+      <h2 id="links-h" className={css.eyebrow}>Links</h2>
+      {links.map((l) => <a key={l.id} className={`${css.btn} ${css.ghost}`} href={l.url} target="_blank" rel="noopener noreferrer" data-testid="fans-link">{l.name}</a>)}
+    </section>
+  );
 }
 
 /** The price list with a plus/minus per item and one Venmo button that carries the total and a note. */
@@ -121,25 +155,35 @@ export function FanList({ slug }: { slug: string }) {
     } catch { setError("Couldn't reach the server. Try again."); } finally { setBusy(false); }
   }
 
-  const merch = view.merch ? <Merch merch={view.merch} /> : null;
+  const rest = (
+    <>
+      {view.donation ? <Donation d={view.donation} /> : null}
+      {view.merch ? <Merch merch={view.merch} /> : null}
+      {view.links.length ? <Links links={view.links} /> : null}
+      {view.socials.length ? (
+        <footer className={css.socials} data-testid="fans-socials">
+          {view.socials.map((x) => <a key={x.key} href={x.url} target="_blank" rel="noopener noreferrer" data-testid={`fans-social-${x.key}`}>{x.label}</a>)}
+        </footer>
+      ) : null}
+    </>
+  );
   if (done) {
     const first = name.trim().split(/\s+/)[0];
     return (
       <main className={css.page} data-testid="fans-page" {...look(view.style)}><div className={css.col}>
-        <h1 className={css.name}><span className={css.eyebrow}>You&apos;re on the list</span>{view.artistName}</h1>
+        <Name view={view} eyebrow="You're on the list" />
         <div className={css.thanks} data-testid="fans-thanks">
           <div className={css.big}>Thanks{first ? <>, <span>{first}</span></> : null}.</div>
           <p className={css.pitch}>We&apos;ll write when there&apos;s a new song or a show.</p>
-          {view.instagram ? <a className={`${css.btn} ${css.ghost}`} href={instagramUrl(view.instagram)} target="_blank" rel="noopener noreferrer" data-testid="fans-instagram">Follow on Instagram</a> : null}
         </div>
-        {merch}
+        {rest}
       </div></main>
     );
   }
 
   return (
     <main className={css.page} data-testid="fans-page" {...look(view.style)}><div className={css.col}>
-      <h1 className={css.name} data-testid="fans-name"><span className={css.eyebrow}>Get on the list</span>{view.artistName}</h1>
+      <Name view={view} eyebrow="Get on the list" />
       {show ? (
         <div className={css.show} data-testid="fans-show">
           <span className={css.dot} />
@@ -161,7 +205,7 @@ export function FanList({ slug }: { slug: string }) {
         <button type="submit" className={css.btn} disabled={busy} data-testid="fans-join">Join the list</button>
         <p className={css.fine}>{view.wording}</p>
       </form>
-      {merch}
+      {rest}
     </div></main>
   );
 }

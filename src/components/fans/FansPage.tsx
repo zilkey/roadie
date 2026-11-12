@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useFanCounts, useFanList, useFansOn } from "@/lib/fans-client";
-import { PageTitle } from "@/components/ui";
 import { AddFan } from "./AddFan";
 import { BandzoogleDialog } from "./BandzoogleDialog";
 import { FanList } from "./FanList";
@@ -35,8 +34,8 @@ function Bars({ rows, testid, empty }: { rows: { key: string; label: string; cou
   );
 }
 
-/** Fans (story 31): counts for everyone in the band; for admins also the list, "Add a fan" and "Send to Bandzoogle". */
-export function FansPage() {
+/** The Fan Page's Fans tab (story 31): counts for everyone in the band; for admins also the list, "Add a fan" and "Send to Bandzoogle". */
+export function FansTab() {
   const artist = useArtist();
   const admin = artist.role === "admin";
   const on = useFansOn();
@@ -49,14 +48,13 @@ export function FansPage() {
   const [bz, setBz] = useState(false);
   // The show page's banner links here with ?bandzoogle=1.
   useEffect(() => { if (admin && sp.get("bandzoogle") === "1") setBz(true); }, [admin, sp]);
-  const closeBz = () => { setBz(false); if (sp.get("bandzoogle")) router.replace("/fans"); };
+  const closeBz = () => { setBz(false); if (sp.get("bandzoogle")) router.replace("/fans?tab=fans"); };
 
   const showLabels = useMemo(() => new Map((counts?.byShow ?? []).map((s) => [s.showId, s.label])), [counts]);
   if (!artist.doc) return null;
   if (!on) {
     return (
       <div className="grid gap-5">
-        <PageTitle title="Fans" />
         <div className="card" data-testid="fans-off"><span className="s">Fans is turned off for this band.{admin ? " An admin can turn it on in Artist settings." : ""}</span></div>
       </div>
     );
@@ -65,12 +63,12 @@ export function FansPage() {
   const perShow = counts?.byShow.length ? Math.round((counts.byShow.reduce((n, s) => n + s.count, 0) / counts.byShow.length) * 10) / 10 : 0;
   return (
     <div className="grid gap-5" data-testid="fans-page">
-      <PageTitle title="Fans" sub={admin ? undefined : "Counts only. Admins see the addresses."} actions={admin && (
-        <>
+      {admin ? (
+        <div className="flex flex-wrap gap-2">
           <button type="button" className="btn outline" onClick={() => setAdding((a) => !a)} data-testid="fan-add">Add a fan</button>
           <button type="button" className="btn acc" onClick={() => setBz(true)} data-testid="bandzoogle-open">Send to Bandzoogle{counts ? ` · ${counts.notInBandzoogle}` : ""}</button>
-        </>
-      )} />
+        </div>
+      ) : <p className="s">Counts only. Admins see the addresses.</p>}
       {admin && <AddFan open={adding} onOpen={openAdd} onClose={() => setAdding(false)} />}
       {!counts ? <span className="s">Loading…</span> : (
         <>

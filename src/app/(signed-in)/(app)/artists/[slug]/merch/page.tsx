@@ -1,5 +1,10 @@
 "use client";
-import { AdminOnly } from "@/components/Guard";
-import { MerchPage } from "@/components/merch/MerchPage";
+import { useEffect } from "react";
+import { useArtistRouter } from "@/lib/artist";
 
-export default function Page() { return <AdminOnly><MerchPage /></AdminOnly>; }
+/** The Merch page became the Fan Page's Price list tab. */
+export default function Page() {
+  const router = useArtistRouter();
+  useEffect(() => { router.replace("/fans?tab=price"); }, [router]);
+  return null;
+}
