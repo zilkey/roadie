@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { draftPath } from "@/schema/drafts";
 import type { StagePlot } from "@/schema";
-import { ErrorBox, Select, useCommand } from "@/components/ui";
+import { ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
 import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useDraft, useHasDraft } from "@/lib/drafts";
@@ -67,7 +67,7 @@ function NewPlot({ plots, onClose }: { plots: (StagePlot & { id: string })[]; on
   );
 }
 
-/** The Stage plots page body: plots filterable by lineup, with (admins) an explicit Add. */
+/** The Stage plots page: title with the lineup filter beside it, (admins) an explicit Add top right, then the plots. */
 export function StagePlotsList() {
   const admin = useProfile().role === "admin";
   const lineups = useArtist().doc?.configurations ?? [];
@@ -82,15 +82,15 @@ export function StagePlotsList() {
 
   return (
     <div className="grid gap-3" data-testid="stage-plots-list">
-      {admin && (adding
-        ? <NewPlot plots={rows} onClose={() => setAdding(false)} />
-        : <div><button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="add-plot">Add a stage plot</button></div>)}
-      {lineups.length > 0 && rows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="s">Lineup</span>
+      <PageTitle
+        title="Stage plots"
+        center
+        pill={lineups.length > 0 && rows.length > 0 && (
           <div className="w-56"><Select value={lineup} options={[...lineups.map((c) => [c.id, c.name] as const), ["none", "No lineup"] as const]} placeholder="All lineups" onChange={setLineup} testid="plot-filter" label="Filter by lineup" /></div>
-        </div>
-      )}
+        )}
+        actions={admin && !adding && <button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="add-plot">Add a stage plot</button>}
+      />
+      {admin && adding && <NewPlot plots={rows} onClose={() => setAdding(false)} />}
       {!col.loading && rows.length === 0 && <div className="empty"><span>No stage plots yet.</span></div>}
       {!col.loading && rows.length > 0 && shown.length === 0 && <div className="empty"><span>No stage plots for that lineup.</span></div>}
       {shown.map((p) => (

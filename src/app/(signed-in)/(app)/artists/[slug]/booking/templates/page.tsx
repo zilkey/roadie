@@ -30,8 +30,10 @@ function Templates() {
   return (
     <div className="grid gap-3">
       <BackLink href="/booking" label="Booking" />
-      <PageTitle title="Email templates" sub="Fill-in fields like {{venue.name}} are replaced when you send." />
+      <PageTitle title="Email templates" sub="Fill-in fields like {{venue.name}} are replaced when you send."
+        actions={!adding && <button className="btn acc" onClick={() => setAdding(true)} data-testid="template-new">+ New template</button>} />
       <ErrorBox error={error} />
+      {adding && <NewTemplate onDone={() => setAdding(false)} />}
       <div className="card"><span className="lbl">Fields you can use</span><span className="font-mono text-xs break-words">{TEMPLATE_FIELDS.map((f) => `{{${f}}}`).join("  ")}</span></div>
       <div className="grid gap-2" data-testid="template-list">
         {sorted.map((t) => editing === t.id ? (
@@ -40,9 +42,6 @@ function Templates() {
           <TemplateCard key={t.id} t={t} onEdit={() => setEditing(t.id)} onDelete={() => confirm(`Delete "${t.name}"?`) && call("emailTemplates.remove", { id: t.id })} />
         ))}
       </div>
-      {adding ? (
-        <NewTemplate onDone={() => setAdding(false)} />
-      ) : <button className="btn ghost justify-self-start" onClick={() => setAdding(true)} data-testid="template-new">+ New template</button>}
     </div>
   );
 }

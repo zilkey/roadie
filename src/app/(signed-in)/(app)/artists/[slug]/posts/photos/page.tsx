@@ -59,20 +59,19 @@ function PhotosTab() {
 
   return (
     <div className="grid gap-5 pb-20">
-      <PageTitle title="Social Media" />
+      <PageTitle title="Social Media" center actions={
+        <Upload<{ driveFileId: string }> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")} testid="photos-upload" disabled={!setUp}
+          tooBig="Put it in the Socials folder in Drive instead."
+          needsFolder={<Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link>}
+          check={(f) => (photoType(f.name, f.type) ? null : PHOTOS_ONLY)}
+          onUploaded={load} />
+      } />
       <PostsTabs at="photos" />
       <ErrorBox error={error} />
       {!data ? (!error && <p className="s" data-testid="photos-loading">Loading…</p>) : (
         <div className="grid gap-5 md:grid-cols-[14rem_1fr]">
           <FolderRail folders={data.folders} socialsId={socialsId} at={folder} onPick={(f) => { setFolder(f); setData(null); }} />
           <div className="grid content-start gap-4">
-            <div className="flex flex-wrap items-start gap-3">
-              <Upload<{ driveFileId: string }> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")} testid="photos-upload" disabled={!setUp}
-                tooBig="Put it in the Socials folder in Drive instead."
-                needsFolder={<Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link>}
-                check={(f) => (photoType(f.name, f.type) ? null : PHOTOS_ONLY)}
-                onUploaded={load} />
-            </div>
             {data.capped && <p className="s m-0" data-testid="photos-capped">Showing the 2,000 most recently added.</p>}
             {data.photos.length === 0
               ? <p className="s m-0" data-testid="photos-none">No photos here yet. Add them to the Socials folder in Drive, or upload one.</p>
