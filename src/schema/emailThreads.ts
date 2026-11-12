@@ -8,7 +8,7 @@ import { entity, serverMask, id, email, ts } from "./common";
  */
 export const EmailThread = entity({
   artistId: id,
-  /** The admin's mailbox the thread is in (whose token reads it). */
+  /** The mailbox the thread is in (whose token reads it): the booking mailbox, or the sending admin's own when none was set. */
   account: email,
   threadId: z.string().min(1),
   target: z.strictObject({ kind: z.enum(["venue", "promoter", "festival", "act"]), id, name: z.string().min(1) }),
@@ -28,6 +28,8 @@ export const EmailThread = entity({
   lastSeenAt: ts.optional(),
   /** Set every time Roadie re-reads the thread, even when nothing changed ("Checked <relative>"). */
   syncedAt: ts.optional(),
+  /** Gmail message id → uid of the admin who sent it from Roadie. With a booking mailbox every admin sends from one address, so this says who wrote each message. */
+  sentBy: z.record(z.string(), z.string().min(1)).optional(),
 });
 export const EmailThreadInput = EmailThread.omit(serverMask);
 export type EmailThread = z.infer<typeof EmailThread>;

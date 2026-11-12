@@ -322,7 +322,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
         {missing.length > 0 && <div className="note s" data-testid="email-missing">Still to fill in: {missing.map((m) => `{{${m}}}`).join(", ")}</div>}
 
         <div className="note s" data-testid="email-note">
-          Sends from your Gmail, so it shows in Sent there too. {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
+          {artist?.bookingMail ? <>Sends from the booking mailbox ({artist.bookingMail.email}), so it shows in Sent there too.</> : "Sends from your Gmail, so it shows in Sent there too."} {thread ? "The reply stays on the thread." : `The thread lands on this ${word}${pitchId ? " and on the pitch" : ""}`}, and replies come back here.
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2">

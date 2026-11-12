@@ -504,7 +504,7 @@ export const templatesRemove = defineCommand({
 
 export const pitchesSendEmail = defineCommand({
   name: "pitches.sendEmail", roles: ["admin"],
-  description: "Send an already filled-in email from the caller's Gmail, log emailSent on the pitch timeline and set lastContactAt. The thread lands on the pitch's place (see email.send). Refuses text that still has {{fields}}.",
+  description: "Send an already filled-in email from the booking mailbox (or the caller's own Gmail when the band has none), log emailSent on the pitch timeline and set lastContactAt. The thread lands on the pitch's place (see email.send). Refuses text that still has {{fields}}.",
   input: z.strictObject({
     id: z.string().min(1), to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(),
     subject: z.string().min(1), body: z.string().min(1), threadId: z.string().optional(), markPitched: z.boolean().default(false),
@@ -518,7 +518,7 @@ export const pitchesSendEmail = defineCommand({
 export const pitchesDraftEmail = defineCommand({
   name: "pitches.draftEmail", roles: ["admin", "mcp"],
   description:
-    "Write an email as a DRAFT in the caller's Gmail (never sends) and note it on the pitch timeline. A person reviews and sends it from the app. " +
+    "Write an email as a DRAFT in the booking mailbox (or the caller's own Gmail when the band has none; never sends) and note it on the pitch timeline. A person reviews and sends it from the app. " +
     "Refuses text that still has {{fields}}.",
   input: z.strictObject({
     id: z.string().min(1), to: z.array(emailSchema).min(1), cc: z.array(emailSchema).optional(),

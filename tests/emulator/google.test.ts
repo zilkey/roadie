@@ -6,7 +6,7 @@ import { db } from "@/server/db";
 import { gmailClient } from "@/server/integrations/gmail";
 import { FEATURE_SCOPES, TOKEN_URL, REVOKE_URL } from "@/server/google/oauth";
 import { accessTokenForEmail, saveGrant } from "@/server/google/grants";
-import { resetEmulators, makeUser, makeArtist, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST } from "./helpers";
 
 // ---------- a stub for Google's HTTP APIs; everything else (the emulators) passes through ----------
 
@@ -130,6 +130,77 @@ test("connect: consent URL, finish only for the admin who started it, band accou
     assert.ok(!(await db.get("artists", TEST_ARTIST))?.google, "the band has no Google account now");
     const after = (off.json as { result: { configured: boolean; me: unknown; band: unknown } }).result;
     assert.deepEqual([after.configured, after.me, after.band], [true, null, null]);
+  } finally {
+    restore();
+    if (gmailWas === undefined) delete process.env.GMAIL_BASE_URL; else process.env.GMAIL_BASE_URL = gmailWas;
+  }
+});
+
+test("booking mailbox: only an admin with Gmail sets it, to themself; another takes over; only its owner clears it; disconnect clears it; sends use its token", async () => {
+  const restore = withGoogleEnv();
+  const gmailWas = process.env.GMAIL_BASE_URL;
+  try {
+    delete process.env.GMAIL_BASE_URL;
+    await makeArtist("Nora Quill Band", "iab");
+    const ingrid = await makeUser("ingrid@example.com", "admin", { name: "Ingrid" });
+    const rudy = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
+    const member = await makeUser("hugo@example.com", "member");
+    const grant = (uid: string, email: string, features: (keyof typeof FEATURE_SCOPES)[], token: string) =>
+      saveGrant(uid, email, email, { access_token: token, expires_in: 3600, refresh_token: `1//${token}`, scope: ["openid", ...features.flatMap((f) => FEATURE_SCOPES[f])].join(" ") });
+    const mailbox = async () => (await db.get("artists", TEST_ARTIST))?.bookingMail ?? null;
+    type St = { bookingMail: { email: string; name: string; isMe: boolean; gmail: boolean } | null };
+    const use = (t: string) => dispatch("google.useForBookingMail", bearer(t), {});
+    const clear = (t: string) => dispatch("google.clearBookingMail", bearer(t), {});
+
+    assert.equal((await use(member.token)).status, 403, "admins only");
+    assert.equal((await use(ingrid.token)).status, 400, "no Gmail connected yet");
+    await grant(ingrid.uid, "ingrid@example.com", ["calendar"], "at-i0");
+    assert.equal((await use(ingrid.token)).status, 400, "Calendar alone isn't Gmail");
+    assert.equal(await mailbox(), null);
+
+    await grant(ingrid.uid, "ingrid@example.com", ["gmail", "calendar"], "at-ingrid");
+    const set = await use(ingrid.token);
+    assert.equal(set.status, 200, JSON.stringify(set.json));
+    assert.deepEqual((set.json as { result: St }).result.bookingMail, { email: "ingrid@example.com", name: "Ingrid", isMe: true, gmail: true });
+    assert.deepEqual(await mailbox(), { uid: ingrid.uid, email: "ingrid@example.com" });
+    const seenByRudy = (await dispatch("google.status", bearer(rudy.token), {})).json as { result: St };
+    assert.equal(seenByRudy.result.bookingMail?.isMe, false);
+
+    // Rudy has no Gmail of his own: his sends, drafts and signature go through Ingrid's grant.
+    stubGoogle((s) => {
+      if (s.url.pathname.endsWith("/messages/send")) return { json: { id: "m1", threadId: "t1" } };
+      if (s.url.pathname.endsWith("/drafts")) return { json: { id: "d1", message: { id: "m2", threadId: "t2" } } };
+      if (s.url.pathname.includes("/threads/")) return { json: { id: "t1", messages: [] } };
+      if (s.url.href.startsWith(REVOKE_URL)) return { json: {} };
+    });
+    const v = await dispatch("venues.create", bearer(rudy.token), venue("Pine Hollow"));
+    assert.equal(v.status, 200, JSON.stringify(v.json));
+    const target = { kind: "venue", id: (v.json as { result: { id: string } }).result.id };
+    const sent = await dispatch("email.send", bearer(rudy.token), { target, to: ["rosa@pinehollow.example"], subject: "Hi", body: "Hello" });
+    assert.equal(sent.status, 200, JSON.stringify(sent.json));
+    assert.equal(seen.find((s) => s.url.pathname.endsWith("/messages/send"))?.auth, "Bearer at-ingrid");
+    const t = await db.get("emailThreads", `${TEST_ARTIST}__t1`);
+    assert.equal(t?.account, "ingrid@example.com");
+    assert.deepEqual(t?.sentBy, { m1: rudy.uid }, "who wrote it");
+    assert.equal((await dispatch("email.draft", bearer(rudy.token), { target, to: ["rosa@pinehollow.example"], subject: "Hi", body: "Hello" })).status, 200);
+    assert.equal(seen.find((s) => s.url.pathname.endsWith("/drafts"))?.auth, "Bearer at-ingrid", "the draft lands in Ingrid's Gmail");
+
+    // Rudy can't clear or claim it for Ingrid; he can only take it over with his own Gmail.
+    assert.equal((await clear(rudy.token)).status, 403, "only the owner clears it");
+    assert.equal((await use(rudy.token)).status, 400, "taking over needs your own Gmail");
+    await grant(rudy.uid, "rudy@example.com", ["gmail"], "at-rudy");
+    assert.equal((await use(rudy.token)).status, 200);
+    assert.deepEqual(await mailbox(), { uid: rudy.uid, email: "rudy@example.com" }, "taken over");
+    assert.equal((await clear(ingrid.token)).status, 403, "no longer Ingrid's to clear");
+    assert.equal((await clear(rudy.token)).status, 200);
+    assert.equal(await mailbox(), null);
+
+    // Disconnecting the owner's Google clears it.
+    assert.equal((await use(ingrid.token)).status, 200);
+    assert.equal((await dispatch("google.disconnect", bearer(rudy.token), {})).status, 200);
+    assert.equal((await mailbox())?.uid, ingrid.uid, "someone else disconnecting leaves it");
+    assert.equal((await dispatch("google.disconnect", bearer(ingrid.token), {})).status, 200);
+    assert.equal(await mailbox(), null);
   } finally {
     restore();
     if (gmailWas === undefined) delete process.env.GMAIL_BASE_URL; else process.env.GMAIL_BASE_URL = gmailWas;

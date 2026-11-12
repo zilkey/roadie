@@ -43,7 +43,7 @@ function GoogleSettings() {
     const r = await call<{ url: string }>("google.connectUrl", { features: picked });
     if (r) window.location.assign(r.url);
   }
-  async function act(name: "google.disconnect" | "google.useForBand") {
+  async function act(name: "google.disconnect" | "google.useForBand" | "google.useForBookingMail" | "google.clearBookingMail") {
     setNote(null);
     const s = await call<Status>(name, {});
     if (s) setStatus(s);
@@ -53,7 +53,7 @@ function GoogleSettings() {
   const adds = picked.some((f) => !me?.features.includes(f));
   return (
     <div className="grid gap-5">
-      <PageTitle title="Google" sub="Send pitches from your own Gmail, put shows and rehearsals on the band calendar, and find song files in Drive." />
+      <PageTitle title="Google" sub="Send pitches from Gmail, put shows and rehearsals on the band calendar, and find song files in Drive." />
       {!status ? <p className="s" data-testid="google-loading">Loading…</p> : !status.configured ? (
         <NotConfiguredCard />
       ) : (
@@ -86,6 +86,23 @@ function GoogleSettings() {
                 {!me ? "Connect Google" : adds ? "Add to connection" : "Reconnect"}
               </button>
             </div></div>
+          </section>
+
+          <section className="card" data-testid="google-booking-mail" aria-labelledby="google-booking-mail-title">
+            <div className="card-head"><h2 id="google-booking-mail-title">Booking mailbox</h2>{status.bookingMail && <span className="tag" data-testid="booking-mail-email">{status.bookingMail.email}</span>}</div>
+            <p className="m-0" data-testid="booking-mail-status">
+              {status.bookingMail
+                ? <>Every admin&apos;s booking emails go out from, and drafts land in, <b>{status.bookingMail.isMe ? "your" : `${status.bookingMail.name}’s`}</b> Gmail. Searches look there too, and each message shows which admin wrote it.
+                  {!status.bookingMail.gmail && <span> Gmail isn&apos;t connected on it any more, so sending won&apos;t work until {status.bookingMail.isMe ? "you connect" : "they connect"} it again.</span>}</>
+                : "Not set. Each admin sends from their own Gmail. To have everyone send from one Gmail, its owner connects Gmail above and presses Use my Gmail."}
+            </p>
+            {(status.bookingMail?.isMe || me?.features.includes("gmail")) && (
+              <div className="card-foot"><div className="end">
+                {status.bookingMail?.isMe
+                  ? <button type="button" className="btn text" disabled={busy} onClick={() => act("google.clearBookingMail")} data-testid="booking-mail-clear">Stop using my Gmail</button>
+                  : <button type="button" className="btn" disabled={busy} onClick={() => act("google.useForBookingMail")} data-testid="booking-mail-use">Use my Gmail</button>}
+              </div></div>
+            )}
           </section>
 
           <section className="card" data-testid="google-band" aria-labelledby="google-band-title">

@@ -11,7 +11,7 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, safeReturnTo, signState, verifyState } from "../google/oauth";
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
-import { bandGoogle } from "../google/band";
+import { bandGoogle, bookingMailOf } from "../google/band";
 import { calendarClient, canWrite, driveClient, IntegrationError, useRealGoogle, type CalInfo } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
 
@@ -83,18 +83,20 @@ async function status(ctx: Ctx) {
   if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, songwritingFolder, showsFolder, releasesFolder, postsFolder, ...cal };
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
-  const [me, band] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId)]);
+  const [me, band, mail] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId), bookingMailOf(artistId)]);
   const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
+  const [mailUser, mailGrant] = mail ? await Promise.all([db.get("users", mail.uid), getGrant(mail.uid)]) : [null, null];
   return {
     configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, songwritingFolder, showsFolder, releasesFolder, postsFolder, ...cal,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
     band: band ? { email: band.email, name: (bandUser?.name as string | undefined) ?? band.email, isMe: band.uid === ctx.uid, features: bandGrant?.features ?? [] } : null,
+    bookingMail: mail ? { email: mail.email, name: (mailUser?.name as string | undefined) ?? mail.email, isMe: mail.uid === ctx.uid, gmail: !!mailGrant?.features.includes("gmail") } : null,
   };
 }
 
 export const googleStatus = defineCommand({
   name: "google.status", roles: ["admin"], input: z.strictObject({}),
-  description: "Read-only: whether Google is set up on this server, which features the caller's own Google account is connected for, which admin's account the band's Drive uses, and the band calendar.",
+  description: "Read-only: whether Google is set up on this server, which features the caller's own Google account is connected for, which admin's account the band's Drive uses, the booking mailbox, and the band calendar.",
   run: (ctx) => status(ctx),
 });
 
@@ -148,16 +150,44 @@ export const googleUseForBand = defineCommand({
   },
 });
 
+export const googleUseForBookingMail = defineCommand({
+  name: "google.useForBookingMail", roles: ["admin"], input: z.strictObject({}),
+  description: "Make the caller's own connected Gmail the booking mailbox: every admin's email sends, drafts and searches go through it. Only the mailbox's owner can do this, for themself; it takes over from whoever had it.",
+  async run(ctx) {
+    const artistId = artistOf(ctx);
+    const g = await getGrant(ctx.uid);
+    if (!g?.features.includes("gmail")) throw new AppError("invalid_input", "Connect your Gmail first", 400);
+    await db.update(ctx, "artists", artistId, { bookingMail: { uid: ctx.uid, email: g.googleEmail } });
+    return status(ctx);
+  },
+});
+
+export const googleClearBookingMail = defineCommand({
+  name: "google.clearBookingMail", roles: ["admin"], input: z.strictObject({}),
+  description: "Stop using the caller's Gmail as the booking mailbox; each admin sends from their own Gmail again. Only the mailbox's owner can.",
+  async run(ctx) {
+    const artistId = artistOf(ctx);
+    const mail = await bookingMailOf(artistId);
+    if (mail && mail.uid !== ctx.uid) throw new AppError("forbidden", "Only the booking mailbox's owner can stop using it", 403);
+    if (mail) await db.update(ctx, "artists", artistId, { bookingMail: null });
+    return status(ctx);
+  },
+});
+
 export const googleDisconnect = defineCommand({
   name: "google.disconnect", roles: ["admin"], input: z.strictObject({}),
-  description: "Disconnect the caller's Google account: revoke Roadie's access at Google and forget the grant. If it was the band's account, the band has none until another admin connects.",
+  description: "Disconnect the caller's Google account: revoke Roadie's access at Google and forget the grant. If it was the band's account, the band has none until another admin connects; if it was the booking mailbox, each admin sends from their own Gmail again.",
   async run(ctx) {
     artistOf(ctx);
     const token = await removeGrant(ctx.uid);
     if (token) await revoke(token);
     // Every artist whose band account this was loses it, not only the one the caller is in.
     for (const a of await db.list("artists")) {
-      if ((a.google as { uid?: string } | null | undefined)?.uid === ctx.uid) await db.update({ ...ctx, artistId: a.id }, "artists", a.id, { google: null });
+      const clear = {
+        ...((a.google as { uid?: string } | null | undefined)?.uid === ctx.uid ? { google: null } : {}),
+        ...((a.bookingMail as { uid?: string } | null | undefined)?.uid === ctx.uid ? { bookingMail: null } : {}),
+      };
+      if (Object.keys(clear).length) await db.update({ ...ctx, artistId: a.id }, "artists", a.id, clear);
     }
     return status(ctx);
   },
@@ -339,4 +369,4 @@ export const googleSetPostsFolder = defineCommand({
   },
 });
 
-export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleDisconnect, googleFindFolders, googleFolder, googleSetBandFolder, googleSetChartsFolder, googleSetDemosFolder, googleSetSongwritingFolder, googleSetRehearsalFolder, googleSetShowsFolder, googleSetReleasesFolder, googleSetPostsFolder];
+export const googleCommands = [googleCalendars, googleSetCalendar, googleCheckCalendar, googleStatus, googleConnectUrl, googleFinishConnect, googleUseForBand, googleUseForBookingMail, googleClearBookingMail, googleDisconnect, googleFindFolders, googleFolder, googleSetBandFolder, googleSetChartsFolder, googleSetDemosFolder, googleSetSongwritingFolder, googleSetRehearsalFolder, googleSetShowsFolder, googleSetReleasesFolder, googleSetPostsFolder];

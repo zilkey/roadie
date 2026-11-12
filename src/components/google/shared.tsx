@@ -7,6 +7,8 @@ export interface Status {
   fakes?: Feature[];
   me: { googleEmail: string; features: Feature[] } | null;
   band: { email: string; name: string; isMe: boolean; features: Feature[] } | null;
+  /** The booking mailbox every admin's email goes through; gmail says its owner's Gmail is still connected. */
+  bookingMail?: { email: string; name: string; isMe: boolean; gmail: boolean } | null;
   missing?: Feature[];
   /** Drive can be used for this band: the local fake, or the band's Google account has Drive connected. */
   driveReady: boolean;

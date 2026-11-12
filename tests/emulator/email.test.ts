@@ -190,3 +190,39 @@ test("an act is a thread target: email.send lands the thread on the act, email.s
   assert.equal(hits.find((h) => h.threadId === sent.threadId)?.linkedId, emailThreadId(TEST_ARTIST, sent.threadId));
   await assert.rejects(cmd("email.send", { target: { kind: "act", id: "nope" }, to: ["a@x.example"], subject: "Hi", body: "x" }, actx), /not found/);
 });
+
+test("booking mailbox: accountOf is the caller's own Gmail without it and the booking mailbox with it; sends say who wrote them; old threads keep their account", async () => {
+  const { accountOf } = await import("@/server/commands/email");
+  const nora = (await makeUser("nora@example.com", "admin", { name: "Nora Quill" })).uid;
+  const noraCtx: Ctx = { uid: nora, role: "admin", via: "app", runId: newRunId() };
+  assert.equal(await accountOf(ctx), "rudy@example.com", "no setting: each admin's own");
+  assert.equal(await accountOf(noraCtx), "nora@example.com");
+
+  const { venueId, pitchId } = await pineHollow();
+  const old = await cmd("pitches.sendEmail", { id: pitchId, to: ["rosa@pinehollow.example"], subject: "Before", body: "Hi Rosa" });
+  assert.equal((await thread(old.threadId)).account, "rudy@example.com");
+
+  await db.update({ ...ctx, artistId: TEST_ARTIST }, "artists", TEST_ARTIST, { bookingMail: { uid, email: "rudy@example.com" } });
+  assert.equal(await accountOf(noraCtx), "rudy@example.com", "every admin goes through the booking mailbox");
+  assert.equal(await accountOf({ ...noraCtx, artistId: TEST_ARTIST }), "rudy@example.com");
+
+  const sent = await cmd("email.send", { target: { kind: "venue", id: venueId }, pitchId, to: ["rosa@pinehollow.example"], subject: "Dates", body: "Here you go" }, noraCtx);
+  const t = await thread(sent.threadId);
+  assert.equal(t.account, "rudy@example.com");
+  assert.equal(t.lastFrom, "rudy@example.com");
+  assert.deepEqual(t.sentBy, { [sent.messageId]: nora });
+  const read = await cmd("email.thread", { id: t.id }, noraCtx);
+  assert.deepEqual(read.sentBy, { [sent.messageId]: "Nora Quill" });
+  // A pitch send from before `sentBy` existed is attributed from its timeline entry's createdBy.
+  await db.update(ctx, "emailThreads", emailThreadId(TEST_ARTIST, old.threadId), { sentBy: {} });
+  const oldRead = await cmd("email.thread", { id: emailThreadId(TEST_ARTIST, old.threadId) }, noraCtx);
+  assert.equal(Object.values(oldRead.sentBy)[0], "Rudy Smith");
+
+  // A thread linked from Nora's own mailbox before the setting keeps that account through a sync.
+  await db.update(ctx, "emailThreads", emailThreadId(TEST_ARTIST, old.threadId), { account: "nora@example.com" });
+  await cmd("email.sync", { target: { kind: "venue", id: venueId } }, noraCtx);
+  assert.equal((await thread(old.threadId)).account, "nora@example.com", "not migrated");
+
+  await db.update({ ...ctx, artistId: TEST_ARTIST }, "artists", TEST_ARTIST, { bookingMail: null });
+  assert.equal(await accountOf(noraCtx), "nora@example.com", "cleared: back to each admin's own");
+});

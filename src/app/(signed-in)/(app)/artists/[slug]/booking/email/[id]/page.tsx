@@ -38,12 +38,13 @@ function ThreadPage() {
   const profile = useProfile();
   const { call, error, busy } = useCommand();
   const [messages, setMessages] = useState<Message[] | null>(null);
+  const [sentBy, setSentBy] = useState<Record<string, string>>({}); // Gmail message id → the admin who wrote it from Roadie
   const [fresh, setFresh] = useState<boolean | null>(null); // "New" is decided before opening the thread marks it seen
   const loaded = useRef(false);
 
   const load = useCallback(async () => {
-    const r = await call<{ messages: Message[] }>("email.thread", { id });
-    if (r) setMessages([...r.messages].sort((x, y) => x.date.localeCompare(y.date)));
+    const r = await call<{ messages: Message[]; sentBy?: Record<string, string> }>("email.thread", { id });
+    if (r) { setMessages([...r.messages].sort((x, y) => x.date.localeCompare(y.date))); setSentBy(r.sentBy ?? {}); }
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (loaded.current || !t) return;
@@ -83,7 +84,7 @@ function ThreadPage() {
       <ErrorBox error={error} />
       {messages !== null && (
         <div className="grid gap-3" data-testid="thread-messages">
-          {messages.map((m, n) => <MessageView key={m.id} m={m} n={n} last={n === messages.length - 1} isNew={n === messages.length - 1 && m.direction === "received" && fresh === true} account={t.account} nameOf={nameOf} />)}
+          {messages.map((m, n) => <MessageView key={m.id} m={m} n={n} last={n === messages.length - 1} isNew={n === messages.length - 1 && m.direction === "received" && fresh === true} account={t.account} sentBy={sentBy[m.id]} nameOf={nameOf} />)}
         </div>
       )}
       {messages !== null && <ReplyCard t={t} messages={messages} nameOf={nameOf} busy={busy} onSent={load} />}
@@ -91,7 +92,7 @@ function ThreadPage() {
   );
 }
 
-function MessageView({ m, n, last, isNew, account, nameOf }: { m: Message; n: number; last: boolean; isNew: boolean; account: string; nameOf(a: string, fromName?: string): string }) {
+function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Message; n: number; last: boolean; isNew: boolean; account: string; sentBy?: string; nameOf(a: string, fromName?: string): string }) {
   const [open, setOpen] = useState(last);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const sent = m.direction === "sent";
@@ -104,6 +105,7 @@ function MessageView({ m, n, last, isNew, account, nameOf }: { m: Message; n: nu
         <span className={`avatar${sent ? "" : " grey"}`} aria-hidden>{initialsOf(who)}</span>
         <span className="grid min-w-0 flex-1 gap-0.5">
           <span className="flex flex-wrap items-center gap-2"><b>{who}</b>{isNew && <span className="chip a" data-testid="msg-new">New</span>}</span>
+          {open && sentBy && <span className="s truncate" data-testid={`msg-sent-by-${n}`}>Sent by {sentBy} from {m.from}</span>}
           {open
             ? <span className="s truncate">{who} &lt;{m.from}&gt; · to {toText}{m.cc.length > 0 && <> · cc {m.cc.map((a) => nameOf(a)).join(", ")}</>}</span>
             : <span className="s truncate" data-testid={`msg-preview-${n}`}>{previewOf(m.body)}</span>}

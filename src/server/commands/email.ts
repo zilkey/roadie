@@ -19,6 +19,7 @@ import { e164 } from "@/schema/normalize";
 import { BAND_NOTES, bandNoteId, emailThreadId, venueNoteId, email as emailSchema } from "@/schema";
 import { withBandNote } from "@/lib/bandNotes";
 import { callerArtistId, privateOf } from "../venues";
+import { bookingMailOf } from "../google/band";
 
 export const gmailFail = (e: unknown): never => {
   if (e instanceof IntegrationError) throw new AppError("gmail_error", `Gmail: ${e.message}`, 502);
@@ -52,7 +53,17 @@ async function artistIdFor(ctx: Ctx): Promise<string> {
   if (all.length !== 1) throw new AppError("not_found", "Set up the artist first", 404);
   return all[0].id;
 }
-async function accountOf(ctx: Ctx): Promise<string> {
+/**
+ * The mailbox the caller's email goes through: the booking mailbox when the band has one (every admin sends, drafts and
+ * searches through it), else the caller's own Gmail. Gmail finds the grant by this address (accessTokenForEmail).
+ * Threads already linked keep the `account` they were read from.
+ */
+export async function accountOf(ctx: Ctx): Promise<string> {
+  const artistId = await artistIdFor(ctx).catch(() => null); // no artist to read the setting from: the caller's own, as before
+  const mail = artistId ? await bookingMailOf(artistId) : null;
+  return mail ? mail.email : ownAccount(ctx);
+}
+async function ownAccount(ctx: Ctx): Promise<string> {
   const u = await db.get("users", ctx.uid);
   if (!u) throw new AppError("forbidden", "No user for this account", 403);
   return u.email as string;
@@ -79,10 +90,10 @@ export function summarize(thread: MailThread, account: string) {
 }
 
 /** Create the thread's doc, or refresh it (and bring back an unlinked one when `place` is given). */
-async function upsertThread(w: Writer, a: { artistId: string; account: string; thread: MailThread; place?: Place; pitchId?: string }) {
+async function upsertThread(w: Writer, a: { artistId: string; account: string; thread: MailThread; place?: Place; pitchId?: string; sentBy?: { messageId: string; uid: string } }) {
   const id = emailThreadId(a.artistId, a.thread.id);
   const existing = await w.get("emailThreads", id);
-  const sum = summarize(a.thread, a.account);
+  const sum = { ...summarize(a.thread, a.account), ...(a.sentBy ? { sentBy: { ...(existing?.sentBy ?? {}), [a.sentBy.messageId]: a.sentBy.uid } } : {}) };
   if (!existing) {
     if (!a.place) throw new AppError("invalid_input", "Which place does this thread belong to?", 400);
     await w.create("emailThreads", { artistId: a.artistId, account: a.account, threadId: a.thread.id, target: a.place, ...(a.pitchId ? { pitchId: a.pitchId } : {}), ...sum, syncedAt: w.now }, { id });
@@ -157,7 +168,7 @@ export async function sendMail(ctx: Ctx, i: { place: Place; pitchId?: string; th
   const msg = await gmail.send({ account, to: i.to, cc: i.cc, subject: i.subject, body: i.body, html: i.html && sanitizeHtml(i.html), threadId: i.threadId }).catch(gmailFail);
   const thread = await gmail.getThread(msg.threadId, account).catch((): MailThread => ({ id: msg.threadId, subject: msg.subject, messages: [msg], lastDate: msg.date }));
   return run(ctx, async (w) => {
-    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchId: i.pitchId });
+    const id = await upsertThread(w, { artistId, account, thread, place: i.place, pitchId: i.pitchId, sentBy: { messageId: msg.id, uid: ctx.uid } });
     let activityId: string | undefined;
     if (i.pitchId) {
       const p = (await w.get("pitches", i.pitchId))!;
@@ -190,8 +201,9 @@ export async function draftMail(ctx: Ctx, i: { pitchId?: string; threadId?: stri
 export async function checkPitchReplies(ctx: Ctx, pitchId: string): Promise<{ added: number }> {
   const pitch = await requirePitchDoc(pitchId);
   const place = await placeOfPitch(pitch);
-  const [artistId, acts, me] = [await artistIdFor(ctx), await db.list(`pitches/${pitchId}/activity`), await accountOf(ctx)];
+  const [artistId, acts, me] = [await artistIdFor(ctx), await db.list(`pitches/${pitchId}/activity`), await ownAccount(ctx)];
   const threads = new Map<string, string>();
+  // Timeline entries from before `gmail.account` was stored were sent from the admin's own Gmail, never the booking mailbox.
   for (const a of acts) if (a.gmail?.threadId && !threads.has(a.gmail.threadId)) threads.set(a.gmail.threadId, (a.gmail.account as string | undefined) ?? me);
   let added = 0;
   for (const [threadId, account] of threads) {
@@ -205,6 +217,26 @@ export async function checkPitchReplies(ctx: Ctx, pitchId: string): Promise<{ ad
 
 /** Firestore timestamps as ISO strings, so a doc can go back over the wire. */
 const plain = (d: Doc) => Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v && typeof (v as { toDate?: unknown }).toDate === "function" ? (v as { toDate(): Date }).toDate().toISOString() : v]));
+
+/**
+ * Who sent each message from Roadie, by Gmail message id: the thread's `sentBy`, then the pitch timeline's emailSent
+ * entries (their `createdBy`, stamped by db.ts) for sends from before `sentBy`. Values are the admins' names.
+ */
+async function sentByNames(d: Doc): Promise<Record<string, string>> {
+  const uids: Record<string, string> = {};
+  if (d.pitchId) {
+    for (const a of await db.list(`pitches/${d.pitchId}/activity`)) {
+      if (a.type === "emailSent" && a.gmail?.messageId && a.gmail.threadId === d.threadId && a.createdBy) uids[a.gmail.messageId] = a.createdBy;
+    }
+  }
+  Object.assign(uids, (d.sentBy ?? {}) as Record<string, string>);
+  const names = new Map<string, string>();
+  await Promise.all([...new Set(Object.values(uids))].map(async (uid) => {
+    const u = await db.get("users", uid);
+    names.set(uid, ((u?.name as string | undefined) || (u?.email as string | undefined)) ?? "an admin");
+  }));
+  return Object.fromEntries(Object.entries(uids).map(([m, uid]) => [m, names.get(uid)!]));
+}
 
 async function ownThread(ctx: Ctx, id: string): Promise<Doc> {
   const [d, artistId] = [await db.get("emailThreads", id), await artistIdFor(ctx)];
@@ -242,14 +274,14 @@ export const emailThread = defineCommand({
     const d = await ownThread(ctx, id);
     const t = await gmailClient().getThread(d.threadId, d.account).catch(gmailFail);
     await db.update(ctx, "emailThreads", id, { lastSeenAt: new Date() });
-    return { thread: plain({ ...d, lastSeenAt: new Date() }), messages: t.messages };
+    return { thread: plain({ ...d, lastSeenAt: new Date() }), messages: t.messages, sentBy: await sentByNames(d) };
   },
 });
 
 const sendIn = z.strictObject({ target: targetIn, ...mailIn, markPitched: z.boolean().default(false) });
 export const emailSend = defineCommand({
   name: "email.send", roles: ["admin"],
-  description: "Send an already filled-in email from the caller's Gmail (a reply when threadId is given). The thread lands on the place; with pitchId it is logged on that pitch's timeline and sets lastContactAt.",
+  description: "Send an already filled-in email from the booking mailbox, or the caller's own Gmail when the band has none (a reply when threadId is given). The thread lands on the place; with pitchId it is logged on that pitch's timeline and sets lastContactAt.",
   input: sendIn,
   async run(ctx, i) {
     const { target, ...rest } = i;
@@ -267,7 +299,7 @@ export const emailDraft = defineCommand({
 
 export const emailSignature = defineCommand({
   name: "email.signature", roles: ["admin"],
-  description: "The caller's Gmail signature (sanitized HTML and plain text), or null when Gmail isn't connected or its grant can't read settings.",
+  description: "The Gmail signature of the mailbox the caller sends from (the booking mailbox, or their own): sanitized HTML and plain text, or null when Gmail isn't connected or its grant can't read settings.",
   input: z.object({}),
   async run(ctx) {
     const account = await accountOf(ctx);
@@ -365,7 +397,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9@._ -]+/g, " ").rep
 
 export const emailSearch = defineCommand({
   name: "email.search", roles: ["admin"],
-  description: "Search the caller's Gmail for threads about a place: mail from or to its contacts (or to the given addresses or domain) or matching the text (the place's name when none). Read only, newest first, at most 25 threads. linkedId says the thread is already on the place.",
+  description: "Search the booking mailbox (or the caller's own Gmail when the band has none) for threads about a place: mail from or to its contacts (or to the given addresses or domain) or matching the text (the place's name when none). Read only, newest first, at most 25 threads. linkedId says the thread is already on the place.",
   input: z.strictObject({ target: targetIn, q: z.string().optional(), addresses: z.array(emailSchema).optional(), domain: z.string().regex(/^[a-z0-9.-]+$/i).optional() }),
   async run(ctx, i) {
     const [place, artistId, account] = [await resolvePlace(i.target), await artistIdFor(ctx), await accountOf(ctx)];
@@ -380,7 +412,7 @@ export const emailSearch = defineCommand({
 
 export const emailPeople = defineCommand({
   name: "email.people", roles: ["admin"],
-  description: "Who the caller has emailed with, from Gmail: q is a name, an address or a domain. Returns {email, name, title?, phone?, lastDate, count, contactId?}, with title and phone guessed from the sender's signature. Read only, newest first, at most 25.",
+  description: "Who the band has emailed with, from the booking mailbox (or the caller's own Gmail when the band has none): q is a name, an address or a domain. Returns {email, name, title?, phone?, lastDate, count, contactId?}, with title and phone guessed from the sender's signature. Read only, newest first, at most 25.",
   input: z.strictObject({ target: targetIn, q: z.string().trim().min(1) }),
   async run(ctx, i) {
     const account = await accountOf(ctx);
