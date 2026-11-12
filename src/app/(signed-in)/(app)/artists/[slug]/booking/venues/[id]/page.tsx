@@ -17,6 +17,7 @@ import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
 import { useVenueTypes, venueTypeLabel } from "@/lib/venueTypes";
 import { VenueEventsTab } from "@/components/booking/VenueEventsTab";
+import { WhoWeKnowCard } from "@/components/booking/WhoWeKnow";
 import type { Show, Venue } from "@/schema";
 
 type Tab = "details" | "events";
@@ -116,6 +117,7 @@ function VenueView() {
         <CardGroup kind="private">
           <DetailCard private title="Contacts" testid="contacts-card" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>{contacts}</DetailCard>
           <AddContactDialog kind="venues" parentId={id} parentName={v.name} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
+          <WhoWeKnowCard b={b} venue={{ id, ...mine }} />
           <DetailCard private title="Our notes" testid="notes-private">
             <KV rows={[
               ["Booked by", (

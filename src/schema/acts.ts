@@ -44,5 +44,5 @@ export const actRelationship = z.enum(ACT_RELATIONSHIPS);
 
 /** What the act commands accept: the shared fields plus this band's take, which goes to its actNotes. */
 export const ActInput = ActRecord.omit({ lookupCandidates: true, lookedUpAt: true }).extend({
-  shortlist: z.boolean().optional(), relationship: actRelationship.optional(), note: z.string().optional(), contactIds: z.array(id).optional(),
+  shortlist: z.boolean().optional(), weKnow: z.boolean().optional(), relationship: actRelationship.optional(), note: z.string().optional(), contactIds: z.array(id).optional(),
 });

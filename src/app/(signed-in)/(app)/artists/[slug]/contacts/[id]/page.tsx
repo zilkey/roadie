@@ -16,6 +16,7 @@ import { PickDialog, RowX, type PickItem } from "@/components/booking/PickDialog
 import { withBandNote } from "@/lib/bandNotes";
 import type { ActDoc, ActNote, Contact, Expense, Payout, Show, ShowDeal } from "@/schema";
 import { personSearchUrl } from "@/lib/links";
+import { WeKnowToggle } from "@/components/booking/WhoWeKnow";
 
 export default function Page() { return <AdminOnly><ContactPage /></AdminOnly>; }
 
@@ -83,6 +84,7 @@ function ContactPage() {
   return (
     <DetailPage testid="contact-page" back={<BackLink mode="back" href="/contacts" label="All contacts" />} title={c.name} meta={c.title}
       more={<span className="flex items-center gap-2">
+        <WeKnowToggle kind="contact" id={id} on={!!c.weKnow} />
         <a className="btn ghost sm" href={personSearchUrl(c.name, c.title)} target="_blank" rel="noreferrer" data-testid="contact-google">Google ↗</a>
         <Menu label="More actions" testid="contact" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive contact", danger: true, onSelect: archive }]} />
       </span>}>

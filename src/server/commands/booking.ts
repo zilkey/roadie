@@ -288,7 +288,8 @@ export const contactsCreate = defineCommand({
 });
 export const contactsUpdate = defineCommand({
   name: "contacts.update", roles: [...ROLES], input: patchInput(ContactIn),
-  description: "Edit a contact. emails/phones replace the lists (first email is primary; emails lowercased, phones stored E.164): read first. Use contacts.attach/detach for links. notes is this band's private notes (replaces the text: read first to add).",
+  description: "Edit a contact. emails/phones replace the lists (first email is primary; emails lowercased, phones stored E.164): read first. Use contacts.attach/detach for links. notes is this band's private notes (replaces the text: read first to add). " +
+    "weKnow: true when someone in the band knows this person (\"we know Kate\", \"Sam's a friend\"), false to unmark; only when the person says so.",
   run: (ctx, { id, patch }) => run(ctx, async (w) => { await requireContact(w, id); return updateNoted(ctx, w, "contacts", id, patch as Record<string, unknown>); }),
 });
 export const contactsRemove = defineCommand({

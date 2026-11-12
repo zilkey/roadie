@@ -27,6 +27,7 @@ import { VenueCalendars } from "@/components/booking/VenueCalendars";
 import { ROUTES } from "@/lib/routes";
 import { ActsTab } from "@/components/booking/ActsTab";
 import { useBookingSearch } from "@/components/booking/BookingNav";
+import { WeKnowChip, useVenuesWeKnow } from "@/components/booking/WhoWeKnow";
 
 /** The booking index. Each section has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to; the Booking sub-nav (BookingNav) switches between them. */
 export function BookingIndex({ seg }: { seg: Tab }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
@@ -40,6 +41,7 @@ type Add = null | "venue" | "promoter" | "festival" | "act";
 function Booking({ seg }: { seg: Tab }) {
   const router = useRouter();
   const b = useBooking();
+  const weKnow = useVenuesWeKnow(b, seg !== "venues");
   const { call, error } = useCommand();
   // The search survives switching sections: the sub-nav's links carry it along as ?q= on the section's route.
   const params = useSearchParams();
@@ -198,7 +200,7 @@ function Booking({ seg }: { seg: Tab }) {
           </div>
         )}
         {note && <p className="s" role="status" data-testid="selection-note">{note}</p>}
-        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={listSeg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} selected={seg === "pitches" ? picked : undefined} onSelect={togglePick} /></div>}
+        {shownRows.length > 0 && <div className="book-tw"><BookingTable seg={listSeg} rows={shownRows} onFlag={setTarget} sort={sort} onSort={setSort} selected={seg === "pitches" ? picked : undefined} onSelect={togglePick} weKnow={weKnow} /></div>}
         {shownRows.length > 0 && CAPTION[listSeg] && <p className="s" data-testid="table-caption">{CAPTION[listSeg]}</p>}
         {seg === "festivals" && page.hasMore && (
           <button type="button" className="btn ghost justify-self-center" disabled={page.loadingMore} onClick={() => void page.more()} data-testid="festivals-more">
@@ -262,7 +264,7 @@ const FlagIcon = ({ filled }: { filled: boolean }) => (
 );
 
 /** `q` marks the matched text in the name and email cells; without `onSort` the headers don't sort (search buckets). */
-export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false, selected, onSelect }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean; /** Pitch List: pitch ids ticked, and the toggle (admins). Without them there is no checkbox column. */ selected?: string[]; onSelect?(pitchId: string): void }) {
+export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "", compact = false, selected, onSelect, weKnow }: { seg: Seg; rows: ListRow[]; onFlag(t: PitchTarget): void; sort?: FestivalSort; onSort?(s: FestivalSort): void; q?: string; compact?: boolean; /** Pitch List: pitch ids ticked, and the toggle (admins). Without them there is no checkbox column. */ selected?: string[]; onSelect?(pitchId: string): void; /** Venue ids with someone we know (#82 S10): their rows get the chip. */ weKnow?: Set<string> }) {
   const hl = (text: string): ReactNode => {
     if (!q.trim()) return text;
     const h = highlight(text, q);
@@ -336,6 +338,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     <td className="name">
       {seg === "pitches" ? <Link href={r.pitch ? `/booking/pitches/${r.pitch.id}` : hrefFor(r.to.kind, r.to.id)} className="nm" data-testid={`${r.kind}-full-${r.id}`}>{hl(r.name)}</Link>
         : nameLink(r, r.to, `${r.kind}-full-${r.id}`, "Venue page")}{status(r)}
+      {r.kind === "venue" && weKnow?.has(r.id) && <> <WeKnowChip id={r.id} /></>}
       {r.promoters.length > 0 && <span className="sub">promoted by {r.promoters.map((p, i) => <span key={p.id}>{i > 0 && ", "}<Link href={hrefFor("promoter", p.id)}>{p.name}</Link></span>)}</span>}
     </td>
   );

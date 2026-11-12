@@ -92,3 +92,35 @@ export function useDocs<T = Record<string, unknown>>(path: string, ids: readonly
   useBusyWhile(loading);
   return { rows, byId: new Map(rows.map((r) => [r.id, r])), error, loading };
 }
+
+/**
+ * Live read-only listener on the docs whose array `field` holds any of `values` (array-contains-any, in chunks of 30, Firestore's
+ * limit). No soft-delete filter (venueEvents have no deletedAt). An empty `values` or `skip` subscribes to nothing.
+ */
+export function useArrayContainsAny<T = Record<string, unknown>>(path: string, field: string, values: readonly string[], opts: { skip?: boolean } = {}) {
+  const { state } = useAuth();
+  const ready = state.status === "ready" && !opts.skip;
+  const [byChunk, setByChunk] = useState<Record<number, Row<T>[]>>({});
+  const [error, setError] = useState<string | null>(null);
+  const key = [...new Set(values)].sort().join(",");
+  useEffect(() => {
+    setByChunk({});
+    if (!ready || !key) return;
+    const all = key.split(",");
+    const offs: (() => void)[] = [];
+    for (let i = 0; i < all.length; i += 30) {
+      const n = i;
+      offs.push(onSnapshot(
+        query(collection(clientDb(), path), where(field, "array-contains-any", all.slice(i, i + 30))),
+        (s) => { setByChunk((m) => ({ ...m, [n]: s.docs.map((d) => ({ ...(d.data() as T), id: d.id })) })); setError(null); },
+        (e) => setError(e.message),
+      ));
+    }
+    return () => offs.forEach((f) => f());
+  }, [ready, path, field, key]);
+  // A doc can match two chunks (two of its acts in different chunks): keep one.
+  const rows = [...new Map(Object.values(byChunk).flat().map((r) => [r.id, r])).values()];
+  const loading = ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error;
+  useBusyWhile(loading);
+  return { rows, error, loading };
+}

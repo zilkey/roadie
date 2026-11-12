@@ -20,6 +20,6 @@ export const Contact = entity({
 });
 /** What db.ts validates for `contacts`: the shared record. */
 export const ContactRecord = Contact.omit({ ...serverMask, matchKey: true });
-/** What the contact commands accept: the shared fields plus this band's notes, which go to its contactNotes (src/schema/bandNotes.ts). */
-export const ContactInput = ContactRecord.extend({ notes: z.string().optional() });
+/** What the contact commands accept: the shared fields plus this band's notes and "we know them" flag, which go to its contactNotes (src/schema/bandNotes.ts). */
+export const ContactInput = ContactRecord.extend({ notes: z.string().optional(), weKnow: z.boolean().optional() });
 export type Contact = z.infer<typeof Contact>;

@@ -88,6 +88,7 @@ export const actsCreate = defineCommand({
 export const actsUpdate = defineCommand({
   name: "acts.update", roles: [...ROLES], input: patchInput(ActIn),
   description: "Edit an act: its shared facts (name, description, genres, hometown, links, imageUrl), or this band's shortlist (Watch), relationship (openFor|peer|notFit), note and contactIds. " +
+    "weKnow: true when the band knows this act (\"we know those guys\", \"friends of ours\"), false to unmark; it is not a shortlist or a relationship. " +
     "note replaces the text: read first to add. contactIds replaces the list; link people with contacts.attach (kind acts).",
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "acts", id, patch as Record<string, unknown>)),
 });

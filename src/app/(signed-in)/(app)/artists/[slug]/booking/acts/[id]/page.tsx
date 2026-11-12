@@ -20,6 +20,7 @@ import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { ActThumb, StarIcon } from "@/components/booking/ActsTab";
 import { FindTeamButton, TeamFindings } from "@/components/booking/ActTeam";
 import { EventPoster } from "@/components/booking/VenueEventBits";
+import { WeKnowToggle } from "@/components/booking/WhoWeKnow";
 import { actSearchUrl, actStats, type EvLike, type TeamResult } from "@/lib/acts";
 import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
 import { dateInBandZone, fmtInstant } from "@/lib/timezone";
@@ -88,6 +89,7 @@ function ActPage() {
         <button type="button" className={on ? "btn soft" : "btn"} aria-pressed={on} data-on={on ? "1" : "0"} disabled={busy} onClick={() => void call("acts.shortlist", { id, on: !on })} data-testid="act-shortlist">
           <StarIcon on={on} size={16} />{on ? "Watching" : "Watch"}
         </button>
+        <WeKnowToggle kind="act" id={id} on={!!take?.weKnow} />
         {reachable
           ? <Link href={`/booking/email/new?target=act:${id}`} className="btn acc" data-testid="act-pitch">Pitch them</Link>
           : social

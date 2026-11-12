@@ -4,7 +4,7 @@
  */
 import { BAND_NOTES, type NotedKind } from "@/schema/bandNotes";
 
-export type BandNoteFields = Partial<Record<"notes" | "payNotes" | "howToPitch" | "note" | "relationship", string>> & { venueIds?: string[]; contactIds?: string[]; shortlist?: boolean };
+export type BandNoteFields = Partial<Record<"notes" | "payNotes" | "howToPitch" | "note" | "relationship", string>> & { venueIds?: string[]; contactIds?: string[]; shortlist?: boolean; weKnow?: boolean };
 
 const textFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].fields;
 const listFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].lists;
