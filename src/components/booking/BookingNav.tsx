@@ -70,7 +70,7 @@ function BookingNav() {
       className="-mx-4 mb-4 flex gap-1 overflow-x-auto border-b border-border px-4 pb-2 min-[900px]:sticky min-[900px]:top-6 min-[900px]:mx-0 min-[900px]:mb-0 min-[900px]:w-[220px] min-[900px]:shrink-0 min-[900px]:flex-col min-[900px]:gap-0 min-[900px]:overflow-visible min-[900px]:rounded-lg min-[900px]:border min-[900px]:bg-surface min-[900px]:p-2">
       {GROUPS.map((g) => (
         <div key={g.head} className="contents min-[900px]:block">
-          <div className="hidden px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-muted min-[900px]:block">{g.head}</div>
+          <div className="hidden px-3 pb-1 pt-2 text-[0.6875rem] font-bold uppercase tracking-wide text-muted min-[900px]:block">{g.head}</div>
           {g.items.map((i) => (
             <Link key={i.key} href={href(i)} data-testid={`booking-seg-${i.key}`} aria-current={on(i) ? "page" : undefined}
               className={`menu-item shrink-0 whitespace-nowrap${on(i) ? " bg-accent-soft text-accent" : ""}`}>
