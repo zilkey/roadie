@@ -23,7 +23,7 @@ export default function PostsPage() { return <AdminOnly><Posts /></AdminOnly>; }
 
 /**
  * Posts: for now, post one photo to the band's Instagram, then the list of posts made from Roadie. The photo comes from the
- * band's Drive (picked, or uploaded into the Posts folder first), and Post now is the only thing that posts.
+ * band's Drive (picked, or uploaded into the Socials folder first, once Set up has run), and Post now is the only thing that posts.
  */
 function Posts() {
   const { artistId } = useArtist();
@@ -49,7 +49,7 @@ function Posts() {
 
 function NewPhotoPost({ username }: { username: string }) {
   const artist = useArtist().doc;
-  const hasFolder = !!artist?.postsFolderId;
+  const hasFolder = !!artist?.postFoldersId;
   const { call, error, busy, setError } = useCommand();
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [way, setWay] = useState<"drive" | null>(null);
@@ -92,7 +92,7 @@ function NewPhotoPost({ username }: { username: string }) {
             <button type="button" className="btn" aria-expanded={way === "drive"} onClick={() => setWay(way === "drive" ? null : "drive")} data-testid="post-from-drive">Choose from Drive</button>
             <Upload<Photo> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")} testid="post-upload" disabled={!hasFolder}
               tooBig="Put it in Drive yourself, then choose it from Drive."
-              needsFolder={<Link href="/admin/google" className="underline">Choose a Posts folder in Settings › Google</Link>}
+              needsFolder={<Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link>}
               check={(f) => (photoType(f.name, f.type) ? null : PHOTOS_ONLY)}
               onUploaded={(p) => { setPhoto({ driveFileId: p.driveFileId, name: p.name, mimeType: p.mimeType, url: p.url }); setWay(null); setError(null); }} />
           </div>

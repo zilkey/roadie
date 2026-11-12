@@ -24,13 +24,16 @@ export interface Status {
   showsFolder: FolderStatus;
   /** The chosen Releases folder (a release's new Drive folder is made inside it), the same way. */
   releasesFolder: FolderStatus;
-  /** The chosen Posts folder (photos uploaded on Posts, in a folder per month), the same way. */
+  /** The chosen Socials folder for Posts (where the band drops photos), the same way. */
   postsFolder: FolderStatus;
+  /** Socials and whether Set up (posts.setup) has made its Posts/ folder; null until Socials is chosen. */
+  posts: PostsSetup | null;
   /** The caller can use Calendar: the local fake, or their own Google account has Calendar connected. */
   calendarReady: boolean;
   /** The band's shared calendar, as named when it was chosen. */
   calendar: { id: string; name: string } | null;
 }
+export interface PostsSetup { socialsId: string; socialsName: string | null; postsId?: string; setUp: boolean }
 export type FolderStatus = { id: string; name: string | null; url: string | null; error?: string } | null;
 export interface Folder { id: string; name: string; url: string; ownerEmail: string }
 export interface Calendar { id: string; name: string; accessRole: string; primary?: boolean; canWrite: boolean }

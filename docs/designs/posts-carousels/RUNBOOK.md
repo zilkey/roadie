@@ -90,3 +90,27 @@ These need the owner or production access. Record them as manual steps:
 - Set the `SIGNED_URL_SECRET` App Hosting secret before deploying anything from this branch (`apphosting.yaml` now references it; command in `docs/SETUP.md`).
 - Local dev: a persisted `.fake-data/fake-drive.json` predates the Socials seed; reset the fake (its page's Reset button, or delete the file) to get it.
 - Next session (phase 2): `session_01MmV83WH51qR8HAz7wiZSxj`, started and running.
+
+### Phase 2 — done
+**Built**
+- `posts.setup` (`src/server/commands/posts.ts`, roles admin + mcp): refuses without Socials ("Choose the Socials folder in Settings › Google first") and when `canMoveIn(Socials)` is false ("Roadie's Google account needs Content manager…", code `drive_permission`, nothing changed); else `findOrMakeFolder(Socials, "Posts")`, shares Socials with `bandmates()` as writer, saves `postFoldersId`, returns `{ socials, posts: { id, made }, sharedWithBand }`. Also exports `setUpSocials(artistId)` and `NOT_SET_UP` ("Set up the Socials folder in Settings › Google"). `postsMonthFolder` and `NO_POSTS_FOLDER` are gone.
+- `google.setPostsFolder` clears `postFoldersId` when the chosen folder changes (choosing the same one keeps it); its description now speaks of Socials. `google.status` gains `posts: { socialsId, socialsName, postsId?, setUp } | null`; `shared.tsx` `Status` gains it (`PostsSetup`). `ArtistIn` omits `postFoldersId`.
+- Settings card: the Posts folder card is now **Socials folder** (test ids unchanged: `posts-folder-*`), with rows for Socials and `Posts/` (Working / Not set up) and a **Set up** button running `posts.setup` (`SocialsSetup` in `FolderCard.tsx`; ids `socials-row`, `socials-posts-row`, `socials-setup-button`, `socials-setup-note`).
+- `POST /api/posts/upload`: needs Set up (`NOT_SET_UP`), saves into the Socials root, no per-file share; returns Socials as `folder`. The Posts page's Upload is off until `postFoldersId` is set, with the new message.
+- `scripts/migrate-posts-49.ts` + `npm run migrate:posts-49` (dry run unless `--apply`): exports `migratePosts49({ apply })`, `titleFor`, `INTERRUPTED`.
+- `tests/emulator/mcp.test.ts`: `posts.setup` added to the expected MCP tool list (the spec gives posts commands the mcp role).
+
+**Deviations**
+- `google.status().posts` is `null` until a Socials folder is chosen (the spec's shape has no "unchosen" case).
+- `sharedWithBand` is the number of bandmates Socials is shared with on that run (all of them; sharing is idempotent), not only the newly added.
+- Migration: a `publishing` post is set to `status: "failed"` with `error: "Interrupted before it posted"` (so it's editable like a failed one). An artist whose Set up hasn't run is skipped with a reason. If a move or the update fails mid-post, that post's moves are put back and its empty folder trashed, then it's reported as skipped. `modifiedTime` comes from the moved file (the move can bump it), else from `drive.get`. Posts are matched per artist by `artistId`.
+- `tests/e2e/posts.spec.ts`: the upload step now chooses Socials and presses Set up (not run until phase 5; phase 3 replaces the NewPhotoPost flow anyway).
+
+**Tests**
+- `npx next typegen && npm run typecheck` → clean.
+- `npx tsx --test tests/unit/photos.test.ts tests/unit/signedUrl.test.ts` → 6/6 pass.
+- `npx firebase emulators:exec … "npx tsx --test --import ./tests/emulator/setup.mjs tests/emulator/posts.test.ts tests/emulator/google.test.ts tests/emulator/drive-list.test.ts"` → 33/33 pass (setup made/found/second run/noMove/Socials change; upload into the Socials root; migration title, dry run, `--apply`, re-run).
+- `… tests/emulator/mcp.test.ts tests/emulator/roadie-policy.test.ts tests/emulator/roadie-tools.test.ts` → 37/37 pass.
+
+**Manual steps for the owner**
+- On prod, after deploying: Settings › Google › Socials folder › **Set up**, then `GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=… npm run migrate:posts-49` (dry run), check the report, then again with `-- --apply`.

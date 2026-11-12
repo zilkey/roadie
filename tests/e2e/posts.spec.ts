@@ -99,7 +99,7 @@ test("the Instagram & Facebook card: Working, Sign in again (here and on Posts)"
   await scenario(request, { revoked: false });
 });
 
-test("Post now: a JPEG chosen from Drive, then one uploaded (once a Posts folder is chosen); both list with their Instagram link", async ({ page }) => {
+test("Post now: a JPEG chosen from Drive, then one uploaded (once the Socials folder is set up); both list with their Instagram link", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/posts"));
   const form = page.getByTestId("new-post");
@@ -126,16 +126,20 @@ test("Post now: a JPEG chosen from Drive, then one uploaded (once a Posts folder
   await expect(first.getByTestId("post-by")).toContainText("Rudy");
   await expect(first.getByTestId("post-view")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
 
-  // Upload is off until a Posts folder is chosen in Settings › Google.
+  // Upload is off until the Socials folder is chosen and set up in Settings › Google.
   await expect(form.getByTestId("post-upload-input")).toBeDisabled();
-  await expect(form.getByTestId("post-upload-needs-folder")).toHaveText("Choose a Posts folder in Settings › Google");
+  await expect(form.getByTestId("post-upload-needs-folder")).toHaveText("Set up the Socials folder in Settings › Google");
   await form.getByTestId("post-upload-needs-folder").getByRole("link").click();
   const folder = page.getByTestId("google-posts-folder");
   await folder.getByTestId("posts-folder-change").click();
-  await folder.getByTestId("posts-folder-q").fill("Posts");
+  await folder.getByTestId("posts-folder-q").fill("Socials");
   await folder.getByTestId("posts-folder-search").click();
-  await folder.getByTestId("posts-folder-hit-Posts").getByTestId("posts-folder-choose").click();
-  await expect(folder.getByTestId("posts-folder-note")).toContainText("Posts folder saved");
+  await folder.getByTestId("posts-folder-hit-Socials").getByTestId("posts-folder-choose").click();
+  await expect(folder.getByTestId("posts-folder-note")).toContainText("Socials folder saved");
+  await expect(folder.getByTestId("socials-posts-row")).toHaveText("Not set up");
+  await folder.getByTestId("socials-setup-button").click();
+  await expect(folder.getByTestId("socials-posts-row")).toHaveText("Working");
+  await expect(folder.getByTestId("socials-setup-note")).toContainText("Made Posts");
 
   await page.goto(A("/posts"));
   await expect(form.getByTestId("post-upload-input")).toBeEnabled();

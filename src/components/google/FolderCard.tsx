@@ -48,16 +48,16 @@ const FOLDERS = {
     unset: "Not chosen yet. A release's new Drive folder goes inside it; Create stays off on a release until you choose it.",
   },
   posts: {
-    title: "Posts folder", command: "google.setPostsFolder", tid: "posts-folder", card: "google-posts-folder",
-    saved: "Posts folder saved. Upload on Posts puts photos here now.",
-    is: "Photos uploaded on Posts go here, in a folder for the month, shared with the band.",
-    unset: "Not chosen yet. This is where photos uploaded on Posts go; Upload stays off on Posts until you choose it.",
+    title: "Socials folder", command: "google.setPostsFolder", tid: "posts-folder", card: "google-posts-folder",
+    saved: "Socials folder saved. Press Set up to make its Posts folder and let the band add to it.",
+    is: "Anyone in the band drops photos here, loose or in folders. Each post gets its own folder in Posts.",
+    unset: "Not chosen yet. This is where the band drops photos for Posts; Upload and Make the draft stay off on Posts until it's chosen and set up.",
   },
 } as const;
 
 /**
  * A Drive folder setting: the band folder (song files are checked against it), the Charts folder (lyrics and chord
- * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase), the rehearsal recordings folder (uploads from a rehearsal go into it) the Shows folder (a show's posters go into it, in a folder per show) the Releases folder (a release's new Drive folder is made inside it) or the Posts folder (photos uploaded on Posts, a folder per month). Chosen by searching the band account's Drive for folders by
+ * sheets; Copy to band folder copies into it), the Demos folder (audio uploaded to a song goes into it), the Songwriting folder (the same, for songs in the Writing phase), the rehearsal recordings folder (uploads from a rehearsal go into it) the Shows folder (a show's posters go into it, in a folder per show) the Releases folder (a release's new Drive folder is made inside it) or the Socials folder (where the band drops photos for Posts; it also shows its Posts/ folder and Set up). Chosen by searching the band account's Drive for folders by
  * name, or by pasting a folder link. Until it's set, what depends on it is off everywhere.
  */
 export function FolderCard({ which, status, onChange }: { which: keyof typeof FOLDERS; status: Status; onChange(s: Status): void }) {
@@ -97,6 +97,7 @@ export function FolderCard({ which, status, onChange }: { which: keyof typeof FO
           : f ? <>Drive can&apos;t open the saved folder ({f.error ?? "unknown error"}). Choose it again.</>
           : c.unset}
       </p>
+      {which === "posts" && status.posts && !open && <SocialsSetup status={status} onChange={onChange} />}
       {!status.driveReady && <p className="s m-0" data-testid={`${c.tid}-needs-drive`}>Connect Drive on the band&apos;s Google account (above) to choose it.</p>}
       {note && <p className="s m-0" role="status" data-testid={`${c.tid}-note`}>{note}</p>}
       {open && (
@@ -121,5 +122,45 @@ export function FolderCard({ which, status, onChange }: { which: keyof typeof FO
         </form>
       )}
     </section>
+  );
+}
+
+/**
+ * The Socials folder's rows: Socials itself and its Posts/ folder (Working once Set up has run, else Not set up), with Set up,
+ * which runs posts.setup: it makes Posts/ and shares Socials with the band as writer. Running it again is safe.
+ */
+function SocialsSetup({ status, onChange }: { status: Status; onChange(s: Status): void }) {
+  const { call, error, busy } = useCommand();
+  const [note, setNote] = useState<string | null>(null);
+  const p = status.posts!;
+
+  async function setUp() {
+    setNote(null);
+    const r = await call<{ posts: { made: boolean }; sharedWithBand: number }>("posts.setup", {});
+    if (!r) return;
+    const s = await call<Status>("google.status", {});
+    if (s) onChange(s);
+    setNote(`${r.posts.made ? "Made Posts" : "Posts was already there"}. Socials is shared with ${r.sharedWithBand} ${r.sharedWithBand === 1 ? "person" : "people"} in the band, who can add photos to it.`);
+  }
+
+  return (
+    <div className="grid gap-2" data-testid="socials-setup">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 m-0 text-sm">
+        <dt className="s">Socials</dt>
+        <dd className="m-0" data-testid="socials-row">{p.socialsName ?? "Drive can't open it"}</dd>
+        <dt className="s">Posts/</dt>
+        <dd className="m-0" data-testid="socials-posts-row">{p.setUp ? "Working" : "Not set up"}</dd>
+      </dl>
+      {!p.setUp && <p className="s m-0" data-testid="socials-needs-setup">Until it&apos;s set up, Upload and Make the draft are off on Posts.</p>}
+      {status.driveReady && (
+        <div>
+          <button type="button" className={`btn sm${p.setUp ? " ghost" : " acc"}`} disabled={busy} onClick={setUp} data-testid="socials-setup-button">
+            {busy ? "Setting up…" : "Set up"}
+          </button>
+        </div>
+      )}
+      {note && <p className="s m-0" role="status" data-testid="socials-setup-note">{note}</p>}
+      <ErrorBox error={error} />
+    </div>
   );
 }

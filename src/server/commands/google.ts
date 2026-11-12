@@ -65,6 +65,13 @@ async function accessTo(uid: string, calendarId: string): Promise<CalInfo | null
   }
 }
 
+/** The Socials folder for Posts and whether Set up (posts.setup) has made its Posts/ folder. Null until Socials is chosen. */
+async function postsSetupOf(artistId: string, socials: Awaited<ReturnType<typeof folderStatus>>) {
+  if (!socials) return null;
+  const postsId = (await db.get("artists", artistId))?.postFoldersId as string | undefined;
+  return { socialsId: socials.id, socialsName: socials.name, ...(postsId ? { postsId } : {}), setUp: !!postsId };
+}
+
 async function status(ctx: Ctx) {
   const artistId = artistOf(ctx);
   const [ready, folder, rehearsalFolder, chartsFolder, demosFolder, songwritingFolder, showsFolder, releasesFolder, postsFolder, calReady, calendar] = await Promise.all([
@@ -72,7 +79,7 @@ async function status(ctx: Ctx) {
     folderStatus(artistId, "songwritingFolderId"), folderStatus(artistId, "showsFolderId"), folderStatus(artistId, "releasesFolderId"), folderStatus(artistId, "postsFolderId"),
     calendarReady(ctx.uid), bandCalendarOf(artistId),
   ]);
-  const cal = { calendarReady: calReady, calendar };
+  const cal = { calendarReady: calReady, calendar, posts: await postsSetupOf(artistId, postsFolder) };
   if (!googleConfigured()) return { configured: false, me: null, band: null, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, songwritingFolder, showsFolder, releasesFolder, postsFolder, ...cal };
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
@@ -320,12 +327,14 @@ export const googleSetReleasesFolder = defineCommand({
 
 export const googleSetPostsFolder = defineCommand({
   name: "google.setPostsFolder", roles: ["admin"],
-  description: "Choose the Posts folder: a photo uploaded on Posts goes into a \"{YYYY-MM}\" folder inside it, made on the month's first upload. Takes a folder id or a Drive folder link.",
+  description: "Choose the Socials folder for Posts: where the band drops photos, loose or in folders; each post gets its own folder in its Posts folder. " +
+    "Choosing a different folder means Set up (posts.setup) runs again. Takes a folder id or a Drive folder link.",
   input: z.strictObject({ folder: z.string().trim().min(1) }),
   async run(ctx, { folder }) {
     const artistId = artistOf(ctx);
     const f = await chosenFolder(artistId, folder);
-    await db.update(ctx, "artists", artistId, { postsFolderId: f.id });
+    const before = (await db.get("artists", artistId))?.postsFolderId;
+    await db.update(ctx, "artists", artistId, { postsFolderId: f.id, ...(before !== f.id ? { postFoldersId: null } : {}) });
     return status(ctx);
   },
 });

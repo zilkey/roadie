@@ -17,6 +17,9 @@ import { signMetaState, verifyMetaState } from "@/server/meta/graph";
 import { GET as mediaGET } from "@/app/api/posts/media/[id]/route";
 import { POST as uploadPOST } from "@/app/api/posts/upload/route";
 import { GET as callbackGET } from "@/app/api/meta/callback/route";
+import { SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
+import { dateInBandZone } from "@/lib/timezone";
+import { migratePosts49, titleFor, INTERRUPTED } from "../../scripts/migrate-posts-49";
 import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -233,6 +236,70 @@ test("media URL: streams the photo within the hour; expired, a wrong signature a
   assert.equal(mediaSigOk(TEST_ARTIST, id, null, null), false);
 });
 
+const driveScenario = (body: Record<string, unknown>) => fetch(`${process.env.DRIVE_BASE_URL}/__scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const chooseSocials = () => cmd("google.setPostsFolder", { folder: `https://drive.google.com/drive/folders/${SOCIALS_FOLDER_ID}` });
+
+// ---------- setup ----------
+
+test("setup: refused before Socials is chosen; makes Posts in Socials and shares Socials with the band as writer", async () => {
+  await assert.rejects(cmd("posts.setup", {}), (e: any) => e.code === "no_posts_folder" && e.message === "Choose the Socials folder in Settings › Google first"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const s = await chooseSocials();
+  assert.deepEqual(s.posts, { socialsId: SOCIALS_FOLDER_ID, socialsName: "Socials", setUp: false });
+
+  const r = await cmd("posts.setup", {});
+  assert.deepEqual(r.socials, { id: SOCIALS_FOLDER_ID, name: "Socials" });
+  assert.equal(r.posts.made, true);
+  assert.equal(r.sharedWithBand, 2, "rudy and nora, the active musicians");
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const posts = await drive.get(r.posts.id);
+  assert.equal(posts.name, "Posts");
+  assert.deepEqual(posts.parents, [SOCIALS_FOLDER_ID]);
+  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, r.posts.id);
+  const socials = await drive.get(SOCIALS_FOLDER_ID);
+  for (const e of ["rudy@example.com", "nora@example.com"]) {
+    const p = socials.permissions.find((x) => x.email === e)!;
+    assert.ok(p.role === "writer" || p.role === "owner", `${e} can add to Socials (${p.role})`);
+  }
+  assert.equal(socials.permissions.find((x) => x.email === "nora@example.com")!.role, "writer");
+
+  const status = await cmd("google.status", {});
+  assert.deepEqual(status.posts, { socialsId: SOCIALS_FOLDER_ID, socialsName: "Socials", postsId: r.posts.id, setUp: true });
+});
+
+test("setup: a second run finds Posts and shares Socials with members who joined since", async () => {
+  await chooseSocials();
+  const first = await cmd("posts.setup", {});
+  await db.create(ctx, "musicians", { name: "felix", instruments: [], active: true, email: "felix@example.com" });
+  const second = await cmd("posts.setup", {});
+  assert.equal(second.posts.made, false);
+  assert.equal(second.posts.id, first.posts.id);
+  assert.equal(second.sharedWithBand, 3);
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  assert.equal((await drive.list({ parents: [SOCIALS_FOLDER_ID], kind: "folders" })).files.filter((f) => f.name === "Posts").length, 1, "one Posts folder");
+  assert.equal((await drive.get(SOCIALS_FOLDER_ID)).permissions.find((x) => x.email === "felix@example.com")!.role, "writer");
+});
+
+test("setup: refused, changing nothing, when the band account can't move files in Socials", async () => {
+  await chooseSocials();
+  await driveScenario({ noMove: true });
+  await assert.rejects(cmd("posts.setup", {}), (e: any) => e.code === "drive_permission" && e.message === "Roadie's Google account needs Content manager on the band's Shared Drive to move photos"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  assert.equal((await drive.list({ parents: [SOCIALS_FOLDER_ID], kind: "folders" })).files.some((f) => f.name === "Posts"), false);
+  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, undefined);
+  assert.equal((await drive.get(SOCIALS_FOLDER_ID)).permissions.find((x) => x.email === "nora@example.com")!.role, "reader", "not shared as writer");
+});
+
+test("setup: choosing a different Socials folder clears Posts, so Set up runs again; artists.update can't set it", async () => {
+  await chooseSocials();
+  await cmd("posts.setup", {});
+  await chooseSocials();
+  assert.ok((await db.get("artists", TEST_ARTIST))!.postFoldersId, "choosing the same folder keeps it");
+  const s = await cmd("google.setPostsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-posts" });
+  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, undefined);
+  assert.equal(s.posts.setUp, false);
+  assert.throws(() => registry["artists.update"].input.parse({ id: TEST_ARTIST, patch: { postFoldersId: "x" } }));
+});
+
 // ---------- upload ----------
 
 const jpeg = (name = "Roots.jpg", type = "image/jpeg") => new File([Buffer.from([0xff, 0xd8, 0xff, 0xd9])], name, { type });
@@ -243,11 +310,15 @@ async function upload(token: string, file: File) {
   return { status: res.status, json: (await res.json()) as Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 
-test("upload: refused without a Posts folder, for anything but a photo, and for members; else into the month's folder, made once and reused", async () => {
+test("upload: refused until Set up has run, for anything but a photo, and for members; else into the Socials root", async () => {
   const none = await upload(rudy.token, jpeg());
   assert.equal(none.status, 400);
-  assert.match(none.json.error.message, /Choose a Posts folder in Settings › Google/);
-  assert.equal((await cmd("google.setPostsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-posts" })).postsFolder.name, "Posts");
+  assert.equal(none.json.error.message, "Choose the Socials folder in Settings › Google first");
+  await chooseSocials();
+  const notSetUp = await upload(rudy.token, jpeg());
+  assert.equal(notSetUp.status, 400);
+  assert.equal(notSetUp.json.error.message, "Set up the Socials folder in Settings › Google");
+  await cmd("posts.setup", {});
   const pdf = await upload(rudy.token, jpeg("x.pdf", "application/pdf"));
   assert.equal(pdf.status, 400);
   assert.equal(pdf.json.error.message, "Roadie takes JPEG, HEIC, PNG and WebP photos");
@@ -255,22 +326,77 @@ test("upload: refused without a Posts folder, for anything but a photo, and for 
 
   const a = await upload(rudy.token, jpeg("Roots.jpg"));
   assert.equal(a.status, 200, JSON.stringify(a.json));
-  const b = await upload(rudy.token, jpeg("Deep End.jpg"));
-  const month = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit" }).format(new Date()).slice(0, 7);
-  assert.equal(a.json.folder.name, month);
-  assert.equal(b.json.folder.id, a.json.folder.id, "the month's folder is reused");
+  assert.deepEqual({ id: a.json.folder.id, name: a.json.folder.name }, { id: SOCIALS_FOLDER_ID, name: "Socials" });
   const drive = driveClient({ artistId: TEST_ARTIST });
-  const folders = (await drive.search({ parent: "fake-folder-posts" })).filter((f) => f.name === month);
-  assert.equal(folders.length, 1);
   const f = await drive.get(a.json.driveFileId);
   assert.equal(f.name, "Roots.jpg");
-  assert.deepEqual(f.parents, [a.json.folder.id]);
-  assert.ok(f.permissions.some((p) => p.email === "nora@example.com"), "shared with the band");
+  assert.deepEqual(f.parents, [SOCIALS_FOLDER_ID], "loose in the Socials root, in the inbox");
+  assert.deepEqual(f.permissions.map((p) => p.email), ["rudy@example.com"], "not shared file by file: Socials is shared with the band");
   // A HEIC from a phone often comes as octet-stream: it's kept as the photo type its name says.
   const heic = await upload(rudy.token, jpeg("IMG_2201.HEIC", "application/octet-stream"));
   assert.equal(heic.status, 200, JSON.stringify(heic.json));
   assert.equal(heic.json.mimeType, "image/heic");
   assert.equal((await db.list("posts")).length, 0, "nothing is posted yet");
+});
+
+// ---------- migrating the #49 posts ----------
+
+test("migration: the title is the caption's first 40 characters cut at a word, else Photo <date>", () => {
+  assert.equal(titleFor("Roots Music Project, thank you!", "2026-10-03"), "Roots Music Project, thank you!");
+  assert.equal(titleFor("Thanks to everyone who came out to the Hi-Dive last night, you were great", "2026-10-03"), "Thanks to everyone who came out to the");
+  assert.equal(titleFor("  ", "2026-10-03"), "Photo 2026-10-03");
+});
+
+test("migration: a dry run changes nothing; --apply moves each #49 photo into its own post folder; a second run changes nothing", async () => {
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const MONTH = "fake-folder-socials-2026-10";
+  const media = (id: string, url = "u") => [{ driveFileId: id, mimeType: "image/jpeg", url }];
+  const posted = (await db.create(ctx, "posts", { artistId: TEST_ARTIST, caption: "Roots Music Project, thank you!", media: media("fake-social-post49"), status: "posted", instagram: { mediaId: "m1", permalink: null }, createdVia: "app" })).id;
+  const stuck = (await db.create(ctx, "posts", { artistId: TEST_ARTIST, caption: "", media: media("fake-social-loose-1"), status: "publishing", createdVia: "app" })).id;
+  const gone = (await db.create(ctx, "posts", { artistId: TEST_ARTIST, caption: "Gone", media: media("no-such-photo"), status: "failed", error: "x", createdVia: "app" })).id;
+
+  // Before Set up, the artist's posts are left with a reason.
+  await chooseSocials();
+  const early = await migratePosts49({ apply: true });
+  assert.equal(early.migrated.length, 0);
+  assert.match(early.skipped[0].reason, /run Set up/);
+  const { posts: { id: postsId } } = await cmd("posts.setup", {});
+
+  const created = dateInBandZone((await db.get("posts", posted))!.createdAt.toDate());
+  const before = JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
+  const dry = await migratePosts49({ apply: false });
+  assert.deepEqual(dry.migrated.map((m) => [m.postId, m.folder]).sort(), [[posted, `${created} - Roots Music Project, thank you!`], [stuck, `DRAFT - Photo ${created}`]].sort());
+  assert.deepEqual(dry.skipped.map((s) => s.postId), [gone]);
+  assert.equal(JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), before, "the dry run changed nothing");
+
+  const r = await migratePosts49({ apply: true });
+  assert.equal(r.migrated.length, 2);
+  assert.deepEqual(r.skipped.map((s) => s.postId), [gone], "the post whose photo is gone is reported and skipped");
+  const p = (await db.get("posts", posted))!;
+  assert.equal(p.title, "Roots Music Project, thank you!");
+  assert.equal(p.status, "posted");
+  const folder = await drive.get(p.driveFolderId);
+  assert.equal(folder.name, `${created} - Roots Music Project, thank you!`);
+  assert.deepEqual(folder.parents, [postsId]);
+  assert.deepEqual((await drive.get("fake-social-post49")).parents, [p.driveFolderId], "the photo moved into the post's folder");
+  assert.deepEqual(p.media[0].from, { folderId: MONTH });
+  assert.equal(p.media[0].name, "Roots Music Project stage.jpg");
+  assert.equal(p.media[0].width, 1600);
+  assert.equal(p.media[0].height, 1000);
+  assert.equal(p.media[0].url, "u");
+  assert.ok(p.media[0].modifiedTime);
+
+  const s = (await db.get("posts", stuck))!;
+  assert.equal(s.status, "failed");
+  assert.equal(s.error, INTERRUPTED);
+  assert.equal((await drive.get(s.driveFolderId)).name, `DRAFT - Photo ${created}`);
+  assert.deepEqual(s.media[0].from, { folderId: SOCIALS_FOLDER_ID });
+  assert.equal((await db.get("posts", gone))!.driveFolderId, undefined);
+
+  const after = JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
+  const again = await migratePosts49({ apply: true });
+  assert.equal(again.migrated.length, 0);
+  assert.equal(JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), after, "a second run changed nothing");
 });
 
 // ---------- publishPhoto ----------

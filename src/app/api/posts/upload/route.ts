@@ -1,8 +1,7 @@
 import { authenticate, ARTIST_HEADER } from "@/server/commands/dispatch";
 import { AppError } from "@/server/errors";
 import { driveClient } from "@/server/integrations";
-import { bandmates } from "@/server/music";
-import { postsMonthFolder } from "@/server/commands/posts";
+import { setUpSocials } from "@/server/commands/posts";
 import { PHOTOS_ONLY, photoType } from "@/lib/photos";
 
 export const runtime = "nodejs";
@@ -10,9 +9,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * Upload a photo for a post: multipart form with `file` (a JPEG, HEIC, PNG or WebP photo), `Authorization: Bearer <ID token>` and `x-artist-id`, like
- * the commands. Admins only. The file goes into this month's folder ("{YYYY-MM}", made if needed) in the Posts folder from
- * Settings › Google, under its own name, shared with the band. Nothing is posted: the page then posts it like a photo picked
- * from Drive.
+ * the commands. Admins only, and only once Set up has run (Settings › Google). The file goes into the root of the Socials
+ * folder under its own name, where it's in the inbox like any photo the band adds; Socials is already shared with the band.
+ * Nothing is posted: the page then posts it like a photo picked from Drive.
  */
 export async function POST(req: Request) {
   try {
@@ -23,10 +22,11 @@ export async function POST(req: Request) {
     if (!(file instanceof File) || file.size === 0) throw new AppError("invalid_input", "Choose a photo to upload", 400);
     const mimeType = photoType(file.name, file.type);
     if (!mimeType) throw new AppError("invalid_input", PHOTOS_ONLY, 400);
-    const folder = await postsMonthFolder(ctx);
+    if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
+    const { socialsId } = await setUpSocials(ctx.artistId);
     const drive = driveClient({ artistId: ctx.artistId });
+    const folder = await drive.get(socialsId);
     const up = await drive.upload({ name: file.name || "Photo.jpg", mimeType, parentId: folder.id, data: file });
-    await drive.share(up.id, (await bandmates()).map((m) => m.email));
     return Response.json({ driveFileId: up.id, name: up.name, mimeType: up.mimeType, url: up.webViewLink, folder: { id: folder.id, name: folder.name, url: folder.webViewLink } });
   } catch (e) {
     if (e instanceof AppError) return Response.json(e.toJSON(), { status: e.status });
