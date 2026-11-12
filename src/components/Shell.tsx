@@ -204,10 +204,10 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const title = current?.label ?? ADMIN_LINKS.find((l) => on(l.href))?.label ?? (on("/me") ? "Your profile" : artist.name);
   const edit = () => { setSheet(false); setEditing(true); };
   const switchTo = profile.artists.length > 1 ? ARTISTS_PATH : undefined;
-  // Calendar, tours, the shows list, the booking tabs' tables, email templates and Social Media use the full width, and so does a show's page (its checklists are a column on the right edge);
+  // Calendar, tours, songs, the shows list, the booking tabs' tables, email templates and Social Media use the full width, and so does a show's page (its checklists are a column on the right edge);
   // every other page (other detail pages too) keeps the 1240px column.
   const showPage = path.startsWith(full("/shows/")) && !path.startsWith(full("/shows/new")) && path.split("/").length === full("/shows/x").split("/").length;
-  const wide = showPage || ["/calendar", "/tours", "/shows", "/booking", "/booking/pitches", "/booking/venues", "/booking/festivals", "/booking/promoters", "/booking/templates", "/contacts", "/posts", "/posts/photos"].some((p) => path === full(p));
+  const wide = showPage || ["/calendar", "/tours", "/songs", "/shows", "/booking", "/booking/pitches", "/booking/venues", "/booking/festivals", "/booking/promoters", "/booking/templates", "/contacts", "/posts", "/posts/photos"].some((p) => path === full(p));
 
   const barLink = (n: NavItem, testid?: string) => (
     <Link key={n.key} href={n.href} data-testid={testid} aria-current={on(n.href) ? "page" : undefined}
