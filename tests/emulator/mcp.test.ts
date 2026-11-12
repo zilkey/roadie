@@ -15,9 +15,9 @@ import { hashToken } from "@/server/availability";
 import { authenticateToken } from "../../mcp/auth";
 import { callTool, toolList } from "../../mcp/tools";
 import { handleMcpRequest, sessionIdFor, SESSION_HEADER } from "../../mcp/web";
-import { authorizationServerMetadata, authorize, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
+import { approve, authorizationServerMetadata, authorize, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
 import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -402,6 +402,7 @@ const routes: Record<string, (req: Request) => Response | Promise<Response>> = {
   "/.well-known/oauth-authorization-server": authorizationServerMetadata,
   "/oauth/register": register,
   "/oauth/authorize": authorize,
+  "/oauth/approve": approve,
   "/oauth/token": tokenEndpoint,
 };
 const app: typeof fetch = async (input, init) => {
@@ -428,71 +429,100 @@ function claudeLike() {
   };
   return { store, provider };
 }
-/** The person on our sign-in page: open it, paste a key, press Connect. Returns the redirect back to Claude. */
-async function signIn(authUrl: URL, key: string) {
-  const page = await app(authUrl);
-  assert.equal(page.status, 200);
-  const html = await page.text();
-  assert.match(html, /Connect Roadie to Claude/);
-  const form = new FormData();
-  for (const m of html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)) form.set(m[1], m[2].replace(/&amp;/g, "&").replace(/&quot;/g, '"'));
-  form.set("key", key);
-  return app("http://app.test/oauth/authorize", { method: "POST", body: form, redirect: "manual" });
+/** The browser: /oauth/authorize sends it to /connect; that page calls /oauth/approve with the person's ID token. */
+async function toConnect(authUrl: URL) {
+  const r = await app(authUrl, { redirect: "manual" });
+  assert.equal(r.status, 302);
+  const to = new URL(r.headers.get("location")!);
+  assert.equal(to.origin + to.pathname, "http://app.test/connect");
+  return to.searchParams.get("req")!;
 }
-
-test("OAuth: Claude's connector discovers sign-in, the person pastes their key, and /mcp works with the token", async (t) => {
+const approveAs = async (req: string, token: string | null, body: Record<string, unknown> = {}) => {
+  const res = await app("http://app.test/oauth/approve", { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ req, ...body }) });
+  return { status: res.status, body: (await res.json()) as any };
+};
+const useAppUrl = (t: { after: (fn: () => void) => void }) => {
   const prev = process.env.APP_URL;
   process.env.APP_URL = "http://app.test";
   t.after(() => { if (prev === undefined) delete process.env.APP_URL; else process.env.APP_URL = prev; });
-  const { token: key } = await newKey();
+};
+
+test("OAuth: Claude's connector discovers sign-in, the person signs in to Roadie and picks the artist, and /mcp works", async (t) => {
+  useAppUrl(t);
+  await makeArtist("The Test Band", "test-band");
+  await makeArtist("Other Band", "other-band", "other-artist");
+  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }, { artistId: "other-artist", role: "member" }] });
   const { store, provider } = claudeLike();
 
-  // First connect: 401 -> metadata -> registration -> sent to our authorize page.
+  // First connect: 401 -> metadata -> registration -> sent to authorize -> our /connect page.
   const first = new StreamableHTTPClientTransport(new URL(URL_), { fetch: app, authProvider: provider });
   await assert.rejects(new Client({ name: "claude", version: "1" }).connect(first), UnauthorizedError);
   assert.ok(store.client?.client_id, "registered");
-  assert.equal(store.authUrl?.origin + store.authUrl!.pathname, "http://app.test/oauth/authorize");
   assert.equal(store.authUrl!.searchParams.get("code_challenge_method"), "S256");
+  const req = await toConnect(store.authUrl!);
 
-  // A wrong key stays on the page with a message; Cancel goes back to Claude with access_denied.
-  const wrong = await signIn(store.authUrl!, "btk_wrong");
-  assert.equal(wrong.status, 401);
-  assert.match(await wrong.text(), /didn&#39;t work/);
-  const cancelForm = new FormData();
-  for (const [k, v] of store.authUrl!.searchParams) cancelForm.set(k, v);
-  cancelForm.set("cancel", "1");
-  const cancelled = await app("http://app.test/oauth/authorize", { method: "POST", body: cancelForm, redirect: "manual" });
-  assert.equal(new URL(cancelled.headers.get("location")!).searchParams.get("error"), "access_denied");
+  // Not signed in: refused. Signed in: your artists, and which have AI access.
+  assert.equal((await approveAs(req, null)).status, 401);
+  const token = await idToken(adminUid);
+  const info = await approveAs(req, token);
+  assert.equal(info.status, 200);
+  assert.equal(info.body.client, "Claude");
+  assert.equal(info.body.returnTo, "claude.example");
+  assert.deepEqual(info.body.artists.map((a: any) => [a.name, a.ai]), [["Other Band", false], ["The Test Band", true]]);
+  // An artist without AI access, or one you're not in, is refused.
+  assert.equal((await approveAs(req, token, { artistId: "other-artist" })).status, 403);
+  assert.equal((await approveAs(req, token, { artistId: "nope" })).status, 403);
+  // Cancel goes back with access_denied.
+  assert.equal(new URL((await approveAs(req, null, { cancel: true })).body.redirect).searchParams.get("error"), "access_denied");
 
-  const back = await signIn(store.authUrl!, key);
-  assert.equal(back.status, 302);
-  const to = new URL(back.headers.get("location")!);
-  assert.equal(to.origin + to.pathname, REDIRECT);
-  assert.equal(to.searchParams.get("state"), "st4te");
-  const code = to.searchParams.get("code")!;
-  assert.equal(code.includes(key), false, "the key never travels in the clear");
-
-  await first.finishAuth(code);
-  assert.equal(store.tokens.access_token, key, "the bearer is the person's Roadie key");
+  const ok = await approveAs(req, token, { artistId: TEST_ARTIST });
+  const back = new URL(ok.body.redirect);
+  assert.equal(back.origin + back.pathname, REDIRECT);
+  assert.equal(back.searchParams.get("state"), "st4te");
+  await first.finishAuth(back.searchParams.get("code")!);
+  assert.match(store.tokens.access_token, /^btk_/);
   assert.ok(store.tokens.refresh_token);
+
+  // The key is a normal MCP key: stored hashed, for this person and artist, named after the client.
+  const keys = await db.list("mcpTokens", (q) => q.where("userId", "==", adminUid));
+  assert.equal(keys.length, 1);
+  assert.equal(keys[0].id, hashToken(store.tokens.access_token));
+  assert.equal(keys[0].artistId, TEST_ARTIST);
+  assert.equal(keys[0].client, "Claude");
+
   const client = new Client({ name: "claude", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(new URL(URL_), { fetch: app, authProvider: provider }));
   assert.deepEqual((await client.listTools()).tools.map((x) => x.name).sort(), EXPECTED);
   await client.close().catch(() => {});
 
-  // The code can't be used with another verifier, and refresh hands back the key while it is still good.
+  // Refresh hands back the same key; the code can't be used with another verifier.
   const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
-  const stolen = await tokenReq({ grant_type: "authorization_code", code, code_verifier: "not-the-verifier", redirect_uri: REDIRECT, client_id: store.client.client_id });
-  assert.equal((await stolen.json()).error, "invalid_grant");
   const refreshed = await tokenReq({ grant_type: "refresh_token", refresh_token: store.tokens.refresh_token, client_id: store.client.client_id });
-  assert.equal((await refreshed.json()).access_token, key);
+  assert.equal((await refreshed.json()).access_token, store.tokens.access_token);
+  const stolen = await tokenReq({ grant_type: "authorization_code", code: back.searchParams.get("code")!, code_verifier: "not-the-verifier", redirect_uri: REDIRECT, client_id: store.client.client_id });
+  assert.equal((await stolen.json()).error, "invalid_grant");
+
+  // Connecting again replaces the key instead of adding one; the old one stops working.
+  const oldKey = store.tokens.access_token;
+  const again = await approveAs(req, token, { artistId: TEST_ARTIST });
+  const verifier = store.verifier!;
+  const second = await (await tokenReq({ grant_type: "authorization_code", code: new URL(again.body.redirect).searchParams.get("code")!, code_verifier: verifier, redirect_uri: REDIRECT, client_id: store.client.client_id })).json();
+  assert.match(second.access_token, /^btk_/);
+  assert.notEqual(second.access_token, oldKey);
+  await assert.rejects(authenticateToken(oldKey), /revoked/);
+  await authenticateToken(second.access_token);
+
+  // Turning off AI access stops the key and refresh.
+  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: false }] });
+  assert.equal((await (await tokenReq({ grant_type: "refresh_token", refresh_token: second.refresh_token })).json()).error, "invalid_grant");
 });
 
-test("OAuth: unknown clients and return addresses get a page, not a redirect; expired codes and revoked keys are refused", async () => {
-  const { token: key, id } = await newKey();
-  const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT] }) })).json();
-  const badRegs = [["javascript:alert(1)"], ["http://evil.example/cb"], []];
-  for (const redirect_uris of badRegs) {
+test("OAuth: an AI-only login can connect; unknown clients and return addresses get a page; expired requests and codes are refused", async (t) => {
+  useAppUrl(t);
+  await makeArtist("The Test Band", "test-band");
+  const bot = await makeUser("bot@example.com", "ai", { name: "Band Bot" });
+  const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT], client_name: "Claude" }) })).json();
+  for (const redirect_uris of [["javascript:alert(1)"], ["http://evil.example/cb"], []]) {
     const r = await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris }) });
     assert.equal(r.status, 400, JSON.stringify(redirect_uris));
   }
@@ -502,14 +532,19 @@ test("OAuth: unknown clients and return addresses get a page, not a redirect; ex
   const noPkce = await app(`http://app.test/oauth/authorize?${new URLSearchParams({ response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT })}`, { redirect: "manual" });
   assert.equal(new URL(noPkce.headers.get("location")!).searchParams.get("error"), "invalid_request");
 
-  const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
   const verifier = "v".repeat(50);
   const challenge = (await import("node:crypto")).createHash("sha256").update(verifier).digest("base64url");
-  const expired = seal({ t: "code", k: key, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() - 1 });
-  assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: expired, code_verifier: verifier })).json()).error, "invalid_grant");
-  const good = seal({ t: "code", k: key, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() + 60_000 });
-  const refresh = seal({ t: "refresh", k: key, c: reg.client_id });
-  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
-  assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: good, code_verifier: verifier })).json()).error, "invalid_grant");
-  assert.equal((await (await tokenReq({ grant_type: "refresh_token", refresh_token: refresh })).json()).error, "invalid_grant");
+  const req = await toConnect(new URL(q({ client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, state: "s" })));
+  const info = await approveAs(req, bot.token);
+  assert.deepEqual(info.body.artists.map((a: any) => a.ai), [true], "the ai role always has AI access");
+  const ok = await approveAs(req, bot.token, { artistId: TEST_ARTIST });
+  const code = new URL(ok.body.redirect).searchParams.get("code")!;
+  const tokenReq = (body: Record<string, string>) => app("http://app.test/oauth/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body) });
+  const got = await (await tokenReq({ grant_type: "authorization_code", code, code_verifier: verifier, redirect_uri: REDIRECT })).json();
+  assert.equal((await authenticateToken(got.access_token)).uid, bot.uid);
+
+  const expiredReq = seal({ t: "req", c: reg.client_id, r: REDIRECT, p: challenge, s: "", e: Date.now() - 1 });
+  assert.equal((await approveAs(expiredReq, bot.token)).status, 400);
+  const expiredCode = seal({ t: "code", u: bot.uid, a: TEST_ARTIST, c: reg.client_id, r: REDIRECT, p: challenge, e: Date.now() - 1 });
+  assert.equal((await (await tokenReq({ grant_type: "authorization_code", code: expiredCode, code_verifier: verifier })).json()).error, "invalid_grant");
 });

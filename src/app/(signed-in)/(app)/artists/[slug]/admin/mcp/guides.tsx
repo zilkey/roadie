@@ -48,35 +48,32 @@ export function UsersGuide({ connectorUrl }: { connectorUrl: string }) {
       <div className="card grid gap-3">
         <H>Before you start</H>
         <Steps>
-          <li>Ask a band admin to turn on <b>AI access</b> for your account.</li>
-          <li>
-            Ask them for your personal <b>Roadie key</b>. It starts with <Inline>btk_</Inline>. Treat it like a password:
-            don&apos;t share it or paste it anywhere other than Claude.
-          </li>
+          <li>Ask a band admin to turn on <b>AI (MCP) access</b> for you in People.</li>
+          <li>That&apos;s it: when you connect, you sign in with the same Google account you use for Roadie. There&apos;s no key to copy.</li>
         </Steps>
         <p className="s">You&apos;ll also need a Claude account. Custom connectors are available on Claude&apos;s paid plans.</p>
       </div>
 
       <div className="card grid gap-3" data-testid="mcp-claude-app">
-        <H>Connect in Claude (web or desktop app)</H>
+        <H>Connect in Claude (web, desktop or phone)</H>
         <Steps>
-          <li>Open Claude at claude.ai or in the Claude desktop app.</li>
+          <li>Open Claude at claude.ai, in the desktop app or on your phone.</li>
           <li>Go to <b>Settings</b>, then <b>Connectors</b>, and choose <b>Add custom connector</b>.</li>
           <li>Name it <b>Roadie</b> and paste this address:</li>
         </Steps>
         <Code testid="mcp-connector-url">{connectorUrl}</Code>
         <Steps>
-          <li value={4}>Save, then follow the prompts to sign in with your Roadie key.</li>
+          <li value={4}>Save, then press <b>Connect</b>. Sign in to Roadie with Google, pick your band and press <b>Connect</b> again.</li>
           <li>In a new chat, open the tools menu and make sure <b>Roadie</b> is switched on.</li>
         </Steps>
-        <p className="s">A connector you add on claude.ai also shows up in the Claude desktop app when you&apos;re signed in to the same account.</p>
+        <p className="s">A connector you add on claude.ai also shows up in the Claude desktop and phone apps when you&apos;re signed in to the same account.</p>
       </div>
 
       <div className="card grid gap-3" data-testid="mcp-claude-code">
         <H>Connect in Claude Code</H>
-        <p className="s">If you use Claude Code in a terminal, run this once, with your own key in place of <Inline>btk_YOUR_KEY</Inline>:</p>
-        <Code>{`claude mcp add --transport http roadie ${connectorUrl} --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
-        <p className="s">Then type <Inline>/mcp</Inline> inside Claude Code to check that Roadie shows as connected.</p>
+        <p className="s">If you use Claude Code in a terminal, run this once:</p>
+        <Code>{`claude mcp add --transport http roadie ${connectorUrl}`}</Code>
+        <p className="s">Then type <Inline>/mcp</Inline> inside Claude Code, choose Roadie and sign in the same way.</p>
       </div>
 
       <div className="card grid gap-3">
@@ -96,7 +93,7 @@ export function UsersGuide({ connectorUrl }: { connectorUrl: string }) {
         <H>Staying safe</H>
         <ul className="s grid list-disc gap-1 pl-4">
           <li>Claude acts as you. Anything it adds or edits is credited to you in History.</li>
-          <li>Lost your key, or think someone else has it? Tell a band admin and they&apos;ll switch it off right away.</li>
+          <li>Think someone else got in? Tell a band admin: turning off your AI access cuts Claude off right away. Connect again afterwards.</li>
           <li>To disconnect, remove the Roadie connector in Claude&apos;s settings.</li>
         </ul>
       </div>
@@ -119,10 +116,11 @@ export function DevelopersGuide() {
       </div>
 
       <div className="card grid gap-3">
-        <H>1. Get a key</H>
+        <H>1. Access and keys</H>
         <p className="s">
-          The user needs <b>AI access</b> (Admin › People). Keys are <Inline>btk_…</Inline> tokens stored hashed (SHA-256) in
-          the <Inline>mcpTokens</Inline> collection; a revoked key stops working at once, even mid-session.
+          The user needs <b>AI access</b> (Admin › People). Connecting signs in with OAuth (<Inline>mcp/oauth.ts</Inline>, the
+          <Inline>/connect</Inline> page), which mints a <Inline>btk_…</Inline> key stored hashed (SHA-256) in <Inline>mcpTokens</Inline> and
+          hands it to the client as the bearer. A revoked key, or AI access turned off, stops it at once, even mid-session.
         </p>
       </div>
 
@@ -137,9 +135,9 @@ export function DevelopersGuide() {
 
       <div className="card grid gap-3">
         <H>3. Connect Claude Code</H>
-        <p className="s">HTTP (one shared server):</p>
-        <Code>{`claude mcp add --transport http roadie http://127.0.0.1:3100/mcp \\\n  --header "Authorization: Bearer btk_YOUR_KEY"`}</Code>
-        <p className="s">Or stdio (Claude Code starts the server itself; the key goes in <Inline>MCP_TOKEN</Inline>):</p>
+        <p className="s">HTTP (one shared server; <Inline>/mcp</Inline> in Claude Code signs in, with the dev sign-in buttons on the emulators):</p>
+        <Code>{"claude mcp add --transport http roadie http://127.0.0.1:3100/mcp"}</Code>
+        <p className="s">Or stdio (Claude Code starts the server itself; it needs a <Inline>btk_</Inline> key in <Inline>MCP_TOKEN</Inline>, e.g. the one a sign-in minted):</p>
         <Code>{"claude mcp add roadie --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix /path/to/roadie run --silent mcp:stdio"}</Code>
         <p className="s">Use one or the other, not both. Run <Inline>/mcp</Inline> inside Claude Code to check it connected.</p>
       </div>

@@ -4,20 +4,28 @@
  * authorization-server metadata, register themselves (RFC 7591) and run authorization code + PKCE. Without these
  * endpoints the app says "Couldn't start sign-in".
  *
- * Signing in still means pasting your Roadie key (btk_...) on our authorize page, and the access token Claude gets back
- * *is* that key, so /mcp's bearer check, revocation and lastUsedAt work exactly as with Claude Code's header.
+ * Signing in is your normal Roadie sign-in: /oauth/authorize checks the request and sends the browser to /connect, which
+ * signs you in with Google (or uses the sign-in you already have), lets you pick the artist and calls /oauth/approve.
+ * The token endpoint then mints an MCP key (btk_..., stored hashed in mcpTokens like any other) and hands it to Claude as
+ * the access token, so /mcp's bearer check works exactly as with Claude Code's header. Turning off someone's AI access
+ * stops it at once; connecting the same client again replaces its previous key.
  *
  * Stateless like mcp/web.ts (App Hosting scales to zero, up to two instances): client ids, codes and refresh tokens are
  * sealed (AES-256-GCM) with a key derived from MCP_SESSION_SECRET, so any instance can open them and nothing is stored.
- * Codes expire after five minutes and are bound to the client, the redirect URI and the PKCE challenge.
+ * Codes expire after five minutes and are bound to the client, the redirect URI and the PKCE challenge; the person
+ * gets fifteen minutes on /connect.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { appUrl } from "@/lib/app-url";
 import { AppError } from "@/server/errors";
-import { authenticateToken } from "./auth";
+import { authenticateToken, mintKey } from "./auth";
+import { adminAuth } from "@/server/admin";
+import { db } from "@/server/db";
+import { mcpIn, type Membership } from "@/schema/users";
 import { sessionSecret } from "./secret";
 
 const CODE_TTL_MS = 5 * 60_000;
+const REQ_TTL_MS = 15 * 60_000;
 
 export const issuer = () => appUrl();
 /** The MCP address users paste into Claude: MCP_URL if set, otherwise APP_URL + /mcp. */
@@ -29,7 +37,10 @@ export const resourceMetadataUrl = () => `${issuer()}/.well-known/oauth-protecte
 
 type Sealed =
   | { t: "client"; r: string[]; n?: string }
-  | { t: "code"; k: string; c: string; r: string; p: string; e: number }
+  /** A checked authorize request waiting on /connect: client, redirect URI, PKCE challenge, state, client name, expiry. */
+  | { t: "req"; c: string; r: string; p: string; s: string; n?: string; e: number }
+  /** Approved: who (users doc id) and which artist. The key is minted when Claude redeems it. */
+  | { t: "code"; u: string; a: string; n?: string; c: string; r: string; p: string; e: number }
   | { t: "refresh"; k: string; c: string };
 
 const aesKey = () => createHash("sha256").update(`roadie-mcp-oauth:${sessionSecret()}`).digest();
@@ -58,8 +69,8 @@ export function unseal<T extends Sealed["t"]>(s: string | null | undefined, t: T
 // ---------- responses ----------
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization, MCP-Protocol-Version" };
-const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...CORS, ...headers } });
+const json = (status: number, body: unknown, headers: Record<string, string> = CORS) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
 const oauthError = (status: number, error: string, description: string) => json(status, { error, error_description: description });
 export const preflight = () => new Response(null, { status: 204, headers: CORS });
 
@@ -118,11 +129,9 @@ export async function register(req: Request): Promise<Response> {
 
 // ---------- authorize ----------
 
-interface AuthParams { client_id: string; redirect_uri: string; code_challenge: string; state: string; clientName?: string }
-
 /** Checks the request. Errors that must not be sent to the redirect URI (bad client or URI) come back as a page. */
-function readAuthParams(p: URLSearchParams | FormData): { ok: AuthParams } | { page: string } | { redirect: string } {
-  const get = (k: string) => { const v = p.get(k); return typeof v === "string" ? v : ""; };
+function readAuthParams(p: URLSearchParams): { ok: Extract<Sealed, { t: "req" }> } | { page: string } | { redirect: string } {
+  const get = (k: string) => p.get(k) ?? "";
   const client = unseal(get("client_id"), "client");
   if (!client) return { page: "This sign-in link isn't from a client Roadie knows. Remove the connector in Claude and add it again." };
   const redirect_uri = get("redirect_uri") || (client.r.length === 1 ? client.r[0] : "");
@@ -132,7 +141,7 @@ function readAuthParams(p: URLSearchParams | FormData): { ok: AuthParams } | { p
   if (get("response_type") !== "code") return fail("unsupported_response_type", "Only response_type=code is supported");
   const code_challenge = get("code_challenge");
   if (!code_challenge || (get("code_challenge_method") || "plain") !== "S256") return fail("invalid_request", "PKCE with S256 is required");
-  return { ok: { client_id: get("client_id"), redirect_uri, code_challenge, state, clientName: client.n } };
+  return { ok: { t: "req", c: get("client_id"), r: redirect_uri, p: code_challenge, s: state, ...(client.n ? { n: client.n } : {}), e: Date.now() + REQ_TTL_MS } };
 }
 
 const withParams = (base: string, params: Record<string, string>) => {
@@ -142,32 +151,65 @@ const withParams = (base: string, params: Record<string, string>) => {
 };
 const redirect = (to: string) => new Response(null, { status: 302, headers: { location: to, "cache-control": "no-store" } });
 
+/** GET /oauth/authorize: check the request, then hand the person to /connect (the app's sign-in) with it sealed. */
 export async function authorize(req: Request): Promise<Response> {
-  if (req.method === "GET") {
-    const url = new URL(req.url);
-    const r = readAuthParams(url.searchParams);
-    if ("page" in r) return html(400, errorPage(r.page));
-    if ("redirect" in r) return redirect(r.redirect);
-    return html(200, signInPage(url.searchParams, r.ok.clientName));
-  }
-
-  const form = await req.formData();
-  const r = readAuthParams(form);
+  const r = readAuthParams(new URL(req.url).searchParams);
   if ("page" in r) return html(400, errorPage(r.page));
   if ("redirect" in r) return redirect(r.redirect);
-  const { client_id, redirect_uri, code_challenge, state } = r.ok;
-  if (form.get("cancel")) return redirect(withParams(redirect_uri, { error: "access_denied", error_description: "Sign-in was cancelled", state }));
+  return redirect(`${issuer()}/connect?req=${seal(r.ok)}`);
+}
 
-  const key = String(form.get("key") ?? "").trim();
-  try {
-    await authenticateToken(key);
-  } catch (e) {
-    if (!(e instanceof AppError)) throw e;
-    const msg = e.status === 401 ? (e.message === "This token was revoked" ? "That key was switched off. Ask a band admin for a new one." : "That key didn't work. Check you copied all of it.") : e.message;
-    return html(e.status === 401 ? 401 : 403, signInPage(form, r.ok.clientName, msg));
+/** Who is signing in on /connect: their Firebase ID token, matched to a users doc by uid, else by verified email. */
+async function personFrom(authHeader: string | null) {
+  const m = /^Bearer (.+)$/.exec(authHeader ?? "");
+  if (!m) throw new AppError("unauthenticated", "Sign in first", 401);
+  let decoded;
+  try { decoded = await adminAuth().verifyIdToken(m[1]); }
+  catch { throw new AppError("unauthenticated", "Your sign-in has expired. Sign in again.", 401); }
+  let user = await db.get("users", decoded.uid);
+  const email = decoded.email?.trim().toLowerCase();
+  if ((!user || user.deletedAt) && email && decoded.email_verified !== false) {
+    user = (await db.list("users", (q) => q.where("email", "==", email).limit(5))).find((u) => !u.deletedAt) ?? null;
   }
-  const code = seal({ t: "code", k: key, c: client_id, r: redirect_uri, p: code_challenge, e: Date.now() + CODE_TTL_MS });
-  return redirect(withParams(redirect_uri, { code, state }));
+  if (!user || user.deletedAt) throw new AppError("not_invited", `${decoded.email ?? "This account"} isn't on any band in Roadie.`, 403);
+  return user;
+}
+
+/**
+ * POST /oauth/approve, called by /connect with the person's Firebase ID token. Body `{req}` lists their artists and
+ * which have AI access; `{req, artistId}` approves and returns the redirect back to the client with a code;
+ * `{req, cancel: true}` returns the access_denied redirect.
+ */
+/** Same-origin JSON (no CORS): only our own /connect page calls /oauth/approve. */
+const own = (status: number, body: unknown) => json(status, body, {});
+
+export async function approve(req: Request): Promise<Response> {
+  let body: { req?: string; artistId?: string; cancel?: boolean };
+  try { body = (await req.json()) as typeof body; }
+  catch { return own(400, new AppError("invalid_input", "Body must be JSON").toJSON()); }
+  const r = unseal(body.req, "req");
+  if (!r || r.e < Date.now()) return own(400, new AppError("expired", "This sign-in link has expired. Start again from Claude.").toJSON());
+  if (body.cancel) return own(200, { redirect: withParams(r.r, { error: "access_denied", error_description: "Sign-in was cancelled", state: r.s }) });
+  try {
+    const user = await personFrom(req.headers.get("authorization"));
+    const ms = (user.artists ?? []) as Membership[];
+    if (!body.artistId) {
+      const docs = await Promise.all(ms.map((m) => db.get("artists", m.artistId)));
+      const artists = ms.flatMap((m, i) => {
+        const a = docs[i];
+        return a && !a.deletedAt ? [{ artistId: m.artistId, name: a.name as string, ai: mcpIn(user, m.artistId) }] : [];
+      }).sort((a, b) => a.name.localeCompare(b.name));
+      return own(200, { client: r.n ?? "Claude", returnTo: new URL(r.r).host, name: user.name, artists });
+    }
+    if (!ms.some((m) => m.artistId === body.artistId)) throw new AppError("not_a_member", "You're not a member of this artist", 403);
+    if (!mcpIn(user, body.artistId)) throw new AppError("forbidden", "You don't have AI access in this artist. Ask a band admin to turn it on for you in People.", 403);
+    const code = seal({ t: "code", u: user.id, a: body.artistId, ...(r.n ? { n: r.n } : {}), c: r.c, r: r.r, p: r.p, e: Date.now() + CODE_TTL_MS });
+    return own(200, { redirect: withParams(r.r, { code, state: r.s }) });
+  } catch (e) {
+    if (e instanceof AppError) return own(e.status, e.toJSON());
+    console.error(e);
+    return own(500, { error: { code: "internal", message: "Something went wrong" } });
+  }
 }
 
 // ---------- token ----------
@@ -187,25 +229,25 @@ export async function token(req: Request): Promise<Response> {
   const clientId = p.get("client_id") ?? "";
 
   let key: string, client: string;
-  if (grant === "authorization_code") {
-    const code = unseal(p.get("code"), "code");
-    if (!code || code.e < Date.now()) return oauthError(400, "invalid_grant", "The code is invalid or has expired");
-    if (clientId && clientId !== code.c) return oauthError(400, "invalid_grant", "The code was issued to another client");
-    if ((p.get("redirect_uri") ?? code.r) !== code.r) return oauthError(400, "invalid_grant", "redirect_uri does not match");
-    const verifier = p.get("code_verifier");
-    if (!verifier || !same(s256(verifier), code.p)) return oauthError(400, "invalid_grant", "PKCE verification failed");
-    key = code.k;
-    client = code.c;
-  } else if (grant === "refresh_token") {
-    const rt = unseal(p.get("refresh_token"), "refresh");
-    if (!rt || (clientId && clientId !== rt.c)) return oauthError(400, "invalid_grant", "The refresh token is invalid");
-    key = rt.k;
-    client = rt.c;
-  } else {
-    return oauthError(400, "unsupported_grant_type", "Use authorization_code or refresh_token");
-  }
-
   try {
+    if (grant === "authorization_code") {
+      const code = unseal(p.get("code"), "code");
+      if (!code || code.e < Date.now()) return oauthError(400, "invalid_grant", "The code is invalid or has expired");
+      if (clientId && clientId !== code.c) return oauthError(400, "invalid_grant", "The code was issued to another client");
+      if ((p.get("redirect_uri") ?? code.r) !== code.r) return oauthError(400, "invalid_grant", "redirect_uri does not match");
+      const verifier = p.get("code_verifier");
+      if (!verifier || !same(s256(verifier), code.p)) return oauthError(400, "invalid_grant", "PKCE verification failed");
+      // Access is checked again here (it may have been turned off in the last five minutes) and the key is made.
+      key = await mintKey(code.u, code.a, code.n ?? "Claude");
+      client = code.c;
+    } else if (grant === "refresh_token") {
+      const rt = unseal(p.get("refresh_token"), "refresh");
+      if (!rt || (clientId && clientId !== rt.c)) return oauthError(400, "invalid_grant", "The refresh token is invalid");
+      key = rt.k;
+      client = rt.c;
+    } else {
+      return oauthError(400, "unsupported_grant_type", "Use authorization_code or refresh_token");
+    }
     await authenticateToken(key);
   } catch (e) {
     if (e instanceof AppError) return oauthError(400, "invalid_grant", e.message);
@@ -220,39 +262,7 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 const html = (status: number, body: string) =>
   new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer" } });
 
-const shell = (title: string, inner: string) => `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(title)}</title>
-<style>
-  :root { color-scheme: light dark; --bg: #f7f5f2; --card: #fff; --fg: #1d1b19; --muted: #6b6560; --line: #e2ddd6; --accent: #c2410c; --err: #b91c1c; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #151413; --card: #1f1d1b; --fg: #f2efeb; --muted: #a39d96; --line: #34302c; --accent: #fb923c; --err: #f87171; } }
-  * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, -apple-system, sans-serif; }
-  main { width: 100%; max-width: 420px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 24px; display: grid; gap: 14px; }
-  h1 { margin: 0; font-size: 1.35rem; }
-  p { margin: 0; color: var(--muted); }
-  label { display: grid; gap: 6px; font-weight: 600; }
-  input[type=password] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 15px ui-monospace, monospace; }
-  .row { display: flex; gap: 10px; }
-  button { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: 600 15px system-ui, sans-serif; cursor: pointer; }
-  button.go { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .err { color: var(--err); font-weight: 600; }
-</style></head><body><main>${inner}</main></body></html>`;
-
-function signInPage(p: URLSearchParams | FormData, clientName?: string, error?: string) {
-  const keep = ["response_type", "client_id", "redirect_uri", "code_challenge", "code_challenge_method", "state", "scope", "resource"];
-  const hidden = keep.map((k) => { const v = p.get(k); return typeof v === "string" && v ? `<input type="hidden" name="${k}" value="${esc(v)}">` : ""; }).join("");
-  const who = clientName ? esc(clientName) : "Claude";
-  return shell("Connect Roadie", `
-<h1>Connect Roadie to ${who}</h1>
-<p>Paste your Roadie key. It starts with <code>btk_</code>; a band admin gives it to you from Admin &gt; AI keys.</p>
-${error ? `<p class="err" role="alert">${esc(error)}</p>` : ""}
-<form method="post" action="/oauth/authorize" style="display:grid;gap:14px">
-  ${hidden}
-  <label>Roadie key<input type="password" name="key" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="btk_..." required autofocus></label>
-  <div class="row"><button type="submit" name="cancel" value="1" formnovalidate>Cancel</button><button class="go" type="submit">Connect</button></div>
-</form>
-<p>${who} will act as you in Roadie. Everything it changes shows in History, and a band admin can switch the key off at any time.</p>`);
-}
-
-const errorPage = (msg: string) => shell("Can't connect Roadie", `<h1>Can't connect Roadie</h1><p class="err">${esc(msg)}</p>`);
+const errorPage = (msg: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Can't connect Roadie</title>
+<style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;font:16px/1.45 system-ui,sans-serif}main{max-width:420px}</style>
+</head><body><main><h1>Can't connect Roadie</h1><p>${esc(msg)}</p></main></body></html>`;
