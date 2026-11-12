@@ -175,3 +175,44 @@ These need the owner or production access. Record them as manual steps:
 **Manual steps for the owner**
 - None new. (Still: `SIGNED_URL_SECRET` before deploying; Set up + migration on prod.)
 - Next session (phase 5): `session_01MmV83YbpT97cJ1EkkRyixq`, created and in the working state (still starting up when checked).
+
+### Phase 5 — done
+**Checked first**
+- **`alt_text`:** accepted, from Graph's public docs (IG User Media reference: "For image posts only … Only supported on a single image or image media in a carousel"; added March 24, 2025). It's sent on image and carousel-item containers, not on the carousel container. Written into design.md.
+- **HEIC `=s2048` size on prod:** not checked (no prod access); left as a manual step. design.md says so.
+
+**Built**
+- `graph.createImage(…, alt?)`, `graph.createCarouselItem`, `graph.createCarousel` (`src/server/meta/graph.ts`).
+- `src/server/postPhoto.ts`: `renderPostPhoto` (JPEG/PNG/WebP from `download`, HEIC/HEIF from `thumbnail(id, 2048)`; `sharp().rotate()`, `cropBox` = the spec's object-fit rule, resize to 1080×1350 or 1080×1080, sRGB JPEG q90), `NoPreviewError` / `noPreview()`, `HEIC_PREVIEW`.
+- `GET /api/posts/media/[postId]/[index]` (signed `media` scope with the index as `v`; `cache-control: private, no-store`; 503 with the "no preview yet" message, else a plain 404). `src/app/api/posts/media/[id]/route.ts` deleted. `signMediaUrl(artistId, postId, index)` / `mediaSigOk(…, index, …)`.
+- `posts.publish` (admin + mcp): checks editable, `freshToken` first, then a transaction claims it (`draft`/`failed` → `publishing`, clears `error`). One photo → `createImage`; 2–10 → an item container per photo (each polled), then the carousel (polled), then `publish` + `permalink`. Posted → `postedAt`, `instagram`, then the folder is renamed `uniqueName(YYYY-MM-DD - <title>)`; a failed rename → `driveTidy.error`. Any failure → `failed` with Instagram's reason prefixed by the photo's name; Drive untouched.
+- `posts.tidy` (admin + mcp): refused unless posted; renames the folder and clears `driveTidy`; `{ ok: true }` when there's nothing to tidy.
+- `posts.publishPhoto` removed (command, its tests, its `EXCLUDED` line).
+- `fakes/fake-meta`: `alt_text` (≤1000, images only), `is_carousel_item`, `media_type=CAROUSEL` with 2–10 finished item `children`, `__scenario { failItem }`, `GET /__media` (for tests: what was published, with each photo's URL and alt).
+- UI: `PostDialog.tsx` (account, no-alt-text warning, what happens in Drive, explicit **Post now**, off with the connect / sign-in message; then the Instagram link and the new folder name). The editor gets **Post…** (off while a photo is missing) and **Finish tidying Drive**; the Posts tab gets **Finish tidying Drive** on a row with `driveTidy`.
+- **Menu rename:** `src/lib/nav.ts` label and `SECTION_LABEL.posts` are **Social Media**; the page title on `posts/page.tsx` (and `posts/photos/page.tsx`, the same section) reads Social Media. The route and `posts.*` names are unchanged; the e2e title check is updated.
+
+**Deviations**
+- Before any container, `publish` checks each HEIC has a Drive preview, so a missing one fails as "IMG_4412: Instagram can't take it yet: Drive hasn't made a preview of IMG_4412 yet; try again in a minute" rather than Instagram's vaguer download error. (Reading that preview's body through matters: cancelling it hung under `next dev`'s fetch.)
+- The token is renewed before the claim (the spec lists Start then Token), so a dead sign-in leaves the draft a draft instead of failed.
+- `publish` also clears `error` when it claims a failed post, so a successful re-post doesn't keep the old reason.
+- `tidy` that still fails throws `drive_tidy` (502) "Drive still said no: …" and keeps `driveTidy`.
+- The After-posting dialog computes the folder name client-side (`dateInBandZone()` + title); a ` (2)` suffix from a name clash wouldn't show there.
+- The Photos page title also reads Social Media (the runbook named only `posts/page.tsx`); the tabs inside stay **Posts | Photos**.
+- e2e fix to phase 4's Drafts test: it read the draft id while the URL was still `/posts/photos` (the regex matched it); it now waits for the editor's URL.
+
+**Tests**
+- `npm run typecheck` → clean.
+- Emulator, targeted: `tests/emulator/posts.test.ts tests/emulator/mcp.test.ts` → 51/51 (new: media URL signing per index; the sideways JPEG 1080×1350 upright; focus moves the crop; Square 1080×1080; HEIC from the preview and its no-preview error; publish one photo vs carousel call order, alt text and order at Meta; `failItem` → failed, Drive untouched, re-post works; HEIC with no preview; a second publish refused; `failRename` → `driveTidy`, `tidy` clears it, a second `tidy` ok; token renewal and the 403 now on `publish`). `mcp, roadie-policy, roadie-tools, undo, history, drive-list, google` → 62/62. Unit (`photos, signedUrl, photoDays, roadie-policy, roadie-tools, help`) → 23/23.
+- **E2E** `npm run e2e -- --trace off` → **195/195 passed** (18.1 min). An earlier full run had a tours calendar test fail once (`tours.spec.ts:369`, the Tours switch after a reload); it passed alone and in the final full run. (This container's Playwright 1.64.1 wanted `chromium_headless_shell-1248`; a local symlink to the preinstalled 1243 build was enough, with no repo change.)
+- `npm run typecheck` → clean; `npm run test` → unit 503/503; emulator 555/556. The one failure, `tests/emulator/wipe.test.ts` "the backup folder is stamped in local time, to the second", predates this work: it assumes the machine isn't on UTC, and this container is. It passes 8/8 with `TZ=America/Denver`. Not changed.
+
+**Manual steps for the owner**
+- `SIGNED_URL_SECRET`: the owner says it's set in Firebase. Done.
+- On prod after deploying: Settings › Google › Socials folder › **Set up**, then `npm run migrate:posts-49` (dry run), check the report, then `-- --apply` (command in Phase 2's notes).
+- On prod: check that an iPhone HEIC's `=s2048` preview is at least 1350 px on its long edge. If not, set `HEIC_PREVIEW` in `src/server/postPhoto.ts` to 4000.
+- On prod: post one carousel with alt text, check the alt text in the Instagram app, then delete the post (Done when).
+- Deploy and merge: not done by a session.
+
+### ALL PHASES DONE
+Final results: typecheck clean; e2e 195/195; unit 503/503; emulator 555/556 (the UTC-only `wipe.test.ts` failure above, which predates this work). Owner's remaining steps: Set up + the #49 migration on prod, the HEIC preview size check, one real carousel post (alt text check, then delete it), then deploy/merge. `SIGNED_URL_SECRET` is already set.
