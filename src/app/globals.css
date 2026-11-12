@@ -185,6 +185,8 @@ dialog.dlg::backdrop { background: var(--backdrop); }
 .menu-item:hover:not([aria-disabled="true"]), .menu-item:focus-visible { background: var(--soft); outline: none; }
 .menu-item.danger { color: var(--danger); }
 .menu-item[aria-disabled="true"] { opacity: .6; cursor: default; }
+/* The page you are on (sidebars, menus): as the top bar marks it. Here, not as utilities: .menu-item is unlayered, so its own background would win. */
+.menu-item[aria-current="page"], .menu-item[aria-current="page"]:hover { background: var(--accent-soft); color: var(--accent-text); font-weight: 700; }
 .menu-item svg { flex: none; }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--divider); }
 .check-list { left: 0; right: auto; max-height: min(60vh, 420px); overflow-y: auto; }

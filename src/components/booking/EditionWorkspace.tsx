@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
+import { Crumbs, campaignsCrumb, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { usePlacePitch, PlaceMore } from "@/components/booking/PlacePitchTab";
 import { useMemo } from "react";
@@ -49,7 +49,7 @@ function EditionPage({ placeId: id, pitchId, defaultTab }: { placeId: string; pi
   const saveNote = async (key: "payNotes" | "notes", next: string) => !!(await call("editions.update", { id, patch: { [key]: next || null } }));
 
   return (
-    <DetailPage testid="edition-page" recordId={id} back={<Crumbs items={place.crumb ? [place.crumb, { label: name }] : [sectionCrumb("edition"), { label: e.festivalName, href: hrefFor("festival", e.festivalId) }, { label: name }]} back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} />} title={name}
+    <DetailPage testid="edition-page" recordId={id} back={<Crumbs items={place.crumb ? [campaignsCrumb, place.crumb, { label: name }] : [sectionCrumb("edition"), { label: e.festivalName, href: hrefFor("festival", e.festivalId) }, { label: name }]} back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} />} title={name}
       pill={place.pill}
       meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
       more={<PlaceMore bookedIt={place.bookedIt} testid="edition" items={[...place.moreItems, { key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>

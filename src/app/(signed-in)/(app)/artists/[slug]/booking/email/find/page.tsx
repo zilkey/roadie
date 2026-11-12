@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import Link, { useArtist } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle } from "@/components/ui";
-import { Crumbs } from "@/components/booking/BookingNav";
+import { Crumbs, campaignsCrumb } from "@/components/booking/BookingNav";
 import { BackLink, useBooking, type PitchRow } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand, type CommandError } from "@/lib/commands";
@@ -51,7 +51,7 @@ function FindSent() {
       .sort((x, y) => x.target.name.localeCompare(y.target.name)));
   }, [b.loading, threads, b.pitches]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const title = <Crumbs fixed items={[{ label: "Booking", href: ROUTES.bookingPitches.path }, { label: back.label, href: back.href }, { label: "Find sent emails" }]} back={<BackLink href={back.href} label={back.label} />} />;
+  const title = <Crumbs fixed items={[campaignsCrumb, { label: back.label, href: back.href }, { label: "Find sent emails" }]} back={<BackLink href={back.href} label={back.label} />} />;
   if (!pitches) return <div className="show-page"><PageTitle back={title} title="Find sent emails" /></div>;
   return <Finder pitches={pitches} placeOf={placeOf} title={title} back={back.href} />;
 }

@@ -1,8 +1,8 @@
 "use client";
-import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
+import { Crumbs, placeTrail, usePitchCampaignCrumb } from "@/components/booking/BookingNav";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { BackLink, Tabs, hrefFor, useBooking } from "@/components/booking/common";
@@ -33,6 +33,8 @@ function SearchGmail() {
   const pitch = params.get("pitch") ?? undefined;
   const b = useBooking();
   const me = useProfile();
+  // email.search looks in the booking mailbox when the band has one (accountOf), else in the caller's own Gmail.
+  const mailbox = useArtist().doc?.bookingMail?.email ?? me.email;
 
   // The place the search is about; an edition's threads and contacts are its festival's.
   const found = useMemo((): { place: Place; contactIds: string[] } | null => {
@@ -57,15 +59,16 @@ function SearchGmail() {
 
   if (b.loading) return null;
   if (!found) return <div className="card" data-testid="search-no-place"><p className="s">Pick a venue, festival or promoter to search for first. <Link href="/booking" className="underline">Back to Booking</Link></p></div>;
-  return <Search place={found.place} pitch={pitch} contacts={contacts} sharedDomain={sharedDomain} account={me.email} />;
+  return <Search place={found.place} pitch={pitch} contacts={contacts} sharedDomain={sharedDomain} account={mailbox} />;
 }
 
 function Search({ place, pitch, contacts, sharedDomain, account }: { place: Place; pitch?: string; contacts: Row<Contact>[]; sharedDomain: string; account: string }) {
   const [tab, setTab] = useState<"threads" | "people">("threads");
+  const campaign = usePitchCampaignCrumb(pitch);
   const back = pitch ? `/booking/pitches/${pitch}` : place.href;
   return (
     <div className="show-page" data-testid="gmail-search-page">
-      <PageTitle back={<Crumbs items={[...placeTrail(place.kind, place.id, place.name, pitch), { label: "Search Gmail" }]} back={<BackLink href={back} label={pitch ? "Pitch" : place.name} />} />} title="Search Gmail" sub={`Looks in ${account}. Nothing is copied until you link it.`} />
+      <PageTitle back={<Crumbs items={[...placeTrail(place.kind, place.id, place.name, pitch, campaign), { label: "Search Gmail" }]} back={<BackLink href={back} label={pitch ? "Pitch" : place.name} />} />} title="Search Gmail" sub={`Looks in ${account}. Nothing is copied until you link it.`} />
       <section className="card">
         <Tabs<"threads" | "people"> value={tab} onChange={setTab} testid="gmail-tabs" options={[["threads", "Threads"], ["people", "People"]]} />
         {/* Both stay mounted so a search survives a switch of tab. */}

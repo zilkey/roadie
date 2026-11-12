@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
+import { Crumbs, campaignsCrumb, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { usePlacePitch, PlaceMore } from "@/components/booking/PlacePitchTab";
 import { useState } from "react";
@@ -77,7 +77,7 @@ function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; p
   );
 
   return (
-    <DetailPage testid="promoter-page" recordId={id} back={<Crumbs items={[place.crumb ?? sectionCrumb("promoter"), { label: p.name }]} back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} />} title={p.name}
+    <DetailPage testid="promoter-page" recordId={id} back={<Crumbs items={[...(place.crumb ? [campaignsCrumb, place.crumb] : [sectionCrumb("promoter")]), { label: p.name }]} back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} />} title={p.name}
       pill={place.pill}
       meta={`${KIND_LABEL[p.kind]}${venues.length ? ` · ${venues.length} venues` : ""}`}
       more={<PlaceMore bookedIt={place.bookedIt} testid="promoter" items={[...place.moreItems, { key: "archive", label: "Archive promoter", danger: true, onSelect: archive }]} />}>

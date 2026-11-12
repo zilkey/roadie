@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
+import { Crumbs, campaignCrumb, placeTrail } from "@/components/booking/BookingNav";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -64,6 +64,7 @@ function ThreadPage() {
   if (nf || !t) return nf;
 
   const pitch = t.pitchId ? b.pitches.find((p) => p.id === t.pitchId) : undefined;
+  const campaign = pitch ? campaignCrumb(b.campaigns.find((c) => c.id === pitch.campaignId), isActive(pitch.status)) : undefined;
   const placeHref = hrefFor(t.target.kind, t.target.id);
   const backHref = t.pitchId ? `/booking/pitches/${t.pitchId}` : placeHref;
   const placeWord = t.target.kind === "festival" ? "Festival" : t.target.kind === "promoter" ? "Promoter" : t.target.kind === "act" ? "Act" : "Venue";
@@ -72,7 +73,7 @@ function ThreadPage() {
 
   return (
     <div className="show-page" data-testid="thread-page">
-      <PageTitle back={<Crumbs items={[...placeTrail(t.target.kind, t.target.id, t.target.name, t.pitchId ?? undefined), { label: t.subject || "(no subject)" }]} back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} />} title={t.subject || "(no subject)"}
+      <PageTitle back={<Crumbs items={[...placeTrail(t.target.kind, t.target.id, t.target.name, t.pitchId ?? undefined, campaign), { label: t.subject || "(no subject)" }]} back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} />} title={t.subject || "(no subject)"}
         sub={<>
           {t.messageCount} message{t.messageCount === 1 ? "" : "s"}{names.length > 0 && <> · {names.join(", ")}</>}
           {pitch && cell && <Link href={`/booking/pitches/${pitch.id}`} className="s block font-semibold underline" data-testid="thread-pitch">Pitch: {cell.config}, {cell.dates}</Link>}

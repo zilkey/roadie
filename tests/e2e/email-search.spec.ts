@@ -31,7 +31,7 @@ test("Search Gmail: link the web form's auto-reply to the venue, find Rosa and t
   await expect(page.getByTestId(`gmail-open-${auto.threadId}`)).toBeVisible();
 
   // the pitch's Email card has it
-  await page.getByTestId("crumb-2").click();
+  await page.getByTestId("crumb-3").click();
   await expect(page.getByTestId("pitch-email-card").getByTestId("email-threads")).toContainText(autoSubject);
 
   // People tab

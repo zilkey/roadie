@@ -1,14 +1,15 @@
 "use client";
-import { createContext, useContext, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import NextLink from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Link, useArtist, useHref } from "@/lib/artist";
-import { useCollection } from "@/lib/firestore-hooks";
+import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { previousPath, subscribeNav } from "@/lib/navHistory";
 import { ROUTES } from "@/lib/routes";
 import type { Campaign } from "@/schema";
 import { FlagCampaignProvider } from "@/components/booking/FlagCampaign";
 import { sortCampaigns } from "@/lib/campaigns";
+import { isActive } from "@/lib/booking";
 import { hrefFor } from "@/components/booking/common";
 
 /**
@@ -18,14 +19,15 @@ import { hrefFor } from "@/components/booking/common";
 export function BookingLayout({ children }: { children: React.ReactNode }) {
   const { role } = useArtist();
   const [q, setQ] = useState("");
+  const [trail, setTrail] = useState<string[]>([]);
   if (role !== "admin") return <>{children}</>;
   return (
-    <SearchContext.Provider value={{ q, setQ }}><FlagCampaignProvider>
+    <SearchContext.Provider value={{ q, setQ }}><TrailContext.Provider value={{ trail, setTrail }}><FlagCampaignProvider>
       <div className="min-[900px]:flex min-[900px]:items-start min-[900px]:gap-6">
         <BookingNav />
         <div className="min-w-0 min-[900px]:flex-1">{children}</div>
       </div>
-    </FlagCampaignProvider></SearchContext.Provider>
+    </FlagCampaignProvider></TrailContext.Provider></SearchContext.Provider>
   );
 }
 
@@ -36,6 +38,12 @@ export function BookingLayout({ children }: { children: React.ReactNode }) {
 const SearchContext = createContext<{ q: string; setQ(q: string): void }>({ q: "", setQ: () => {} });
 export const useBookingSearch = () => useContext(SearchContext);
 
+/**
+ * The links of the page's breadcrumbs, published by Crumbs. A page the sidebar has no link for (a pitch, an email, Search
+ * Gmail) lights up the deepest crumb that is a sidebar link: the pitch's campaign, Ongoing, or the place's section.
+ */
+const TrailContext = createContext<{ trail: string[]; setTrail(t: string[]): void }>({ trail: [], setTrail: () => {} });
+
 type Key = "campaigns" | "pitches" | "venues" | "festivals" | "promoters" | "contacts" | "calendars" | "acts" | "templates" | `campaign-${string}`;
 interface Item { key: Key; href: string; label: string; /** Paths under /booking that light this item up besides its own (record pages that belong to it). */ also?: string[]; /** Drawn under All campaigns, with tree lines (desktop). */ kid?: boolean; exact?: boolean }
 /**
@@ -45,7 +53,7 @@ interface Item { key: Key; href: string; label: string; /** Paths under /booking
 const GROUPS: { head: string; items: Item[] }[] = [
   { head: "Campaigns", items: [
     { key: "campaigns", href: ROUTES.bookingCampaigns.path, label: "All campaigns", exact: true },
-    { key: "pitches", href: ROUTES.bookingPitches.path, label: ROUTES.bookingPitches.title, also: ["/booking/email"] },
+    { key: "pitches", href: ROUTES.bookingPitches.path, label: ROUTES.bookingPitches.title },
   ] },
   { head: "Places", items: [
     { key: "venues", href: ROUTES.bookingVenues.path, label: ROUTES.bookingVenues.title },
@@ -68,6 +76,7 @@ function BookingNav() {
   const full = useHref();
   const { artistId } = useArtist();
   const { q } = useBookingSearch();
+  const { trail } = useContext(TrailContext);
   const campaigns = useCollection<Campaign>("campaigns", { where: [["artistId", "==", artistId]] });
   // Ongoing and each active campaign hang under All campaigns as a small tree (no counts: Jeff, 2026-11-12).
   const groups = useMemo(() => GROUPS.map((g, n) => n > 0 ? g : { ...g, items: [
@@ -75,7 +84,13 @@ function BookingNav() {
     ...sortCampaigns(campaigns.rows ?? []).active.map((c): Item => ({ key: `campaign-${c.id}`, href: `/booking/campaigns/${c.id}`, label: c.name, kid: true })),
   ] }), [campaigns.rows]);
   const under = (href: string) => path === full(href) || path.startsWith(full(href) + "/");
-  const on = (i: Item) => (i.exact ? path === full(i.href) : under(i.href)) || (i.also ?? []).some((a) => under(a));
+  // The current item: the link to this very page; else the deepest crumb that is a link here (a pitch's campaign); else the
+  // section the path is under.
+  const items = groups.flatMap((g) => g.items);
+  const current = items.find((i) => path === full(i.href))
+    ?? [...trail].reverse().map((h) => items.find((i) => i.href === h)).find(Boolean)
+    ?? items.find((i) => (i.exact ? path === full(i.href) : under(i.href)) || (i.also ?? []).some((a) => under(a)));
+  const on = (i: Item) => i.key === current?.key;
   const href = (i: Item) => SEARCHABLE.includes(i.key) && q.trim() ? `${i.href}?q=${encodeURIComponent(q)}` : i.href;
   return (
     <nav aria-label="Booking" data-testid="booking-nav"
@@ -109,11 +124,16 @@ export function Crumbs({ items, back, fixed }: { items: Crumb[]; back?: React.Re
   const router = useRouter();
   const full = useHref();
   const prev = useSyncExternalStore(subscribeNav, previousPath, () => undefined);
-  if (role !== "admin") return <>{back}</>;
+  const { setTrail } = useContext(TrailContext);
   const from = prev && SECTIONS.find((i) => full(i.href) === prev);
   const fromHref = from && from.href;
-  const isSection = SECTIONS.some((i) => i.href === items[0]?.href);
-  const head = !fixed && from && fromHref && isSection ? [{ label: from.label, href: fromHref }, ...items.slice(1)] : items;
+  // A pitch's trail starts Campaigns › its campaign: only Ongoing (a section) gives way to the list you came from.
+  const lead = items[0]?.href === ROUTES.bookingCampaigns.path && items.length > 1 ? 1 : 0;
+  const isSection = SECTIONS.some((i) => i.href === items[lead]?.href) && fromHref !== items[lead]?.href && fromHref !== ROUTES.bookingCampaigns.path;
+  const head = !fixed && from && fromHref && isSection ? [{ label: from.label, href: fromHref }, ...items.slice(lead + 1)] : items;
+  const links = JSON.stringify(head.flatMap((c) => (c.href ? [c.href.split("?")[0]] : [])));
+  useEffect(() => { setTrail(JSON.parse(links)); return () => setTrail([]); }, [links, setTrail]);
+  if (role !== "admin") return <>{back}</>;
   const trail = [{ label: ROUTES.booking.title, href: ROUTES.booking.path }, ...head];
   return (
     <>
@@ -151,7 +171,17 @@ export const sectionCrumb = (kind: PlaceKind): Crumb => ({ label: SECTION[kind].
 /** Where a pitch is listed: its campaign's page while that is live and active (or the pitch is closed), else Ongoing. */
 export const campaignCrumb = (campaign?: { id: string; name: string; status: string } | null, pitchActive = true): Crumb =>
   campaign && (campaign.status === "active" || !pitchActive) ? { label: campaign.name, href: `/booking/campaigns/${campaign.id}` } : { label: ROUTES.bookingPitches.title, href: ROUTES.bookingPitches.path };
-/** The trail down to a place, or to its pitch when there is one: the pitch's campaign › the place's pitch, else Venues › the venue. */
+export const campaignsCrumb: Crumb = { label: ROUTES.bookingCampaigns.title, href: ROUTES.bookingCampaigns.path };
+/** A pitch's campaign crumb (its campaign, or Ongoing), read from the pitch; undefined without a pitch. */
+export function usePitchCampaignCrumb(pitchId?: string | null): Crumb | undefined {
+  const { doc: p } = useDoc<{ status: string; campaignId?: string | null }>("pitches", pitchId ?? "", { skip: !pitchId });
+  const { doc: c } = useDoc<Campaign>("campaigns", p?.campaignId ?? "", { skip: !p?.campaignId });
+  return pitchId ? campaignCrumb(c, isActive(p?.status ?? "toPitch")) : undefined;
+}
+/**
+ * The trail down to a place, or to its pitch when there is one: Campaigns › the pitch's campaign (or Ongoing) › the place's
+ * pitch, else Venues › the venue.
+ */
 export const placeTrail = (kind: PlaceKind, id: string, name: string, pitchId?: string, campaign?: Crumb): Crumb[] => pitchId
-  ? [campaign ?? { label: ROUTES.bookingCampaigns.title, href: ROUTES.bookingCampaigns.path }, { label: name, href: `/booking/pitches/${pitchId}` }]
+  ? [campaignsCrumb, campaign ?? { label: ROUTES.bookingPitches.title, href: ROUTES.bookingPitches.path }, { label: name, href: `/booking/pitches/${pitchId}` }]
   : [sectionCrumb(kind), { label: name, href: hrefFor(kind, id) }];

@@ -109,7 +109,7 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   expect(mine[0].body).toContain("Dec 11 works");
 
   // Back on the pitch: the row counts 3 messages, and the thread is no longer a new reply.
-  await page.getByTestId("crumb-2").click();
+  await page.getByTestId("crumb-3").click();
   await expect(page.getByTestId(`thread-count-${linked.id}`)).toHaveText("3");
   await expect(page.getByTestId(`thread-new-${linked.id}`)).toHaveCount(0);
 });

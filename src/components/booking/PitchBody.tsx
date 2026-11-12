@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, campaignCrumb } from "@/components/booking/BookingNav";
+import { Crumbs, campaignCrumb, campaignsCrumb } from "@/components/booking/BookingNav";
 import type { Campaign } from "@/schema";
 import { PitchCampaignPicker } from "@/components/booking/MoveToCampaign";
 import { draftPath } from "@/schema/drafts";
@@ -116,7 +116,7 @@ export function PitchBody({ id, embedded = false, booking: extBooking, setBookin
 
   return (
     <div className={embedded ? "grid gap-5" : "show-page"} data-testid={embedded ? "pitch-body" : "pitch-page"} data-pitch-id={id}>
-      {!embedded && <PageTitle back={<Crumbs items={[home, { label: p.target.name }]} back={<BackLink href={home.href!} label={home.label} />} />} title={p.target.name}
+      {!embedded && <PageTitle back={<Crumbs items={[campaignsCrumb, home, { label: p.target.name }]} back={<BackLink href={home.href!} label={home.label} />} />} title={p.target.name}
         sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
           <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">{p.target.kind === "venue" ? "Venue" : p.target.kind === "promoter" ? "Promoter" : "Festival"} page</Link></>}
         pill={<StatusPill status={p.status} />}

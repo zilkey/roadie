@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, campaignCrumb, sectionCrumb } from "@/components/booking/BookingNav";
+import { Crumbs, campaignCrumb, campaignsCrumb, sectionCrumb } from "@/components/booking/BookingNav";
 import { PitchBody } from "@/components/booking/PitchBody";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -88,7 +88,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
 
   return (
     <DetailPage testid="venue-page" recordId={id}
-      back={<Crumbs items={[admin && pitch ? campaignCrumb(campaign, isActive(pitch.status)) : sectionCrumb("venue"), { label: v.name }]} back={<BackLink mode="back" href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />} />}
+      back={<Crumbs items={[...(admin && pitch ? [campaignsCrumb, campaignCrumb(campaign, isActive(pitch.status))] : [sectionCrumb("venue")]), { label: v.name }]} back={<BackLink mode="back" href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />} />}
       title={v.name}
       pill={admin && pitch ? <StatusPill status={pitch.status} /> : admin && pitched ? <PitchedPill /> : undefined}
       meta={[typeLabel, v.address.city].filter(Boolean).join(" · ")}

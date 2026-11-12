@@ -1,5 +1,5 @@
 "use client";
-import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
+import { Crumbs, campaignCrumb, placeTrail } from "@/components/booking/BookingNav";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -19,7 +19,7 @@ import { ROUTES } from "@/lib/routes";
 import { PersonalTouches } from "@/components/booking/PersonalTouches";
 
 const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-import { buildTemplateContext, fillTemplate, unfilledFields } from "@/lib/booking";
+import { buildTemplateContext, fillTemplate, isActive, unfilledFields } from "@/lib/booking";
 import { htmlToText, textToHtml } from "@/lib/email-html";
 import { fieldsInWords, nameFromAddress, parseTarget } from "@/lib/email-compose";
 import { ROLE_LABEL, rolesOf, roleFirst, type ContactRole } from "@/lib/venues";
@@ -64,6 +64,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   // Where this email goes: ?target=venue:<id>, else the pitch's target, else the thread's place.
   const pitchId = params.get("pitch") ?? thread?.pitchId ?? "";
   const pitch = b.pitches.find((p) => p.id === pitchId);
+  const campaign = pitch ? campaignCrumb(b.campaigns.find((c) => c.id === pitch.campaignId), isActive(pitch.status)) : undefined;
   // ?pitches=a,b: more pitches this one email covers (#82 S8: one email to a promoter about several venues). Each gets the same log.
   const morePitches = (params.get("pitches") ?? "").split(",").filter((x) => x && x !== pitchId && /^[\w-]+$/.test(x));
   const covered = b.pitches.filter((p) => morePitches.includes(p.id));
@@ -241,8 +242,8 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
 
   return (
     <div className="show-page" data-testid="compose-page">
-      <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined) : []), ...(thread ? [{ label: thread.subject || "Thread", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
-        sub={thread ? <>Reply on {thread.subject} · from {profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {profile.email}</>}
+      <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined, campaign) : []), ...(thread ? [{ label: thread.subject || "Thread", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
+        sub={thread ? <>Reply on {thread.subject} · from {artist?.bookingMail?.email ?? profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {artist?.bookingMail?.email ?? profile.email}</>}
         actions={place?.kind === "act" ? undefined : <Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
       {queue.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#1c1b22] px-3 py-2 text-white" data-testid="email-queue">
