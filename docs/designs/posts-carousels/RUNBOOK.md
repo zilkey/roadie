@@ -115,3 +115,29 @@ These need the owner or production access. Record them as manual steps:
 **Manual steps for the owner**
 - On prod, after deploying: Settings › Google › Socials folder › **Set up**, then `GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=… npm run migrate:posts-49` (dry run), check the report, then again with `-- --apply`.
 - Next session (phase 3): `session_01MmV83ZHFX2S3DLFYsJ3CJJ`, created and in the working state (still starting up when checked).
+
+### Phase 3 — done
+**Built**
+- `posts.photos { folder? }` (admin + mcp): `{ folders: { id, name, parentId, count }[], photos: Photo[], capped }`. Folders from `inboxFolders()`; every inbox folder's images are read with `listAll(…, "images", "createdTime desc")` (20 parents per query, every page), merged newest added first and cut at `photosLimits.max` (2,000; `CAPPED` message). `Photo` is `{ driveFileId, name, mimeType (photoType), width, height (swapped on an odd rotation), takenAt, folderId, thumb }`; `takenAt` is the EXIF time as written, else `createdTime` via the new `dateTimeInBandZone()` (`src/lib/timezone.ts`). A folder outside the inbox (Posts/, a post folder, anything outside Socials) is refused: "That folder isn't in Socials" (`not_in_socials`).
+- `posts.list {}` (admin + mcp): `{ drafts, posts }` of `PostRow`; drafts = every non-posted status by `updatedAt` desc, posts = posted by `postedAt` (else `createdAt`) desc; `thumb` signed from the first photo's stored `modifiedTime`. Soft-deleted and other bands' posts left out.
+- `thumbUrl(artistId, fileId, modifiedTime, size)` and `THUMB_SIZES` in `src/server/signedUrl.ts`; `listAll` takes an optional `orderBy`.
+- `GET /api/posts/thumb/[artistId]/[fileId]?v=&s=&exp=&sig=`: `signedOk("thumb", …)`, `s` ∈ 400/1080/2048 (unsigned), streams `drive.thumbnail`, `cache-control: private, max-age=3600`; 503 for a missing secret on a real project, else a plain 404.
+- `src/lib/photoDays.ts`: `photoDay` (before 04:00 → the day before), `dayLabels(shows, rehearsals)`, `groupByDay`, `dayTitle`.
+- Pages: `PostsTabs` (Posts | Photos as links); **Posts** tab (`posts/page.tsx`) now lists Drafts then Posted from `posts.list`, keeps the Instagram not-connected / sign-in-again messages (plus "Posting to @…" when connected). `NewPhotoPost` is removed. **Photos** (`posts/photos/page.tsx` + `components/posts/PhotoGrid.tsx`): folder rail (Socials, nested folders with counts, link to Posts), Upload into the Socials root (off until Set up), day groups labelled from `useCollection("shows")`/`("rehearsals")`, numbered ordered picking with Shift-click ranges and per-day Select all, a sticky bottom bar (count + Clear), the 2,000 note; 3-column grid on a phone.
+- `posts.photos`/`posts.list` added to the expected MCP tool list in `tests/emulator/mcp.test.ts`.
+
+**Deviations**
+- **Played shows label a day too** (hold, confirmed, played; not canceled or dropped). The decision "only hold and confirmed shows label a day" would leave every past show unlabelled once it's marked played, which breaks Done when ("with the show named"); I read it as excluding canceled/dropped. The seeded past show (2026-10-10, Creamery Arts Center) is `played`, so no new seed show was needed. Rehearsals label as "Rehearsal" or "Rehearsal · <location name>".
+- `posts.photos` with `folder` still returns **every** inbox folder in `folders` (so the rail keeps its tree); only `photos` is narrowed to that folder and its subfolders. Socials' own id as `folder` means everything. Counts are always whole, so every inbox folder is listed from Drive on each call.
+- Socials itself isn't in `folders` (as `inboxFolders` returns); the rail shows it as "Socials" (all) without a count. Files Drive lists as images that aren't a `photoType` (e.g. GIF) are left out of photos and counts. `width`/`height` are omitted when Drive has no `imageMediaMetadata`.
+- The sticky bar has the count and Clear only: **Add to carousel draft**, the dialog, `?draft=` and "Make the draft is off until Set up" are phase 4. Posts tab rows don't link anywhere yet (the editor is phase 4).
+- `photosLimits.max` is a mutable export (like `publishTiming`) so the cap test lowers it to 3 instead of seeding 2,001 files; the test also asserts the default is 2,000.
+- `tests/e2e/posts.spec.ts`: the two `NewPhotoPost` tests (Post now from Drive/upload; a failed container) are replaced by one Photos test (Upload off until Set up, day label for the 01:30 photo, numbered picking, a folder in the rail, upload lands in Socials, empty Drafts). The failed-container e2e comes back with phase 5's publish. Not run (e2e runs in phase 5).
+
+**Tests**
+- `npx next typegen && npm run typecheck` → clean.
+- `npx tsx --test tests/unit/photoDays.test.ts tests/unit/photos.test.ts tests/unit/signedUrl.test.ts` → 9/9 pass.
+- `npx firebase emulators:exec --config firebase.test.json --only firestore,auth --project demo-band-tracker "npx tsx --test --import ./tests/emulator/setup.mjs tests/emulator/posts.test.ts tests/emulator/mcp.test.ts tests/emulator/drive-list.test.ts tests/emulator/google.test.ts tests/emulator/roadie-policy.test.ts tests/emulator/roadie-tools.test.ts"` → 76/76 pass (new: posts.photos whole inbox / nested + Posts skipped + folder refusal / batches + cap; the 01:30 photo's day labelled Creamery Arts Center; posts.list; thumb route signed, sizes, expiry, wrong sig, other version, other band, no preview, 503).
+
+**Manual steps for the owner**
+- None new. (Still: `SIGNED_URL_SECRET` before deploying; Set up + migration on prod.)

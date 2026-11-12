@@ -13,6 +13,14 @@ export function dateInBandZone(d: Date = new Date()): string {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
+const fmtTime = new Intl.DateTimeFormat("en-CA", { timeZone: BAND_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** Date and time (YYYY-MM-DD HH:MM, 24-hour) of an instant as seen in the band's timezone. */
+export function dateTimeInBandZone(d: Date = new Date()): string {
+  const p = Object.fromEntries(fmtTime.formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
 /** Format an instant (ISO string, ms or Date) for display in the band's timezone. */
 export function fmtInstant(t: string | number | Date, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }): string {
   return new Date(t).toLocaleString("en-US", { ...opts, timeZone: BAND_TIME_ZONE });

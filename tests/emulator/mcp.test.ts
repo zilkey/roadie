@@ -115,7 +115,7 @@ const EXPECTED = [
   // geo (address typeahead, read-only)
   "geo.autocomplete",
   // posts (#75): the Socials folder; the rest of Posts joins as its phases land
-  "posts.setup",
+  "posts.setup", "posts.photos", "posts.list",
   // read tools and undo
   "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
   "history.undoRun", "history.myRuns",

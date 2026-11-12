@@ -14,8 +14,11 @@ import type { Ctx } from "../ctx";
 import { driveClient, type DriveFile } from "../integrations";
 import { bandmates } from "../music";
 import { findOrMakeFolder } from "../driveFolders";
-import { POSTS_FOLDER_NAME, socialsOf } from "../postFolder";
+import { POSTS_FOLDER_NAME, inboxFolders, listAll, socialsOf } from "../postFolder";
+import { thumbUrl } from "../signedUrl";
+import { dateTimeInBandZone } from "@/lib/timezone";
 import { PHOTOS_ONLY, photoType } from "@/lib/photos";
+import { postStatus, type PostMedia } from "@/schema/posts";
 import { graph, GraphError, type Tok } from "../meta/graph";
 import { freshToken } from "../meta/connection";
 import { signMediaUrl } from "../meta/media";
@@ -52,6 +55,108 @@ export const postsSetup = defineCommand({
     if (emails.length) await drive.share(socialsId, emails, "writer");
     await db.update(ctx, "artists", artistId, { postFoldersId: folder.id });
     return { socials: { id: socials.id, name: socials.name }, posts: { id: folder.id, made }, sharedWithBand: emails.length };
+  },
+});
+
+// ---------- reading: the inbox's photos, and the posts ----------
+
+/** A photo in the inbox, as Posts › Photos shows it. width/height are upright; takenAt is "YYYY-MM-DD HH:MM", camera-local. */
+export interface Photo {
+  driveFileId: string; name: string; mimeType: string; width?: number; height?: number; takenAt: string; folderId: string; thumb: string;
+}
+export interface PhotoFolder { id: string; name: string; parentId: string; count: number }
+
+/** How many photos Photos reads at most (the most recently added). Tests lower it. */
+export const photosLimits = { max: 2000 };
+export const CAPPED = "Showing the 2,000 most recently added";
+export const NOT_IN_SOCIALS = "That folder isn't in Socials";
+
+/** "YYYY:MM:DD HH:MM:SS" (imageMediaMetadata.time) → "YYYY-MM-DD HH:MM"; null when it isn't that shape. */
+const exifTime = (t?: string) => {
+  const m = t && /^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2})/.exec(t);
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : null;
+};
+
+/** A Drive photo as a Photo: upright size (an odd rotation swaps width and height), when it was taken, and a signed thumbnail. */
+function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: string): Photo {
+  const im = f.image, odd = (im?.rotation ?? 0) % 2 === 1;
+  const created = Date.parse(f.createdAt);
+  return {
+    driveFileId: f.id, name: f.name, mimeType,
+    ...(im ? { width: odd ? im.height : im.width, height: odd ? im.width : im.height } : {}),
+    takenAt: exifTime(im?.time) ?? (Number.isNaN(created) ? "" : dateTimeInBandZone(new Date(created))),
+    folderId, thumb: thumbUrl(artistId, f.id, f.modifiedTime, 400),
+  };
+}
+
+export const postsPhotos = defineCommand({
+  name: "posts.photos", roles: ["admin", "mcp"],
+  description: "The photos in the band's Socials inbox (Socials and every folder under it except Posts, where photos already used in a post live), newest added first, at most the 2,000 most recently added. " +
+    "Also lists the inbox folders, each with how many photos it holds itself. Give `folder` (a folder id) for that folder and its subfolders only. Each photo says when it was taken (camera time) and which folder it's in.",
+  input: z.strictObject({ folder: z.string().min(1).optional() }),
+  async run(ctx, { folder }) {
+    const artistId = artistOf(ctx);
+    const { socialsId } = await socialsOf(artistId);
+    const drive = driveClient({ artistId });
+    const all = await inboxFolders(drive, artistId);
+    let within = [socialsId, ...all.map((f) => f.id)];
+    if (folder && folder !== socialsId) {
+      if (!all.some((f) => f.id === folder)) throw new AppError("not_in_socials", NOT_IN_SOCIALS, 400);
+      const under = new Set([folder]);
+      for (let grew = true; grew;) { grew = false; for (const f of all) if (!under.has(f.id) && under.has(f.parentId)) { under.add(f.id); grew = true; } }
+      within = within.filter((id) => under.has(id));
+    }
+    // Every photo in every inbox folder, so each folder's count is whole; then only the asked-for folders, newest added first, capped.
+    const known = new Set([socialsId, ...all.map((f) => f.id)]), wanted = new Set(within);
+    const counts = new Map<string, number>();
+    const photos: (Photo & { addedAt: string })[] = [];
+    for (const f of await listAll(drive, [...known], "images", "createdTime desc")) {
+      const mimeType = photoType(f.name, f.mimeType), folderId = f.parents.find((p) => known.has(p));
+      if (!mimeType || !folderId) continue;
+      counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
+      if (wanted.has(folderId)) photos.push({ ...photoOf(artistId, f, mimeType, folderId), addedAt: f.createdAt });
+    }
+    photos.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+    const capped = photos.length > photosLimits.max;
+    return {
+      folders: all.map((f) => ({ ...f, count: counts.get(f.id) ?? 0 })) as PhotoFolder[],
+      photos: photos.slice(0, photosLimits.max).map(({ addedAt: _, ...p }) => p) as Photo[],
+      capped,
+    };
+  },
+});
+
+/** A post in the Posts tab's lists. thumb is the first photo's, signed from its stored modifiedTime (no Drive call). */
+export interface PostRow {
+  id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; thumb?: string;
+  permalink?: string | null; error?: string; driveTidy?: { error: string };
+}
+
+const millis = (t: unknown) => (t as { toMillis?(): number } | undefined)?.toMillis?.() ?? (typeof t === "string" ? Date.parse(t) : 0);
+
+export const postsList = defineCommand({
+  name: "posts.list", roles: ["admin", "mcp"],
+  description: "The band's posts made in Roadie: `drafts` (drafts, failed posts and any being posted right now, most recently changed first) and `posts` (posted to Instagram, newest first), each with its title, status, photo count, Instagram link and any error.",
+  input: z.strictObject({}),
+  async run(ctx) {
+    const artistId = artistOf(ctx);
+    const docs = await db.list("posts", (q) => q.where("artistId", "==", artistId));
+    const rowOf = (d: Record<string, unknown>): PostRow => {
+      const media = (d.media as PostMedia[] | undefined) ?? [], first = media[0];
+      return {
+        id: d.id as string, status: d.status as PostRow["status"], count: media.length,
+        ...(d.title ? { title: d.title as string } : {}),
+        ...(d.postedAt ? { postedAt: d.postedAt as string } : {}),
+        ...(first ? { thumb: thumbUrl(artistId, first.driveFileId, first.modifiedTime, 400) } : {}),
+        ...(d.instagram ? { permalink: (d.instagram as { permalink: string | null }).permalink } : {}),
+        ...(d.error ? { error: d.error as string } : {}),
+        ...(d.driveTidy ? { driveTidy: d.driveTidy as { error: string } } : {}),
+      };
+    };
+    const drafts = docs.filter((d) => d.status !== "posted").sort((a, b) => millis(b.updatedAt) - millis(a.updatedAt));
+    const posted = docs.filter((d) => d.status === "posted")
+      .sort((a, b) => (millis(b.postedAt) || millis(b.createdAt)) - (millis(a.postedAt) || millis(a.createdAt)));
+    return { drafts: drafts.map(rowOf), posts: posted.map(rowOf) };
   },
 });
 
@@ -101,4 +206,4 @@ export const postsPublishPhoto = defineCommand({
   },
 });
 
-export const postCommands = [postsSetup, postsPublishPhoto];
+export const postCommands = [postsSetup, postsPhotos, postsList, postsPublishPhoto];

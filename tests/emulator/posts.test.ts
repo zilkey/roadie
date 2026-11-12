@@ -16,6 +16,12 @@ import { signMediaUrl, mediaSigOk } from "@/server/meta/media";
 import { signMetaState, verifyMetaState } from "@/server/meta/graph";
 import { GET as mediaGET } from "@/app/api/posts/media/[id]/route";
 import { POST as uploadPOST } from "@/app/api/posts/upload/route";
+import { GET as thumbGET } from "@/app/api/posts/thumb/[artistId]/[fileId]/route";
+import { photosLimits } from "@/server/commands/posts";
+import { findOrMakeFolder } from "@/server/driveFolders";
+import { thumbUrl } from "@/server/signedUrl";
+import { dayLabels, groupByDay } from "@/lib/photoDays";
+import sharp from "sharp";
 import { GET as callbackGET } from "@/app/api/meta/callback/route";
 import { SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
 import { dateInBandZone } from "@/lib/timezone";
@@ -397,6 +403,180 @@ test("migration: a dry run changes nothing; --apply moves each #49 photo into it
   const again = await migratePosts49({ apply: true });
   assert.equal(again.migrated.length, 0);
   assert.equal(JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), after, "a second run changed nothing");
+});
+
+// ---------- Photos: posts.photos, posts.list, the thumb route ----------
+
+const PHONE = "fake-folder-socials-phone", MONTH_FOLDER = "fake-folder-socials-2026-10";
+const SEEDED_PHOTOS = ["fake-social-heic-1", "fake-social-heic-2", "fake-social-rotated", "fake-social-late", "fake-social-phone-5", "fake-social-phone-6",
+  "fake-social-loose-1", "fake-social-loose-2", "fake-social-loose-3", "fake-social-post49"];
+const tick = () => new Promise((r) => setTimeout(r, 5));
+
+test("posts.photos: refused before Socials is chosen; the whole inbox newest added first, each photo upright with when it was taken; folders with their own counts", async () => {
+  await assert.rejects(cmd("posts.photos", {}), (e: any) => e.code === "no_posts_folder"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  await chooseSocials();
+  const r = await cmd("posts.photos", {});
+  assert.equal(r.capped, false);
+  assert.deepEqual(r.photos.map((p: any) => p.driveFileId), SEEDED_PHOTOS.slice().reverse(), "newest added first; not the PDF"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual(r.folders, [
+    { id: MONTH_FOLDER, name: "2026-10", parentId: SOCIALS_FOLDER_ID, count: 1 },
+    { id: PHONE, name: "Jeff's phone spring 26", parentId: SOCIALS_FOLDER_ID, count: 6 },
+  ].sort((a, b) => r.folders.findIndex((f: any) => f.id === a.id) - r.folders.findIndex((f: any) => f.id === b.id))); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const by = (id: string) => r.photos.find((p: any) => p.driveFileId === id); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const rotated = by("fake-social-rotated");
+  assert.deepEqual({ ...rotated, thumb: undefined }, {
+    driveFileId: "fake-social-rotated", name: "photo-rotated.jpg", mimeType: "image/jpeg", width: 900, height: 1200, takenAt: "2026-10-10 21:15", folderId: PHONE, thumb: undefined,
+  }, "stored 1200×900 turned a quarter: 900×1200 upright");
+  assert.match(rotated.thumb, /^\/api\/posts\/thumb\/test-artist\/fake-social-rotated\?v=2026-11-01T18%3A02%3A00.000Z&s=400&exp=\d+&sig=/);
+  assert.equal(by("fake-social-heic-2").mimeType, "image/heic", "an octet-stream HEIC is a HEIC by its name");
+  assert.equal(by("fake-social-late").takenAt, "2026-10-11 01:30", "the camera's own time, as written");
+  assert.equal(by("fake-social-phone-6").takenAt, "2026-11-01 11:05", "no camera time: when it was added, in the band's timezone (MST after Nov 1, 02:00)");
+  assert.equal(by("fake-social-loose-1").folderId, SOCIALS_FOLDER_ID);
+});
+
+test("posts.photos: walks nested folders, skips Posts/, takes one folder and its subfolders, and refuses a folder outside Socials", async () => {
+  await chooseSocials();
+  await cmd("posts.setup", {});
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const postsId = (await db.get("artists", TEST_ARTIST))!.postFoldersId as string;
+  const encore = (await findOrMakeFolder(drive, PHONE, "Encore")).folder;
+  const deeper = (await findOrMakeFolder(drive, encore.id, "Crowd")).folder;
+  const inPost = (await findOrMakeFolder(drive, postsId, "DRAFT - Hi-Dive announcement")).folder;
+  await tick();
+  const crowd = await drive.upload({ name: "Crowd.jpg", mimeType: "image/jpeg", parentId: deeper.id, data: new Blob([Buffer.from([0xff, 0xd8])]) });
+  await tick();
+  const used = await drive.upload({ name: "Used.jpg", mimeType: "image/jpeg", parentId: inPost.id, data: new Blob([Buffer.from([0xff, 0xd8])]) });
+
+  const all = await cmd("posts.photos", {});
+  const folderIds = all.folders.map((f: any) => f.id); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.ok(folderIds.includes(encore.id) && folderIds.includes(deeper.id), "folders two levels down");
+  assert.deepEqual(all.folders.find((f: any) => f.id === deeper.id), { id: deeper.id, name: "Crowd", parentId: encore.id, count: 1 }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.equal(all.folders.find((f: any) => f.id === PHONE).count, 6, "a folder's count is its own photos, not its subfolders'"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.ok(!folderIds.includes(postsId) && !folderIds.includes(inPost.id), "not Posts/ or a post folder");
+  assert.equal(all.photos[0].driveFileId, crowd.id);
+  assert.ok(!all.photos.some((p: any) => p.driveFileId === used.id), "a photo in a post folder isn't in the inbox"); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  const phone = await cmd("posts.photos", { folder: PHONE });
+  assert.deepEqual(phone.photos.map((p: any) => p.driveFileId).sort(), [crowd.id, ...SEEDED_PHOTOS.slice(0, 6)].sort(), "the phone folder and what's under it"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.equal(phone.folders.length, all.folders.length, "the rail still lists every inbox folder");
+  assert.equal((await cmd("posts.photos", { folder: SOCIALS_FOLDER_ID })).photos.length, all.photos.length, "Socials itself is everything");
+  for (const outside of [postsId, inPost.id, "fake-folder-charts"]) {
+    await assert.rejects(cmd("posts.photos", { folder: outside }), (e: any) => e.code === "not_in_socials" && e.message === "That folder isn't in Socials"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+});
+
+test("posts.photos: more than 20 folders are read in batches, merged newest added first; at most the most recently added, with counts still whole", async () => {
+  await chooseSocials();
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const made: string[] = [];
+  for (let i = 1; i <= 23; i++) made.push((await findOrMakeFolder(drive, SOCIALS_FOLDER_ID, `Dump ${String(i).padStart(2, "0")}`)).folder.id);
+  // Newest in the last folder (the second batch), then one in the first: merged across batches by when they were added.
+  const add = async (parentId: string, name: string) => { await tick(); return (await drive.upload({ name, mimeType: "image/jpeg", parentId, data: new Blob([Buffer.from([0xff, 0xd8])]) })).id; };
+  const older = await add(made[0], "Older.jpg");
+  const newer = await add(made[22], "Newer.jpg");
+  const r = await cmd("posts.photos", {});
+  assert.ok(r.folders.length > 20);
+  assert.deepEqual(r.photos.slice(0, 2).map((p: any) => p.driveFileId), [newer, older]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.equal(r.photos.length, 12);
+
+  assert.equal(photosLimits.max, 2000);
+  photosLimits.max = 3;
+  try {
+    const capped = await cmd("posts.photos", {});
+    assert.equal(capped.capped, true);
+    assert.deepEqual(capped.photos.map((p: any) => p.driveFileId), [newer, older, "fake-social-post49"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+    assert.equal(capped.folders.find((f: any) => f.id === PHONE).count, 6, "counts aren't capped"); // eslint-disable-line @typescript-eslint/no-explicit-any
+  } finally { photosLimits.max = 2000; }
+});
+
+test("Photos' days: the 01:30 photo goes on the day before, labelled with that night's show; canceled shows don't label a day", async () => {
+  await chooseSocials();
+  const { photos } = await cmd("posts.photos", {});
+  const shows = [
+    { date: "2026-10-10", status: "played", venue: { id: "v1", name: "Creamery Arts Center" } },
+    { date: "2026-11-01", status: "canceled", venue: { id: "v2", name: "Hi-Dive" } },
+    { date: "2026-11-01", status: "hold", kind: "house" as const, hostName: "Robin" },
+  ];
+  const days = groupByDay(photos as { driveFileId: string; takenAt: string }[], dayLabels(shows, [{ date: "2026-09-20", location: { name: "Rudy's garage" } }]));
+  const oct10 = days.find((d) => d.day === "2026-10-10")!;
+  assert.deepEqual(oct10.labels, ["Creamery Arts Center"]);
+  assert.deepEqual(oct10.photos.map((p) => p.driveFileId).sort(), ["fake-social-late", "fake-social-phone-5", "fake-social-rotated"]);
+  assert.equal(days.find((d) => d.day === "2026-10-11"), undefined, "nothing left on Oct 11");
+  assert.deepEqual(days.find((d) => d.day === "2026-11-01")!.labels, ["House concert · Robin"]);
+  assert.deepEqual(days.find((d) => d.day === "2026-09-20")!.labels, ["Rehearsal · Rudy's garage"]);
+  assert.deepEqual(days.map((d) => d.day), ["2026-11-01", "2026-10-10", "2026-10-03", "2026-09-20"], "newest day first");
+});
+
+test("posts.list: drafts (with failed and publishing) by latest change, then posted newest first; other bands' and deleted posts left out", async () => {
+  const make = async (fields: Record<string, unknown>, artistId = TEST_ARTIST) => {
+    await tick();
+    return (await db.create({ ...ctx, artistId }, "posts", { artistId, caption: "", createdVia: "app", ...fields })).id;
+  };
+  const photo = (id: string, modifiedTime?: string) => ({ driveFileId: id, mimeType: "image/jpeg", ...(modifiedTime ? { modifiedTime } : {}) });
+  const posted1 = await make({ title: "Thanks, Denver", status: "posted", postedAt: "2026-11-03T03:00:00.000Z", media: [photo("a"), photo("b")], instagram: { mediaId: "m1", permalink: "https://www.instagram.com/p/X/" } });
+  const draft = await make({ title: "Hi-Dive announcement", status: "draft", media: [photo("fake-social-late", "2026-11-01T18:03:00.000Z")], driveFolderId: "f1" });
+  const failed = await make({ title: "Tour poster", status: "failed", error: "Instagram said: no", media: [photo("c")] });
+  const posted2 = await make({ title: "Roots", status: "posted", postedAt: "2026-11-05T03:00:00.000Z", media: [photo("d")], instagram: { mediaId: "m2", permalink: null }, driveTidy: { error: "Drive said no" } });
+  const gone = await make({ title: "Gone", status: "draft", media: [photo("e")] });
+  await db.softDelete(ctx, "posts", gone);
+  await make({ title: "Theirs", status: "draft", media: [photo("f")] }, "another-band");
+  await tick();
+  await db.update(ctx, "posts", draft, { caption: "changed last" });
+
+  const r = await cmd("posts.list", {});
+  assert.deepEqual(r.drafts.map((p: any) => p.id), [draft, failed]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual(r.posts.map((p: any) => p.id), [posted2, posted1]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const d = r.drafts[0];
+  assert.deepEqual({ ...d, thumb: undefined }, { id: draft, title: "Hi-Dive announcement", status: "draft", count: 1, thumb: undefined });
+  assert.equal(d.thumb, thumbUrl(TEST_ARTIST, "fake-social-late", "2026-11-01T18:03:00.000Z", 400), "signed from the stored modifiedTime");
+  assert.equal(r.drafts[1].error, "Instagram said: no");
+  assert.deepEqual({ ...r.posts[0], thumb: undefined }, { id: posted2, title: "Roots", status: "posted", postedAt: "2026-11-05T03:00:00.000Z", count: 1, thumb: undefined, permalink: null, driveTidy: { error: "Drive said no" } });
+  assert.equal(r.posts[1].permalink, "https://www.instagram.com/p/X/");
+  assert.equal(r.posts[1].count, 2);
+  assert.equal((await dispatch("posts.list", `Bearer ${hugo.token}`, {}, TEST_ARTIST)).status, 403, "members can't read posts");
+});
+
+const thumb = (url: string) => {
+  const m = /^\/api\/posts\/thumb\/([^/]+)\/([^/?]+)/.exec(url)!;
+  return thumbGET(new Request(`http://app${url}`), { params: Promise.resolve({ artistId: decodeURIComponent(m[1]), fileId: decodeURIComponent(m[2]) }) });
+};
+
+test("thumb route: a signed link streams Drive's upright preview at 400, 1080 or 2048, cached for the hour; anything else is a 404", async () => {
+  const v = "2026-11-01T18:02:00.000Z";
+  const ok = await thumb(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400));
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get("content-type"), "image/jpeg");
+  assert.equal(ok.headers.get("cache-control"), "private, max-age=3600");
+  const meta = await sharp(Buffer.from(await ok.arrayBuffer())).metadata();
+  assert.deepEqual([meta.width, meta.height], [300, 400], "upright, the long edge 400");
+  const big = await thumb(thumbUrl(TEST_ARTIST, "fake-social-heic-1", v, 1080).replace("s=1080", "s=2048"));
+  assert.equal(big.status, 200, "s isn't signed");
+  const bigMeta = await sharp(Buffer.from(await big.arrayBuffer())).metadata();
+  assert.deepEqual([bigMeta.width, bigMeta.height], [1536, 2048], "the HEIC turned a quarter: portrait, the long edge 2048");
+
+  assert.equal(thumbUrl(TEST_ARTIST, "x", v, 400), thumbUrl(TEST_ARTIST, "x", v, 400, Date.now() + 1), "the same link within the hour");
+  const no = async (url: string, why: string) => assert.equal((await thumb(url)).status, 404, why);
+  await no(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400).replace("s=400", "s=500"), "a size we don't serve");
+  await no(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400, Date.now() - 2 * 60 * 60_000), "expired");
+  await no(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400).replace(/sig=./, (x) => (x.endsWith("a") ? "sig=b" : "sig=a")), "wrong signature");
+  await no(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400).replace("v=2026-11-01", "v=2026-11-02"), "another version of the file");
+  await no(thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400).replace("/test-artist/", "/another-band/"), "a link signed for this band doesn't open another band's");
+  await no(thumbUrl(TEST_ARTIST, "fake-social-loose-1", v, 400).replace("fake-social-loose-1", "fake-social-loose-2"), "another file");
+  await driveScenario({ noThumbnail: ["fake-social-loose-2"] });
+  await no(thumbUrl(TEST_ARTIST, "fake-social-loose-2", v, 400), "Drive has no preview yet");
+  await driveScenario({ noThumbnail: [] });
+
+  const project = process.env.GCLOUD_PROJECT, secret = process.env.SIGNED_URL_SECRET;
+  const url = thumbUrl(TEST_ARTIST, "fake-social-rotated", v, 400);
+  process.env.GCLOUD_PROJECT = "roadie-prod-iab"; delete process.env.SIGNED_URL_SECRET;
+  try {
+    const res = await thumb(url);
+    assert.equal(res.status, 503);
+    assert.equal(await res.text(), "Signed links aren't set up on this server");
+  } finally {
+    process.env.GCLOUD_PROJECT = project;
+    if (secret !== undefined) process.env.SIGNED_URL_SECRET = secret;
+  }
 });
 
 // ---------- publishPhoto ----------

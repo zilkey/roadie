@@ -99,74 +99,62 @@ test("the Instagram & Facebook card: Working, Sign in again (here and on Posts)"
   await scenario(request, { revoked: false });
 });
 
-test("Post now: a JPEG chosen from Drive, then one uploaded (once the Socials folder is set up); both list with their Instagram link", async ({ page }) => {
+test("Photos: Upload is off until Set up; the inbox by day, the late-night photo on the show's day; picking is numbered; an upload lands in Socials", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/posts"));
-  const form = page.getByTestId("new-post");
-  await expect(form).toContainText("Post a photo to @noraquillband");
-  await expect(form.getByTestId("post-now")).toBeDisabled();
+  await page.getByTestId("posts-tab-photos").click();
+  await expect(page).toHaveURL(/\/posts\/photos$/);
+  // No Socials folder yet: Photos says where to choose it.
+  await expect(page.getByTestId("error")).toContainText("Choose the Socials folder in Settings › Google first");
 
-  // From Drive: a PDF is refused, the JPEG is chosen.
-  await form.getByTestId("post-from-drive").click();
-  await form.getByTestId("drive-q").fill("Glass Coast chart Am");
-  await form.getByTestId("drive-search").click();
-  await form.getByTestId("hit-Glass Coast chart Am.pdf").getByTestId("hit-check").check();
-  await expect(form.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
-  await form.getByTestId("drive-q").fill("Roots");
-  await form.getByTestId("drive-search").click();
-  await form.getByTestId("hit-Roots Music Project stage.jpg").getByTestId("hit-check").check();
-  await expect(form.getByTestId("post-photo-name")).toHaveText("Roots Music Project stage.jpg");
-  await form.getByTestId("post-caption").fill("Roots Music Project, thank you!");
-  await expect(form.getByTestId("post-caption-count")).toHaveText("31 / 2,200");
-  await form.getByTestId("post-now").click();
-  await expect(form.getByTestId("post-note")).toContainText("Posted to @noraquillband.");
-  await expect(form.getByTestId("post-note-link")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
-  const first = page.getByTestId("posts-list").locator("li").first();
-  await expect(first.getByTestId("post-caption-start")).toHaveText("Roots Music Project, thank you!");
-  await expect(first.getByTestId("post-by")).toContainText("Rudy");
-  await expect(first.getByTestId("post-view")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
-
-  // Upload is off until the Socials folder is chosen and set up in Settings › Google.
-  await expect(form.getByTestId("post-upload-input")).toBeDisabled();
-  await expect(form.getByTestId("post-upload-needs-folder")).toHaveText("Set up the Socials folder in Settings › Google");
-  await form.getByTestId("post-upload-needs-folder").getByRole("link").click();
+  await page.goto(A("/admin/google"));
   const folder = page.getByTestId("google-posts-folder");
   await folder.getByTestId("posts-folder-change").click();
   await folder.getByTestId("posts-folder-q").fill("Socials");
   await folder.getByTestId("posts-folder-search").click();
   await folder.getByTestId("posts-folder-hit-Socials").getByTestId("posts-folder-choose").click();
   await expect(folder.getByTestId("posts-folder-note")).toContainText("Socials folder saved");
-  await expect(folder.getByTestId("socials-posts-row")).toHaveText("Not set up");
+
+  // Chosen but not set up: the photos show, Upload is off.
+  await page.goto(A("/posts/photos"));
+  await expect(page.getByTestId("photos-upload-input")).toBeDisabled();
+  await expect(page.getByTestId("photos-upload-needs-folder")).toHaveText("Set up the Socials folder in Settings › Google");
+  const rail = page.getByTestId("photos-rail");
+  await expect(rail.getByTestId("photos-folder-fake-folder-socials-phone")).toContainText("Jeff's phone spring 26");
+  await expect(rail.getByTestId("photos-folder-fake-folder-socials-phone")).toContainText("6");
+  // IMG_2210 was taken at 01:30 on Oct 11: it's on Oct 10, labelled with that night's show.
+  const oct10 = page.getByTestId("photo-day-2026-10-10");
+  await expect(oct10.getByTestId("photo-day-label-2026-10-10")).toContainText("Creamery Arts Center");
+  await expect(oct10.getByTestId("photo-fake-social-late")).toBeVisible();
+  await expect(page.getByTestId("photo-day-2026-10-11")).toHaveCount(0);
+
+  // Picking is numbered in tap order; Select all adds the rest of the day.
+  await page.getByTestId("photo-fake-social-loose-2").click();
+  await page.getByTestId("photo-fake-social-late").click();
+  await expect(page.getByTestId("photo-pick-fake-social-loose-2")).toHaveText("1");
+  await expect(page.getByTestId("photo-pick-fake-social-late")).toHaveText("2");
+  await oct10.getByTestId("photo-day-all-2026-10-10").click();
+  await expect(page.getByTestId("photos-picked")).toHaveText(`${2 + (await oct10.locator("li").count()) - 1} picked`);
+  await page.getByTestId("photos-clear").click();
+  await expect(page.getByTestId("photos-bar")).toHaveCount(0);
+
+  // A folder in the rail shows only its photos.
+  await rail.getByTestId("photos-folder-fake-folder-socials-2026-10").click();
+  await expect(page.getByTestId("photo-grid").locator("li")).toHaveCount(1);
+  await rail.getByTestId("photos-folder-all").click();
+
+  await page.goto(A("/admin/google"));
   await folder.getByTestId("socials-setup-button").click();
   await expect(folder.getByTestId("socials-posts-row")).toHaveText("Working");
-  await expect(folder.getByTestId("socials-setup-note")).toContainText("Made Posts");
+  await page.goto(A("/posts/photos"));
+  await expect(page.getByTestId("photos-upload-input")).toBeEnabled();
+  await page.getByTestId("photos-upload-input").setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(page.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
+  await page.getByTestId("photos-upload-input").setInputFiles({ name: "Deep End crowd.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
+  await expect(page.getByTestId("photos-upload-done")).toContainText("Uploaded to Socials");
+  await expect(page.getByTestId("photo-grid").locator('[title="Deep End crowd.jpg"]')).toBeVisible();
 
-  await page.goto(A("/posts"));
-  await expect(form.getByTestId("post-upload-input")).toBeEnabled();
-  await form.getByTestId("post-upload-input").setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
-  await expect(form.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
-  await form.getByTestId("post-upload-input").setInputFiles({ name: "Deep End crowd.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
-  await expect(form.getByTestId("post-photo-name")).toHaveText("Deep End crowd.jpg");
-  await form.getByTestId("post-caption").fill("Deep End, Saturday!");
-  await form.getByTestId("post-now").click();
-  await expect(form.getByTestId("post-note")).toContainText("Posted to @noraquillband.");
-  const top = page.getByTestId("posts-list").locator("li").first();
-  await expect(top.getByTestId("post-caption-start")).toHaveText("Deep End, Saturday!");
-  await expect(top.getByTestId("post-view")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
-  await expect(page.getByTestId("posts-list").locator("li")).toHaveCount(2);
-});
-
-test("a post Instagram can't take stays on the list with Instagram's reason", async ({ page, request }) => {
-  await scenario(request, { failContainers: true });
-  await signInAs(page, "rudy");
-  await page.goto(A("/posts"));
-  const form = page.getByTestId("new-post");
-  await form.getByTestId("post-from-drive").click();
-  await form.getByTestId("drive-q").fill("Deep End load-in");
-  await form.getByTestId("drive-search").click();
-  await form.getByTestId("hit-Deep End load-in.jpg").getByTestId("hit-check").check();
-  await form.getByTestId("post-now").click();
-  await expect(form.locator(".err")).toContainText("The aspect ratio is not supported");
-  await expect(page.getByTestId("posts-list").locator("li").first().getByTestId("post-failed")).toContainText("Didn't post: Instagram couldn't take the photo");
-  await scenario(request, { failContainers: false });
+  // The Posts tab has no drafts yet.
+  await page.getByTestId("photos-rail-posts").click();
+  await expect(page.getByTestId("posts-drafts-none")).toBeVisible();
 });

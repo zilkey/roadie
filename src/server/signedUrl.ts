@@ -44,3 +44,17 @@ export function signedOk(scope: SignedScope, artistId: string, id: string, v: st
   const want = Buffer.from(mac(scope, artistId, id, v, e)), got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got);
 }
+
+/** The sizes the thumb route serves (the long edge, px): the grid, the editor's preview, and the HEIC source for posting. */
+export const THUMB_SIZES = [400, 1080, 2048] as const;
+export type ThumbSize = (typeof THUMB_SIZES)[number];
+
+/**
+ * A photo's thumbnail link, for an <img> on our pages: /api/posts/thumb/{artistId}/{fileId}?v=&s=&exp=&sig=. `v` is the file's
+ * modifiedTime ("0" when unknown), so a changed photo gets a new link; `s` isn't signed.
+ */
+export function thumbUrl(artistId: string, fileId: string, modifiedTime: string | undefined, size: ThumbSize, now = Date.now()): string {
+  const v = modifiedTime || "0";
+  const q = new URLSearchParams({ v, s: String(size), ...signUrl("thumb", artistId, fileId, v, now) });
+  return `/api/posts/thumb/${encodeURIComponent(artistId)}/${encodeURIComponent(fileId)}?${q}`;
+}
