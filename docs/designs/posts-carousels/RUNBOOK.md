@@ -142,3 +142,35 @@ These need the owner or production access. Record them as manual steps:
 **Manual steps for the owner**
 - None new. (Still: `SIGNED_URL_SECRET` before deploying; Set up + migration on prod.)
 - Next session (phase 4): `session_01MmV83Xtps1NAg4VEXz2BaJ`, created and in the working state (still starting up when checked).
+
+### Phase 4 — done
+**Built**
+- Commands in `src/server/commands/posts.ts` (admin + mcp, with help text): `posts.get`, `posts.createDraft`, `posts.addToDraft`, `posts.updateDraft`, `posts.rename`, `posts.removeFromDraft`, `posts.deleteDraft`.
+  - Shared checks (`pickable`): each photo is in the inbox (Socials or an inbox folder), is a `photoType`, isn't trashed; a photo in a post's folder names that post (one `driveFolderId ==` query per parent). Nothing moves until every photo passes.
+  - `createDraft`: `uniqueName("DRAFT - " + title)` folder in `Posts/`, moves each photo in, then the doc (`draft`, `caption: ""`, `aspect: "4:5"`, `media` with name, upright size, `modifiedTime` from the move, `url`, `from.folderId`). On a failed move or create: moves put back, the folder trashed if empty, no doc.
+  - `addToDraft` (cap 10, "A post holds at most 10 photos"), `rename` (folder renamed back if the save fails), `removeFromDraft` ("Delete the draft instead" for the last photo; moved back into the draft if the save fails), `deleteDraft` (keeps going past a failed move; trashes the folder only if empty, else leaves it and says so; soft-deletes the doc).
+  - `updateDraft`: `{ caption?, aspect?, order?, items? }`, Firestore only; refuses >30 hashtags, an `order` that isn't every photo once, an `items` key not in the post. Draft edits refuse `posted` / `publishing` posts with the spec's messages.
+  - `posts.list` rows gain `driveFolderId`.
+- `src/server/undo.ts`: `changedDrive(entry)` + `DRIVE_CHANGED`; `undoRun` refuses (409 `drive_changed`, nothing reverted) any run with a `posts` create/delete/restore, a `title`/`status`/`driveFolderId` change, or a change in which `driveFileId`s are in `media`. Reorder/caption/alt/crop/aspect stay undoable.
+- `src/server/assistant/policy.ts`: `posts.` no longer excluded; `ALWAYS_CONFIRM` + `posts.setup/publish/deleteDraft/removeFromDraft`; `VOICE_TAP_ONLY` + `posts.setup/publish`; `READ_ONLY` + `posts.photos/list/get`; `ONE_RECORD_LISTS` + `posts.updateDraft`; the four `SUMMARY` lines. `tools.ts` `fillPost` gives those cards the post's title, photo count and the photo's name.
+- UI: `AddToDraftDialog.tsx` (new draft by name or an existing draft/failed post with a folder; says the photos move to `Posts/DRAFT - <name>`); Photos' bar gets **Add to carousel draft** (off with the Set up link until Set up), and with `?draft=<id>` reads **Add to <title>** and calls `addToDraft`. Posts tab rows link to the editor. Editor `posts/[id]/page.tsx` + `CarouselEditor.tsx`: crop preview (s=1080, `object-fit: cover`, drag sets `focus` by `−dx/(renderedWidth − frameWidth)`), 4:5 / Square, list with drag (`drag-reorder.ts`) and ↑/↓, alt text, ×, Add photos, caption with characters/2,200 and hashtags/30, pencil rename on blur/Enter, Delete draft, missing/trashed photo "… is no longer in Drive" + Remove, read-only when posted/publishing, autosave via `useAutosave("posts.updateDraft")` with SaveStatus.
+
+**Deviations**
+- `posts.get` returns `{ ...post, photos: { [driveFileId]: { thumb1080, missing, trashed } } }`. The `modifiedTime` save-back is a direct Firestore transaction (no rev, no history), as the spec says it isn't in history.
+- `deleteDraft` returns `{ folderLeft, notMoved, message? }`: `notMoved` is the photos' names (no extension) and `message` carries the spec's sentence ("Couldn't move IMG_4412 back: … The draft keeps it" / "Left DRAFT - x in Drive: …"). When some photos couldn't move back the draft stays, so `folderLeft` is true.
+- Messages name a photo by its file name without the extension ("IMG_4410"), matching the spec's examples.
+- A photo Drive answers 404 for (deleted for good) leaves the post without a move in `removeFromDraft`/`deleteDraft`; otherwise the editor's **Remove** on a missing photo could never work.
+- A post with no `driveFolderId` (an unmigrated #49 post) is refused for draft edits: "This post has no folder in Drive yet; run the #49 migration first".
+- `updateDraft` accepts `caption: null` (autosave's `bind` sends null for an emptied field) and saves `""`; `alt: ""` clears the alt text.
+- "Return no runId": the dispatcher still returns a `runId` for every command; the client shows no Undo toast for the Drive commands (only autosave toasts), and `undoRun` refuses those runs anyway.
+- `posts.publishPhoto` stays in `EXCLUDED` (by name) until phase 5 deletes it, so Roadie isn't offered the old one-photo post; `posts.publish`'s policy entries are in place for phase 5.
+- The editor reads the live doc (`useDoc("posts", id)`, admins can read posts) so an Undo shows at once, and calls `posts.get` for previews and missing flags (again whenever the set of photos changes). Delete draft asks with `window.confirm`. **Post now** / `PostDialog.tsx` are phase 5.
+- `tests/e2e/posts.spec.ts`: the Photos test also checks Make the draft is off until Set up; new test "Drafts: pick 5, Make the draft, reorder, caption and alt autosave; Delete draft puts them back" (relies on the Photos test's Set up). Not run (e2e runs in phase 5).
+
+**Tests**
+- `npx next typegen && npm run typecheck` → clean.
+- `npx tsx --test tests/unit/photos.test.ts tests/unit/signedUrl.test.ts tests/unit/photoDays.test.ts` → 9/9 pass; `tests/unit/roadie-policy.test.ts tests/unit/roadie-tools.test.ts tests/unit/help.test.ts tests/unit/roadie-script.test.ts` → 22/22 pass.
+- `npx firebase emulators:exec --config firebase.test.json --only firestore,auth --project demo-band-tracker "npx tsx --test --import ./tests/emulator/setup.mjs tests/emulator/posts.test.ts tests/emulator/mcp.test.ts tests/emulator/roadie-policy.test.ts tests/emulator/roadie-tools.test.ts tests/emulator/undo.test.ts tests/emulator/history.test.ts tests/emulator/drive-list.test.ts tests/emulator/google.test.ts"` → 97/97 pass (new: createDraft moves + `from`, refusals naming the post, " (2)", `failMove: 2` undo; addToDraft append/cap/`failMove`; updateDraft shape/whole items/hashtags/`baseRev` conflict/locked; rename + clash; removeFromDraft own folder/root/last/failed move; deleteDraft back + trash/PDF left/partial; posts.get trashed flag + save-back; undo refusal vs caption/order revert; policy).
+
+**Manual steps for the owner**
+- None new. (Still: `SIGNED_URL_SECRET` before deploying; Set up + migration on prod.)

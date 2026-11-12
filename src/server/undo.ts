@@ -6,11 +6,12 @@
  * Things outside Firestore (sent email, Calendar events, Bandsintown listings, Drive copies) are not undone, with one
  * exception: a show or rehearsal brought back that is still linked to a band calendar event (removing it deleted the
  * event) puts the event back.
+ * A run that moved or renamed something in Drive through a post (see changedDrive) can't be undone at all.
  */
 import type { Timestamp } from "firebase-admin/firestore";
 import { collections, kindOf } from "@/schema";
 import { newRunId, type Ctx } from "./ctx";
-import { db, run, type Doc } from "./db";
+import { db, isListDiff, run, type Diff, type Doc } from "./db";
 import { AppError } from "./errors";
 import { calendarSend } from "./calendarSync";
 
@@ -32,6 +33,25 @@ export interface UndoReport {
 }
 
 const CHUNK = 100;
+
+export const DRIVE_CHANGED = "This changed Drive, so it can't be undone. Take the photo out or delete the draft instead";
+
+/**
+ * A posts change that went with a Drive move or rename: the post was made or deleted, its title, status or folder changed,
+ * or which photos it holds changed. Undoing only Firestore would leave Drive disagreeing, so those runs are refused. A
+ * reorder, caption, alt text, crop or aspect edit (posts.updateDraft) changes only Firestore and stays undoable.
+ */
+export function changedDrive(e: Doc): boolean {
+  if (e.entity?.kind !== "posts") return false;
+  if (e.op === "create" || e.op === "delete" || e.op === "restore") return true;
+  const diff = (e.diff ?? {}) as Diff;
+  if (["title", "status", "driveFolderId"].some((k) => k in diff)) return true;
+  const m = diff.media;
+  if (!m) return false;
+  if (isListDiff(m)) return true;
+  const fileIds = (v: unknown) => (Array.isArray(v) ? v.map((x) => (x as { driveFileId?: string }).driveFileId).sort().join("\n") : "");
+  return fileIds(m.before) !== fileIds(m.after);
+}
 const tsKey = (d: Doc) => {
   const t = d.createdAt as Timestamp | undefined;
   return [t?.seconds ?? 0, t?.nanoseconds ?? 0, (d.seq as number | undefined) ?? 0] as const;
@@ -58,6 +78,7 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
   if (opts.ownerUid && entries.some((e) => e.actor?.uid !== opts.ownerUid)) {
     throw new AppError("forbidden", "You can only undo your own runs", 403);
   }
+  if (entries.some(changedDrive)) throw new AppError("drive_changed", DRIVE_CHANGED, 409);
   const report: UndoReport = { undoRunId: newRunId(), reverted: [], unchanged: [], needsManualCorrection: [], failed: [], changedSince: [], calendar: [] };
   const undoCtx: Ctx = { ...ctx, runId: report.undoRunId };
 

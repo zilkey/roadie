@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { A, FIRESTORE, META } from "./env";
+import { A, DRIVE, FIRESTORE, META } from "./env";
 
 // Instagram runs against fakes/fake-meta (playwright.config.ts): Connect goes to its Unified login dialog, which comes straight
 // back with a code; /__scenario sets what that sign-in finds and which kind of token it gives. Post now makes Meta's fake fetch the photo from our signed link.
@@ -135,6 +135,9 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   await expect(page.getByTestId("photo-pick-fake-social-late")).toHaveText("2");
   await oct10.getByTestId("photo-day-all-2026-10-10").click();
   await expect(page.getByTestId("photos-picked")).toHaveText(`${2 + (await oct10.locator("li").count()) - 1} picked`);
+  // Not set up yet: Make the draft is off, and says why.
+  await expect(page.getByTestId("photos-add")).toBeDisabled();
+  await expect(page.getByTestId("photos-not-set-up")).toHaveText("Set up the Socials folder in Settings › Google");
   await page.getByTestId("photos-clear").click();
   await expect(page.getByTestId("photos-bar")).toHaveCount(0);
 
@@ -157,4 +160,60 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   // The Posts tab has no drafts yet.
   await page.getByTestId("photos-rail-posts").click();
   await expect(page.getByTestId("posts-drafts-none")).toBeVisible();
+});
+
+test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the caption and alt text autosave; Delete draft puts them back", async ({ page, request }) => {
+  // Socials was chosen and set up by the Photos test above.
+  await signInAs(page, "rudy");
+  await page.goto(A("/posts/photos"));
+  const picks = ["fake-social-loose-2", "fake-social-late", "fake-social-rotated", "fake-social-heic-1", "fake-social-loose-1"];
+  for (const p of picks) await page.getByTestId(`photo-${p}`).click();
+  await expect(page.getByTestId("photos-picked")).toHaveText("5 picked");
+  await page.getByTestId("photos-add").click();
+  const dlg = page.getByTestId("add-to-draft");
+  await dlg.getByTestId("add-to-draft-title").fill("Hi-Dive announcement");
+  await expect(dlg.getByTestId("add-to-draft-note")).toContainText("Posts/DRAFT - Hi-Dive announcement");
+  await dlg.getByTestId("add-to-draft-go").click();
+
+  // The editor, in pick order.
+  await expect(page).toHaveURL(/\/posts\/[^/]+$/);
+  const id = page.url().split("/").pop()!;
+  await expect(page.getByTestId("editor-title")).toHaveText("Hi-Dive announcement");
+  const order = () => page.getByTestId("editor-photos").locator("li").evaluateAll((ls) => ls.map((l) => l.getAttribute("data-testid")!.replace("editor-photo-", "")));
+  await expect.poll(order).toEqual(picks);
+  // Drive has the folder holding them.
+  const folder = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("DRAFT - Hi-Dive announcement")}`)).json()) as { id: string; name: string }[])
+    .find((f) => f.name === "DRAFT - Hi-Dive announcement")!;
+  expect(folder).toBeTruthy();
+  const inFolder = await (await request.get(`${DRIVE}/files/list?parents=${folder.id}&kind=images`)).json();
+  expect(inFolder.files.map((f: { id: string }) => f.id).sort()).toEqual([...picks].sort());
+
+  // Reorder with the buttons (a phone's way), then the caption and an alt text; all autosave.
+  await page.getByTestId("editor-down-fake-social-loose-2").click();
+  await expect.poll(order).toEqual(["fake-social-late", "fake-social-loose-2", ...picks.slice(2)]);
+  await page.getByTestId("editor-caption").fill("Hi-Dive, Nov 14! #denver #nora");
+  await expect(page.getByTestId("editor-counts")).toContainText("2 / 30 hashtags");
+  await page.getByTestId("editor-alt-fake-social-late").fill("The crowd at the Creamery");
+  await page.getByTestId("editor-alt-fake-social-late").blur();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("editor-caption")).toHaveValue("Hi-Dive, Nov 14! #denver #nora");
+  await expect(page.getByTestId("editor-alt-fake-social-late")).toHaveValue("The crowd at the Creamery");
+  await expect.poll(order).toEqual(["fake-social-late", "fake-social-loose-2", ...picks.slice(2)]);
+
+  // Back on Photos the picked ones have left the inbox; the draft is listed on Posts.
+  await page.getByTestId("editor-done").click();
+  await expect(page.getByTestId(`post-${id}`)).toContainText("5 photos · Draft");
+  await page.goto(A("/posts/photos"));
+  await expect(page.getByTestId("photo-grid")).toBeVisible();
+  for (const p of picks) await expect(page.getByTestId(`photo-${p}`)).toHaveCount(0);
+
+  // Delete draft: every photo is back in the inbox.
+  await page.goto(A(`/posts/${id}`));
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId("editor-delete").click();
+  await expect(page).toHaveURL(/\/posts$/);
+  await expect(page.getByTestId("posts-drafts-none")).toBeVisible();
+  await page.goto(A("/posts/photos"));
+  for (const p of picks) await expect(page.getByTestId(`photo-${p}`)).toBeVisible();
 });

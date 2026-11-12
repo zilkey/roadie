@@ -18,8 +18,8 @@ interface PostRow {
 export default function PostsPage() { return <AdminOnly><Posts /></AdminOnly>; }
 
 /**
- * Posts › Posts: the drafts (with failed posts and any being posted) first, then what's been posted to Instagram. Photos are
- * picked on the Photos tab. Whether Instagram is connected is said here, since posting needs it.
+ * Posts › Posts: the drafts (with failed posts and any being posted) first, then what's been posted to Instagram; each opens
+ * in the editor. Photos are picked on the Photos tab. Whether Instagram is connected is said here, since posting needs it.
  */
 function Posts() {
   const [status, setStatus] = useState<MetaStatus | null>(null);
@@ -63,7 +63,7 @@ function PostSection({ title, testid, rows, empty }: { title: string; testid: st
             {p.thumb ? <img src={p.thumb} alt="" className="h-14 w-14 shrink-0 rounded-md bg-soft object-cover" loading="lazy" />
               : <span className="h-14 w-14 shrink-0 rounded-md bg-soft" />}
             <span className="grid min-w-0 flex-1 gap-0.5">
-              <b className="truncate" data-testid="post-title">{p.title ?? <i className="s">Untitled</i>}</b>
+              <Link href={`/posts/${p.id}`} className="truncate font-bold no-underline hover:underline" data-testid="post-title">{p.title ?? <i className="s">Untitled</i>}</Link>
               <span className="s" data-testid="post-meta">
                 {p.count === 1 ? "1 photo" : `${p.count} photos`}
                 {p.status === "draft" && " · Draft"}

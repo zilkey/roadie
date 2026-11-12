@@ -27,6 +27,8 @@ import { SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
 import { dateInBandZone } from "@/lib/timezone";
 import { migratePosts49, titleFor, INTERRUPTED } from "../../scripts/migrate-posts-49";
 import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { undoRun } from "@/server/undo";
+import { eligibleCommands, isReadOnly, needsConfirm, summarize, voiceConfirmable } from "@/server/assistant/policy";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -527,7 +529,7 @@ test("posts.list: drafts (with failed and publishing) by latest change, then pos
   assert.deepEqual(r.drafts.map((p: any) => p.id), [draft, failed]); // eslint-disable-line @typescript-eslint/no-explicit-any
   assert.deepEqual(r.posts.map((p: any) => p.id), [posted2, posted1]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const d = r.drafts[0];
-  assert.deepEqual({ ...d, thumb: undefined }, { id: draft, title: "Hi-Dive announcement", status: "draft", count: 1, thumb: undefined });
+  assert.deepEqual({ ...d, thumb: undefined }, { id: draft, title: "Hi-Dive announcement", status: "draft", count: 1, thumb: undefined, driveFolderId: "f1" });
   assert.equal(d.thumb, thumbUrl(TEST_ARTIST, "fake-social-late", "2026-11-01T18:03:00.000Z", 400), "signed from the stored modifiedTime");
   assert.equal(r.drafts[1].error, "Instagram said: no");
   assert.deepEqual({ ...r.posts[0], thumb: undefined }, { id: posted2, title: "Roots", status: "posted", postedAt: "2026-11-05T03:00:00.000Z", count: 1, thumb: undefined, permalink: null, driveTidy: { error: "Drive said no" } });
@@ -577,6 +579,253 @@ test("thumb route: a signed link streams Drive's upright preview at 400, 1080 or
     process.env.GCLOUD_PROJECT = project;
     if (secret !== undefined) process.env.SIGNED_URL_SECRET = secret;
   }
+});
+
+// ---------- drafts: createDraft, addToDraft, updateDraft, rename, removeFromDraft, deleteDraft, get, undo ----------
+
+/** A ctx with its own run, so each call is its own Undo. */
+const fresh = (): Ctx => ({ ...ctx, runId: newRunId() });
+const run = async (name: string, input: unknown) => { const c = fresh(); return { out: await cmd(name, input, c), runId: c.runId }; };
+const refused = (p: Promise<unknown>, c: string, message: string) => assert.rejects(p, (e: any) => e.code === c && e.message === message); // eslint-disable-line @typescript-eslint/no-explicit-any
+async function setUpPosts() {
+  await chooseSocials();
+  await cmd("posts.setup", {});
+  return (await db.get("artists", TEST_ARTIST))!.postFoldersId as string;
+}
+const parentsOf = async (id: string) => (await driveClient({ artistId: TEST_ARTIST }).get(id)).parents;
+const folderNamed = async (parent: string, name: string) =>
+  (await driveClient({ artistId: TEST_ARTIST }).list({ parents: [parent], kind: "folders" })).files.find((f) => f.name === name);
+
+test("createDraft: refused until Set up; moves the photos into Posts/DRAFT - <title> and records where each came from", async () => {
+  await chooseSocials();
+  await refused(cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-1"] }), "posts_not_set_up", "Set up the Socials folder in Settings › Google");
+  const postsId = await setUpPosts();
+  const r = await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-rotated", "fake-social-loose-1"] });
+  assert.equal(r.folderName, "DRAFT - Hi-Dive announcement");
+  const folder = (await folderNamed(postsId, r.folderName))!;
+  assert.deepEqual(await parentsOf("fake-social-rotated"), [folder.id]);
+  assert.deepEqual(await parentsOf("fake-social-loose-1"), [folder.id]);
+  const p = (await db.get("posts", r.id))!;
+  assert.equal(p.status, "draft");
+  assert.equal(p.caption, "");
+  assert.equal(p.aspect, "4:5");
+  assert.equal(p.title, "Hi-Dive announcement");
+  assert.equal(p.driveFolderId, folder.id);
+  assert.deepEqual(p.media.map((m: any) => ({ ...m, modifiedTime: typeof m.modifiedTime, url: typeof m.url })), [ // eslint-disable-line @typescript-eslint/no-explicit-any
+    { driveFileId: "fake-social-rotated", mimeType: "image/jpeg", name: "photo-rotated.jpg", width: 900, height: 1200, modifiedTime: "string", url: "string", from: { folderId: PHONE } },
+    { driveFileId: "fake-social-loose-1", mimeType: "image/jpeg", name: "IMG_4411.JPG", width: 1600, height: 1000, modifiedTime: "string", url: "string", from: { folderId: SOCIALS_FOLDER_ID } },
+  ], "in the order given, upright sizes");
+  const inbox = (await cmd("posts.photos", {})).photos.map((x: any) => x.driveFileId); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.ok(!inbox.includes("fake-social-rotated") && !inbox.includes("fake-social-loose-1"), "gone from the inbox");
+  assert.equal((await dispatch("posts.createDraft", `Bearer ${hugo.token}`, { title: "x", driveFileIds: ["fake-social-loose-2"] }, TEST_ARTIST)).status, 403);
+});
+
+test("createDraft: refuses, changing nothing, a photo outside Socials, one already in a post (naming it), a non-photo and a trashed photo; a name clash gives (2)", async () => {
+  const postsId = await setUpPosts();
+  const first = await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-1"] });
+  const before = (await driveClient({ artistId: TEST_ARTIST }).list({ parents: [postsId], kind: "folders" })).files.length;
+  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-loose-2", "fake-social-loose-1"] }), "in_a_post", "IMG_4411 is already in Hi-Dive announcement");
+  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-photo-roots"] }), "not_in_socials", "Roots Music Project stage isn't in Socials");
+  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-pdf"] }), "invalid_input", "Set list isn't a photo. Roadie takes JPEG, HEIC, PNG and WebP photos");
+  await driveClient({ artistId: TEST_ARTIST }).trash("fake-social-loose-3");
+  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-loose-3"] }), "invalid_input", "Poster draft is in Drive's trash");
+  assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID], "nothing moved");
+  assert.equal((await driveClient({ artistId: TEST_ARTIST }).list({ parents: [postsId], kind: "folders" })).files.length, before, "no folder made");
+  assert.equal((await db.list("posts")).length, 1);
+  const second = await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-2"] });
+  assert.equal(second.folderName, "DRAFT - Hi-Dive announcement (2)");
+  assert.notEqual(second.id, first.id);
+});
+
+test("createDraft: a move failing partway puts the first photo back and trashes the empty folder, with no post left", async () => {
+  const postsId = await setUpPosts();
+  await driveScenario({ failMove: 2 });
+  await assert.rejects(cmd("posts.createDraft", { title: "Broken", driveFileIds: ["fake-social-loose-1", "fake-social-heic-1", "fake-social-loose-2"] }));
+  assert.deepEqual(await parentsOf("fake-social-loose-1"), [SOCIALS_FOLDER_ID]);
+  assert.deepEqual(await parentsOf("fake-social-heic-1"), [PHONE]);
+  assert.equal(await folderNamed(postsId, "DRAFT - Broken"), undefined, "the folder is in the trash");
+  assert.equal((await db.list("posts")).length, 0);
+});
+
+test("addToDraft: appends the photos; at most 10 in all; a failed move puts back only this call's photos", async () => {
+  await setUpPosts();
+  const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1"] });
+  const folder = (await db.get("posts", id))!.driveFolderId as string;
+  assert.deepEqual(await cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-heic-1", "fake-social-late"] }), { count: 3 });
+  assert.deepEqual((await db.get("posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual(await parentsOf("fake-social-late"), [folder]);
+  const many = SEEDED_PHOTOS.filter((x) => !["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"].includes(x)); // 7 more makes 10, plus one
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const extra = (await drive.upload({ name: "Extra.jpg", mimeType: "image/jpeg", parentId: SOCIALS_FOLDER_ID, data: new Blob([Buffer.from([0xff, 0xd8])]) })).id;
+  await refused(cmd("posts.addToDraft", { id, driveFileIds: [...many, extra] }), "invalid_input", "A post holds at most 10 photos");
+
+  await driveScenario({ failMove: 2 });
+  await assert.rejects(cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-loose-2", "fake-social-phone-5"] }));
+  assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID], "this call's move put back");
+  assert.deepEqual(await parentsOf("fake-social-phone-5"), [PHONE]);
+  assert.deepEqual(await parentsOf("fake-social-late"), [folder], "the draft's own photos stay");
+  assert.equal((await db.get("posts", id))!.media.length, 3);
+});
+
+test("updateDraft: caption, aspect, order and the whole items map; refuses >30 hashtags, a wrong order, a baseRev conflict, and a posted post", async () => {
+  await setUpPosts();
+  const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1", "fake-social-loose-2", "fake-social-late"] });
+  const out = await cmd("posts.updateDraft", { id, patch: {
+    caption: "Thanks, Denver! #tour", aspect: "1:1", order: ["fake-social-late", "fake-social-loose-1", "fake-social-loose-2"],
+    items: { "fake-social-late": { alt: "The crowd at the Hi-Dive", focus: { x: 0.2, y: 0.5 } }, "fake-social-loose-1": { alt: "" }, "fake-social-loose-2": {} },
+  } });
+  assert.equal(out.caption, "Thanks, Denver! #tour");
+  assert.equal(out.aspect, "1:1");
+  assert.deepEqual(out.media.map((m: any) => [m.driveFileId, m.alt, m.focus]), [ // eslint-disable-line @typescript-eslint/no-explicit-any
+    ["fake-social-late", "The crowd at the Hi-Dive", { x: 0.2, y: 0.5 }], ["fake-social-loose-1", undefined, undefined], ["fake-social-loose-2", undefined, undefined],
+  ]);
+  // the whole map again: one photo's edit doesn't drop another's
+  const again = await cmd("posts.updateDraft", { id, patch: { items: { "fake-social-late": { alt: "The crowd at the Hi-Dive", focus: { x: 0.2, y: 0.5 } }, "fake-social-loose-1": { alt: "Rudy" }, "fake-social-loose-2": {} } } });
+  assert.deepEqual(again.media.map((m: any) => m.alt), ["The crowd at the Hi-Dive", "Rudy", undefined]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.equal((await parentsOf("fake-social-late")).length, 1, "Drive untouched");
+
+  const tags = Array.from({ length: 31 }, (_, i) => `#t${i}`).join(" ");
+  await refused(cmd("posts.updateDraft", { id, patch: { caption: tags } }), "invalid_input", "A caption can have at most 30 hashtags");
+  await cmd("posts.updateDraft", { id, patch: { caption: tags.replace(" #t30", "") } });
+  await code(cmd("posts.updateDraft", { id, patch: { order: ["fake-social-late"] } }), "invalid_input");
+  await code(cmd("posts.updateDraft", { id, patch: { items: { "fake-social-heic-1": { alt: "x" } } } }), "invalid_input");
+
+  const rev = (await db.get("posts", id))!.rev as number;
+  const send = (caption: string, baseRev: number) => dispatch("posts.updateDraft", `Bearer ${rudy.token}`, { id, patch: { caption }, _meta: { baseRev, autosave: true } }, TEST_ARTIST);
+  assert.equal((await send("mine", rev)).status, 200);
+  const clash = await send("theirs", rev);
+  assert.equal(clash.status, 409);
+  assert.equal((clash.json as any).error.code, "conflict"); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  await db.update(ctx, "posts", id, { status: "posted" });
+  await refused(cmd("posts.updateDraft", { id, patch: { caption: "late" } }), "post_locked", "This post has gone out; it can't be changed");
+  await db.update(ctx, "posts", id, { status: "publishing" });
+  await refused(cmd("posts.rename", { id, title: "x" }), "post_locked", "This post is being posted right now");
+});
+
+test("rename: renames the draft's folder (a clash gives (2)) and its title", async () => {
+  const postsId = await setUpPosts();
+  await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-1"] });
+  const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-2"] });
+  const folder = (await db.get("posts", id))!.driveFolderId as string;
+  assert.deepEqual(await cmd("posts.rename", { id, title: "Hi-Dive announcement" }), { folderName: "DRAFT - Hi-Dive announcement (2)" });
+  assert.equal((await folderNamed(postsId, "DRAFT - Hi-Dive announcement (2)"))!.id, folder);
+  assert.equal((await db.get("posts", id))!.title, "Hi-Dive announcement");
+  assert.deepEqual(await cmd("posts.rename", { id, title: "Hi-Dive announcement" }), { folderName: "DRAFT - Hi-Dive announcement (2)" }, "its own name doesn't clash");
+  assert.deepEqual(await cmd("posts.rename", { id, title: "Thanks, Denver" }), { folderName: "DRAFT - Thanks, Denver" });
+});
+
+test("removeFromDraft: back to its own folder, or the Socials root when that folder is gone; the last photo is refused; a failed move keeps it", async () => {
+  await setUpPosts();
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const encore = (await findOrMakeFolder(drive, SOCIALS_FOLDER_ID, "Encore")).folder;
+  const pic = (await drive.upload({ name: "Encore.jpg", mimeType: "image/jpeg", parentId: encore.id, data: new Blob([Buffer.from([0xff, 0xd8])]) })).id;
+  const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-heic-1", pic, "fake-social-loose-1"] });
+  assert.deepEqual(await cmd("posts.removeFromDraft", { id, driveFileId: "fake-social-heic-1" }), { count: 2 });
+  assert.deepEqual(await parentsOf("fake-social-heic-1"), [PHONE]);
+  await drive.trash(encore.id);
+  await cmd("posts.removeFromDraft", { id, driveFileId: pic });
+  assert.deepEqual(await parentsOf(pic), [SOCIALS_FOLDER_ID], "its folder is in the trash: the Socials root");
+  await refused(cmd("posts.removeFromDraft", { id, driveFileId: "fake-social-loose-1" }), "invalid_input", "Delete the draft instead");
+  await cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-loose-2"] });
+  await driveScenario({ failMove: 1 });
+  await assert.rejects(cmd("posts.removeFromDraft", { id, driveFileId: "fake-social-loose-2" }));
+  assert.deepEqual((await db.get("posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-loose-2"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+});
+
+test("deleteDraft: every photo goes back and the empty folder is trashed; a folder with the PDF is left; a failed move keeps that photo in the draft", async () => {
+  const postsId = await setUpPosts();
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const a = await cmd("posts.createDraft", { title: "A", driveFileIds: ["fake-social-heic-1", "fake-social-loose-1"] });
+  assert.deepEqual(await cmd("posts.deleteDraft", { id: a.id }), { folderLeft: false, notMoved: [] });
+  assert.deepEqual(await parentsOf("fake-social-heic-1"), [PHONE]);
+  assert.deepEqual(await parentsOf("fake-social-loose-1"), [SOCIALS_FOLDER_ID]);
+  assert.equal(await folderNamed(postsId, "DRAFT - A"), undefined, "trashed");
+  assert.ok((await db.get("posts", a.id))!.deletedAt, "soft-deleted");
+  assert.equal((await cmd("posts.list", {})).drafts.length, 0);
+
+  const b = await cmd("posts.createDraft", { title: "B", driveFileIds: ["fake-social-loose-1"] });
+  const bFolder = (await db.get("posts", b.id))!.driveFolderId as string;
+  await drive.update("fake-social-pdf", { addParents: [bFolder], removeParents: [SOCIALS_FOLDER_ID] });
+  const left = await cmd("posts.deleteDraft", { id: b.id });
+  assert.deepEqual(left, { folderLeft: true, notMoved: [], message: "Left DRAFT - B in Drive: it has files Roadie didn't put there" });
+  assert.ok(await folderNamed(postsId, "DRAFT - B"));
+  assert.deepEqual(await parentsOf("fake-social-loose-1"), [SOCIALS_FOLDER_ID]);
+
+  const c = await cmd("posts.createDraft", { title: "C", driveFileIds: ["fake-social-loose-2", "fake-social-late"] });
+  await driveScenario({ failMove: 2 });
+  const partly = await cmd("posts.deleteDraft", { id: c.id });
+  assert.equal(partly.folderLeft, true);
+  assert.deepEqual(partly.notMoved, ["IMG_2210"]);
+  assert.match(partly.message, /^Couldn't move IMG_2210 back: .+\. The draft keeps it$/);
+  const kept = (await db.get("posts", c.id))!;
+  assert.equal(kept.deletedAt, null);
+  assert.deepEqual(kept.media.map((m: any) => m.driveFileId), ["fake-social-late"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID]);
+});
+
+test("posts.get: each photo's 1080 preview, a trashed or missing photo flagged, and a changed modifiedTime saved without history", async () => {
+  await setUpPosts();
+  const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1", "fake-social-late"] });
+  const drive = driveClient({ artistId: TEST_ARTIST });
+  const before = (await db.get("posts", id))!;
+  await tick();
+  await drive.trash("fake-social-late");
+  const r = await cmd("posts.get", { id });
+  assert.equal(r.title, "Tour");
+  assert.deepEqual(r.photos["fake-social-loose-1"].trashed, false);
+  assert.equal(r.photos["fake-social-loose-1"].missing, false);
+  assert.match(r.photos["fake-social-loose-1"].thumb1080, /&s=1080&/);
+  assert.equal(r.photos["fake-social-late"].trashed, true, "flagged");
+  const after = (await db.get("posts", id))!;
+  assert.notEqual(after.media[1].modifiedTime, before.media[1].modifiedTime, "trashing bumped it; saved back");
+  assert.equal(after.rev, before.rev, "not an edit: no new rev or history");
+  await code(cmd("posts.get", { id: "nope" }), "not_found");
+});
+
+test("undo: refuses createDraft, rename, removeFromDraft and deleteDraft runs; reverts an updateDraft caption edit", async () => {
+  await setUpPosts();
+  const made = await run("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1", "fake-social-loose-2", "fake-social-late"] });
+  const id = made.out.id as string;
+  const renamed = await run("posts.rename", { id, title: "Tour 2" });
+  const removed = await run("posts.removeFromDraft", { id, driveFileId: "fake-social-late" });
+  const edited = await run("posts.updateDraft", { id, patch: { caption: "Hello" } });
+  const reordered = await run("posts.updateDraft", { id, patch: { order: ["fake-social-loose-2", "fake-social-loose-1"] } });
+  for (const r of [made, renamed, removed]) {
+    await refused(undoRun(fresh(), r.runId), "drive_changed", "This changed Drive, so it can't be undone. Take the photo out or delete the draft instead");
+  }
+  await undoRun(fresh(), reordered.runId);
+  await undoRun(fresh(), edited.runId);
+  const p = (await db.get("posts", id))!;
+  assert.equal(p.caption, "");
+  assert.deepEqual(p.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-loose-2"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const deleted = await run("posts.deleteDraft", { id });
+  await refused(undoRun(fresh(), deleted.runId), "drive_changed", "This changed Drive, so it can't be undone. Take the photo out or delete the draft instead");
+  assert.ok((await db.get("posts", id))!.deletedAt);
+});
+
+test("policy: posts commands are offered to Roadie; setup and publish ask and need a tap; reads don't ask; a 7-photo order doesn't; 6 photos into a draft does", () => {
+  const offered = eligibleCommands("admin").map((c) => c.name);
+  for (const n of ["posts.setup", "posts.photos", "posts.list", "posts.get", "posts.createDraft", "posts.addToDraft", "posts.updateDraft", "posts.rename", "posts.removeFromDraft", "posts.deleteDraft"]) {
+    assert.ok(offered.includes(n), n);
+  }
+  assert.ok(!offered.includes("posts.publishPhoto"));
+  for (const n of ["posts.setup", "posts.publish"]) {
+    assert.equal(needsConfirm(n, {}), true, n);
+    assert.equal(voiceConfirmable(n, {}, false), false, n);
+  }
+  assert.equal(needsConfirm("posts.deleteDraft", { id: "p" }), true);
+  assert.equal(needsConfirm("posts.removeFromDraft", { id: "p", driveFileId: "f" }), true);
+  for (const n of ["posts.photos", "posts.list", "posts.get"]) assert.equal(isReadOnly(n), true, n);
+  const seven = Array.from({ length: 7 }, (_, i) => `f${i}`);
+  assert.equal(needsConfirm("posts.updateDraft", { id: "p", patch: { order: seven } }), false);
+  assert.equal(needsConfirm("posts.createDraft", { title: "x", driveFileIds: seven.slice(0, 6) }), true);
+  assert.equal(needsConfirm("posts.createDraft", { title: "x", driveFileIds: seven.slice(0, 5) }), false);
+  assert.equal(needsConfirm("posts.rename", { id: "p", title: "x" }), false);
+  assert.equal(summarize("posts.publish", { id: "p" }, undefined, { title: "Tour", count: 3 }), "Post Tour (3 photos) to Instagram now");
+  assert.equal(summarize("posts.deleteDraft", { id: "p" }, undefined, { title: "Tour" }), "Delete the draft Tour and put its photos back in Socials");
+  assert.equal(summarize("posts.removeFromDraft", { id: "p" }, undefined, { title: "Tour", photo: "IMG_4412" }), "Take IMG_4412 out of Tour");
+  assert.equal(summarize("posts.setup", {}), "Set up the Socials folder and let the band add to it");
 });
 
 // ---------- publishPhoto ----------

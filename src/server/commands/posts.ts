@@ -1,23 +1,26 @@
 /**
  * Posts: the band's social posts. Photos live in the band's Socials folder (Settings › Google), laid out as in
  * docs/designs/posts-carousels/folder-model.md: the inbox, plus Socials/Posts with one folder per post. posts.setup makes
- * Posts/ and lets the band add to Socials. For now one photo from the band's Drive is posted to the band's Instagram now
- * (posts.publishPhoto). Meta fetches the photo from a signed URL on our server (src/server/meta/media.ts), which streams it
- * from Drive, so nothing outside Drive keeps a copy. Photos uploaded on Posts go to Drive first (/api/posts/upload), into
- * the Socials root.
+ * Posts/ and lets the band add to Socials. Photos are picked from the inbox (posts.photos) into a draft (posts.createDraft),
+ * which moves them into Posts/DRAFT - <title>; the editor changes the draft (updateDraft: Firestore only) and the commands
+ * that move or rename in Drive can't be undone (src/server/undo.ts). For now one photo from the band's Drive is posted to the
+ * band's Instagram now (posts.publishPhoto). Meta fetches the photo from a signed URL on our server (src/server/meta/media.ts),
+ * which streams it from Drive, so nothing outside Drive keeps a copy. Photos uploaded on Posts go to Drive first
+ * (/api/posts/upload), into the Socials root.
  */
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { db } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { driveClient, type DriveFile } from "../integrations";
+import { firestore } from "../admin";
+import { driveClient, IntegrationError, type DriveFile, type DriveService } from "../integrations";
 import { bandmates } from "../music";
 import { findOrMakeFolder } from "../driveFolders";
-import { POSTS_FOLDER_NAME, inboxFolders, listAll, socialsOf } from "../postFolder";
+import { POSTS_FOLDER_NAME, inboxFolders, isEmpty, listAll, moveBack, moveInto, socialsOf, uniqueName } from "../postFolder";
 import { thumbUrl } from "../signedUrl";
 import { dateTimeInBandZone } from "@/lib/timezone";
-import { PHOTOS_ONLY, photoType } from "@/lib/photos";
+import { HASHTAG_MAX, PHOTOS_ONLY, hashtagCount, photoType } from "@/lib/photos";
 import { postStatus, type PostMedia } from "@/schema/posts";
 import { graph, GraphError, type Tok } from "../meta/graph";
 import { freshToken } from "../meta/connection";
@@ -126,9 +129,12 @@ export const postsPhotos = defineCommand({
   },
 });
 
-/** A post in the Posts tab's lists. thumb is the first photo's, signed from its stored modifiedTime (no Drive call). */
+/**
+ * A post in the Posts tab's lists. thumb is the first photo's, signed from its stored modifiedTime (no Drive call).
+ * driveFolderId is its folder in Socials/Posts: a draft without one (a #49 post not migrated yet) can't take photos.
+ */
 export interface PostRow {
-  id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; thumb?: string;
+  id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; thumb?: string; driveFolderId?: string;
   permalink?: string | null; error?: string; driveTidy?: { error: string };
 }
 
@@ -147,6 +153,7 @@ export const postsList = defineCommand({
         id: d.id as string, status: d.status as PostRow["status"], count: media.length,
         ...(d.title ? { title: d.title as string } : {}),
         ...(d.postedAt ? { postedAt: d.postedAt as string } : {}),
+        ...(d.driveFolderId ? { driveFolderId: d.driveFolderId as string } : {}),
         ...(first ? { thumb: thumbUrl(artistId, first.driveFileId, first.modifiedTime, 400) } : {}),
         ...(d.instagram ? { permalink: (d.instagram as { permalink: string | null }).permalink } : {}),
         ...(d.error ? { error: d.error as string } : {}),
@@ -206,4 +213,336 @@ export const postsPublishPhoto = defineCommand({
   },
 });
 
-export const postCommands = [postsSetup, postsPhotos, postsList, postsPublishPhoto];
+// ---------- drafts: one folder per post in Socials/Posts ----------
+
+export const POSTED_LOCKED = "This post has gone out; it can't be changed";
+export const PUBLISHING_LOCKED = "This post is being posted right now";
+export const NO_FOLDER = "This post has no folder in Drive yet; run the #49 migration first";
+export const DELETE_INSTEAD = "Delete the draft instead";
+export const MAX_PHOTOS = 10;
+export const TOO_MANY = "A post holds at most 10 photos";
+export const TOO_MANY_HASHTAGS = "A caption can have at most 30 hashtags";
+
+/** A photo's name as Roadie says it: the file name without its extension ("IMG_4410"). */
+export const photoLabel = (name?: string) => (name ?? "That photo").replace(/\.[^.]+$/, "");
+
+type PostDoc = Record<string, unknown> & { id: string; artistId: string; title?: string; status: string; media: PostMedia[]; driveFolderId?: string; caption: string; rev?: number };
+
+/** The band's live post, or a 404. */
+async function postOf(ctx: Ctx, id: string): Promise<PostDoc> {
+  const artistId = artistOf(ctx);
+  const d = await db.get("posts", id);
+  if (!d || d.deletedAt || d.artistId !== artistId) throw new AppError("not_found", "That post isn't there", 404);
+  return d as PostDoc;
+}
+
+/** Draft edits and publish: only a post with its own folder that is a draft or failed. */
+function editable(p: PostDoc): asserts p is PostDoc & { driveFolderId: string } {
+  if (p.status === "posted") throw new AppError("post_locked", POSTED_LOCKED, 409);
+  if (p.status === "publishing") throw new AppError("post_locked", PUBLISHING_LOCKED, 409);
+  if (!p.driveFolderId) throw new AppError("post_locked", NO_FOLDER, 409);
+}
+
+/** "DRAFT - <title>": a draft's folder name (a failed post keeps it). */
+const draftFolder = (title: string) => `DRAFT - ${title}`;
+
+interface Picked { file: DriveFile; mimeType: string; from: string }
+
+/**
+ * The checks createDraft and addToDraft make before anything moves: each photo is in the inbox (Socials or a folder under it
+ * but not under Posts/), is a photo and isn't in the trash. A photo in a post's folder names that post. Nothing changes here.
+ */
+async function pickable(drive: DriveService, artistId: string, ids: string[]): Promise<Picked[]> {
+  const { socialsId } = await socialsOf(artistId);
+  const inbox = new Set([socialsId, ...(await inboxFolders(drive, artistId)).map((f) => f.id)]);
+  const holder = new Map<string, Promise<string | undefined>>();
+  /** The post whose folder is `folderId` (one query per parent folder). */
+  const postIn = (folderId: string) => {
+    if (!holder.has(folderId)) {
+      holder.set(folderId, db.list("posts", (q) => q.where("driveFolderId", "==", folderId)).then((rows) => {
+        const p = rows.find((r) => r.artistId === artistId && !r.deletedAt);
+        return p ? ((p.title as string | undefined) ?? "another post") : undefined;
+      }));
+    }
+    return holder.get(folderId)!;
+  };
+  const out: Picked[] = [];
+  for (const id of ids) {
+    let f: DriveFile;
+    try { f = await drive.get(id); } catch (e) {
+      if (e instanceof IntegrationError && (e.status === 404 || e.status === 403)) throw new AppError("not_found", "Drive can't find one of those photos", 404);
+      throw e;
+    }
+    const n = photoLabel(f.name);
+    if (f.trashed) throw new AppError("invalid_input", `${n} is in Drive's trash`, 400);
+    const mimeType = photoType(f.name, f.mimeType);
+    if (!mimeType) throw new AppError("invalid_input", `${n} isn't a photo. ${PHOTOS_ONLY}`, 400);
+    const from = f.parents.find((p) => inbox.has(p));
+    if (!from) {
+      for (const parent of f.parents) {
+        const title = await postIn(parent);
+        if (title) throw new AppError("in_a_post", `${n} is already in ${title}`, 400);
+      }
+      throw new AppError("not_in_socials", `${n} isn't in Socials`, 400);
+    }
+    out.push({ file: f, mimeType, from });
+  }
+  return out;
+}
+
+/** What the post keeps about a photo it was given: the moved file (its modifiedTime is after the move). */
+function mediaOf(p: Picked, moved: DriveFile): PostMedia {
+  const im = moved.image ?? p.file.image, odd = (im?.rotation ?? 0) % 2 === 1;
+  return {
+    driveFileId: p.file.id, mimeType: p.mimeType, name: p.file.name,
+    ...(p.file.webViewLink ? { url: p.file.webViewLink } : {}),
+    ...(im ? { width: odd ? im.height : im.width, height: odd ? im.width : im.height } : {}),
+    ...((moved.modifiedTime ?? p.file.modifiedTime) ? { modifiedTime: (moved.modifiedTime ?? p.file.modifiedTime)! } : {}),
+    from: { folderId: p.from },
+  };
+}
+
+/** Move each picked photo into the post folder; on any failure put back the ones this call moved, then throw. */
+async function moveAllInto(drive: DriveService, picked: Picked[], to: string): Promise<{ media: PostMedia[]; undo(): Promise<void> }> {
+  const done: Picked[] = [], media: PostMedia[] = [];
+  const undo = async () => {
+    for (const p of done.reverse()) await moveInto(drive, p.file.id, p.from, to).catch(() => undefined);
+  };
+  try {
+    for (const p of picked) {
+      const moved = await moveInto(drive, p.file.id, to, p.from);
+      done.push(p);
+      media.push(mediaOf(p, moved));
+    }
+  } catch (e) { await undo(); throw e; }
+  return { media, undo };
+}
+
+const unique = (ids: string[]) => [...new Set(ids)];
+const ids = z.array(z.string().min(1)).min(1).max(MAX_PHOTOS);
+
+export const postsGet = defineCommand({
+  name: "posts.get", roles: ["admin", "mcp"],
+  description: "One post with its photos in carousel order, each with a preview link and whether it's still in Drive (missing) or in Drive's trash (trashed). The post editor opens with this.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  async run(ctx, { id }) {
+    const artistId = artistOf(ctx);
+    const post = await postOf(ctx, id);
+    const drive = driveClient({ artistId });
+    const fresh = new Map<string, string>();
+    const photos: Record<string, { thumb1080: string; missing: boolean; trashed: boolean }> = {};
+    for (const m of post.media.slice(0, MAX_PHOTOS)) {
+      let f: DriveFile | null = null;
+      try { f = await drive.get(m.driveFileId); } catch (e) {
+        if (!(e instanceof IntegrationError && (e.status === 404 || e.status === 403))) throw e;
+      }
+      if (f?.modifiedTime && f.modifiedTime !== m.modifiedTime) fresh.set(m.driveFileId, f.modifiedTime);
+      photos[m.driveFileId] = { thumb1080: thumbUrl(artistId, m.driveFileId, f?.modifiedTime ?? m.modifiedTime, 1080), missing: !f, trashed: !!f?.trashed };
+    }
+    // A photo edited in Drive since: keep its new modifiedTime (it signs the thumbnail). Not an edit, so not in history.
+    let media = post.media;
+    if (fresh.size) {
+      const ref = firestore().doc(`posts/${id}`);
+      media = await firestore().runTransaction(async (tx) => {
+        const cur = ((await tx.get(ref)).data()?.media ?? []) as PostMedia[];
+        const next = cur.map((m) => (fresh.has(m.driveFileId) ? { ...m, modifiedTime: fresh.get(m.driveFileId)! } : m));
+        tx.update(ref, { media: next });
+        return next;
+      });
+    }
+    return { ...post, media, photos };
+  },
+});
+
+export const postsCreateDraft = defineCommand({
+  name: "posts.createDraft", roles: ["admin", "mcp"],
+  description: "Make a draft post from 1–10 photos in the Socials inbox (driveFileIds, in carousel order): makes Socials/Posts/DRAFT - <title> in Drive and moves the photos into it, " +
+    "remembering the folder each came from. Refused, changing nothing, when a photo isn't in Socials or is already in another post. If a step fails, the moves are put back.",
+  input: z.strictObject({ title: z.string().trim().min(1).max(100), driveFileIds: ids }),
+  async run(ctx, { title, driveFileIds }) {
+    const artistId = artistOf(ctx);
+    const { postsId } = await setUpSocials(artistId);
+    const drive = driveClient({ artistId });
+    const picked = await pickable(drive, artistId, unique(driveFileIds));
+    const folderName = await uniqueName(drive, postsId, draftFolder(title));
+    const folder = await drive.createFolder(folderName, postsId);
+    let moved: Awaited<ReturnType<typeof moveAllInto>> | undefined;
+    try {
+      moved = await moveAllInto(drive, picked, folder.id);
+      const { id } = await db.create(ctx, "posts", {
+        artistId, title, caption: "", aspect: "4:5", media: moved.media, driveFolderId: folder.id, status: "draft", createdVia: ctx.via,
+      });
+      return { id, folderName };
+    } catch (e) {
+      await moved?.undo();
+      if (await isEmpty(drive, folder.id).catch(() => false)) await drive.trash(folder.id).catch(() => undefined);
+      throw e;
+    }
+  },
+});
+
+export const postsAddToDraft = defineCommand({
+  name: "posts.addToDraft", roles: ["admin", "mcp"],
+  description: "Add photos from the Socials inbox to the end of a draft (at most 10 photos in all), moving them into the draft's folder in Drive. Same checks as createDraft; if a step fails, this call's moves are put back.",
+  input: z.strictObject({ id: z.string().min(1), driveFileIds: ids }),
+  async run(ctx, { id, driveFileIds }) {
+    const artistId = artistOf(ctx);
+    const post = await postOf(ctx, id);
+    editable(post);
+    const want = unique(driveFileIds);
+    if (post.media.length + want.length > MAX_PHOTOS) throw new AppError("invalid_input", TOO_MANY, 400);
+    const drive = driveClient({ artistId });
+    const picked = await pickable(drive, artistId, want);
+    const moved = await moveAllInto(drive, picked, post.driveFolderId);
+    try {
+      await db.update(ctx, "posts", id, { media: [...post.media, ...moved.media] });
+    } catch (e) { await moved.undo(); throw e; }
+    return { count: post.media.length + moved.media.length };
+  },
+});
+
+const ItemEdit = z.strictObject({
+  alt: z.string().max(1000).optional(),
+  focus: z.strictObject({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
+});
+
+export const postsUpdateDraft = defineCommand({
+  name: "posts.updateDraft", roles: ["admin", "mcp"],
+  description: "Edit a draft (the editor autosaves through this): caption (at most 2,200 characters and 30 hashtags), aspect (4:5 or 1:1), order (every photo's driveFileId, in the new order) and items " +
+    "(driveFileId → { alt, focus }; send every photo's entry: alt is the alt text, \"\" clears it; focus {x,y} 0–1 is where the crop is centred). Changes only Roadie, never Drive.",
+  input: z.strictObject({
+    id: z.string().min(1),
+    patch: z.strictObject({
+      caption: z.string().max(2200).nullable().optional(),
+      aspect: z.enum(["4:5", "1:1"]).optional(),
+      order: z.array(z.string().min(1)).max(MAX_PHOTOS).optional(),
+      items: z.record(z.string(), ItemEdit).optional(),
+    }),
+  }),
+  async run(ctx, { id, patch }) {
+    const post = await postOf(ctx, id);
+    editable(post);
+    const out: Record<string, unknown> = {};
+    if (patch.caption !== undefined) {
+      const caption = patch.caption ?? "";
+      if (hashtagCount(caption) > HASHTAG_MAX) throw new AppError("invalid_input", TOO_MANY_HASHTAGS, 400);
+      out.caption = caption;
+    }
+    if (patch.aspect) out.aspect = patch.aspect;
+    let media = post.media;
+    if (patch.order) {
+      const have = media.map((m) => m.driveFileId);
+      if (patch.order.length !== have.length || unique(patch.order).length !== have.length || !patch.order.every((x) => have.includes(x))) {
+        throw new AppError("invalid_input", "order has to list every photo in the post once", 400);
+      }
+      media = patch.order.map((x) => media.find((m) => m.driveFileId === x)!);
+    }
+    if (patch.items) {
+      const unknown = Object.keys(patch.items).find((k) => !media.some((m) => m.driveFileId === k));
+      if (unknown) throw new AppError("invalid_input", `${unknown} isn't in this post`, 400);
+      media = media.map((m) => {
+        const e = patch.items![m.driveFileId];
+        if (!e) return m;
+        const { alt: _a, focus: _f, ...rest } = m;
+        const alt = e.alt !== undefined ? e.alt : m.alt, focus = e.focus !== undefined ? e.focus : m.focus;
+        return { ...rest, ...(alt ? { alt } : {}), ...(focus ? { focus } : {}) };
+      });
+    }
+    if (media !== post.media) out.media = media;
+    if (Object.keys(out).length) await db.update(ctx, "posts", id, out);
+    return db.get("posts", id);
+  },
+});
+
+export const postsRename = defineCommand({
+  name: "posts.rename", roles: ["admin", "mcp"],
+  description: "Rename a draft: its title, and its folder in Drive to DRAFT - <title> (with (2), (3)… when another post's folder has that name).",
+  input: z.strictObject({ id: z.string().min(1), title: z.string().trim().min(1).max(100) }),
+  async run(ctx, { id, title }) {
+    const artistId = artistOf(ctx);
+    const { postsId } = await setUpSocials(artistId);
+    const post = await postOf(ctx, id);
+    editable(post);
+    const drive = driveClient({ artistId });
+    const was = (await drive.get(post.driveFolderId)).name;
+    const folderName = await uniqueName(drive, postsId, draftFolder(title), post.driveFolderId);
+    if (folderName !== was) await drive.rename(post.driveFolderId, folderName);
+    try {
+      await db.update(ctx, "posts", id, { title });
+    } catch (e) {
+      if (folderName !== was) await drive.rename(post.driveFolderId, was).catch(() => undefined);
+      throw e;
+    }
+    return { folderName };
+  },
+});
+
+/** moveBack, except that a photo Drive no longer has (deleted for good) has nothing to move: null, and it just leaves the post. */
+async function backOrGone(drive: DriveService, at: { socialsId: string; postFolderId: string }, m: PostMedia): Promise<string | null> {
+  try { return await moveBack(drive, at, m); } catch (e) {
+    if (e instanceof IntegrationError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+export const postsRemoveFromDraft = defineCommand({
+  name: "posts.removeFromDraft", roles: ["admin", "mcp"],
+  description: "Take one photo out of a draft: it moves back in Drive to the folder it came from (or the Socials root if that folder is gone). A draft keeps at least one photo: delete the draft instead.",
+  input: z.strictObject({ id: z.string().min(1), driveFileId: z.string().min(1) }),
+  async run(ctx, { id, driveFileId }) {
+    const artistId = artistOf(ctx);
+    const { socialsId } = await setUpSocials(artistId);
+    const post = await postOf(ctx, id);
+    editable(post);
+    const m = post.media.find((x) => x.driveFileId === driveFileId);
+    if (!m) throw new AppError("not_found", "That photo isn't in this post", 404);
+    if (post.media.length === 1) throw new AppError("invalid_input", DELETE_INSTEAD, 400);
+    const drive = driveClient({ artistId });
+    const to = await backOrGone(drive, { socialsId, postFolderId: post.driveFolderId }, m);
+    const media = post.media.filter((x) => x.driveFileId !== driveFileId);
+    try {
+      await db.update(ctx, "posts", id, { media });
+    } catch (e) {
+      if (to) await moveInto(drive, driveFileId, post.driveFolderId, to).catch(() => undefined);
+      throw e;
+    }
+    return { count: media.length };
+  },
+});
+
+export const postsDeleteDraft = defineCommand({
+  name: "posts.deleteDraft", roles: ["admin", "mcp"],
+  description: "Delete a draft: every photo moves back in Drive to the folder it came from (or the Socials root), then the draft's folder is trashed if it's empty. " +
+    "A photo that can't be moved back stays in the draft, and the draft stays. A folder holding files Roadie didn't put there is left in Drive. Never deletes a photo.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  async run(ctx, { id }) {
+    const artistId = artistOf(ctx);
+    const { socialsId } = await setUpSocials(artistId);
+    const post = await postOf(ctx, id);
+    editable(post);
+    const drive = driveClient({ artistId });
+    const kept: PostMedia[] = [], notMoved: string[] = [], why: string[] = [];
+    for (const m of post.media) {
+      try { await backOrGone(drive, { socialsId, postFolderId: post.driveFolderId }, m); } catch (e) {
+        kept.push(m);
+        notMoved.push(photoLabel(m.name));
+        why.push(`Couldn't move ${photoLabel(m.name)} back: ${e instanceof Error ? e.message : String(e)}. The draft keeps it`);
+      }
+    }
+    if (kept.length) {
+      if (kept.length < post.media.length) await db.update(ctx, "posts", id, { media: kept });
+      return { folderLeft: true, notMoved, message: why.join(". ") };
+    }
+    const folderLeft = !(await isEmpty(drive, post.driveFolderId));
+    let message: string | undefined;
+    if (folderLeft) message = `Left ${(await drive.get(post.driveFolderId).catch(() => null))?.name ?? draftFolder(post.title ?? "")} in Drive: it has files Roadie didn't put there`;
+    else await drive.trash(post.driveFolderId);
+    await db.softDelete(ctx, "posts", id);
+    return { folderLeft, notMoved, ...(message ? { message } : {}) };
+  },
+});
+
+export const postCommands = [
+  postsSetup, postsPhotos, postsList, postsGet, postsCreateDraft, postsAddToDraft, postsUpdateDraft, postsRename, postsRemoveFromDraft, postsDeleteDraft,
+  postsPublishPhoto,
+];

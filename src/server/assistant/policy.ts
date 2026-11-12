@@ -14,7 +14,7 @@ export const EXCLUDED: readonly string[] = [
   "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
   "google.",          // connecting someone's own Google account is an access change only they make
   "meta.",            // connecting the band's Instagram & Facebook: the same
-  "posts.",           // posting to Instagram: Roadie gets it in its own story (#19), with a confirm
+  "posts.publishPhoto", // the one-photo post from #49; posts.publish (with its confirm) replaces it
   "artists.create",   // making a band; the rest of band settings (links, lineups, custom fields) is open, but see refusal()
   "assistant.",       // Roadie's own prefs
   "drafts.",          // personal scratch, nothing to hand an assistant
@@ -63,6 +63,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "songs.merge",                                                                         // folds duplicate songs into one: their files, setlists, rehearsals and release tracks move
   "venues.mergeInto",                                                                    // moves every band's shows, pitches and notes, then archives a room
   "tours.book", "tours.removeItem",                                                      // books a show (and can drop other options); takes a show or pitch off a tour (tours.remove asks too: *.remove)
+  "posts.setup", "posts.publish", "posts.deleteDraft", "posts.removeFromDraft",         // shares Socials with the band; posts to Instagram; moves photos back in Drive
 ];
 /**
  * Cards that need a tap even when the person is talking to Roadie: they change who can see things (Drive sharing,
@@ -73,6 +74,7 @@ export const VOICE_TAP_ONLY: readonly string[] = [
   "files.shareWithBand", "files.copyToBand", "drive.fix", "releases.files.copyToFolder",
   "stagePlots.shareLink", "stagePlots.shareOff",
   "songs.merge", "venues.mergeInto",
+  "posts.setup", "posts.publish",
 ];
 /** True when a spoken yes may answer this card. The shared-room venue edit reaches every band, like a merge. */
 export function voiceConfirmable(name: string, input: unknown, hasPicks: boolean): boolean {
@@ -91,10 +93,10 @@ const isRemove = (name: string) => name.endsWith(".remove");
 /** More than this many records in one ask needs a yes. */
 export const BULK_LIMIT = 5;
 /** Commands whose array input is the content of one record (a checklist, a setlist), not a list of records. */
-const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
+const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "posts.updateDraft", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -211,6 +213,10 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     const moving = others.map((o) => `${others.length > 1 ? `${song(o)}: ` : ""}${refsLabel(o.refs)}`).join("; ");
     return `Merge ${others.length ? others.map(song).join(" and ") : "the duplicate songs"} into ${song(b?.keep)}. Moving: ${moving || "everything attached"}. Blanks on the kept song are filled in, and the other${others.length === 1 ? " song is" : "s are"} archived; you can undo it`;
   },
+  "posts.publish": (i, b) => `Post ${i.label ?? b?.title ?? "the post"}${typeof b?.count === "number" ? ` (${b.count} photo${b.count === 1 ? "" : "s"})` : ""} to Instagram now`,
+  "posts.deleteDraft": (i, b) => `Delete the draft ${i.label ?? b?.title ?? ""}`.trimEnd() + " and put its photos back in Socials",
+  "posts.removeFromDraft": (i, b) => `Take ${b?.photo ?? "the photo"} out of ${i.label ?? b?.title ?? "the draft"}`,
+  "posts.setup": () => "Set up the Socials folder and let the band add to it",
   "venues.mergeInto": () => "Merge a duplicate venue into another one for EVERY band: shows, pitches and notes move, and the duplicate is archived",
   "venues.update": (i, before) => {
     const patch = (i.patch ?? {}) as Record<string, unknown>;

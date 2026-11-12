@@ -1,13 +1,15 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Link, { useArtist } from "@/lib/artist";
-import { ErrorBox, PageTitle } from "@/components/ui";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { AdminOnly } from "@/components/Guard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { Upload } from "@/components/music/Upload";
 import { PostsTabs } from "@/components/posts/PostsTabs";
 import { PhotoGrid, type GridPhoto } from "@/components/posts/PhotoGrid";
+import { AddToDraftDialog } from "@/components/posts/AddToDraftDialog";
 import { dayLabels, groupByDay, type LabelRehearsal, type LabelShow } from "@/lib/photoDays";
 import { PHOTO_TYPES, PHOTOS_ONLY, photoType } from "@/lib/photos";
 
@@ -15,11 +17,12 @@ interface Folder { id: string; name: string; parentId: string; count: number }
 interface Photos { folders: Folder[]; photos: GridPhoto[]; capped: boolean }
 
 /** Posts › Photos is admins-only, like the rest of Posts. */
-export default function PhotosPage() { return <AdminOnly><PhotosTab /></AdminOnly>; }
+export default function PhotosPage() { return <AdminOnly><Suspense fallback={null}><PhotosTab /></Suspense></AdminOnly>; }
 
 /**
  * Posts › Photos: the Socials inbox (every folder under Socials except Posts/), grouped by the day each photo was taken and
- * labelled with that day's shows and rehearsals. A rail picks a folder; photos are picked in order.
+ * labelled with that day's shows and rehearsals. A rail picks a folder; photos are picked in order, and Add to carousel draft
+ * makes a draft of them (or adds them to one). Opened from the editor's Add photos (`?draft=<id>`), the bar adds to that draft.
  */
 function PhotosTab() {
   const artist = useArtist().doc;
@@ -30,6 +33,20 @@ function PhotosTab() {
   const [selected, setSelected] = useState<string[]>([]);
   const shows = useCollection<LabelShow>("shows");
   const rehearsals = useCollection<LabelRehearsal>("rehearsals");
+  const router = useRouter();
+  const draftId = useSearchParams().get("draft");
+  const [draft, setDraft] = useState<{ title?: string } | null>(null);
+  const [dialog, setDialog] = useState(false);
+  const add = useCommand();
+  useEffect(() => {
+    if (!draftId) { setDraft(null); return; }
+    runCommand<{ drafts: { id: string; title?: string }[] }>("posts.list", {}).then((r) => setDraft(r.drafts.find((d) => d.id === draftId) ?? null), () => setDraft(null));
+  }, [draftId]);
+  const toEditor = (id: string) => router.push(`/posts/${id}`);
+  async function addToOpenDraft() {
+    if (!draftId) return;
+    if (await add.call<{ count: number }>("posts.addToDraft", { id: draftId, driveFileIds: selected })) toEditor(draftId);
+  }
 
   const load = useCallback(() => {
     setError(null);
@@ -66,9 +83,19 @@ function PhotosTab() {
       {selected.length > 0 && (
         <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-3 border-t border-line bg-surface px-4 py-3 shadow-lg" role="region" aria-label="Picked photos" data-testid="photos-bar">
           <b data-testid="photos-picked">{selected.length} picked</b>
+          {!setUp && <span className="s" data-testid="photos-not-set-up"><Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link></span>}
+          {add.error && <span className="err" role="alert" data-testid="photos-add-error">{add.error}</span>}
           <button type="button" className="btn ghost sm ml-auto" onClick={() => setSelected([])} data-testid="photos-clear">Clear</button>
+          {draftId ? (
+            <button type="button" className="btn sm" disabled={!setUp || add.busy} onClick={() => void addToOpenDraft()} data-testid="photos-add">
+              {add.busy ? "Moving…" : `Add to ${draft?.title ?? "the draft"}`}
+            </button>
+          ) : (
+            <button type="button" className="btn sm" disabled={!setUp} onClick={() => setDialog(true)} data-testid="photos-add">Add to carousel draft</button>
+          )}
         </div>
       )}
+      <AddToDraftDialog open={dialog} onClose={() => setDialog(false)} driveFileIds={selected} onDone={(id) => { setDialog(false); toEditor(id); }} />
     </div>
   );
 }

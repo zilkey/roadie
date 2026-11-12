@@ -361,6 +361,18 @@ async function labelFor(s: Session, name: string, input: unknown): Promise<strin
   } catch { return undefined; }
 }
 
+/** A post's card names it: its title, how many photos, and the photo being taken out (posts aren't records.get kinds). */
+const POST_CARDS = /^posts\.(publish|deleteDraft|removeFromDraft)$/;
+async function fillPost(s: Session, input: unknown): Promise<{ input: unknown; before?: Row }> {
+  const i = (input ?? {}) as Row;
+  if (typeof i.id !== "string") return { input };
+  const p = await db.get("posts", i.id).catch(() => null);
+  if (!p || p.deletedAt || p.artistId !== s.artistId) return { input };
+  const media = (p.media ?? []) as { driveFileId: string; name?: string }[];
+  const photo = media.find((m) => m.driveFileId === i.driveFileId)?.name?.replace(/\.[^.]+$/, "");
+  return { input, before: { ...(p.title ? { title: p.title } : {}), count: media.length, ...(photo ? { photo } : {}) } };
+}
+
 /** Partial nested patches (one time, one address line) are filled from the record: the commands replace the whole object. null removes a key. */
 const NESTED: Record<string, { kind: string; fields: string[] }> = {
   "shows.update": { kind: "shows", fields: ["times", "sound"] },
@@ -599,7 +611,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const no = refusal(name, input);
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
-    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : name === "songs.merge" ? await fillSongMerge(input) : MONEY_CARDS.test(name) ? await fillMoney(s, name, input) : await fillNested(s, name, input ?? {});
+    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : name === "songs.merge" ? await fillSongMerge(input) : MONEY_CARDS.test(name) ? await fillMoney(s, name, input) : POST_CARDS.test(name) ? await fillPost(s, input) : await fillNested(s, name, input ?? {});
     let parsed = cmd.input.safeParse(filled.input);
     // A value that isn't on its list (a venue type the band doesn't have, a region the schema doesn't know) becomes a dropdown on the card.
     const choice = isReadOnly(name) ? null : await picksFor(s, name, filled.input, parsed.success ? [] : parsed.error.issues, filled.before);
