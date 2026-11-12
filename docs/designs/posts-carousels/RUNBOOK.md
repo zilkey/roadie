@@ -174,3 +174,4 @@ These need the owner or production access. Record them as manual steps:
 
 **Manual steps for the owner**
 - None new. (Still: `SIGNED_URL_SECRET` before deploying; Set up + migration on prod.)
+- Next session (phase 5): `session_01MmV83YbpT97cJ1EkkRyixq`, created and in the working state (still starting up when checked).
