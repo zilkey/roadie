@@ -142,6 +142,39 @@ export function quietDays(status: string, lastMs: number | undefined, today = to
   return (status === "pitched" || status === "talking") && lastMs !== undefined ? daysSince(lastMs, today) : undefined;
 }
 
+/** What the follow-up rule reads off a pitch (a Firestore Timestamp on either side has toMillis). */
+export interface FollowUpPitchLike {
+  status: string;
+  nextStep?: { text: string; due?: string } | null;
+  lastContactAt?: { toMillis?: () => number } | null;
+  createdAt?: { toMillis?: () => number } | null;
+}
+export interface FollowUp {
+  /** "Next step ... was due ...", "No contact for N days" (what pitches.needingFollowUp says). */
+  reasons: string[];
+  /** Its next step is due today or overdue. */
+  due: boolean;
+  /** Pitched or Talking, and quiet for `quietLimit` days or more. */
+  quiet: boolean;
+  /** Days since the last contact (or creation); undefined when neither is known. */
+  daysSinceContact: number | undefined;
+}
+/**
+ * Whether an active pitch needs a nudge (pitches.needingFollowUp and the To Dos Booking column): a next step due on or before
+ * `today`, or Pitched/Talking with no contact for `quietLimit` days. Null when it needs none (or isn't active).
+ */
+export function followUpFor(p: FollowUpPitchLike, today = todayStr(), quietLimit = QUIET_DAYS): FollowUp | null {
+  if (!isActive(p.status)) return null;
+  const reasons: string[] = [];
+  const due = !!(p.nextStep?.due && p.nextStep.due <= today);
+  if (due) reasons.push(`Next step "${p.nextStep!.text}" was due ${p.nextStep!.due}`);
+  const last = (p.lastContactAt ?? p.createdAt)?.toMillis?.();
+  const days = last ? daysSince(last, today) : undefined;
+  const quiet = (quietDays(p.status, last, today) ?? 0) >= quietLimit;
+  if (quiet) reasons.push(`No contact for ${days} days`);
+  return reasons.length ? { reasons, due, quiet, daysSinceContact: days } : null;
+}
+
 /** A pitch's dates ("YYYY-MM-DD"), sorted and unique (missing = none). */
 export const sortedDates = (dates?: readonly string[]): string[] => [...new Set(dates ?? [])].sort();
 /** A date has passed once it is before today. */

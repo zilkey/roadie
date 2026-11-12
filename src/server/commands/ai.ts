@@ -8,7 +8,7 @@ import { db, type Doc } from "../db";
 import { AppError } from "../errors";
 import { bandsintownClient } from "../integrations";
 import { undoRun, runsOf } from "../undo";
-import { buildSearchItems, searchItems, isActive, todayStr, daysSince, quietDays, QUIET_DAYS } from "@/lib/booking";
+import { buildSearchItems, searchItems, isActive, todayStr, followUpFor, QUIET_DAYS, type FollowUpPitchLike } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { DEFAULT_TRANSITION_SEC, setlistTotal, transitionOf } from "@/lib/music";
 import { bandsintownEligible } from "../showSync";
@@ -188,12 +188,9 @@ export const pitchesNeedingFollowUp = defineCommand({
     const artistId = await callerArtistId(ctx);
     const out = [];
     for (const p of pitches) {
-      const reasons: string[] = [];
-      if (p.nextStep?.due && p.nextStep.due <= today) reasons.push(`Next step "${p.nextStep.text}" was due ${p.nextStep.due}`);
-      const last = (p.lastContactAt ?? p.createdAt)?.toMillis?.() as number | undefined;
-      const quiet = last ? daysSince(last, today) : undefined;
-      if ((quietDays(p.status, last, today) ?? 0) >= i.quietDays) reasons.push(`No contact for ${quiet} days`);
-      if (!reasons.length) continue;
+      const f = followUpFor(p as unknown as FollowUpPitchLike, today, i.quietDays);
+      if (!f) continue;
+      const { reasons, daysSinceContact: quiet } = f;
       const kind = p.target.kind as string;
       const target = await db.get(kind === "venue" ? "venues" : kind === "promoter" ? "promoters" : "editions", p.target.id);
       // The band's contacts at the place: a venue's from its venueNotes, a promoter's or festival's (an edition's are its festival's) from the band's notes.

@@ -17,6 +17,7 @@ export const I = {
   money: "M12 3v18M16 7.5c0-1.7-1.8-3-4-3s-4 1.1-4 3 1.8 2.6 4 3 4 1.3 4 3.2-1.8 3.3-4 3.3-4-1.3-4-3",
   posts: "M4 7h3l2-3h6l2 3h3v13H4zM12 17a4 4 0 100-8 4 4 0 000 8z",
   fans: "M16 19v-1.5a3.5 3.5 0 00-3.5-3.5h-5A3.5 3.5 0 004 17.5V19M10 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM20 19v-1.5a3.5 3.5 0 00-2.5-3.35M15.5 4.2a3.5 3.5 0 010 6.6",
+  todos: "M3 4h4v4H3zM3 14h4v4H3zM11 6h10M11 16h10",
   chevron: "M6 9l6 6 6-6",
   back: "M15 5l-7 7 7 7",
   up: "M6 15l6-6 6 6",
@@ -43,8 +44,9 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
     money: { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
     fans: { key: "fans", href: "/fans", label: "Fans", icon: I.fans },
     posts: { key: "posts", href: "/posts", label: "Social Media", icon: I.posts },
+    todos: { key: "todos", href: "/todos", label: "To Dos", icon: I.todos },
   };
-  // Booking, its email templates, Contacts, Releases and Posts (for now) are admin-only.
-  const adminOnly = new Set<SectionId>(["booking", "contacts", "templates", "releases", "posts"]);
+  // Booking, its email templates, Contacts, Releases, Posts and To Dos (for now) are admin-only.
+  const adminOnly = new Set<SectionId>(["booking", "contacts", "templates", "releases", "posts", "todos"]);
   return [{ key: "calendar", href: "/calendar", label: "Calendar", icon: I.calendar }, ...order.filter((k) => (!adminOnly.has(k) || role === "admin") && (k !== "fans" || opts.fans)).map((k) => all[k])];
 }

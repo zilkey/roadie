@@ -33,15 +33,15 @@ test("Posts starts in More for an admin whose menu was saved before it existed; 
   const call = (name: string, body: unknown) => dispatch(name, bearer(rudy.token), body);
   // A menu saved before Posts: no seenSections, and Rehearsals switched on.
   await firestore().doc(`userPrefs/${rudy.uid}`).set({ uid: rudy.uid, hiddenSections: ["templates", "releases"] });
-  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "posts"]);
+  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "posts", "todos"]);
   await call("sections.setHidden", { section: "money", hidden: true });
-  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "posts", "money"], "another change keeps Posts in More");
+  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "posts", "todos", "money"], "another change keeps Posts in More");
   await call("sections.setHidden", { section: "posts", hidden: false });
-  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "money"]);
-  assert.deepEqual(hiddenFromPrefs((await firestore().doc(`userPrefs/${rudy.uid}`).get()).data(), "admin"), ["templates", "releases", "contacts", "money"], "the app reads it the same way");
+  assert.deepEqual(await hiddenSections(rudy.uid, "admin"), ["templates", "releases", "contacts", "todos", "money"]);
+  assert.deepEqual(hiddenFromPrefs((await firestore().doc(`userPrefs/${rudy.uid}`).get()).data(), "admin"), ["templates", "releases", "contacts", "todos", "money"], "the app reads it the same way");
   // An empty saved list is still the person's own, and Posts still starts hidden in it.
-  assert.deepEqual(hiddenFromPrefs({ hiddenSections: [] }, "admin"), ["contacts", "posts"]);
-  assert.deepEqual(hiddenFromPrefs({ hiddenSections: [], seenSections: ["contacts", "posts"] }, "admin"), []);
+  assert.deepEqual(hiddenFromPrefs({ hiddenSections: [] }, "admin"), ["contacts", "posts", "todos"]);
+  assert.deepEqual(hiddenFromPrefs({ hiddenSections: [], seenSections: ["contacts", "posts", "todos"] }, "admin"), []);
   // Members never get Posts, so it isn't added to theirs.
   assert.deepEqual(hiddenFromPrefs({ hiddenSections: ["money"] }, "member"), ["money"]);
 });
@@ -50,12 +50,12 @@ test("sections.setOrder: per user, completed with the default order, duplicates 
   const call = (tok: string, name: string, body: unknown) => dispatch(name, bearer(tok), body);
   const rudy = await makeUser("rudy@example.com", "admin");
   const hugo = await makeUser("hugo@example.com", "member");
-  assert.deepEqual(await sectionOrder(rudy.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts"]);
+  assert.deepEqual(await sectionOrder(rudy.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts", "todos"]);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["money", "songs"] })).status, 200);
-  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts"]);
-  assert.deepEqual(await sectionOrder(hugo.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts"], "someone else's menu is untouched");
+  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"]);
+  assert.deepEqual(await sectionOrder(hugo.uid), ["shows", "booking", "contacts", "templates", "tours", "songs", "releases", "setlists", "rehearsals", "stagePlots", "money", "fans", "posts", "todos"], "someone else's menu is untouched");
   await call(rudy.token, "sections.setHidden", { section: "booking", hidden: true });
-  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts"], "hiding keeps the order");
+  assert.deepEqual(await sectionOrder(rudy.uid), ["money", "songs", "shows", "booking", "contacts", "templates", "tours", "releases", "setlists", "rehearsals", "stagePlots", "fans", "posts", "todos"], "hiding keeps the order");
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["money", "money"] })).status, 400);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["home"] })).status, 400);
   assert.equal((await call(rudy.token, "sections.setOrder", { order: ["calendar"] })).status, 400);

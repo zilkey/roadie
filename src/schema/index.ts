@@ -30,6 +30,7 @@ import { ReleaseInput, ReleaseTrackInput } from "./releases";
 import { TourInput, TourEntryInput } from "./tours";
 import { PostInput } from "./posts";
 import { SocialChecklistsInput } from "./socialChecklists";
+import { TodoInput } from "./todos";
 import { IncomeInput } from "./income";
 import { PayoutInput } from "./payouts";
 import { StatSnapshotInput } from "./statSnapshots";
@@ -74,6 +75,7 @@ export * from "./releases";
 export * from "./tours";
 export * from "./posts";
 export * from "./socialChecklists";
+export * from "./todos";
 export * from "./income";
 export * from "./payouts";
 export * from "./driving";
@@ -136,6 +138,7 @@ export const collections: Record<string, CollectionDef> = {
   entries: { input: TourEntryInput },
   posts: { input: PostInput },
   socialChecklists: { input: SocialChecklistsInput },
+  todos: { input: TodoInput },
   income: { input: IncomeInput },
   payouts: { input: PayoutInput },
   statSnapshots: { input: StatSnapshotInput, immutable: true },

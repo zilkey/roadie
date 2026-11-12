@@ -1,0 +1,82 @@
+import { z } from "zod";
+import { defineCommand } from "./types";
+import { idInput } from "./util";
+import { run, type Writer } from "../db";
+import { AppError } from "../errors";
+import { setTodoDismissed, setTodoOrder } from "../prefs";
+import { TODO_CHECKLIST_KEY, TODO_COLUMN_KEY } from "@/lib/todos";
+
+// To Dos › Our list (todos/{id}) and each admin's own view of the To Dos page (userPrefs/{uid}: todoOrder, todoDismissed).
+// Admin-only for now, and not Roadie's (no "mcp").
+
+const ROLES = ["admin"] as const;
+const owner = z.string().min(1).nullable();
+
+async function requireTodo(w: Writer, id: string) {
+  const t = await w.get("todos", id);
+  if (!t || t.deletedAt || (w.ctx.artistId && t.artistId !== w.ctx.artistId)) throw new AppError("not_found", "To do not found", 404);
+  return t;
+}
+async function requireMusician(w: Writer, id: string) {
+  const m = await w.get("musicians", id);
+  if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
+}
+function artistOf(w: Writer) {
+  if (!w.ctx.artistId) throw new AppError("invalid_input", "Which artist? Open one first", 400);
+  return w.ctx.artistId;
+}
+
+export const todosAdd = defineCommand({
+  name: "todos.add", roles: [...ROLES], description: "Add a to-do to To Dos › Our list (the band's own, not tied to a show or release), optionally assigned to a musician.",
+  input: z.strictObject({ label: z.string().trim().min(1), ownerId: owner.optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    if (i.ownerId) await requireMusician(w, i.ownerId);
+    return w.create("todos", { artistId: artistOf(w), label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}) });
+  }),
+});
+
+export const todosEdit = defineCommand({
+  name: "todos.edit", roles: [...ROLES], description: "Change an Our list to-do's text and who it's assigned to: ownerId a musician id, or null for unassigned.",
+  input: z.strictObject({ id: z.string().min(1), label: z.string().trim().min(1), ownerId: owner }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    await requireTodo(w, i.id);
+    if (i.ownerId) await requireMusician(w, i.ownerId);
+    return w.update("todos", i.id, { label: i.label, ownerId: i.ownerId ?? null });
+  }),
+});
+
+export const todosCheck = defineCommand({
+  name: "todos.check", roles: [...ROLES], description: "Tick an Our list to-do done or not. Ticking records who and when.",
+  input: z.strictObject({ id: z.string().min(1), done: z.boolean() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    await requireTodo(w, i.id);
+    return w.update("todos", i.id, i.done ? { done: true, doneAt: w.now.toDate().toISOString(), doneBy: ctx.uid } : { done: false, doneAt: null, doneBy: null });
+  }),
+});
+
+export const todosRemove = defineCommand({
+  name: "todos.remove", roles: [...ROLES], input: idInput, description: "Remove an Our list to-do (Undo puts it back).",
+  run: (ctx, { id }) => run(ctx, async (w) => { await requireTodo(w, id); return w.softDelete("todos", id); }),
+});
+
+export const todosSetOrder = defineCommand({
+  name: "todos.setOrder", roles: [...ROLES],
+  description: "Save the caller's order of one To Dos column (pinned, booking, show:{showId}, releases, social, our): keys are item keys, top first. Personal: it changes only this page, only for the caller.",
+  input: z.strictObject({ column: z.string().regex(TODO_COLUMN_KEY, "Not a To Dos column"), keys: z.array(z.string().min(1).max(200)).max(1000) }),
+  async run(ctx, i) { return { column: i.column, keys: await setTodoOrder(ctx.uid, i.column, i.keys) }; },
+});
+
+const checklistKey = z.strictObject({ key: z.string().regex(TODO_CHECKLIST_KEY, "Not a checklist key") });
+export const todosDismiss = defineCommand({
+  name: "todos.dismiss", roles: [...ROLES],
+  description: "Hide one checklist (key {kind}:{id}:{listId}) from the caller's To Dos. Personal: the checklist itself is untouched.",
+  input: checklistKey,
+  async run(ctx, i) { return { dismissed: await setTodoDismissed(ctx.uid, i.key, true) }; },
+});
+export const todosUndismiss = defineCommand({
+  name: "todos.undismiss", roles: [...ROLES], description: "Show a dismissed checklist on the caller's To Dos again.",
+  input: checklistKey,
+  async run(ctx, i) { return { dismissed: await setTodoDismissed(ctx.uid, i.key, false) }; },
+});
+
+export const todoCommands = [todosAdd, todosEdit, todosCheck, todosRemove, todosSetOrder, todosDismiss, todosUndismiss];
