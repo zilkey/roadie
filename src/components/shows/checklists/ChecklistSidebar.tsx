@@ -122,7 +122,7 @@ export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
         </h2>
         {admin && (
           <div className="flex items-center gap-2">
-            <Link href="/admin/artist#checklist-templates" className="s underline" data-testid="manage-templates">Manage templates</Link>
+            <Link href={`/admin/checklists?tab=${host.kind}`} className="s underline" data-testid="manage-templates">Manage templates</Link>
             {lists.length >= 2 && (
               <button type="button" className="card-edit" onClick={() => { setDraft(lists.map((l) => l.id)); setError(null); }} data-testid="checklists-edit">Edit</button>
             )}
@@ -136,7 +136,7 @@ export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
               Start from one of your templates, or make a blank list.
             </UnfinishedPlaceholder>
             <p className="s muted">
-              Templates live in <Link href="/admin/artist#checklist-templates" className="underline" data-testid="checklist-templates-link">Artist settings › Checklist templates</Link>
+              Templates live in <Link href={`/admin/checklists?tab=${host.kind}`} className="underline" data-testid="checklist-templates-link">Artist settings › Checklist templates</Link>
             </p>
           </>
         ) : (

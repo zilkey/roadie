@@ -32,6 +32,7 @@ export const ADMIN_LINKS = [
   { href: "/admin/people", label: "People", testid: "admin-people" },
   { href: "/admin/fields", label: "Custom fields", testid: "admin-fields" },
   { href: "/admin/venue-types", label: "Venue types", testid: "admin-venue-types" },
+  { href: "/admin/checklists", label: "Checklist templates", testid: "admin-checklists" },
   { href: "/admin/mcp", label: "Integrations", testid: "admin-mcp" },
   { href: "/admin/history", label: "Activity", testid: "admin-history" },
 ];

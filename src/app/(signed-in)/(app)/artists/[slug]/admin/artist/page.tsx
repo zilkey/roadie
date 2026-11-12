@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation";
 import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
 import { withScheme } from "@/lib/links";
-import { ChecklistTemplatesEditor } from "@/components/shows/checklists/ChecklistTemplatesEditor";
 import { ARTIST_LINKS, DEFAULT_LIST_WORDING, SIGNAL_GROUP_PREFIX, artistSlug, normalizePaymentUrl, normalizeSignalGroupUrl, type Artist, type ArtistLinkKey } from "@/schema";
 
 type Links = Artist["links"];
@@ -241,7 +240,6 @@ function ArtistEditor() {
       <GenresCard genres={genres} onChange={editGenres} />
       <BandChatCard url={signal} onChange={editSignal} />
       <FansMerchCard features={features} payment={payment} wording={wording} onFeature={editFeature} onPayment={editPayment} onWording={editWording} />
-      <ChecklistTemplatesEditor artistId={artist.id} />
     </div>
   );
 }

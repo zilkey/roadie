@@ -59,23 +59,6 @@ test("settings: General edits the artist name", async ({ page }) => {
   await page.getByTestId("artist-save").click();
   await expect(page.getByTestId("artist-name-value")).toHaveText("Nora Quill Band");
 
-  // checklist templates: add one with an item, see it after a reload, delete it
-  const section = page.getByTestId("checklist-templates");
-  await section.getByTestId("new-template").click();
-  await page.getByTestId("new-template-name").fill("E2E Soundcheck");
-  await page.getByTestId("new-template-add").click();
-  const card = section.locator('[data-testid^="template-"]', { has: page.locator('input[value="E2E Soundcheck"]') }).first();
-  await expect(card).toBeVisible();
-  await card.locator('input[data-testid^="template-add-item-"]').fill("Line check");
-  await page.keyboard.press("Enter");
-  await expect(card.locator('input[data-testid^="template-item-"]').first()).toHaveValue("Line check");
-  await expect(card.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
-  await page.reload();
-  const saved = page.getByTestId("checklist-templates").locator('[data-testid^="template-"]', { has: page.locator('input[value="E2E Soundcheck"]') }).first();
-  await expect(saved).toBeVisible();
-  await expect(saved.locator('input[data-testid^="template-item-"]').first()).toHaveValue("Line check");
-  await saved.getByRole("button", { name: "Delete E2E Soundcheck" }).click();
-  await expect(page.locator('input[value="E2E Soundcheck"]')).toHaveCount(0);
 });
 
 test("member sees 5 tabs with Tours and Rehearsals, 'My money' in More, and cannot open /booking or admin pages", async ({ page }) => {

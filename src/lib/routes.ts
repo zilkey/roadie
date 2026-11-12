@@ -64,6 +64,7 @@ export const ROUTES = {
   lineups: { title: "Lineups", path: "/admin/lineups" },
   fields: { title: "Custom fields", path: "/admin/fields" },
   people: { title: "People", path: "/admin/people" },
+  checklistTemplates: { title: "Checklist templates", path: "/admin/checklists" },
   google: { title: "Google", path: "/admin/google" },
   mcp: { title: "Integrations", path: "/admin/mcp" },
   history: { title: "Activity", path: "/admin/history" },

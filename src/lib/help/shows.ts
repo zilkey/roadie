@@ -152,7 +152,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
     text: [
       "Each show has a \"Checklists\" column beside its tabs, with a count like \"3 of 9\". A list is a named set of to-dos. Anyone in the band can tick items, add one (\"Add a to-do…\"), edit it and assign it to a person (or leave it for \"Anyone\").",
       "Admins press \"New list\" to start from a template or a \"Blank list\", and use the list's menu to rename or delete it. \"Edit\" reorders lists once there are two or more.",
-      "Templates are managed in Artist settings, General, under \"Checklist templates\" (\"Manage templates\" links there). Adding a template to a show copies its items unticked and unassigned. Later template edits don't change lists already on shows.",
+      "Templates are managed in Artist settings, \"Checklist templates\" (\"Manage templates\" links there), on tabs for Shows, Releases and Social media. \"New show template\" adds one to the tab you're on; each template's menu renames it, moves it to another tab or deletes it, and the grip drags it into order. Adding a template to a show copies its items unticked and unassigned. Later template edits don't change lists already on shows.",
       "\"Save as template\" on a list makes a new template from it. If the list came from a template, the button reads \"Update template\" and replaces that template's items (after a confirm).",
     ].join("\n\n"),
     related: ["showPage", "customFields"],
