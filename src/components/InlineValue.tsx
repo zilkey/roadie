@@ -13,7 +13,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 export type InlineKind = "text" | "textarea" | "time" | "date" | "url" | "select";
 
-export function InlineValue({ testid, label, kind, value, display, link, emptyLabel = "Add…", options = [], placeholder, inputMode, canEdit, onSave, error, validate, autoStart, savedMs = 2500, className }: {
+export function InlineValue({ testid, label, kind, value, display, link, emptyLabel = "Add…", options = [], placeholder, inputMode, canEdit, onSave, error, validate, autoStart, enterSaves, savedMs = 2500, className }: {
   /** button `${testid}`, input `${testid}-input`, tick `${testid}-saved`, error `${testid}-error`. */
   testid: string;
   /** For aria only; the caller draws the visible label. */
@@ -40,6 +40,8 @@ export function InlineValue({ testid, label, kind, value, display, link, emptyLa
   validate?(next: string): string | null;
   /** Open on mount. */
   autoStart?: boolean;
+  /** `textarea` only: Enter saves, Shift+Enter is a new line (a one-line note in a table cell). */
+  enterSaves?: boolean;
   /** How long the Saved tick stays (tests pass 0). */
   savedMs?: number;
   /** Extra classes on the resting button / text. */
@@ -88,7 +90,7 @@ export function InlineValue({ testid, label, kind, value, display, link, emptyLa
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }
-    if (e.key === "Enter" && kind !== "textarea" && kind !== "select") { e.preventDefault(); void finish(); }
+    if (e.key === "Enter" && kind !== "select" && (kind !== "textarea" || (enterSaves && !e.shiftKey && !e.nativeEvent.isComposing))) { e.preventDefault(); void finish(); }
     if (e.key === "Tab" && kind === "time") { e.preventDefault(); tabTo.current = e.shiftKey ? "prev" : "next"; void finish(); }
   };
 

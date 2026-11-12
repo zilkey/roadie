@@ -20,12 +20,12 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { ErrorBox } from "@/components/ui";
 import { hrefFor, useBooking } from "@/components/booking/common";
-import { EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, TicketLink } from "@/components/booking/VenueEventBits";
+import { ActLinksLine, EventActs, EventBadges, EventPoster, OPENER_DISCLAIMER, ShowActions, ShowNote, TicketLink } from "@/components/booking/VenueEventBits";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
 import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
-import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
+import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
 import { dateInBandZone } from "@/lib/timezone";
 import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
@@ -76,6 +76,7 @@ export function VenueCalendars() {
   const ours = useOurGenres();
   const acts = useCollection<ActDoc>("acts");
   const actGenres = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.genres])), [acts.rows]);
+  const actLinks = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a.links])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
   const fKey = JSON.stringify(f);
@@ -139,7 +140,7 @@ export function VenueCalendars() {
               <th className="nw">Date</th>
               <th className="name">Show</th>
               <th>Venue</th>
-              <th>City</th>
+              <th>Notes</th>
             </tr></thead>
             <tbody>
               {shown.map((e) => {
@@ -153,9 +154,13 @@ export function VenueCalendars() {
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><EventActs e={e} /><EventBadges e={e} stats={records.get(e.venueId)} today={today} genres={genres} isNew={!!since && e.firstSeenAt > since} /></div>
                       {titleSaysMore(e) && <span className="sub">{e.title}</span>}
                       {e.ticketUrl && <span className="sub"><TicketLink e={e} /></span>}
+                      <ActLinksLine groups={showActLinks(e.acts, actLinks)} eventId={e.id} />
                     </td>
-                    <td>{v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`} className="nm" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link> : <span className="dash">—</span>}</td>
-                    <td className="nw">{v?.address.city || <span className="dash">—</span>}</td>
+                    <td>
+                      {v ? <Link href={`${hrefFor("venue", v.id)}?tab=events`} className="nm" data-testid={`calendar-show-venue-${e.id}`}>{v.name}</Link> : <span className="dash">—</span>}
+                      {v?.address.city && <span className="sub whitespace-nowrap" data-testid={`calendar-show-city-${e.id}`}>{v.address.city}</span>}
+                    </td>
+                    <td className="note"><ShowNote e={e} take={takes.get(e.id)} /></td>
                   </tr>
                 );
               })}

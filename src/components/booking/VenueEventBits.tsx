@@ -6,7 +6,8 @@
 import { Fragment, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
 import { Dialog, useCommand } from "@/components/ui";
-import { billParts, fmtEventDay, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx } from "@/lib/venueEvents";
+import { billParts, fmtEventDay, openerChance, TOUR_WINDOW_DAYS, type OpenerCtx, type ShowActLinks } from "@/lib/venueEvents";
+import { InlineValue } from "@/components/InlineValue";
 import { isActive } from "@/lib/booking";
 import { XIcon } from "@/components/booking/ActsTab";
 import { FlagIcon } from "@/components/booking/common";
@@ -66,8 +67,47 @@ export function EventActs({ e, className = "font-semibold" }: { e: Ev; className
   );
 }
 
+/**
+ * Under the ticket link: every website and social link of the acts on the bill (showActLinks), each in a new tab, so the act's
+ * page needn't be opened. The act's name leads its links when the bill has more than one act.
+ */
+export function ActLinksLine({ groups, eventId }: { groups: ShowActLinks[]; eventId: string }) {
+  if (!groups.length) return null;
+  return (
+    <span className="sub" data-testid={`calendar-show-links-${eventId}`}>
+      {groups.map((g) => (
+        <span key={g.actId} className="mr-3 inline-block" data-testid={`calendar-act-links-${g.actId}`}>
+          {groups.length > 1 && <>{g.name}: </>}
+          {g.links.map((l, j) => (
+            <Fragment key={l.key}>{j > 0 && " · "}
+              <a className="underline" href={l.url} target="_blank" rel="noopener noreferrer" aria-label={`${g.name} on ${l.label} (opens in a new tab)`}
+                data-testid={`calendar-act-link-${g.actId}-${l.key}`}>{l.label} ↗</a>
+            </Fragment>
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The band's note on a show (venueEventNotes.note, the same note as its take; venueEvents.setTake saves it), click to edit in a
+ * table cell. The cell keeps its size: resting, the note is one line with an ellipsis; editing, the textarea lies over the cell
+ * at the same width and grows down over the rows below as it fills. Blur or Enter saves (Shift+Enter is a new line), Escape puts it back.
+ */
+export function ShowNote({ e, take }: { e: Ev; take?: VenueEventNote }) {
+  const { call, error } = useCommand();
+  const value = take?.note ?? "";
+  return (
+    <div className="note-cell" title={value || undefined} data-testid={`calendar-show-note-${e.id}`}>
+      <InlineValue testid={`show-note-${e.id}`} label="Note" kind="textarea" value={value} emptyLabel="Add a note" canEdit enterSaves error={error}
+        onSave={async (v) => !!(await call("venueEvents.setTake", { eventId: e.id, note: v || null }))} />
+    </div>
+  );
+}
+
 export function TicketLink({ e }: { e: Ev }) {
-  return e.ticketUrl ? <a className="text-sm underline" href={e.ticketUrl} target="_blank" rel="noreferrer">Tickets and details ↗</a> : null;
+  return e.ticketUrl ? <a className="text-sm underline" href={e.ticketUrl} target="_blank" rel="noopener noreferrer">Tickets and details ↗</a> : null;
 }
 
 /**

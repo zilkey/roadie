@@ -624,6 +624,15 @@ mark { background: var(--quiet); color: inherit; }
 @media (hover: none) { .val .pen { opacity: .55; } }
 .val.add { color: var(--muted); font-weight: 600; }
 .val-saved { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8125rem; font-weight: 600; color: var(--success-text); }
+/* A click-to-edit note in a table cell (ShowNote, Booking's Venue calendars): the cell never changes size. Resting, one line with
+   an ellipsis; editing, the textarea lies over the cell at its width and grows down over the rows below. */
+.note-cell { position: relative; width: 220px; height: var(--ctl-h); }
+.note-cell > span:not(.grid) { display: flex; flex-wrap: nowrap; width: 100%; height: 100%; }
+.note-cell .val { flex: 1 1 auto; min-width: 0; width: calc(100% + 20px); white-space: nowrap; }
+.note-cell .val > .min-w-0 { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-cell .val-saved { flex: none; }
+.note-cell > .grid { position: absolute; top: 0; left: 0; width: 100%; z-index: 5; }
+.note-cell textarea { min-height: var(--ctl-h); box-shadow: 0 6px 16px rgb(0 0 0 / .12); }
 .ib { width: 44px; height: 44px; border-radius: 10px; border: 0; background: none; color: var(--accent-text); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .ib:hover { background: var(--accent-soft); }
 .ib:focus-visible { outline: 2px solid var(--accent); }

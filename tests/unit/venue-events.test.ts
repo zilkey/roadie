@@ -6,7 +6,7 @@ import { extract } from "@/server/events/selectors";
 import { readCalendar, toDraft, eventId, markRuns, type EventDraft } from "@/server/events/refresh";
 import { suggestSelectors } from "@/server/events/suggest";
 import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
-import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenFrom, addMonths, latestFirst, showListed, genresMatch, genreOptions, readShowFilter, showFilterFromParams, showFilterToParams, DEFAULT_SHOW_FILTER, nextCalendarLimit, genreFit, tourStops, isColorado } from "@/lib/venueEvents";
+import { billParts, byWhen, eventTime, fmtClock, fmtEventDay, fmtEventYear, isUpcoming, openerChance, booksOpeners, roomStats, MIN_BILLS, titleSaysMore, whenFrom, addMonths, latestFirst, showListed, genresMatch, genreOptions, readShowFilter, showFilterFromParams, showFilterToParams, DEFAULT_SHOW_FILTER, nextCalendarLimit, genreFit, tourStops, isColorado, showActLinks } from "@/lib/venueEvents";
 import { parseIcs } from "@/server/events/readers/ics";
 import { VenueCalendar } from "@/schema";
 
@@ -750,5 +750,31 @@ describe("tourStops (#79)", () => {
     assert.equal(isColorado(" colorado "), true);
     assert.equal(isColorado("WY"), false);
     assert.equal(isColorado(undefined), false);
+  });
+});
+
+describe("showActLinks (Venue calendars' act cell)", () => {
+  test("every linked act's links in ARTIST_LINKS order, bill order, each act once; acts with no record or links left out", () => {
+    const links = new Map<string, Record<string, string> | undefined>([
+      ["trio", { instagram: "https://instagram.com/trio", website: "https://trio.example", spotify: " " }],
+      ["duo", {}],
+      ["solo", { bandcamp: "https://solo.bandcamp.com" }],
+    ]);
+    const out = showActLinks([
+      { name: "Trio", role: "headliner", actId: "trio" },
+      { name: "Duo", role: "support", actId: "duo" },
+      { name: "Unlinked", role: "support" },
+      { name: "Gone", role: "support", actId: "gone" },
+      { name: "Solo", role: "support", actId: "solo" },
+      { name: "Trio again", role: "support", actId: "trio" },
+    ], links);
+    assert.deepEqual(out, [
+      { actId: "trio", name: "Trio", links: [
+        { key: "website", label: "Website", url: "https://trio.example" },
+        { key: "instagram", label: "Instagram", url: "https://instagram.com/trio" },
+      ] },
+      { actId: "solo", name: "Solo", links: [{ key: "bandcamp", label: "Bandcamp", url: "https://solo.bandcamp.com" }] },
+    ]);
+    assert.deepEqual(showActLinks([], links), []);
   });
 });

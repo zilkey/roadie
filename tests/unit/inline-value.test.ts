@@ -72,6 +72,20 @@ test("Enter saves on text; Enter on a textarea does not", async () => {
   assert.ok(tid("f-input"), "still open");
 });
 
+test("enterSaves on a textarea: Enter saves, Shift+Enter does not", async () => {
+  const { calls } = mount({ kind: "textarea", enterSaves: true });
+  fireEvent.click(tid("f")!);
+  fireEvent.change(tid("f-input")!, { target: { value: "Two" } });
+  fireEvent.keyDown(tid("f-input")!, { key: "Enter", shiftKey: true });
+  await flush();
+  assert.deepEqual(calls, []);
+  assert.ok(tid("f-input"), "still open");
+  fireEvent.keyDown(tid("f-input")!, { key: "Enter" });
+  await flush();
+  assert.deepEqual(calls, ["Two"]);
+  assert.equal(tid("f-input"), null);
+});
+
 test("blur with the value unchanged (after trim) calls nothing and shows no tick", async () => {
   const { calls } = mount();
   fireEvent.click(tid("f")!);

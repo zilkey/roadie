@@ -1,5 +1,5 @@
 /** Venue calendars on the client (issue #60): labels, the opener-chance guess and the room's record, shared with the server's post-step. */
-import type { Act, CalendarType, VenueCalendar, VenueEvent } from "@/schema";
+import { ARTIST_LINKS, type Act, type ArtistLinkKey, type CalendarType, type VenueCalendar, type VenueEvent } from "@/schema";
 import { dateInBandZone } from "@/lib/timezone";
 
 export const CALENDAR_LABEL: Record<CalendarType, string> = {
@@ -273,4 +273,24 @@ export function genreOptions(ours: readonly string[], seen: Iterable<readonly st
   for (const gs of seen) for (const g of new Set(gs ?? [])) n.set(g, (n.get(g) ?? 0) + 1);
   const mine = new Set(ours);
   return { ours: [...mine], rest: [...n].filter(([g]) => !mine.has(g)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g]) => g) };
+}
+
+/** One act on a show's bill and its links, for the Venue calendars tab's act cell. */
+export type ShowActLinks = { actId: string; name: string; links: { key: ArtistLinkKey; label: string; url: string }[] };
+
+/**
+ * Every website and social link of the acts on a show's bill, so the act cell can open them in new tabs without the act's page: in
+ * bill order, each linked act once, its links in ARTIST_LINKS order. Acts with no record or no links are left out.
+ */
+export function showActLinks(acts: readonly Act[], links: ReadonlyMap<string, Partial<Record<ArtistLinkKey, string>> | undefined>): ShowActLinks[] {
+  const seen = new Set<string>();
+  const out: ShowActLinks[] = [];
+  for (const a of acts) {
+    if (!a.actId || seen.has(a.actId)) continue;
+    seen.add(a.actId);
+    const have = links.get(a.actId);
+    const list = ARTIST_LINKS.flatMap(([key, label]) => (have?.[key]?.trim() ? [{ key, label, url: have[key]!.trim() }] : []));
+    if (list.length) out.push({ actId: a.actId, name: a.name, links: list });
+  }
+  return out;
 }

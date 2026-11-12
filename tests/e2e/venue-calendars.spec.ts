@@ -1,5 +1,5 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
-import { A } from "./env";
+import { test, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { A, APP, AUTH, FIRESTORE, ARTIST_SLUG } from "./env";
 
 // Booking's Venue calendars tab: every venue's upcoming shows in one list. The shows come from the Bluebird Room's seeded iCal
 // calendar (fixtures/calendars via VENUE_EVENTS_FIXTURES, three shows in 2031) once it is refreshed; its two seeded 2020 shows are
@@ -237,4 +237,106 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await page.getByTestId("calendar-filter-region").selectOption("");
   await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(page).toHaveURL(/\/booking\/calendars$/);
+});
+
+/** Set an act's links through the app's own command (an act with nothing known yet has no link editor on its page, only Look up). */
+async function setActLinks(request: APIRequestContext, actId: string, links: Record<string, string>) {
+  const auth = await request.post(`http://${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo`, {
+    data: {
+      postBody: `id_token=${encodeURIComponent(JSON.stringify({ sub: "dev-rudy", email: "rudy@example.com", email_verified: true, name: "Rudy" }))}&providerId=google.com`,
+      requestUri: "http://localhost", returnIdpSignInMethod: true, returnSecureToken: true,
+    },
+  });
+  const token = ((await auth.json()) as { idToken: string }).idToken;
+  const artists = await request.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/artists`, { headers: { authorization: "Bearer owner" } });
+  const docs = ((await artists.json()) as { documents: { name: string; fields: { slug?: { stringValue: string } } }[] }).documents;
+  const artistId = docs.find((d) => d.fields.slug?.stringValue === ARTIST_SLUG)!.name.split("/").pop()!;
+  const res = await request.post(`${APP}/api/commands/acts.update`, { data: { id: actId, patch: { links } }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
+  expect(res.ok(), await res.text()).toBeTruthy();
+}
+
+test("the act cell lists the act's links, each in a new tab; the city sits under the venue", async ({ page, request }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  await everyShow(page);
+  const trio = shows(page).filter({ hasText: "Headline Example Trio" });
+  // the city is under the venue's name; there is no City column
+  await expect(trio.getByTestId(/^calendar-show-city-/)).toHaveText("Denver");
+  await expect(page.getByRole("columnheader", { name: "City" })).toHaveCount(0);
+
+  // the trio's act gets a website and an Instagram: they show up live, under the ticket link
+  const actId = (await trio.getByTestId(/^act-name-/).first().getAttribute("data-testid"))!.replace(/^act-name-/, "");
+  await setActLinks(request, actId, { instagram: "https://instagram.com/exampletrio", website: "https://trio.example.com/" });
+  const site = trio.getByTestId(`calendar-act-link-${actId}-website`), ig = trio.getByTestId(`calendar-act-link-${actId}-instagram`);
+  await expect(site).toHaveText("Website ↗");
+  await expect(site).toHaveAttribute("href", "https://trio.example.com/");
+  await expect(ig).toHaveText("Instagram ↗");
+  await expect(ig).toHaveAttribute("href", "https://instagram.com/exampletrio");
+  for (const a of [site, ig, trio.getByRole("link", { name: /Tickets and details/ })]) {
+    await expect(a).toHaveAttribute("target", "_blank");
+    await expect(a).toHaveAttribute("rel", "noopener noreferrer");
+  }
+});
+
+test("Notes: click to edit in place without moving the row; the box grows as she types; Enter saves to one line with an ellipsis", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/calendars"));
+  await everyShow(page);
+  const trio = shows(page).filter({ hasText: "Headline Example Trio" });
+  const cell = trio.locator('[data-testid^="calendar-show-note-"]');
+  const button = cell.getByRole("button");
+  // start empty (a retry may find the earlier attempt's note)
+  if (!/Add a note/.test(await button.textContent() ?? "")) {
+    await button.click();
+    await cell.locator("textarea").fill("");
+    await cell.locator("textarea").press("Enter");
+  }
+  await expect(button).toContainText("Add a note");
+
+  // the layout, not the viewport: focusing the box may scroll the table's own scroller to show it
+  const layout = () => cell.evaluate((el) => {
+    const td = el.closest("td")!, tr = td.parentElement as HTMLTableRowElement, table = td.closest("table")!;
+    return { td: [td.offsetLeft, td.offsetTop, td.offsetWidth, td.offsetHeight], row: [tr.offsetTop, tr.offsetHeight], table: [table.offsetWidth, table.offsetHeight] };
+  });
+  // the page settles first (the rows grow while the listing's data comes in)
+  let before = await layout();
+  await expect.poll(async () => { const now = await layout(); const same = JSON.stringify(now) === JSON.stringify(before); before = now; return same; }).toBe(true);
+  await button.click();
+  const box = cell.locator("textarea");
+  await expect(box).toBeFocused();
+  // editing changes neither the cell nor the row
+  expect(await layout()).toEqual(before);
+  const oneLine = (await box.boundingBox())!.height;
+
+  const long = "Saw them at the Gothic in May, great draw, ask Dana about the opener slot and whether they want a local band with a horn section";
+  const [first, rest] = [long.slice(0, 30), long.slice(31)]; // "Saw them at the Gothic in May," then a new line
+  await box.pressSequentially(first);
+  await box.press("Shift+Enter");
+  await box.pressSequentially(rest);
+  await expect.poll(async () => (await box.boundingBox())!.height).toBeGreaterThan(oneLine);
+  expect(await layout()).toEqual(before);
+
+  await box.press("Enter");
+  await expect(box).toHaveCount(0);
+  const text = button.locator(".min-w-0");
+  await expect(text).toContainText("Saw them at the Gothic in May,");
+  expect(await layout()).toEqual(before);
+  // one line, cut off with an ellipsis
+  const style = await text.evaluate((el) => ({ ov: getComputedStyle(el).textOverflow, ws: getComputedStyle(el).whiteSpace, cut: el.scrollWidth > el.clientWidth }));
+  expect(style).toEqual({ ov: "ellipsis", ws: "nowrap", cut: true });
+
+  // saved without leaving the page: it is there after a reload
+  await page.reload();
+  await everyShow(page);
+  await expect(cell.getByRole("button")).toContainText("ask Dana about the opener slot");
+
+  // Escape puts it back; clearing it leaves "Add a note"
+  await cell.getByRole("button").click();
+  await cell.locator("textarea").fill("thrown away");
+  await cell.locator("textarea").press("Escape");
+  await expect(cell.getByRole("button")).toContainText("Saw them at the Gothic");
+  await cell.getByRole("button").click();
+  await cell.locator("textarea").fill("");
+  await cell.locator("textarea").press("Enter");
+  await expect(cell.getByRole("button")).toContainText("Add a note");
 });
