@@ -81,6 +81,7 @@ export function summarize(thread: MailThread, account: string) {
   return {
     subject: thread.subject || msgs[0]?.subject || "",
     snippet: last ? snippetOf(last.body) : "",
+    ...(msgs[0]?.date ? { firstDate: msgs[0].date } : {}),
     lastDate: last?.date ?? thread.lastDate,
     lastFrom: validEmail(from) ? from : me,
     lastDirection: last?.direction ?? "sent",
@@ -437,6 +438,60 @@ export const emailSearch = defineCommand({
   },
 });
 
+export interface SuggestHit extends ThreadHit {
+  /** Why it matched: written to (or from) one of the place's contacts, the place's name in the subject, or only in the text. */
+  why: "contact" | "subject" | "text";
+  /** The place the thread is already on, when it's linked somewhere else. */
+  elsewhere?: string;
+}
+const SUGGEST_MESSAGES = 10;
+const SUGGEST_THREADS = 3;
+
+/** The Gmail query for "Find sent emails": mail the mailbox sent to the place's contacts, or that names the place. */
+export function sentQuery(addresses: string[], name: string): string {
+  const parts = [...(addresses.length ? [`to:${anyOf(addresses)}`] : []), ...(name.trim() ? [quote(name.trim())] : [])];
+  return parts.length ? `in:sent (${parts.join(" OR ")})` : "";
+}
+
+/** Rank a pitch's hits: a contact's address first, then the name in the subject, then the rest; newest first within each. */
+export function rankSuggestions(hits: ThreadHit[], messages: MailMessage[], addresses: string[], name: string): Omit<SuggestHit, "elsewhere">[] {
+  const addrs = new Set(addresses.map((a) => a.toLowerCase()));
+  const n = name.trim().toLowerCase();
+  const order = { contact: 0, subject: 1, text: 2 } as const;
+  return hits.map((h) => {
+    const ms = messages.filter((m) => m.threadId === h.threadId);
+    const why: SuggestHit["why"] = ms.some((m) => [m.from, ...m.to, ...m.cc].some((a) => addrs.has(a.toLowerCase()))) ? "contact"
+      : n && ms.some((m) => m.subject.toLowerCase().includes(n)) ? "subject" : "text";
+    return { ...h, why };
+  }).sort((a, b) => order[a.why] - order[b.why] || b.lastDate.localeCompare(a.lastDate));
+}
+
+export const emailSuggest = defineCommand({
+  name: "email.suggest", roles: ["admin"],
+  description: "Find sent emails: the threads the booking mailbox (or the caller's own Gmail) sent that look like this pitch's, to the place's contacts or naming the place. Read only. Returns {account, hits}: the mailbox searched and at most 3 threads, best first, each with why it matched. Threads already on this pitch are left out; elsewhere names the place a thread is already linked to.",
+  input: z.strictObject({ pitchId: z.string().min(1) }),
+  async run(ctx, { pitchId }) {
+    const pitch = await requirePitchDoc(pitchId);
+    if (ctx.artistId && pitch.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
+    const [place, artistId, account] = [await placeOfPitch(pitch), await artistIdFor(ctx), await accountOf(ctx)];
+    const addresses = [...new Set((await placeContacts(place, artistId)).flatMap((c) => c.emails as string[]))];
+    const q = sentQuery(addresses, place.name);
+    if (!q) return { account, hits: [] };
+    const msgs = (await gmailClient().listMessages({ account, q, max: SUGGEST_MESSAGES }).catch(gmailFail)).sort((a, b) => b.date.localeCompare(a.date));
+    const ranked = rankSuggestions(groupThreads(msgs, account, new Map()), msgs, addresses, place.name);
+    const out: SuggestHit[] = [];
+    for (const h of ranked) {
+      const d = await db.get("emailThreads", emailThreadId(artistId, h.threadId));
+      const live = d && !d.deletedAt ? d : null;
+      if (live && threadPitchIds(live as { pitchId?: string; pitchIds?: string[] }).includes(pitchId)) continue;
+      const elsewhere = live && live.target.id !== place.id ? (live.target.name as string) : undefined;
+      out.push({ ...h, ...(live ? { linkedId: live.id } : {}), ...(elsewhere ? { elsewhere } : {}) });
+      if (out.length === SUGGEST_THREADS) break;
+    }
+    return { account, hits: out };
+  },
+});
+
 export const emailPeople = defineCommand({
   name: "email.people", roles: ["admin"],
   description: "Who the band has emailed with, from the booking mailbox (or the caller's own Gmail when the band has none): q is a name, an address or a domain. Returns {email, name, title?, phone?, lastDate, count, contactId?}, with title and phone guessed from the sender's signature. Read only, newest first, at most 25.",
@@ -453,4 +508,4 @@ export const emailPeople = defineCommand({
   },
 });
 
-export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft, emailSearch, emailPeople];
+export const emailCommands = [emailSignature, emailLink, emailUnlink, emailSync, emailThread, emailSend, emailDraft, emailSearch, emailPeople, emailSuggest];

@@ -38,6 +38,7 @@ export const ROUTES = {
   pitch: { title: "Pitch", path: "/booking/pitches/:id", params: ["id"] },
   emailNew: { title: "New email", path: "/booking/email/new" },
   emailSearch: { title: "Search Gmail", path: "/booking/email/search" },
+  emailFind: { title: "Find sent emails", path: "/booking/email/find" },
   emailThread: { title: "Email thread", path: "/booking/email/:id", params: ["id"] },
   bookingTemplates: { title: "Email templates", path: "/booking/templates" },
   tours: { title: "Tours", path: "/tours" },

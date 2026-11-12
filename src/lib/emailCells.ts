@@ -11,7 +11,7 @@
 import { followUpFor, type FollowUpPitchLike } from "./booking";
 
 export interface ThreadLike {
-  id: string; subject: string; lastDate: string; lastDirection: "sent" | "received" | string; messageCount: number;
+  id: string; subject: string; firstDate?: string; lastDate: string; lastDirection: "sent" | "received" | string; messageCount: number;
   target: { kind: string; id: string }; pitchId?: string; pitchIds?: string[];
   createdAt?: { toMillis(): number }; lastSeenAt?: { toMillis(): number } | null;
 }
@@ -32,7 +32,8 @@ export interface EmailCells {
   threads: string[];
 }
 
-const ms = (t: ThreadLike) => t.createdAt?.toMillis() ?? Date.parse(t.lastDate);
+/** When the thread started: its first message (a thread linked long after it was sent keeps its own date), else when Roadie got it. */
+const ms = (t: ThreadLike) => (t.firstDate ? Date.parse(t.firstDate) : undefined) ?? t.createdAt?.toMillis() ?? Date.parse(t.lastDate);
 const newReplyOn = (t: ThreadLike) => t.lastDirection === "received" && (!t.lastSeenAt || t.lastSeenAt.toMillis() < Date.parse(t.lastDate));
 
 /** `placeId`: where the pitch's threads live (an edition's are on its festival). */

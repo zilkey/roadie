@@ -232,6 +232,8 @@ function Booking({ seg, campaign }: { seg: Tab; campaign?: CampaignKey }) {
             disabled: !queues.initial.length, hint: "Every pitch that needs one has its first email", onSelect: () => router.push(queueHref(queues.initial, 0, base)!) },
           { key: "followUp", testid: "write-follow-ups", label: queues.followUp.length ? `Write ${queues.followUp.length} ${queues.followUp.length === 1 ? "follow-up" : "follow-ups"}` : "Write follow-ups",
             disabled: !queues.followUp.length, hint: "No follow-up is due", onSelect: () => router.push(queueHref(queues.followUp, 0, base)!) },
+          // Pitches emailed outside Roadie (by hand, from Gmail): find what was sent and link it.
+          { key: "find", testid: "find-sent-emails", label: "Find sent emails", onSelect: () => router.push(`${ROUTES.emailFind.path}?campaign=${encodeURIComponent(campaign)}`) },
         ]} />}
         {camp && <Menu label="Campaign actions" testid="campaign-more" triggerClass="btn" trigger={<span className="px-1 text-lg font-bold leading-none" aria-hidden>⋮</span>} items={[
           { key: "rename", testid: "campaign-rename", label: "Rename", onSelect: () => setRenaming((n) => n + 1) },

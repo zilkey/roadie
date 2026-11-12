@@ -72,6 +72,40 @@ test("email.search finds mail from the contacts and by the place's name, groups 
   assert.equal(dom.length, 2, "the domain chip finds the auto-reply too");
 });
 
+const sendRaw = async (body: Record<string, unknown>) => (await (await fetch(`${gmailUrl}/messages/send`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as Record<string, any>;
+
+test("email.suggest finds what was sent outside Roadie, best first; linking it takes it off the pitch and shows elsewhere", async () => {
+  const { venueId } = await pineHollow();
+  const { id: pitchId } = await cmd("pitches.flag", { kind: "venue", id: venueId });
+  const other = await cmd("venues.create", venue("Velour"));
+  const { id: velourPitch } = await cmd("pitches.flag", { kind: "venue", id: other.id });
+  // Sent from Gmail by hand: to the contact, one naming the room in the subject, one only in the text; one that came in; one unrelated.
+  const toRosa = await sendRaw({ from: "rudy@example.com", to: ["rosa@pinehollow.example"], subject: "Spring dates?", body: "Hi Rosa" });
+  await receive({ from: "rosa@pinehollow.example", to: ["rudy@example.com"], subject: "Re: Spring dates?", body: "Let me check", threadId: toRosa.threadId });
+  const bySubject = await sendRaw({ from: "rudy@example.com", to: ["info@pinehollow.example"], subject: "Pine Hollow Lounge, March", body: "Hello" });
+  const byText = await sendRaw({ from: "rudy@example.com", to: ["friend@else.example"], subject: "Weekend", body: "We might play Pine Hollow Lounge" });
+  await receive({ from: "news@pinehollow.example", to: ["rudy@example.com"], subject: "Pine Hollow Lounge newsletter", body: "Shows" });
+  await sendRaw({ from: "rudy@example.com", to: ["x@y.example"], subject: "Unrelated", body: "Nothing" });
+
+  const r = await cmd("email.suggest", { pitchId });
+  assert.equal(r.account, "rudy@example.com", "no booking mailbox: the caller's own");
+  assert.deepEqual(r.hits.map((h: any) => [h.threadId, h.why]), [[toRosa.threadId, "contact"], [bySubject.threadId, "subject"], [byText.threadId, "text"]], "sent mail only, best first");
+
+  // Linked to this pitch: no longer suggested here. Linked to the venue alone, it says so.
+  await cmd("email.link", { threadId: toRosa.threadId, target: { kind: "venue", id: venueId }, pitchId });
+  const t = await db.get("emailThreads", `${TEST_ARTIST}__${toRosa.threadId}`);
+  assert.ok(t?.firstDate, "the thread keeps the date it started");
+  assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1, "the reply is on the timeline");
+  assert.deepEqual((await cmd("email.suggest", { pitchId })).hits.map((h: any) => h.threadId), [bySubject.threadId, byText.threadId]);
+
+  await sendRaw({ from: "rudy@example.com", to: ["v@velour.example"], subject: "Velour and Pine Hollow Lounge", body: "Both rooms" });
+  await cmd("email.link", { threadId: bySubject.threadId, target: { kind: "venue", id: other.id }, pitchId: velourPitch });
+  const moved = (await cmd("email.suggest", { pitchId })).hits.find((h: any) => h.threadId === bySubject.threadId);
+  assert.equal(moved.elsewhere, "Velour");
+  assert.ok(moved.linkedId);
+  await assert.rejects(cmd("email.suggest", { pitchId: "nope" }), /not found/i);
+});
+
 test("email.people groups by the other party, reads title and phone from the signature, and knows contacts", async () => {
   const { venueId, contactId } = await pineHollow();
   const target = { kind: "venue", id: venueId };

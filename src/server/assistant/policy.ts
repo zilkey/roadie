@@ -20,7 +20,7 @@ export const EXCLUDED: readonly string[] = [
   "history.myRuns",   // Roadie sees only its own thread's runs, through history.undoRun
   "pitches.checkReplies", // reads the band's mail: Roadie never reads email
   "email.signature",  // reads the admin's Gmail settings: Roadie never reads email
-  "email.link", "email.sync", "email.thread", "email.search", "email.people", // the same: they read threads from Gmail
+  "email.link", "email.sync", "email.thread", "email.search", "email.people", "email.suggest", // the same: they read threads from Gmail
   "stats.importCsv",  // bulk import of someone's file
   "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
   "files.docText",    // the song and rehearsal pages' inline Google Doc view (#18); Roadie gets doc text in its own story

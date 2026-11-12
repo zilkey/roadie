@@ -21,7 +21,8 @@ export interface GmailService {
   send(input: MailInput): Promise<MailMessage>;
   createDraft(input: MailInput): Promise<MailDraft>;
   listDrafts(account?: string): Promise<MailDraft[]>;
-  listMessages(opts?: { account?: string; threadId?: string; q?: string }): Promise<MailMessage[]>;
+  /** `max`: at most this many, newest first (Gmail's default page is 50). */
+  listMessages(opts?: { account?: string; threadId?: string; q?: string; max?: number }): Promise<MailMessage[]>;
   listThreads(account?: string): Promise<MailThread[]>;
   /** `account` is the mailbox the thread is in (the real API needs it; the fake has one shared view). */
   getThread(id: string, account?: string): Promise<MailThread>;
@@ -45,7 +46,10 @@ export function fakeGmailClient(baseUrl: string): GmailService {
     send: (i) => call<MailMessage>("POST", "/messages/send", { body: wire(i) }).then(named),
     createDraft: (i) => call("POST", "/drafts", { body: wire(i) }),
     listDrafts: (account) => call("GET", "/drafts", { query: { account } }),
-    listMessages: (o = {}) => call<MailMessage[]>("GET", "/messages", { query: o }).then((r) => r.map(named)),
+    listMessages: ({ max, ...o } = {}) => call<MailMessage[]>("GET", "/messages", { query: o }).then((r) => {
+      const all = r.map(named);
+      return max ? all.sort((a, b) => b.date.localeCompare(a.date)).slice(0, max) : all;
+    }),
     listThreads: (account) => call<MailThread[]>("GET", "/threads", { query: { account } }).then((r) => r.map((t) => ({ ...t, messages: t.messages.map(named) }))),
     getThread: (id) => call<MailThread>("GET", `/threads/${encodeURIComponent(id)}`).then((t) => ({ ...t, messages: t.messages.map(named) })),
     async getSignature(account) {
@@ -153,7 +157,7 @@ export function googleGmail(tokenFor: (account: string, force?: boolean) => Prom
     },
     async listMessages(o = {}) {
       if (o.threadId) return (await getThread(o.threadId, o.account)).messages;
-      const r = await callAs(o.account)<{ messages?: { id: string }[] }>("GET", "/messages", { query: { q: o.q, maxResults: "50" } });
+      const r = await callAs(o.account)<{ messages?: { id: string }[] }>("GET", "/messages", { query: { q: o.q, maxResults: String(o.max ?? 50) } });
       return Promise.all((r.messages ?? []).map(async (m) => toMessage(await getMessage(o.account!, m.id), o.account!)));
     },
     async listThreads(account) {

@@ -22,6 +22,8 @@ export const EmailThread = entity({
   subject: z.string(),
   /** First ~160 characters of the last message's text, quoted part stripped. */
   snippet: z.string(),
+  /** Date of the first message (ISO): when the thread started, which may be long before it was linked. Missing on threads not re-read since it was added. */
+  firstDate: z.string().optional(),
   /** Date of the last message (ISO). */
   lastDate: z.string(),
   lastFrom: email,
