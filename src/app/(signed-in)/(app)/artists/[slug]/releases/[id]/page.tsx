@@ -18,6 +18,7 @@ import { ReleaseMissing, StatusPill, releaseHref, trackHref, useRelease, type Re
 import { ReleaseMoney } from "@/components/releases/ReleaseMoney";
 import { ReleaseFolder } from "@/components/releases/ReleaseFolder";
 import { ReleaseFiles } from "@/components/releases/ReleaseFiles";
+import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import type { Expense, Income, Payout, SetlistTemplate } from "@/schema";
 
 /** "Mar 6, 2027". */
@@ -50,7 +51,7 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const n = p.total;
 
   return (
-    <div className="sg-page" data-testid="release-page">
+    <div className="sg-page !max-w-none" data-testid="release-page">
       <PageTitle back={<BackLink mode="back" href="/releases" label="All releases" />}
         title={admin
           ? <InlineValue testid="field-title" label="Title" kind="text" value={release.title} canEdit validate={(v) => (v.trim() ? null : "A release needs a title")}
@@ -67,26 +68,34 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
         options={[["tracks", "Tracks"], ...(admin ? [["money", "Money"] as [Tab, string]] : []), ["files", "Files"]]} />
       <ErrorBox error={error} />
 
-      {tab === "tracks" && <>
-        <section className="card flex flex-wrap items-start gap-5">
-          {release.cover?.url
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
-            : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
-          <div className="grid min-w-0 flex-1 content-start gap-2">
-            <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
-            <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
-              <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
-              {admin && <Spent release={release} />}
-            </div>
-          </div>
-        </section>
-        <Tracklist d={d} release={release} />
-        <ReleaseDetails release={release} admin={admin} />
-      </>}
-      {tab === "money" && admin && <ReleaseMoney data={d} />}
-      {tab === "files" && <ReleaseFiles data={d} />}
+      {/* Like a show's page: the tab's cards, with the checklists a column on the right from lg (stacked under them on a phone). */}
+      <div className="show-cols">
+        <div className="show-main">
+          {tab === "tracks" && <>
+            <section className="card flex flex-wrap items-start gap-5">
+              {release.cover?.url
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={release.cover.url} alt={`${release.title} cover`} className="h-[148px] w-[148px] shrink-0 rounded-xl object-cover" data-testid="release-cover" />
+                : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
+              <div className="grid min-w-0 flex-1 content-start gap-2">
+                <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
+                <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
+                  <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
+                  {admin && <Spent release={release} />}
+                </div>
+              </div>
+            </section>
+            <Tracklist d={d} release={release} />
+            <ReleaseDetails release={release} admin={admin} />
+          </>}
+          {tab === "money" && admin && <ReleaseMoney data={d} />}
+          {tab === "files" && <ReleaseFiles data={d} />}
+        </div>
+        <aside className="show-side" aria-label="Checklists">
+          <ChecklistSidebar host={{ kind: "release", id: release.id, artistId: release.artistId, checklists: release.checklists ?? [] }} admin={admin} />
+        </aside>
+      </div>
     </div>
   );
 }
