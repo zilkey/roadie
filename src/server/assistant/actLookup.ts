@@ -1,6 +1,6 @@
 /**
  * An act's Look up (issue #78, the About card on the DetailAct board): fills the shared `acts/{id}` record's About facts from two
- * places, only when someone clicks Look up (or "Look up shortlist"), never on a calendar refresh.
+ * places, only when someone clicks Look up (or "Look up watched acts"), never on a calendar refresh.
  * - Spotify (src/server/integrations/spotify.ts): artist search by name gives the Spotify link, a photo and genres. When more than
  *   one artist has exactly the act's name, the candidates are stored on the act and the card asks "same band?".
  * - Google search through Gemini's grounding (searchWeb in web.ts), then a structured extraction: website, Instagram, Bandcamp,

@@ -1,8 +1,8 @@
 "use client";
 /**
  * Booking's Acts tab (issue #77, board "ListActs" on the booking canvas): every act seen on a venue calendar plus any added by hand,
- * filtered (a dropdown) to the shortlist, the acts that opened at rooms on our list, or those on tour, and by genre (several at once),
- * city and name; the filters add up. Each row shows a few genres and an icon per link we have. The star (shortlist) and the X
+ * filtered (a dropdown) to the acts we watch (stored as the shortlist), the acts that opened at rooms on our list, or those on tour, and by genre (several at once),
+ * city and name; the filters add up. Each row shows a few genres and an icon per link we have. The star (Watch; stored as shortlist) and the X
  * beside it (not a fit: hidden from here, with an Undo) are one choice: a click sets it, a click on the lit one clears it.
  *
  * The acts and this band's take on them are live (useCollection); what the calendars say about each (rooms, next show, opened at our
@@ -12,7 +12,7 @@
  * "Load more" adds a page (the Festivals tab's button, the Shows list's client-side slice). A new filter, city or search starts back
  * at the first page, in its own change handler: no effect sets the page, so a filter can't set off a run of re-renders.
  *
- * The filters ride in the URL so a link sends the exact list: ?show= (the dropdown; the shortlist is the default and leaves it out),
+ * The filters ride in the URL so a link sends the exact list: ?show= (the dropdown; Watching is the default and leaves it out),
  * ?genre= (once per genre), ?city= and ?find= (not ?q=: that's the booking-wide search, which replaces the tab). They're written with
  * history.replaceState, which the App Router picks up without a navigation, so typing in Find doesn't refetch the page. Back from
  * an act's page steps back to that URL, and useListMemory opens as many pages as were open and scrolls back to where it was.
@@ -139,7 +139,7 @@ export function ActsTab() {
   };
 
   /**
-   * Shortlist and Not a fit are one choice: a click sets that one (and clears the other), a click on the lit one clears it. Not a
+   * Watch and Not a fit are one choice: a click sets that one (and clears the other), a click on the lit one clears it. Not a
    * fit takes the act off the list (unless it was searched for), so it says so with an Undo back to how it was.
    */
   const choose = async (a: Row, pick: "shortlist" | "notFit") => {
@@ -168,7 +168,7 @@ export function ActsTab() {
         <span className="flex-auto" />
         {toLookUp && (
           <button type="button" className="btn soft sm" disabled={shortlistLookup.busy} onClick={() => void lookUpShortlist()} data-testid="acts-lookup-shortlist">
-            {shortlistLookup.busy ? "Looking up…" : "Look up shortlist"}
+            {shortlistLookup.busy ? "Looking up…" : "Look up watched acts"}
           </button>
         )}
         <label className="sr-only" htmlFor="acts-q">Find an act</label>
@@ -184,13 +184,13 @@ export function ActsTab() {
       {lookupStatus && <span className="s" data-testid="acts-lookup-status">{lookupStatus}</span>}
       {loading && <span className="s">Loading…</span>}
       {!loading && rows.length === 0 && (
-        <div className="empty" data-testid="acts-empty"><span>{filter === "shortlist" && !q && !city ? "Nothing on the shortlist yet. Tap an act's star to add it." : "Nothing matches."}</span></div>
+        <div className="empty" data-testid="acts-empty"><span>{filter === "shortlist" && !q && !city ? "You aren't watching any acts yet. Tap an act's star to watch it." : "Nothing matches."}</span></div>
       )}
       {!loading && rows.length > 0 && (
         <div className="book-tw">
           <table className="book-table wn">
             <thead><tr>
-              <th className="flag"><span className="sr-only">Shortlist or not a fit</span></th>
+              <th className="flag"><span className="sr-only">Watch or not a fit</span></th>
               <th className="name">Act</th>
               <th>Seen at</th>
               <th>Next show</th>
@@ -205,7 +205,7 @@ export function ActsTab() {
                   <tr key={a.id} data-testid={`act-row-${a.id}`}>
                     <td className="flag">
                       <span className="inline-flex">
-                        <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Shortlist ${a.name}`} title={on ? "On the shortlist (click to clear)" : "Shortlist"} disabled={star.busy}
+                        <button type="button" className="flag-ic star-ic" aria-pressed={on} data-on={on ? "1" : "0"} aria-label={`Watch ${a.name}`} title={on ? "Watching (click to stop)" : "Watch"} disabled={star.busy}
                           onClick={() => void choose(a, "shortlist")} data-testid={`act-star-${a.id}`}><StarIcon on={on} /></button>
                         <button type="button" className="flag-ic dismiss-ic" aria-pressed={nf} data-on={nf ? "1" : "0"} aria-label={`${a.name} is not a fit`} title={nf ? "Not a fit (click to clear)" : "Not a fit: hide it"} disabled={star.busy}
                           onClick={() => void choose(a, "notFit")} data-testid={`act-dismiss-${a.id}`}><XIcon size={16} /></button>

@@ -132,7 +132,7 @@ export function actStats(events: EvLike[], venues: Map<string, VenueLike>, ours:
 export const roomsLine = (rooms: Room[]) => rooms.map((r) => `${r.name} (${r.roles.length === 2 ? "headlining, opening" : r.roles[0] === "support" ? "opening" : "headlining"})`).join(" · ");
 
 export type ActFilter = "shortlist" | "opened" | "tour" | "all";
-export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Shortlist"], ["opened", "Opened at our rooms"], ["tour", "On tour"], ["all", "All acts"]];
+export const ACT_FILTERS: [ActFilter, string][] = [["shortlist", "Watching"], ["opened", "Opened at our rooms"], ["tour", "On tour"], ["all", "All acts"]];
 
 export interface ActTake { shortlist?: boolean; relationship?: ActRelationship | string; note?: string }
 /**

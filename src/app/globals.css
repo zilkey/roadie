@@ -310,7 +310,7 @@ fieldset.sec { margin: 0; }
 .flag-ic[data-flagged="1"] { color: var(--pitched); }
 .flag-ic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .flag-ic:disabled { opacity: .5; cursor: default; }
-/* Acts (#77): the shortlist star (hollow grey, filled gold), and the soft accent button the act page's Shortlisted uses. */
+/* Acts (#77): the Watch star (hollow grey, filled gold), and the soft accent button the act page's Watching uses. */
 .star-ic { color: var(--muted); }
 .star-ic[data-on="1"] { color: var(--gold, #c48a00); }
 /* Acts table: "Not a fit" beside the star (hollow grey, red on hover), and the act's links as small icons. */

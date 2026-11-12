@@ -85,13 +85,13 @@ test("an act's page lists where they've played, and the shortlist, relationship 
   // shortlist toggles and survives a reload
   const star = page.getByTestId("act-shortlist");
   if ((await star.getAttribute("aria-pressed")) === "true") await star.click(); // a retry starts from the earlier attempt's data
-  await expect(star).toHaveText("Shortlist");
+  await expect(star).toHaveText("Watch");
   await expect(star).toHaveAttribute("aria-pressed", "false");
   await star.click();
-  await expect(star).toHaveText("Shortlisted");
+  await expect(star).toHaveText("Watching");
   await expect(star).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(page.getByTestId("act-shortlist")).toHaveText("Shortlisted");
+  await expect(page.getByTestId("act-shortlist")).toHaveText("Watching");
 
   // relationship: pick shows its hint, tapping again clears it
   const hint = page.getByTestId("act-rel-hint");
@@ -233,7 +233,7 @@ test("an act added by hand lands on its own page with nothing known about it yet
   await expect(page.getByTestId("act-page")).toBeVisible();
   await expect(page.getByTestId("act-page")).toContainText("Hand Added Quartet");
   await expect(page.getByTestId("act-about-empty")).toBeVisible();
-  await expect(page.getByTestId("act-shortlist")).toHaveText("Shortlist");
+  await expect(page.getByTestId("act-shortlist")).toHaveText("Watch");
   await expect(page.getByTestId("act-page")).toContainText("Not on any venue calendar in Roadie.");
 });
 
@@ -295,11 +295,11 @@ test("Look up on a name Spotify shares asks which band: None of these keeps the 
   await expect(page.getByTestId("act-hometown")).toHaveText("Loveland, CO");
 });
 
-test("Look up shortlist on the Acts tab looks up every shortlisted act not yet looked up", async ({ page }) => {
+test("Look up watched acts on the Acts page looks up every watched act not yet looked up", async ({ page }) => {
   await signInAs(page, "rudy");
   await addAct(page, "North Fork Crossing");
   await page.getByTestId("act-shortlist").click();
-  await expect(page.getByTestId("act-shortlist")).toHaveText("Shortlisted");
+  await expect(page.getByTestId("act-shortlist")).toHaveText("Watching");
   const path = new URL(page.url()).pathname;
 
   await page.goto(A("/booking/acts"));

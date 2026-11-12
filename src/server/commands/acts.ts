@@ -1,6 +1,6 @@
 /**
  * Acts (issue #77): the bands on venue calendars, shared by every band, and this band's take on each (actNotes: shortlist,
- * relationship, note, contacts). Roadie gets all of these: finding acts, shortlisting one, noting what they are to us.
+ * relationship, note, contacts; `shortlist` is what the app calls Watch). Roadie gets all of these: finding acts, watching one, noting what they are to us.
  */
 import { z } from "zod";
 import { defineCommand } from "./types";
@@ -52,8 +52,8 @@ export const actsFind = defineCommand({
   description:
     "Find acts: the bands on venue calendars' bills (shared by every band), plus any added by hand. Each row: the act (name, description, genres, hometown, links), " +
     "rooms (every venue it's on a calendar at, with headliner/support), next (its next show), openedAt (venue ids on our list where it played support), " +
-    "tour (2+ Colorado rooms within four weeks, from today), cities, and this band's take: shortlist, relationship (openFor = bigger than us, we want to open for them; " +
-    "peer = about our size, trade shows; notFit), note. filter: shortlist | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
+    "tour (2+ Colorado rooms within four weeks, from today), cities, and this band's take: shortlist (true = we watch them; the app says Watch), relationship (openFor = bigger than us, we want to open for them; " +
+    "peer = about our size, trade shows; notFit), note. filter: shortlist (the acts we watch) | opened (played support at rooms we play) | tour | all (default). q matches the name. " +
     "Not-a-fit acts are left out unless q names them. count is every match. Acts aren't in search: find an act by name here, with q.",
   input: z.strictObject({
     q: z.string().optional(), filter: z.enum(FILTERS).default("all"), city: z.string().min(1).optional(),
@@ -81,21 +81,21 @@ export const actsFind = defineCommand({
 
 export const actsCreate = defineCommand({
   name: "acts.create", roles: [...ROLES], input: ActIn,
-  description: "Add an act by hand. Same name merges into the existing one. shortlist, relationship (openFor|peer|notFit), note and contactIds are this band's (other bands never see them); everything else is shared with every band.",
+  description: "Add an act by hand. Same name merges into the existing one. shortlist (Watch), relationship (openFor|peer|notFit), note and contactIds are this band's (other bands never see them); everything else is shared with every band.",
   run: (ctx, input) => run(ctx, (w) => createNoted(w, "acts", input)),
 });
 
 export const actsUpdate = defineCommand({
   name: "acts.update", roles: [...ROLES], input: patchInput(ActIn),
-  description: "Edit an act: its shared facts (name, description, genres, hometown, links, imageUrl), or this band's shortlist, relationship (openFor|peer|notFit), note and contactIds. " +
+  description: "Edit an act: its shared facts (name, description, genres, hometown, links, imageUrl), or this band's shortlist (Watch), relationship (openFor|peer|notFit), note and contactIds. " +
     "note replaces the text: read first to add. contactIds replaces the list; link people with contacts.attach (kind acts).",
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "acts", id, patch as Record<string, unknown>)),
 });
 
 export const actsShortlist = defineCommand({
   name: "acts.shortlist", roles: [...ROLES],
-  description: "Put an act on this band's shortlist (on: true) or take it off (on: false), only when the person asks to shortlist or star it. " +
-    "Saying what an act is to us (bigger than us, a peer, not a fit) or a note is acts.note, not a shortlist. Find the act's id with acts.find.",
+  description: "Watch an act (on: true; the app's Watch star, stored as the shortlist) or stop watching it (on: false), only when the person asks to watch, shortlist or star it. " +
+    "Saying what an act is to us (bigger than us, a peer, not a fit) or a note is acts.note, not a watch. Find the act's id with acts.find.",
   input: z.strictObject({ id: z.string().min(1), on: z.boolean() }),
   run: (ctx, { id, on }) => run(ctx, (w) => updateNoted(ctx, w, "acts", id, { shortlist: on })),
 });
@@ -105,7 +105,7 @@ export const actsNote = defineCommand({
   description:
     "Say what an act is to this band, privately: relationship openFor (bigger than us: we want to open for them), peer (about our size: we open for them, they open for us) " +
     "or notFit (hidden from the Acts list), null clears it; and/or note, which replaces the note (read it with acts.find first to add to it; \"\" clears). Find the act's id with acts.find. " +
-    "\"They're bigger than us\" or \"we'd love to open for them\" is relationship openFor alone: no note (unless they give one) and no shortlist (unless they ask).",
+    "\"They're bigger than us\" or \"we'd love to open for them\" is relationship openFor alone: no note (unless they give one) and no watch (unless they ask).",
   input: z.strictObject({ id: z.string().min(1), relationship: z.enum(ACT_RELATIONSHIPS).nullable().optional(), note: z.string().nullable().optional() }),
   run: (ctx, { id, relationship, note }) => run(ctx, async (w) => {
     if (relationship === undefined && note === undefined) throw new AppError("invalid_input", "Say a relationship or a note", 400);
@@ -124,14 +124,14 @@ export const actsLookup = defineCommand({
   run: (ctx, { id, spotifyId }) => lookUpAct(ctx, id, { spotifyId }),
 });
 
-// Look up is admin-only, not MCP's or Roadie's: it searches the web and Spotify on a click on the act page or the Acts tab.
+// Look up is admin-only, not MCP's or Roadie's: it searches the web and Spotify on a click on the act page or the Acts page.
 
-/** Acts looked up per click of "Look up shortlist": each one is a web search, an extraction and a Spotify search. */
+/** Acts looked up per click of "Look up watched acts": each one is a web search, an extraction and a Spotify search. */
 export const SHORTLIST_LOOKUPS = 20;
 
 export const actsLookupShortlist = defineCommand({
   name: "acts.lookupShortlist", roles: ["admin"],
-  description: `Run acts.lookup for every act on this band's shortlist that hasn't been looked up yet, ${SHORTLIST_LOOKUPS} at most per call (left says how many remain). The Acts tab's "Look up shortlist" button.`,
+  description: `Run acts.lookup for every act this band watches (the shortlist) that hasn't been looked up yet, ${SHORTLIST_LOOKUPS} at most per call (left says how many remain). The Acts page's "Look up watched acts" button.`,
   input: z.strictObject({}),
   async run(ctx) {
     const todo = (await findActs(ctx, { filter: "shortlist" })).filter(({ a }) => !a.lookedUpAt && !a.lookupCandidates).map(({ a }) => a.id);

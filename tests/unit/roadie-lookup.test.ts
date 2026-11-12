@@ -81,6 +81,10 @@ test("tool groups: a venue request gets the core and no stage plot tools; the wo
   assert.ok(core.length < defs.length / 2, `${core.length} of ${defs.length}`);
   // "mix" also pulls releases in (a monitor mix and a record's mix share the word); the stage plot group is still there
   assert.deepEqual(groupsFor("add a second monitor mix to the stage plot", [], undefined), ["stagePlots", "releases"]);
+  // "watch X" loads the acts tools (Watch is the app's word for the shortlist); a follow-up doesn't
+  assert.ok(groupsFor("watch Wheelwright", [], undefined).includes("acts"));
+  assert.ok(groupsFor("which acts are we watching?", [], undefined).includes("acts"));
+  assert.ok(!groupsFor("send a follow-up to the Bluebird", [], undefined).includes("acts"));
   assert.deepEqual(groupsFor("add a second one", [], { route: "stagePlot", recordKind: "stagePlot", recordId: "x" }), ["stagePlots"]);
   assert.ok(groupsFor("make it 12", [{ role: "user", text: "how many inputs does the trio plot have?" }], undefined).includes("stagePlots"));
   const all = selectTools(defs, ["stagePlots", "checklists"]).map((d) => d.name);

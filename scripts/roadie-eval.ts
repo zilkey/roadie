@@ -98,6 +98,7 @@ const SCENARIOS: Scenario[] = [
   { name: "acts-tour", turns: [{ say: "which acts are on tour around here right now?", calls: [/acts\.find/], text: /North Fork Crossing/, noText: REFUSES }] },
   // #78: acts aren't in search, so the first lookup is acts.find; and a relationship or a note writes only that (in #77's run Roadie also shortlisted Wheelwright).
   { name: "acts-shortlist", turns: [{ say: "shortlist North Fork Crossing", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
+  { name: "acts-watch", turns: [{ say: "watch Wheelwright", calls: [/acts\.find/, /acts\.shortlist/], noCalls: [/^search$/], args: [[/acts\.shortlist/, /"on":true/]], noText: REFUSES }] },
   { name: "acts-note", turns: [{ say: "Wheelwright is bigger than us, we'd love to open for them", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"relationship":"openFor"/]], noArgs: [[/acts\.note/, /"note":"[^"]/]], noText: REFUSES }] },
   { name: "acts-note-text", turns: [{ say: "add a note on the act Morrow Morrow: great harmonies, super friendly crew", calls: [/acts\.find/, /acts\.note/], noCalls: [/acts\.shortlist/, /^search$/], args: [[/acts\.note/, /"note":"[^"]*harmonies/i]], noArgs: [[/acts\.note/, /"relationship"/]], noText: REFUSES }] },
   // #79: the band's own genres (General Settings) feed the opener guess's genre fit

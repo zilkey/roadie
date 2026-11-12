@@ -86,7 +86,7 @@ function ActPage() {
       )}
       more={<>
         <button type="button" className={on ? "btn soft" : "btn"} aria-pressed={on} data-on={on ? "1" : "0"} disabled={busy} onClick={() => void call("acts.shortlist", { id, on: !on })} data-testid="act-shortlist">
-          <StarIcon on={on} size={16} />{on ? "Shortlisted" : "Shortlist"}
+          <StarIcon on={on} size={16} />{on ? "Watching" : "Watch"}
         </button>
         {reachable
           ? <Link href={`/booking/email/new?target=act:${id}`} className="btn acc" data-testid="act-pitch">Pitch them</Link>
