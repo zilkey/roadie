@@ -560,7 +560,7 @@ export const postsPublish = defineCommand({
       for (const m of post.media) {
         if (!fromPreview(m.mimeType)) continue;
         photo = photoLabel(m.name);
-        try { await (await drive.thumbnail(m.driveFileId, HEIC_PREVIEW)).body?.cancel(); } catch (e) {
+        try { await (await drive.thumbnail(m.driveFileId, HEIC_PREVIEW)).arrayBuffer(); } catch (e) { // read it through: a cancelled body can hang under Next's fetch
           if (e instanceof IntegrationError && e.status === 404) throw new GraphError(400, `Instagram can't take it yet: ${noPreview(m.name)}`);
           throw e;
         }
