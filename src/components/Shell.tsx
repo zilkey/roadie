@@ -225,8 +225,6 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh min-[900px]:flex" style={{ "--tabbar-h": "calc(3.5rem + env(safe-area-inset-bottom))" } as React.CSSProperties}>
-      {profile.role === "admin" && <Roadie />}
-
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Today's shows and rehearsals, above both bars (#66) */}
         <DayOfBanner />
@@ -298,6 +296,8 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
           </>
         )}
       </div>
+      {/* Roadie: a column on the right on desktop, a pill + sheet on a phone */}
+      {profile.role === "admin" && <Roadie />}
       <EditMenuDialog open={editing} onClose={() => setEditing(false)} role={profile.role} hidden={hidden} order={order} fans={fansOn} />
     </div>
   );

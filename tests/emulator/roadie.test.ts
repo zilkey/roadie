@@ -140,7 +140,7 @@ test("api: someone else's thread id starts a fresh thread; transcripts stay out 
   assert.equal(hist.docs.some((d) => String(d.data().path ?? d.data().collection ?? "").includes("assistant")), false);
 });
 
-test("command: assistant.setPrefs stores width and thread, members refused", async () => {
+test("command: assistant.setPrefs stores width (rail or pixels) and thread, members refused", async () => {
   const admin = await makeUser("a@example.com", "admin");
   const member = await makeUser("m@example.com", "member");
   assert.equal(assistantSetPrefs.name, "assistant.setPrefs");
@@ -152,6 +152,10 @@ test("command: assistant.setPrefs stores width and thread, members refused", asy
   await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null });
   assert.deepEqual((await firestore().collection("users").doc(admin.uid).get()).data()!.prefs, { assistant: { width: "narrow" } });
   assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { width: "huge" })).status, 400);
+  // A dragged width in pixels, from 280 up; fractions and tiny widths refused.
+  assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { width: 480 })).status, 200);
+  assert.deepEqual((await firestore().collection("users").doc(admin.uid).get()).data()!.prefs, { assistant: { width: 480 } });
+  for (const bad of [279, 480.5, 5000]) assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { width: bad })).status, 400, String(bad));
 });
 
 test("flow: a reply that promises a change with nothing written gets one nudge, then asks instead", async () => {

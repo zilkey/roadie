@@ -9,13 +9,14 @@ import { useDoc } from "@/lib/firestore-hooks";
 import { artistHeaders, runCommand } from "@/lib/commands";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assistant";
+import { DEFAULT_PX, fromSaved, type PanelWidth } from "@/lib/roadie-width";
 
-export type Width = "full" | "narrow";
+export type Width = PanelWidth;
 export interface ChatMsg { id: string; role: "user" | "assistant"; text: string; actions: AssistantAction[] }
 export interface Pending { text: string; reply: string; actions: AssistantAction[]; doneId?: string; error?: string }
 
 const WIDTH_KEY = "roadie.width";
-const readWidth = (): Width => { try { return localStorage.getItem(WIDTH_KEY) === "narrow" ? "narrow" : "full"; } catch { return "full"; } };
+const readWidth = (): Width => { try { return fromSaved(localStorage.getItem(WIDTH_KEY)); } catch { return DEFAULT_PX; } };
 
 /** Where the admin is, as a named route plus the record in view and the tab (`?tab=` or `#tab`, from the browser's address). */
 export function pageContextFor(path: string, search = "", hash = ""): PageContext {
@@ -31,8 +32,8 @@ export function useRoadie(onNavigated?: () => void) {
   const { slug } = useArtist();
   const router = useRouter();
   const path = usePathname();
-  const prefs = useDoc<{ prefs?: { assistant?: { width?: Width; threadId?: string } } }>("users", profile.userId);
-  const [width, setWidthState] = useState<Width>("full");
+  const prefs = useDoc<{ prefs?: { assistant?: { width?: "full" | Width; threadId?: string } } }>("users", profile.userId);
+  const [width, setWidthState] = useState<Width>(DEFAULT_PX);
   const [threadId, setThreadId] = useState<string | undefined>();
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -44,13 +45,15 @@ export function useRoadie(onNavigated?: () => void) {
     if (loaded.current || prefs.loading) return;
     loaded.current = true;
     const a = prefs.doc?.prefs?.assistant;
-    if (a?.width) setWidthState(a.width);
+    if (a?.width !== undefined) setWidthState(fromSaved(a.width));
     if (a?.threadId) setThreadId(a.threadId);
   }, [prefs.loading, prefs.doc]);
 
-  const setWidth = useCallback((w: Width) => {
+  // `save: false` while a drag or a held arrow key is still moving; the last call saves.
+  const setWidth = useCallback((w: Width, { save = true }: { save?: boolean } = {}) => {
     setWidthState(w);
-    try { localStorage.setItem(WIDTH_KEY, w); } catch { /* private mode */ }
+    if (!save) return;
+    try { localStorage.setItem(WIDTH_KEY, String(w)); } catch { /* private mode */ }
     runCommand("assistant.setPrefs", { width: w }).catch(() => {});
   }, []);
 

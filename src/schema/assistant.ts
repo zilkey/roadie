@@ -126,5 +126,6 @@ export const MAX_AUDIO_BYTES = 1_000_000;
 export const UndoRequest = z.strictObject({ threadId: id, runId: z.string().min(1).max(100) });
 export type UndoRequest = z.infer<typeof UndoRequest>;
 
-export const AssistantWidth = z.enum(["full", "narrow"]);
+/** The Roadie panel: the rail, a dragged width in pixels, or `full` (older saves; read as the default size). */
+export const AssistantWidth = z.union([z.enum(["full", "narrow"]), z.number().int().min(280).max(4000)]);
 export const AssistantPrefs = z.strictObject({ width: AssistantWidth.optional(), threadId: id.optional() });

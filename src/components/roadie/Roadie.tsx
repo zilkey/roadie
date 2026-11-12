@@ -6,6 +6,14 @@ import { useVoice, type VoicePhase } from "./useVoice";
 import { onRoadieAsk } from "./ask";
 import type { AssistantAction } from "@/schema/assistant";
 import { linkify } from "@/lib/linkify";
+import { clampPx, DEFAULT_PX, dragTo, keyTo, maxPx, MIN_PX } from "@/lib/roadie-width";
+
+const useWindowWidth = () =>
+  useSyncExternalStore(
+    (cb) => { window.addEventListener("resize", cb); return () => window.removeEventListener("resize", cb); },
+    () => window.innerWidth,
+    () => 1280,
+  );
 
 const useDesktop = () =>
   useSyncExternalStore(
@@ -208,7 +216,7 @@ const Chevron = ({ dir }: { dir: "left" | "right" }) => (
 const iconBtn = "grid size-11 shrink-0 place-items-center rounded-lg text-[var(--ink)] hover:bg-[var(--roadie-chip)]";
 const ghost = "rounded-lg border border-[var(--roadie-control-border)] bg-[var(--roadie-bubble)] px-2.5 py-1.5 text-sm text-[var(--ink)] hover:border-[var(--muted)]";
 
-/** The assistant. Mount once, in Shell, for admins only: a left column on desktop, a pill + bottom sheet on a phone. */
+/** The assistant. Mount once, in Shell, for admins only: a resizable right column on desktop, a pill + bottom sheet on a phone. */
 export function Roadie() {
   const desktop = useDesktop();
   const [open, setOpen] = useState(false);
@@ -216,32 +224,74 @@ export function Roadie() {
   const voice = useVoice(r);
   const kb = useKeyboardInset();
   const fieldFocused = useFieldFocused();
+  const windowW = useWindowWidth();
+  const panel = useRef<HTMLElement>(null);
+  // The last settled pixel width (not one mid-drag), so expanding the rail goes back to it.
+  const lastPx = useRef(DEFAULT_PX);
+  const dragging = useRef(false);
+  if (typeof r.width === "number" && !dragging.current) lastPx.current = r.width;
   // Asked on your behalf (askRoadie): open, and send it as the first message of a new chat.
   const latest = useRef(r);
   latest.current = r;
   useEffect(() => onRoadieAsk(({ text, pageContext }) => {
     setOpen(true);
-    if (latest.current.width === "narrow" && window.matchMedia("(min-width: 900px)").matches) latest.current.setWidth("full");
+    if (latest.current.width === "narrow" && window.matchMedia("(min-width: 900px)").matches) latest.current.setWidth(lastPx.current);
     void latest.current.send(text, { fresh: true, pageContext });
   }), []);
   const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo, open: r.open, reply: r.send }} notice={r.notice} voice={voice} autoFocus={!desktop} />;
 
   if (desktop) {
+    // Drag the left edge: the panel is as wide as the gap from the pointer to its right edge. Below the minimum it
+    // snaps to the rail (and back out again while still dragging); letting go saves.
+    const startDrag = (e: React.PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
+      let w = r.width;
+      dragging.current = true;
+      const move = (ev: PointerEvent) => { w = dragTo(right - ev.clientX, window.innerWidth); r.setWidth(w, { save: false }); };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+        document.body.style.removeProperty("cursor");
+        document.body.style.removeProperty("user-select");
+        dragging.current = false;
+        r.setWidth(w);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    };
+
     if (r.width === "narrow") {
       return (
-        <aside className="sticky top-0 flex h-dvh w-[72px] shrink-0 flex-col items-center gap-2 border-r border-[var(--roadie-border)] bg-[var(--roadie-bg)] py-4" data-testid="roadie-panel" data-width="narrow">
-          <button data-testid="roadie-expand" aria-label="Expand Roadie" title="Expand Roadie" onClick={() => r.setWidth("full")}><Badge /></button>
+        <aside ref={panel} className="sticky top-0 flex h-dvh w-[72px] shrink-0 flex-col items-center gap-2 border-l border-[var(--roadie-border)] bg-[var(--roadie-bg)] py-4" data-testid="roadie-panel" data-width="narrow">
+          <button data-testid="roadie-expand" aria-label="Expand Roadie" title="Expand Roadie" onClick={() => r.setWidth(lastPx.current)}><Badge /></button>
         </aside>
       );
     }
+    // The saved width stays as chosen; a smaller window only shows it narrower.
+    const px = clampPx(r.width, windowW);
+    const onKey = (e: React.KeyboardEvent) => {
+      const next = keyTo(e.key, px, windowW);
+      if (next === null) return;
+      e.preventDefault();
+      r.setWidth(next, { save: false });
+    };
     return (
-      <aside className="sticky top-0 flex h-dvh w-[360px] shrink-0 flex-col border-r border-[var(--roadie-border)] bg-[var(--roadie-bg)]" data-testid="roadie-panel" data-width="full">
+      <aside ref={panel} className="sticky top-0 flex h-dvh shrink-0 flex-col border-l border-[var(--roadie-border)] bg-[var(--roadie-bg)]" style={{ width: px }} data-testid="roadie-panel" data-width={px}>
+        <div role="separator" aria-orientation="vertical" aria-label="Resize Roadie" aria-valuenow={px} aria-valuemin={MIN_PX} aria-valuemax={maxPx(windowW)} tabIndex={0}
+          className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize touch-none outline-none hover:bg-[var(--roadie-control-border)] focus-visible:bg-[var(--accent)]"
+          data-testid="roadie-resize" onPointerDown={startDrag} onKeyDown={onKey} onKeyUp={(e) => { if (keyTo(e.key, px, windowW) !== null) r.setWidth(px); }} />
         <div className="flex items-center gap-2.5 px-3 py-3">
           <Badge />
           <span className="font-display text-lg font-extrabold">Roadie</span>
           <span className="ml-auto flex gap-1.5">
             <button className={ghost} data-testid="roadie-new" onClick={r.newChat}>New chat</button>
-            <button className={ghost} data-testid="roadie-narrow" aria-label="Narrow Roadie" title="Narrow Roadie" onClick={() => r.setWidth("narrow")}><Chevron dir="left" /></button>
+            <button className={ghost} data-testid="roadie-narrow" aria-label="Narrow Roadie" title="Narrow Roadie" onClick={() => r.setWidth("narrow")}><Chevron dir="right" /></button>
           </span>
         </div>
         {chat}

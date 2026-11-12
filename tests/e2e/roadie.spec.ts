@@ -11,11 +11,13 @@ async function ask(page: Page, text: string) {
   await page.getByTestId("roadie-input").press("Enter");
 }
 
-test("admin: panel on the left, canned reply, survives navigation and reload", async ({ page }) => {
+test("admin: panel on the right, canned reply, survives navigation and reload", async ({ page }) => {
   await signInAs(page, "nora");
   const panel = page.getByTestId("roadie-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toHaveAttribute("data-width", "full");
+  await expect(panel).toHaveAttribute("data-width", "360");
+  const box = (await panel.boundingBox())!;
+  expect(Math.round(box.x + box.width)).toBe(page.viewportSize()!.width); // flush with the window's right edge
   await expect(page.getByTestId("roadie-input")).toHaveAttribute("placeholder", "Ask or tell me anything…");
 
   await page.getByTestId("roadie-new").click();
@@ -37,6 +39,59 @@ test("admin: panel on the left, canned reply, survives navigation and reload", a
   await page.reload();
   await expect(page.getByTestId("roadie-msg-user")).toHaveCount(3);
   await expect(page.getByTestId("roadie-msg-assistant").first()).toContainText("Roadie here");
+});
+
+test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to half the window, and snaps to the rail", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAs(page, "nora");
+  const panel = page.getByTestId("roadie-panel");
+  const handle = page.getByTestId("roadie-resize");
+  await expect(handle).toHaveAttribute("role", "separator");
+  await expect(handle).toHaveAttribute("aria-valuenow", "360");
+  await expect(handle).toHaveAttribute("aria-valuemin", "280");
+  await expect(handle).toHaveAttribute("aria-valuemax", "640");
+
+  // Drag the left edge out to 500px.
+  const saved = () => page.waitForRequest((r) => r.url().includes("assistant.setPrefs") && r.method() === "POST" && "width" in (r.postDataJSON() ?? {}));
+  let req = saved();
+  const h = (await handle.boundingBox())!;
+  await page.mouse.move(h.x + h.width / 2, h.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(1280 - 450, h.y + 200, { steps: 4 });
+  await page.mouse.move(1280 - 500, h.y + 200, { steps: 4 });
+  await page.mouse.up();
+  expect((await req).postDataJSON().width).toBe(500);
+  await expect(panel).toHaveAttribute("data-width", "500");
+
+  // Arrow keys: left widens, right narrows; Home goes to the minimum.
+  await handle.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(handle).toHaveAttribute("aria-valuenow", "516");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuenow", "484");
+
+  // Saved per person: it comes back after a reload.
+  req = saved();
+  await page.keyboard.press("End");
+  expect((await req).postDataJSON().width).toBe(640);
+  await page.reload();
+  await expect(panel).toHaveAttribute("data-width", "640");
+
+  // A smaller window shows it at half the window.
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await expect(panel).toHaveAttribute("data-width", "500");
+  await expect(handle).toHaveAttribute("aria-valuemax", "500");
+
+  // Drag under 280px: it snaps to the rail; Expand brings back the last width.
+  const g = (await handle.boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(1000 - 200, g.y + 200, { steps: 6 });
+  await page.mouse.up();
+  await expect(panel).toHaveAttribute("data-width", "narrow");
+  await page.getByTestId("roadie-expand").click();
+  await expect(panel).toHaveAttribute("data-width", "500");
 });
 
 test("a calendar ask Roadie can't place: it asks back with buttons, and a tap answers", async ({ page }) => {

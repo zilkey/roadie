@@ -13,7 +13,7 @@ export const assistantSetPrefs = defineCommand({
     const u = await db.get("users", ctx.uid);
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
     const cur = ((u.prefs as { assistant?: z.infer<typeof AssistantPrefs> } | undefined)?.assistant) ?? {};
-    const next = { ...cur, ...(input.width ? { width: input.width } : {}) };
+    const next = { ...cur, ...(input.width !== undefined ? { width: input.width } : {}) };
     if (input.threadId === null) delete next.threadId;
     else if (input.threadId) next.threadId = input.threadId;
     const res = await db.update(ctx, "users", ctx.uid, { prefs: { assistant: next } });
