@@ -9,6 +9,7 @@ import { useDragReorder } from "@/lib/drag-reorder";
 import { runCommand } from "@/lib/commands";
 import { CAPTION_MAX, HASHTAG_MAX, hashtagCount } from "@/lib/photos";
 import type { Post, PostMedia } from "@/schema/posts";
+import { PostDialog } from "@/components/posts/PostDialog";
 
 type Focus = { x: number; y: number };
 interface PhotoState { thumb1080: string; missing: boolean; trashed: boolean }
@@ -33,6 +34,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
   const [aspect, setAspect] = useState<"4:5" | "1:1" | null>(null);
   const [at, setAt] = useState(0);
   const [naming, setNaming] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
 
   const as = useAutosave({
     command: "posts.updateDraft", id, rev: post.rev, title: post.title ?? "Post",
@@ -84,6 +86,9 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
     await as.flush();
     await drive.call("posts.rename", { id, title: t });
   }
+  async function tidy() {
+    if (await drive.call("posts.tidy", { id })) toast({ key: `posts.tidy:${id}`, text: "Drive is tidied" });
+  }
   async function deleteDraft() {
     if (!window.confirm(`Delete the draft ${post.title ?? ""}? Its photos go back where they came from in Socials.`)) return;
     await as.flush();
@@ -124,6 +129,12 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
       {post.status === "failed" && post.error && <p className="err m-0" data-testid="editor-failed">Didn&apos;t post: {post.error}</p>}
       {post.status === "posted" && post.instagram?.permalink && (
         <p className="m-0"><a href={post.instagram.permalink} target="_blank" rel="noreferrer" className="underline" data-testid="editor-permalink">View on Instagram ›</a></p>
+      )}
+      {post.status === "posted" && post.driveTidy && (
+        <p className="err m-0" data-testid="editor-tidy">
+          Posted, but Drive wasn&apos;t tidied: {post.driveTidy.error}{" "}
+          <button type="button" className="btn ghost sm" disabled={drive.busy} onClick={() => void tidy()} data-testid="editor-tidy-button">Finish tidying Drive</button>
+        </p>
       )}
       <ErrorBox error={drive.error} />
 
@@ -201,8 +212,11 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
           {!readOnly && (
             <div className="flex flex-wrap gap-2 border-t border-line pt-3">
               <button type="button" className="btn ghost sm" disabled={drive.busy} onClick={() => void deleteDraft()} data-testid="editor-delete">Delete draft</button>
+              <button type="button" className="btn sm ml-auto" disabled={drive.busy || media.some((m) => photos[m.driveFileId]?.missing || photos[m.driveFileId]?.trashed)}
+                title="Post it to Instagram" onClick={() => setPosting(true)} data-testid="editor-post">Post…</button>
             </div>
           )}
+          <PostDialog open={posting} onClose={() => setPosting(false)} post={{ id, title: post.title, media }} before={() => as.flush()} />
         </div>
       </div>
     </div>

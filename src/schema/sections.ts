@@ -12,7 +12,7 @@ export const isSectionId = (s: unknown): s is SectionId => (SECTION_IDS as reado
 /** A stored section id, with the old name of a renamed section mapped to its new one ("albums" became "releases"). */
 export const legacySectionId = (s: unknown): unknown => (s === "albums" ? "releases" : s);
 
-export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", contacts: "Contacts", templates: "Email templates", tours: "Tours", shows: "Shows", songs: "Songs", releases: "Releases", setlists: "Setlist Templates", rehearsals: "Rehearsals", stagePlots: "Stage plots", money: "Money", fans: "Fans", posts: "Posts" };
+export const SECTION_LABEL: Record<SectionId, string> = { booking: "Booking", contacts: "Contacts", templates: "Email templates", tours: "Tours", shows: "Shows", songs: "Songs", releases: "Releases", setlists: "Setlist Templates", rehearsals: "Rehearsals", stagePlots: "Stage plots", money: "Money", fans: "Fans", posts: "Social Media" };
 export const SectionSetInput = z.strictObject({ section: SectionIdSchema, hidden: z.boolean() });
 
 /**

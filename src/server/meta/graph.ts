@@ -130,8 +130,15 @@ export const graph = {
   /** Instagram User token: the account it belongs to. */
   igMe: (t: Tok) => api<{ user_id?: string; id: string; username: string }>(t, "GET", "/me", { fields: "user_id,username" }),
   igUser: (igId: string, t: Tok) => api<{ id: string; username: string }>(t, "GET", `/${encodeURIComponent(igId)}`, { fields: "username" }),
-  createImage: (igId: string, t: Tok, imageUrl: string, caption: string) =>
-    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { image_url: imageUrl, caption }),
+  /** One photo's container (a one-photo post). alt_text: images only, up to 1,000 characters (Graph, since March 2025). */
+  createImage: (igId: string, t: Tok, imageUrl: string, caption: string, alt?: string) =>
+    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { image_url: imageUrl, caption, alt_text: alt || undefined }),
+  /** One photo of a carousel: an image container with is_carousel_item (no caption; the carousel has it). */
+  createCarouselItem: (igId: string, t: Tok, imageUrl: string, alt?: string) =>
+    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { image_url: imageUrl, is_carousel_item: "true", alt_text: alt || undefined }),
+  /** The carousel container: 2–10 finished item containers, in order, with the caption. */
+  createCarousel: (igId: string, t: Tok, children: string[], caption: string) =>
+    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { media_type: "CAROUSEL", children: children.join(","), caption }),
   container: (id: string, t: Tok) => api<{ status_code?: string; status?: string }>(t, "GET", `/${encodeURIComponent(id)}`, { fields: "status_code,status" }),
   publish: (igId: string, t: Tok, creationId: string) => api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media_publish`, { creation_id: creationId }),
   permalink: (mediaId: string, t: Tok) => api<{ permalink?: string }>(t, "GET", `/${encodeURIComponent(mediaId)}`, { fields: "permalink" }),

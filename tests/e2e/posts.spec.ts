@@ -43,7 +43,7 @@ test("Posts starts in More for a new admin; switching it on sticks; members don'
   await page.getByTestId("more-toggle").click();
   await page.getByTestId("more-posts").click();
   await expect(page).toHaveURL(/\/posts$/);
-  await expect(page.getByTestId("page-title")).toHaveText("Posts");
+  await expect(page.getByTestId("page-title")).toHaveText("Social Media");
   await expect(await menuSwitch(page, "posts")).toHaveAttribute("aria-checked", "false");
   await page.getByTestId("menu-done").click();
 
@@ -216,4 +216,56 @@ test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the captio
   await expect(page.getByTestId("posts-drafts-none")).toBeVisible();
   await page.goto(A("/posts/photos"));
   for (const p of picks) await expect(page.getByTestId(`photo-${p}`)).toBeVisible();
+});
+
+test("Post now: off while Instagram needs a sign-in; then the carousel goes out in the editor's order and Drive shows YYYY-MM-DD - <name>", async ({ page, request }) => {
+  // Socials was set up and Instagram connected by the tests above.
+  await signInAs(page, "rudy");
+  await page.goto(A("/posts/photos"));
+  const picks = ["fake-social-loose-1", "fake-social-late", "fake-social-rotated", "fake-social-heic-1", "fake-social-loose-2"];
+  for (const p of picks) await page.getByTestId(`photo-${p}`).click();
+  await page.getByTestId("photos-add").click();
+  const dlg = page.getByTestId("add-to-draft");
+  await dlg.getByTestId("add-to-draft-title").fill("Thanks, Denver");
+  await dlg.getByTestId("add-to-draft-go").click();
+  await expect(page.getByTestId("editor-title")).toHaveText("Thanks, Denver");
+  const id = page.url().split("/").pop()!;
+  await page.getByTestId("editor-up-fake-social-late").click();
+  await page.getByTestId("editor-caption").fill("Thank you, Denver!");
+  await page.getByTestId("editor-caption").blur();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+
+  // Instagram needs a new sign-in: the dialog says so and Post now is off.
+  await scenario(request, { revoked: true });
+  await page.getByTestId("editor-post").click();
+  const post = page.getByTestId("post-dialog");
+  await expect(post.getByTestId("post-sign-in-again")).toContainText("changed their password");
+  await expect(post.getByTestId("post-now")).toBeDisabled();
+  await post.getByTestId("post-cancel").click();
+  await scenario(request, { revoked: false });
+
+  await page.getByTestId("editor-post").click();
+  await expect(post.getByTestId("post-account")).toContainText("A carousel of 5 photos goes to @noraquillband");
+  await expect(post.getByTestId("post-no-alt")).toContainText("None of the photos have alt text.");
+  await expect(post.getByTestId("post-drive-note")).toContainText("Posts/DRAFT - Thanks, Denver");
+  await post.getByTestId("post-now").click();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  await expect(post.getByTestId("post-done-folder")).toContainText(`Posts/${today} - Thanks, Denver`, { timeout: 30_000 });
+  await expect(post.getByTestId("post-done-permalink")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
+
+  // Meta got the photos in the editor's order; the fake Drive has the folder under its posted name.
+  const media = ((await (await request.get(`${META}/__media`)).json()) as { media: { caption: string; children?: { imageUrl: string }[] }[] }).media;
+  const last = media[media.length - 1];
+  expect(last.caption).toBe("Thank you, Denver!");
+  expect(last.children!.map((c) => new URL(c.imageUrl).pathname)).toEqual([0, 1, 2, 3, 4].map((i) => `/api/posts/media/${id}/${i}`));
+  const names = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("Thanks, Denver")}`)).json()) as { name: string }[]).map((f) => f.name);
+  expect(names).toContain(`${today} - Thanks, Denver`);
+  expect(names).not.toContain("DRAFT - Thanks, Denver");
+
+  // The editor is read-only now, and Posts lists it as posted.
+  await post.getByTestId("post-done-close").click();
+  await expect(page.getByTestId(`post-${id}`)).toContainText("5 photos · Posted");
+  await page.goto(A(`/posts/${id}`));
+  await expect(page.getByTestId("editor-status")).toHaveText("Posted");
+  await expect(page.getByTestId("editor-caption")).toHaveCount(0);
 });

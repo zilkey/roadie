@@ -59,7 +59,7 @@ function PhotosTab() {
 
   return (
     <div className="grid gap-5 pb-20">
-      <PageTitle title="Posts" />
+      <PageTitle title="Social Media" />
       <PostsTabs at="photos" />
       <ErrorBox error={error} />
       {!data ? (!error && <p className="s" data-testid="photos-loading">Loading…</p>) : (

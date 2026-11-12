@@ -42,7 +42,7 @@ export function navFor(role: "admin" | "member", order: SectionId[], opts: { fan
     stagePlots: { key: "stagePlots", href: "/stage-plots", label: "Stage plots", icon: I.stagePlots },
     money: { key: "money", href: "/money", label: role === "admin" ? "Money" : "My money", icon: I.money },
     fans: { key: "fans", href: "/fans", label: "Fans", icon: I.fans },
-    posts: { key: "posts", href: "/posts", label: "Posts", icon: I.posts },
+    posts: { key: "posts", href: "/posts", label: "Social Media", icon: I.posts },
   };
   // Booking, its email templates, Contacts, Releases and Posts (for now) are admin-only.
   const adminOnly = new Set<SectionId>(["booking", "contacts", "templates", "releases", "posts"]);

@@ -287,6 +287,7 @@ All of these live in `src/server/commands/posts.ts` with `roles: ["admin", "mcp"
 - **Alt text:** phase 5 starts by checking Graph's docs, or with one test call, whether `alt_text` is accepted on image and carousel-item containers. The result is written here.
   - If it is accepted, it's sent.
   - If it isn't, the `alt` argument is dropped, alt text stays in Roadie only, and the "no alt text" warning is dropped from the Post dialog.
+  - **Checked in phase 5 (Nov 12), from Graph's public docs:** it is accepted, so it's sent. The [IG User Media reference](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media) added `alt_text` on March 24, 2025: "For image posts only. Alternative text, up to 1000 character, for an image. Only supported on a single image or image media in a carousel. Reels and stories are not supported." It is not a parameter of the carousel container itself. Still worth one look on prod that the alt text shows in the Instagram app.
 
 **`posts.tidy { id }`** returns `{ ok: true }`.
 - It is refused unless the status is `posted`.
@@ -350,6 +351,7 @@ All of these live in `src/server/commands/posts.ts` with `roles: ["admin", "mcp"
    This is the same rule as CSS `object-fit: cover; object-position: fx·100% fy·100%`, so the editor shows the same crop that gets posted.
 3. **Output:** resize to 1080 wide (1080×1350 or 1080×1080), upscaling when the crop is narrower than 1080. Encode as sRGB JPEG at quality 90 with `cache-control: private, no-store`. It's made on each request and never stored.
 - Phase 5 first checks on prod that `=s2048` thumbnails of an iPhone HEIC come back at 1350 px or more on the long edge. If not, the route uses `=s4000` for HEIC, which `thumbnail()` already accepts as a size.
+  - **Phase 5 (Nov 12):** not checked; a session has no prod access. It is a manual step for the owner (the runbook's Phase log). The size is `HEIC_PREVIEW` in `src/server/postPhoto.ts`.
 
 **`POST /api/posts/upload`**
 - Saves into the Socials root, with the type from `photoType(name, file.type)`. Anything else is refused: "Roadie takes JPEG, HEIC, PNG and WebP photos".

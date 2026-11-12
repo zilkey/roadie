@@ -6,15 +6,23 @@
  * 60 days, renewable once it's 24 hours old). It fetches each container's image_url like Meta does, so the signed media route is
  * exercised for real. POST /__scenario sets what the next sign-in finds:
  * { scenario: one | several | none | personal | declined | cancel, kind, systemExpiresIn (seconds, 0 = never), revoked,
- *   failContainers, fetchMedia, ageHours (makes every token issued so far that many hours older) }.
+ *   failContainers, fetchMedia, failItem (the nth carousel item container from now fails), ageHours (makes every token issued so
+ *   far that many hours older) }. Containers take alt_text (images only, 1,000 characters), is_carousel_item, and
+ *   media_type=CAROUSEL with 2–10 finished item children.
  */
 import { defineFake, runIfMain, esc, HttpError, type Route } from "../lib";
 
 export type MetaScenario = "one" | "several" | "none" | "personal" | "declined" | "cancel";
 type Kind = "system" | "instagram";
 interface Token { token: string; kind: Kind; long: boolean; issuedAt: number; expiresAt: number /* 0 = never */ }
-interface Container { id: string; igId: string; imageUrl: string; caption: string; status_code: "FINISHED" | "ERROR" | "PUBLISHED"; status: string }
-interface Media { id: string; igId: string; caption: string; imageUrl: string; permalink: string; at: string }
+interface Container {
+  id: string; igId: string; imageUrl: string; caption: string; status_code: "FINISHED" | "ERROR" | "PUBLISHED"; status: string;
+  /** An image container that is one photo of a carousel (is_carousel_item=true). */
+  item?: boolean; alt?: string;
+  /** A carousel container (media_type=CAROUSEL): its item containers, in order. */
+  children?: string[];
+}
+interface Media { id: string; igId: string; caption: string; imageUrl: string; permalink: string; at: string; children?: { imageUrl: string; alt?: string }[]; alt?: string }
 export interface MetaState {
   seq: number;
   scenario: MetaScenario;
@@ -27,6 +35,9 @@ export interface MetaState {
   failContainers: boolean;
   /** Fetch image_url when a container is made (off where nothing serves it). */
   fetchMedia: boolean;
+  /** The nth carousel item container from now ends in ERROR (1 = the next one). */
+  failItem?: number;
+  items?: number;
   tokens: Token[];
   containers: Container[];
   media: Media[];
@@ -72,9 +83,25 @@ const content = (prefix: string): Route<MetaState>[] => [
     const t = tokenOf(s, body.access_token);
     if (isErr(t)) return t;
     if (!IG[params.igId]) return graphError("Unsupported post request.");
+    if (body.alt_text && body.alt_text.length > 1000) return graphError("The parameter alt_text must be at most 1000 characters.");
+    if (body.media_type === "CAROUSEL") {
+      if (body.alt_text) return graphError("alt_text is only supported on image containers.");
+      const ids = String(body.children ?? "").split(",").filter(Boolean);
+      if (ids.length < 2 || ids.length > 10) return graphError("The carousel must have between 2 and 10 children.", 36003);
+      const kids = ids.map((id) => s.containers.find((x) => x.id === id && x.igId === params.igId));
+      if (kids.some((k) => !k || !k.item)) return graphError("Invalid children: every child must be a carousel item container.");
+      if (kids.some((k) => k!.status_code !== "FINISHED")) return graphError("A carousel item isn't ready.", 9007);
+      const c: Container = { id: `container-${++s.seq}`, igId: params.igId, imageUrl: "", caption: body.caption ?? "", status_code: "FINISHED", status: "Finished", children: ids };
+      s.containers.push(c);
+      return { id: c.id };
+    }
     if (!body.image_url) return graphError("The parameter image_url is required.");
-    const c: Container = { id: `container-${++s.seq}`, igId: params.igId, imageUrl: body.image_url, caption: body.caption ?? "", status_code: "FINISHED", status: "Finished: Media has been uploaded and it is ready to be published." };
-    if (s.failContainers) Object.assign(c, { status_code: "ERROR", status: "Error: The aspect ratio is not supported." });
+    const item = body.is_carousel_item === "true";
+    if (item && body.caption) return graphError("A carousel item can't have a caption.");
+    const c: Container = { id: `container-${++s.seq}`, igId: params.igId, imageUrl: body.image_url, caption: body.caption ?? "", status_code: "FINISHED", status: "Finished: Media has been uploaded and it is ready to be published.",
+      ...(item ? { item } : {}), ...(body.alt_text ? { alt: body.alt_text } : {}) };
+    const failItem = item && s.failItem !== undefined && ++s.items! === s.failItem;
+    if (s.failContainers || failItem) Object.assign(c, { status_code: "ERROR", status: "Error: The aspect ratio is not supported." });
     else if (s.fetchMedia) {
       const res = await fetch(c.imageUrl).catch(() => null);
       if (!res?.ok || !res.headers.get("content-type")?.startsWith("image/jpeg")) Object.assign(c, { status_code: "ERROR", status: "Error: Media download has failed. The media URI doesn't meet our requirements." });
@@ -86,9 +113,11 @@ const content = (prefix: string): Route<MetaState>[] => [
     const t = tokenOf(s, body.access_token);
     if (isErr(t)) return t;
     const c = s.containers.find((x) => x.id === body.creation_id && x.igId === params.igId);
-    if (!c || c.status_code !== "FINISHED") return graphError("Media ID is not available", 9007);
+    if (!c || c.status_code !== "FINISHED" || c.item) return graphError("Media ID is not available", 9007);
     c.status_code = "PUBLISHED";
-    const m: Media = { id: `media-${++s.seq}`, igId: c.igId, caption: c.caption, imageUrl: c.imageUrl, permalink: `https://www.instagram.com/p/FAKE${s.seq}/`, at: new Date().toISOString() };
+    const kids = c.children?.map((id) => s.containers.find((x) => x.id === id)!);
+    const m: Media = { id: `media-${++s.seq}`, igId: c.igId, caption: c.caption, imageUrl: kids ? kids[0].imageUrl : c.imageUrl, permalink: `https://www.instagram.com/p/FAKE${s.seq}/`, at: new Date().toISOString(),
+      ...(kids ? { children: kids.map((k) => ({ imageUrl: k.imageUrl, ...(k.alt ? { alt: k.alt } : {}) })) } : {}), ...(c.alt ? { alt: c.alt } : {}) };
     s.media.push(m);
     return { id: m.id };
   }],
@@ -169,8 +198,11 @@ const routes: Route<MetaState>[] = [
     if (s.scenario === "personal") return PERSONAL;
     return { id: "ig-app-scoped-1", user_id: "ig-1", username: IG["ig-1"] };
   }],
+  // For tests: what's been published (each carousel with its photos' URLs and alt text, in order).
+  ["GET", "/__media", (_req, s) => ({ media: s.media })],
   ["POST", "/__scenario", ({ body }, s) => {
     for (const k of ["scenario", "kind", "systemExpiresIn", "revoked", "failContainers", "fetchMedia"] as const) if (body[k] !== undefined) (s as unknown as Record<string, unknown>)[k] = body[k];
+    if (body.failItem !== undefined) { s.failItem = Number(body.failItem) || undefined; s.items = 0; }
     if (body.ageHours) for (const t of s.tokens) t.issuedAt -= Number(body.ageHours) * 60 * 60_000;
     return { ok: true };
   }],
@@ -182,6 +214,6 @@ export const fakeMeta = defineFake<MetaState>({
   name: "fake-meta", defaultPort: 3208, initial, routes, formApi: true,
   page: (s) => `<p>Scenario: <b>${esc(s.scenario)}</b> · ${esc(s.kind)} token${s.revoked ? " · revoked" : ""}${s.failContainers ? " · containers fail" : ""}</p>
 <h2>Published</h2><table><tr><th>Id</th><th>Account</th><th>Caption</th><th>Image URL</th><th>At</th></tr>${s.media.slice().reverse().map((m) =>
-    `<tr><td>${esc(m.id)}</td><td>@${esc(IG[m.igId])}</td><td><pre>${esc(m.caption)}</pre></td><td>${esc(m.imageUrl.split("?")[0])}</td><td>${esc(m.at)}</td></tr>`).join("")}</table>`,
+    `<tr><td>${esc(m.id)}</td><td>@${esc(IG[m.igId])}</td><td><pre>${esc(m.caption)}</pre></td><td>${(m.children ?? [{ imageUrl: m.imageUrl, alt: m.alt }]).map((k) => `${esc(k.imageUrl.split("?")[0])}${k.alt ? ` (alt: ${esc(k.alt)})` : ""}`).join("<br>")}</td><td>${esc(m.at)}</td></tr>`).join("")}</table>`,
 });
 runIfMain(import.meta, fakeMeta);

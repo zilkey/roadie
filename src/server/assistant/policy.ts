@@ -14,7 +14,6 @@ export const EXCLUDED: readonly string[] = [
   "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
   "google.",          // connecting someone's own Google account is an access change only they make
   "meta.",            // connecting the band's Instagram & Facebook: the same
-  "posts.publishPhoto", // the one-photo post from #49; posts.publish (with its confirm) replaces it
   "artists.create",   // making a band; the rest of band settings (links, lineups, custom fields) is open, but see refusal()
   "assistant.",       // Roadie's own prefs
   "drafts.",          // personal scratch, nothing to hand an assistant

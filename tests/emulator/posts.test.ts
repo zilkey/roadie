@@ -13,8 +13,8 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { RENEW_AFTER_MS, unsealMeta } from "@/server/meta/connection";
 import { signMediaUrl, mediaSigOk } from "@/server/meta/media";
-import { signMetaState, verifyMetaState } from "@/server/meta/graph";
-import { GET as mediaGET } from "@/app/api/posts/media/[id]/route";
+import { graph, signMetaState, verifyMetaState } from "@/server/meta/graph";
+import { GET as mediaGET } from "@/app/api/posts/media/[postId]/[index]/route";
 import { POST as uploadPOST } from "@/app/api/posts/upload/route";
 import { GET as thumbGET } from "@/app/api/posts/thumb/[artistId]/[fileId]/route";
 import { photosLimits } from "@/server/commands/posts";
@@ -49,9 +49,9 @@ before(async () => {
   });
   // Our side of the signed media link, so the fake fetches the photo from the real route like Meta does.
   app = http.createServer(async (rq, rs) => {
-    const m = /^\/api\/posts\/media\/([^/?]+)/.exec(rq.url ?? "");
+    const m = /^\/api\/posts\/media\/([^/?]+)\/([^/?]+)/.exec(rq.url ?? "");
     if (!m) { rs.writeHead(404); rs.end(); return; }
-    const res = await mediaGET(new Request(`http://app${rq.url}`), { params: Promise.resolve({ id: decodeURIComponent(m[1]) }) });
+    const res = await mediaGET(new Request(`http://app${rq.url}`), { params: Promise.resolve({ postId: decodeURIComponent(m[1]), index: m[2] }) });
     rs.writeHead(res.status, Object.fromEntries(res.headers));
     rs.end(Buffer.from(await res.arrayBuffer()));
   });
@@ -137,7 +137,7 @@ test("a system-user token that expires: good until then, and Sign in again after
   assert.ok(Math.abs(Date.parse(out.connection.expiresAt) - (Date.now() + 30 * 24 * 60 * 60_000)) < 60_000);
   await firestore().doc(`metaConnections/${TEST_ARTIST}`).update({ expiresAt: new Date(Date.now() - 1000) });
   assert.deepEqual((await cmd("meta.status", {})).check, { working: false, reason: "The sign-in expired." });
-  await code(cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "x" }), "meta_sign_in_again");
+  await code(cmd("posts.publish", { id: await oneDraft() }), "meta_sign_in_again");
 });
 
 test("an Instagram User token: exchanged for 60 days, the account read from /me, Roadie renews it", async () => {
@@ -164,8 +164,9 @@ test("renewal: not before it's due, renewed once it is (on status and before a p
   const refused = await cmd("meta.status", {});
   assert.equal(refused.check.working, false);
   assert.match(refused.check.reason, /at least 24 hours old/);
-  await rejects(cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "x" }), "meta_sign_in_again", /24 hours old.*Connect again in Settings › Integrations/);
-  assert.equal((await db.list("posts")).length, 0, "nothing is posted with a dead sign-in");
+  const draft = await oneDraft();
+  await rejects(cmd("posts.publish", { id: draft }), "meta_sign_in_again", /24 hours old.*Connect again in Settings › Integrations/);
+  assert.equal((await db.get("posts", draft))!.status, "draft", "nothing is posted with a dead sign-in, and the draft stays a draft");
 
   // Connect again, and let a week pass on both sides: status renews it.
   await connect();
@@ -182,7 +183,7 @@ test("renewal: not before it's due, renewed once it is (on status and before a p
   // And a publish renews it first when it's due.
   await scenario({ ageHours: 8 * 24 });
   await backdate(RENEW_AFTER_MS + 1000);
-  assert.equal((await cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "x" })).status, "posted");
+  assert.equal((await cmd("posts.publish", { id: draft })).status, "posted");
   assert.notEqual(unsealMeta((await stored()).token), unsealMeta(after.token));
 });
 
@@ -218,30 +219,75 @@ test("finishConnect refuses a state another admin started; members can't connect
   const nora = await makeUser("nora@example.com", "admin", { name: "Nora" });
   await code(cmd("meta.finishConnect", { code: s.code, state: s.state }, { ...ctx, uid: nora.uid }), "invalid_state");
   await code(cmd("meta.finishConnect", { code: s.code, state: s.state }, { ...ctx, artistId: "another-band" }), "invalid_state");
-  for (const name of ["meta.status", "meta.connectUrl", "meta.disconnect", "posts.publishPhoto"]) {
+  for (const name of ["meta.status", "meta.connectUrl", "meta.disconnect", "posts.publish", "posts.tidy"]) {
     assert.equal((await dispatch(name, `Bearer ${hugo.token}`, {})).status, 403, name);
   }
 });
 
 // ---------- the signed media URL ----------
 
-async function post(artistId = TEST_ARTIST, driveFileId = "fake-photo-roots") {
-  return (await db.create({ ...ctx, artistId }, "posts", { artistId, caption: "c", media: [{ driveFileId, mimeType: "image/jpeg" }], status: "publishing", createdVia: "app" })).id;
+/** Set up Socials (once) and make a draft of these photos; its id. */
+async function oneDraft(photos: string[] = ["fake-social-loose-1"], title = "Thanks, Roots") {
+  if (!(await db.get("artists", TEST_ARTIST))!.postFoldersId) {
+    await cmd("google.setPostsFolder", { folder: `https://drive.google.com/drive/folders/${SOCIALS_FOLDER_ID}` });
+    await cmd("posts.setup", {});
+  }
+  return (await cmd("posts.createDraft", { title, driveFileIds: photos })).id as string;
 }
-const media = (url: string, id: string) => mediaGET(new Request(url), { params: Promise.resolve({ id }) });
+const media = (url: string) => {
+  const m = /\/api\/posts\/media\/([^/?]+)\/([^/?]+)/.exec(url)!;
+  return mediaGET(new Request(url), { params: Promise.resolve({ postId: decodeURIComponent(m[1]), index: m[2] }) });
+};
+const pixels = async (res: Response) => sharp(Buffer.from(await res.arrayBuffer()));
 
-test("media URL: streams the photo within the hour; expired, a wrong signature and another band's post are 404s", async () => {
-  const id = await post();
-  const ok = await media(signMediaUrl(TEST_ARTIST, id), id);
+test("media URL: a signed link renders that photo within the hour; expired, a wrong signature, another photo's index and another band's post are 404s", async () => {
+  const id = await oneDraft(["fake-social-loose-1", "fake-social-late"]);
+  const ok = await media(signMediaUrl(TEST_ARTIST, id, 1));
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get("content-type"), "image/jpeg");
-  assert.equal((await media(signMediaUrl(TEST_ARTIST, id, Date.now() - 2 * 60 * 60_000), id)).status, 404, "expired");
-  const u = new URL(signMediaUrl(TEST_ARTIST, id));
+  assert.equal(ok.headers.get("cache-control"), "private, no-store");
+  assert.equal((await media(signMediaUrl(TEST_ARTIST, id, 0, Date.now() - 2 * 60 * 60_000))).status, 404, "expired");
+  const u = new URL(signMediaUrl(TEST_ARTIST, id, 0));
   u.searchParams.set("sig", u.searchParams.get("sig")!.replace(/^./, (c) => (c === "a" ? "b" : "a")));
-  assert.equal((await media(u.toString(), id)).status, 404, "wrong signature");
-  const other = await post("another-band");
-  assert.equal((await media(signMediaUrl(TEST_ARTIST, other), other)).status, 404, "a link signed for this band doesn't open another band's post");
-  assert.equal(mediaSigOk(TEST_ARTIST, id, null, null), false);
+  assert.equal((await media(u.toString())).status, 404, "wrong signature");
+  assert.equal((await media(signMediaUrl(TEST_ARTIST, id, 0).replace(`/${id}/0?`, `/${id}/1?`))).status, 404, "index 0's link doesn't open photo 1");
+  assert.equal((await media(signMediaUrl(TEST_ARTIST, id, 5))).status, 404, "no such photo");
+  const other = (await db.create({ ...ctx, artistId: "another-band" }, "posts", { artistId: "another-band", caption: "c", media: [{ driveFileId: "fake-photo-roots", mimeType: "image/jpeg" }], status: "draft", createdVia: "app" })).id;
+  assert.equal((await media(signMediaUrl(TEST_ARTIST, other, 0))).status, 404, "a link signed for this band doesn't open another band's post");
+  assert.equal(mediaSigOk(TEST_ARTIST, id, "0", null, null), false);
+});
+
+test("media route: the sideways JPEG comes out 1080×1350 and upright; focus moves the crop; Square is 1080×1080", async () => {
+  // photo-rotated.jpg: 1200×900 stored, EXIF 6, so 900×1200 upright; photo-landscape.jpg: 1600×1000 in four coloured quadrants.
+  const id = await oneDraft(["fake-social-rotated", "fake-social-loose-1"]);
+  const rotated = await pixels(await media(signMediaUrl(TEST_ARTIST, id, 0)));
+  const meta = await rotated.metadata();
+  assert.deepEqual([meta.width, meta.height, meta.orientation ?? 1], [1080, 1350, 1], "upright, no EXIF rotation left");
+  // The landscape photo: a 4:5 crop at the left edge vs the right edge shows different quadrants.
+  const at = async (x: number) => {
+    await cmd("posts.updateDraft", { id, patch: { items: { "fake-social-rotated": { alt: "" }, "fake-social-loose-1": { focus: { x, y: 0.5 } } } } });
+    const img = await pixels(await media(signMediaUrl(TEST_ARTIST, id, 1)));
+    const { data } = await img.clone().extract({ left: 540, top: 300, width: 1, height: 1 }).raw().toBuffer({ resolveWithObject: true });
+    return [...data];
+  };
+  const left = await at(0), right = await at(1);
+  assert.notDeepEqual(left, right, "focus moved the crop");
+  await cmd("posts.updateDraft", { id, patch: { aspect: "1:1" } });
+  const sq = await (await pixels(await media(signMediaUrl(TEST_ARTIST, id, 1)))).metadata();
+  assert.deepEqual([sq.width, sq.height], [1080, 1080]);
+});
+
+test("media route: a HEIC renders from Drive's 2048 preview; with no preview yet it says so", async () => {
+  // The fake has no bytes for a HEIC original, so a 200 here can only have come from the thumbnail.
+  const id = await oneDraft(["fake-social-loose-2"]);
+  const res = await media(signMediaUrl(TEST_ARTIST, id, 0));
+  assert.equal(res.status, 200);
+  const m = await (await pixels(res)).metadata();
+  assert.deepEqual([m.width, m.height], [1080, 1350]);
+  await driveScenario({ noThumbnail: ["fake-social-loose-2"] });
+  const none = await media(signMediaUrl(TEST_ARTIST, id, 0));
+  assert.equal(none.status, 503);
+  assert.equal(await none.text(), "Drive hasn't made a preview of IMG_4412 yet; try again in a minute");
 });
 
 const driveScenario = (body: Record<string, unknown>) => fetch(`${process.env.DRIVE_BASE_URL}/__scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -806,7 +852,7 @@ test("undo: refuses createDraft, rename, removeFromDraft and deleteDraft runs; r
 
 test("policy: posts commands are offered to Roadie; setup and publish ask and need a tap; reads don't ask; a 7-photo order doesn't; 6 photos into a draft does", () => {
   const offered = eligibleCommands("admin").map((c) => c.name);
-  for (const n of ["posts.setup", "posts.photos", "posts.list", "posts.get", "posts.createDraft", "posts.addToDraft", "posts.updateDraft", "posts.rename", "posts.removeFromDraft", "posts.deleteDraft"]) {
+  for (const n of ["posts.setup", "posts.photos", "posts.list", "posts.get", "posts.createDraft", "posts.addToDraft", "posts.updateDraft", "posts.rename", "posts.removeFromDraft", "posts.deleteDraft", "posts.publish", "posts.tidy"]) {
     assert.ok(offered.includes(n), n);
   }
   assert.ok(!offered.includes("posts.publishPhoto"));
@@ -822,39 +868,130 @@ test("policy: posts commands are offered to Roadie; setup and publish ask and ne
   assert.equal(needsConfirm("posts.createDraft", { title: "x", driveFileIds: seven.slice(0, 6) }), true);
   assert.equal(needsConfirm("posts.createDraft", { title: "x", driveFileIds: seven.slice(0, 5) }), false);
   assert.equal(needsConfirm("posts.rename", { id: "p", title: "x" }), false);
+  assert.equal(needsConfirm("posts.tidy", { id: "p" }), false);
   assert.equal(summarize("posts.publish", { id: "p" }, undefined, { title: "Tour", count: 3 }), "Post Tour (3 photos) to Instagram now");
   assert.equal(summarize("posts.deleteDraft", { id: "p" }, undefined, { title: "Tour" }), "Delete the draft Tour and put its photos back in Socials");
   assert.equal(summarize("posts.removeFromDraft", { id: "p" }, undefined, { title: "Tour", photo: "IMG_4412" }), "Take IMG_4412 out of Tour");
   assert.equal(summarize("posts.setup", {}), "Set up the Socials folder and let the band add to it");
 });
 
-// ---------- publishPhoto ----------
+// ---------- publish and tidy ----------
 
-test("publishPhoto: Instagram fetches the photo from the signed link, posts it, and the post keeps its link", async () => {
-  await code(cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "Thanks, Roots!" }), "meta_not_connected");
+/** Record which Graph calls a publish makes, in order. */
+function recordGraph() {
+  const calls: string[] = [];
+  const orig = { ...graph };
+  for (const k of ["createImage", "createCarouselItem", "createCarousel", "container", "publish", "permalink"] as const) {
+    (graph as any)[k] = (...args: unknown[]) => { calls.push(k); return (orig as any)[k](...args); }; // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+  return { calls: () => calls.filter((c) => c !== "container"), restore: () => Object.assign(graph, orig) };
+}
+const published = async () => ((await (await fetch(`${META}/__media`)).json()) as { media: { caption: string; imageUrl: string; alt?: string; children?: { imageUrl: string; alt?: string }[] }[] }).media;
+const folderOf = async (id: string) => (await driveClient({ artistId: TEST_ARTIST }).get((await db.get("posts", id))!.driveFolderId)).name;
+
+test("publish: one photo is one image container with its alt text, then published; the post keeps its link and the folder takes the date", async () => {
+  const id = await oneDraft(["fake-social-loose-1"], "Thanks, Roots");
+  await code(cmd("posts.publish", { id }), "meta_not_connected");
   await connect();
-  await code(cmd("posts.publishPhoto", { driveFileId: "fake-chart-1-b", caption: "x" }), "invalid_input"); // a PDF
-  const r = await cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "Thanks, Roots!" });
-  assert.equal(r.status, "posted");
-  assert.match(r.permalink, /^https:\/\/www\.instagram\.com\/p\/FAKE\d+\/$/);
-  const p = (await db.get("posts", r.id))!;
+  await cmd("posts.updateDraft", { id, patch: { caption: "Thanks, Roots! #live", items: { "fake-social-loose-1": { alt: "The band on the Roots stage" } } } });
+  const g = recordGraph();
+  try {
+    const r = await cmd("posts.publish", { id });
+    assert.equal(r.status, "posted");
+    assert.match(r.permalink, /^https:\/\/www\.instagram\.com\/p\/FAKE\d+\/$/);
+    assert.equal(r.driveTidy, undefined);
+    assert.deepEqual(g.calls(), ["createImage", "publish", "permalink"]);
+  } finally { g.restore(); }
+  const p = (await db.get("posts", id))!;
   assert.equal(p.status, "posted");
-  assert.equal(p.caption, "Thanks, Roots!");
-  assert.equal(p.createdVia, "app");
-  assert.equal(p.artistId, TEST_ARTIST);
-  assert.deepEqual(p.media, [{ driveFileId: "fake-photo-roots", mimeType: "image/jpeg", url: "http://localhost:3202/files/fake-photo-roots" }]);
-  assert.equal(p.instagram.permalink, r.permalink);
-  assert.ok(!JSON.stringify(r).includes("EAAsys"));
+  assert.ok(Math.abs(Date.parse(p.postedAt) - Date.now()) < 60_000);
+  const [m] = await published();
+  assert.equal(m.caption, "Thanks, Roots! #live");
+  assert.equal(m.alt, "The band on the Roots stage");
+  assert.match(m.imageUrl, new RegExp(`/api/posts/media/${id}/0\\?`));
+  assert.equal(await folderOf(id), `${dateInBandZone()} - Thanks, Roots`);
+  await refused(cmd("posts.updateDraft", { id, patch: { caption: "x" } }), "post_locked", "This post has gone out; it can't be changed");
+  await refused(cmd("posts.publish", { id }), "post_locked", "This post has gone out; it can't be changed");
 });
 
-test("publishPhoto: a container Instagram can't use leaves the post failed with Instagram's reason", async () => {
+test("publish: a carousel is an item container per photo in the editor's order (each with its alt text), then the carousel with the caption", async () => {
   await connect();
-  await scenario({ failContainers: true });
-  const r = await cmd("posts.publishPhoto", { driveFileId: "fake-photo-roots", caption: "x" });
+  const id = await oneDraft(["fake-social-loose-1", "fake-social-rotated", "fake-social-late"], "Hi-Dive announcement");
+  await cmd("posts.updateDraft", { id, patch: { caption: "See you there", order: ["fake-social-late", "fake-social-loose-1", "fake-social-rotated"], items: { "fake-social-late": {}, "fake-social-loose-1": { alt: "Nora at the mic" }, "fake-social-rotated": {} } } });
+  const g = recordGraph();
+  try {
+    assert.equal((await cmd("posts.publish", { id })).status, "posted");
+    assert.deepEqual(g.calls(), ["createCarouselItem", "createCarouselItem", "createCarouselItem", "createCarousel", "publish", "permalink"]);
+  } finally { g.restore(); }
+  const [m] = await published();
+  assert.equal(m.caption, "See you there");
+  assert.deepEqual(m.children!.map((c) => [new URL(c.imageUrl).pathname, c.alt]), [
+    [`/api/posts/media/${id}/0`, undefined], [`/api/posts/media/${id}/1`, "Nora at the mic"], [`/api/posts/media/${id}/2`, undefined],
+  ]);
+  assert.equal(await folderOf(id), `${dateInBandZone()} - Hi-Dive announcement`);
+});
+
+test("publish: a carousel item Instagram can't use leaves the post failed with the reason and the photo, Drive untouched; it can be posted again", async () => {
+  await connect();
+  const id = await oneDraft(["fake-social-loose-1", "fake-social-late"], "Tour");
+  const folder = (await db.get("posts", id))!.driveFolderId;
+  await scenario({ failItem: 2 });
+  const r = await cmd("posts.publish", { id });
   assert.equal(r.status, "failed");
-  assert.equal(r.error, "Instagram couldn't take the photo: Error: The aspect ratio is not supported.");
-  const p = (await db.get("posts", r.id))!;
+  assert.equal(r.error, "IMG_2210: Instagram couldn't take the photo: Error: The aspect ratio is not supported.");
+  const p = (await db.get("posts", id))!;
   assert.equal(p.status, "failed");
   assert.equal(p.error, r.error);
   assert.equal(p.instagram, undefined);
+  assert.equal(await folderOf(id), "DRAFT - Tour", "Drive untouched");
+  assert.deepEqual(await parentsOf("fake-social-late"), [folder]);
+  assert.equal((await published()).length, 0);
+  await scenario({ failItem: 0 });
+  assert.equal((await cmd("posts.publish", { id })).status, "posted");
+  const after = (await db.get("posts", id))!;
+  assert.equal(after.error, undefined, "the old reason is cleared");
+  assert.equal(await folderOf(id), `${dateInBandZone()} - Tour`);
+});
+
+test("publish: a HEIC Drive has no preview of yet fails before Instagram is asked, saying so", async () => {
+  await connect();
+  const id = await oneDraft(["fake-social-loose-2"], "Heic");
+  await driveScenario({ noThumbnail: ["fake-social-loose-2"] });
+  const r = await cmd("posts.publish", { id });
+  assert.equal(r.status, "failed");
+  assert.equal(r.error, "IMG_4412: Instagram can't take it yet: Drive hasn't made a preview of IMG_4412 yet; try again in a minute");
+  await driveScenario({ noThumbnail: [] });
+  assert.equal((await cmd("posts.publish", { id })).status, "posted", "a HEIC posts from its preview");
+});
+
+test("publish: a second publish is refused while one is posting", async () => {
+  await connect();
+  const id = await oneDraft();
+  const both = await Promise.allSettled([cmd("posts.publish", { id }), cmd("posts.publish", { id })]);
+  assert.equal(both.filter((x) => x.status === "fulfilled").length, 1, "one posts");
+  const no = both.find((x) => x.status === "rejected") as PromiseRejectedResult;
+  assert.equal(no.reason.code, "post_locked");
+  assert.equal((await published()).length, 1);
+  const other = await oneDraft(["fake-social-loose-3"], "Poster");
+  await db.update(ctx, "posts", other, { status: "publishing" });
+  await refused(cmd("posts.publish", { id: other }), "post_locked", "This post is being posted right now");
+});
+
+test("publish: a failed folder rename leaves the post posted with driveTidy; tidy renames it and clears it; a second tidy is ok", async () => {
+  await connect();
+  const id = await oneDraft(["fake-social-loose-1"], "Roots");
+  await refused(cmd("posts.tidy", { id }), "invalid_input", "Only a posted post's folder is tidied");
+  await driveScenario({ failRename: true });
+  const r = await cmd("posts.publish", { id });
+  assert.equal(r.status, "posted");
+  assert.match(r.driveTidy.error, /failRename/);
+  assert.deepEqual((await db.get("posts", id))!.driveTidy, r.driveTidy);
+  assert.equal(await folderOf(id), "DRAFT - Roots");
+  assert.equal((await cmd("posts.list", {})).posts[0].driveTidy.error, r.driveTidy.error);
+  await code(cmd("posts.tidy", { id }), "drive_tidy");
+  await driveScenario({ failRename: false });
+  assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
+  assert.equal((await db.get("posts", id))!.driveTidy, undefined);
+  assert.equal(await folderOf(id), `${dateInBandZone()} - Roots`);
+  assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
 });

@@ -3,10 +3,10 @@
  * docs/designs/posts-carousels/folder-model.md: the inbox, plus Socials/Posts with one folder per post. posts.setup makes
  * Posts/ and lets the band add to Socials. Photos are picked from the inbox (posts.photos) into a draft (posts.createDraft),
  * which moves them into Posts/DRAFT - <title>; the editor changes the draft (updateDraft: Firestore only) and the commands
- * that move or rename in Drive can't be undone (src/server/undo.ts). For now one photo from the band's Drive is posted to the
- * band's Instagram now (posts.publishPhoto). Meta fetches the photo from a signed URL on our server (src/server/meta/media.ts),
- * which streams it from Drive, so nothing outside Drive keeps a copy. Photos uploaded on Posts go to Drive first
- * (/api/posts/upload), into the Socials root.
+ * that move or rename in Drive can't be undone (src/server/undo.ts). posts.publish posts a draft to the band's Instagram now,
+ * as one photo or a carousel, then renames its folder YYYY-MM-DD - <title>. Meta fetches each photo from a signed URL on our
+ * server (src/server/meta/media.ts), which renders it from Drive, so nothing outside Drive keeps a copy. Photos uploaded on
+ * Posts go to Drive first (/api/posts/upload), into the Socials root.
  */
 import { z } from "zod";
 import { defineCommand } from "./types";
@@ -19,8 +19,9 @@ import { bandmates } from "../music";
 import { findOrMakeFolder } from "../driveFolders";
 import { POSTS_FOLDER_NAME, inboxFolders, isEmpty, listAll, moveBack, moveInto, socialsOf, uniqueName } from "../postFolder";
 import { thumbUrl } from "../signedUrl";
-import { dateTimeInBandZone } from "@/lib/timezone";
+import { dateInBandZone, dateTimeInBandZone } from "@/lib/timezone";
 import { HASHTAG_MAX, PHOTOS_ONLY, hashtagCount, photoType } from "@/lib/photos";
+import { HEIC_PREVIEW, fromPreview, noPreview } from "../postPhoto";
 import { postStatus, type PostMedia } from "@/schema/posts";
 import { graph, GraphError, type Tok } from "../meta/graph";
 import { freshToken } from "../meta/connection";
@@ -180,38 +181,6 @@ async function finished(containerId: string, token: Tok) {
   }
   throw new GraphError(504, "Instagram is still working on the photo. Check Instagram in a few minutes before posting it again.");
 }
-
-export const postsPublishPhoto = defineCommand({
-  name: "posts.publishPhoto", roles: ["admin"],
-  description: "Post one photo (JPEG, HEIC, PNG or WebP) from the band's Drive (driveFileId) to the band's Instagram now, with a caption. Renews the Instagram sign-in first when it's due. Saves the post with its Instagram link, or with Instagram's reason when it fails.",
-  input: z.strictObject({ driveFileId: z.string().min(1), caption: z.string().max(2200) }),
-  async run(ctx, { driveFileId, caption }) {
-    const artistId = artistOf(ctx);
-    const { igId, ...token } = await freshToken(artistId);
-    let f: DriveFile;
-    try { f = await driveClient({ artistId }).get(driveFileId); } catch { throw new AppError("not_found", "Drive can't find that photo", 404); }
-    const mimeType = photoType(f.name, f.mimeType);
-    if (!mimeType) throw new AppError("invalid_input", PHOTOS_ONLY, 400);
-    const { id } = await db.create(ctx, "posts", {
-      artistId, caption, media: [{ driveFileId: f.id, mimeType, url: f.webViewLink }], status: "publishing", createdVia: ctx.via,
-    });
-    try {
-      const container = await graph.createImage(igId, token, signMediaUrl(artistId, id), caption);
-      await finished(container.id, token);
-      const media = await graph.publish(igId, token, container.id);
-      const permalink = (await graph.permalink(media.id, token).catch(() => ({ permalink: undefined }))).permalink ?? null;
-      await db.update(ctx, "posts", id, { status: "posted", instagram: { mediaId: media.id, permalink } });
-      return { id, status: "posted" as const, permalink };
-    } catch (e) {
-      // Anything else still leaves the post failed (never stuck on publishing), then goes up as an error.
-      const msg = e instanceof Error ? e.message : String(e);
-      const error = !(e instanceof GraphError) ? `Something went wrong: ${msg}` : msg.startsWith("Instagram") ? msg : `Instagram said: ${msg}`;
-      await db.update(ctx, "posts", id, { status: "failed", error });
-      if (!(e instanceof GraphError)) throw e;
-      return { id, status: "failed" as const, error };
-    }
-  },
-});
 
 // ---------- drafts: one folder per post in Socials/Posts ----------
 
@@ -542,7 +511,117 @@ export const postsDeleteDraft = defineCommand({
   },
 });
 
+// ---------- posting ----------
+
+/** "YYYY-MM-DD - <title>": a posted post's folder, dated the day it posted in the band's timezone. */
+const postedFolder = (postedAt: string, title: string) => `${dateInBandZone(new Date(postedAt))} - ${title}`;
+
+/** Rename a posted post's folder to its posted name; the error's message when Drive refuses. */
+async function tidyFolder(artistId: string, post: { driveFolderId?: string; postedAt?: string; title?: string }): Promise<string | null> {
+  try {
+    const { postsId } = await setUpSocials(artistId);
+    if (!post.driveFolderId || !post.postedAt) return null;
+    const drive = driveClient({ artistId });
+    const name = await uniqueName(drive, postsId, postedFolder(post.postedAt, post.title ?? "Post"), post.driveFolderId);
+    if ((await drive.get(post.driveFolderId)).name !== name) await drive.rename(post.driveFolderId, name);
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/** Instagram's reason, as the post keeps it: "Instagram …" as is, else "Instagram said: …", with the photo's name when it's one photo's. */
+const graphReason = (e: GraphError, photo?: string) => {
+  const msg = e.message.startsWith("Instagram") ? e.message : `Instagram said: ${e.message}`;
+  return photo ? `${photo}: ${msg}` : msg;
+};
+
+export const postsPublish = defineCommand({
+  name: "posts.publish", roles: ["admin", "mcp"],
+  description: "Post a draft (or a post that failed) to the band's Instagram now: one photo, or a carousel of 2–10 in the draft's order, each cropped to the post's shape (4:5 or square) around its focus, with its alt text and the caption. " +
+    "Renews the Instagram sign-in first when it's due. When it goes out, the post keeps its Instagram link and its folder in Drive is renamed YYYY-MM-DD - <title>. If Instagram refuses, the post is marked failed with the reason and Drive is left as it was; it can be posted again.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  async run(ctx, { id }) {
+    const artistId = artistOf(ctx);
+    editable(await postOf(ctx, id));
+    const { igId, ...token } = await freshToken(artistId);
+    // Claim it: a second publish (or a draft edit) is refused while this one runs.
+    const post = await db.run(ctx, async (w) => {
+      const p = (await w.get("posts", id)) as PostDoc | null;
+      if (!p || p.deletedAt || p.artistId !== artistId) throw new AppError("not_found", "That post isn't there", 404);
+      editable(p);
+      await w.update("posts", id, { status: "publishing", error: null });
+      return p;
+    });
+    const drive = driveClient({ artistId });
+    let photo: string | undefined;
+    try {
+      // A HEIC posts from Drive's preview: say so now if Drive hasn't made one yet, rather than Instagram's vaguer error.
+      for (const m of post.media) {
+        if (!fromPreview(m.mimeType)) continue;
+        photo = photoLabel(m.name);
+        try { await (await drive.thumbnail(m.driveFileId, HEIC_PREVIEW)).body?.cancel(); } catch (e) {
+          if (e instanceof IntegrationError && e.status === 404) throw new GraphError(400, `Instagram can't take it yet: ${noPreview(m.name)}`);
+          throw e;
+        }
+      }
+      let creationId: string;
+      if (post.media.length === 1) {
+        const m = post.media[0];
+        photo = photoLabel(m.name);
+        creationId = (await graph.createImage(igId, token, signMediaUrl(artistId, id, 0), post.caption ?? "", m.alt)).id;
+        await finished(creationId, token);
+      } else {
+        const children: string[] = [];
+        for (const [i, m] of post.media.entries()) {
+          photo = photoLabel(m.name);
+          const c = await graph.createCarouselItem(igId, token, signMediaUrl(artistId, id, i), m.alt);
+          await finished(c.id, token);
+          children.push(c.id);
+        }
+        photo = undefined;
+        creationId = (await graph.createCarousel(igId, token, children, post.caption ?? "")).id;
+        await finished(creationId, token);
+      }
+      photo = undefined;
+      const media = await graph.publish(igId, token, creationId);
+      const permalink = (await graph.permalink(media.id, token).catch(() => ({ permalink: undefined }))).permalink ?? null;
+      const postedAt = new Date().toISOString();
+      await db.update(ctx, "posts", id, { status: "posted", postedAt, instagram: { mediaId: media.id, permalink }, error: null });
+      // Then Drive: the folder takes the posted name. If Drive refuses, the post is still posted, with Finish tidying Drive.
+      const tidyError = await tidyFolder(artistId, { ...post, postedAt });
+      if (tidyError) {
+        await db.update(ctx, "posts", id, { driveTidy: { error: tidyError } });
+        return { status: "posted" as const, permalink, driveTidy: { error: tidyError } };
+      }
+      return { status: "posted" as const, permalink };
+    } catch (e) {
+      // Anything else still leaves the post failed (never stuck on publishing), then goes up as an error. Drive is untouched.
+      const error = e instanceof GraphError ? graphReason(e, photo) : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`;
+      await db.update(ctx, "posts", id, { status: "failed", error });
+      if (!(e instanceof GraphError)) throw e;
+      return { status: "failed" as const, error };
+    }
+  },
+});
+
+export const postsTidy = defineCommand({
+  name: "posts.tidy", roles: ["admin", "mcp"],
+  description: "Finish tidying Drive for a posted post whose folder couldn't be renamed when it went out: renames its folder to YYYY-MM-DD - <title>. Does nothing (and says ok) when there's nothing left to tidy.",
+  input: z.strictObject({ id: z.string().min(1) }),
+  async run(ctx, { id }) {
+    const artistId = artistOf(ctx);
+    const post = await postOf(ctx, id);
+    if (post.status !== "posted") throw new AppError("invalid_input", "Only a posted post's folder is tidied", 409);
+    if (!post.driveTidy) return { ok: true as const };
+    const error = await tidyFolder(artistId, post as PostDoc & { postedAt?: string });
+    if (error) throw new AppError("drive_tidy", `Drive still said no: ${error}`, 502);
+    await db.update(ctx, "posts", id, { driveTidy: null });
+    return { ok: true as const };
+  },
+});
+
 export const postCommands = [
   postsSetup, postsPhotos, postsList, postsGet, postsCreateDraft, postsAddToDraft, postsUpdateDraft, postsRename, postsRemoveFromDraft, postsDeleteDraft,
-  postsPublishPhoto,
+  postsPublish, postsTidy,
 ];

@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "@/lib/artist";
-import { ErrorBox, PageTitle } from "@/components/ui";
+import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { AdminOnly } from "@/components/Guard";
 import { runCommand } from "@/lib/commands";
 import { fmtInstant } from "@/lib/timezone";
@@ -25,15 +25,18 @@ function Posts() {
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const [list, setList] = useState<{ drafts: PostRow[]; posts: PostRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    runCommand<MetaStatus>("meta.status", {}).then(setStatus, (e: Error) => setError(e.message));
+  const load = useCallback(() => {
     runCommand<{ drafts: PostRow[]; posts: PostRow[] }>("posts.list", {}).then(setList, (e: Error) => setError(e.message));
   }, []);
+  useEffect(() => {
+    runCommand<MetaStatus>("meta.status", {}).then(setStatus, (e: Error) => setError(e.message));
+    load();
+  }, [load]);
   const connected = status?.connection;
 
   return (
     <div className="grid gap-5">
-      <PageTitle title="Posts" />
+      <PageTitle title="Social Media" />
       <PostsTabs at="posts" />
       <ErrorBox error={error} />
       {status && (!connected ? (
@@ -45,18 +48,20 @@ function Posts() {
         <>
           <PostSection title="Drafts" testid="posts-drafts" rows={list.drafts}
             empty={<>No drafts. Pick photos on the <Link href="/posts/photos" className="underline">Photos</Link> tab.</>} />
-          <PostSection title="Posted" testid="posts-list" rows={list.posts} empty="Nothing posted from Roadie yet." />
+          <PostSection title="Posted" testid="posts-list" rows={list.posts} empty="Nothing posted from Roadie yet." onTidied={load} />
         </>
       )}
     </div>
   );
 }
 
-function PostSection({ title, testid, rows, empty }: { title: string; testid: string; rows: PostRow[]; empty: React.ReactNode }) {
+function PostSection({ title, testid, rows, empty, onTidied }: { title: string; testid: string; rows: PostRow[]; empty: React.ReactNode; onTidied?(): void }) {
+  const tidy = useCommand();
   return (
     <section className="grid gap-2" aria-labelledby={`${testid}-title`} data-testid={testid}>
       <h2 id={`${testid}-title`} className="font-display text-lg font-bold">{title}</h2>
       {rows.length === 0 && <p className="s m-0" data-testid={`${testid}-none`}>{empty}</p>}
+      <ErrorBox error={tidy.error} />
       <ul className="m-0 grid list-none gap-2 p-0">
         {rows.map((p) => (
           <li key={p.id} className="flex items-start gap-3 rounded-lg border border-line bg-surface p-3" data-testid={`post-${p.id}`}>
@@ -71,7 +76,13 @@ function PostSection({ title, testid, rows, empty }: { title: string; testid: st
               </span>
               {p.status === "failed" && <span className="err m-0" data-testid="post-failed">Didn&apos;t post: {p.error ?? "Instagram didn't say why."}</span>}
               {p.status === "publishing" && <span className="s" data-testid="post-publishing">Posting…</span>}
-              {p.driveTidy && <span className="err m-0" data-testid="post-tidy">Posted, but Drive wasn&apos;t tidied: {p.driveTidy.error}</span>}
+              {p.driveTidy && (
+                <span className="err m-0" data-testid="post-tidy">
+                  Posted, but Drive wasn&apos;t tidied: {p.driveTidy.error}{" "}
+                  <button type="button" className="btn ghost sm" disabled={tidy.busy}
+                    onClick={async () => { if (await tidy.call("posts.tidy", { id: p.id })) onTidied?.(); }} data-testid="post-tidy-button">Finish tidying Drive</button>
+                </span>
+              )}
             </span>
             {p.status === "posted" && p.permalink && (
               <a href={p.permalink} target="_blank" rel="noreferrer" className="s shrink-0 underline" data-testid="post-view">View on Instagram ›</a>
