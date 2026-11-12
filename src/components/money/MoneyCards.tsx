@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
+import { celebrateMoneyIn } from "@/components/Celebrate";
 import { AdminOnlyBadge, ShowCard, UnfinishedPlaceholder } from "@/components/shows/page/kit";
 import { useBand } from "@/components/shows/common";
 import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, countsAsPaidOut, formatCents, owesBack, parseDollars, showTotals, splitEvenly } from "@/lib/money";
@@ -135,7 +136,7 @@ export function MoneyInCard({ context, day }: MoneyCardProps & DayFilter) {
                           {Object.entries(METHOD_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                         </select>
                       )}
-                      <button type="button" className="btn outline sm" disabled={busy} onClick={() => void call("income.setReceived", { id: x.id, ...(!x.method && how[x.id] ? { method: how[x.id] } : {}) })} data-testid={`income-received-${x.id}`}>Received</button>
+                      <button type="button" className="btn outline sm" disabled={busy} onClick={() => void call("income.setReceived", { id: x.id, ...(!x.method && how[x.id] ? { method: how[x.id] } : {}) }).then((ok) => { if (ok) celebrateMoneyIn(formatCents(x.amount), x.from); })} data-testid={`income-received-${x.id}`}>Received</button>
                     </>
                   )}
                   <RemoveButton testid={`income-remove-${x.id}`} busy={busy} onClick={() => void call("income.remove", { id: x.id })} />

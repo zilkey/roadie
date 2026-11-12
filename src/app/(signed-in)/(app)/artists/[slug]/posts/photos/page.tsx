@@ -100,24 +100,27 @@ function PhotosTab() {
   );
 }
 
-/** Socials (everything), then its folders nested under their parents with how many photos each holds, and a link to Posts. */
+/**
+ * Socials (everything), then its folders nested under their parents with how many photos each holds, and a link to Posts.
+ * Long names wrap inside the rail (grid-cols-1 is minmax(0,1fr), so a name can't widen its column past the rail).
+ */
 function FolderRail({ folders, socialsId, at, onPick }: { folders: Folder[]; socialsId?: string; at: string | null; onPick(id: string | null): void }) {
   const kids = (parent: string) => folders.filter((f) => f.parentId === parent).sort((a, b) => a.name.localeCompare(b.name));
   const tops = folders.filter((f) => !folders.some((p) => p.id === f.parentId));
   const item = (id: string | null, label: string, count?: number) => (
     <button type="button" aria-current={at === id ? "true" : undefined} onClick={() => onPick(id)}
-      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ${at === id ? "bg-soft font-bold" : ""}`} data-testid={`photos-folder-${id ?? "all"}`}>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {count !== undefined && <span className="s">{count}</span>}
+      className={`flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-1.5 text-left ${at === id ? "bg-soft font-bold" : ""}`} data-testid={`photos-folder-${id ?? "all"}`}>
+      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{label}</span>
+      {count !== undefined && <span className="s shrink-0">{count}</span>}
     </button>
   );
   const tree = (fs: Folder[]): React.ReactNode => fs.length > 0 && (
-    <ul className="m-0 grid list-none gap-0.5 pl-3">
+    <ul className="m-0 grid min-w-0 list-none grid-cols-1 gap-0.5 pl-3">
       {fs.map((f) => <li key={f.id}>{item(f.id, f.name, f.count)}{tree(kids(f.id))}</li>)}
     </ul>
   );
   return (
-    <nav aria-label="Folders" className="grid content-start gap-1" data-testid="photos-rail">
+    <nav aria-label="Folders" className="grid min-w-0 grid-cols-1 content-start gap-1" data-testid="photos-rail">
       {item(null, "Socials")}
       {tree(socialsId ? kids(socialsId) : tops)}
       <Link href="/posts" className="s px-2 py-1.5 underline" data-testid="photos-rail-posts">Posts ›</Link>

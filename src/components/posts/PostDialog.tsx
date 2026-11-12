@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "@/lib/artist";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
+import { celebratePost } from "@/components/Celebrate";
 import { dateInBandZone } from "@/lib/timezone";
 import type { MetaStatus } from "@/components/posts/MetaCard";
 import type { PostMedia } from "@/schema/posts";
@@ -13,7 +14,7 @@ interface Published { status: "posted" | "failed"; permalink?: string | null; er
  * Post it (the canvas's *Post it* board): the Instagram account it goes to, a warning when a photo has no alt text, what
  * happens in Drive, and an explicit Post now (posts.publish). Off, with the connect or sign-in message, while Instagram isn't
  * connected or needs a new sign-in. Then *After posting*: the Instagram link and the folder's new name. `before` runs first
- * (the editor flushes its autosave).
+ * (the editor flushes its autosave). A successful post gets the confetti.
  */
 export function PostDialog({ open, onClose, post, before }: {
   open: boolean; onClose(): void; before(): Promise<void>;
@@ -38,7 +39,7 @@ export function PostDialog({ open, onClose, post, before }: {
     await before();
     const r = await call<Published>("posts.publish", { id: post.id });
     if (r?.status === "failed") { setError(`Didn't post: ${r.error ?? "Instagram didn't say why."}`); return; }
-    if (r) setDone({ ...r, folder: `${dateInBandZone()} - ${title}` });
+    if (r) { setDone({ ...r, folder: `${dateInBandZone()} - ${title}` }); celebratePost(title); }
   }
 
   return (

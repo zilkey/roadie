@@ -2,6 +2,7 @@
 import Link from "@/lib/artist";
 import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { celebrateMoneyIn } from "@/components/Celebrate";
 import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
 import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCategory, byMonth, byShow, defaultProject, formatCents, incomeExpected, incomeSoFar, moneyRows, moneyTotals, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
@@ -130,7 +131,7 @@ function Admin() {
                     </div>
                     <span className="flex shrink-0 items-center gap-2">
                       <b className="font-mono">{formatCents(x.amount)}</b>
-                      <button className="btn sm" disabled={busy} data-testid={`owed-received-${x.id}`} onClick={() => call("income.setReceived", { id: x.id })}>Received</button>
+                      <button className="btn sm" disabled={busy} data-testid={`owed-received-${x.id}`} onClick={() => void call("income.setReceived", { id: x.id }).then((ok) => { if (ok) celebrateMoneyIn(formatCents(x.amount), x.from); })}>Received</button>
                     </span>
                   </div>
                 ))}

@@ -130,9 +130,14 @@ test("admin logs income owed to us, then marks it received", async ({ page }) =>
   await expect(modal.getByTestId("mi-saves")).toContainText(`${VENUE} owes us $400.00 (guarantee)`);
   await modal.getByTestId("mi-save").click();
   await expect(modal).toBeHidden();
+  await expect(page.getByTestId("celebration-title")).toHaveText("Money on the way!");
+  await expect(page.getByTestId("celebration-text")).toHaveText(`${VENUE} owes us $400.00`);
+  await page.getByTestId("celebration").click();
   const owed = page.getByTestId("owed-to-us");
   const row = owed.locator('[data-testid^="owed-income-"]', { hasText: VENUE });
   await expect(row).toContainText("$400.00");
   await row.locator('[data-testid^="owed-received-"]').click();
   await expect(owed).not.toContainText(VENUE);
+  await expect(page.getByTestId("celebration-title")).toHaveText("Money in!");
+  await expect(page.getByTestId("celebration-text")).toHaveText(`$400.00 from ${VENUE}`);
 });

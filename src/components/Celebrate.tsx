@@ -18,6 +18,11 @@ export const celebrateBooking = (target: string, dates: string[]) =>
 /** A song just left Writing: `label` is where it went ("Learning", "Playing"). */
 export const celebrateSong = (title: string, label: string) =>
   celebrate({ title: "Out of the writing room!", text: `${title} is now ${label}` });
+/** Money in was recorded: received now, or owed to us (`received` false). `amount` is formatted ("$250.00"). */
+export const celebrateMoneyIn = (amount: string, from: string, received = true) =>
+  celebrate({ title: received ? "Money in!" : "Money on the way!", text: received ? `${amount} from ${from}` : `${from} owes us ${amount}` });
+/** A post just went up on Instagram. */
+export const celebratePost = (title: string) => celebrate({ title: "Posted!", text: `${title} is on Instagram` });
 
 const COLORS = ["#3a46c4", "#d6336c", "#1f8a55", "#f2b705", "#ff7a3d", "#7c5cff"];
 
@@ -70,10 +75,13 @@ export function CelebrateHost() {
   useEffect(() => { if (!c) return; const h = setTimeout(dismiss, CELEBRATE_MS); return () => clearTimeout(h); }, [c]);
   const [still, setStill] = useState(false);
   useEffect(() => { setStill(window.matchMedia("(prefers-reduced-motion: reduce)").matches); }, []);
+  // A manual popover joins the top layer, so the confetti shows over an open modal dialog (Post it) too.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { const el = box.current; if (c && el && typeof el.showPopover === "function" && !el.matches(":popover-open")) el.showPopover(); }, [c]);
   if (usePathname().endsWith("/print")) return null;
   if (!c) return null;
   return (
-    <div className="celebrate" key={c.n}>
+    <div className="celebrate" key={c.n} ref={box} popover="manual">
       {!still && <Confetti />}
       <button type="button" className="celebrate-card" role="status" aria-live="polite" onClick={dismiss} data-testid="celebration">
         <span className="celebrate-title" data-testid="celebration-title">{c.title}</span>

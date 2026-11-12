@@ -252,6 +252,8 @@ test("Post now: off while Instagram needs a sign-in; then the carousel goes out 
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   await expect(post.getByTestId("post-done-folder")).toContainText(`Posts/${today} - Thanks, Denver`, { timeout: 30_000 });
   await expect(post.getByTestId("post-done-permalink")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
+  await expect(page.getByTestId("celebration-title")).toHaveText("Posted!");
+  await expect(page.getByTestId("celebration-text")).toHaveText("Thanks, Denver is on Instagram");
 
   // Meta got the photos in the editor's order; the fake Drive has the folder under its posted name.
   const media = ((await (await request.get(`${META}/__media`)).json()) as { media: { caption: string; children?: { imageUrl: string }[] }[] }).media;

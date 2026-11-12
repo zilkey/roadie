@@ -10,6 +10,7 @@ import type { Income } from "@/schema";
 import type { MoneyDefaults } from "./modals";
 import { EditAmount, EditFoot, EditInput, MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useEditPickers, useEditSave, useProjectsAndShows, useReleaseTracks, withContext } from "./MoneyOutModal";
 import { TourFields, useTourPick } from "./TourFields";
+import { celebrateMoneyIn } from "@/components/Celebrate";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
@@ -57,7 +58,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
       amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}), ...tp.payload,
       date: got ? when : dateInBandZone(), ...(got ? { method, receivedAt: when } : {}),
     });
-    if (r) onClose();
+    if (r) { onClose(); celebrateMoneyIn(money, who, got); }
   }
 
   return (
