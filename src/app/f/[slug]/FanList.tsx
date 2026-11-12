@@ -38,6 +38,20 @@ function Name({ view, eyebrow }: { view: View; eyebrow: string }) {
   );
 }
 
+/** An envelope, for Join the list. */
+const MailIcon = () => (
+  <svg className={css.icon} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 6.5 8.5 6.5 8.5-6.5" />
+  </svg>
+);
+/** Venmo's V in a rounded square, for every button that opens Venmo. */
+const VenmoIcon = () => (
+  <svg className={css.icon} width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" data-testid="venmo-icon">
+    <rect x="1" y="1" width="22" height="22" rx="6" fill="currentColor" />
+    <path d="M16.6 5.6c.5.8.7 1.6.7 2.6 0 3.2-2.7 7.3-4.9 10.2H7.4L5.4 6.3l4.4-.4 1.1 8.6c1-1.6 2.2-4.2 2.2-6 0-1-.2-1.6-.4-2.2l3.9-.7Z" fill="var(--accent)" />
+  </svg>
+);
+
 /** The Venmo button's words and note for `n` of a show's line: "Buy 2 Tickets · $40" / "Suggested Donation · $20". */
 function showButton(l: ShowLine, n: number): { label: string; note: string } {
   const total = money(l.amountCents * n);
@@ -63,7 +77,7 @@ function ShowPay({ l, venmo }: { l: ShowLine; venmo: string }) {
           <button type="button" className={css.step} aria-label={`One more ${what}`} disabled={n >= 20} onClick={() => setN((x) => Math.min(20, x + 1))} data-testid="fans-show-plus">+</button>
         </span>
       </div>
-      <a className={css.btn} href={venmoPayUrl(venmo, l.amountCents * n, b.note)} target="_blank" rel="noopener noreferrer" data-testid="fans-show-pay">{b.label}</a>
+      <a className={css.btn} href={venmoPayUrl(venmo, l.amountCents * n, b.note)} target="_blank" rel="noopener noreferrer" data-testid="fans-show-pay"><VenmoIcon />{b.label}</a>
       <p className={css.fine}>Pays @{venmo} on Venmo{l.button === "donation" ? ". You can change the amount there." : "."}</p>
     </section>
   );
@@ -74,7 +88,7 @@ function Tip({ venmo }: { venmo: string }) {
   return (
     <section className={css.merch} aria-labelledby="tip-h" data-testid="fans-tip">
       <h2 id="tip-h" className={css.eyebrow}>Tip</h2>
-      <a className={css.btn} href={venmoPayUrl(venmo, 0, "Tip")} target="_blank" rel="noopener noreferrer" data-testid="fans-tip-pay">Leave a tip</a>
+      <a className={css.btn} href={venmoPayUrl(venmo, 0, "Tip")} target="_blank" rel="noopener noreferrer" data-testid="fans-tip-pay"><VenmoIcon />Leave a tip</a>
       <p className={css.fine}>Pays @{venmo} on Venmo. You pick the amount there.</p>
     </section>
   );
@@ -118,7 +132,7 @@ function Merch({ merch }: { merch: NonNullable<View["merch"]> }) {
         </ul>
       ) : null}
       <a className={css.btn} href={venmoPayUrl(merch.venmo, total, note)} target="_blank" rel="noopener noreferrer" data-testid="fans-venmo">
-        {total ? `Pay ${money(total)} with Venmo` : "Pay with Venmo"}
+        <VenmoIcon />{total ? `Pay ${money(total)} with Venmo` : "Pay with Venmo"}
       </a>
       <p className={css.fine} data-testid="fans-venmo-fine">
         {total ? <>Venmo opens with {money(total)} to @{merch.venmo} and the note “{note}”.</> : <>Pay @{merch.venmo} on Venmo.</>}
@@ -235,7 +249,7 @@ export function FanList({ slug, showId }: { slug: string; showId?: string }) {
           <input type="text" autoComplete="postal-code" inputMode="numeric" maxLength={5} placeholder="80302" value={zip} onChange={(e) => setZip(e.target.value.replace(/\D/g, ""))} data-testid="fans-zip" />
         </label>
         {error ? <p className={css.error} role="alert" data-testid="fans-error">{error}</p> : null}
-        <button type="submit" className={css.btn} disabled={busy} data-testid="fans-join">Join the list</button>
+        <button type="submit" className={css.btn} disabled={busy} data-testid="fans-join"><MailIcon />Join the list</button>
         <p className={css.fine}>{view.wording}</p>
       </form>
       {rest}
