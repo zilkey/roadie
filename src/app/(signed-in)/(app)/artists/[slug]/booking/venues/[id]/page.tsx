@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
@@ -73,7 +74,7 @@ function VenueView() {
 
   return (
     <DetailPage testid="venue-page"
-      back={<BackLink mode="back" href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />}
+      back={<Crumbs items={[sectionCrumb("venue"), { label: v.name }]} back={<BackLink mode="back" href={admin ? "/booking/venues" : "/shows"} label={admin ? "All venues" : "Shows"} />} />}
       title={v.name}
       pill={admin && pitched ? <PitchedPill /> : undefined}
       meta={[typeLabel, v.address.city].filter(Boolean).join(" · ")}

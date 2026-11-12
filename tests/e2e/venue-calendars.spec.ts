@@ -45,7 +45,7 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-calendars").click();
   await expect(page).toHaveURL(/\/booking\/calendars$/);
-  await expect(page.getByTestId("booking-seg-calendars")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("booking-seg-calendars")).toHaveAttribute("aria-current", "page");
   await everyShow(page);
 
   // first page: the two furthest out, latest first, with the bill, the time and the venue
@@ -93,7 +93,9 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   expect(y).toBeGreaterThan(100);
   await shows(page).nth(2).getByTestId(/^calendar-show-venue-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
-  await page.getByTestId("back").click();
+  // the trail names the list it came from, and goes back to it
+  await expect(page.getByTestId("crumb-1")).toHaveText("Venue calendars");
+  await page.getByTestId("crumb-1").click();
   await expect(page).toHaveURL(/\/booking\/calendars\?show=all$/);
   await expect(shows(page)).toHaveCount(3);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);

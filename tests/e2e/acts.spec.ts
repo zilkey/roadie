@@ -147,7 +147,7 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   expect(y).toBeGreaterThan(100);
   await page.getByTestId(/^act-row-/).last().getByTestId(/^act-link-/).click();
   await expect(page.getByTestId("act-page")).toBeVisible();
-  await page.getByTestId("back").click();
+  await page.getByTestId("crumb-1").click();
   await expect(page).toHaveURL(/\/booking\/acts\?show=all$/);
   await expect(page.getByTestId(/^act-row-/)).toHaveCount(rowsOpen);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);

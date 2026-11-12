@@ -6,6 +6,7 @@
  * anything is in them. Look up and the Contacts card's "Find their team" look for the act's booking agent, manager and publicist (acts.findTeam).
  * Search Google is always there, and each show in Where they've played links to the venue's event page.
  */
+import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
@@ -75,7 +76,7 @@ function ActPage() {
   const lonely = played.filter((e) => e.date >= today && e.acts.length === 1 && e.acts[0].actId === id);
 
   return (
-    <DetailPage testid="act-page" back={<BackLink mode="back" href="/booking/acts" label="All acts" />}
+    <DetailPage testid="act-page" back={<Crumbs items={[sectionCrumb("act"), { label: act.name }]} back={<BackLink mode="back" href="/booking/acts" label="All acts" />} />}
       title={<span className="flex items-center gap-4"><ActThumb src={act.imageUrl} size={72} /><span>{act.name}</span></span>}
       meta={(opened > 0 || next) && (
         <span className="flex flex-wrap items-center gap-1.5">

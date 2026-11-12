@@ -52,7 +52,7 @@ test("search buckets the results by kind, marks the match, and clearing brings t
 test("flag a venue, move the pitch along, search finds it", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.getByTestId("tab-booking").click();
-  await expect(page.getByTestId("booking-seg-pitches")).toHaveAttribute("aria-selected", "true"); // Booking opens on the Pitch List
+  await expect(page.getByTestId("booking-seg-pitches")).toHaveAttribute("aria-current", "page"); // Booking opens on the Pitch List
   await page.getByTestId("booking-search").fill("swallow");
   await expect(page.getByTestId("bucket-venues")).toBeVisible(); // a search replaces the tab with buckets
   await page.getByTestId("booking-seg-venues").click(); // and it follows to every tab
@@ -373,4 +373,39 @@ test("the pitch page has Booked it in its header (a form under it) and Abandon p
   page.once("dialog", (d) => void d.dismiss()); // look, don't abandon: other specs use this pitch
   await page.getByTestId("pitch-abandon").click();
   await expect(page.getByTestId("status-chip")).toHaveText(status);
+});
+
+test("the Booking sub-nav: grouped beside the page, a sideways row on a phone, and the trail on a record page", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking/venues"));
+  const nav = page.getByTestId("booking-nav");
+  for (const head of ["Pitches", "Places", "Discover", "Set up"]) await expect(nav).toContainText(head);
+  await expect(page.getByTestId("booking-seg-venues")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("page-title")).toHaveText("Venues");
+  await expect(page.getByTestId("booking-seg-contacts")).toHaveAttribute("href", /\/contacts$/); // Contacts is its own section
+  await expect(page.getByTestId("booking-seg-templates")).toHaveAttribute("href", /\/booking\/templates$/);
+
+  // a record page: Booking › Venues › the venue, and the section crumb goes back to the list
+  await page.getByTestId(/^venue-full-/).first().click();
+  await expect(page.getByTestId(/^(venue|pitch)-page$/)).toBeVisible();
+  if (await page.getByTestId("pitch-page").count()) await page.getByTestId("target-link").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  await expect(page.getByTestId("crumbs")).toBeVisible();
+  await expect(page.getByTestId("crumb-0")).toHaveText("Booking");
+  await expect(page.getByTestId("crumb-current")).toHaveText(await page.getByTestId("page-title").innerText());
+  await expect(page.getByTestId("back")).toBeHidden(); // desktop: the trail instead of the back link
+  await expect(page.getByTestId("booking-seg-venues")).toHaveAttribute("aria-current", "page");
+
+  // phone: the same links in one row that scrolls sideways, no trail, the back link instead
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("crumbs")).toBeHidden();
+  await expect(page.getByTestId("back")).toBeVisible();
+  await expect(page.getByTestId("back-button")).toBeVisible();
+  const box = await nav.boundingBox();
+  const acts = await page.getByTestId("booking-seg-acts").boundingBox();
+  expect(Math.abs((acts?.y ?? 0) - (box?.y ?? 0))).toBeLessThan(40); // one row
+  expect(await nav.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true); // that scrolls
+  await page.getByTestId("booking-seg-acts").scrollIntoViewIfNeeded();
+  await page.getByTestId("booking-seg-acts").click();
+  await expect(page).toHaveURL(/\/booking\/acts$/);
 });

@@ -29,6 +29,10 @@ test("a member opens the venue from a show, sees the address but no notes, and f
   await expect(page.getByTestId("venue-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Deep End");
   await expect(page.getByTestId("room-address")).toContainText("7 S Broadway");
+  // no Booking sub-nav or trail for a member: the page alone, with its way back to Shows
+  await expect(page.getByTestId("booking-nav")).toHaveCount(0);
+  await expect(page.getByTestId("crumbs")).toHaveCount(0);
+  await expect(page.getByTestId("back")).toHaveAttribute("href", /\/shows$/);
   // the band's private notes are not there for a member: no notes form, no contacts, no merge, no archive
   await expect(page.getByTestId("venue-loadin")).toHaveCount(0);
   await expect(page.getByTestId("notes-private")).toHaveCount(0);

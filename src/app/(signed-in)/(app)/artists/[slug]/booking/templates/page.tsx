@@ -29,7 +29,7 @@ function Templates() {
   const sorted = [...(rows ?? [])].sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div className="grid gap-3">
-      <BackLink href="/booking" label="Booking" />
+      <span className="min-[900px]:hidden"><BackLink href="/booking" label="Booking" /></span>{/* desktop: the Booking sub-nav */}
       <PageTitle title="Email templates" sub="Fill-in fields like {{venue.name}} are replaced when you send."
         actions={!adding && <button className="btn acc" onClick={() => setAdding(true)} data-testid="template-new">+ New template</button>} />
       <ErrorBox error={error} />

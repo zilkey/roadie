@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -224,7 +225,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
 
   return (
     <div className="show-page" data-testid="compose-page">
-      <PageTitle back={<BackLink href={back} label={backLabel} />} title={thread ? "Reply" : "New email"}
+      <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined) : []), ...(thread ? [{ label: thread.subject || "Thread", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
         sub={thread ? <>Reply on {thread.subject} · from {profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {profile.email}</>}
         actions={place?.kind === "act" ? undefined : <Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
       <ErrorBox error={error} />

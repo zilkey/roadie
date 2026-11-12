@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
@@ -74,7 +75,7 @@ function FestivalPage() {
   const contacts = <ContactsPanel kind="festivals" parentId={id} contactIds={f.contactIds ?? []} contacts={b.contacts} />;
 
   return (
-    <DetailPage testid="festival-page" back={<BackLink mode="back" href="/booking/festivals" label="All festivals" />} title={f.name}
+    <DetailPage testid="festival-page" back={<Crumbs items={[sectionCrumb("festival"), { label: f.name }]} back={<BackLink mode="back" href="/booking/festivals" label="All festivals" />} />} title={f.name}
       pill={active ? <PitchedPill /> : undefined} meta={meta}
       more={<Menu label="More actions" testid="festival" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive festival", danger: true, onSelect: archive }]} />}>
       <ErrorBox error={error} />

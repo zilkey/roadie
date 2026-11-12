@@ -76,7 +76,8 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   await card.getByTestId(`thread-${linked.id}`).click();
   await expect(page.getByTestId("thread-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText(subject);
-  await expect(page.getByTestId("back")).toHaveText("← Back");
+  await expect(page.getByTestId("crumb-1")).toHaveText("Pitch List"); // Booking › Pitch List › the pitch › this thread
+  await expect(page.getByTestId("crumb-current")).toHaveText(subject);
   await expect(page.getByTestId("thread-page")).toContainText("2 messages · Rosa Jackson");
   await expect(page.getByTestId("thread-private")).toContainText("sent and received from rudy@example.com");
   await expect(page.getByTestId("open-in-gmail")).toHaveAttribute("href", new RegExp(`#all/${first.threadId}$`));
@@ -108,7 +109,7 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   expect(mine[0].body).toContain("Dec 11 works");
 
   // Back on the pitch: the row counts 3 messages, and the thread is no longer a new reply.
-  await page.getByTestId("back").click();
+  await page.getByTestId("crumb-2").click();
   await expect(page.getByTestId(`thread-count-${linked.id}`)).toHaveText("3");
   await expect(page.getByTestId(`thread-new-${linked.id}`)).toHaveCount(0);
 });

@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
@@ -64,7 +65,7 @@ function Search({ place, pitch, contacts, sharedDomain, account }: { place: Plac
   const back = pitch ? `/booking/pitches/${pitch}` : place.href;
   return (
     <div className="show-page" data-testid="gmail-search-page">
-      <PageTitle back={<BackLink href={back} label={pitch ? "Pitch" : place.name} />} title="Search Gmail" sub={`Looks in ${account}. Nothing is copied until you link it.`} />
+      <PageTitle back={<Crumbs items={[...placeTrail(place.kind, place.id, place.name, pitch), { label: "Search Gmail" }]} back={<BackLink href={back} label={pitch ? "Pitch" : place.name} />} />} title="Search Gmail" sub={`Looks in ${account}. Nothing is copied until you link it.`} />
       <section className="card">
         <Tabs<"threads" | "people"> value={tab} onChange={setTab} testid="gmail-tabs" options={[["threads", "Threads"], ["people", "People"]]} />
         {/* Both stay mounted so a search survives a switch of tab. */}

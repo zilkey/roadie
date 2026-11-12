@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs } from "@/components/booking/BookingNav";
 import { draftPath } from "@/schema/drafts";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import Link, { useArtist, useMaybeArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -124,7 +125,7 @@ function PitchPage() {
 
   return (
     <div className="show-page" data-testid="pitch-page">
-      <PageTitle back={<BackLink href="/booking/pitches" label="Pitch List" />} title={p.target.name}
+      <PageTitle back={<Crumbs items={[{ label: "Pitch List", href: "/booking/pitches" }, { label: p.target.name }]} back={<BackLink href="/booking/pitches" label="Pitch List" />} />} title={p.target.name}
         sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
           <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">{p.target.kind === "venue" ? "Venue" : p.target.kind === "promoter" ? "Promoter" : "Festival"} page</Link></>}
         pill={<StatusPill status={p.status} />}

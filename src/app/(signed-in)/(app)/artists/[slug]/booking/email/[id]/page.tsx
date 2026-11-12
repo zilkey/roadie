@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, placeTrail } from "@/components/booking/BookingNav";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
@@ -68,7 +69,7 @@ function ThreadPage() {
 
   return (
     <div className="show-page" data-testid="thread-page">
-      <PageTitle back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} title={t.subject || "(no subject)"}
+      <PageTitle back={<Crumbs items={[...placeTrail(t.target.kind, t.target.id, t.target.name, t.pitchId ?? undefined), { label: t.subject || "(no subject)" }]} back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} />} title={t.subject || "(no subject)"}
         sub={<>
           {t.messageCount} message{t.messageCount === 1 ? "" : "s"}{names.length > 0 && <> · {names.join(", ")}</>}
           {pitch && cell && <Link href={`/booking/pitches/${pitch.id}`} className="s block font-semibold underline" data-testid="thread-pitch">Pitch: {cell.config}, {cell.dates}</Link>}

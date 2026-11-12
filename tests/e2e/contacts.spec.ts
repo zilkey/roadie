@@ -15,7 +15,12 @@ test("Contacts starts in More for an admin and opens the list", async ({ page })
   await expect(page).toHaveURL(/\/contacts$/);
   await expect(page.getByTestId("contacts-list")).toBeVisible();
   await expect(page.getByTestId("tab-booking")).toBeVisible();
-  await expect(page.getByTestId("booking-seg-contacts")).toHaveCount(0); // no Contacts tab on Booking any more
+  await expect(page.getByTestId("booking-nav")).toHaveCount(0); // its own section, not a Booking page
+  // Booking's sub-nav lists Contacts under Places and opens this same page
+  await page.getByTestId("tab-booking").click();
+  await page.getByTestId("booking-seg-contacts").click();
+  await expect(page).toHaveURL(/\/contacts$/);
+  await expect(page.getByTestId("contacts-list")).toBeVisible();
 });
 
 test("the old Booking contact URLs redirect to the new pages", async ({ page }) => {

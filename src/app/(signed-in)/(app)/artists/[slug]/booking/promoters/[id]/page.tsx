@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -75,7 +76,7 @@ function PromoterPage() {
   );
 
   return (
-    <DetailPage testid="promoter-page" back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} title={p.name}
+    <DetailPage testid="promoter-page" back={<Crumbs items={[sectionCrumb("promoter"), { label: p.name }]} back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} />} title={p.name}
       pill={active ? <PitchedPill /> : undefined}
       meta={`${KIND_LABEL[p.kind]}${venues.length ? ` · ${venues.length} venues` : ""}`}
       more={<div>

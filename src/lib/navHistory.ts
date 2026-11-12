@@ -26,6 +26,9 @@ if (typeof window !== "undefined") window.addEventListener("popstate", () => { p
 export function takeSteppedBack(): boolean { const p = popped; popped = false; return p; }
 
 /** Create forms (".../new") are never a place to go back to: they leave by router.replace, so they are not recorded. */
-export function recordPath(path: string) { popped = false; if (!path.endsWith("/new")) stack = nextStack(stack, path); }
+export function recordPath(path: string) { popped = false; if (!path.endsWith("/new")) stack = nextStack(stack, path); listeners.forEach((l) => l()); }
+const listeners = new Set<() => void>();
+/** For useSyncExternalStore: called after each recorded path, so a page can show where it was reached from (the Booking breadcrumbs). */
+export function subscribeNav(l: () => void) { listeners.add(l); return () => { listeners.delete(l); }; }
 /** The page before this one, if the person came from elsewhere in the app. */
 export function previousPath(): string | undefined { return canGoBack(stack) ? stack[stack.length - 2] : undefined; }

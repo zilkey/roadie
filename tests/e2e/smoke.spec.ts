@@ -25,7 +25,7 @@ test("admin signs in and sees 6 tabs", async ({ page }) => {
   await expect(page.getByTestId("page-title")).toHaveText("Money");
   await page.getByTestId("tab-booking").click();
   await expect(page).toHaveURL(new RegExp(`/artists/${ARTIST_SLUG}/booking$`));
-  await expect(page.getByTestId("page-title")).toHaveText("Booking");
+  await expect(page.getByTestId("page-title")).toHaveText("Pitch List");
 });
 
 test("admin: phone layout uses bottom tabs", async ({ page }) => {

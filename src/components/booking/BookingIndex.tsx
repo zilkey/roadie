@@ -1,7 +1,7 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
@@ -10,7 +10,7 @@ import { useHasDraft } from "@/lib/drafts";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
 import { Menu } from "@/components/Menu";
 import {
-  EntityForm, Tabs, StatusChip, type SubmitMeta, actForm, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
+  EntityForm, StatusChip, type SubmitMeta, actForm, festivalForm, hrefFor, promoterForm, useBooking, venueForm,
 } from "@/components/booking/common";
 import { PitchModal, type PitchTarget } from "@/components/booking/PitchModal";
 import { fmtPhone, listRows, type ListRow, type Place, type Ref } from "@/components/booking/listRows";
@@ -18,18 +18,20 @@ import { useVenueTypes } from "@/lib/venueTypes";
 import { CheckFilter } from "@/components/booking/CheckFilter";
 import { FESTIVAL_SORTS, type FestivalSort } from "@/lib/festivalPage";
 import { useFestivalPage } from "@/components/booking/useFestivalPage";
-import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, highlight, isActive, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
+import { QUIET_DAYS, STATUSES, STATUS_LABEL, buildSearchItems, fmtDate, highlight, pitchCellText, quietDays, searchItems, todayStr, type Status } from "@/lib/booking";
 import { fmtInstant } from "@/lib/timezone";
 import type { Show } from "@/schema";
 import { AddToTourDialog } from "@/components/booking/AddToTourDialog";
 import { SearchBuckets } from "@/components/booking/SearchBuckets";
 import { VenueCalendars } from "@/components/booking/VenueCalendars";
+import { ROUTES } from "@/lib/routes";
 import { ActsTab } from "@/components/booking/ActsTab";
+import { useBookingSearch } from "@/components/booking/BookingNav";
 
-/** The booking index. Each tab has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to. */
+/** The booking index. Each section has its own route (/booking, /booking/pitches, /booking/venues, …) so it can be linked to; the Booking sub-nav (BookingNav) switches between them. */
 export function BookingIndex({ seg }: { seg: Tab }) { return <AdminOnly><Booking seg={seg} /></AdminOnly>; }
 
-/** The table kinds. Contacts is not a tab (it has its own section) but its table still draws the search results. */
+/** The table kinds. Contacts is not a Booking section (it has its own section) but its table still draws the search results. */
 export type Seg = "pitches" | "venues" | "festivals" | "promoters" | "contacts";
 /** "calendars" (Venue calendars) is every venue's upcoming shows and "acts" the bands on them (#77): not tables of booking records, so no ListRow kind. */
 type Tab = Exclude<Seg, "contacts"> | "calendars" | "acts";
@@ -39,11 +41,13 @@ function Booking({ seg }: { seg: Tab }) {
   const router = useRouter();
   const b = useBooking();
   const { call, error } = useCommand();
-  // The search survives switching tabs: it rides along as ?q= on the tab's route.
+  // The search survives switching sections: the sub-nav's links carry it along as ?q= on the section's route.
   const params = useSearchParams();
   const [q, setQ] = useState(() => params.get("q") ?? "");
-  const setSeg = (s: Tab) => router.push(`/booking/${s}${q.trim() ? `?q=${encodeURIComponent(q)}` : ""}`);
-  // Clearing the search (the field's own cancel button, or deleting the text) brings the tab back and drops ?q= from the URL.
+  const search = useBookingSearch();
+  useEffect(() => { search.setQ(q); }, [q]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => search.setQ(""), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Clearing the search (the field's own cancel button, or deleting the text) brings the list back and drops ?q= from the URL.
   const changeQ = (v: string) => {
     setQ(v);
     if (!v.trim() && params.get("q") !== null) router.replace(`/booking/${seg}`);
@@ -111,8 +115,6 @@ function Booking({ seg }: { seg: Tab }) {
   const [note, setNote] = useState("");
   const chosen = b.pitches.filter((p) => picked.includes(p.id));
   const togglePick = (id: string) => setPicked((x) => x.includes(id) ? x.filter((y) => y !== id) : [...x, id]);
-  const activeCount = b.pitches.filter((p) => isActive(p.status)).length;
-
 
   async function create(kind: Exclude<Add, null>, data: Record<string, unknown>, meta: SubmitMeta) {
     const cmd = { venue: "venues.create", promoter: "promoters.create", festival: "festivals.create", act: "acts.create" }[kind];
@@ -152,7 +154,7 @@ function Booking({ seg }: { seg: Tab }) {
 
   return (
     <div className="grid gap-5">
-      <PageTitle title="Booking" center actions={<>
+      <PageTitle title={TITLE[seg]} center actions={<>
         <label className="search-field">
           <SearchIcon />
           <input className="input" type="search" placeholder="Search places, festivals, contacts…" value={q} onChange={(e) => changeQ(e.target.value)} data-testid="booking-search" aria-label="Search booking" />
@@ -160,8 +162,6 @@ function Booking({ seg }: { seg: Tab }) {
         </label>
         {addActions}
       </>} />
-      <Tabs<Tab> testid="booking-seg" value={seg} onChange={setSeg}
-        options={[["pitches", <>Pitch List <span className="chip a ml-1" data-testid="pitch-count">{activeCount}</span></>], ["venues", "Venues"], ["festivals", "Festivals & series"], ["promoters", "Promoters"], ["calendars", "Venue calendars"], ["acts", "Acts"]]} />
       <ErrorBox error={error} />
 
       {seg === "pitches" && !q.trim() && (
@@ -215,7 +215,13 @@ function Booking({ seg }: { seg: Tab }) {
   );
 }
 
-/** The muted line under each tab's table (not the search buckets). */
+/** Each section's page title: its name in the sub-nav. */
+const TITLE: Record<Tab, string> = {
+  pitches: ROUTES.bookingPitches.title, venues: ROUTES.bookingVenues.title, festivals: ROUTES.bookingFestivals.title,
+  promoters: ROUTES.bookingPromoters.title, calendars: ROUTES.bookingCalendars.title, acts: ROUTES.bookingActs.title,
+};
+
+/** The muted line under each section's table (not the search buckets). */
 const CAPTION: Partial<Record<Seg, string>> = {
   pitches: "Names and flags open the pitch. Yellow rows have gone quiet.",
   venues: "A venue with an active pitch opens the pitch; the venue page is one click under its name. Venues your band has something on come first.",

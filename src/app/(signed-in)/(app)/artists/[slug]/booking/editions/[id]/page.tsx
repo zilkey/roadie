@@ -1,4 +1,5 @@
 "use client";
+import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
@@ -47,7 +48,7 @@ function EditionPage() {
   const saveNote = async (key: "payNotes" | "notes", next: string) => !!(await call("editions.update", { id, patch: { [key]: next || null } }));
 
   return (
-    <DetailPage testid="edition-page" back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} title={name}
+    <DetailPage testid="edition-page" back={<Crumbs items={[sectionCrumb("edition"), { label: e.festivalName, href: hrefFor("festival", e.festivalId) }, { label: name }]} back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} />} title={name}
       pill={active ? <PitchedPill /> : undefined}
       meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
       more={<Menu label="More actions" testid="edition" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>
