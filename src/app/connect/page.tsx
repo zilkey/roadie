@@ -14,15 +14,29 @@ interface Artist { artistId: string; name: string; ai: boolean }
 interface Info { client: string; returnTo: string; name: string; artists: Artist[] }
 type State =
   | { s: "loading" }
-  | { s: "signedOut" }
+  | { s: "signedOut"; note?: string }
   | { s: "choose"; user: User; info: Info }
   | { s: "going" }
-  | { s: "error"; message: string; user?: User };
+  | { s: "error"; message: string; user?: User; retry?: boolean };
+
+/** In-app browsers (Claude on a phone) can leave Firebase's sign-in or token refresh hanging: never wait forever. */
+class Stalled extends Error {}
+const within = <T,>(p: Promise<T>, ms: number, step: string) =>
+  Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Stalled(step)), ms))]);
+/** Tell the server which step stalled, so it shows in the logs (the page runs on someone's phone). */
+const report = (step: string, detail = "") => {
+  try { navigator.sendBeacon("/oauth/log", JSON.stringify({ step, detail: detail.slice(0, 200), ua: navigator.userAgent.slice(0, 200) })); } catch { /* best effort */ }
+};
 
 async function approve(req: string, user: User | null, extra: Record<string, unknown> = {}) {
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (user) headers.authorization = `Bearer ${await user.getIdToken()}`;
-  const res = await fetch("/oauth/approve", { method: "POST", headers, body: JSON.stringify({ req, ...extra }) });
+  if (user) headers.authorization = `Bearer ${await within(user.getIdToken(), 15_000, "token")}`;
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 20_000);
+  let res: Response;
+  try { res = await fetch("/oauth/approve", { method: "POST", headers, body: JSON.stringify({ req, ...extra }), signal: ctl.signal }); }
+  catch { throw new Stalled("approve"); }
+  finally { clearTimeout(t); }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error?.message ?? "Something went wrong. Try again.");
   return json;
@@ -36,21 +50,41 @@ export default function Connect() {
 
   useEffect(() => { setReq(new URLSearchParams(location.search).get("req") ?? ""); }, []);
 
+  const load = useCallback(async (user: User) => {
+    if (!req) return;
+    setState({ s: "loading" });
+    try {
+      const info = (await approve(req, user)) as Info;
+      setPicked(info.artists.find((a) => a.ai)?.artistId ?? "");
+      setState({ s: "choose", user, info });
+    } catch (e) {
+      if (e instanceof Stalled) {
+        report(e.message);
+        return setState({ s: "error", message: "Roadie is taking too long to answer. Check your connection and try again.", user, retry: true });
+      }
+      setState({ s: "error", message: e instanceof Error ? e.message : "Something went wrong", user });
+    }
+  }, [req]);
+
   useEffect(() => {
     if (req === null) return;
     if (!req) return setState({ s: "error", message: "This page opens from Claude when you connect Roadie. Start again from Claude." });
-    return onAuthStateChanged(clientAuth(), async (user) => {
-      if (!user) return setState({ s: "signedOut" });
-      setState({ s: "loading" });
-      try {
-        const info = (await approve(req, user)) as Info;
-        setPicked(info.artists.find((a) => a.ai)?.artistId ?? "");
-        setState({ s: "choose", user, info });
-      } catch (e) {
-        setState({ s: "error", message: e instanceof Error ? e.message : "Something went wrong", user });
-      }
+    const auth = clientAuth();
+    let settled = false;
+    // If Firebase never says who is signed in (it can hang in an in-app browser), offer sign-in instead of "Checking…" forever.
+    const t = setTimeout(() => {
+      if (settled) return;
+      report("auth-state");
+      setState({ s: "signedOut", note: "Couldn't check whether you're signed in. Sign in to carry on." });
+    }, 8_000);
+    const off = onAuthStateChanged(auth, (user) => {
+      settled = true;
+      clearTimeout(t);
+      if (!user) return setState((st) => (st.s === "signedOut" ? st : { s: "signedOut" }));
+      void load(user);
     });
-  }, [req]);
+    return () => { clearTimeout(t); off(); };
+  }, [req, load]);
 
   useEffect(() => {
     if (!usingEmulators) return;
@@ -77,7 +111,9 @@ export default function Connect() {
       const { redirect } = await approve(req, user, extra);
       location.assign(redirect);
     } catch (e) {
-      setState({ s: "error", message: e instanceof Error ? e.message : "Something went wrong", user: user ?? undefined });
+      if (e instanceof Stalled) report(e.message, "connect");
+      const message = e instanceof Stalled ? "Roadie is taking too long to answer. Check your connection and try again." : e instanceof Error ? e.message : "Something went wrong";
+      setState({ s: "error", message, user: user ?? undefined, retry: e instanceof Stalled });
     }
   };
   const switchAccount = async () => { await signOut(clientAuth()); setState({ s: "signedOut" }); };
@@ -95,6 +131,7 @@ export default function Connect() {
             <h2 className="font-display text-xl font-bold m-0">Connect Roadie to Claude</h2>
             <p className="s">Sign in with the Google account you use for Roadie.</p>
           </div>
+          {state.note && <p className="s" data-testid="connect-note">{state.note}</p>}
           <button className="btn acc" data-testid="connect-google" onClick={google}>Sign in with Google</button>
           {usingEmulators && people.length > 0 && (
             <div className="card" data-testid="connect-dev">
@@ -147,6 +184,7 @@ export default function Connect() {
       {state.s === "error" && (
         <>
           <div className="err" data-testid="connect-error">{state.message}</div>
+          {state.retry && state.user && <button className="btn acc" data-testid="connect-retry" onClick={() => load(state.user!)}>Try again</button>}
           {state.user && <button className="btn ghost" onClick={switchAccount}>Use a different account</button>}
         </>
       )}

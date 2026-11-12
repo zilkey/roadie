@@ -266,3 +266,13 @@ const errorPage = (msg: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Can't connect Roadie</title>
 <style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;font:16px/1.45 system-ui,sans-serif}main{max-width:420px}</style>
 </head><body><main><h1>Can't connect Roadie</h1><p>${esc(msg)}</p></main></body></html>`;
+
+/** POST /oauth/log: /connect reports a step that stalled in someone's browser (it runs on their phone, out of sight). */
+export async function connectLog(req: Request): Promise<Response> {
+  try {
+    const b = JSON.parse((await req.text()).slice(0, 1000)) as { step?: unknown; detail?: unknown; ua?: unknown };
+    const str = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n).replace(/[\r\n]/g, " ") : "");
+    console.warn(`connect stalled: step=${str(b.step, 40)} detail=${str(b.detail, 200)} ua=${str(b.ua, 200)}`);
+  } catch { /* ignore junk */ }
+  return new Response(null, { status: 204 });
+}

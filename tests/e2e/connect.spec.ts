@@ -38,3 +38,18 @@ test("Connect: someone without AI access is told to ask an admin", async ({ page
   await expect(page.getByTestId("connect-no-access")).toContainText("Ask a band admin");
   await expect(page.getByTestId("connect-allow")).toBeDisabled();
 });
+
+test("Connect: if Roadie doesn't answer, the page says so and Try again works (no endless Checking…)", async ({ page, request }) => {
+  const reg = await (await request.post("/oauth/register", { data: { redirect_uris: [REDIRECT], client_name: "Claude" } })).json();
+  const q = new URLSearchParams({ response_type: "code", client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: "abc", code_challenge_method: "S256" });
+  let logged = "";
+  await page.route("**/oauth/log", async (route) => { logged = route.request().postData() ?? ""; await route.fulfill({ status: 204 }); });
+  await page.route("**/oauth/approve", (route) => route.abort());
+  await page.goto(`/oauth/authorize?${q}`);
+  await page.getByTestId("connect-dev-rudy").click();
+  await expect(page.getByTestId("connect-error")).toContainText("taking too long");
+  expect(logged).toContain("approve");
+  await page.unroute("**/oauth/approve");
+  await page.getByTestId("connect-retry").click();
+  await expect(page.getByTestId("connect-allow")).toBeEnabled();
+});
