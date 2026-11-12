@@ -114,3 +114,4 @@ These need the owner or production access. Record them as manual steps:
 
 **Manual steps for the owner**
 - On prod, after deploying: Settings › Google › Socials folder › **Set up**, then `GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS=… npm run migrate:posts-49` (dry run), check the report, then again with `-- --apply`.
+- Next session (phase 3): `session_01MmV83ZHFX2S3DLFYsJ3CJJ`, created and in the working state (still starting up when checked).
