@@ -2,11 +2,11 @@
 
 The Roadie MCP server lets Claude (or any MCP client) read and update the band's data with the same rules as the app: same Zod schemas, dedupe, soft delete, history. It can **draft** emails but never send them.
 
-## 1. Get a key
+## 1. Access
 
-1. An admin turns on **AI access** for the person (Admin > Users, "AI access" box).
-2. Admin > **AI keys** > label it (for example "Laptop · Claude Code") > Create key.
-3. Copy the key (`btk_...`) now. It is shown once; only its SHA-256 hash is stored. You can revoke it on the same page; a revoked key stops working immediately, even inside a running session. The page shows when each key was last used.
+An admin turns on **AI (MCP) access** for the person (People, the person's sheet). People with the AI-only role always have it. That's all: connecting signs in with their normal Roadie Google account (below), and there's no key to hand out.
+
+Under the hood a sign-in mints a key (`btk_...`) for that person and artist, stores only its SHA-256 hash in `mcpTokens` (with the client's name in `client`), and gives it to the client as the bearer token. Connecting the same client to the same artist again revokes its previous key. Turning off AI access stops every key at once, even inside a running session; `lastUsedAt` is stamped on each use.
 
 ## 2. Where the server runs
 
@@ -23,18 +23,28 @@ npx firebase apphosting:secrets:grantaccess MCP_SESSION_SECRET --backend roadie-
 
 There is also a stdio entry for Claude Code on your own machine (`npm run mcp:stdio`, key in `MCP_TOKEN`). It points at the emulators by default; for the real project set `GOOGLE_APPLICATION_CREDENTIALS` (service account JSON) and `GCLOUD_PROJECT=roadie-prod-iab`.
 
-## 3. Connect Claude Code
+## 3. Connect the Claude apps (claude.ai, desktop, iPhone/Android)
 
-HTTP (one shared server, many clients):
+Settings > Connectors > Add custom connector, URL `https://app.myroadie.online/mcp`, then Connect. These apps sign in with OAuth (`mcp/oauth.ts`):
+
+1. `/mcp` answers 401 with `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"`, which names the app as the authorization server (`/.well-known/oauth-authorization-server`).
+2. The client registers at `/oauth/register` and sends the browser to `/oauth/authorize`, which checks the request and sends it to **Google's own sign-in page** (scope `openid email`, the same OAuth client and redirect URI as Settings > Google; `/api/google/callback` tells the two apart by the state). Plain redirects on purpose: in Claude's in-app sign-in window on iPhone, Firebase's popup never reports back and its sign-in state can take many seconds to load.
+3. The callback reads the verified email from Google's id_token, finds the users doc by email and sends the browser to **`/connect`** with a sealed `who` (bound to this request, 15 minutes). `/connect` (`src/app/connect/page.tsx`, outside the signed-in group so AI-only logins work) shows the person's artists and which have AI access, and calls `/oauth/approve`. "Use a different account" is `/oauth/login`, Google's chooser again. Without a Google OAuth client (dev, tests) `/connect` signs in with Firebase instead (the emulator's dev buttons). If a step stalls in the browser, `/connect` says so and logs `connect stalled: step=...` via `/oauth/log`.
+4. The client trades the code (PKCE S256) at `/oauth/token`; that is where the key is minted. Refresh tokens hand back the same key while it still works.
+
+Nothing is stored for the flow itself: client ids, pending requests (15 minutes), codes (5 minutes) and refresh tokens are sealed with `MCP_SESSION_SECRET`.
+
+## 4. Connect Claude Code
+
+HTTP (one shared server, many clients), then `/mcp` in Claude Code to sign in as above:
 
 ```
-claude mcp add --transport http roadie https://app.myroadie.online/mcp \
-  --header "Authorization: Bearer btk_YOUR_KEY"
+claude mcp add --transport http roadie https://app.myroadie.online/mcp
 ```
 
-(`http://127.0.0.1:3100/mcp` against the dev server.) Users get the same address from Admin > Claude Code in the app.
+(`http://127.0.0.1:3100/mcp` against the dev server, where `/connect` offers the dev sign-in buttons.) Users get the same address from Integrations in the app. A `--header "Authorization: Bearer btk_..."` still works if you have a key.
 
-stdio (Claude Code starts the server itself; the key goes in the environment):
+stdio (Claude Code starts the server itself; it needs a key in the environment, for example one a sign-in minted):
 
 ```
 claude mcp add roadie --env MCP_TOKEN=btk_YOUR_KEY -- npm --prefix ~/workspace/roadie run --silent mcp:stdio

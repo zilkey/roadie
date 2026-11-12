@@ -336,14 +336,26 @@ test("acts.findTeam: lists the team, saves nothing; Add makes a contact linked t
   assert.deepEqual(r.people.map((p: { role: string; email?: string; name?: string }) => [p.role, p.name ?? p.email]), [
     ["booking", "Dana Reyes"], ["management", "mgmt@abrothersfountain.example"], ["publicity", "Sam Ortiz"], ["general", "hello@abrothersfountain.example"],
   ]);
+  // The search for Sam Ortiz found Sam's own email and LinkedIn on their PR firm's team page, not the colleague's.
+  const sam = r.people[2];
+  assert.equal(sam.email, "sam@ortizpr.example");
+  assert.equal(sam.phone, "+13035550177");
+  assert.deepEqual(sam.links, ["https://www.linkedin.com/in/sam-ortiz-pr", "https://ortizpr.example/team"]);
   assert.ok(!r.people.some((p: { email?: string }) => p.email === "sam@made-up-pr.example"), "made-up email dropped");
+  // dedupeTeam folded "D. Reyes" into Dana Reyes and the press inbox (the address Sam's search found) into Sam, page and all.
+  assert.equal(sam.source, "https://abrothersfountain.example/contact");
+  assert.equal(r.people.filter((p: { email?: string }) => p.email === "sam@ortizpr.example").length, 1);
   assert.equal((await db.list("contacts")).length, 0, "nothing saved");
   const { teamContactInput } = await import("@/lib/acts");
-  const c = await cmd("contacts.create", { ...teamContactInput(r.people[0], "A Brother's Fountain"), attachTo: { kind: "acts", id: a.id } });
+  const c = await cmd("contacts.create", { ...teamContactInput(r.people[0], "A Brother's Fountain", "2026-11-11"), attachTo: { kind: "acts", id: a.id } });
   const saved = (await db.get("contacts", c.id))! as Record<string, any>;
+  const note = (await db.list("contactNotes")).find((n) => n.contactId === c.id) as Record<string, any> | undefined;
+  assert.match(note?.notes ?? "", /^Found by "Find their team" for A Brother's Fountain on 2026-11-11\. Booking agent for A Brother's Fountain at Front Range Touring: named on abrothersfountain\.example/);
+  const s = await cmd("contacts.create", { ...teamContactInput(sam, "A Brother's Fountain", "2026-11-11"), attachTo: { kind: "acts", id: a.id } });
+  assert.deepEqual(((await db.get("contacts", s.id))! as Record<string, any>).links, sam.links);
   assert.equal(saved.title, "Booking agent, Front Range Touring");
   assert.deepEqual(saved.phones, ["+19705550142"]);
-  assert.deepEqual((await take(a.id))!.contactIds, [c.id]);
+  assert.deepEqual((await take(a.id))!.contactIds, [c.id, s.id]);
 
   const other = await cmd("acts.create", { name: "Nobody Knows Us" });
   assert.deepEqual((await cmd("acts.findTeam", { id: other.id })).people, []);

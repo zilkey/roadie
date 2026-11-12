@@ -10,13 +10,14 @@ import { fmtPhone } from "@/components/booking/listRows";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useHasDraft } from "@/lib/drafts";
 import { highlight } from "@/lib/booking";
+import { isAgent, isManager } from "@/lib/contactRoles";
 import type { Show } from "@/schema";
 
 /** The Contacts section: everyone the band deals with, with where they work. Admins only (contacts are admin-only data). */
 export function ContactsIndex() { return <AdminOnly><Contacts /></AdminOnly>; }
 
-type Filter = "venue" | "festival" | "promoter" | "host" | "email";
-const FILTERS: [Filter, string][] = [["venue", "Venue"], ["festival", "Festival"], ["promoter", "Promoter"], ["host", "Host"], ["email", "Has email"]];
+type Filter = "venue" | "festival" | "promoter" | "host" | "manager" | "agent" | "email";
+const FILTERS: [Filter, string][] = [["venue", "Venue"], ["festival", "Festival"], ["promoter", "Promoter"], ["host", "Host"], ["manager", "Managers"], ["agent", "Booking agents"], ["email", "Has email"]];
 type Place = { kind: "venue" | "festival" | "promoter"; id: string; name: string; city?: string };
 
 const Dash = () => <span className="dash">—</span>;
@@ -49,7 +50,7 @@ function Contacts() {
     return [...b.contacts].sort((x, y) => x.name.localeCompare(y.name)).filter((c) => {
       const at = placesOf.get(c.id) ?? [];
       if (needle && ![c.name, ...c.emails, c.title ?? "", ...at.map((p) => p.name)].some((t) => t.toLowerCase().includes(needle))) return false;
-      return on.every((f) => f === "host" ? hosts.has(c.id) : f === "email" ? c.emails.length > 0 : at.some((p) => p.kind === f));
+      return on.every((f) => f === "host" ? hosts.has(c.id) : f === "email" ? c.emails.length > 0 : f === "manager" ? isManager(c.title) : f === "agent" ? isAgent(c.title) : at.some((p) => p.kind === f));
     });
   }, [b.contacts, placesOf, hosts, q, on]);
 

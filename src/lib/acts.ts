@@ -166,20 +166,96 @@ export type TeamRole = (typeof TEAM_ROLES)[number];
 export const TEAM_ROLE_LABEL: Record<TeamRole, string> = {
   booking: "Booking agent", management: "Manager", publicity: "Publicist", label: "Label", general: "General inbox", other: "Team",
 };
-/** One person "Find their team" turned up. An email is always one written on a page it read. */
-export interface TeamPerson { name?: string; role: TeamRole; company?: string; email?: string; phone?: string; source?: string }
+/**
+ * One person "Find their team" turned up. An email is always one written on a page it read. `links` and `infoFrom` come from the
+ * search for the person themself: their LinkedIn and the pages that name them, and the page their email or phone was on.
+ */
+export interface TeamPerson { name?: string; role: TeamRole; company?: string; email?: string; phone?: string; source?: string; links?: string[]; infoFrom?: string }
 export interface TeamResult { id: string; name: string; people: TeamPerson[]; read: string[]; searched: boolean }
+
+/** The parts of a name worth matching: lowercase words of three letters or more ("Joseph \"JP\" Pineda" → joseph, pineda). */
+export function nameTokens(name: string): string[] {
+  return name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z]+/).filter((t) => t.length >= 3);
+}
+
+/** A name's first-name forms (its first word and any nickname in quotes) and its surname: `Joseph "JP" Pineda` → [joseph, jp], pineda. */
+function nameForms(name: string): { firsts: string[]; last: string } | undefined {
+  const plain = name.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[“”]/g, '"');
+  const nicks = [...plain.matchAll(/"([^"]+)"|\(([^)]+)\)/g)].map((m) => (m[1] ?? m[2]).replace(/[^a-z]/g, "")).filter(Boolean);
+  const words = plain.replace(/"[^"]*"|\([^)]*\)/g, " ").split(/[^a-z]+/).filter(Boolean);
+  if (words.length < 2) return undefined;
+  const last = words[words.length - 1];
+  if (last.length < 2) return undefined;
+  return { firsts: [words[0], ...nicks], last };
+}
+
+/**
+ * Whether two names are the same person, conservatively: the same name, or the same surname with first names that match, where one
+ * may be an initial or a nickname in quotes (`Joseph "JP" Pineda`, `JP Pineda`, `J. Pineda`). Different first names stay apart.
+ */
+export function sameTeamName(a: string, b: string): boolean {
+  const norm = (s: string) => s.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]+/g, " ").trim();
+  if (norm(a) && norm(a) === norm(b)) return true;
+  const x = nameForms(a), y = nameForms(b);
+  if (!x || !y || x.last !== y.last) return false;
+  return x.firsts.some((f) => y.firsts.some((g) => f === g || (f.length === 1 && g.startsWith(f)) || (g.length === 1 && f.startsWith(g))));
+}
+
+/** The contact a person Find their team turned up already is: one with their email, else one with the same name (sameTeamName). */
+export function teamContactMatch<C extends { name: string; emails: string[] }>(p: TeamPerson, contacts: C[]): C | undefined {
+  const email = p.email?.toLowerCase();
+  return (email ? contacts.find((c) => c.emails.some((e) => e.toLowerCase() === email)) : undefined)
+    ?? (p.name ? contacts.find((c) => sameTeamName(c.name, p.name!)) : undefined);
+}
 
 /** A Google search for the act's booking agent and manager, for when Find their team comes back empty. */
 export const teamSearchUrl = (name: string) => `https://www.google.com/search?q=${encodeURIComponent(`"${name}" band booking agent OR manager OR management`)}`;
 
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return u; } };
+
+/**
+ * How the person got into Roadie, for the contact's notes: "Found by Find their team for Brooke Alexx on 2026-11-11. Booking agent
+ * at Reliant Talent Agency, named on reliantalent.com (https://…). Email from a search for them, on …". `today` is YYYY-MM-DD.
+ */
+export function teamNote(p: TeamPerson, actName: string, today: string): string {
+  const what = p.role === "general" ? `${actName}'s general inbox` : `${TEAM_ROLE_LABEL[p.role]} for ${actName}${p.company ? ` at ${p.company}` : ""}`;
+  const where = p.source ? `named on ${hostOf(p.source)} (${p.source})` : "named in a Google search";
+  const info = [p.email && "email", p.phone && "phone"].filter(Boolean).join(" and ");
+  return [
+    `Found by "Find their team" for ${actName} on ${today}.`,
+    `${what}: ${where}.`,
+    p.infoFrom && info && `The ${info} came from a search for them, on ${hostOf(p.infoFrom)} (${p.infoFrom}).`,
+  ].filter(Boolean).join(" ");
+}
+
 /** What Add puts on the contact: the person's name, else the inbox as "<act> manager" (a general inbox is just the act). */
-export function teamContactInput(p: TeamPerson, actName: string) {
+export function teamContactInput(p: TeamPerson, actName: string, today: string) {
   const label = TEAM_ROLE_LABEL[p.role];
   const name = p.name ?? (p.role === "general" ? actName : `${actName} ${label.toLowerCase()}`);
   const title = [p.role === "general" || p.role === "other" ? undefined : label, p.company].filter(Boolean).join(", ");
+  const checkedAt = new Date().toISOString();
+  const sources = [...new Set([p.source, p.infoFrom].filter((u): u is string => !!u))].map((url) => ({ url, checkedAt }));
   return {
     name, ...(title ? { title } : {}), emails: p.email ? [p.email] : [], phones: p.phone ? [p.phone] : [],
-    ...(p.source ? { sources: [{ url: p.source, checkedAt: new Date().toISOString() }] } : {}),
+    ...(p.links?.length ? { links: p.links } : {}), ...(sources.length ? { sources } : {}), notes: teamNote(p, actName, today),
+  };
+}
+
+/**
+ * For someone already in contacts: what Find their team found that the contact doesn't have yet (an email, a phone, links), as a
+ * contacts.update patch with a line added to the notes. Undefined when there's nothing new.
+ */
+export function teamContactPatch(p: TeamPerson, c: { emails: string[]; phones: string[]; links?: string[]; notes?: string }, actName: string, today: string) {
+  const email = p.email && !c.emails.includes(p.email) ? p.email : undefined;
+  const phone = p.phone && !c.phones.includes(p.phone) ? p.phone : undefined;
+  const links = (p.links ?? []).filter((u) => !(c.links ?? []).includes(u));
+  if (!email && !phone && !links.length) return undefined;
+  const got = [email && "email", phone && "phone", links.length && "links"].filter(Boolean).join(", ");
+  const from = p.infoFrom ?? p.source;
+  const line = `Added ${got} from "Find their team" for ${actName} on ${today}${from ? `, on ${hostOf(from)} (${from})` : ""}.`;
+  return {
+    ...(email ? { emails: [...c.emails, email] } : {}), ...(phone ? { phones: [...c.phones, phone] } : {}),
+    ...(links.length ? { links: [...(c.links ?? []), ...links] } : {}),
+    notes: c.notes?.trim() ? `${c.notes.trim()}\n\n${line}` : line,
   };
 }

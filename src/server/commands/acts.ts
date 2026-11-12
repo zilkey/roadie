@@ -155,7 +155,9 @@ export const actsFindTeam = defineCommand({
   description:
     "Look for an act's team: booking agent, manager, publicist, label and general inbox, from the act's own website (its contact, booking, " +
     "about and press pages), its Bandcamp, and a Google search (Gemini's grounding) with the pages it came from. An email is returned only when " +
-    "it is written on a page that was read. Saves nothing: the act page's \"Find their team\" button lists people, each with an Add button.",
+    "it is written on a page that was read. Then one more search per named person for their own email, phone and LinkedIn (kept only when " +
+    "a page names them). Saves nothing: the act page's \"Find their team\" button lists people, each with an Add button that saves them " +
+    "with a note on how they were found.",
   input: z.strictObject({ id: z.string().min(1) }),
   run: (_ctx, { id }) => findActTeam(id),
 });

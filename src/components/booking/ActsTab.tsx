@@ -14,10 +14,12 @@
  *
  * The filters ride in the URL so a link sends the exact list: ?show= (the dropdown; the shortlist is the default and leaves it out),
  * ?genre= (once per genre), ?city= and ?find= (not ?q=: that's the booking-wide search, which replaces the tab). They're written with
- * history.replaceState, which the App Router picks up without a navigation, so typing in Find doesn't refetch the page.
+ * history.replaceState, which the App Router picks up without a navigation, so typing in Find doesn't refetch the page. Back from
+ * an act's page steps back to that URL, and useListMemory opens as many pages as were open and scrolls back to where it was.
  */
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useListMemory } from "@/lib/listMemory";
 import Link, { useArtist } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
@@ -117,6 +119,8 @@ export function ActsTab() {
     return listed.sort((x, y) => (found?.get(x.id)?.next?.date ?? "9999").localeCompare(found?.get(y.id)?.next?.date ?? "9999") || x.name.localeCompare(y.name));
   }, [acts.rows, found, takes, filter, city, q, genres]);
   const loading = !acts.rows || !notes.rows || (!found && !error);
+  // Back from an act's page: the same pages open and the same scroll.
+  useListMemory(shown, setShown, !loading);
   const page = rows.slice(0, shown);
   const left = rows.length - page.length;
 

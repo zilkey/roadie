@@ -139,6 +139,19 @@ test("the Acts tab shows the shortlist, all acts, a search, and hides an act tha
   await expect(page.getByTestId(`act-row-${sup}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${head}`)).toBeVisible();
   await expect(page.getByTestId(`act-row-${lone}`)).toBeVisible();
+  // Back from an act's page comes back to the list as it was: the filter (in the URL), every page open and the scroll
+  const rowsOpen = await page.getByTestId(/^act-row-/).count();
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const y = await page.evaluate(() => window.scrollY);
+  expect(y).toBeGreaterThan(100);
+  await page.getByTestId(/^act-row-/).last().getByTestId(/^act-link-/).click();
+  await expect(page.getByTestId("act-page")).toBeVisible();
+  await page.getByTestId("back").click();
+  await expect(page).toHaveURL(/\/booking\/acts\?show=all$/);
+  await expect(page.getByTestId(/^act-row-/)).toHaveCount(rowsOpen);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(y);
+  await page.setViewportSize({ width: 1280, height: 900 });
   // a new filter starts back at the first page; the search looks through every act, not just the page
   await page.getByTestId("acts-filter").selectOption("opened");
   await page.getByTestId("acts-filter").selectOption("all");
@@ -336,4 +349,45 @@ test("Pitch them: disabled with nothing to go on, then opens a new email to the 
   // Cancel goes back to the act
   await page.getByTestId("email-cancel").click();
   await expect(page).toHaveURL(actUrl);
+});
+
+test("Find their team: each person's own email and LinkedIn; Add links them, with a note on how they were found; the contact links back", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const name = `A Brother's Fountain ${Date.now() % 100000}`;
+  await addAct(page, name);
+  const actUrl = page.url();
+
+  await page.getByTestId("act-find-team").click();
+  const sam = page.getByTestId("act-team").getByTestId(/^act-team-person-/).filter({ hasText: "Sam Ortiz" });
+  await expect(sam).toContainText("sam@ortizpr.example");
+  await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("href", "https://www.linkedin.com/in/sam-ortiz-pr");
+  await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("target", "_blank");
+  await sam.getByTestId(/^act-team-add-/).click();
+  await expect(sam.getByTestId(/^act-team-added-/)).toContainText("In contacts");
+
+  // The act's Contacts card lists Sam as a link to their page
+  await page.getByTestId("contact-link-Sam Ortiz").click();
+  await expect(page.getByTestId("contact-page")).toBeVisible();
+  await expect(page.getByTestId("contact-links")).toContainText("LinkedIn");
+  await expect(page.getByTestId("contact-google")).toHaveAttribute("href", /google\.com\/search\?q=%22Sam%20Ortiz%22/);
+  await expect(page.getByTestId("contact-google")).toHaveAttribute("target", "_blank");
+  await expect(page.getByTestId("contact-notes")).toContainText(`Found by "Find their team" for ${name}`);
+  await page.getByTestId("works-with").getByRole("link", { name }).click();
+  await expect(page).toHaveURL(actUrl);
+});
+
+test("Find their team on another act: Sam Ortiz is already a contact (from the test above), so Link links them, no second Add", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await addAct(page, `A Brother's Fountain ${Date.now() % 100000} B`);
+
+  await page.getByTestId("act-find-team").click();
+  // Dana Reyes and "D. Reyes" are one row, and the press inbox is Sam's address: four people, not six.
+  await expect(page.getByTestId("act-team").getByTestId(/^act-team-person-/)).toHaveCount(4);
+  const sam = page.getByTestId("act-team").getByTestId(/^act-team-person-/).filter({ hasText: "Sam Ortiz" });
+  await expect(sam.getByTestId(/^act-team-add-/)).toHaveCount(0);
+  await expect(sam.getByTestId(/^act-team-update-/)).toHaveCount(0);
+  await sam.getByTestId(/^act-team-attach-/).click();
+  await expect(sam.getByTestId(/^act-team-added-/)).toContainText("In contacts");
+  await expect(sam.getByTestId(/^act-team-attach-/)).toHaveCount(0);
+  await expect(page.getByTestId("contact-link-Sam Ortiz")).toBeVisible();
 });

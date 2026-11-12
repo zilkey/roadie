@@ -1,6 +1,7 @@
 import { appUrl } from "@/lib/app-url";
 import { artistPath } from "@/lib/routes";
 import { googleConfigured, verifyState } from "@/server/google/oauth";
+import { googleCallback, isLoginState } from "../../../../../mcp/oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;
+  // Signing in on /connect to link Claude (mcp/oauth.ts) uses this same redirect URI.
+  if (isLoginState(q.get("state"))) return googleCallback(q);
   const state = q.get("state") ?? "";
   const s = googleConfigured() ? verifyState(state) : null;
   if (!s) return new Response("This Google sign-in link has expired. Go back to Roadie and press Connect again.", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
