@@ -18,9 +18,9 @@ test("cart: total and note in price list order; unlisted items count for nothing
   assert.equal(cartNote(ITEMS, {}), "");
 });
 
-test("venmoPayUrl: the profile with no amount; pay, amount and note otherwise, spaces as %20", () => {
+test("venmoPayUrl: the profile with no amount or note; a note alone (a tip) opens pay; pay, amount and note otherwise, spaces as %20", () => {
   assert.equal(venmoPayUrl("Ingrid-Avison"), "https://venmo.com/Ingrid-Avison");
-  assert.equal(venmoPayUrl("Ingrid-Avison", 0, "x"), "https://venmo.com/Ingrid-Avison");
+  assert.equal(venmoPayUrl("Ingrid-Avison", 0, "Tip"), "https://venmo.com/Ingrid-Avison?txn=pay&note=Tip");
   assert.equal(venmoPayUrl("Ingrid-Avison", 3500, "2 Coozie, 1 T-Shirt"), "https://venmo.com/Ingrid-Avison?txn=pay&amount=35.00&note=2%20Coozie%2C%201%20T-Shirt");
   assert.equal(venmoPayUrl("a", 450), "https://venmo.com/a?txn=pay&amount=4.50");
 });

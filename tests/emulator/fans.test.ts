@@ -93,10 +93,15 @@ test("list: public name, merch price list with the Venmo handle, and style", asy
   let v = await listView("nora-quill-band", NEVER);
   assert.equal(v.artistName, "Nora Quill");
   assert.equal(v.merch, null, "merch off and no payment link: no price list");
+  assert.equal(v.tip, null, "no payment link: no tip button");
   assert.deepEqual(v.style, { theme: "dark", accent: "#e8590c" });
   await cmd("artists.update", { id: TEST_ARTIST, patch: { features: { fans: true, merch: true }, paymentUrl: "@Nora-Quill" } });
   v = await listView("nora-quill-band", NEVER);
   assert.deepEqual(v.merch, { venmo: "Nora-Quill", items });
+  assert.deepEqual(v.tip, { venmo: "Nora-Quill" }, "a Venmo link means a tip button");
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { hideTips: true } });
+  assert.equal((await listView("nora-quill-band", NEVER)).tip, null, "Hide Tips");
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { hideTips: null } });
   await cmd("artists.update", { id: TEST_ARTIST, patch: { merchItems: [] } });
   assert.equal((await listView("nora-quill-band", NEVER)).merch, null, "no items: no merch section");
   await cmd("artists.update", { id: TEST_ARTIST, patch: { publicName: null } });

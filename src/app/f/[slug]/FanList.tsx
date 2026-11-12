@@ -3,7 +3,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { cartNote, cartTotal, money, onColor, venmoPayUrl, type Cart } from "@/lib/merch";
 import css from "./fans.module.css";
 
-// The public fan page, top to bottom: the email list, tonight's shows (Ticket or Suggested Donation), merch, the page's links, then the artist's socials. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
+// The public fan page, top to bottom: the email list, tonight's shows (Ticket or Suggested Donation), merch, Leave a tip, the page's links, then the artist's socials. Plain fetch against /api/public/{slug}; no app components, auth or Firebase.
 interface Item { id: string; name: string; priceCents: number }
 interface ShowLine { id: string; name: string; amountCents: number; button: "ticket" | "donation" }
 interface View {
@@ -11,6 +11,7 @@ interface View {
   current: { showId: string; label: string; date: string } | null;
   merch: { venmo: string; items: Item[] } | null;
   shows: { venmo: string; items: ShowLine[] } | null;
+  tip: { venmo: string } | null;
   links: { id: string; name: string; url: string }[];
   socials: { key: string; label: string; url: string }[];
   style: { theme: "auto" | "light" | "dark"; accent: string | null };
@@ -64,6 +65,17 @@ function ShowPay({ l, venmo }: { l: ShowLine; venmo: string }) {
       </div>
       <a className={css.btn} href={venmoPayUrl(venmo, l.amountCents * n, b.note)} target="_blank" rel="noopener noreferrer" data-testid="fans-show-pay">{b.label}</a>
       <p className={css.fine}>Pays @{venmo} on Venmo{l.button === "donation" ? ". You can change the amount there." : "."}</p>
+    </section>
+  );
+}
+
+/** "Leave a tip": Venmo opens with "Tip" as the note and the fan types the amount. */
+function Tip({ venmo }: { venmo: string }) {
+  return (
+    <section className={css.merch} aria-labelledby="tip-h" data-testid="fans-tip">
+      <h2 id="tip-h" className={css.eyebrow}>Tip</h2>
+      <a className={css.btn} href={venmoPayUrl(venmo, 0, "Tip")} target="_blank" rel="noopener noreferrer" data-testid="fans-tip-pay">Leave a tip</a>
+      <p className={css.fine}>Pays @{venmo} on Venmo. You pick the amount there.</p>
     </section>
   );
 }
@@ -179,6 +191,7 @@ export function FanList({ slug, showId }: { slug: string; showId?: string }) {
     <>
       {view.shows?.items.map((l) => <ShowPay key={l.id} l={l} venmo={view.shows!.venmo} />)}
       {view.merch ? <Merch merch={view.merch} /> : null}
+      {view.tip ? <Tip venmo={view.tip.venmo} /> : null}
       {view.links.length ? <Links links={view.links} /> : null}
       {view.socials.length ? (
         <footer className={css.socials} data-testid="fans-socials">

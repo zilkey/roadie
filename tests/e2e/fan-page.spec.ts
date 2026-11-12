@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A, APP, ARTIST_SLUG } from "./env";
 
-// The Fan Page (/fans): Fans, Price list, Links, Suggested donation, QR code and Settings tabs. Each test puts back what it changed;
+// The Fan Page (/fans): Email List, Merch Prices, Money, QR code, Links and Settings tabs. Each test puts back what it changed;
 // the file runs one test at a time because they all edit the same artist.
 test.describe.configure({ mode: "serial" });
 
@@ -13,14 +13,14 @@ async function signIn(page: Page, key = "rudy") {
 const saved = (page: Page) => expect(page.getByTestId("save-status").first()).toHaveText("Saved");
 const values = (page: Page, testid: string) => page.getByTestId(testid).evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value));
 const tab = async (page: Page, k: string) => { await page.getByTestId(`fan-page-tab-${k}`).click(); await expect(page).toHaveURL(new RegExp(`tab=${k}`)); };
-type View = { artistName: string; logo: string | null; style: { theme: string; accent: string | null }; links: { name: string; url: string }[]; shows: unknown };
+type View = { artistName: string; logo: string | null; style: { theme: string; accent: string | null }; links: { name: string; url: string }[]; shows: unknown; tip: { venmo: string } | null };
 const view = async (page: Page) => (await (await page.request.get(`${APP}/api/public/${ARTIST_SLUG}/list`)).json()) as View;
 
 test("tabs, with Preview on every one; the old Merch page lands on Price list; members only get Fans", async ({ page, browser }) => {
   await signIn(page);
   await page.goto(A("/fans"));
   await expect(page.getByTestId("page-title")).toHaveText("Fan Page");
-  for (const k of ["fans", "price", "links", "donation", "qr", "settings"]) {
+  for (const k of ["fans", "price", "money", "qr", "links", "settings"]) {
     await tab(page, k);
     await expect(page.getByTestId("fan-page-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}`);
   }
@@ -87,7 +87,7 @@ test("links: a name and a full URL, reorderable, on the public page in order", a
   await expect.poll(async () => (await view(page)).links).toEqual([]);
 });
 
-test("a show's Fan Page card: on, name, amount, button, preview link; the Suggested donation tab lists it", async ({ page }) => {
+test("a show's Fan Page card: on, name, amount, button, preview link; the Money tab lists it", async ({ page }) => {
   await signIn(page);
   await page.goto(A("/shows"));
   await page.getByTestId("shows-row").filter({ hasText: "Marisol" }).filter({ hasText: "Dec 12" }).first().locator("td.date a").click();
@@ -121,7 +121,7 @@ test("a show's Fan Page card: on, name, amount, button, preview link; the Sugges
   await expect(page.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
 
   // The Fan Page tab lists it with the same preview link; the preview asks the public view for that show.
-  await page.goto(A("/fans?tab=donation"));
+  await page.goto(A("/fans?tab=money"));
   const row = page.getByTestId("donation-show").filter({ hasText: "Marisol Late Show" });
   await expect(row).toContainText("$15");
   await expect(row).toContainText("Suggested Donation");
@@ -145,6 +145,33 @@ test("a show's Fan Page card: on, name, amount, button, preview link; the Sugges
   await expect(c2.getByTestId("show-fan-preview-none")).toBeVisible();
   await c2.getByTestId("show-fan-button-ticket").click();
   await expect(c2.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("tab names in order; Money's Hide Tips takes the Leave a tip button off the public page", async ({ page }) => {
+  await signIn(page);
+  await page.goto(A("/fans"));
+  await expect(page.getByTestId("fan-page-tabs").getByRole("tab")).toHaveText(["Email List", "Merch Prices", "Money", "QR code", "Links", "Settings"]);
+  await tab(page, "money");
+  const before = (await view(page)).tip;
+  const box = page.getByTestId("fan-hide-tips");
+  await expect(box).not.toBeChecked();
+  await box.check();
+  await saved(page);
+  await expect.poll(async () => (await view(page)).tip).toBeNull();
+  await page.goto(`/f/${ARTIST_SLUG}`);
+  await expect(page.getByTestId("fans-join")).toBeVisible();
+  await expect(page.getByTestId("fans-tip")).toHaveCount(0);
+
+  // Put it back.
+  await page.goto(A("/fans?tab=money"));
+  await page.getByTestId("fan-hide-tips").uncheck();
+  await saved(page);
+  await expect.poll(async () => (await view(page)).tip).toEqual(before);
+  if (before) {
+    await page.goto(`/f/${ARTIST_SLUG}`);
+    await expect(page.getByTestId("fans-tip-pay")).toHaveText("Leave a tip");
+    await expect(page.getByTestId("fans-tip-pay")).toHaveAttribute("href", `https://venmo.com/${before.venmo}?txn=pay&note=Tip`);
+  }
 });
 
 test("settings: logo upload replaces the name, name and style reach the public page", async ({ page }) => {

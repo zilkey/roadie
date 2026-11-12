@@ -97,6 +97,8 @@ export interface ListView {
   merch: { venmo: string; items: { id: string; name: string; priceCents: number }[] } | null;
   /** Shows with their fan page line on and in its window (see showsOnPage), each a Venmo button; null when there are none or no Venmo link. */
   shows: { venmo: string; items: FanShowLine[] } | null;
+  /** The "Leave a tip" button's Venmo handle; null when Hide Tips is checked or there is no Venmo link. */
+  tip: { venmo: string } | null;
   /** The fan page's own links, in order. */
   links: { id: string; name: string; url: string }[];
   /** The artist's public links (Instagram, Spotify, website...), in ARTIST_LINKS order, for the footer. */
@@ -161,6 +163,7 @@ export async function listView(slug: string, now: Date = new Date(), previewShow
     current: hit ? { showId: hit.id, label: showLabel(hit), date: hit.date as string } : null,
     merch: merchOn && items.length ? { venmo: pay!.handle, items } : null,
     shows: pay?.app === "venmo" ? await showsOnPage(artist.id, now, previewShowId).then((items) => (items.length ? { venmo: pay.handle, items } : null)) : null,
+    tip: pay?.app === "venmo" && artist.hideTips !== true ? { venmo: pay.handle } : null,
     links,
     socials,
     style: { theme: style.theme ?? "auto", accent: style.accent ?? null },

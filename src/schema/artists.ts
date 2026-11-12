@@ -171,6 +171,8 @@ export const Artist = entity({
   /** The merch price list on the public fan page, in order. Shown when features.merch is on and paymentUrl is set. */
   merchItems: z.array(MerchItem).max(50).optional(),
   fanPageStyle: FanPageStyle.optional(),
+  /** True hides the fan page's "Leave a tip" button (Fan Page › Money). Missing = the button shows whenever there is a Venmo link. */
+  hideTips: z.boolean().optional(),
   /** The fan page's own links, in order, listed under merch. */
   fanLinks: z.array(FanLink).max(30).optional(),
   /**

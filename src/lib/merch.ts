@@ -19,12 +19,14 @@ export function cartNote(items: readonly PriceLine[], cart: Cart): string {
 
 /**
  * The link that opens Venmo to pay @handle. With an amount, Venmo opens with it and the note filled in
- * (venmo.com/{handle}?txn=pay&amount=&note=; on a phone the link opens the Venmo app). Without one, the profile page.
+ * (venmo.com/{handle}?txn=pay&amount=&note=; on a phone the link opens the Venmo app). With only a note, Venmo opens to pay with
+ * that note and the fan types the amount (a tip). With neither, the profile page.
  */
 export function venmoPayUrl(handle: string, cents = 0, note = ""): string {
   const base = `https://venmo.com/${encodeURIComponent(handle)}`;
-  if (cents <= 0) return base;
-  const q = new URLSearchParams({ txn: "pay", amount: (cents / 100).toFixed(2) });
+  if (cents <= 0 && !note) return base;
+  const q = new URLSearchParams({ txn: "pay" });
+  if (cents > 0) q.set("amount", (cents / 100).toFixed(2));
   if (note) q.set("note", note);
   return `${base}?${q.toString().replace(/\+/g, "%20")}`;
 }

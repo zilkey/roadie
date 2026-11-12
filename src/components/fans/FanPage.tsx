@@ -21,8 +21,8 @@ import { FansTab } from "./FansPage";
 
 /** The Fan Page's tabs, in order: [?tab= value, label, admins only]. */
 export const FAN_PAGE_TABS = [
-  ["fans", "Fans", false], ["price", "Price list", true], ["links", "Links", true], ["donation", "Suggested donation", true],
-  ["qr", "QR code", true], ["settings", "Settings", true],
+  ["fans", "Email List", false], ["price", "Merch Prices", true], ["money", "Money", true], ["qr", "QR code", true],
+  ["links", "Links", true], ["settings", "Settings", true],
 ] as const;
 export type FanPageTab = (typeof FAN_PAGE_TABS)[number][0];
 
@@ -150,7 +150,7 @@ async function shrinkImage(file: File): Promise<string | null> {
 /** Accent swatches offered on the Settings tab, besides any color picked by hand. */
 const SWATCHES = ["#5561e8", "#e8590c", "#d6336c", "#2f9e44", "#f0b400", "#111111"];
 
-/** The Fan Page (/fans): Fans for everyone; for admins also the price list, links, suggested donation, QR code and settings of /f/{slug}. */
+/** The Fan Page (/fans): Email List for everyone; for admins also Merch Prices, Money (tips and show lines), QR code, links and settings of /f/{slug}. */
 export function FanPage() {
   const ctx = useArtist();
   const artist = ctx.doc ?? undefined;
@@ -166,16 +166,17 @@ export function FanPage() {
   const [publicName, setPublicName] = useState("");
   const [style, setStyle] = useState<FanPageStyle>({});
   const [logo, setLogo] = useState<string | null>(null);
+  const [hideTips, setHideTips] = useState(false);
   const [logoError, setLogoError] = useState("");
   const [origin, setOrigin] = useState("");
   useEffect(() => { setOrigin(window.location.origin); }, []);
   const resetFrom = (a: Artist) => {
     setItems((a.merchItems ?? []).map((i) => ({ id: i.id, a: i.name, b: priceText(i.priceCents) })));
     setLinks((a.fanLinks ?? []).map((l) => ({ id: l.id, a: l.name, b: l.url })));
-    setPublicName(a.publicName ?? ""); setStyle(a.fanPageStyle ?? {}); setLogo(a.logo?.dataUrl ?? null);
+    setPublicName(a.publicName ?? ""); setStyle(a.fanPageStyle ?? {}); setLogo(a.logo?.dataUrl ?? null); setHideTips(!!a.hideTips);
   };
   const as = useAutosave({ command: "artists.update", id: admin ? artist?.id ?? "" : "", rev: artist?.rev, scope: "fan-page", title: "Fan Page", onUseTheirs: () => artist && resetFrom(artist) });
-  const liveKey = JSON.stringify(artist ? [artist.merchItems, artist.fanLinks, artist.publicName, artist.fanPageStyle, artist.logo?.dataUrl.length] : null);
+  const liveKey = JSON.stringify(artist ? [artist.merchItems, artist.fanLinks, artist.publicName, artist.fanPageStyle, artist.logo?.dataUrl.length, artist.hideTips] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const shows = useCollection<Show>("shows", { where: [["artistId", "==", ctx.artistId]], skip: !admin });
@@ -262,8 +263,10 @@ export function FanPage() {
         </section>
       )}
 
-      {tab === "donation" && (
+      {tab === "money" && (
         <section className="card" data-testid="fan-donation">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hideTips} onChange={(e) => { setHideTips(e.target.checked); as.patch({ hideTips: e.target.checked || null }); }} data-testid="fan-hide-tips" />Hide Tips</label>
+          <p className="s">{hideTips ? "The fan page has no tip button." : "The fan page always has a “Leave a tip” button that opens Venmo with “Tip” as the note."}</p>
           <p className="s">Shows with “Show on Fan Page” checked, from today on. Each one appears on the fan page 1 hour before the show and 3 hours after, with + and − and a Venmo button. Set it up in the Fan Page section of the show&apos;s Promotion tab.</p>
           {!venmo && <p className="s" data-testid="donation-no-venmo">Add your Venmo link (Payment app) in {general}: the fan page needs it to show these.</p>}
           {shows.rows === null ? null : onPage.length ? (
