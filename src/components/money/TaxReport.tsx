@@ -7,6 +7,7 @@ import { EXPENSE_LABEL, INCOME_LABEL, METHOD_LABEL, formatCents } from "@/lib/mo
 import { MEALS_PCT, defaultTaxYear, moneyYears, necThreshold, taxReport, unassignedIncome, type TaxEntry, type TaxLineTotal } from "@/lib/taxes";
 import { useMoneyData } from "./useMoneyData";
 import { useAdmins } from "./MoneyNav";
+import { PrintIcon } from "@/components/print/PrintDialog";
 
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const amt = (c: number) => (c ? formatCents(c) : "—");
@@ -25,23 +26,29 @@ export function TaxReport({ uid }: { uid: string }) {
   const { call, error, busy } = useCommand();
   const years = useMemo(() => moneyYears({ income: d.inc, expenses: d.exp, payouts: d.pay }, Number(d.today.slice(0, 4))), [d.inc, d.exp, d.pay, d.today]);
   const year = Number(sp.get("year")) || defaultTaxYear(d.today);
-  const r = useMemo(() => taxReport({ year, uid, income: d.inc, expenses: d.exp, payouts: d.pay, musicianUserId: d.musicianUserId }),
+  // Cash is left out by default; ?cash=1 counts it in gross receipts and the net.
+  const includeCash = sp.get("cash") === "1";
+  const r = useMemo(() => taxReport({ year, uid, includeCash, income: d.inc, expenses: d.exp, payouts: d.pay, musicianUserId: d.musicianUserId }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [year, uid, d.inc, d.exp, d.pay, d.musicians.rows]);
+    [year, uid, includeCash, d.inc, d.exp, d.pay, d.musicians.rows]);
   const loose = unassignedIncome(d.inc, year);
   const name = d.personName(uid);
   const isAdmin = admins.some((a) => a.id === uid);
-  const setYear = (y: string) => router.replace(`/money/taxes/${uid}?year=${y}`);
+  const go = (y: number, cash: boolean) => router.replace(`/money/taxes/${uid}?year=${y}${cash ? "&cash=1" : ""}`);
+  const setYear = (y: string) => go(Number(y), includeCash);
 
   return (
     <div className="grid gap-5" data-testid="tax-report">
       <PageTitle title={`${name}'s taxes`} sub="What went through their account, sorted the way Schedule C asks for it"
-        actions={<>
+        actions={<div className="flex flex-nowrap items-center gap-2">
+          <label className="pick" data-testid="tax-include-cash-label">
+            <input type="checkbox" checked={includeCash} onChange={(e) => go(year, e.target.checked)} data-testid="tax-include-cash" /> Include cash
+          </label>
           <select className="select w-auto" value={year} onChange={(e) => setYear(e.target.value)} data-testid="tax-year" aria-label="Tax year">
             {[...new Set([...years, year])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
-          <button className="btn ghost" onClick={() => window.print()} data-testid="tax-print">Print</button>
-        </>} />
+          <button type="button" className="icon-btn" onClick={() => window.print()} data-testid="tax-print" aria-label="Print" title="Print"><PrintIcon /></button>
+        </div>} />
       <ErrorBox error={error} />
       {d.users.rows && !isAdmin && <div className="empty" data-testid="tax-not-admin">{name} isn&apos;t an admin, so nothing goes through their account.</div>}
 
@@ -80,8 +87,8 @@ export function TaxReport({ uid }: { uid: string }) {
           <span><span className="tax-k">Principal business</span> Musician / performing arts</span>
         </div>
 
-        <h3 className="tax-part"><span>Part I</span> Income</h3>
-        <Line n="" label="Received in cash" value={r.income.cash} testid="tax-cash" sub />
+        <h3 className="tax-part"><span>Part I</span> Income{!includeCash && <span className="tax-part-note" data-testid="tax-cash-off">cash left out</span>}</h3>
+        <Line n="" label={includeCash ? "Received in cash" : "Received in cash (not included)"} value={r.income.cash} testid="tax-cash" sub />
         <Line n="" label="Received any other way (check, Venmo, card…)" value={r.income.nonCash} testid="tax-noncash" sub
           detail={r.income.byMethod.length > 0 && (
             <div className="tax-detail">
@@ -121,7 +128,7 @@ export function TaxReport({ uid }: { uid: string }) {
         {r.payees.length > 0 && <p className="tax-note">A 1099-NEC is usually due for anyone paid {formatCents(necThreshold(year))} or more in {year} who isn&apos;t an employee or a corporation.</p>}
 
         <footer className="tax-foot">
-          Income counts on the day it was received, with whoever received it. Expenses count for whoever&apos;s money it finally was: a bandmate&apos;s expense you paid back is yours; one nobody has paid back is still theirs. Meals are at {MEALS_PCT}%. Gear is under Supplies: a big purchase may need to be depreciated instead (Form 4562). This is a worksheet, not tax advice.
+          Income counts on the day it was received, with whoever received it{includeCash ? "" : "; cash is left out unless Include cash is on"}.Expenses count for whoever&apos;s money it finally was: a bandmate&apos;s expense you paid back is yours; one nobody has paid back is still theirs. Meals are at {MEALS_PCT}%. Gear is under Supplies: a big purchase may need to be depreciated instead (Form 4562). This is a worksheet, not tax advice.
         </footer>
       </div>
     </div>

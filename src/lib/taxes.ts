@@ -2,6 +2,7 @@
 // The band has no account of its own, so each admin reports what went through THEIR account. A year's worksheet for one
 // admin is cash-basis, laid out like Schedule C (Form 1040):
 //  - Income: received income (by receivedAt) that landed with them (income.receivedBy), split cash vs everything else.
+//    Cash is left out of gross receipts (and so the net) unless `includeCash`; its total is still reported.
 //  - Expenses: paid expenses (open bills never count) whose cost they bore: whoever paid back a member's expense
 //    (paidBackBy, else the reimbursement payout's paidBy), else whoever paid it (userId). A member's expense nobody has paid
 //    back yet is still the member's, so it is on no admin's worksheet. Bucketed into Schedule C lines; meals at 50%.
@@ -51,7 +52,10 @@ export interface TaxLineTotal { key: TaxLineKey; line: string; label: string; am
 export interface TaxPayee { key: string; name: string; total: number; count: number; over: boolean }
 export interface TaxReport {
   year: number; uid: string;
+  /** Whether cash counts in gross receipts (and the net). */
+  includeCash: boolean;
   income: {
+    /** Cash received, counted or not. */
     cash: number; nonCash: number; gross: number;
     /** Non-cash split by method ("unknown" when no method was recorded). */
     byMethod: { method: string; amount: number }[];
@@ -78,7 +82,7 @@ const toKey = (to: MoneyTo, musicianUserId?: (id: string) => string | undefined)
 const byDate = (a: { date: string }, b: { date: string }) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 export function taxReport(i: {
-  year: number; uid: string;
+  year: number; uid: string; includeCash?: boolean;
   income: readonly TaxIncome[]; expenses: readonly TaxExpense[]; payouts: readonly PayoutLike[];
   musicianUserId?(musicianId: string): string | undefined;
 }): TaxReport {
@@ -86,8 +90,10 @@ export function taxReport(i: {
   const payoutById = new Map(i.payouts.map((p) => [p.id, p]));
 
   // Income
-  const inc = live(i.income).filter((x) => x.receivedAt && inYear(x.receivedAt, year) && x.receivedBy === uid);
-  const cash = inc.filter((x) => x.method === "cash").reduce((n, x) => n + x.amount, 0);
+  const includeCash = i.includeCash === true;
+  const received = live(i.income).filter((x) => x.receivedAt && inYear(x.receivedAt, year) && x.receivedBy === uid);
+  const cash = received.filter((x) => x.method === "cash").reduce((n, x) => n + x.amount, 0);
+  const inc = includeCash ? received : received.filter((x) => x.method !== "cash");
   const gross = inc.reduce((n, x) => n + x.amount, 0);
   const sumBy = <T,>(xs: readonly T[], key: (x: T) => string, amt: (x: T) => number) => {
     const m = new Map<string, number>();
@@ -131,9 +137,9 @@ export function taxReport(i: {
   const all = TAX_LINE_ORDER.map((k) => lines.get(k)!);
   const totalExpenses = all.reduce((n, l) => n + l.amount, 0);
   return {
-    year, uid,
+    year, uid, includeCash,
     income: {
-      cash, nonCash: gross - cash, gross, byMethod, byCategory,
+      cash, nonCash: gross - (includeCash ? cash : 0), gross, byMethod, byCategory,
       entries: inc.map((x) => ({ id: x.id, date: x.receivedAt!, what: x.from, amount: x.amount, category: x.category, kind: "income" as const, method: x.method })).sort(byDate),
     },
     lines: all, partV, totalExpenses, net: gross - totalExpenses, miles,

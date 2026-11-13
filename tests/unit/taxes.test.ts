@@ -8,8 +8,20 @@ const inc = (o: Partial<TaxIncome>): TaxIncome => ({ id: "i", date: "2025-03-01"
 const x = (o: Partial<TaxExpense>): TaxExpense => ({ id: "x", userId: "rudy", date: "2025-04-01", amount: 100, category: "other", what: "x", ...o });
 const pay = (o: Partial<PayoutLike>): PayoutLike => ({ id: "p", to: { name: "Sam" }, kind: "pay", amount: 500, projectId: "band", paidAt: "2025-05-01", paidBy: "rudy", ...o });
 
-test("income: received in the year, by whoever received it, cash vs everything else", () => {
-  const r = taxReport({ year: 2025, uid: "rudy", payouts: [], expenses: [], income: [
+test("cash is left out of gross receipts and the net by default, but its total is still reported", () => {
+  const income = [inc({ id: "a", amount: 30000, method: "cash" }), inc({ id: "b", amount: 20000, method: "check" })];
+  const expenses = [x({ amount: 5000 })];
+  const off = taxReport({ year: 2025, uid: "rudy", income, expenses, payouts: [] });
+  assert.equal(off.includeCash, false);
+  assert.deepEqual([off.income.cash, off.income.nonCash, off.income.gross, off.net], [30000, 20000, 20000, 15000]);
+  assert.deepEqual(off.income.entries.map((e) => e.id), ["b"]);
+  assert.deepEqual(off.income.byCategory, [{ category: "guarantee", amount: 20000 }]);
+  const on = taxReport({ year: 2025, uid: "rudy", includeCash: true, income, expenses, payouts: [] });
+  assert.deepEqual([on.income.cash, on.income.nonCash, on.income.gross, on.net], [30000, 20000, 50000, 45000]);
+});
+
+test("income: received in the year, by whoever received it, cash vs everything else (cash included)", () => {
+  const r = taxReport({ year: 2025, uid: "rudy", includeCash: true, payouts: [], expenses: [], income: [
     inc({ id: "a", amount: 30000, method: "cash" }),
     inc({ id: "b", amount: 20000, method: "check" }),
     inc({ id: "c", amount: 5000, method: "venmo", category: "merch" }),
