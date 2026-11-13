@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "@/lib/artist";
 import { Dialog } from "@/components/ui";
 import { SongSearch } from "./SongSearch";
+import { Metronome } from "./Metronome";
 import { fmtLen, move, parseLen } from "@/lib/music";
 import { useDragReorder } from "@/lib/drag-reorder";
 import type { SetlistItem } from "@/schema";
@@ -55,6 +56,7 @@ export const itemsPayload = (items: SetlistItemT[]) => items.map((i) => {
  * The ordered list of songs and breaks, shared by the template editor and a show's Setlist tab: drag to reorder, remove,
  * add a song, add a break (its name and length are click-to-edit on the row), and pin alternates to a song (Alt opens a song search). An alternate lives on its song's item,
  * so it drags with it, and it never counts toward the time. Stateless about saving: every change calls `onChange(next)` with the whole new list.
+ * Every song (and alternate) with a tempo gets its metronome button.
  * `bpm` shows each song's tempo before its time, read live from the song (items don't carry a copy).
  */
 export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Nothing in this setlist yet.", bpm = false }: {
@@ -101,6 +103,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
               {it.key && <span className="s"> · {it.key}</span>}
             </span>
             {bpm && songBpm(it) != null && <span className="s font-mono" data-testid="item-bpm">{songBpm(it)} bpm</span>}
+            {it.type === "song" && it.songId && <Metronome id={it.songId} bpm={songBpm(it)} title={songTitle(it)} />}
             {it.type === "break" && admin
               ? <BreakField value={fmtLen(it.lengthSec ?? 0)} display={fmtLen(it.lengthSec ?? 0)} label="Break length" testid="item-len" className="font-mono text-sm !w-20" parse={parseLen} commit={(v) => setBreak(i, { lengthSec: Number(v) })} />
               : <span className="font-mono text-sm" data-testid="item-len">{fmtLen(it.lengthSec ?? 0)}</span>}
@@ -120,6 +123,7 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
                       <Link href={`/songs/${a.songId}`} className="font-semibold" data-testid="alt-title">{altTitle(a)}</Link>
                       {a.key && <span className="s"> · {a.key}</span>}
                     </span>
+                    <Metronome id={a.songId} bpm={songs.find((s) => s.id === a.songId)?.bpm} title={altTitle(a)} />
                     {admin && <button className="btn danger sm" onClick={() => patch(i, it.alts!.filter((_, j) => j !== k))} aria-label={`Remove alternate ${altTitle(a)}`} data-testid="alt-remove">✕</button>}
                   </li>
                 ))}

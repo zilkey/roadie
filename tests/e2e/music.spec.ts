@@ -162,6 +162,17 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await page.reload();
   await expect(titles).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
   await expect(page.getByTestId("item-2").getByTestId("alt-title")).toHaveText(["Weathervane"]);
+  // every song with a tempo has its metronome (alternates too); a break has none, and a tap plays without leaving the page
+  await expect(page.getByTestId("item-0").getByTestId("metronome")).toHaveCount(0);
+  await expect(page.getByTestId("item-1").getByTestId("metronome")).toHaveAttribute("data-bpm", "84");
+  const glass = page.getByTestId("item-2").getByTestId("metronome").first();
+  await expect(glass).toHaveAttribute("data-bpm", "96");
+  await expect(page.getByTestId("item-2").getByTestId("alt").getByTestId("metronome")).toHaveAttribute("data-bpm", "84");
+  await glass.click();
+  await expect(glass).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("setlist-page")).toBeVisible();
+  await glass.click();
+  await expect(glass).toHaveAttribute("aria-pressed", "false");
 
   // open the seeded Deep End show (Nov 14; other tests add more Deep End shows) and seed its Setlist tab from the template
   await page.goto(A("/shows"));
@@ -175,6 +186,7 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await expect(page.getByTestId("seed-dialog")).toBeHidden();
   await expect(page.getByTestId("setlist-items").getByTestId("item-title")).toHaveText(["Talk / tune", "Weathervane", "Glass Coast"]);
   await expect(page.getByTestId("item-2").getByTestId("alt-title")).toHaveText(["Weathervane"]); // seeding brings the alternate
+  await expect(page.getByTestId("item-1").getByTestId("metronome")).toHaveAttribute("data-bpm", "84"); // the show's setlist has metronomes too
   await expect(page.getByTestId("total-time")).toHaveText("9:32 of 45:00");
   await expect(page.getByTestId("setlist-total").getByTestId("bpm-range")).toHaveText("Tempo 84–96 bpm"); // the show's total card has the strip too
   await expect(page.getByTestId("fit")).toHaveText("Fits");
