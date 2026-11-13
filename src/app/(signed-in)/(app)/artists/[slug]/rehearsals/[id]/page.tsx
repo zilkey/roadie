@@ -1,4 +1,5 @@
 "use client";
+import { Metronome } from "@/components/music/Metronome";
 import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import Link, { useArtistRouter as useRouter } from "@/lib/artist";
@@ -296,6 +297,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
                     </span>
                     <span aria-hidden className="shrink-0 text-xl d-muted">›</span>
                   </Link>
+                  <Metronome id={sid} bpm={m.songs.find((s) => s.id === sid)?.bpm} title={titleOf(m, sid)} />
                   {admin && <button type="button" aria-label={`Remove ${titleOf(m, sid)}`} className="min-h-[44px] min-w-[44px] shrink-0 border-0 bg-transparent text-lg s" disabled={busy}
                     onClick={() => removeSong(sid)} data-testid="reh-song-remove">×</button>}
                 </li>

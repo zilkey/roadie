@@ -875,3 +875,12 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
   .td-grip { display: none; }
   .td-it > input[type=checkbox] { width: 22px; height: 22px; }
 }
+
+/* The song metronome (Metronome.tsx): an icon button; while it plays it fills with the accent and the arm swings once a beat. */
+.metronome { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; }
+.metronome:hover { color: var(--ink); }
+.metronome.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.metronome .metronome-arm { transform-origin: 12px 16px; transform: rotate(18deg); }
+.metronome.on .metronome-arm { animation: metronome-swing var(--beat, .5s) ease-in-out infinite alternate; }
+@keyframes metronome-swing { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
+@media (prefers-reduced-motion: reduce) { .metronome.on .metronome-arm { animation: none; } }

@@ -1,4 +1,5 @@
 "use client";
+import { Metronome } from "@/components/music/Metronome";
 import { BackLink } from "@/components/BackLink";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
@@ -160,6 +161,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <PageTitle
         back={<BackLink mode="back" href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} label="All songs" />}
         title={song.title}
+        pill={<Metronome id={song.id} bpm={song.bpm} title={song.title} />}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
           {/* Conflicts and failed saves still surface here; the plain Saved tick sits beside each value. */}

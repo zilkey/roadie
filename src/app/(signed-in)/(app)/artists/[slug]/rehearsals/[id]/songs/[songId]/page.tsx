@@ -1,4 +1,5 @@
 "use client";
+import { Metronome } from "@/components/music/Metronome";
 import { BackLink } from "@/components/BackLink";
 import Link from "@/lib/artist";
 import { useParams } from "next/navigation";
@@ -61,6 +62,7 @@ function RehearsalSong({ r, songId, m }: { r: Row; songId: string; m: ReturnType
   return (
     <DetailPage testid="rehearsal-song-page" back={<BackLink mode="back" href={`/rehearsals/${r.id}`} label={`Rehearsal · ${fmtLong(r.date)}`} />}
       title={title}
+      pill={song && <Metronome id={song.id} bpm={song.bpm} title={title} />}
       meta={<span>Rehearsal · {fmtLong(r.date)}{song && <> · <Link href={`/songs/${song.id}`} className="underline" data-testid="open-song">Song page</Link></>}</span>}
       more={admin ? <SaveStatus {...as.statusProps} /> : undefined}>
       <DetailCard private title="Notes" testid="reh-song-notes-card">

@@ -255,3 +255,27 @@ test("Back on the song page returns to the rehearsal song it was opened from", a
   await expect(page).toHaveURL(/\/rehearsals\/[^/]+\/songs\/[^/]+$/);
   await close();
 });
+
+/** The metronome plays the song's BPM from the rehearsal's song list, keeps going onto that song's page, and a second tap stops it. */
+test("a rehearsal song's metronome starts from the list and stops from the song page", async ({ browser }) => {
+  const { page, close } = await as(browser, "rudy");
+  await openRehearsal(page, "Oct 18");
+  const tick = page.getByTestId("reh-song-row-Glass Coast").getByTestId("metronome");
+  await expect(tick).toHaveAttribute("data-bpm", "96");
+  await tick.click();
+  await expect(tick).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/\/rehearsals\/[^/]+$/); // the tap plays; it doesn't open the song
+  await page.getByTestId("reh-song-row-Glass Coast").getByTestId("reh-song-open").click();
+  const onPage = page.getByTestId("rehearsal-song-page").getByTestId("metronome");
+  await expect(onPage).toHaveAttribute("aria-pressed", "true");
+  await onPage.click();
+  await expect(onPage).toHaveAttribute("aria-pressed", "false");
+  await page.getByTestId("open-song").click();
+  const onSong = page.getByTestId("song-page").getByTestId("metronome");
+  await expect(onSong).toHaveAttribute("data-bpm", "96");
+  await onSong.click();
+  await expect(onSong).toHaveAttribute("aria-pressed", "true");
+  await onSong.click();
+  await expect(onSong).toHaveAttribute("aria-pressed", "false");
+  await close();
+});
