@@ -7,12 +7,16 @@ import { clientDb } from "@/lib/firebase-client";
 import { useCollection, useDocs } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { dateInBandZone } from "@/lib/timezone";
-import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDismissLabel, dayOfItems, dayOfText, type DayOfItem, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
+import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDirectionsHref, dayOfDismissLabel, dayOfItems, dayOfText, type DayOfItem, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
 import { askRoadie } from "@/components/roadie/ask";
 import { toast } from "@/components/Toasts";
+import { fanPreviewHref } from "@/components/shows/page/FanPageCard";
 import type { Venue } from "@/schema";
 
 const linkClass = "flex min-h-11 min-w-0 flex-1 items-center gap-2 pl-4 pr-1 text-sm no-underline hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white min-[900px]:gap-2.5 min-[900px]:pl-5 min-[900px]:text-[0.9375rem]";
+
+/** Each piece of a row is its own link: the pill, title, time and city open the page; Directions and the fan page links go where they say. */
+const partClass = "inline-flex min-h-11 shrink-0 items-center whitespace-nowrap no-underline hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white";
 
 /** The clock the banner runs on: now, refreshed every half minute and when the tab comes back, so rows appear, change and leave by themselves. */
 function useNow(): number {
@@ -44,12 +48,14 @@ function useDismissed(artistId: string): string[] {
 /**
  * The day-of banner (#66): a row above the nav for each of today's confirmed shows and rehearsals, from 3 hours before its
  * first time until it is over (src/lib/dayOf.ts), for everyone in the band. A row links to the show or rehearsal and says the
- * next time still ahead; its × hides it for you only (command dayOf.dismiss). Renders nothing when there is nothing on.
+ * next time still ahead, with Directions (Google Maps) when it has a place and, for admins on a show, Preview Fan Page (once the
+ * line has an amount) and Edit Fan Page (the show's Promotion tab), those two from 900px up so a phone row stays one line; its × hides it for you only (command dayOf.dismiss). Renders nothing when there is nothing on.
  * An hour after a show's last time its row says "Congrats on the Deep End show!"; for admins it adds "Record the deets", and a
  * tap opens the show and asks Roadie (in a new chat, about that show) to start the after-show interview.
  */
 export function DayOfBanner() {
-  const { artistId, role } = useArtist();
+  const { artistId, role, doc: artist } = useArtist();
+  const slug = artist?.slug;
   const admin = role === "admin";
   const now = useNow();
   const today = dateInBandZone(new Date(now));
@@ -92,12 +98,17 @@ export function DayOfBanner() {
               {admin && <span className="shrink-0 whitespace-nowrap underline" data-testid="dayof-record">Record the deets</span>}
             </Link>
           ) : (
-            <Link href={item.href} data-testid="dayof-link" className={linkClass}>
-              <span className="shrink-0 rounded-full bg-white/20 px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-wide">{item.kind === "show" ? "Show" : "Rehearsal"}</span>
-              {item.title && <span className="min-w-0 truncate font-bold" data-testid="dayof-title">{item.title}</span>}
-              <span className="shrink-0 whitespace-nowrap" data-testid="dayof-when">{dayOfText(item, now)}</span>
-              {item.city && <span className="hidden shrink-0 whitespace-nowrap min-[900px]:inline">{item.city}</span>}
-            </Link>
+            <div className="flex min-w-0 flex-1 items-center gap-x-3 overflow-hidden pl-4 text-sm min-[900px]:gap-x-4 min-[900px]:pl-5 min-[900px]:text-[0.9375rem]">
+              <Link href={item.href} data-testid="dayof-link" className={partClass}>
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[0.6875rem] font-bold uppercase tracking-wide">{item.kind === "show" ? "Show" : "Rehearsal"}</span>
+              </Link>
+              {item.title && <Link href={item.href} className="block min-h-11 min-w-0 shrink truncate font-bold leading-[2.75rem] no-underline hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white" data-testid="dayof-title">{item.title}</Link>}
+              <Link href={item.href} className={partClass} data-testid="dayof-when">{dayOfText(item, now)}</Link>
+              {item.city && <Link href={item.href} className={`${partClass} hidden min-[900px]:inline-flex`} data-testid="dayof-city">{item.city}</Link>}
+              {item.mapsQuery && <a href={dayOfDirectionsHref(item.mapsQuery)} target="_blank" rel="noopener noreferrer" className={`${partClass} underline`} data-testid="dayof-directions">Directions</a>}
+              {admin && item.kind === "show" && slug && item.fanPreview && <a href={fanPreviewHref(slug, item.id)} target="_blank" rel="noopener noreferrer" className={`${partClass} hidden underline min-[900px]:inline-flex`} data-testid="dayof-fan-preview">Preview Fan Page</a>}
+              {admin && item.kind === "show" && <Link href={`${item.href}?tab=promotion`} className={`${partClass} hidden underline min-[900px]:inline-flex`} data-testid="dayof-fan-edit">Edit Fan Page</Link>}
+            </div>
           )}
           <button type="button" aria-label={dayOfDismissLabel(item)} data-testid="dayof-dismiss" onClick={() => hide(item)}
             className="grid h-11 w-11 shrink-0 place-items-center min-[900px]:mr-3">

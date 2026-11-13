@@ -21,8 +21,8 @@ export const DAY_OF_AFTER_MS = 60 * 60 * 1000;
 
 export type DayOfKind = "show" | "rehearsal";
 export interface DayOfTimes { loadIn?: string; soundcheck?: string; doors?: string; showStart?: string; set?: string }
-export interface DayOfShow extends ShowPlaceLike { id: string; date: string; status: string; artistId?: string; times?: DayOfTimes }
-export interface DayOfRehearsal { id: string; date: string; startTime?: string; endTime?: string; location?: { name?: string } }
+export interface DayOfShow extends ShowPlaceLike { id: string; date: string; status: string; artistId?: string; times?: DayOfTimes; fanPage?: { amountCents?: number } }
+export interface DayOfRehearsal { id: string; date: string; startTime?: string; endTime?: string; location?: { name?: string; address?: string; lat?: number; lng?: number } }
 
 /** One clock time of a show or rehearsal, as an instant. */
 export interface DayOfPoint { label: string; time: string; at: number }
@@ -35,6 +35,10 @@ export interface DayOfItem {
   /** The venue (or "House concert · hosts", the festival); a rehearsal's place, "" when it has none. */
   title: string;
   city?: string;
+  /** Where Directions goes in Google Maps; absent when the show or rehearsal has no place. */
+  mapsQuery?: string;
+  /** A show whose fan page line has an amount, so its preview shows something. */
+  fanPreview?: boolean;
   zone: string;
   /** The banner shows while start <= now < end. */
   start: number; end: number;
@@ -92,14 +96,32 @@ export function showItem(s: DayOfShow, zone?: string): DayOfItem {
     points.push({ label, time, at: zonedInstant(s.date, min, z) });
   }
   points.sort((a, b) => a.at - b.at);
-  const base = { key: dayOfKey("show", s.id, s.date), kind: "show" as const, id: s.id, date: s.date, href: `/shows/${s.id}`, title: showName(s), city: s.venue?.city ?? s.place?.city, zone: z, points };
+  const base = { key: dayOfKey("show", s.id, s.date), kind: "show" as const, id: s.id, date: s.date, href: `/shows/${s.id}`, title: showName(s), city: s.venue?.city ?? s.place?.city, mapsQuery: showMapsQuery(s), fanPreview: !!s.fanPage?.amountCents, zone: z, points };
   if (!points.length) return { ...base, start: zonedInstant(s.date, 0, z), end: zonedInstant(s.date, 1440, z) };
   return { ...base, start: points[0].at - DAY_OF_LEAD_MS, end: points[points.length - 1].at + DAY_OF_TAIL_MS };
 }
 
+/** A show's Directions query: the venue's name with its address, else with its city; a house concert's address, else its city. */
+export function showMapsQuery(s: DayOfShow): string | undefined {
+  const address = s.venue?.address ?? s.place?.address;
+  const city = s.venue?.city ?? s.place?.city;
+  const q = [s.venue?.name, address || city].filter((x) => x?.trim()).join(", ");
+  return q || undefined;
+}
+
+/** A rehearsal's Directions query: its address, else its coordinates, else its name. */
+export function rehearsalMapsQuery(r: DayOfRehearsal): string | undefined {
+  const l = r.location;
+  if (!l) return undefined;
+  return l.address?.trim() || (l.lat !== undefined && l.lng !== undefined ? `${l.lat},${l.lng}` : l.name?.trim()) || undefined;
+}
+
+/** Google Maps directions to the place, from wherever the phone is. */
+export const dayOfDirectionsHref = (q: string) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
+
 /** A rehearsal's row, on the band's clock. An end time at or before the start is after midnight. */
 export function rehearsalItem(r: DayOfRehearsal, zone: string = BAND_TIME_ZONE): DayOfItem {
-  const base = { key: dayOfKey("rehearsal", r.id, r.date), kind: "rehearsal" as const, id: r.id, date: r.date, href: `/rehearsals/${r.id}`, title: r.location?.name?.trim() ?? "", zone };
+  const base = { key: dayOfKey("rehearsal", r.id, r.date), kind: "rehearsal" as const, id: r.id, date: r.date, href: `/rehearsals/${r.id}`, title: r.location?.name?.trim() ?? "", mapsQuery: rehearsalMapsQuery(r), zone };
   const midnight = zonedInstant(r.date, 0, zone);
   if (!r.startTime) {
     const until = r.endTime ? { label: "Until", time: r.endTime, at: zonedInstant(r.date, minutesOf(r.endTime), zone) } : undefined;

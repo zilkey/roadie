@@ -102,6 +102,14 @@ test("the banner shows inside the window and not before, stacks earliest first, 
   expect(bannerBox.y + bannerBox.height).toBeLessThanOrEqual(topbar.y + 1);
   expect(bannerBox.height).toBe(88);
 
+  // Each piece of the row is its own link to the page; Directions opens Google Maps; an admin gets Edit Fan Page (the
+  // Promotion tab) and, with no amount on the line yet, no Preview.
+  const showRow = banner.getByTestId("dayof-row-show");
+  for (const id of ["dayof-link", "dayof-title", "dayof-when", "dayof-city"]) await expect(showRow.getByTestId(id)).toHaveAttribute("href", new RegExp(`/shows/${SHOW}$`));
+  await expect(showRow.getByTestId("dayof-directions")).toHaveAttribute("href", /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=Deep%20End/);
+  await expect(showRow.getByTestId("dayof-fan-edit")).toHaveAttribute("href", new RegExp(`/shows/${SHOW}\\?tab=promotion$`));
+  await expect(showRow.getByTestId("dayof-fan-preview")).toHaveCount(0);
+
   // Each row goes straight to its page, and the banner is there too.
   await banner.getByTestId("dayof-row-show").getByTestId("dayof-link").click();
   await expect(page).toHaveURL(new RegExp(`/shows/${SHOW}$`));

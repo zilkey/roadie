@@ -1,7 +1,7 @@
 /** The day-of banner's pure logic (#66): the window, the order rows stack in, what a row says, pruneDismissed. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDismissLabel, dayOfItems, dayOfKey, dayOfText, pruneDismissed, rehearsalItem, showItem, zonedInstant, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
+import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDirectionsHref, dayOfDismissLabel, dayOfItems, dayOfKey, dayOfText, pruneDismissed, rehearsalItem, showItem, zonedInstant, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
 
 /** An instant from a Denver wall clock in November (MST, UTC-7): at("2026-11-10", "14:00"). */
 const at = (date: string, time: string) => Date.parse(`${date}T${time}:00-07:00`);
@@ -200,4 +200,23 @@ test("pruneDismissed keeps a week of dismissals", () => {
 test("Roadie is not offered dayOf.dismiss: its tool list is unchanged by the banner", async () => {
   const { toolDefs } = await import("@/server/assistant/tools");
   assert.ok(!toolDefs("admin").some((t) => t.name.startsWith("dayOf.")));
+});
+
+// ---------- the links ----------
+
+test("Directions: a venue by name and address (else city), a house concert by address, a rehearsal by address, coordinates or name", () => {
+  assert.equal(showItem(show("s", {}, { venue: { id: "v", name: "Deep End", address: "12 Main St, Provo, UT", city: "Provo" } })).mapsQuery, "Deep End, 12 Main St, Provo, UT");
+  assert.equal(showItem(show("s", {})).mapsQuery, "Venue s, Provo");
+  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "house", hostName: "Ann", place: { city: "Orem", address: "9 Elm St" } })).mapsQuery, "9 Elm St");
+  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "other" })).mapsQuery, undefined);
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", address: "5 Oak Ave" } })).mapsQuery, "5 Oak Ave");
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", lat: 40.2, lng: -111.6 } })).mapsQuery, "40.2,-111.6");
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic" } })).mapsQuery, "The Attic");
+  assert.equal(rehearsalItem(reh("r")).mapsQuery, undefined);
+  assert.equal(dayOfDirectionsHref("Deep End, Provo"), "https://www.google.com/maps/dir/?api=1&destination=Deep%20End%2C%20Provo");
+});
+
+test("Preview Fan Page only once the show's fan page line has an amount", () => {
+  assert.equal(showItem(show("s", {})).fanPreview, false);
+  assert.equal(showItem(show("s", {}, { fanPage: { amountCents: 2000 } })).fanPreview, true);
 });
