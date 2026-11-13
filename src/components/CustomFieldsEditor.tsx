@@ -16,9 +16,11 @@ const Grip = () => (
 
 export type FieldKind = "song" | "show";
 const COPY = {
-  song: { title: "Song fields", blurb: "Extra facts to note on each song, like Capo or Tuning. Define them here, fill them in on the song.", eg: "Capo", plural: "songs", coll: "songs" },
+  song: { title: "Song fields", blurb: "Extra facts to note on each song, like Capo or Tuning. Define them here, fill them in on the song. Tick In setlists to offer one when printing a setlist.", eg: "Capo", plural: "songs", coll: "songs" },
   show: { title: "Show fields", blurb: "Extra facts to note on each show, like Parking or Hotel. Define them here, fill them in on the show (admins only).", eg: "Parking", plural: "shows", coll: "shows" },
 } as const;
+type Flag = "inTable" | "inSetlists";
+const SETLISTS_HINT = "Offered as an extra field when printing a setlist";
 const TABLE_HINT = {
   song: "A column in the Songs list",
   show: "A column in the Shows list (admins only)",
@@ -39,16 +41,18 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
   const [desc, setDesc] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  // "In table" ticks show at once; each is dropped once the artist doc agrees, or if its save fails (the doc is the truth again).
+  // "In table" / "In setlists" ticks show at once, keyed "<flag>:<fieldId>"; each is dropped once the artist doc agrees, or if its save fails (the doc is the truth again).
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
   useEffect(() => setTicked((t) => {
-    const left = Object.fromEntries(Object.entries(t).filter(([id, on]) => !!fields.find((f) => f.id === id)?.inTable !== on));
+    const left = Object.fromEntries(Object.entries(t).filter(([k, on]) => { const [flag, id] = k.split(":") as [Flag, string]; return !!fields.find((f) => f.id === id)?.[flag] !== on; }));
     return Object.keys(left).length === Object.keys(t).length ? t : left;
   }), [fields]);
-  const inTable = (f: SongField) => ticked[f.id] ?? !!f.inTable;
-  async function tick(f: SongField, on: boolean) {
-    setTicked((t) => ({ ...t, [f.id]: on }));
-    if (!(await call(`artists.set${Kind}FieldInTable`, { id: artist.id, fieldId: f.id, inTable: on }))) setTicked(({ [f.id]: _, ...t }) => t);
+  const isOn = (f: SongField, flag: Flag) => ticked[`${flag}:${f.id}`] ?? !!f[flag];
+  async function tick(f: SongField, flag: Flag, on: boolean) {
+    const k = `${flag}:${f.id}`;
+    setTicked((t) => ({ ...t, [k]: on }));
+    const cmd = flag === "inTable" ? `artists.set${Kind}FieldInTable` : "artists.setSongFieldInSetlists";
+    if (!(await call(cmd, { id: artist.id, fieldId: f.id, [flag]: on }))) setTicked(({ [k]: _, ...t }) => t);
   }
   const ids = fields.map((f) => f.id);
   const dr = useDragReorder((from, to) => void call(`artists.reorder${Kind}Fields`, { id: artist.id, fieldIds: moved(ids, from, to) }));
@@ -101,7 +105,7 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
       )}
       {fields.length === 0 ? <p className="s text-center" data-testid={`${kind}-fields-empty`}>No {kind} fields yet.</p> : (
         <div className="cfg-scroll"><table className="cfg-table">
-          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>Description</th><th>{Kind}s with a value</th><th title={TABLE_HINT[kind]}>In table</th><th className="act"><span className="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th className="act"><span className="sr-only">Reorder</span></th><th>Field</th><th>Description</th><th>{Kind}s with a value</th><th title={TABLE_HINT[kind]}>In table</th>{kind === "song" && <th title={SETLISTS_HINT}>In setlists</th>}<th className="act"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{fields.map((f, i) => (
             <tr key={f.id} data-testid={`${kind}-field-${f.id}`} data-editing={editId === f.id ? "1" : undefined} {...dr.row(i)}>
               <td className="act"><span className="flex w-6 cursor-grab select-none justify-center text-muted" {...dr.handle(i)} aria-hidden="true"><Grip /></span></td>
@@ -111,8 +115,12 @@ export function CustomFieldsEditor({ artist, kind }: { artist: Artist; kind: Fie
               <td>{usedOn(f)}</td>
               <td>
                 <input type="checkbox" className="h-4 w-4" aria-label={`Show ${f.label} in the ${Kind}s table`} title={TABLE_HINT[kind]} data-testid={`${kind}-field-in-table-${f.id}`}
-                  checked={inTable(f)} onChange={(e) => void tick(f, e.target.checked)} />
+                  checked={isOn(f, "inTable")} onChange={(e) => void tick(f, "inTable", e.target.checked)} />
               </td>
+              {kind === "song" && <td>
+                <input type="checkbox" className="h-4 w-4" aria-label={`Offer ${f.label} when printing setlists`} title={SETLISTS_HINT} data-testid={`song-field-in-setlists-${f.id}`}
+                  checked={isOn(f, "inSetlists")} onChange={(e) => void tick(f, "inSetlists", e.target.checked)} />
+              </td>}
               <td className="act">
                 <button type="button" className="icon-btn" aria-label={`Rename ${f.label}`} data-testid={`${kind}-field-edit-${f.id}`} onClick={() => { setName(f.label); setEditId(f.id); }}>{Icons.edit}</button>
                 <button type="button" className="icon-btn danger" aria-label={`Delete ${f.label}`} data-testid={`${kind}-field-remove-${f.id}`} disabled={busy} onClick={() => void remove(f)}>{Icons.trash}</button>

@@ -360,7 +360,7 @@ export const artistsUpdate = defineCommand({
 
 // ---------- custom fields (artist-defined label/value pairs on songs and on shows) ----------
 
-type FieldDef = { id: string; label: string; inTable?: boolean; description?: string };
+type FieldDef = { id: string; label: string; inTable?: boolean; inSetlists?: boolean; description?: string };
 type Kind = { noun: "song" | "show"; defs: "songFields" | "showFields"; coll: "songs" | "shows" };
 const SONG: Kind = { noun: "song", defs: "songFields", coll: "songs" };
 const SHOW: Kind = { noun: "show", defs: "showFields", coll: "shows" };
@@ -449,6 +449,19 @@ function fieldCommands(k: Kind) {
   return [add, update, remove, reorder, column] as const;
 }
 const [artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields, artistsSetSongFieldInTable] = fieldCommands(SONG);
+/** Song fields only: whether the setlist Print dialog offers the field. */
+const artistsSetSongFieldInSetlists = defineCommand({
+  name: "artists.setSongFieldInSetlists", roles: ["admin"],
+  description: "Offer (inSetlists true) or stop offering (false) a song field as an extra field in the setlist Print dialog. The field and its values stay either way.",
+  input: z.strictObject({ id: z.string().min(1), fieldId: z.string().min(1), inSetlists: z.boolean() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const fields = await fieldsOf(w, SONG, i.id);
+    if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", "No such song field", 404);
+    // Off is stored as no key, like a field that was never turned on.
+    const set = (f: FieldDef) => { const { inSetlists: _, ...rest } = f; return i.inSetlists ? { ...rest, inSetlists: true } : rest; };
+    return w.update("artists", i.id, { songFields: fields.map((f) => (f.id === i.fieldId ? set(f) : f)) });
+  }),
+});
 const [artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields, artistsSetShowFieldInTable] = fieldCommands(SHOW);
 
 /** Everyone for this artist, as the People page shows them: Team users (with their linked musician), then musicians with no Team access. Mirrors derivePeople in components/people/shared.tsx (a client module). */
@@ -479,6 +492,6 @@ export const peopleList = defineCommand({
 
 export const peopleCommands = [
   peopleList, usersAdd, usersUpdate, usersRemove, usersAddToBand, musiciansCreate, musiciansUpdate, musiciansArchive, musiciansRemoveFromBand, musiciansRestore, musiciansRemove, artistsCreate, artistsUpdate,
-  artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields, artistsSetSongFieldInTable,
+  artistsAddSongField, artistsUpdateSongField, artistsRemoveSongField, artistsReorderSongFields, artistsSetSongFieldInTable, artistsSetSongFieldInSetlists,
   artistsAddShowField, artistsUpdateShowField, artistsRemoveShowField, artistsReorderShowFields, artistsSetShowFieldInTable,
 ];

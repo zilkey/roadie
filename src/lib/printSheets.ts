@@ -10,9 +10,9 @@
 import type { SongField } from "@/schema";
 import type { PrintOptions } from "@/schema/print";
 import { fmtLen } from "@/lib/music";
-import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, songFieldId } from "@/lib/print";
+import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, songFieldId } from "@/lib/print";
 
-export interface PrintSong { id: string; title: string; shortTitle?: string; key?: string; lengthSec?: number; fields?: { fieldId: string; value: string }[] }
+export interface PrintSong { id: string; title: string; shortTitle?: string; key?: string; bpm?: number; lengthSec?: number; fields?: { fieldId: string; value: string }[] }
 export interface PrintItem { type: "song" | "break"; songId?: string; title: string; lengthSec?: number; key?: string; note?: string; alts?: { songId: string; title: string }[] }
 
 /** One extra-field value printed on a song row. */
@@ -78,11 +78,12 @@ export function buildSheets(input: BuildInput): BuildResult {
   const mine = options.copy === "mine";
   const songsById = new Map(input.songs.map((s) => [s.id, s]));
 
-  // Selected non-break fields, in the order Key, Length, then the artist's own order.
+  // Selected non-break fields, in the order Key, Length, Tempo, then the artist's own order.
   const picked = new Set(options.fields);
   const selected: { id: string; label: string }[] = [
     ...(picked.has(FIELD_KEY) ? [{ id: FIELD_KEY, label: "Key" }] : []),
     ...(picked.has(FIELD_LENGTH) ? [{ id: FIELD_LENGTH, label: "Length" }] : []),
+    ...(picked.has(FIELD_TEMPO) ? [{ id: FIELD_TEMPO, label: "Tempo" }] : []),
     ...songFields.filter((f) => picked.has(songFieldId(f.id))).map((f) => ({ id: songFieldId(f.id), label: f.label })),
   ];
   const showBreaks = picked.has(FIELD_BREAKS);
@@ -128,6 +129,7 @@ export function buildSheets(input: BuildInput): BuildResult {
     const value = (id: string): string => {
       if (id === FIELD_KEY) return key ?? "";
       if (id === FIELD_LENGTH) return fmtLen(sec || undefined);
+      if (id === FIELD_TEMPO) return song?.bpm ? `${song.bpm} bpm` : "";
       return song?.fields?.find((f) => songFieldId(f.fieldId) === id)?.value ?? "";
     };
     if (layout === "list") {

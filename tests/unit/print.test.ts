@@ -188,3 +188,10 @@ test("buildSheets: alternates print under their song only when Alternates is on,
   const short = songs.map((s, n) => (n === 2 ? { ...s, shortTitle: "Shorty" } : s));
   assert.deepEqual(songRows(rowsOf(buildSheets(base({ items, songs: short, options: opts({ fields: ["alts"], titles: "short" }) }))))[0].alts, ["Shorty", "Off the list"]);
 });
+
+test("buildSheets: Tempo prints the song's bpm after Length, and is left out when the song has none", () => {
+  const songs = songs25().map((s, i) => (i === 0 ? { ...s, bpm: 120 } : { ...s, bpm: undefined }));
+  const rows = songRows(rowsOf(buildSheets(base({ songs, options: opts({ fields: ["tempo", "length"] }) }))));
+  assert.deepEqual(rows[0].fields.map((f) => [f.label, f.value]), [["Length", rows[0].fields[0].value], ["Tempo", "120 bpm"]]);
+  assert.deepEqual(rows[1].fields.map((f) => f.label), ["Length"]);
+});

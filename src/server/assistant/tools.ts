@@ -319,6 +319,7 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "artists.removeShowField": (_i, r) => `Deleted a show field${r?.showsCleared ? ` (cleared it on ${plural(r.showsCleared, "show")})` : ""}`,
   "artists.reorderSongFields": () => "Reordered the song fields",
   "artists.reorderShowFields": () => "Reordered the show fields",
+  "artists.setSongFieldInSetlists": (i) => (i.inSetlists ? "Offered a song field when printing setlists" : "Stopped offering a song field when printing setlists"),
   "artists.setSongFieldInTable": (i) => (i.inTable ? "Added a song field to the Songs table" : "Took a song field out of the Songs table"),
   "stagePlots.create": (i, r) => `Made the stage plot ${quote(i.name)}${r?.summary ? `: ${r.summary}` : ""}`,
   "stagePlots.copy": (i, r) => `Copied the stage plot${i.dropMusicianIds?.length ? ` without ${plural(i.dropMusicianIds.length, "person")}` : ""}${r?.summary ? `: ${r.summary}` : ""}`,

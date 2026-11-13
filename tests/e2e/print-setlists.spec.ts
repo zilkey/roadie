@@ -57,6 +57,7 @@ test.beforeAll(async ({ playwright }) => {
   artistId = await artistIdOf(ARTIST_SLUG);
   capoId = (await cmd<{ fieldId: string }>("artists.addSongField", { id: artistId, label: "Capo" })).fieldId;
   midiId = (await cmd<{ fieldId: string }>("artists.addSongField", { id: artistId, label: "MIDI" })).fieldId;
+  for (const fieldId of [capoId, midiId]) await cmd("artists.setSongFieldInSetlists", { id: artistId, fieldId, inSetlists: true });
 
   const ids25 = await makeSongs([...S1, ...S2], true);
   const items25 = [
@@ -165,6 +166,8 @@ test("the dialog's options each change the preview, and each toggle flips", asyn
   await expect(rows.nth(0).getByTestId("print-fields")).toHaveText("Capo 1");
   await field(page, `field:${capoId}`).uncheck();
   await expect(rows.nth(0).getByTestId("print-fields")).toHaveCount(0);
+  // Only song fields marked In setlists are offered; Tempo always is.
+  await expect(page.getByTestId("print-field")).toHaveCount(7);
   // Breaks off: the break box goes.
   await field(page, "breaks").uncheck();
   await expect(page.getByTestId("print-preview").getByTestId("print-break")).toHaveCount(0);

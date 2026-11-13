@@ -25,6 +25,8 @@ export const SongField = z.strictObject({
   label: z.string().min(1),
   /** Also a column in the Songs (or Shows) list table. Missing = no. */
   inTable: z.boolean().optional(),
+  /** Song fields only: offered in the setlist Print dialog. Missing = no. */
+  inSetlists: z.boolean().optional(),
   /** One line saying what the field holds ("Capo fret with the guitar tuned down a half step to Eb"): help text under the value, a tooltip on the column header, and read by Roadie. Missing = none, never an empty string. */
   description: z.string().optional(),
 });

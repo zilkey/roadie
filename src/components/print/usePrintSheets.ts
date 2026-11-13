@@ -17,7 +17,8 @@ export function usePrintSheets(setlistId: string, options: PrintOptions) {
   const m = useMusic();
   const artist = useArtist();
   const profile = useProfile();
-  const songFields: SongField[] = artist.doc?.songFields ?? [];
+  // Only the song fields marked "In setlists" on the Custom fields page are offered and printed.
+  const songFields: SongField[] = useMemo(() => (artist.doc?.songFields ?? []).filter((f) => f.inSetlists), [artist.doc?.songFields]);
 
   const template = m.templates.find((t) => t.id === setlistId);
   const show = template ? undefined : m.shows.find((s) => s.id === setlistId);

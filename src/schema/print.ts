@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * How someone last printed a setlist, per artist. Per-user prefs, not business data: `userPrefs/{uid}.print[artistId]`,
  * written with firebase-admin like the other prefs (no history, no undo).
- * `fields` holds extra-field ids: "key", "length", "breaks", or "field:<songFieldId>" for one of the artist's song fields.
+ * `fields` holds extra-field ids: "key", "length", "tempo", "breaks", "alts", or "field:<songFieldId>" for one of the artist's song fields.
  */
 export const PrintOptions = z.strictObject({
   copy: z.enum(["band", "mine"]),
