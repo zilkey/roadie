@@ -3,22 +3,17 @@ import Link from "@/lib/artist";
 import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { celebrateMoneyIn } from "@/components/Celebrate";
-import { Tabs } from "@/components/booking/common";
 import { useCollection } from "@/lib/firestore-hooks";
-import { CATEGORY_LABEL, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byCategory, byMonth, byShow, defaultProject, formatCents, incomeExpected, incomeSoFar, moneyRows, moneyTotals, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
+import { INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL, byMonth, defaultProject, formatCents, incomeExpected, incomeSoFar, moneyRows, moneyTotals, owedToUs, projectOf, projectTotals, totals, weOwe } from "@/lib/money";
 import { todayStr } from "@/lib/booking";
-import { fmtLong, showName as nameOfShow } from "@/lib/shows";
-import { HBars, MonthBars } from "./charts";
-import { Projects } from "./Projects";
+import { MonthBars } from "./charts";
 import { InlineValue } from "@/components/InlineValue";
 import { StatusChip, UPDATE_COMMAND, ledger, projectOptions } from "./Project";
 import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
-import type { Expense, Income, Musician, Payout, Project, Show, User } from "@/schema";
-
-type Tab = "overview" | "projects" | "shows" | "categories";
+import type { Expense, Income, Musician, Payout, Project, User } from "@/schema";
 
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -29,15 +24,11 @@ function Admin() {
   const expenses = useCollection<Expense>("expenses");
   const payouts = useCollection<Payout>("payouts");
   const projects = useCollection<Project>("projects");
-  const shows = useCollection<Show>("shows");
   const musicians = useCollection<Musician>("musicians");
   const users = useCollection<User>("users");
-  const [tab, setTab] = useState<Tab>("overview");
   const [modal, setModal] = useState<{ kind: "in" | "out"; defaults?: MoneyDefaults } | null>(null);
   const { call, error, busy } = useCommand();
 
-  const showById = useMemo(() => new Map((shows.rows ?? []).map((s) => [s.id, s])), [shows.rows]);
-  const showName = (id: string) => ((x) => (x ? nameOfShow(x) : "Show"))(showById.get(id));
   const personName = (userId: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.userId === userId)?.name ?? "Someone";
   // A show that hasn't happened yet is nowhere in Money but the Expected box: its guarantee is dated on the show.
@@ -90,11 +81,9 @@ function Admin() {
   return (
     <div className="grid gap-5" data-testid="admin-money">
       <PageTitle title="Money" actions={actions} />
-      <Tabs<Tab> testid="money-tab" value={tab} onChange={setTab} options={[["overview", "Overview"], ["projects", "Projects"], ["shows", "By show"], ["categories", "By category"]]} />
       <ErrorBox error={error} />
 
-      {tab === "overview" && (
-        <>
+      <>
           <div className="grid gap-5 md:grid-cols-2">
             <div className="grid min-w-0 content-start gap-5">
               <div className="card" data-testid="money-totals">
@@ -209,15 +198,7 @@ function Admin() {
               })}
             </div>
           </div>
-        </>
-      )}
-
-      {tab === "projects" && <Projects admin />}
-      {tab === "shows" && (
-        <HBars title="Each show's take" testid="chart-shows"
-          rows={byShow(rows).map((r) => ({ ...r, label: showName(r.key), sub: showById.get(r.key) ? fmtLong(showById.get(r.key)!.date) : undefined }))} />
-      )}
-      {tab === "categories" && <HBars title="By category" testid="chart-categories" rows={byCategory(rows).map((r) => ({ ...r, label: CATEGORY_LABEL[r.key] ?? r.key }))} />}
+      </>
       {modals}
     </div>
   );

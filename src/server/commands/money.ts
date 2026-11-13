@@ -37,6 +37,8 @@ const id1 = z.string().min(1);
 // income.update    admin  { id, patch: { amount?, category?, from?, date?, projectId?, showId? (null clears), method? (null clears), receivedAt? (null clears), notes? (null clears) } }
 // income.remove    admin  { id }
 // income.setReceived admin { id, receivedAt?: date (default today), method? }   received:false is income.update { receivedAt: null }.
+//                         An admin in the app (and income.add with receivedAt) stamps receivedBy = themselves when it has none.
+// income.assign    admin (app only) { id, receivedBy: uid | null }   which admin's account it landed in, for the tax pages.
 // payouts.add      admin  { to: { musicianId } | { userId } | { contactId } | { name }, kind: payoutKind, amount, what?, projectId?, showId?, releaseTrackId?, dueDate?, paidAt?, method?, paidBy?, expenseIds? }
 //                         `to` must resolve (musician, user or contact found, or a plain name); the server copies the name onto to.name. No paidAt = we owe.
 //                         paidBy is the admin whose account it left (the band has none); only admins can be payers.
@@ -475,7 +477,9 @@ export const incomeAdd = defineCommand({
     const projectId = await projectFor(w, { projectId: i.projectId, show, tourId: i.tourId });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
-    const r = await w.create("income", { ...i, ...(await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show })), artistId, projectId, date: i.date ?? (show?.date as string | undefined) ?? todayServer() });
+    // Received in the app by an admin: it landed in their account (the tax pages read receivedBy). Roadie's adds stay unassigned.
+    const receivedBy = i.receivedAt && ctx.role === "admin" ? { receivedBy: ctx.uid } : {};
+    const r = await w.create("income", { ...i, ...receivedBy, ...(await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show })), artistId, projectId, date: i.date ?? (show?.date as string | undefined) ?? todayServer() });
     if (i.showId) await refreshDealTotals(w, i.showId, { income: [(await w.get("income", r.id))!] });
     return r;
   }),
@@ -511,13 +515,26 @@ export const incomeRemove = defineCommand({
   }),
 });
 
+/** Which admin's account a received income landed in (the tax pages). App only: not an MCP tool. null = nobody yet. */
+export const incomeAssign = defineCommand({
+  name: "income.assign", roles: ["admin"], description: "Set which admin received an income record (receivedBy: their uid, or null).",
+  input: z.strictObject({ id: id1, receivedBy: id1.nullable() }),
+  run: (_ctx, i) => run(_ctx, async (w) => {
+    await requireIncome(w, i.id);
+    if (i.receivedBy) await requirePayer(w, i.receivedBy);
+    return w.update("income", i.id, { receivedBy: i.receivedBy });
+  }),
+});
+
 export const incomeSetReceived = defineCommand({
   name: "income.setReceived", roles: ["admin", "mcp"],
   description: "The money arrived: marks an income record received on receivedAt (YYYY-MM-DD, default today), optionally with how it was paid (method). To un-receive it use income.update with receivedAt:null.",
   input: z.strictObject({ id: id1, receivedAt: dateStr.optional(), method: paymentMethod.optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const x = await requireIncome(w, i.id);
-    const r = await w.update("income", i.id, { receivedAt: i.receivedAt ?? todayServer(), ...(i.method ? { method: i.method } : {}) });
+    const r = await w.update("income", i.id, {
+      receivedAt: i.receivedAt ?? todayServer(), ...(i.method ? { method: i.method } : {}), ...(ctx.role === "admin" && !x.receivedBy ? { receivedBy: ctx.uid } : {}),
+    });
     await refresh(w, x.showId);
     return r;
   }),
@@ -612,4 +629,4 @@ export const payoutsMarkPaid = defineCommand({
   }),
 });
 
-export const moneyCommands = [incomeAdd, incomeUpdate, incomeRemove, incomeSetReceived, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
+export const moneyCommands = [incomeAdd, incomeUpdate, incomeRemove, incomeSetReceived, incomeAssign, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];

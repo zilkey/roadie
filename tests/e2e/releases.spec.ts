@@ -101,7 +101,7 @@ test("a new release from a setlist template gets its own project; tracks are add
 
   // the release's project is on the Money page, and the release is reachable from it
   await openTab(page, "money");
-  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("money-seg-projects").click();
   const prow = page.getByTestId("projects-table").locator("tr", { hasText: "Night Shift EP" });
   await expect(prow).toContainText("Release");
   await prow.locator('[data-testid^="project-release-"]').click();
@@ -113,7 +113,7 @@ test("a new release from a setlist template gets its own project; tracks are add
   await page.getByTestId("field-title-input").press("Enter");
   await expect(page.getByTestId("page-title")).toContainText("Night Shift");
   await openTab(page, "money");
-  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("money-seg-projects").click();
   await expect(page.getByTestId("projects-table")).toContainText("Night Shift");
   await expect(page.getByTestId("projects-table")).not.toContainText("Night Shift EP");
 });

@@ -116,6 +116,25 @@ test("income: defaults to the default project, the show's project, owed until se
   assert.equal((await dealTotals(other)).income, 0);
 });
 
+test("income.receivedBy: an admin receiving it in the app gets it; Roadie's stay unassigned; income.assign moves it to another admin only", async () => {
+  const got = await cmd("income.add", { amount: 5000, category: "tips", from: "Door", receivedAt: "2026-11-11", method: "cash" });
+  assert.equal((await db.get("income", got.id) as any).receivedBy, ctx.uid);
+  const owed = await cmd("income.add", { amount: 7000, category: "guarantee", from: "Deep End" });
+  assert.equal((await db.get("income", owed.id) as any).receivedBy, undefined); // not received yet
+  await cmd("income.setReceived", { id: owed.id });
+  assert.equal((await db.get("income", owed.id) as any).receivedBy, ctx.uid);
+  const mcp: Ctx = { ...ctx, role: "mcp", uid: "ai" };
+  const ai = await cmd("income.add", { amount: 900, category: "merch", from: "Merch table", receivedAt: "2026-11-11" }, mcp);
+  assert.equal((await db.get("income", ai.id) as any).receivedBy, undefined);
+  const other = await makeUser("ingrid@example.com", "admin", { name: "Ingrid" });
+  await cmd("income.assign", { id: ai.id, receivedBy: other.uid });
+  assert.equal((await db.get("income", ai.id) as any).receivedBy, other.uid);
+  await code(cmd("income.assign", { id: ai.id, receivedBy: memberUid }), "invalid_input"); // members have no worksheet
+  await cmd("income.assign", { id: ai.id, receivedBy: null });
+  assert.equal((await db.get("income", ai.id) as any).receivedBy, undefined);
+  assert.ok(!registry["income.assign"].roles.includes("mcp")); // app only: not a Roadie / MCP tool
+});
+
 test("payouts: to resolves and copies the name; paidAt missing = owed; markPaid; paidOut in totals", async () => {
   const s = await mkShow();
   const mus = (await db.create(ctx, "musicians", { name: "Sam Drummer", instruments: [], active: true })).id;

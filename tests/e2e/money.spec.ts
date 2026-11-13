@@ -56,7 +56,7 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
 test("Projects tab lists the seeded projects; New project adds Fall run and Cancel discards", async ({ page }) => {
   await signInAs(page, "rudy");
   await openTab(page, "money");
-  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("money-seg-projects").click();
   const table = page.getByTestId("projects-table");
   for (const name of ["General", "Duo", "Wild Hearts LP", "Spring West Tour", "Lighthouse video"]) await expect(table).toContainText(name);
   await expect(table.locator("tr", { hasText: "General" }).first()).toContainText("default");
@@ -79,7 +79,7 @@ test("Projects tab lists the seeded projects; New project adds Fall run and Canc
 test("the Wild Hearts LP project page shows its totals and records", async ({ page }) => {
   await signInAs(page, "rudy");
   await openTab(page, "money");
-  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("money-seg-projects").click();
   await page.getByTestId("projects-table").locator("tr", { hasText: "Wild Hearts LP" }).click();
   await expect(page).toHaveURL(/\/money\/projects\/[^/]+$/);
   await expect(page.getByTestId("project-page")).toContainText("Wild Hearts LP");
@@ -123,7 +123,7 @@ test("a project's ⋯ menu makes it the default and deletes it once nothing is o
   const NAME = `Scratch ${Date.now()}`;
   await signInAs(page, "rudy");
   await openTab(page, "money");
-  await page.getByTestId("money-tab-projects").click();
+  await page.getByTestId("money-seg-projects").click();
   await page.getByTestId("new-project").click();
   await page.getByTestId("np-name").fill(NAME);
   await page.getByTestId("np-add").click();

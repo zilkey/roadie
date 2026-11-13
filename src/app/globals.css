@@ -884,3 +884,49 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
 .metronome.on .metronome-arm { animation: metronome-swing var(--beat, .5s) ease-in-out infinite alternate; }
 @keyframes metronome-swing { from { transform: rotate(-24deg); } to { transform: rotate(24deg); } }
 @media (prefers-reduced-motion: reduce) { .metronome.on .metronome-arm { animation: none; } }
+
+/* Money › Taxes: the yearly worksheet, drawn like an IRS form (ruled lines, line numbers, boxed amounts). */
+.tax-form { background: var(--surface); color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; font-size: 0.9375rem; overflow: hidden; }
+.tax-head { display: grid; grid-template-columns: 9.5rem 1fr 7rem; border-bottom: 2px solid var(--ink); }
+.tax-head > * { padding: 10px 14px; }
+.tax-form-id { font-weight: 800; font-size: 1.0625rem; line-height: 1.2; letter-spacing: .02em; }
+.tax-form-id span { font-weight: 500; font-size: 0.8125rem; }
+.tax-title { display: grid; align-content: center; justify-items: center; text-align: center; gap: 2px; border-left: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+.tax-title b { font-size: 1.25rem; font-weight: 800; }
+.tax-title span { font-size: 0.75rem; color: var(--muted); }
+.tax-year-box { display: grid; align-content: center; justify-items: center; }
+.tax-year-box span { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.tax-year-box b { font-size: 1.75rem; font-weight: 800; font-family: var(--font-mono, ui-monospace, monospace); line-height: 1.1; }
+.tax-part { display: flex; align-items: center; gap: 10px; margin: 0; padding: 6px 14px 6px 0; font-size: 0.9375rem; font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.tax-part > span { background: var(--ink); color: var(--surface); padding: 4px 10px; font-weight: 800; min-width: 4.5rem; text-align: center; }
+.tax-row { display: grid; grid-template-columns: 3rem minmax(0, 1fr) 9.5rem; align-items: stretch; border-bottom: 1px solid var(--divider); min-height: 38px; }
+.tax-row.s, .tax-ident { display: flex; flex-wrap: wrap; gap: 6px 28px; align-items: center; padding: 8px 14px; }
+.tax-k { font-size: 0.75rem; color: var(--muted); margin-right: 4px; }
+.tax-n { display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.8125rem; border-right: 1px solid var(--divider); }
+.tax-label { display: flex; align-items: center; padding: 8px 12px; min-width: 0; background-image: radial-gradient(circle, var(--empty-border) 1px, transparent 1.2px); background-size: 6px 2px; background-repeat: repeat-x; background-position: left calc(100% - 10px); }
+.tax-amt { display: flex; align-items: center; justify-content: flex-end; padding: 8px 12px; font-family: var(--font-mono, ui-monospace, monospace); border-left: 1px solid var(--ink); background: var(--empty); white-space: nowrap; }
+.tax-row.sub .tax-label { padding-left: 28px; color: var(--muted); }
+.tax-row.strong .tax-label, .tax-row.strong .tax-amt { font-weight: 800; }
+.tax-row.total { border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+.tax-row.total .tax-amt { background: var(--accent-soft); }
+.tax-line > summary { list-style: none; cursor: pointer; }
+.tax-line > summary::-webkit-details-marker { display: none; }
+.tax-line > summary .tax-label::after { content: "▸"; margin-left: 8px; color: var(--muted); font-size: 0.75rem; background: var(--surface); padding: 0 2px; }
+.tax-line[open] > summary .tax-label::after { content: "▾"; }
+.tax-line > summary:hover .tax-label { color: var(--accent-text); }
+.tax-detail { display: grid; gap: 4px; padding: 8px 14px 10px 4.25rem; border-bottom: 1px solid var(--divider); background: var(--page); font-size: 0.875rem; }
+.tax-dl { display: flex; justify-content: space-between; gap: 12px; }
+.tax-note { margin: 0; padding: 6px 14px 10px 4.25rem; font-size: 0.8125rem; color: var(--muted); border-bottom: 1px solid var(--divider); }
+.tax-foot { padding: 12px 14px; border-top: 2px solid var(--ink); font-size: 0.75rem; color: var(--muted); }
+.tax-notice { border-color: var(--warn); }
+@media (max-width: 640px) {
+  .tax-head { grid-template-columns: 1fr auto; }
+  .tax-title { grid-column: 1 / -1; grid-row: 2; border: 0; border-top: 1px solid var(--ink); }
+  .tax-row { grid-template-columns: 2.25rem minmax(0, 1fr) 7.5rem; }
+  .tax-detail, .tax-note { padding-left: 2.75rem; }
+}
+@media print {
+  [data-testid="money-nav"], .page-actions, [data-testid="tax-unassigned"] { display: none !important; }
+  .tax-line .tax-detail { display: none; }
+  .tax-form { border-color: #000; }
+}

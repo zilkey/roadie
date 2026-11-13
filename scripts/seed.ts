@@ -306,9 +306,10 @@ async function main() {
   // --- income (#39): what came in and what is still owed to the band (no receivedAt) ---
   const income = (input: Record<string, unknown>) => create("income", { artistId: artist, projectId: bandProject, ...input });
   // The played show's guarantee, received.
-  await income({ date: "2026-10-10", amount: 45000, category: "guarantee", method: "check", from: "Creamery Arts Center", showId: playedShow, receivedAt: "2026-10-10" });
+  await income({ date: "2026-10-10", amount: 45000, category: "guarantee", method: "check", from: "Creamery Arts Center", showId: playedShow, receivedAt: "2026-10-10", receivedBy: uid.rudy });
   await income({ date: "2027-01-16", amount: 30000, category: "guarantee", from: "Pine Hollow Lounge", showId: lakeShow });
   await income({ date: "2026-10-15", amount: 18400, category: "streaming", from: "Bandcamp", projectId: releaseProject, notes: "October sales, not yet transferred" });
+  // Received, but nobody is down as receiving it (as Roadie logs it): Money › Taxes asks whose account it landed in.
   await income({ date: "2026-10-05", amount: 40000, category: "crowdfunding", from: "Backer pledges", projectId: releaseProject, receivedAt: "2026-10-05", method: "bank" });
 
   // --- payouts (#39): what the band paid or still owes people ---

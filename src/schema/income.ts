@@ -23,6 +23,8 @@ export const Income = entity({
   tourEntryId: id.optional(),
   /** When the money arrived (YYYY-MM-DD). Missing = still owed to us. */
   receivedAt: dateStr.optional(),
+  /** The admin whose account it landed in (users/{uid}): their tax worksheet counts it. Set to the admin who marks it received in the app; income.assign changes it. */
+  receivedBy: id.optional(),
   notes: z.string().optional(),
   /** On income that was copied off a deal's old income[] lines (src/schema/shows.ts): `${showId}:${line.id}`. Nothing sets it any more. */
   sourceKey: z.string().optional(),

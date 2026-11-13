@@ -32,7 +32,7 @@ export interface ExpenseLike {
 /** An income doc (src/schema/income.ts). No receivedAt = owed to us. */
 export interface IncomeLike {
   id: string; date: string; amount: number; category: string; method?: string; from: string; projectId: string; showId?: string;
-  receivedAt?: string; deletedAt?: unknown;
+  receivedAt?: string; /** The admin whose account it landed in (users/{uid}): the tax pages put it on their worksheet. */ receivedBy?: string; deletedAt?: unknown;
 }
 /** A payout doc (src/schema/payouts.ts). No paidAt = we owe. */
 export interface PayoutLike {
@@ -185,14 +185,14 @@ export function showTotals(i: {
 }
 
 /** One amount that actually moved, for the Money page's totals and charts. `payer` is whose account it left (expenses: userId; payouts: paidBy). */
-export interface MoneyRow { date: string; kind: "income" | "expense" | "payout"; showId?: string; projectId?: string; category: string; payer?: string; in: number; out: number }
+export interface MoneyRow { date: string; kind: "income" | "expense" | "payout"; showId?: string; projectId?: string; category: string; payer?: string; /** Income: the admin it landed with. */ receiver?: string; in: number; out: number }
 /**
  * Money that moved: received income (by its own date), paid expenses (open bills are left out) and paid payouts (by
  * paidAt; reimbursements are transfers, not spending, and are left out). Owed amounts never reach the charts.
  */
 export function moneyRows(i: { income: readonly IncomeLike[]; expenses: readonly ExpenseLike[]; payouts: readonly PayoutLike[] }): MoneyRow[] {
   const out: MoneyRow[] = [];
-  for (const x of live(i.income)) if (x.receivedAt) out.push({ date: x.date, kind: "income", showId: x.showId, projectId: x.projectId, category: x.category, in: x.amount, out: 0 });
+  for (const x of live(i.income)) if (x.receivedAt) out.push({ date: x.date, kind: "income", showId: x.showId, projectId: x.projectId, category: x.category, receiver: x.receivedBy, in: x.amount, out: 0 });
   for (const x of live(i.expenses)) if (!isOwedBill(x)) out.push({ date: x.date, kind: "expense", showId: x.showId, projectId: x.projectId, category: x.category, payer: x.userId, in: 0, out: x.amount });
   for (const p of live(i.payouts).filter(countsAsPaidOut)) {
     if (p.paidAt) out.push({ date: p.paidAt, kind: "payout", showId: p.showId, projectId: p.projectId, category: "payout", payer: p.paidBy, in: 0, out: p.amount });
@@ -212,12 +212,16 @@ function group(rows: readonly MoneyRow[], key: (r: MoneyRow) => string | undefin
   }
   return [...m].map(([k, v]) => ({ key: k, ...v, net: v.in - v.out }));
 }
+export const byYear = (rows: readonly MoneyRow[]) => group(rows, (r) => r.date.slice(0, 4)).sort((a, b) => (a.key < b.key ? 1 : -1));
 export const byMonth = (rows: readonly MoneyRow[]) => group(rows, (r) => r.date.slice(0, 7)).sort((a, b) => (a.key < b.key ? -1 : 1));
 export const byShow = (rows: readonly MoneyRow[]) => group(rows, (r) => r.showId).sort((a, b) => b.net - a.net);
 export const byProject = (rows: readonly MoneyRow[]) => group(rows, (r) => r.projectId).sort((a, b) => b.net - a.net);
 export const byCategory = (rows: readonly MoneyRow[]) => group(rows, (r) => r.category).sort((a, b) => b.in + b.out - (a.in + a.out));
 /** Who paid what out of their own pocket, biggest first: money out with a known payer (a record with none is left out). */
 export const byPayer = (rows: readonly MoneyRow[]) => group(rows.filter((r) => r.out > 0), (r) => r.payer).sort((a, b) => b.out - a.out);
+
+/** Who money came in to, biggest first (income with no receiver is left out). */
+export const byReceiver = (rows: readonly MoneyRow[]) => group(rows.filter((r) => r.in > 0), (r) => r.receiver).sort((a, b) => b.in - a.in);
 
 /** Split `total` cents evenly over n people; the first people get the leftover cents. */
 export function splitEvenly(total: number, n: number): number[] {

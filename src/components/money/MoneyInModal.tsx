@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Select, useCommand } from "@/components/ui";
+import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { INCOME_LABEL, METHOD_LABEL, formatCents, parseDollars } from "@/lib/money";
 import { dateInBandZone } from "@/lib/timezone";
 import { showName } from "@/lib/shows";
@@ -11,6 +11,8 @@ import type { MoneyDefaults } from "./modals";
 import { EditAmount, EditFoot, EditInput, MethodWhenFields, ModalFoot, ModalHead, MoneyDialog, ProjectShowFields, Toggle, TrackField, shortDate, useEditPickers, useEditSave, useProjectsAndShows, useReleaseTracks, withContext } from "./MoneyOutModal";
 import { TourFields, useTourPick } from "./TourFields";
 import { celebrateMoneyIn } from "@/components/Celebrate";
+import { useProfile } from "@/lib/auth";
+import { useAdmins } from "./MoneyNav";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
@@ -41,6 +43,8 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("");
   const [when, setWhen] = useState(dateInBandZone());
+  const me = useProfile();
+  const [gotBy, setGotBy] = useState(me.uid);
 
   const cents = parseDollars(amount);
   const who = from.trim();
@@ -58,6 +62,8 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
       amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}), ...tp.payload,
       date: got ? when : dateInBandZone(), ...(got ? { method, receivedAt: when } : {}),
     });
+    // The server puts received money on the caller's worksheet; someone else's account is one more call.
+    if (r && got && gotBy !== me.uid && r.id) await call("income.assign", { id: r.id, receivedBy: gotBy });
     if (r) { onClose(); celebrateMoneyIn(money, who, got); }
   }
 
@@ -84,6 +90,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
         <TrackField t={tr} prefix="mi" context={context} />
         <TourFields t={tp} prefix="mi" />
         {got && <MethodWhenFields method={method} setMethod={setMethod} when={when} setWhen={setWhen} prefix="mi" />}
+        {got && <WhoGotIt value={gotBy} onChange={setGotBy} />}
       </div>
       <ModalFoot saves={saves} error={error} busy={busy} canSave={canSave} onCancel={onClose} prefix="mi" />
     </form>
@@ -98,6 +105,7 @@ function IncomeEdit({ id, context, onClose }: { id: string; context?: MoneyDefau
 function IncomeEditBody({ x, context, onClose }: { x: Row<Income>; context?: MoneyDefaults["context"]; onClose(): void }) {
   const { save, status, error, bad, setBad } = useEditSave("income.update", x.id);
   const { s, t, tp } = useEditPickers(x, context, save);
+  const assign = useCommand();
   return (
     <div data-testid="money-in-edit">
       <ModalHead title="Money in" sub="Changes save as you go" onClose={onClose} testid="mi-close" />
@@ -125,8 +133,25 @@ function IncomeEditBody({ x, context, onClose }: { x: Row<Income>; context?: Mon
             <EditInput label="When" type="date" value={x.receivedAt} testid="mi-when" onCommit={(v) => { if (!v) return false; void save({ receivedAt: v }, "the date"); return true; }} />
           </div>
         )}
+        {x.receivedAt && <WhoGotIt value={x.receivedBy ?? ""} onChange={(v) => void assign.call("income.assign", { id: x.id, receivedBy: v || null })} />}
+        <ErrorBox error={assign.error} />
       </div>
       <EditFoot prefix="mi" status={status} error={error} bad={bad} onClose={onClose} />
     </div>
+  );
+}
+
+/** Whose account received money landed in: it goes on their tax worksheet (Money › Taxes). */
+function WhoGotIt({ value, onChange }: { value: string; onChange(uid: string): void }) {
+  const admins = useAdmins();
+  return (
+    <label className="grid gap-1">
+      <span className="lbl">Who got it</span>
+      <select className="select" value={value} onChange={(e) => onChange(e.target.value)} data-testid="mi-got-by">
+        {!value && <option value="">Nobody yet</option>}
+        {admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+      </select>
+      <span className="s">It goes on their taxes.</span>
+    </label>
   );
 }
