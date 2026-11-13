@@ -4,6 +4,7 @@ import type { ChecklistLike } from "@/lib/shows";
 import { Menu } from "@/components/Menu";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { toast } from "@/components/Toasts";
+import { confetti } from "@/components/Celebrate";
 import { useBand } from "../common";
 import type { ChecklistHost } from "./ChecklistSidebar";
 import { ChecklistItem } from "./ChecklistItem";
@@ -33,6 +34,12 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
   const settled = useRef(false);
   const base = { kind: host.kind, id: host.id, listId: list.id };
   const done = list.items.filter((i) => i.done).length;
+  // Every item ticked: the list folds shut to its title and count; the chevron opens it again.
+  // It folds again each time it becomes complete (ticking the last item shuts it).
+  const complete = list.items.length > 0 && done === list.items.length;
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (!complete) setExpanded(false); }, [complete]);
+  const shut = complete && !expanded && !renaming;
 
   useEffect(() => { if (autoFocusAdd) addRef.current?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (renaming) renameRef.current?.select(); }, [renaming]);
@@ -82,7 +89,14 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
               else if (e.key === "Escape") { e.stopPropagation(); void finishRename(false); }
             }} />
         ) : (
-          <h3 className="min-w-0 break-words text-[1.125rem] font-bold" data-testid={`checklist-title-${list.id}`}>{list.name}</h3>
+          <div className="flex min-w-0 items-center gap-1">
+            {complete && <button type="button" className="icon-btn shrink-0" aria-expanded={!shut} aria-label={`${shut ? "Show" : "Hide"} ${list.name}`}
+              onClick={() => setExpanded(shut)} data-testid={`checklist-fold-${list.id}`}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                style={{ transform: shut ? "rotate(-90deg)" : undefined }}><path d="M3.5 6 8 10.5 12.5 6" /></svg>
+            </button>}
+            <h3 className="min-w-0 break-words text-[1.125rem] font-bold" data-testid={`checklist-title-${list.id}`}>{list.name}</h3>
+          </div>
         )}
         <div className="flex shrink-0 items-center gap-2">
           <span className="s" data-testid={`checklist-count-${list.id}`}>{done} of {list.items.length}</span>
@@ -100,12 +114,13 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
           )}
         </div>
       </div>
+      {!shut && <>
       {list.items.length === 0 ? <p className="s">Nothing on this list yet.</p> : (
         <ul className="flex flex-col">
           {list.items.map((i) => (
             <li key={i.id}>
               <ChecklistItem item={i} people={people} musicians={musicians} busy={busy}
-                onToggle={(d) => void call("checklists.check", { ...base, itemId: i.id, done: d })}
+                onToggle={(d) => { if (d) confetti(); void call("checklists.check", { ...base, itemId: i.id, done: d }); }}
                 onSave={(n) => void call("checklists.editItem", { ...base, itemId: i.id, label: n.label, ownerId: n.ownerId })}
                 onRemove={() => void call("checklists.removeItem", { ...base, itemId: i.id })}
                 onPin={admin ? (p) => void pin(i.id, p) : undefined} />
@@ -120,6 +135,7 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
           testid={`checklist-add-owner-${list.id}`} />
         <button type="submit" className="btn ghost" disabled={!text.trim() || busy} data-testid={`checklist-add-btn-${list.id}`}>Add</button>
       </form>
+      </>}
       <ErrorBox error={error} />
     </section>
   );

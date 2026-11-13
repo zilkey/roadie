@@ -37,12 +37,13 @@ export const todosAdd = defineCommand({
 });
 
 export const todosEdit = defineCommand({
-  name: "todos.edit", roles: [...ROLES], description: "Change an Our list to-do's text and who it's assigned to: ownerId a musician id, or null for unassigned.",
-  input: z.strictObject({ id: z.string().min(1), label: z.string().trim().min(1), ownerId: owner }),
+  name: "todos.edit", roles: [...ROLES], description: "Change an Our list to-do's text and/or who it's assigned to: ownerId a musician id, or null for unassigned. A field left out stays as it is.",
+  // Each field is optional so the page's two inline edits (text, who) can't undo each other with a stale copy of the other.
+  input: z.strictObject({ id: z.string().min(1), label: z.string().trim().min(1).optional(), ownerId: owner.optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     await requireTodo(w, i.id);
     if (i.ownerId) await requireMusician(w, i.ownerId);
-    return w.update("todos", i.id, { label: i.label, ownerId: i.ownerId ?? null });
+    return w.update("todos", i.id, { ...(i.label !== undefined ? { label: i.label } : {}), ...(i.ownerId !== undefined ? { ownerId: i.ownerId } : {}) });
   }),
 });
 
