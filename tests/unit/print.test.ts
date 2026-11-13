@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { defaultPrintOptions, fitTextSize, parsePrintQuery, printPath, printQuery } from "@/lib/print";
+import { defaultPrintOptions, fitTextSize, keepFields, parsePrintQuery, printOptionsToRemember, printPath, printQuery, readSavedPrintOptions } from "@/lib/print";
 import { buildSheets, type BuildInput, type PrintItem, type SheetRow } from "@/lib/printSheets";
 import type { PrintOptions } from "@/schema/print";
 import { BREAK_ITEM, BREAK_TEXT, items25, items5, songs25, songs5, TOTAL_25_SEC } from "../fixtures/print-setlists";
@@ -201,4 +201,37 @@ test("buildSheets: a song field prints its setlist label when it has one", () =>
   const fields = [{ id: "capo", label: "Capo (Eb)", setlistLabel: "Capo" }];
   const rows = songRows(rowsOf(buildSheets(base({ songs, songFields: fields, options: opts({ fields: ["field:capo"] }) }))));
   assert.deepEqual(rows[0].fields.map((f) => [f.label, f.value]), [["Capo", "2"]]);
+});
+
+test("readSavedPrintOptions: keeps each option that still validates, falls back on the rest, null when nothing is usable", () => {
+  assert.equal(readSavedPrintOptions(undefined), null);
+  assert.equal(readSavedPrintOptions("x"), null);
+  assert.equal(readSavedPrintOptions({ paper: "legal", size: 3 }), null);
+  const saved = opts({ copy: "mine", sheets: "perSet", fields: ["key", "field:capo"], titles: "short", header: false, transitions: false, paper: "a4" });
+  assert.deepEqual(readSavedPrintOptions(saved), saved);
+  // A stale option (an old paper, an unknown key, a junk field entry) doesn't throw away the rest.
+  const r = readSavedPrintOptions({ ...saved, paper: "legal", zoom: 2, fields: ["key", 7, "", "key", "field:capo"] })!;
+  assert.deepEqual(r, { ...saved, paper: "letter", fields: ["key", "field:capo"] });
+  // Saved before transitions existed: on.
+  const { transitions: _, ...old } = saved;
+  assert.equal(readSavedPrintOptions(old)!.transitions, true);
+});
+
+test("keepFields: built-ins always, song fields only when they still exist", () => {
+  assert.deepEqual(keepFields(["field:gone", "key", "tempo", "field:capo", "breaks", "alts", "nonsense", "key"], ["capo"]), ["key", "tempo", "field:capo", "breaks", "alts"]);
+});
+
+test("printOptionsToRemember: forced choices keep last time's, unseen song fields stay, deleted ones go", () => {
+  const prev = opts({ copy: "mine", sheets: "perSet", fields: ["key", "field:capo", "field:gone"] });
+  const printed = opts({ copy: "band", sheets: "one", fields: ["length"] });
+  const offered = ["key", "length", "tempo", "breaks", "alts"]; // capo was taken off In setlists
+  const r = printOptionsToRemember(printed, prev, { setCount: 1, canMine: false, offered, songFieldIds: ["capo"] });
+  assert.equal(r.sheets, "perSet", "a one-set setlist doesn't turn one sheet per set off");
+  assert.equal(r.copy, "mine", "no My copy this time doesn't turn it off");
+  assert.deepEqual(r.fields, ["length", "field:capo"], "key was unticked; capo stays for when it's offered again; gone is dropped");
+  // When the choices were real, they're what's remembered.
+  const real = printOptionsToRemember(printed, prev, { setCount: 2, canMine: true, offered: [...offered, "field:capo"], songFieldIds: ["capo"] });
+  assert.deepEqual(real, printed);
+  // First print ever: just what was printed.
+  assert.deepEqual(printOptionsToRemember(printed, null, { setCount: 1, canMine: false, offered, songFieldIds: [] }), printed);
 });

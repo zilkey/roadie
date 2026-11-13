@@ -4,7 +4,7 @@ import { CloseIcon } from "@/components/Sheet";
 import { Select } from "@/components/ui";
 import { useArtistRouter, useHref } from "@/lib/artist";
 import { runCommand } from "@/lib/commands";
-import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, PAPER, defaultPrintOptions, printPath, pxToPt, songFieldId } from "@/lib/print";
+import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, PAPER, defaultPrintOptions, keepFields, printOptionsToRemember, printPath, pxToPt, songFieldId } from "@/lib/print";
 import type { PrintOptions, PrintPaper } from "@/schema/print";
 import { PrintSheets } from "./PrintSheets";
 import { usePrintSheets } from "./usePrintSheets";
@@ -50,19 +50,24 @@ export function PrintDialog({ setlistId, onClose }: { setlistId: string; onClose
 
   // Until the real options are known, build with the plain defaults so we learn how many sets there are.
   const p = usePrintSheets(setlistId, opts ?? defaultPrintOptions(1));
-  const { result, canMine, mineName, songFields } = p;
+  const { result, canMine, mineName, songFields, allSongFieldIds } = p;
+  const offeredSongFieldIds = songFields.map((f) => f.id);
   useEffect(() => {
-    if (opts || saved === undefined || !result) return;
+    if (opts || saved === undefined || !result || !allSongFieldIds) return;
+    // Last time's choices, minus song fields that were deleted or taken off "In setlists" since (they'd be ticked but invisible).
     const o = defaultPrintOptions(result.setCount, saved);
-    setOpts(canMine ? o : { ...o, copy: "band" });
-  }, [opts, saved, result, canMine]);
+    const fields = keepFields(o.fields, offeredSongFieldIds);
+    setOpts({ ...o, fields, copy: canMine ? o.copy : "band" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts, saved, result, canMine, allSongFieldIds]);
 
   const set = (patch: Partial<PrintOptions>) => setOpts((o) => (o ? { ...o, ...patch } : o));
   const toggleField = (id: string) => opts && set({ fields: opts.fields.includes(id) ? opts.fields.filter((f) => f !== id) : [...opts.fields, id] });
 
   async function go() {
     if (!opts) return;
-    try { await runCommand("setlists.setPrintPrefs", { options: opts }); } catch { /* printing doesn't wait on saving the prefs */ }
+    const remember = printOptionsToRemember(opts, saved ?? null, { setCount: result?.setCount ?? 1, canMine, offered: fields.map(([id]) => id), songFieldIds: allSongFieldIds ?? offeredSongFieldIds });
+    try { await runCommand("setlists.setPrintPrefs", { options: remember }); } catch { /* printing doesn't wait on saving the prefs */ }
     const url = href(printPath(setlistId, opts));
     if (desktop) window.open(url, "_blank");
     else router.push(printPath(setlistId, opts));

@@ -44,5 +44,7 @@ export function usePrintSheets(setlistId: string, options: PrintOptions) {
     loading: m.loading, missing: !m.loading && !kind, result, kind,
     backPath: kind === "show" ? `/shows/${setlistId}?tab=setlist` : `/setlists/${setlistId}`,
     canMine, mineName, songFields,
+    /** Every song field's id, offered or not (for pruning saved choices); null until the artist doc is in. */
+    allSongFieldIds: artist.doc ? (artist.doc.songFields ?? []).map((f) => f.id) : null,
   };
 }

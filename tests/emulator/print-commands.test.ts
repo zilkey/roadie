@@ -92,6 +92,23 @@ test("setlists.printLink for a template: the path mirrors the options, missing o
   assert.equal((await db.history("setlistTemplates", templateId)).length, before.tpl);
 });
 
+test("print prefs survive a stale stored option and drop song fields that no longer print", async () => {
+  const { rudy, templateId } = await setup();
+  const capo = (await call(rudy.token, "artists.addSongField", { id: TEST_ARTIST, label: "Capo" })).json.result.fieldId as string;
+  const midi = (await call(rudy.token, "artists.addSongField", { id: TEST_ARTIST, label: "MIDI" })).json.result.fieldId as string;
+  await call(rudy.token, "artists.setSongFieldInSetlists", { id: TEST_ARTIST, fieldId: capo, inSetlists: true });
+  await call(rudy.token, "setlists.setPrintPrefs", { options: { ...SAVED, fields: ["key", `field:${capo}`, `field:${midi}`, "field:deleted"] } });
+  // An option that stops validating (here: written by hand) falls back alone.
+  const uid = (await db.list("users")).find((u) => u.email === "rudy@example.com")!.id;
+  const { firestore } = await import("@/server/admin");
+  await firestore().collection("userPrefs").doc(uid).set({ print: { [TEST_ARTIST]: { paper: "legal" } } }, { merge: true });
+  const got = (await call(rudy.token, "setlists.printPrefs", {})).json.result.options;
+  assert.deepEqual(got, { ...SAVED, paper: "letter", fields: ["key", `field:${capo}`, `field:${midi}`, "field:deleted"] });
+  // A link prints only fields that still print: capo (In setlists), not midi (not offered) or the deleted one.
+  const link = await call(rudy.token, "setlists.printLink", { setlistId: templateId });
+  assert.deepEqual(link.json.result.options.fields, ["key", `field:${capo}`]);
+});
+
 test("setlists.printLink for a show points at the show's setlist id", async () => {
   const { rudy } = await setup();
   const v = await db.create(importCtx(), "venues", venue("Deep End"));

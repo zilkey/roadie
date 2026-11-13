@@ -1,6 +1,7 @@
 /** Per-user prefs at userPrefs/{uid}. Written with firebase-admin directly (like drafts): personal, so no history entry and no undo. */
 import { hiddenFromPrefs, normalizeOrder, SECTION_IDS, type SectionId } from "@/schema/sections";
-import { PrintOptions } from "@/schema/print";
+import type { PrintOptions } from "@/schema/print";
+import { readSavedPrintOptions } from "@/lib/print";
 import { pruneDismissed } from "@/lib/dayOf";
 import { dateInBandZone } from "@/lib/timezone";
 import { firestore } from "./admin";
@@ -37,10 +38,9 @@ export async function setAskChannel(uid: string, artistId: string, channel: AskC
   await ref(uid).set({ uid, askChannel: { [artistId]: channel } }, { merge: true });
 }
 
-/** How the caller last printed a setlist in this artist; null when they never did (or the stored value no longer validates). */
+/** How the caller last printed a setlist in this artist; null when they never did. Options that no longer validate fall back one by one (readSavedPrintOptions). */
 export async function printPrefs(uid: string, artistId: string): Promise<PrintOptions | null> {
-  const p = PrintOptions.safeParse((await ref(uid).get()).data()?.print?.[artistId]);
-  return p.success ? p.data : null;
+  return readSavedPrintOptions((await ref(uid).get()).data()?.print?.[artistId]);
 }
 
 export async function setPrintPrefs(uid: string, artistId: string, o: PrintOptions): Promise<void> {

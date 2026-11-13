@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PrintOptions } from "@/schema/print";
-import { defaultPrintOptions, printPath } from "@/lib/print";
+import { defaultPrintOptions, keepFields, printPath } from "@/lib/print";
 import { artistPath } from "@/lib/routes";
 import { appUrl } from "../availability";
 import { db } from "../db";
@@ -44,7 +44,10 @@ export const setlistsPrintLink = defineCommand({
     }
     const saved = await printPrefs(ctx.uid, artistId!);
     const defined = Object.fromEntries(Object.entries(explicit).filter(([, v]) => v !== undefined));
-    const options = PrintOptions.parse(defaultPrintOptions(setCount((doc.items ?? []) as { type?: string }[]), { ...saved, ...defined }));
+    const merged = defaultPrintOptions(setCount((doc.items ?? []) as { type?: string }[]), { ...saved, ...defined });
+    // Only fields that still print: song fields deleted or taken off "In setlists" since they were saved are dropped.
+    const offered = ((artist.songFields ?? []) as { id: string; inSetlists?: boolean }[]).filter((f) => f.inSetlists).map((f) => f.id);
+    const options = PrintOptions.parse({ ...merged, fields: keepFields(merged.fields, offered) });
     const path = artistPath(artist.slug, printPath(id, options));
     return { url: `${appUrl()}${path}`, path, options };
   },

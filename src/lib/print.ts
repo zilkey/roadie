@@ -2,7 +2,7 @@
  * Printable setlists: the options, the print route's query string, paper sizes and the fit-to-page search. Shared by the
  * Print dialog, the print route and the setlists.printLink command, so a link Roadie builds opens the same sheets.
  */
-import type { PrintOptions, PrintPaper } from "@/schema/print";
+import { PrintOptions, type PrintPaper } from "@/schema/print";
 
 export const FIELD_KEY = "key";
 export const FIELD_LENGTH = "length";
@@ -13,6 +13,53 @@ export const FIELD_BREAKS = "breaks";
 export const FIELD_ALTS = "alts";
 /** The extra-field id for one of the artist's song fields. */
 export const songFieldId = (id: string) => `field:${id}`;
+
+/** The extra fields every setlist offers (song fields come and go with the artist's Custom fields). */
+export const BUILTIN_FIELDS: readonly string[] = [FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, FIELD_BREAKS, FIELD_ALTS];
+
+/**
+ * Someone's stored print choices, read leniently: each option that still validates is kept and the rest fall back to the
+ * defaults, so one stale or renamed option never throws away the others. Field ids are kept as long as they look like one;
+ * which of them still exist is up to the reader (keepFields). null = nothing usable stored.
+ */
+export function readSavedPrintOptions(raw: unknown): PrintOptions | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const shape = PrintOptions.shape;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(shape) as (keyof typeof shape)[]) {
+    if (k === "fields") {
+      if (Array.isArray(r.fields)) out.fields = [...new Set(r.fields.filter((f): f is string => typeof f === "string" && f.length > 0))];
+      continue;
+    }
+    const p = shape[k].safeParse(r[k]);
+    if (p.success && p.data !== undefined) out[k] = p.data;
+  }
+  if (!Object.keys(out).length) return null;
+  return { ...defaultPrintOptions(2), ...out };
+}
+
+/** The picked fields that still exist: the built-in ones, and song fields whose id is in `songFieldIds`. Order kept, no repeats. */
+export const keepFields = (fields: string[], songFieldIds: string[]): string[] => {
+  const ok = new Set([...BUILTIN_FIELDS, ...songFieldIds.map(songFieldId)]);
+  return [...new Set(fields)].filter((f) => ok.has(f));
+};
+
+/**
+ * What to remember after printing: what was printed, except where the dialog forced a choice the person didn't make, so a
+ * one-set setlist doesn't turn "one sheet per set" off and a missing "My copy" doesn't turn it off for next time. Song fields
+ * that still exist but weren't on offer this time (taken off "In setlists") stay picked; deleted ones are dropped.
+ */
+export function printOptionsToRemember(printed: PrintOptions, prev: PrintOptions | null, ctx: { setCount: number; canMine: boolean; offered: string[]; songFieldIds: string[] }): PrintOptions {
+  const offered = new Set(ctx.offered);
+  const unseen = (prev?.fields ?? []).filter((f) => !offered.has(f));
+  return {
+    ...printed,
+    sheets: ctx.setCount <= 1 && prev ? prev.sheets : printed.sheets,
+    copy: !ctx.canMine && prev ? prev.copy : printed.copy,
+    fields: keepFields([...printed.fields, ...unseen], ctx.songFieldIds),
+  };
+}
 
 /** Defaults: band copy, breaks shown, wrapped titles, header on, transitions counted, Letter. One sheet when there is one set; otherwise the saved choice. */
 export function defaultPrintOptions(setCount: number, saved?: Partial<PrintOptions> | null): PrintOptions {
