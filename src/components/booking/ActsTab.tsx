@@ -188,12 +188,12 @@ export function ActsTab() {
       )}
       {!loading && rows.length > 0 && (
         <div className="book-tw">
-          <table className="book-table wn">
+          <table className="book-table wn acts">
             <thead><tr>
               <th className="flag"><span className="sr-only">Watch or not a fit</span></th>
               <th className="name">Act</th>
-              <th>Seen at</th>
-              <th>Next show</th>
+              <th className="seen">Seen at</th>
+              <th className="next">Next show</th>
               <th className="sl acts-sl">Sounds like</th>
             </tr></thead>
             <tbody>
@@ -227,12 +227,12 @@ export function ActsTab() {
                         </span>
                       </div>
                     </td>
-                    <td data-testid={`act-seen-${a.id}`}>
+                    <td className="seen" data-testid={`act-seen-${a.id}`}>
                       {rooms.length ? <>{rooms.length} room{rooms.length === 1 ? "" : "s"}
                         <span className="sub">{rooms.slice(0, ROOMS_SHOWN).map((r, i) => <span key={r.venueId}>{i > 0 && " · "}<Link href={hrefFor("venue", r.venueId)} className="hover:underline">{r.name}</Link> ({roleWord(r.roles)})</span>)}{rooms.length > ROOMS_SHOWN ? ` · +${rooms.length - ROOMS_SHOWN}` : ""}</span></>
                         : <span className="dash">—</span>}
                     </td>
-                    <td className="nw" data-testid={`act-next-${a.id}`}>{f?.next ? <>
+                    <td className="nw next" data-testid={`act-next-${a.id}`}>{f?.next ? <>
                       {f.next.ticketUrl ? <a href={f.next.ticketUrl} target="_blank" rel="noreferrer" className="underline" title="Tickets and details" data-testid={`act-next-link-${a.id}`}>{fmtEventDay(f.next.date)} ↗</a> : fmtEventDay(f.next.date)}
                       <span className="sub"><Link href={hrefFor("venue", f.next.venueId)} className="hover:underline" data-testid={`act-next-venue-${a.id}`}>{f.next.name}</Link></span>
                     </> : <span className="dash">—</span>}</td>

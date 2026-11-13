@@ -65,7 +65,8 @@ test("email.search finds mail from the contacts and by the place's name, groups 
   const again = await cmd("email.search", { target });
   assert.ok(again.find((x: any) => x.threadId === auto.threadId).linkedId, "linked now");
 
-  assert.equal((await cmd("email.search", { target, q: "Unrelated" })).length, 2, "typed text replaces the place's name; the contacts' mail stays");
+  // Linking the auto-reply made booking@ a contact of the venue, so its thread is the contacts' mail now too.
+  assert.equal((await cmd("email.search", { target, q: "Unrelated" })).length, 3, "typed text replaces the place's name; the contacts' mail stays");
   const only = await cmd("email.search", { target, addresses: [], q: "Unrelated" });
   assert.deepEqual(only.map((x: any) => x.subject), ["Unrelated"], "no addresses chosen: only the text");
   const dom = await cmd("email.search", { target, addresses: [], domain: "pinehollow.example", q: "zzz-nothing" });

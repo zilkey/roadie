@@ -11,6 +11,7 @@ import { CONTACT_ROLES } from "@/lib/venues";
 import { bandNoteOf, bandNotesBy, createNoted, setVenuePromoters, updateNoted, withBandNote, writeBandNote } from "../bandNotes";
 import { ensureVenueTypes, requireVenueType } from "../venueTypes";
 import { requireActiveCampaign } from "./campaigns";
+import { attachContact, detachContact, parentKind } from "../contactLinks";
 import { FESTIVAL_PAGE_SIZE, FESTIVAL_SORTS, festivalRows } from "@/lib/festivalPage";
 import {
   BAND_NOTES, VenueInput, VENUE_ROLE_FIELDS, venueNoteId, slug, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
@@ -33,7 +34,6 @@ const FestivalNew = FestivalIn.extend({ address: FestivalInput.shape.address.unw
 const EditionIn = EditionInput.omit({ festivalName: true }).extend({ venueIds: arr(EditionInput.shape.venueIds) });
 const lowerEmails = z.array(z.string().transform(lowerEmail).pipe(emailSchema));
 const ContactIn = ContactInput.omit({ artistId: true }).extend({ emails: lowerEmails.default([]), phones: z.array(z.string().transform(e164).pipe(ContactInput.shape.phones.element)).default([]) });
-const parentKind = z.enum(["venues", "promoters", "festivals", "acts"]);
 
 async function requireVenue(w: Writer, id: string) {
   const v = await w.get("venues", id);
@@ -283,7 +283,7 @@ export const contactsCreate = defineCommand({
   description: "Add a person to this band's contacts. Same email (or name when no email) merges into the band's existing contact. attachTo links them to a venue, promoter or festival. Contacts and their notes are this band's own (other bands never see them).",
   run: (ctx, { attachTo, ...input }) => run(ctx, async (w) => {
     const r = await createNoted(w, "contacts", { ...input, artistId: await artistIdOf(w) });
-    if (attachTo) await attach(w, attachTo.kind, attachTo.id, r.id);
+    if (attachTo) await attachContact(w, attachTo.kind, attachTo.id, r.id);
     return r;
   }),
 });
@@ -310,48 +310,20 @@ export const contactsRemove = defineCommand({
       // The band's festival and promoter notes carry the links.
       const { coll, key } = BAND_NOTES[kind];
       const parents = new Set((await w.query(coll, (q) => q.where("contactIds", "array-contains", id))).map((n) => n[key] as string));
-      for (const pid of parents) await detach(w, kind, pid, id);
+      for (const pid of parents) await detachContact(w, kind, pid, id);
     }
     return w.softDelete("contacts", id);
   }),
 });
 
-/** Contact links are the band's own: venueNotes, promoterNotes, festivalNotes and actNotes contactIds. */
-async function attach(w: Writer, kind: z.infer<typeof parentKind>, parentId: string, contactId: string) {
-  await requireContact(w, contactId);
-  const p = await w.get(kind, parentId);
-  if (!p || p.deletedAt) throw new AppError("not_found", kind === "acts" ? "Act not found" : "Place not found", 404);
-  if (kind === "venues") {
-    const artistId = await artistIdOf(w);
-    const { fields } = await noteOf(w, p, artistId);
-    if (!fields.contactIds.includes(contactId)) await writeNote(w, p, artistId, { contactIds: [...fields.contactIds, contactId] });
-    return;
-  }
-  const artistId = await artistIdOf(w);
-  const ids = (await bandNoteOf(w, kind, p, artistId)).fields.contactIds ?? [];
-  if (!ids.includes(contactId)) await writeBandNote(w, kind, p, artistId, { contactIds: [...ids, contactId] });
-}
-async function detach(w: Writer, kind: z.infer<typeof parentKind>, parentId: string, contactId: string) {
-  const p = await w.get(kind, parentId);
-  if (!p || p.deletedAt) return;
-  if (kind === "venues") {
-    const artistId = await artistIdOf(w);
-    const { fields } = await noteOf(w, p, artistId);
-    if (fields.contactIds.includes(contactId)) await writeNote(w, p, artistId, { contactIds: fields.contactIds.filter((x) => x !== contactId) });
-    return;
-  }
-  const artistId = await artistIdOf(w);
-  const ids = (await bandNoteOf(w, kind, p, artistId)).fields.contactIds ?? [];
-  if (ids.includes(contactId)) await writeBandNote(w, kind, p, artistId, { contactIds: ids.filter((x) => x !== contactId) });
-}
 const linkInput = z.strictObject({ contactId: z.string().min(1), kind: parentKind, id: z.string().min(1) });
 export const contactsAttach = defineCommand({
   name: "contacts.attach", roles: [...ROLES], input: linkInput, description: "Link an existing contact to a venue, promoter, festival or act (an act's booker, manager or a member).",
-  run: (ctx, i) => run(ctx, async (w) => { await attach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
+  run: (ctx, i) => run(ctx, async (w) => { await attachContact(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
 });
 export const contactsDetach = defineCommand({
   name: "contacts.detach", roles: [...ROLES], input: linkInput, description: "Unlink a contact from a venue, promoter, festival or act (a venue contact's roles go with it).",
-  run: (ctx, i) => run(ctx, async (w) => { await detach(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
+  run: (ctx, i) => run(ctx, async (w) => { await detachContact(w, i.kind, i.id, i.contactId); return { id: i.contactId }; }),
 });
 export const contactsSetRoles = defineCommand({
   name: "contacts.setRoles", roles: [...ROLES],

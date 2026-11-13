@@ -14,12 +14,15 @@ import type { MailMessage, MailThread } from "../integrations/gmail";
 import { unfilledFields } from "@/lib/booking";
 import { snippetOf } from "@/lib/email-text";
 import { sanitizeHtml, htmlToText } from "@/lib/email-html";
-import { signatureOf } from "@/lib/email-signature";
+import { signatureOf, nameFromAddress } from "@/lib/email-signature";
 import { e164 } from "@/schema/normalize";
 import { BAND_NOTES, bandNoteId, emailThreadId, threadPitchIds, venueNoteId, email as emailSchema } from "@/schema";
 import { withBandNote } from "@/lib/bandNotes";
 import { callerArtistId, privateOf } from "../venues";
 import { bookingMailOf } from "../google/band";
+import { createNoted } from "../bandNotes";
+import { attachContact } from "../contactLinks";
+import { roleIn } from "@/schema";
 
 export const gmailFail = (e: unknown): never => {
   if (e instanceof IntegrationError) throw new AppError("gmail_error", `Gmail: ${e.message}`, 502);
@@ -110,7 +113,86 @@ async function upsertThread(w: Writer, a: { artistId: string; account: string; t
     const grew = all.length > had.length;
     await w.update("emailThreads", id, { ...sum, syncedAt: w.now, ...(a.place ? { target: a.place } : {}), ...(grew ? pitches : {}) });
   }
+  const place = a.place ?? (existing?.target as Place | undefined);
+  if (place) await addThreadPeople(w, { artistId: a.artistId, account: a.account, place, messages: a.thread.messages });
   return id;
+}
+
+// ---------- the people a place's mail is with ----------
+
+/** Robots, not people: no-reply senders, bounces, mailer daemons, notification and list addresses. */
+const NOT_A_PERSON = /(^|[._+-])(no-?reply|do-?not-?reply|donotreply|mailer-daemon|postmaster|bounces?|notifications?|notify|unsubscribe|calendar-notification)([._+-]|@)|@(.+\.)?(noreply|bounce|bounces|email|mailchimp|mcsv|sendgrid|mailgun)\./i;
+export const isPerson = (addr: string) => !NOT_A_PERSON.test(addr);
+
+export interface ThreadPerson { email: string; name: string; title?: string; phone?: string }
+/**
+ * The other people on a place's mail: whoever wrote to the mailbox (with the name from the From header, and a title and phone
+ * guessed from the signature) and whoever the mailbox wrote to. Cc'd addresses, robots and the band's own addresses are left out.
+ */
+export function threadPeople(messages: MailMessage[], ours: ReadonlySet<string>): ThreadPerson[] {
+  const by = new Map<string, ThreadPerson>();
+  for (const m of [...messages].sort((a, b) => b.date.localeCompare(a.date))) {
+    const others = m.direction === "received" ? [m.from] : m.to;
+    for (const raw of others) {
+      const email = raw.toLowerCase();
+      if (ours.has(email) || !validEmail(email) || !isPerson(email)) continue;
+      const p = by.get(email) ?? by.set(email, { email, name: "" }).get(email)!;
+      if (m.direction !== "received" || p.name) continue;
+      p.name = m.fromName.trim();
+      const sig = signatureOf(m.body, p.name);
+      const phone = sig.phone ? e164(sig.phone) : "";
+      if (sig.title) p.title = sig.title;
+      if (/^\+[1-9]\d{6,14}$/.test(phone)) p.phone = phone;
+    }
+  }
+  return [...by.values()];
+}
+
+/** The band's own addresses: the mailbox, its team's logins and its musicians. Mail between them is not a contact. */
+async function ourAddresses(w: Writer, artistId: string, account: string): Promise<Set<string>> {
+  const users = (await w.query("users")).filter((u) => !u.deletedAt && roleIn(u, artistId));
+  const musicians = await w.query("musicians");
+  return new Set([account, ...users.map((u) => u.email as string), ...musicians.map((m) => m.email as string | undefined)].filter((e): e is string => !!e).map((e) => e.toLowerCase()));
+}
+
+/**
+ * Make each person on the thread one of the band's contacts and link them to the place, so the next pitch there has someone to
+ * write to. An address already in the band's contacts is linked, not copied (and gets the name from Gmail when it only had the
+ * address, when the contact was only named from the address); one the band archived stays archived and unlinked. Returns how many were linked that weren't before.
+ */
+async function addThreadPeople(w: Writer, a: { artistId: string; account: string; place: Place; messages: MailMessage[] }): Promise<number> {
+  const people = threadPeople(a.messages, await ourAddresses(w, a.artistId, a.account));
+  if (!people.length) return 0;
+  const coll = COLL[a.place.kind];
+  const before = new Set(((await placeContactIds(w, a.place, a.artistId)) ?? []));
+  let added = 0;
+  for (const p of people) {
+    const mine = (await w.query("contacts", (q) => q.where("emails", "array-contains", p.email))).filter((c) => c.artistId === a.artistId);
+    const live = mine.find((c) => !c.deletedAt);
+    if (!live && mine.length) continue; // archived on purpose
+    let id: string;
+    if (live) {
+      id = live.id;
+      const guessed = [p.email, nameFromAddress(p.email)].includes(live.name as string); // named from the address before anyone answered
+      if (p.name && guessed && live.name !== p.name) await w.update("contacts", id, { name: p.name });
+    } else {
+      id = (await createNoted(w, "contacts", { artistId: a.artistId, name: p.name || nameFromAddress(p.email), emails: [p.email], phones: p.phone ? [p.phone] : [], ...(p.title ? { title: p.title } : {}) })).id;
+    }
+    if (before.has(id)) continue;
+    await attachContact(w, coll, a.place.id, id);
+    before.add(id);
+    added++;
+  }
+  return added;
+}
+
+/** The ids the band has linked to the place (venue notes, or the band's notes on a promoter, festival or act). */
+async function placeContactIds(w: Writer, place: Place, artistId: string): Promise<string[]> {
+  const rec = await w.get(COLL[place.kind], place.id);
+  if (!rec) return [];
+  if (place.kind === "venue") return privateOf((await w.get("venueNotes", venueNoteId(artistId, place.id))) ?? rec).contactIds as string[] ?? [];
+  const kind = ({ promoter: "promoters", festival: "festivals", act: "acts" } as const)[place.kind];
+  return withBandNote(kind, rec, await w.get(BAND_NOTES[kind].coll, bandNoteId(artistId, rec.id))).contactIds ?? [];
 }
 
 /** Every pitch named, live and this band's, checked before anything is sent (S8: N pitches, one email). */

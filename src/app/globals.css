@@ -332,7 +332,14 @@ fieldset.sec { margin: 0; }
 /* Acts table: "Not a fit" beside the star (hollow grey, red on hover), and the act's links as small icons. */
 .dismiss-ic { color: var(--muted); }
 .dismiss-ic:hover, .dismiss-ic[data-on="1"] { color: var(--danger); }
-.book-table th.acts-sl, .book-table td.acts-sl { min-width: 200px; max-width: 300px; }
+/* Venue calendars: Notes gets real room on a wide screen instead of Act taking all the slack. */
+.book-table.cal th.name, .book-table.cal td.name { width: auto; white-space: normal; }
+.book-table.cal th.note, .book-table.cal td.note { width: 38%; min-width: 260px; }
+/* Acts list: balanced columns, not the .wn "name takes all the slack" layout. */
+.book-table.acts th.name, .book-table.acts td.name { width: 30%; white-space: normal; }
+.book-table.acts th.seen, .book-table.acts td.seen { width: 22%; }
+.book-table.acts th.next, .book-table.acts td.next { width: 16%; }
+.book-table th.acts-sl, .book-table td.acts-sl { width: 32%; min-width: 0; max-width: none; }
 .link-icons { display: inline-flex; flex-wrap: wrap; gap: 2px; }
 .link-icons a { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; color: var(--muted); }
 .link-icons a:hover { color: var(--ink); background: var(--soft); }

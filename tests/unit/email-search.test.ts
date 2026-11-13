@@ -70,3 +70,10 @@ test("Find sent emails: the fake's in:sent, the sent-mail query, and contact > s
   assert.deepEqual(ranked.map((h) => [h.threadId, h.why]), [["tContact", "contact"], ["tSubject", "subject"], ["tText", "text"]], "best first, not newest first");
   assert.equal(isExcluded("email.suggest"), true, "Roadie never reads email");
 });
+
+test("isPerson: no-reply, bounce and notification addresses are robots", async () => {
+  const { isPerson } = await import("@/server/commands/email");
+  for (const a of ["noreply@x.com", "no-reply@x.com", "do-not-reply@x.com", "donotreply@x.com", "mailer-daemon@x.com", "bounces+123@x.com", "notifications@x.com", "calendar-notification@google.com", "a@noreply.github.com", "info@email.squarespace.com"])
+    assert.equal(isPerson(a), false, a);
+  for (const a of ["rosa@pinehollow.example", "booking@mainstagebrewing.com", "noreen@x.com", "replyguy@x.com"]) assert.equal(isPerson(a), true, a);
+});

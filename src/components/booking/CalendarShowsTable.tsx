@@ -30,13 +30,13 @@ export interface CalendarShowsProps {
 export function CalendarShowsTable({ shows, venues, takes, pitches, records, today, genres, actGenres, actLinks, since, showVenue = true, admin = true }: CalendarShowsProps) {
   return (
     <div className="book-tw">
-      <table className="book-table wn">
+      <table className="book-table wn cal">
         <thead><tr>
           {admin && <th className="flag"><span className="sr-only">Pitch this, or not a fit</span></th>}
           <th aria-label="Poster" />
           <th className="nw">Show</th>
           <th className="name">Act</th>
-          {admin && <th>Notes</th>}
+          {admin && <th className="note">Notes</th>}
         </tr></thead>
         <tbody>
           {shows.map((e) => {

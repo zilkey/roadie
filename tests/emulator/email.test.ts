@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
 import { isExcluded, needsConfirm } from "@/server/assistant/policy";
-import { hasNewReply, emailThreadId } from "@/schema";
+import { hasNewReply, emailThreadId, venueNoteId } from "@/schema";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
@@ -263,4 +263,50 @@ test("S8 (#82): one email covers several pitches: each logged once, replies reac
   assert.deepEqual([ot.pitchId, ot.pitchIds], [p2, undefined]);
   await gmailClient().simulateReply!(old.threadId, { from: "kate@sun.example", body: "Maybe" });
   assert.equal((await cmd("email.sync", { target: { kind: "venue", id: v2 } })).added, 1);
+});
+
+test("ingest adds the people on a place's mail as the band's contacts, linked to the place: names from Gmail, no robots, no band, no repeats", async () => {
+  const { venueId, pitchId } = await pineHollow();
+  const linked = async () => {
+    const n = await db.get("venueNotes", venueNoteId(TEST_ARTIST, venueId));
+    const ids = (n?.contactIds ?? []) as string[];
+    return Promise.all(ids.map(async (id) => (await db.get("contacts", id))!));
+  };
+  // We wrote to Rosa: she is a contact named from her address until she answers with a name.
+  const sent = await cmd("pitches.sendEmail", { id: pitchId, to: ["rosa@pinehollow.example"], cc: ["rudy@example.com"], subject: "Support slot", body: "Hi Rosa" });
+  let cs = await linked();
+  assert.deepEqual(cs.map((c) => [c.name, c.emails]), [["Rosa", ["rosa@pinehollow.example"]]], "the band's own address is never a contact");
+  assert.equal(cs[0].artistId, TEST_ARTIST);
+
+  // Her reply carries her name and signature; a no-reply notice in the same thread is skipped.
+  await receive({ threadId: sent.threadId, from: "Rosa@PineHollow.example", fromName: "Rosa Diaz", to: ["rudy@example.com"], subject: "Re: Support slot", body: "Sounds good.\n\nRosa Diaz\nTalent Buyer\n(303) 555-0142" });
+  await receive({ threadId: sent.threadId, from: "noreply@pinehollow.example", fromName: "Pine Hollow", to: ["rudy@example.com"], subject: "Re: Support slot", body: "Auto" });
+  await cmd("email.sync", { target: { kind: "venue", id: venueId } });
+  cs = await linked();
+  assert.equal(cs.length, 1, "Rosa once, and no noreply");
+  assert.equal(cs[0].name, "Rosa Diaz", "the name from Gmail replaces the one guessed from the address");
+  assert.equal((await db.list("contacts")).filter((c) => c.artistId === TEST_ARTIST).length, 1, "merged, not copied");
+
+  // A stranger's email linked to the venue: the sender becomes a contact there, with the title and phone from the signature.
+  const first = await receive({ from: "Sam@PineHollow.example", fromName: "Sam Ortiz", to: ["rudy@example.com"], subject: "Your submission", body: "Thanks!\n\nSam Ortiz\nEvents Manager\n303-555-0199" });
+  await cmd("email.link", { threadId: first.threadId, target: { kind: "venue", id: venueId } });
+  const sam = (await linked()).find((c) => c.emails[0] === "sam@pinehollow.example")!;
+  assert.equal(sam.name, "Sam Ortiz");
+  assert.equal(sam.title, "Events Manager");
+  assert.deepEqual(sam.phones, ["+13035550199"]);
+
+  // Archived on purpose: a later thread doesn't bring them back.
+  await cmd("contacts.remove", { id: sam.id });
+  await cmd("email.sync", { target: { kind: "venue", id: venueId } });
+  assert.equal((await linked()).some((c) => c.id === sam.id), false);
+  assert.equal((await db.get("contacts", sam.id))!.deletedAt != null, true);
+
+  // A promoter's mail links to the band's notes on the promoter.
+  const p = await cmd("promoters.create", { name: "Mile High Shows", kind: "promoter" });
+  const pm = await receive({ from: "jo@milehigh.example", fromName: "Jo Park", to: ["rudy@example.com"], subject: "Hello", body: "Hi" });
+  await cmd("email.link", { threadId: pm.threadId, target: { kind: "promoter", id: p.id } });
+  const pn = (await db.list("promoterNotes")).find((n) => n.promoterId === p.id)!;
+  const jo = (await db.list("contacts")).find((c) => c.emails?.[0] === "jo@milehigh.example")!;
+  assert.deepEqual(pn.contactIds, [jo.id]);
+  assert.equal(jo.name, "Jo Park");
 });
