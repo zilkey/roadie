@@ -188,3 +188,24 @@ test("'google ...': the source in the reply is a link that opens in a new tab", 
   await expect(link).toHaveAttribute("target", "_blank");
   await expect(link).toHaveAttribute("rel", "noopener noreferrer");
 });
+
+test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, marks it Stopped, and the chat carries on", async ({ page }) => {
+  await signInAs(page, "nora");
+  await page.getByTestId("roadie-new").click();
+  await ask(page, "find me a venue in Boise [fake: slow]");
+  await expect(page.getByTestId("roadie-vamp")).toBeVisible();
+  await expect(page.getByTestId("roadie-send")).toHaveCount(0);
+  await page.getByTestId("roadie-stop").click();
+
+  await expect(page.getByTestId("roadie-stopped")).toBeVisible();
+  await expect(page.getByTestId("roadie-stop")).toHaveCount(0);
+  await expect(page.getByTestId("roadie-vamp")).toHaveCount(0);
+  // The saved copy (marked stopped on the server) survives a reload.
+  await page.reload();
+  await expect(page.getByTestId("roadie-msg-user")).toHaveText("find me a venue in Boise [fake: slow]");
+  await expect(page.getByTestId("roadie-stopped")).toBeVisible();
+
+  await ask(page, "hi");
+  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("Roadie here");
+  await expect(page.getByTestId("roadie-stopped")).toHaveCount(1);
+});

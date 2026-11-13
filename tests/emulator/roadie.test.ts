@@ -195,3 +195,38 @@ test("api: a failed model call still saves the person's message, the error event
   assert.equal(done.threadId, err.threadId);
   assert.equal((await thread.collection("messages").get()).size, 4);
 });
+
+test("api: Stop mid-reply ends the turn at once, saves it as stopped with the thread named up front, history says it was dropped", async () => {
+  const admin = await makeUser("stop@example.com", "admin", { name: "Rudy" });
+  const message = "find me a venue in Boise [fake: slow]";
+  const stop = new AbortController();
+  const res = await handleChat(`Bearer ${admin.token}`, { message, pageContext: ctx }, null, stop.signal);
+  const reader = res.body!.getReader();
+  const first = JSON.parse(new TextDecoder().decode((await reader.read()).value).replace(/^data: /, "")) as AssistantEvent;
+  assert.equal(first.type, "start");
+  const { threadId, messageId } = first as Extract<AssistantEvent, { type: "start" }>;
+  await new Promise((r) => setTimeout(r, 300)); // the fake model is now "thinking" (20s unless stopped)
+  const started = Date.now();
+  stop.abort();
+  await reader.cancel().catch(() => {});
+
+  const reply = firestore().collection("assistantThreads").doc(threadId).collection("messages").doc(messageId);
+  let saved: FirebaseFirestore.DocumentData | undefined;
+  while (!(saved = (await reply.get()).data()) && Date.now() - started < 8000) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(saved, "the stopped reply is saved");
+  assert.ok(Date.now() - started < 5000, `stopped promptly (${Date.now() - started}ms)`);
+  assert.equal(saved.stopped, true);
+  assert.equal(saved.failed, undefined);
+  assert.equal(saved.text, "", "the model's unfinished words are not kept");
+
+  const history = await loadHistory(admin.uid, threadId);
+  assert.equal(history?.[0].text, message);
+  assert.match(history![1].text, /They stopped this reply\. Nothing was changed\./);
+
+  // The conversation goes on normally after a Stop.
+  const again = await readSse(await post(admin.token, { threadId, message: "hi", pageContext: ctx }));
+  assert.equal(again[0].type, "start");
+  const done = again.at(-1) as Extract<AssistantEvent, { type: "done" }>;
+  assert.equal(done.type, "done");
+  assert.equal(done.threadId, threadId);
+});

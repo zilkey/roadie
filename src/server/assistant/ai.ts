@@ -7,6 +7,8 @@ import { script, type Step } from "./script";
 export const FAKE_MODEL = "roadie/fake";
 /** A user message containing this makes the canned model fail like Vertex did on 2026-10-27 (a 400 after the stream began). Tests only. */
 export const FAKE_400 = "[fake: 400]";
+/** A user message containing this makes the canned model start a reply, then think for a long time (until stopped). Tests only. */
+export const FAKE_SLOW = "[fake: slow]";
 
 export type ModelMode = "fake" | "gemini" | "vertex";
 const hasKey = (env: NodeJS.ProcessEnv) => !!(env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENAI_API_KEY);
@@ -52,6 +54,11 @@ function defineFake(ai: Genkit) {
     { name: FAKE_MODEL, label: "Roadie (canned)", supports: { tools: true, multiturn: true, systemRole: true, media: false } },
     async (req, send): Promise<GenerateResponseData> => {
       const turn = lastTurn(req);
+      if (turn.text.includes(FAKE_SLOW)) {
+        send?.({ content: [{ text: "Hang on, " }] });
+        await new Promise((done) => setTimeout(done, 20000).unref());
+        return { message: { role: "model", content: [{ text: "Hang on, done." }] }, finishReason: "stop" };
+      }
       if (turn.text.includes(FAKE_400)) {
         send?.({ content: [{ text: "Sure, " }] });
         throw new GenkitError({ status: "INVALID_ARGUMENT", message: "Interaction API returned an error: [invalid_request] Request contains an invalid argument." });
@@ -97,6 +104,19 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
  * prod at 07:08 the same day: three 429s in seven seconds outlasted two waits, so the person saw "dropped a cable" and
  * the retry a minute later worked. The waits now cover about half a minute.
  */
+/**
+ * Settles with `call`, or rejects as soon as `signal` fires. Genkit 1.43 neither passes the signal to the model nor
+ * cuts `generate` short, so a Stop would otherwise wait out the whole model call; its late answer is dropped.
+ */
+export function untilStopped<T>(call: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise<T>((resolve, reject) => {
+    const off = () => reject(signal.reason);
+    signal.addEventListener("abort", off, { once: true });
+    call.then(resolve, reject).finally(() => signal.removeEventListener("abort", off));
+  });
+}
+
 export async function withModelRetry<T>(call: () => Promise<T>, waits = [1500, 4000, 8000, 15000]): Promise<T> {
   for (let i = 0; ; i++) {
     try { return await call(); } catch (e) {

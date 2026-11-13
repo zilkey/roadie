@@ -31,6 +31,11 @@ export async function loadHistory(uid: string, threadId: string, limit = 20): Pr
       const changed = acts.filter((a) => a.kind === "readback").map((a) => a.label);
       return [{ role: m.role, text: `${text} [This reply failed partway. ${changed.length ? `Only these changes were made: ${changed.join("; ")}.` : "Nothing was changed."} The request before it is not done.]` }];
     }
+    // A reply they stopped: what happened before the Stop, and that the request is dropped, not waiting to be picked up.
+    if (m.stopped) {
+      const changed = acts.filter((a) => a.kind === "readback").map((a) => a.label);
+      return [{ role: m.role, text: `${text} [They stopped this reply. ${changed.length ? `Only these changes were made: ${changed.join("; ")}.` : "Nothing was changed."} Don't pick the request back up unless they ask again.]`.trim() }];
+    }
     return text ? [{ role: m.role, text }] : [];
   });
 }
@@ -53,6 +58,8 @@ export async function saveTurn(a: {
   userText: string; replyText: string; actions: AssistantAction[]; userAt: Date;
   /** The model call failed partway: replyText and actions are what happened before it did. */
   failed?: boolean;
+  /** The person tapped Stop: replyText and actions are what happened before they did. */
+  stopped?: boolean;
   /** The tool calls made for the reply (saved so a bad reply can be read back from Firestore). */
   trace?: ToolTrace[];
 }): Promise<{ assistantMessageId: string }> {
@@ -65,7 +72,7 @@ export async function saveTurn(a: {
   batch.set(user, { role: "user", text: a.userText, actions: [], pageContext: a.pageContext, at: Timestamp.fromDate(a.userAt) });
   // Never earlier than the user's message, so ordering by `at` is stable.
   const replyAt = Timestamp.fromMillis(Math.max(now.toMillis(), a.userAt.getTime() + 1));
-  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt, ...(a.failed ? { failed: true } : {}), ...(a.trace?.length ? { trace: a.trace } : {}) });
+  batch.set(reply, { role: "assistant", text: a.replyText, actions: a.actions, pageContext: a.pageContext, at: replyAt, ...(a.failed ? { failed: true } : {}), ...(a.stopped ? { stopped: true } : {}), ...(a.trace?.length ? { trace: a.trace } : {}) });
   await batch.commit();
   return { assistantMessageId: reply.id };
 }

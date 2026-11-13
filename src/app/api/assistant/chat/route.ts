@@ -11,5 +11,5 @@ export async function POST(req: Request) {
   } catch {
     /* empty body */
   }
-  return handleChat(req.headers.get("authorization"), body, req.headers.get(ARTIST_HEADER));
+  return handleChat(req.headers.get("authorization"), body, req.headers.get(ARTIST_HEADER), req.signal);
 }

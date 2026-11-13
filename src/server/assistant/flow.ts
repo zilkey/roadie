@@ -1,6 +1,6 @@
 import { z, type MessageData } from "genkit";
 import type { AssistantAction, AssistantEvent, PageContext, ToolTrace } from "@/schema/assistant";
-import { getAi, modelLabel, withModelRetry } from "./ai";
+import { getAi, modelLabel, untilStopped, withModelRetry } from "./ai";
 import { contextNow, pageList, pageRecord } from "./context";
 import { claimsChange, cleanMessages, requestShape, withoutThoughts } from "./guard";
 import { makeCtx, type Session } from "./run";
@@ -32,6 +32,8 @@ export const ChatFlowOutput = z.object({
   })),
   /** The model call failed partway: `text` and `actions` are what happened before it did. */
   failed: z.boolean().optional(),
+  /** The person stopped the reply: `text` and `actions` are what happened before they did. */
+  stopped: z.boolean().optional(),
   /** Every tool call made, in order: saved with the reply so a bad one can be read back from Firestore. */
   trace: z.array(z.object({ name: z.string(), input: z.string(), ok: z.boolean(), error: z.string().optional(), ms: z.number() })).optional(),
 });
@@ -114,7 +116,7 @@ export function getChatFlow() {
     const byName = new Map(defs.map((d, i) => [d.name, tools[i]]));
     return ai.defineFlow(
       { name: "assistant.chat", inputSchema: ChatFlowInput, outputSchema: ChatFlowOutput, streamSchema: z.custom<AssistantEvent>() },
-      async (input, { sendChunk }) => {
+      async (input, { sendChunk, abortSignal }) => {
         const s: Session = { ...input.session, model: modelLabel(), pageContext: input.pageContext };
         let sys = system(input.pageContext, s.now ?? new Date());
         if (s.voice) sys += ` ${VOICE_NOTE}`;
@@ -154,14 +156,14 @@ export function getChatFlow() {
         const acted = () => actions.some((a) => a.kind !== "action" || !/^(Couldn't|No page|No \w+ with)/.test(a.label));
         const generate = async () => {
           let words = "";
-          const ask = (msgs: MessageData[]) => withModelRetry(() => ai.generate({
-            model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true,
+          const ask = (msgs: MessageData[]) => untilStopped(withModelRetry(() => ai.generate({
+            model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true, abortSignal,
             onChunk: (c) => { if (c.text) words += c.text; },
-          }));
+          })), abortSignal);
           try {
             return { res: await ask(cleanMessages(messages)), words };
           } catch (e) {
-            if ((e as { status?: string }).status !== "INVALID_ARGUMENT") throw e;
+            if (abortSignal.aborted || (e as { status?: string }).status !== "INVALID_ARGUMENT") throw e;
             // Vertex rejected the conversation. Log its shape (never its words) and try once more without thoughts.
             console.error(JSON.stringify({ roadieModel400: (e as Error).message, threadId: s.threadId, runId: s.runId, shape: requestShape(messages) }));
             words = "";
@@ -173,8 +175,10 @@ export function getChatFlow() {
         let nudged = false;
         let failed = false;
         try {
-          for (let step = 0; step < MAX_STEPS && !stopped; step++) {
+          for (let step = 0; step < MAX_STEPS && !stopped && !abortSignal.aborted; step++) {
             const { res, words } = await generate();
+            // Stopped while the model was answering: its words are dropped, nothing more runs.
+            if (abortSignal.aborted) break;
             messages = res.messages;
             const requests = res.toolRequests;
             if (!requests.length) {
@@ -193,6 +197,8 @@ export function getChatFlow() {
             say(words);
             const responses = [];
             for (const tr of requests) {
+              // Stopped: the tool already running finishes (a write is never left half done), the rest never start.
+              if (abortSignal.aborted) break;
               const { name, ref, input: args } = tr.toolRequest;
               const started = Date.now();
               const out = ++calls > MAX_TOOL_CALLS
@@ -225,9 +231,9 @@ export function getChatFlow() {
           }
         } catch (e) {
           // The model call failed. What already happened (writes, cards) stands; chat.ts saves it with the message.
-          console.error(e);
-          failed = true;
+          if (!abortSignal.aborted) { console.error(e); failed = true; }
         }
+        if (abortSignal.aborted) return { text: text.trim(), actions, stopped: true, trace };
         if (failed) return { text: text.trim(), actions, failed, trace };
         // A pitch made (or found) this message: offer to open it, unless Roadie already took them there.
         if (actions.some((a) => a.kind === "link" && a.route === "pitch") && !actions.some((a) => a.kind === "navigate") && !/see the pitch/i.test(text)) {

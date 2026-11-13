@@ -72,6 +72,8 @@ export const AssistantMessage = z.strictObject({
   at: ts,
   /** A reply whose model call failed partway (the person's message above it is saved all the same). */
   failed: z.literal(true).optional(),
+  /** A reply the person stopped partway (Stop); what it did before then stands. */
+  stopped: z.literal(true).optional(),
   /** Every tool call made for this reply, in order (replies only). */
   trace: z.array(ToolTrace).optional(),
 });
@@ -88,6 +90,8 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
 
 /** Server-sent events from POST /api/assistant/chat. */
 export type AssistantEvent =
+  /** First event of every turn: the conversation and the id the reply will be saved under (a Stop still finds it). */
+  | { type: "start"; threadId: string; messageId: string }
   | { type: "text"; delta: string }
   | { type: "action"; label: string }
   | { type: "navigate"; route: string; params: Record<string, string>; label: string }

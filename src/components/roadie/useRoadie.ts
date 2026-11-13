@@ -12,8 +12,9 @@ import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assi
 import { DEFAULT_PX, fromSaved, type PanelWidth } from "@/lib/roadie-width";
 
 export type Width = PanelWidth;
-export interface ChatMsg { id: string; role: "user" | "assistant"; text: string; actions: AssistantAction[] }
-export interface Pending { text: string; reply: string; actions: AssistantAction[]; doneId?: string; error?: string }
+export interface ChatMsg { id: string; role: "user" | "assistant"; text: string; actions: AssistantAction[]; stopped?: boolean }
+/** `replyId` is where the server will save the reply (from its first event); `stopped` once the person tapped Stop. */
+export interface Pending { text: string; reply: string; actions: AssistantAction[]; doneId?: string; error?: string; replyId?: string; stopped?: boolean }
 
 const WIDTH_KEY = "roadie.width";
 const readWidth = (): Width => { try { return fromSaved(localStorage.getItem(WIDTH_KEY)); } catch { return DEFAULT_PX; } };
@@ -63,26 +64,35 @@ export function useRoadie(onNavigated?: () => void) {
     return onSnapshot(
       query(collection(clientDb(), "assistantThreads", threadId, "messages"), orderBy("at")),
       (s) => setMessages(s.docs.map((d) => {
-        const x = d.data() as { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; at?: Timestamp };
-        return { id: d.id, role: x.role, text: x.text, actions: x.actions ?? [] };
+        const x = d.data() as { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; at?: Timestamp; stopped?: boolean };
+        return { id: d.id, role: x.role, text: x.text, actions: x.actions ?? [], ...(x.stopped ? { stopped: true } : {}) };
       })),
       () => setMessages([]),
     );
   }, [threadId]);
 
-  // The reply is shown from `pending` until the saved copy arrives (or a few seconds pass).
+  // The reply is shown from `pending` until the saved copy arrives (or a few seconds pass). A stopped reply is saved
+  // once the server notices the Stop and the tool it was running finishes, so it is kept on screen until then.
   useEffect(() => {
     if (!pending?.doneId) return;
     if (messages.some((m) => m.id === pending.doneId)) { setPending(null); return; }
-    const t = setTimeout(() => setPending(null), 5000);
+    const t = setTimeout(() => setPending(null), pending.stopped ? 60000 : 5000);
     return () => clearTimeout(t);
-  }, [pending?.doneId, messages]);
+  }, [pending?.doneId, pending?.stopped, messages]);
 
-  type Turn = { reply: string; actions: AssistantAction[]; error?: string };
+  type Turn = { reply: string; actions: AssistantAction[]; error?: string; stopped?: boolean };
+  const inFlight = useRef<AbortController | null>(null);
   /** Applies one event to the visible `pending` and to `acc`, the finished turn that `send` returns. */
   const apply = useCallback((e: AssistantEvent, acc: Turn) => {
     const add = (a: AssistantAction) => { acc.actions.push(a); setPending((p) => p && { ...p, actions: [...p.actions, a] }); };
-    if (e.type === "text") { acc.reply += e.delta; setPending((p) => p && { ...p, reply: p.reply + e.delta }); }
+    if (e.type === "start") {
+      // Where the reply will be saved: switch to its conversation now, so a Stop still shows the saved copy.
+      if (e.threadId !== threadId) {
+        setThreadId(e.threadId);
+        runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
+      }
+      setPending((p) => p && { ...p, replyId: e.messageId });
+    } else if (e.type === "text") { acc.reply += e.delta; setPending((p) => p && { ...p, reply: p.reply + e.delta }); }
     else if (e.type === "action") add({ kind: "action", label: e.label });
     else if (e.type === "readback") add({ kind: "readback", label: e.label, runId: e.runId });
     else if (e.type === "confirm") add({ kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending", ...(e.fields ? { fields: e.fields } : {}), ...(e.voice ? { voice: true } : {}) });
@@ -119,16 +129,19 @@ export function useRoadie(onNavigated?: () => void) {
    */
   const send = useCallback(async (text: string, opts?: { voice?: boolean; fresh?: boolean; pageContext?: PageContext }): Promise<Turn | null> => {
     const message = text.trim();
-    if (!message || (pending && !pending.doneId && !pending.error)) return null;
+    if (!message || (pending && !pending.doneId && !pending.error && !pending.stopped)) return null;
     const thread = opts?.fresh ? undefined : threadId;
     if (opts?.fresh) setThreadId(undefined);
     setNotice(null);
     setPending({ text: message, reply: "", actions: [] });
     const acc: Turn = { reply: "", actions: [] };
+    const ctl = new AbortController();
+    inFlight.current = ctl;
     try {
       const token = await clientAuth().currentUser?.getIdToken();
+      if (ctl.signal.aborted) throw ctl.signal.reason;
       const res = await fetch("/api/assistant/chat", {
-        method: "POST",
+        method: "POST", signal: ctl.signal,
         headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() },
         body: JSON.stringify({ threadId: thread, message, pageContext: opts?.pageContext ?? pageContextFor(path, window.location.search, window.location.hash), ...(opts?.voice ? { voice: true } : {}) }),
       });
@@ -145,14 +158,26 @@ export function useRoadie(onNavigated?: () => void) {
         for (const part of parts) if (part.startsWith("data: ")) apply(JSON.parse(part.slice(6)), acc);
       }
     } catch (e) {
-      acc.error = e instanceof Error ? e.message : "Roadie is unavailable";
-      setPending((p) => p && { ...p, error: acc.error });
+      if (ctl.signal.aborted) {
+        // Stopped: what came in stays on screen, marked stopped, until the server's saved copy replaces it.
+        acc.stopped = true;
+        setPending((p) => p && { ...p, stopped: true, ...(p.replyId ? { doneId: p.replyId } : {}) });
+      } else {
+        acc.error = e instanceof Error ? e.message : "Roadie is unavailable";
+        setPending((p) => p && { ...p, error: acc.error });
+      }
+    } finally {
+      if (inFlight.current === ctl) inFlight.current = null;
     }
-    return { reply: acc.reply, actions: acc.actions, ...(acc.error ? { error: acc.error } : {}) };
+    return { reply: acc.reply, actions: acc.actions, ...(acc.error ? { error: acc.error } : {}), ...(acc.stopped ? { stopped: true } : {}) };
   }, [pending, threadId, path, apply]);
+
+  /** Stop the reply being written. Whatever Roadie already did stands (and can be undone); nothing more runs. */
+  const stop = useCallback(() => { inFlight.current?.abort(); }, []);
 
   /** Start a fresh conversation (the old one stays in Firestore). */
   const newChat = useCallback(() => {
+    inFlight.current?.abort();
     setThreadId(undefined); setPending(null);
     runCommand("assistant.setPrefs", { threadId: null }).catch(() => {});
   }, []);
@@ -179,7 +204,7 @@ export function useRoadie(onNavigated?: () => void) {
     (await post("confirm", { pendingId, decision, ...(picks ? { picks } : {}), ...(by ? { by } : {}) })) as { status: "done" | "canceled" | "failed"; label?: string; message?: string } | null, [post]);
   const undo = useCallback((runId: string) => post("undo", { runId }), [post]);
 
-  const busy = !!pending && !pending.doneId && !pending.error;
+  const busy = !!pending && !pending.doneId && !pending.error && !pending.stopped;
   /** A "link" action's button: opens its page inside the artist, only when tapped. */
   const open = useCallback((a: AssistantAction) => {
     const r = resolveRoute(a.route, a.params, slug);
@@ -188,5 +213,5 @@ export function useRoadie(onNavigated?: () => void) {
     onNavigated?.();
   }, [router, onNavigated, slug]);
 
-  return { width, setWidth, messages, pending, busy, send, newChat, answer, undo, open, notice };
+  return { width, setWidth, messages, pending, busy, send, stop, newChat, answer, undo, open, notice };
 }

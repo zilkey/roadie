@@ -7,7 +7,7 @@ import { speak, speechAvailable, stopSpeaking, unlockAudio } from "./speech";
 import { micAvailable, record, releaseMic } from "./recorder";
 
 export type VoicePhase = "idle" | "listening" | "transcribing" | "thinking" | "speaking" | "answering";
-type Turn = { reply: string; actions: AssistantAction[]; error?: string } | null;
+type Turn = { reply: string; actions: AssistantAction[]; error?: string; stopped?: boolean } | null;
 type Done = { status: "done" | "canceled" | "failed"; label?: string; message?: string } | null;
 
 async function transcribe(blob: Blob, mimeType: string, mode: "message" | "answer", signal: AbortSignal): Promise<TranscribeResponse> {
@@ -23,7 +23,7 @@ async function transcribe(blob: Blob, mimeType: string, mode: "message" | "answe
 }
 
 /** Talk to Roadie: record a question, send it as a voice turn, speak the reply, and listen once for yes or no on a voice-OK card. */
-export function useVoice(r: { send(t: string, o?: { voice?: boolean }): Promise<Turn>; answer(id: string, d: "yes" | "cancel", picks?: Record<string, string>, by?: "voice"): Promise<Done> }) {
+export function useVoice(r: { send(t: string, o?: { voice?: boolean }): Promise<Turn>; stop?(): void; answer(id: string, d: "yes" | "cancel", picks?: Record<string, string>, by?: "voice"): Promise<Done> }) {
   const [available, setAvailable] = useState(false);
   const [phase, setPhaseState] = useState<VoicePhase>("idle");
   const [level, setLevel] = useState(0);
@@ -60,7 +60,7 @@ export function useVoice(r: { send(t: string, o?: { voice?: boolean }): Promise<
       if (!t.text.trim()) { await say("Sorry, I didn't catch that."); return; }
       phaseTo("thinking");
       const turn = await api.current.send(t.text, { voice: true });
-      if (!turn || !live()) return;
+      if (!turn || turn.stopped || !live()) return;
       await say(turn.error ?? turn.reply);
       if (turn.error || !live()) return;
       const cards = turn.actions.filter((a) => a.kind === "confirm" && a.voice === true && (a.status ?? "pending") === "pending");
@@ -94,7 +94,9 @@ export function useVoice(r: { send(t: string, o?: { voice?: boolean }): Promise<
     }
   }, []);
 
+  // The voice Stop button also stops a reply Roadie is still working on (the "Thinking…" part).
   const stop = useCallback(() => {
+    if (run.current) api.current.stop?.();
     run.current?.abort(); run.current = null;
     stopSpeaking();
     if (alive.current) { setPhaseState("idle"); setLevel(0); }

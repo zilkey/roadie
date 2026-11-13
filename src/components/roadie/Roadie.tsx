@@ -128,7 +128,7 @@ function Replies({ actions, live, on }: { actions: AssistantAction[]; live: bool
   );
 }
 
-function Bubble({ role, text, actions = [], on, live = false }: { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; on: Handlers; live?: boolean }) {
+function Bubble({ role, text, actions = [], on, live = false, stopped = false }: { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; on: Handlers; live?: boolean; stopped?: boolean }) {
   return (
     <div className={`grid grid-cols-[minmax(0,1fr)] gap-1 ${role === "user" ? "justify-items-end" : ""}`}>
       {role === "assistant" && <Actions actions={actions} on={on} />}
@@ -139,7 +139,8 @@ function Bubble({ role, text, actions = [], on, live = false }: { role: "user" |
             : <span key={i}>{s.text}</span>)}
         </div>
       )}
-      {role === "assistant" && <Replies actions={actions} live={live} on={on} />}
+      {role === "assistant" && stopped && <div className="s italic" data-testid="roadie-stopped">Stopped</div>}
+      {role === "assistant" && <Replies actions={actions} live={live && !stopped} on={on} />}
     </div>
   );
 }
@@ -151,7 +152,7 @@ const MicIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
 );
 
-function Chat({ messages, pending, busy, send, on, notice, voice, autoFocus = false }: { messages: ChatMsg[]; pending: Pending | null; busy: boolean; send(t: string): unknown; on: Handlers; notice: string | null; voice: Voice; autoFocus?: boolean }) {
+function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocus = false }: { messages: ChatMsg[]; pending: Pending | null; busy: boolean; send(t: string): unknown; stop(): void; on: Handlers; notice: string | null; voice: Voice; autoFocus?: boolean }) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   // Once the saved copy of the exchange arrives, `pending` stands in for it for one more render: hide the pair so it isn't doubled.
@@ -172,7 +173,7 @@ function Chat({ messages, pending, busy, send, on, notice, voice, autoFocus = fa
           {pending && (
             <>
               <Bubble role="user" text={pending.text} on={on} />
-              <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} live={!busy} />
+              <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} live={!busy} stopped={pending.stopped} />
               {busy && !pending.reply && !pending.actions.length && <div className="s italic" role="status" data-testid="roadie-vamp">{vamp.replace(/(…|\.{3})\s*$/, "")}<span className="roadie-dots" aria-hidden><span>.</span><span>.</span><span>.</span></span></div>}
               {pending.error && <div className="text-sm text-warn" data-testid="roadie-error">{pending.error}</div>}
             </>
@@ -197,10 +198,18 @@ function Chat({ messages, pending, busy, send, on, notice, voice, autoFocus = fa
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
             </button>
           ))}
-          <button type="button" aria-label="Send" data-testid="roadie-send" disabled={busy || !text.trim()} onClick={submit}
-            className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-          </button>
+          {/* While Roadie is working, Send becomes Stop: what it already did stands, nothing more runs. */}
+          {busy && voice.phase === "idle" ? (
+            <button type="button" aria-label="Stop Roadie" title="Stop" data-testid="roadie-stop" onClick={stop}
+              className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)]">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
+            </button>
+          ) : (
+            <button type="button" aria-label="Send" data-testid="roadie-send" disabled={busy || !text.trim()} onClick={submit}
+              className="grid size-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[var(--on-accent)] hover:bg-[var(--accent-hover)] disabled:opacity-50">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -238,7 +247,7 @@ export function Roadie() {
     if (latest.current.width === "narrow" && window.matchMedia("(min-width: 900px)").matches) latest.current.setWidth(lastPx.current);
     void latest.current.send(text, { fresh: true, pageContext });
   }), []);
-  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} on={{ answer: r.answer, undo: r.undo, open: r.open, reply: r.send }} notice={r.notice} voice={voice} autoFocus={!desktop} />;
+  const chat = <Chat messages={r.messages} pending={r.pending} busy={r.busy} send={r.send} stop={r.stop} on={{ answer: r.answer, undo: r.undo, open: r.open, reply: r.send }} notice={r.notice} voice={voice} autoFocus={!desktop} />;
 
   if (desktop) {
     // Drag the left edge: the panel is as wide as the gap from the pointer to its right edge. Below the minimum it
