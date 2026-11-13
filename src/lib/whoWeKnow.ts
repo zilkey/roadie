@@ -79,6 +79,32 @@ export function traceWhoWeKnow(v: TraceVenue, d: TraceData): KnownPath[] {
   return trace(v, d, knownSets(d), d.events);
 }
 
+type PlayedPath = Extract<KnownPath, { kind: "played" }>;
+/** An act we can reach on the venue's calendar, its shows split at today: `upcoming` soonest first, `past` newest first. */
+export type NetworkAct = Omit<PlayedPath, "shows"> & { upcoming: PlayedShow[]; past: PlayedShow[] };
+export interface VenueNetwork {
+  /** Known acts (or acts with people we know) with a show here today or later, soonest first. */
+  booked: NetworkAct[];
+  /** The rest that have played here, most recent first. */
+  played: NetworkAct[];
+  /** Known people who work at the room or book it through a promoter. */
+  around: Exclude<KnownPath, { kind: "played" }>[];
+}
+
+/** The venue's Network tab: who we know that's booked to play here, who has played here, and who works or books here. */
+export function venueNetwork(v: TraceVenue, d: TraceData, today: string): VenueNetwork {
+  const out: VenueNetwork = { booked: [], played: [], around: [] };
+  for (const p of traceWhoWeKnow(v, d)) {
+    if (p.kind !== "played") { out.around.push(p); continue; }
+    const { shows, ...rest } = p;
+    const upcoming = shows.filter((s) => s.date >= today).reverse();
+    const past = shows.filter((s) => s.date < today);
+    (upcoming.length ? out.booked : out.played).push({ ...rest, upcoming, past });
+  }
+  out.booked.sort((x, y) => x.upcoming[0].date.localeCompare(y.upcoming[0].date) || x.act.name.localeCompare(y.act.name));
+  return out;
+}
+
 /** The venues (of `venues`) with at least one path, for the Venues list's "We know someone" chip. */
 export function venuesWeKnow(venues: readonly TraceVenue[], d: TraceData): Set<string> {
   const sets = knownSets(d);

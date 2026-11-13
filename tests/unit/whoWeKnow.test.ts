@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { traceWhoWeKnow, venuesWeKnow, knownActIds, type TraceData } from "@/lib/whoWeKnow";
+import { traceWhoWeKnow, venuesWeKnow, venueNetwork, knownActIds, type TraceData } from "@/lib/whoWeKnow";
 
 const base = (): TraceData => ({
   contacts: [
@@ -71,4 +71,23 @@ test("venuesWeKnow and knownActIds", () => {
   const d = base();
   assert.deepEqual([...venuesWeKnow([{ id: "v1" }, { id: "v2" }, { id: "v3" }, { id: "v4", promoterIds: ["msp"] }], d)].sort(), ["v1", "v2", "v4"]);
   assert.deepEqual(knownActIds(d), ["hay", "wheel"]);
+});
+
+test("venueNetwork: an act with a show from today on is booked (soonest first, past shows counted), the rest played, people around", () => {
+  const d = base();
+  d.events = [...d.events,
+    { id: "e6", venueId: "v1", date: "2026-08-01", acts: [{ name: "Wheelwright", role: "support", actId: "wheel" }] },
+    { id: "e7", venueId: "v1", date: "2026-07-01", acts: [{ name: "The Haystack Ramblers", role: "headliner", actId: "hay" }] },
+  ];
+  const net = venueNetwork({ id: "v1", promoterIds: ["msp"] }, d, "2026-06-01");
+  assert.deepEqual(net.booked.map((a) => [a.act.id, a.upcoming.map((s) => s.eventId), a.past.map((s) => s.eventId)]), [
+    ["hay", ["e2", "e7"], ["e1"]],
+    ["wheel", ["e6"], []],
+  ]);
+  assert.deepEqual(net.played, []);
+  assert.deepEqual(net.around.map((p) => p.kind === "books" && p.contact.id), ["kate"]);
+
+  const later = venueNetwork({ id: "v1" }, d, "2026-12-01");
+  assert.deepEqual(later.booked, []);
+  assert.deepEqual(later.played.map((a) => [a.act.id, a.past[0].eventId, a.past.length]), [["wheel", "e6", 1], ["hay", "e7", 3]]);
 });

@@ -14,7 +14,7 @@ export const BAND_NOTES = {
   editions: { coll: "editionNotes", key: "editionId", fields: ["notes", "payNotes"], lists: [], flags: [] },
   /** `venueIds`: the venues this promoter books, as this band knows it (the other side of venueNotes.promoterIds). */
   promoters: { coll: "promoterNotes", key: "promoterId", fields: ["notes", "howToPitch"], lists: ["venueIds", "contactIds"], flags: [] },
-  /** `weKnow`: someone in the band knows this person (networking, #82 S10: the venue page's "Who we know"). */
+  /** `weKnow`: someone in the band knows this person (networking, #82 S10: the venue page's Network tab). */
   contacts: { coll: "contactNotes", key: "contactId", fields: ["notes"], lists: [], flags: ["weKnow"] },
   /** Acts (#77): `relationship` is openFor | peer | notFit (src/schema/acts.ts); `contactIds`, the act's people as this band's contacts; `weKnow`, we know the band. */
   acts: { coll: "actNotes", key: "actId", fields: ["note", "relationship"], lists: ["contactIds"], flags: ["shortlist", "weKnow"] },

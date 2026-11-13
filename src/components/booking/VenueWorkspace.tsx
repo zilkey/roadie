@@ -18,21 +18,22 @@ import { fmtDate, isActive } from "@/lib/booking";
 import { privateOf } from "@/lib/venues";
 import { useVenueTypes, venueTypeLabel } from "@/lib/venueTypes";
 import { VenueEventsTab } from "@/components/booking/VenueEventsTab";
-import { WhoWeKnowCard } from "@/components/booking/WhoWeKnow";
+import { VenueNetworkTab } from "@/components/booking/WhoWeKnow";
 import type { Show, Venue } from "@/schema";
 
-type Tab = "pitch" | "details" | "events";
+type Tab = "pitch" | "details" | "events" | "network";
+const ADMIN_TABS: Tab[] = ["pitch", "network"];
 
 const ROOM_KEYS = ["name", "street", "city", "state", "zip", "type", "capacity", "website"];
 const roomFields = ROOM_KEYS.map((k) => roomForm.fields.find((f) => f.key === k)!);
 const href = (u: string) => (u.startsWith("http") ? u : `https://${u}`);
 
 /**
- * One page per venue (#82, Jeff 2026-11-12: "they always confuse me"): tabs Pitch | Venue details | Venue events, one header for
- * all three (the venue's name, the pitch's status, Booked it and More) and the trail Booking › <the pitch's campaign> › <venue>.
+ * One page per venue (#82, Jeff 2026-11-12: "they always confuse me"): tabs Pitch | Venue details | Venue events | Network, one header for
+ * all of them (the venue's name, the pitch's status, Booked it and More) and the trail Booking › <the pitch's campaign> › <venue>.
  * /booking/venues/{id} and a venue's /booking/pitches/{id} both render it; the route only picks the tab it opens on (?tab= too).
  * The Pitch tab is the pitch page's content (PitchBody): the pitch the route names, else the band's active pitch on the venue, else
- * "Start a pitch". Members see Venue details and Venue events only.
+ * "Start a pitch". Members see Venue details and Venue events only. Network (admins) is who we know that played or is booked here (WhoWeKnow.tsx).
  *
  * Venue details: the venue is two documents shown as a single column of cards. "About the room" is shared with every band (autosaved; the card warns
  * who sees it). The private group (admins only) is this band's pitch, contacts, notes, promoters and shows. Everything autosaves; Done closes a card.
@@ -46,7 +47,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
   const { role, artistId } = useArtist();
   const admin = role === "admin";
   const asked = sp.get("tab") as Tab | null;
-  const tab: Tab = asked && ["pitch", "details", "events"].includes(asked) && (admin || asked !== "pitch") ? asked : !admin && defaultTab === "pitch" ? "details" : defaultTab;
+  const tab: Tab = asked && ["pitch", "details", "events", "network"].includes(asked) && (admin || !ADMIN_TABS.includes(asked)) ? asked : !admin && ADMIN_TABS.includes(defaultTab) ? "details" : defaultTab;
   const [booking, setBooking] = useState(false);
   const { doc: v, loading } = useDoc<Venue>("venues", id, { includeDeleted: true });
   const b = useBooking();
@@ -109,7 +110,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
         </div>
       ) : undefined}>
       <Tabs<Tab> testid="venue-tab" value={tab} onChange={(t) => router.replace(`${pathname}${t === defaultTab ? "" : `?tab=${t}`}`)}
-        options={[...(admin ? [["pitch", "Pitch"] as [Tab, string]] : []), ["details", "Venue details"], ["events", "Venue events"]]} />
+        options={[...(admin ? [["pitch", "Pitch"] as [Tab, string]] : []), ["details", "Venue details"], ["events", "Venue events"], ...(admin ? [["network", "Network"] as [Tab, string]] : [])]} />
       <ErrorBox error={error} />
       {tab === "pitch" && (pitch ? <PitchBody key={pitch.id} id={pitch.id} embedded booking={booking} setBooking={setBooking} /> : (
         <section className="card" data-testid="venue-no-pitch">
@@ -125,6 +126,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
         </section>
       )}
       {tab === "events" && <VenueEventsTab venue={v} admin={admin} />}
+      {tab === "network" && admin && <VenueNetworkTab b={b} venue={{ id, ...mine }} />}
       {tab === "details" && <>
       {archived && (
         <div className="card hi" data-testid="venue-archived">
@@ -153,7 +155,6 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
         <CardGroup kind="private">
           <DetailCard private title="Contacts" testid="contacts-card" headerExtra={<PlusButton label="Add a contact" testid="contact-add" onClick={() => setAddingContact(true)} />}>{contacts}</DetailCard>
           <AddContactDialog kind="venues" parentId={id} parentName={v.name} open={addingContact} onClose={() => setAddingContact(false)} onWantOpen={() => setAddingContact(true)} />
-          <WhoWeKnowCard b={b} venue={{ id, ...mine }} />
           <DetailCard private title="Our notes" testid="notes-private">
             <KV rows={[
               ["Booked by", (

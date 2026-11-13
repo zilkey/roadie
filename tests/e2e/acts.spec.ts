@@ -117,6 +117,31 @@ test("an act's page lists where they've played, and the shortlist, relationship 
   await expect(page.getByTestId("contact-add")).toBeVisible();
 });
 
+test("a venue's Network tab lists an act we know that's booked to play there", async ({ page }) => {
+  await signInAs(page, "rudy");
+  const sup = href.support.split("/").pop()!;
+  await page.goto(href.support);
+  await page.getByTestId("we-know").click();
+  await expect(page.getByTestId("we-know")).toHaveAttribute("data-on", "1");
+
+  await openVenue(page, "Bluebird Room");
+  await page.getByTestId("venue-tab-network").click();
+  await expect(page).toHaveURL(/\?tab=network$/);
+  const booked = page.getByTestId("network-booked");
+  await expect(booked).toContainText("Booked to play here (1)");
+  const row = booked.getByTestId(`network-act-${sup}`);
+  await expect(row).toContainText("Sample Support");
+  await expect(row).toContainText("(we know the band)");
+  await expect(row).toContainText("plays here");
+  await expect(row).toContainText("(support)");
+  await expect(page.getByTestId("network-played")).toContainText("Played here (0)");
+
+  // unmark, so the later tests see the act as before
+  await page.goto(href.support);
+  await page.getByTestId("we-know").click();
+  await expect(page.getByTestId("we-know")).toHaveAttribute("data-on", "0");
+});
+
 test("the Acts tab shows the shortlist, all acts, a search, and hides an act that isn't a fit until it's searched for", async ({ page }) => {
   await signInAs(page, "rudy");
   const id = (p: string) => p.split("/").pop()!;
