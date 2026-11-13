@@ -34,6 +34,7 @@ export function TaxReport({ uid }: { uid: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [year, uid, includeCash, useStandardRate, d.inc, d.exp, d.pay, d.musicians.rows]);
   const loose = unassignedIncome(d.inc, year);
+  const need1099 = r.payees.filter((p) => p.over);
   const name = d.personName(uid);
   const isAdmin = admins.some((a) => a.id === uid);
   const go = (o: { year?: number; cash?: boolean; std?: boolean }) => {
@@ -70,6 +71,19 @@ export function TaxReport({ uid }: { uid: string }) {
                   {admins.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {need1099.length > 0 && (
+        <div className="card tax-notice" data-testid="tax-1099-warning" role="alert">
+          <b>{need1099.length === 1 ? "1 person needs" : `${need1099.length} people need`} a 1099-NEC for {year}</b>
+          <span className="s">{name} paid {need1099.length === 1 ? "them" : "each of them"} {formatCents(necThreshold(year))} or more. Send each one a 1099-NEC (and file it with the IRS) by January 31, {year + 1}, unless they&apos;re a corporation. You&apos;ll need their W-9 for their name, address and tax ID.</span>
+          {need1099.map((p) => (
+            <div key={p.key} className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2" data-testid={`tax-1099-warning-${p.key}`}>
+              <span className="min-w-0"><b>{p.name}</b> <span className="s">· {p.count === 1 ? "1 payment" : `${p.count} payments`}</span></span>
+              <b className="font-mono">{formatCents(p.total)}</b>
             </div>
           ))}
         </div>

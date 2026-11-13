@@ -50,6 +50,9 @@ test("Money's sub-nav: the breakdowns are pages; an admin's tax worksheet splits
   expect(await cents("tax-line-1-amount")).toBe(before + 40000);
   await expect(loose).toHaveCount(0);
   await expect(page.getByTestId("tax-line-31")).toBeVisible();
+  // Hugo's $75 is under the 1099-NEC threshold: listed, no warning (the cutoff itself is in tests/unit/taxes.test.ts)
+  await expect(page.locator('[data-testid^="tax-payee-"]', { hasText: "Hugo" })).toHaveCount(1);
+  await expect(page.getByTestId("tax-1099-warning")).toHaveCount(0);
   // Use standard rate is on by default; off, line 9 is the gas actually spent
   await expect(page.getByTestId("tax-standard-rate")).toBeChecked();
   await expect(page.getByTestId("tax-car-note")).toContainText("standard mileage rate");
