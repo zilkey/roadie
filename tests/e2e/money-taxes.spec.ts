@@ -50,4 +50,13 @@ test("Money's sub-nav: the breakdowns are pages; an admin's tax worksheet splits
   expect(await cents("tax-line-1-amount")).toBe(before + 40000);
   await expect(loose).toHaveCount(0);
   await expect(page.getByTestId("tax-line-31")).toBeVisible();
+  // Use standard rate is on by default; off, line 9 is the gas actually spent
+  await expect(page.getByTestId("tax-standard-rate")).toBeChecked();
+  await expect(page.getByTestId("tax-car-note")).toContainText("standard mileage rate");
+  await page.getByTestId("tax-standard-rate").click();
+  await expect(page).toHaveURL(/std=0/);
+  await expect(page.getByTestId("tax-standard-rate")).not.toBeChecked();
+  await expect(page.getByTestId("tax-car-note")).toContainText("gas actually spent");
+  await page.getByTestId("tax-standard-rate").click();
+  await expect(page).not.toHaveURL(/std=0/);
 });

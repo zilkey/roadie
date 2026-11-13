@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useArtistRouter } from "@/lib/artist";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { EXPENSE_LABEL, INCOME_LABEL, METHOD_LABEL, formatCents } from "@/lib/money";
-import { MEALS_PCT, defaultTaxYear, moneyYears, necThreshold, taxReport, unassignedIncome, type TaxEntry, type TaxLineTotal } from "@/lib/taxes";
+import { MEALS_PCT, defaultTaxYear, mileageRate, moneyYears, necThreshold, taxReport, unassignedIncome, type TaxEntry, type TaxLineTotal } from "@/lib/taxes";
 import { useMoneyData } from "./useMoneyData";
 import { useAdmins } from "./MoneyNav";
 import { PrintIcon } from "@/components/print/PrintDialog";
@@ -28,26 +28,26 @@ export function TaxReport({ uid }: { uid: string }) {
   const year = Number(sp.get("year")) || defaultTaxYear(d.today);
   // Cash is left out by default (and off the form entirely); ?cash=1 counts it in gross receipts and the net.
   const includeCash = sp.get("cash") === "1";
-  const r = useMemo(() => taxReport({ year, uid, includeCash, income: d.inc, expenses: d.exp, payouts: d.pay, musicianUserId: d.musicianUserId }),
+  // Line 9 is the standard mileage rate on business miles by default; ?std=0 uses actual gas instead.
+  const useStandardRate = sp.get("std") !== "0";
+  const r = useMemo(() => taxReport({ year, uid, includeCash, useStandardRate, income: d.inc, expenses: d.exp, payouts: d.pay, musicianUserId: d.musicianUserId }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [year, uid, includeCash, d.inc, d.exp, d.pay, d.musicians.rows]);
+    [year, uid, includeCash, useStandardRate, d.inc, d.exp, d.pay, d.musicians.rows]);
   const loose = unassignedIncome(d.inc, year);
   const name = d.personName(uid);
   const isAdmin = admins.some((a) => a.id === uid);
-  const go = (y: number, cash: boolean) => router.replace(`/money/taxes/${uid}?year=${y}${cash ? "&cash=1" : ""}`);
-  const setYear = (y: string) => go(Number(y), includeCash);
+  const go = (o: { year?: number; cash?: boolean; std?: boolean }) => {
+    const y = o.year ?? year, cash = o.cash ?? includeCash, std = o.std ?? useStandardRate;
+    router.replace(`/money/taxes/${uid}?year=${y}${cash ? "&cash=1" : ""}${std ? "" : "&std=0"}`);
+  };
+  const setYear = (y: string) => go({ year: Number(y) });
 
   return (
     <div className="grid gap-5" data-testid="tax-report">
       <PageTitle title={`${name}'s taxes`} sub="What went through their account, sorted the way Schedule C asks for it"
         actions={<div className="flex flex-nowrap items-center gap-2">
-          <button type="button" role="switch" aria-checked={includeCash} onClick={() => go(year, !includeCash)} data-testid="tax-include-cash"
-            className="flex min-h-11 cursor-pointer items-center gap-2 whitespace-nowrap border-0 bg-transparent px-1 font-semibold" style={{ font: "inherit", color: "var(--ink)" }}>
-            Include cash
-            <span aria-hidden className="inline-flex items-center rounded-full p-[3px]" style={{ width: 44, height: 26, background: includeCash ? "var(--accent)" : "var(--input-border)", justifyContent: includeCash ? "flex-end" : "flex-start" }}>
-              <span className="block rounded-full" style={{ width: 20, height: 20, background: "#fff" }} />
-            </span>
-          </button>
+          <Switch label="Use standard rate" on={useStandardRate} onClick={() => go({ std: !useStandardRate })} testid="tax-standard-rate" />
+          <Switch label="Include cash" on={includeCash} onClick={() => go({ cash: !includeCash })} testid="tax-include-cash" />
           <select className="select w-auto" value={year} onChange={(e) => setYear(e.target.value)} data-testid="tax-year" aria-label="Tax year">
             {[...new Set([...years, year])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -112,8 +112,10 @@ export function TaxReport({ uid }: { uid: string }) {
         <Line n="31" label={r.net < 0 ? "Net loss" : "Net profit"} value={r.net} testid="tax-line-31" strong total />
 
         <h3 className="tax-part"><span>Part IV</span> Your vehicle</h3>
-        <Line n="44a" label="Business miles (from gas estimates you logged)" value={r.miles} raw={`${r.miles.toLocaleString("en-US")} mi`} testid="tax-miles" />
-        <p className="tax-note">Line 9 uses actual gas costs. If you take the standard mileage rate instead, use the miles and leave the gas off. Gas typed without an estimate has no miles here.</p>
+        <Line n="44a" label="Business miles (your own driving, from gas estimates)" value={r.miles} raw={`${r.miles.toLocaleString("en-US")} mi`} testid="tax-miles" />
+        {r.useStandardRate
+          ? <p className="tax-note" data-testid="tax-car-note">Line 9 is the standard mileage rate ({mileageRate(`${year}-12-31`)}¢ a mile in {year}) on these miles; the {formatCents(r.gasSpent)} you actually spent on your own gas is left off. Gas you paid a bandmate back for counts at what it cost.{r.gasWithoutMiles > 0 && ` ${r.gasWithoutMiles === 1 ? "1 gas expense has" : `${r.gasWithoutMiles} gas expenses have`} no miles, so ${r.gasWithoutMiles === 1 ? "it counts" : "they count"} for nothing.`}</p>
+          : <p className="tax-note" data-testid="tax-car-note">Line 9 is the gas actually spent. Turn on Use standard rate to take the mileage rate on these miles instead.</p>}
 
         <h3 className="tax-part"><span>Part V</span> Other expenses</h3>
         {r.partV.length === 0 && <div className="tax-row s">None.</div>}
@@ -136,6 +138,18 @@ export function TaxReport({ uid }: { uid: string }) {
         </footer>
       </div>
     </div>
+  );
+}
+
+function Switch({ label, on, onClick, testid }: { label: string; on: boolean; onClick: () => void; testid: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={onClick} data-testid={testid}
+      className="flex min-h-11 cursor-pointer items-center gap-2 whitespace-nowrap border-0 bg-transparent px-1 font-semibold" style={{ font: "inherit", color: "var(--ink)" }}>
+      {label}
+      <span aria-hidden className="inline-flex items-center rounded-full p-[3px]" style={{ width: 44, height: 26, background: on ? "var(--accent)" : "var(--input-border)", justifyContent: on ? "flex-end" : "flex-start" }}>
+        <span className="block rounded-full" style={{ width: 20, height: 20, background: "#fff" }} />
+      </span>
+    </button>
   );
 }
 

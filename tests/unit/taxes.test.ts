@@ -1,7 +1,7 @@
 // The yearly tax worksheet (src/lib/taxes.ts) and the by-year / by-receiver breakdowns (no emulator).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bearerOf, defaultTaxYear, moneyYears, necThreshold, taxLineOf, taxReport, unassignedIncome, type TaxExpense, type TaxIncome } from "@/lib/taxes";
+import { bearerOf, defaultTaxYear, mileageRate, moneyYears, necThreshold, taxLineOf, taxReport, unassignedIncome, type TaxExpense, type TaxIncome } from "@/lib/taxes";
 import { byReceiver, byYear, moneyRows, type PayoutLike } from "@/lib/money";
 
 const inc = (o: Partial<TaxIncome>): TaxIncome => ({ id: "i", date: "2025-03-01", amount: 1000, category: "guarantee", from: "Deep End", projectId: "band", receivedAt: "2025-03-01", receivedBy: "rudy", ...o });
@@ -58,7 +58,7 @@ test("expenses: Schedule C lines, meals at 50%, whoever's money it finally was, 
     x({ id: "old", category: "gear", amount: 1, date: "2024-12-31" }),
   ] });
   const line = (n: string) => r.lines.find((l) => l.line === n)!;
-  assert.equal(line("9").amount, 3000);
+  assert.equal(line("9").amount, 8400); // 120 mi at 70¢ (2025), not the $30 of gas
   assert.equal(line("8").amount, 500);
   assert.equal(line("22").amount, 25000);
   assert.equal(line("24a").amount, 10000);
@@ -69,8 +69,28 @@ test("expenses: Schedule C lines, meals at 50%, whoever's money it finally was, 
   assert.equal(line("11").amount, 0); // the reimbursement is a transfer, never labor
   assert.deepEqual(r.partV, [{ category: "mixing", amount: 15000 }, { category: "recording", amount: 5000 }]);
   assert.equal(r.miles, 120);
-  assert.equal(r.totalExpenses, 3000 + 500 + 25000 + 10000 + 1001 + 4000 + 20000);
+  assert.equal(r.totalExpenses, 8400 + 500 + 25000 + 10000 + 1001 + 4000 + 20000);
   assert.equal(r.net, -r.totalExpenses);
+});
+
+test("line 9: business miles at the year's standard rate by default; actual gas when Use standard rate is off", () => {
+  const expenses = [
+    x({ id: "a", category: "gas", amount: 3000, gas: { miles: 100 }, date: "2026-02-01" }),
+    x({ id: "b", category: "gas", amount: 1500, gas: { miles: 11 }, date: "2026-03-01" }),
+    x({ id: "c", category: "gas", amount: 2000, date: "2026-04-01" }), // typed, no miles
+    // Eric drove; Rudy paid him back: always what it cost, never miles on Rudy's form
+    x({ id: "eric", userId: "eric", category: "gas", amount: 4000, gas: { miles: 300 }, date: "2026-05-01", paidBackAt: "2026-05-02", paidBackBy: "rudy" }),
+  ];
+  const on = taxReport({ year: 2026, uid: "rudy", income: [], payouts: [], expenses });
+  const car = (r: typeof on) => r.lines.find((l) => l.key === "car")!;
+  assert.equal(on.useStandardRate, true);
+  assert.equal(car(on).amount, 7250 + 798 + 4000); // 100 × 72.5¢, 11 × 72.5¢ = 797.5 → 798, plus Eric's $40
+  assert.deepEqual(car(on).entries.map((e) => e.id), ["a", "b", "eric"]);
+  assert.deepEqual([on.miles, on.gasSpent, on.gasWithoutMiles], [111, 6500, 1]);
+  const off = taxReport({ year: 2026, uid: "rudy", useStandardRate: false, income: [], payouts: [], expenses });
+  assert.equal(car(off).amount, 6500 + 4000);
+  assert.equal(off.gasWithoutMiles, 0);
+  assert.equal(mileageRate("2022-06-30"), 58.5); assert.equal(mileageRate("2022-07-01"), 62.5); assert.equal(mileageRate("2025-01-01"), 70);
 });
 
 test("contract labor: payouts they paid, never to themselves; 1099-NEC at the year's threshold", () => {

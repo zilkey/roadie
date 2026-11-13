@@ -38,6 +38,17 @@ export const MEALS_PCT = 50;
 /** A 1099-NEC is due for a non-employee paid this much or more in the year: $600 through 2025, $2,000 from 2026. */
 export const necThreshold = (year: number) => (year >= 2026 ? 200000 : 60000);
 
+/** The IRS standard mileage rate for business, in cents per mile, on a date. 2022 changed on July 1. */
+export function mileageRate(date: string): number {
+  const y = Number(date.slice(0, 4));
+  if (y >= 2026) return 72.5;
+  if (y === 2025) return 70;
+  if (y === 2024) return 67;
+  if (y === 2023) return 65.5;
+  if (y === 2022) return date.slice(5) >= "07-01" ? 62.5 : 58.5;
+  return 56;
+}
+
 /** Whose money an expense finally was: who paid it back, else who paid it. Undefined for an open bill. */
 export function bearerOf(x: ExpenseLike, payoutPaidBy: (payoutId: string) => string | undefined): string | undefined {
   if (isOwedBill(x)) return undefined;
@@ -54,6 +65,12 @@ export interface TaxReport {
   year: number; uid: string;
   /** Whether cash counts in gross receipts (and the net). */
   includeCash: boolean;
+  /** Whether line 9 is the standard mileage rate on business miles (else actual gas). */
+  useStandardRate: boolean;
+  /** Their own gas spent this year (not bandmates' they paid back), counted on line 9 only without `useStandardRate`. */
+  gasSpent: number;
+  /** With `useStandardRate`: their own gas expenses that have no miles, so they count for nothing. */
+  gasWithoutMiles: number;
   income: {
     /** Cash received, counted or not. */
     cash: number; nonCash: number; gross: number;
@@ -67,7 +84,7 @@ export interface TaxReport {
   partV: { category: string; amount: number }[];
   totalExpenses: number;
   net: number;
-  /** Miles on this person's gas expenses that came from an estimate (Part IV, line 44a). */
+  /** Miles on this person's own gas expenses that came from an estimate (Part IV, line 44a); bandmates' driving is not theirs. */
   miles: number;
   /** Who they paid as contract labor this year, biggest first, with the 1099-NEC flag. */
   payees: TaxPayee[];
@@ -82,7 +99,7 @@ const toKey = (to: MoneyTo, musicianUserId?: (id: string) => string | undefined)
 const byDate = (a: { date: string }, b: { date: string }) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 
 export function taxReport(i: {
-  year: number; uid: string; includeCash?: boolean;
+  year: number; uid: string; includeCash?: boolean; useStandardRate?: boolean;
   income: readonly TaxIncome[]; expenses: readonly TaxExpense[]; payouts: readonly PayoutLike[];
   musicianUserId?(musicianId: string): string | undefined;
 }): TaxReport {
@@ -105,13 +122,25 @@ export function taxReport(i: {
 
   // Expenses
   const lines = new Map<TaxLineKey, TaxLineTotal>(TAX_LINE_ORDER.map((k) => [k, { key: k, ...TAX_LINES[k], amount: 0, spent: 0, entries: [] }]));
-  let miles = 0;
+  const useStandardRate = i.useStandardRate !== false;
+  let miles = 0, gasSpent = 0, gasWithoutMiles = 0;
   const exp = live(i.expenses).filter((x) => inYear(x.date, year) && bearerOf(x, (id) => payoutById.get(id)?.paidBy) === uid);
   for (const x of exp) {
     const l = lines.get(taxLineOf(x.category))!;
+    // Only their own driving is miles: gas they paid a bandmate back for stays what it cost (the rate is for your own car).
+    const own = x.category === "gas" && x.userId === uid;
+    const m = own ? x.gas?.miles ?? 0 : 0;
+    if (own) { gasSpent += x.amount; miles += m; }
+    if (own && useStandardRate) {
+      if (!m) { gasWithoutMiles += 1; continue; }
+      const rate = mileageRate(x.date);
+      const amount = Math.round(m * rate);
+      l.spent += amount;
+      l.entries.push({ id: x.id, date: x.date, what: `${x.what} · ${m.toLocaleString("en-US")} mi × ${rate}¢`, amount, category: x.category, kind: "expense", to: x.to?.name });
+      continue;
+    }
     l.spent += x.amount;
     l.entries.push({ id: x.id, date: x.date, what: x.what, amount: x.amount, category: x.category, kind: "expense", to: x.to?.name });
-    if (x.category === "gas" && x.gas?.miles) miles += x.gas.miles;
   }
   const partV = sumBy(lines.get("other")!.entries, (e) => e.category, (e) => e.amount).map(([category, amount]) => ({ category, amount }));
 
@@ -137,7 +166,7 @@ export function taxReport(i: {
   const all = TAX_LINE_ORDER.map((k) => lines.get(k)!);
   const totalExpenses = all.reduce((n, l) => n + l.amount, 0);
   return {
-    year, uid, includeCash,
+    year, uid, includeCash, useStandardRate, gasSpent, gasWithoutMiles,
     income: {
       cash, nonCash: gross - (includeCash ? cash : 0), gross, byMethod, byCategory,
       entries: inc.map((x) => ({ id: x.id, date: x.receivedAt!, what: x.from, amount: x.amount, category: x.category, kind: "income" as const, method: x.method })).sort(byDate),
