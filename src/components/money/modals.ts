@@ -39,7 +39,7 @@ export interface MoneyDefaults {
   musicianId?: string;
   /** Money out only: open "We paid" with these pay-back expense ids ticked (a reimbursement). */
   expenseIds?: string[];
-  /** Money out only: open "We paid" instead of "We owe". */
+  /** Money out only: false opens on "We owe"; Money out starts on "We paid" otherwise. */
   paid?: boolean;
   /** Money out only: settle one thing we owe (an open bill or an unpaid payout): asks who paid and when, nothing else. */
   markPaid?: { kind: "expense" | "payout"; id: string };

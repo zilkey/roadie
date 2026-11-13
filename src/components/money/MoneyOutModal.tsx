@@ -307,7 +307,7 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
   const reimburse = !!defaults?.expenseIds?.length;
   const owed = useDocs<Expense>("expenses", defaults?.expenseIds ?? [], { skip: !reimburse });
 
-  const [paid, setPaid] = useState<boolean>(!!defaults?.paid || reimburse);
+  const [paid, setPaid] = useState<boolean>(defaults?.paid !== false || reimburse);
   const [kind, setKind] = useState<Kind>("expense");
   const [who, setWho] = useState<WhoOption | null>(null);
   const [touchedWho, setTouchedWho] = useState(false);

@@ -223,6 +223,7 @@ test("the Money tab: spent, earned and net, the Money in and Money out cards (li
   await moneyOut.getByTestId("money-out-open").click();
   const out = page.getByTestId("money-out-modal");
   await expect(out).toBeVisible();
+  await out.getByTestId("mo-owe").check(); // Money out starts on We paid
   await out.getByTestId("mo-kind").selectOption("pay");
   await out.getByTestId("mo-who-input").fill("Ava Strings");
   await out.getByTestId("mo-who-other").click();
