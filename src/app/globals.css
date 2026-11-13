@@ -930,4 +930,3 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
   .tax-line .tax-detail { display: none; }
   .tax-form { border-color: #000; }
 }
-.tax-part > .tax-part-note { background: none; color: var(--muted); padding: 0; min-width: 0; font-weight: 600; font-size: 0.8125rem; margin-left: auto; }

@@ -26,7 +26,7 @@ export function TaxReport({ uid }: { uid: string }) {
   const { call, error, busy } = useCommand();
   const years = useMemo(() => moneyYears({ income: d.inc, expenses: d.exp, payouts: d.pay }, Number(d.today.slice(0, 4))), [d.inc, d.exp, d.pay, d.today]);
   const year = Number(sp.get("year")) || defaultTaxYear(d.today);
-  // Cash is left out by default; ?cash=1 counts it in gross receipts and the net.
+  // Cash is left out by default (and off the form entirely); ?cash=1 counts it in gross receipts and the net.
   const includeCash = sp.get("cash") === "1";
   const r = useMemo(() => taxReport({ year, uid, includeCash, income: d.inc, expenses: d.exp, payouts: d.pay, musicianUserId: d.musicianUserId }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,9 +41,13 @@ export function TaxReport({ uid }: { uid: string }) {
     <div className="grid gap-5" data-testid="tax-report">
       <PageTitle title={`${name}'s taxes`} sub="What went through their account, sorted the way Schedule C asks for it"
         actions={<div className="flex flex-nowrap items-center gap-2">
-          <label className="pick" data-testid="tax-include-cash-label">
-            <input type="checkbox" checked={includeCash} onChange={(e) => go(year, e.target.checked)} data-testid="tax-include-cash" /> Include cash
-          </label>
+          <button type="button" role="switch" aria-checked={includeCash} onClick={() => go(year, !includeCash)} data-testid="tax-include-cash"
+            className="flex min-h-11 cursor-pointer items-center gap-2 whitespace-nowrap border-0 bg-transparent px-1 font-semibold" style={{ font: "inherit", color: "var(--ink)" }}>
+            Include cash
+            <span aria-hidden className="inline-flex items-center rounded-full p-[3px]" style={{ width: 44, height: 26, background: includeCash ? "var(--accent)" : "var(--input-border)", justifyContent: includeCash ? "flex-end" : "flex-start" }}>
+              <span className="block rounded-full" style={{ width: 20, height: 20, background: "#fff" }} />
+            </span>
+          </button>
           <select className="select w-auto" value={year} onChange={(e) => setYear(e.target.value)} data-testid="tax-year" aria-label="Tax year">
             {[...new Set([...years, year])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
@@ -87,9 +91,9 @@ export function TaxReport({ uid }: { uid: string }) {
           <span><span className="tax-k">Principal business</span> Musician / performing arts</span>
         </div>
 
-        <h3 className="tax-part"><span>Part I</span> Income{!includeCash && <span className="tax-part-note" data-testid="tax-cash-off">cash left out</span>}</h3>
-        <Line n="" label={includeCash ? "Received in cash" : "Received in cash (not included)"} value={r.income.cash} testid="tax-cash" sub />
-        <Line n="" label="Received any other way (check, Venmo, card…)" value={r.income.nonCash} testid="tax-noncash" sub
+        <h3 className="tax-part"><span>Part I</span> Income</h3>
+        {includeCash && <Line n="" label="Received in cash" value={r.income.cash} testid="tax-cash" sub />}
+        <Line n="" label={includeCash ? "Received any other way (check, Venmo, card…)" : "Received by check, Venmo, card…"} value={r.income.nonCash} testid="tax-noncash" sub
           detail={r.income.byMethod.length > 0 && (
             <div className="tax-detail">
               {r.income.byMethod.map((m) => <div key={m.method} className="tax-dl"><span>{m.method === "unknown" ? "Method not recorded" : METHOD_LABEL[m.method] ?? m.method}</span><span className="font-mono">{formatCents(m.amount)}</span></div>)}
@@ -128,7 +132,7 @@ export function TaxReport({ uid }: { uid: string }) {
         {r.payees.length > 0 && <p className="tax-note">A 1099-NEC is usually due for anyone paid {formatCents(necThreshold(year))} or more in {year} who isn&apos;t an employee or a corporation.</p>}
 
         <footer className="tax-foot">
-          Income counts on the day it was received, with whoever received it{includeCash ? "" : "; cash is left out unless Include cash is on"}.Expenses count for whoever&apos;s money it finally was: a bandmate&apos;s expense you paid back is yours; one nobody has paid back is still theirs. Meals are at {MEALS_PCT}%. Gear is under Supplies: a big purchase may need to be depreciated instead (Form 4562). This is a worksheet, not tax advice.
+          Income counts on the day it was received, with whoever received it. Expenses count for whoever&apos;s money it finally was: a bandmate&apos;s expense you paid back is yours; one nobody has paid back is still theirs. Meals are at {MEALS_PCT}%. Gear is under Supplies: a big purchase may need to be depreciated instead (Form 4562). This is a worksheet, not tax advice.
         </footer>
       </div>
     </div>
