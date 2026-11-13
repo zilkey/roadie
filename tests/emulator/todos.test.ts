@@ -40,6 +40,12 @@ test("Our list: add, edit and pick who, tick (stamps who and when), untick, remo
   await cmd("todos.edit", { id, label: "Order 500 stickers", ownerId: null }, admin());
   assert.equal((await db.get("todos", id))!.ownerId, undefined, "null unassigns");
   await assert.rejects(cmd("todos.edit", { id, label: "  ", ownerId: null }, admin()));
+  // a field left out stays as it is: the page's text and who edits each send only their own
+  await cmd("todos.edit", { id, ownerId: dean }, admin());
+  await cmd("todos.edit", { id, label: "Order 600 stickers" }, admin());
+  t = (await db.get("todos", id))!;
+  assert.deepEqual([t.label, t.ownerId], ["Order 600 stickers", dean]);
+  await cmd("todos.edit", { id, label: "Order 500 stickers", ownerId: null }, admin());
 
   await cmd("todos.check", { id, done: true }, admin());
   t = (await db.get("todos", id))!;

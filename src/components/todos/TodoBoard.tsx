@@ -232,13 +232,13 @@ function Card({ item, musicians, grip, onUp, onDown }: { item: BoardItem; musici
         <TickBox id={cid} item={item} />
         <div className="td-tx">
           <InlineValue testid={`todos-text-${a.id}`} label="To do" kind="text" value={item.label} canEdit enterSaves className="td-label"
-            onSave={async (v) => { const t = v.trim(); if (t === item.label) return true; if (!t) return !!(await remove()); return !!(await act("todos.edit", { id: a.id, label: t, ownerId: item.ownerId ?? null })); }} />
+            onSave={async (v) => { const t = v.trim(); if (t === item.label) return true; if (!t) return !!(await remove()); return !!(await act("todos.edit", { id: a.id, label: t })); }} />
           <div className="td-meta">
             {item.source && <span data-testid="todos-source">{item.source.text}</span>}
             <InlineValue testid={`todos-who-${a.id}`} label="Who" kind="select" value={item.ownerId ?? ""} canEdit emptyLabel="Unassigned"
               display={item.ownerId ? <span className="td-who">{nameOf(musicians, item.ownerId)}</span> : "Unassigned"}
               options={[["", "Unassigned"], ...people.map((m) => [m.id, m.name] as const)]}
-              onSave={async (v) => v === (item.ownerId ?? "") || !!(await act("todos.edit", { id: a.id, label: item.label, ownerId: v || null }))} />
+              onSave={async (v) => v === (item.ownerId ?? "") || !!(await act("todos.edit", { id: a.id, ownerId: v || null }))} />
           </div>
         </div>
         <button type="button" className="td-pin" aria-label={`Remove ${item.label}`} title="Remove" data-testid={`todos-remove-${a.id}`} onClick={() => void remove()}>

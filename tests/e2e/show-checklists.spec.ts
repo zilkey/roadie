@@ -51,6 +51,7 @@ test("an admin adds a list from a template, works its to-dos in place, renames a
   const done = c.getByRole("checkbox", { name: "Done: Bring the big banner" });
   await done.click();
   await expect(done).toBeChecked();
+  await expect(page.getByTestId("confetti")).toBeAttached(); // every tick gets confetti
   await expect(c.getByTestId(`checklist-count-${id}`)).toHaveText("1 of 2");
 
   // admins pin an open item to To Dos, and unpin it
@@ -62,6 +63,20 @@ test("an admin adds a list from a template, works its to-dos in place, renames a
   // × removes an item; so does saving it empty
   await c.getByRole("button", { name: "Remove Post on social media" }).click();
   await expect(c.getByTestId(`checklist-count-${id}`)).toHaveText("1 of 1");
+
+  // all done: the list folds shut to its title and count; the chevron opens it again
+  const fold = c.getByTestId(`checklist-fold-${id}`);
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(done).toHaveCount(0);
+  await expect(c.getByTestId(`checklist-add-${id}`)).toHaveCount(0);
+  await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  await expect(done).toBeChecked();
+  await done.click(); // unticking reopens the list for good; no fold button
+  await expect(c.getByTestId(`checklist-count-${id}`)).toHaveText("0 of 1");
+  await expect(fold).toHaveCount(0);
+  await done.click(); // complete again: folds shut again
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
 
   await c.getByTestId(`checklist-${id}-actions`).click();
   await page.getByTestId(`checklist-${id}-menu-rename`).click();
