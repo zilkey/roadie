@@ -126,6 +126,18 @@ test("artists.setSongFieldInSetlists: admin-only, toggles the print flag and not
   assert.equal((await call(admin, "artists.setSongFieldInSetlists", { id: TEST_ARTIST, fieldId: parking, inSetlists: true })).status, 404);
 });
 
+test("artists.updateSongField setlistLabel: set trimmed, kept through rename, blank removes; not on show fields", async () => {
+  const { admin, call, field, artist } = await world();
+  const parking = await field("Show", "Parking"), capo = await field("Song", "Capo (Eb)");
+  assert.equal((await call(admin, "artists.updateSongField", { id: TEST_ARTIST, fieldId: capo, setlistLabel: " Capo " })).status, 200);
+  assert.deepEqual((await artist()).songFields, [{ id: capo, label: "Capo (Eb)", setlistLabel: "Capo" }]);
+  await call(admin, "artists.updateSongField", { id: TEST_ARTIST, fieldId: capo, label: "Capo in Eb" });
+  assert.deepEqual((await artist()).songFields, [{ id: capo, label: "Capo in Eb", setlistLabel: "Capo" }]);
+  assert.equal((await call(admin, "artists.updateSongField", { id: TEST_ARTIST, fieldId: capo, setlistLabel: "" })).status, 200);
+  assert.deepEqual((await artist()).songFields, [{ id: capo, label: "Capo in Eb" }]);
+  assert.equal((await call(admin, "artists.updateShowField", { id: TEST_ARTIST, fieldId: parking, setlistLabel: "P" })).status, 400);
+});
+
 test("field descriptions: set on add or update, trimmed, blank removes, kept through rename, table tick and reorder", async () => {
   const { admin, member, call, artist } = await world();
   const add = async (kind: "Show" | "Song", label: string, description?: string) =>

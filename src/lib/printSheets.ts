@@ -84,7 +84,7 @@ export function buildSheets(input: BuildInput): BuildResult {
     ...(picked.has(FIELD_KEY) ? [{ id: FIELD_KEY, label: "Key" }] : []),
     ...(picked.has(FIELD_LENGTH) ? [{ id: FIELD_LENGTH, label: "Length" }] : []),
     ...(picked.has(FIELD_TEMPO) ? [{ id: FIELD_TEMPO, label: "Tempo" }] : []),
-    ...songFields.filter((f) => picked.has(songFieldId(f.id))).map((f) => ({ id: songFieldId(f.id), label: f.label })),
+    ...songFields.filter((f) => picked.has(songFieldId(f.id))).map((f) => ({ id: songFieldId(f.id), label: f.setlistLabel || f.label })),
   ];
   const showBreaks = picked.has(FIELD_BREAKS);
   const showAlts = picked.has(FIELD_ALTS);
@@ -129,7 +129,7 @@ export function buildSheets(input: BuildInput): BuildResult {
     const value = (id: string): string => {
       if (id === FIELD_KEY) return key ?? "";
       if (id === FIELD_LENGTH) return fmtLen(sec || undefined);
-      if (id === FIELD_TEMPO) return song?.bpm ? `${song.bpm} bpm` : "";
+      if (id === FIELD_TEMPO) return song?.bpm ? `${song.bpm}bpm` : "";
       return song?.fields?.find((f) => songFieldId(f.fieldId) === id)?.value ?? "";
     };
     if (layout === "list") {

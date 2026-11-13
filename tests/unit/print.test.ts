@@ -192,6 +192,13 @@ test("buildSheets: alternates print under their song only when Alternates is on,
 test("buildSheets: Tempo prints the song's bpm after Length, and is left out when the song has none", () => {
   const songs = songs25().map((s, i) => (i === 0 ? { ...s, bpm: 120 } : { ...s, bpm: undefined }));
   const rows = songRows(rowsOf(buildSheets(base({ songs, options: opts({ fields: ["tempo", "length"] }) }))));
-  assert.deepEqual(rows[0].fields.map((f) => [f.label, f.value]), [["Length", rows[0].fields[0].value], ["Tempo", "120 bpm"]]);
+  assert.deepEqual(rows[0].fields.map((f) => [f.label, f.value]), [["Length", rows[0].fields[0].value], ["Tempo", "120bpm"]]);
   assert.deepEqual(rows[1].fields.map((f) => f.label), ["Length"]);
+});
+
+test("buildSheets: a song field prints its setlist label when it has one", () => {
+  const songs = songs25().map((s, i) => (i === 0 ? { ...s, fields: [{ fieldId: "capo", value: "2" }] } : s));
+  const fields = [{ id: "capo", label: "Capo (Eb)", setlistLabel: "Capo" }];
+  const rows = songRows(rowsOf(buildSheets(base({ songs, songFields: fields, options: opts({ fields: ["field:capo"] }) }))));
+  assert.deepEqual(rows[0].fields.map((f) => [f.label, f.value]), [["Capo", "2"]]);
 });

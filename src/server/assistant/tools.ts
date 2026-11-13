@@ -313,7 +313,7 @@ const READBACK: Record<string, (i: Row, r: any, s: Session, l: L) => Promise<str
   "artists.update": (i) => `Updated the band: ${list(Object.keys(i.patch ?? {}).map((k) => (k === "links" ? `links (${list(Object.keys(i.patch.links ?? {}))})` : k === "configurations" ? "lineups" : k)))}`,
   "artists.addSongField": (i) => `Added the song field ${quote(i.label)}`,
   "artists.addShowField": (i) => `Added the show field ${quote(i.label)}`,
-  "artists.updateSongField": (i) => (i.label ? `Renamed a song field to ${quote(i.label)}` : "Changed a song field's description"),
+  "artists.updateSongField": (i) => (i.label ? `Renamed a song field to ${quote(i.label)}` : i.description === undefined ? "Changed a song field's setlist label" : "Changed a song field's description"),
   "artists.updateShowField": (i) => (i.label ? `Renamed a show field to ${quote(i.label)}` : "Changed a show field's description"),
   "artists.removeSongField": (_i, r) => `Deleted a song field${r?.songsCleared ? ` (cleared it on ${plural(r.songsCleared, "song")})` : ""}`,
   "artists.removeShowField": (_i, r) => `Deleted a show field${r?.showsCleared ? ` (cleared it on ${plural(r.showsCleared, "show")})` : ""}`,

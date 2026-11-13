@@ -6,7 +6,7 @@ import type { PrintOptions, PrintPaper } from "@/schema/print";
 
 export const FIELD_KEY = "key";
 export const FIELD_LENGTH = "length";
-/** The song's tempo, "120 bpm". */
+/** The song's tempo, "120bpm". */
 export const FIELD_TEMPO = "tempo";
 export const FIELD_BREAKS = "breaks";
 /** Alternates pinned to a song print small under it. Off by default. */
