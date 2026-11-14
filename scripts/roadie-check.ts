@@ -3,7 +3,8 @@
  * sends them. Catches what the unit tests never can: the model endpoint rejecting the tool schemas (2026-10-29: every
  * Roadie message in prod failed with "required fields ['route'] are not defined" because an enum field had no type).
  * Needs no emulators and no login: ROADIE_MODEL=gemini with the key in .secrets, or ROADIE_MODEL=vertex with ADC.
- * Exits 1 with the endpoint's error when the request is refused. Runs from the pre-push hook (see docs/SETUP.md).
+ * Exits 1 with the endpoint's error when the request is refused. No git hook runs it: run it by hand before pushing a
+ * change that reaches the model (AGENTS.md, "How Jeff works", rule 5).
  */
 import { getAi, modelLabel, modelMode } from "../src/server/assistant/ai";
 import { toolDefs } from "../src/server/assistant/tools";
