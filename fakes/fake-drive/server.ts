@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import sharp from "sharp";
+import PDFDocument from "pdfkit";
 import { defineFake, runIfMain, esc, need, required, HttpError, type Route } from "../lib";
 import { sheetsRoutes, type FakeSpreadsheet } from "./sheets";
 
@@ -43,7 +44,7 @@ export interface DriveFile {
  * POST /__scenario: what goes wrong next. failMove: the nth move from now (a PATCH with addParents/removeParents) fails with a 500.
  * failRename: every rename fails. noMove: capabilities.canMoveChildrenWithinDrive is false. noThumbnail: these files have no preview.
  */
-export interface DriveScenario { failMove?: number; failRename?: boolean; noMove?: boolean; noThumbnail?: string[] }
+export interface DriveScenario { failMove?: number; failRename?: boolean; noMove?: boolean; noThumbnail?: string[]; /** The per-tab PDF export answers 404. */ noTabExport?: boolean }
 export interface DriveState { seq: number; files: DriveFile[]; scenario?: DriveScenario; moves?: number; /** The Sheets fake's spreadsheets (fakes/fake-drive/sheets.ts), by file id. */ sheets?: Record<string, FakeSpreadsheet> }
 
 export const BAND_FOLDER_ID = "fake-band-folder";
@@ -166,6 +167,17 @@ const isVideoFile = (f: { mimeType: string; name: string }) => f.mimeType.includ
 const isMedia = (f: DriveFile) => isImage(f) || isVideoFile(f);
 /** The bytes the fake serves for any video: not a playable MP4, only something to fetch. */
 const FAKE_VIDEO = Buffer.from("\0\0\0\x18ftypmp42\0\0\0\0mp42isom fake video bytes");
+
+/** A small real PDF: the lines on page 1, and a second page when asked. */
+function fakePdf(lines: string[], twoPages: boolean): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "LETTER", margin: 48 });
+  const chunks: Buffer[] = [];
+  const done = new Promise<Buffer>((resolve, reject) => { doc.on("data", (c: Buffer) => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject); });
+  doc.fontSize(11).text(lines.slice(0, 40).join("\n").replace(/[^\x20-\x7E\n]/g, "?"));
+  if (twoPages) doc.addPage().text("Page 2");
+  doc.end();
+  return done;
+}
 
 // ---------- Docs API documents (documents.get with includeTabsContent), the parts Roadie reads ----------
 
@@ -315,6 +327,7 @@ const routes: Route<DriveState>[] = [
     if (body.failMove !== undefined) { sc.failMove = Number(body.failMove) || undefined; s.moves = 0; }
     if (body.failRename !== undefined) sc.failRename = !!body.failRename;
     if (body.noMove !== undefined) sc.noMove = !!body.noMove;
+    if (body.noTabExport !== undefined) sc.noTabExport = !!body.noTabExport;
     if (body.noThumbnail !== undefined) sc.noThumbnail = emailsOf(body.noThumbnail);
     return { ok: true, scenario: sc };
   }],
@@ -332,8 +345,10 @@ const routes: Route<DriveState>[] = [
     f.modifiedTime = new Date().toISOString();
     return f;
   }],
-  ["GET", "/files/:id/content", ({ params }, s) => {
+  ["GET", "/files/:id/content", async ({ params }, s) => {
     const f = find(s, params.id);
+    // A PDF chart: two pages, so "first page only" has something to drop.
+    if (f.mimeType === "application/pdf" && f.text === undefined && !f.fixture) return { bytes: await fakePdf([f.name], true), type: "application/pdf" };
     if (f.text !== undefined) return { bytes: Buffer.from(f.text), type: "text/csv" };
     if (f.fixture) return { bytes: fixture(f.fixture), type: f.mimeType };
     if (f.mimeType === MIME.jpeg) return { bytes: PIXEL_JPEG, type: MIME.jpeg };
@@ -342,9 +357,20 @@ const routes: Route<DriveState>[] = [
     return { bytes: tone(), type: "audio/wav" };
   }],
   // Drive's files.export, text/plain only: a Google Doc's text. Drive starts the export with a byte order mark and ends lines with CRLF; so does the fake.
-  ["GET", "/files/:id/export", ({ params, query }, s) => {
+  // As PDF (mimeType=application/pdf; with ?tab= it stands in for the editor's per-tab export): the text on page 1. A second page when the
+  // text says "(two pages)", or when a doc with several tabs is exported whole.
+  ["GET", "/files/:id/export", async ({ params, query }, s) => {
     const f = find(s, params.id);
     if (f.noAccess) throw new HttpError(403, "The caller does not have permission");
+    if (query.get("mimeType") === "application/pdf") {
+      if (f.mimeType !== MIME.doc) throw new HttpError(403, "Export only supports Docs Editors files.");
+      const tab = query.get("tab");
+      if (tab && s.scenario?.noTabExport) throw new HttpError(404, "Not found (fake: noTabExport)");
+      const d = f.gdoc && tab ? { ...f.gdoc, tabs: f.gdoc.tabs.filter((t) => t.tabProperties.tabId === tab) } : f.gdoc;
+      if (d && !d.tabs.length) throw new HttpError(404, `No tab ${tab}`);
+      const text = d ? gdocText(d) : f.text ?? "";
+      return { bytes: await fakePdf([f.name, ...text.split("\n")], text.includes("(two pages)") || (!tab && (f.gdoc?.tabs.length ?? 1) > 1)), type: "application/pdf" };
+    }
     if (query.get("mimeType") !== "text/plain") throw new HttpError(400, "The fake only exports text/plain");
     if (f.mimeType !== MIME.doc) throw new HttpError(403, "Export only supports Docs Editors files.");
     return { bytes: Buffer.from("\uFEFF" + (f.gdoc ? gdocText(f.gdoc) : f.text ?? "").replace(/\n/g, "\r\n")), type: "text/plain" };

@@ -395,7 +395,7 @@ test("only admins (or mcp) may write Music; members have no write commands", () 
   // rehearsals.setExpenses is Money, not Music: members enter their own expense lines, like shows.setExpenses
   // printing is a read plus personal prefs: members print too
   // files.docText reads a Google Doc's lyrics for the song page; its only write is the cached copy of the doc's text
-  const memberOk = new Set(["rehearsals.setExpenses", "setlists.printLink", "setlists.printPrefs", "setlists.setPrintPrefs", "files.docText"]);
+  const memberOk = new Set(["rehearsals.setExpenses", "setlists.printLink", "setlists.printPrefs", "setlists.setPrintPrefs", "files.docText", "setlists.pdf"]);
   for (const [name, c] of Object.entries(registry)) {
     if (/^(songs|files|setlists|rehearsals|drive)\./.test(name) && !memberOk.has(name)) assert.ok(!c.roles.includes("member"), name);
   }

@@ -67,6 +67,11 @@ export interface DriveService {
   download(id: string, range?: string | null): Promise<Response>;
   /** A Google Doc (Sheet, Slides) converted to `mimeType`, as text. Only "text/plain" is used, for a Doc's lyrics. */
   export(id: string, mimeType: "text/plain"): Promise<string>;
+  /**
+   * A Google Doc as PDF bytes, laid out as Docs prints it (tables, fonts). Without `tabId`: the whole doc (files.export). With one:
+   * that tab alone, from the Docs editor's own export link (files.export has no way to pick a tab).
+   */
+  exportPdf(id: string, tabId?: string): Promise<Uint8Array>;
   /** A Google Doc from the Docs API (documents.get, every tab's content): tabs, tables, text runs with bold and italic. */
   document(id: string): Promise<GDocument>;
   /** One page of non-trashed files whose parent is any of `parents`. */
@@ -120,6 +125,7 @@ export function fakeDriveClient(baseUrl: string): DriveService {
     permissions: (id) => call("GET", `${f(id)}/permissions`),
     download: (id, range) => fetch(`${baseUrl}${f(id)}/content`, { headers: range ? { range } : {} }),
     export: async (id, mimeType) => exportText(await fetch(`${baseUrl}${f(id)}/export?${new URLSearchParams({ mimeType })}`)),
+    exportPdf: async (id, tabId) => pdfBytes(await fetch(`${baseUrl}${f(id)}/export?${new URLSearchParams({ mimeType: "application/pdf", ...(tabId ? { tab: tabId } : {}) })}`)),
     document: (id) => call("GET", `/docs/v1/documents/${encodeURIComponent(id)}`, { query: { includeTabsContent: "true" } }),
   };
 }
@@ -192,9 +198,20 @@ async function exportText(res: Response): Promise<string> {
   return res.text();
 }
 
+/** An export's body as PDF bytes; an IntegrationError when Drive said no, or answered with something that isn't a PDF (a sign-in page). */
+async function pdfBytes(res: Response): Promise<Uint8Array> {
+  if (!res.ok) {
+    const err = await res.json().catch(() => undefined);
+    throw new IntegrationError("drive", res.status, err?.error?.message ?? res.statusText);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") throw new IntegrationError("drive", 502, "Google didn't answer with a PDF");
+  return bytes;
+}
+
 const RANK = { reader: 1, writer: 2, owner: 3 } as const;
 
-export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapis.com/drive/v3", uploadUrl = "https://www.googleapis.com/upload/drive/v3", docsUrl = "https://docs.googleapis.com/v1"): DriveService {
+export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapis.com/drive/v3", uploadUrl = "https://www.googleapis.com/upload/drive/v3", docsUrl = "https://docs.googleapis.com/v1", editorUrl = "https://docs.google.com"): DriveService {
   const call = googleJson("drive", baseUrl, token);
   const docs = googleJson("docs", docsUrl, token);
   const f = (id: string) => `/files/${encodeURIComponent(id)}`;
@@ -319,6 +336,16 @@ export function googleDrive(token: TokenSource, baseUrl = "https://www.googleapi
       let res = await get(false);
       if (res.status === 401) res = await get(true);
       return exportText(res);
+    },
+    async exportPdf(id, tabId) {
+      // One tab: the editor's export link, which takes the band account's token like the API does. The whole doc: files.export.
+      const url = tabId
+        ? `${editorUrl}/document/d/${encodeURIComponent(id)}/export?${new URLSearchParams({ format: "pdf", tab: tabId })}`
+        : `${baseUrl}${f(id)}/export?${new URLSearchParams({ mimeType: "application/pdf" })}`;
+      const get = async (force: boolean) => fetch(url, { headers: { authorization: `Bearer ${await token(force)}` } });
+      let res = await get(false);
+      if (res.status === 401) res = await get(true);
+      return pdfBytes(res);
     },
     // documents.get reads with the drive scope the band account already granted. includeTabsContent: every tab, not just the first.
     document: (id) => docs("GET", `/documents/${encodeURIComponent(id)}`, { query: { includeTabsContent: "true" } }),

@@ -25,6 +25,7 @@ export const EXCLUDED: readonly string[] = [
   "stats.importCsv",  // bulk import of someone's file
   "shows.setChecklists", // replaces every list at once; the granular checklist commands do the same safely
   "files.docText",    // the song and rehearsal pages' inline Google Doc view (#18); Roadie gets doc text in its own story
+  "setlists.pdf",     // the setlist's Download PDF button: exports every chart and saves a file in Drive, a minute's work started by a click
   "tours.sheet",      // rewrites the tour's Google Sheet over anyone's edits there: the Sheet tab's button, after its confirm
   "venueEvents.",     // venue calendars (#60): refreshing reads strangers' pages; setup is by hand with its preview
   "venues.setCalendar",

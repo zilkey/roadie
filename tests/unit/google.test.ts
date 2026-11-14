@@ -288,3 +288,17 @@ test("state: returnTo round-trips when artist-relative and is dropped otherwise"
     assert.equal(verifyState(`${body}.${mac}`), null, "re-bodied state fails the signature");
   } finally { restore(); }
 });
+
+test("drive.exportPdf: the whole doc through files.export, one tab through the editor's export link, both as the band account; not-a-PDF is an error", async () => {
+  stubGoogle((s) => (s.url.pathname.includes("/denied/") ? { status: 403, json: { error: { code: 403, message: "No access" } } } : { json: { html: "a sign-in page" } }));
+  const d = googleDrive(async () => "tok", undefined, undefined, undefined, "https://editor.googleapis.com");
+  await assert.rejects(d.exportPdf("doc1"), (e: IntegrationError) => e.status === 502);
+  assert.equal(seen[0].url.pathname, "/drive/v3/files/doc1/export");
+  assert.equal(seen[0].url.searchParams.get("mimeType"), "application/pdf");
+  assert.equal(seen[0].auth, "Bearer tok");
+  await assert.rejects(d.exportPdf("doc1", "t.abc"), (e: IntegrationError) => e.status === 502);
+  assert.equal(seen[1].url.pathname, "/document/d/doc1/export");
+  assert.deepEqual([seen[1].url.searchParams.get("format"), seen[1].url.searchParams.get("tab")], ["pdf", "t.abc"]);
+  assert.equal(seen[1].auth, "Bearer tok");
+  await assert.rejects(d.exportPdf("denied", "t.0"), (e: IntegrationError) => e.status === 403);
+});

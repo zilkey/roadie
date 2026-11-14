@@ -7,6 +7,7 @@ import { SaveStatus } from "@/components/SaveStatus";
 import type { SaveState } from "@/lib/autosave";
 import { fmtDay, useMusic } from "@/components/music/common";
 import { PrintDialog, PrintIcon } from "@/components/print/PrintDialog";
+import { SetlistPdfButton } from "@/components/print/SetlistPdfButton";
 import { BpmStrip } from "@/components/music/BpmStrip";
 import { SetlistItemsEditor, itemsPayload, type SetlistItemT } from "@/components/music/SetlistItemsEditor";
 import { runCommand } from "@/lib/commands";
@@ -95,6 +96,7 @@ export function SetlistTab({ show, admin }: { show: ShowRow; admin: boolean }) {
       {(admin || songCount(items) > 0) && (
         <div className="flex flex-wrap items-center gap-2">
           {songCount(items) > 0 && <button type="button" className="btn outline" data-testid="print-setlist" onClick={() => setPrinting(true)}><PrintIcon />Print</button>}
+          {songCount(items) > 0 && <SetlistPdfButton showId={show.id} />}
           {admin && <>
           <Menu label="Seed from template" testid="seed-template" trigger={<span className="px-2 text-sm font-semibold">Seed from template ▾</span>}
             items={templateItems.length ? templateItems : none("No templates yet")} />
