@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import sharp from "sharp";
 import { defineFake, runIfMain, esc, need, required, HttpError, type Route } from "../lib";
+import { sheetsRoutes, type FakeSpreadsheet } from "./sheets";
 
 export const MIME = {
   folder: "application/vnd.google-apps.folder",
@@ -35,17 +36,21 @@ export interface DriveFile {
   thumbnailLink?: string;
   /** A file in tests/fixtures whose bytes GET /files/:id/content serves (the seeded photos). */
   fixture?: string;
+  /** A Google Sheet the caller can only view: Drive says it can't edit it and the Sheets fake refuses batchUpdate (403). */
+  readOnly?: boolean;
 }
 /**
  * POST /__scenario: what goes wrong next. failMove: the nth move from now (a PATCH with addParents/removeParents) fails with a 500.
  * failRename: every rename fails. noMove: capabilities.canMoveChildrenWithinDrive is false. noThumbnail: these files have no preview.
  */
 export interface DriveScenario { failMove?: number; failRename?: boolean; noMove?: boolean; noThumbnail?: string[] }
-export interface DriveState { seq: number; files: DriveFile[]; scenario?: DriveScenario; moves?: number }
+export interface DriveState { seq: number; files: DriveFile[]; scenario?: DriveScenario; moves?: number; /** The Sheets fake's spreadsheets (fakes/fake-drive/sheets.ts), by file id. */ sheets?: Record<string, FakeSpreadsheet> }
 
 export const BAND_FOLDER_ID = "fake-band-folder";
 /** The seeded Socials folder for Posts (not chosen in the seed): photos to pick, in folders and loose. */
 export const SOCIALS_FOLDER_ID = "fake-folder-socials";
+/** The seeded Google Sheet for the Money sheet (not chosen in the seed). */
+export const MONEY_SHEET_ID = "fake-sheet-books";
 const MEMBERS = ["rudy", "nora", "hugo", "felix", "iris"].map((n) => `${n}@example.com`);
 const link = (id: string) => `http://localhost:3202/files/${id}`;
 
@@ -96,6 +101,10 @@ function initial(): DriveState {
   add("fake-reh-2", "Rehearsal 2026-10-04 Glass Coast bridge.m4a", MIME.audio, "hugo@example.com", ["root-hugo"], ["rudy@example.com"]);
   add("fake-reh-3", "Rehearsal video Ruby Hill ending.mp4", MIME.video, "felix@example.com", ["fake-folder-rehearsals"], all);
   socials(add, files);
+  // Google Sheets for the Money sheet (Settings › Google): one Nora can edit, one she can only view.
+  add(MONEY_SHEET_ID, "Nora's books", MIME.sheet, "nora@example.com", ["root-nora"], all);
+  add("fake-sheet-readonly", "Accountant's copy", MIME.sheet, "hugo@example.com", ["root-hugo"], all);
+  files.find((f) => f.id === "fake-sheet-readonly")!.readOnly = true;
   return { seq: 0, files, scenario: {}, moves: 0 };
 }
 
@@ -300,6 +309,7 @@ const routes: Route<DriveState>[] = [
     f.modifiedTime = new Date().toISOString();
     return view(s, f);
   }],
+  ...sheetsRoutes<DriveState>(),
   ["POST", "/__scenario", ({ body }, s) => {
     const sc = (s.scenario ??= {});
     if (body.failMove !== undefined) { sc.failMove = Number(body.failMove) || undefined; s.moves = 0; }

@@ -13,6 +13,7 @@ import { MoneyInModal } from "./MoneyInModal";
 import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyDefaults } from "./modals";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
+import { useSendToSheet } from "./SendToSheet";
 import type { Expense, Income, Musician, Payout, Project, User } from "@/schema";
 
 const shortDate = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -28,6 +29,7 @@ function Admin() {
   const users = useCollection<User>("users");
   const [modal, setModal] = useState<{ kind: "in" | "out"; defaults?: MoneyDefaults } | null>(null);
   const { call, error, busy } = useCommand();
+  const sheet = useSendToSheet();
 
   const personName = (userId: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.userId === userId)?.name ?? "Someone";
@@ -50,6 +52,7 @@ function Admin() {
   const loaded = income.rows !== null && expenses.rows !== null && payouts.rows !== null;
   const actions = (
     <>
+      {sheet.button}
       <button className="btn acc" data-testid="money-in-open" onClick={() => setModal({ kind: "in" })}>+ Money in</button>
       <button className="btn acc" data-testid="money-out-open" onClick={() => setModal({ kind: "out" })}>+ Money out</button>
     </>
@@ -80,8 +83,9 @@ function Admin() {
 
   return (
     <div className="grid gap-5" data-testid="admin-money">
-      <PageTitle title="Money" actions={actions} />
+      <PageTitle title="Money" sub={sheet.line} actions={actions} />
       <ErrorBox error={error} />
+      {sheet.dialog}
 
       <>
           <div className="grid gap-5 md:grid-cols-2">

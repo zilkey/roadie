@@ -5,6 +5,7 @@ import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
 import { FolderCard } from "@/components/google/FolderCard";
 import { ShortcutCard } from "@/components/google/ShortcutCard";
+import { MoneySheetCard } from "@/components/google/MoneySheetCard";
 import { FEATURES, list, NotConfiguredCard, type Calendar, type Check, type Feature, type Status } from "@/components/google/shared";
 
 export default function GooglePage() { return <AdminOnly><GoogleSettings /></AdminOnly>; }
@@ -130,6 +131,7 @@ function GoogleSettings() {
       {status && <FolderCard which="shows" status={status} onChange={setStatus} />}
       {status && <FolderCard which="releases" status={status} onChange={setStatus} />}
       {status && <FolderCard which="posts" status={status} onChange={setStatus} />}
+      {status && <MoneySheetCard />}
       {status && <ShortcutCard />}
     </div>
   );

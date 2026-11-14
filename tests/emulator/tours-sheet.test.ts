@@ -66,7 +66,7 @@ test("tours.sheet makes one Google Sheet in the band folder, the band version, t
   assert.equal(second.made, false);
   assert.equal((await db.get("tours", t))!.sheet.driveFileId, linked.driveFileId, "the same sheet");
   assert.ok((await contentOf(linked.driveFileId)).includes("Laundry"));
-  const sheets = await (await fetch(`${process.env.DRIVE_BASE_URL}/files?mimeType=application/vnd.google-apps.spreadsheet`)).json();
+  const sheets = await (await fetch(`${process.env.DRIVE_BASE_URL}/files?mimeType=application/vnd.google-apps.spreadsheet&parent=${BAND_FOLDER_ID}`)).json();
   assert.equal(sheets.length, 1, "a second copy never makes a second file");
 });
 
