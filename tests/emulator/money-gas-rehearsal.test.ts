@@ -1,5 +1,5 @@
 /**
- * Money on rehearsals and the gas category: gas is its own expense category (always paid back, estimate only on gas),
+ * Money on rehearsals and the gas category: gas is its own expense category (paid back unless payBack is false, estimate only on gas),
  * a rehearsal's money goes on its project (rehearsals.create defaults to the default project, rehearsals.update moves its
  * expenses and payouts, expenses.add takes the rehearsal's project when none is named), payouts.add takes a rehearsalId,
  * an admin who logs gas for a bandmate saves the bandmate's home (not their own), and projects.remove refuses a project
@@ -58,10 +58,12 @@ const GAS = {
   priceMilli: 3790, priceArea: "Denver", priceWeek: "2026-10-19", seriesId: "EMM_EPM0R5_PTE_R20_DPG", estimateCents: 498,
 };
 
-test("gas is its own category: category gas always pays back, even when payBack is off", async () => {
-  const g = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", payBack: false, gas: GAS });
+test("gas is its own category: category gas pays back by default, and payBack false (the driver covers it) sticks", async () => {
+  const g = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", gas: GAS });
   const x = await db.get("expenses", g.id) as any;
   assert.deepEqual([x.category, x.payBack, x.gas.estimateCents], ["gas", true, 498]);
+  const own = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", payBack: false, gas: GAS });
+  assert.equal((await db.get("expenses", own.id) as any).payBack, false);
 });
 
 test("a gas estimate is refused on any category but gas (travel still takes one for older records)", async () => {

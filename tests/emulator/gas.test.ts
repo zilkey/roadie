@@ -270,6 +270,15 @@ test("MCP: estimate a bandmate's gas, save their car, and log the expense in the
   const upd = await call("expenses.update", { id: add.result.id, patch: { amount: estimateCents + 100 } });
   assert.ok(!upd.error, JSON.stringify(upd));
   assert.equal((await db.get("expenses", add.result.id))!.gas.overridden, true);
+  // A driver who covers their own gas: no pay back, and the typed addresses stay on the expense.
+  const own = await call("expenses.add", {
+    amount: estimateCents, what: "Gas", category: "gas", userId: memberUid, payBack: false,
+    gas: { ...nums, fromKind: "typed", fromText: HOME.address, to: LOFT, estimateCents },
+  });
+  const o = (await db.get("expenses", own.result.id))!;
+  assert.equal(o.payBack, false);
+  assert.equal(o.gas.fromText, HOME.address);
+  assert.equal(o.gas.to.address, LOFT.address);
   const gone = await call("people.updateDriving", { userId: "nobody", mpg: 20 });
   assert.equal(gone.error.code, "not_found");
 });

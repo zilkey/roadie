@@ -619,6 +619,19 @@ function useEditWho() {
   return { users: users.rows ?? [], options };
 }
 
+/** A gas expense's frozen trip, read-only: where from and to (when the addresses were kept), miles, MPG and the price used. */
+function GasTrip({ g }: { g: NonNullable<Expense["gas"]> }) {
+  const to = [g.to.name, g.to.address].filter(Boolean).join(", ");
+  return (
+    <div className="grid gap-1 text-sm" data-testid="mo-gas-trip">
+      <span className="lbl">Trip</span>
+      <span data-testid="mo-gas-from">From: {g.fromKind === "typed" && g.fromText ? g.fromText : "home"}</span>
+      {to && <span data-testid="mo-gas-to">To: {to}</span>}
+      <span>{g.miles.toFixed(1)} mi {g.roundTrip ? "round trip" : "one way"} · {g.mpg} MPG · ${(g.priceMilli / 1000).toFixed(2)}/gal ({g.priceArea}, week of {g.priceWeek})</span>
+    </div>
+  );
+}
+
 function ExpenseEdit({ id, context, onClose }: { id: string; context?: MoneyDefaults["context"]; onClose(): void }) {
   const { doc } = useDoc<Expense>("expenses", id);
   return doc ? <ExpenseEditBody x={doc} context={context} onClose={onClose} /> : <div style={{ padding: 22 }} data-testid="mo-edit-loading">Loading…</div>;
@@ -665,7 +678,8 @@ function ExpenseEditBody({ x, context, onClose }: { x: Row<Expense>; context?: M
             <EditInput label="When" type="date" value={x.date} testid="mo-when" onCommit={(v) => { if (!v) return false; void save({ date: v }, "the date"); return true; }} />
           </div>
         )}
-        {!gas && !bill && (
+        {gas && x.gas && <GasTrip g={x.gas} />}
+        {!bill && (
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={x.payBack !== false} onChange={(e) => void save({ payBack: e.target.checked }, "pay back")} data-testid="mo-payback" />
             <span>The band owes {payer} this back</span>

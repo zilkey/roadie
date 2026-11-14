@@ -160,7 +160,7 @@ export const expensesAdd = defineCommand({
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Woodshed $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
-    "A gas expense (category gas) carries the frozen estimate in `gas` and is always paid back: gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source and areaKind). saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
+    "A gas expense (category gas) carries the frozen estimate in `gas` and is paid back unless payBack is false (the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source and areaKind). With fromKind typed, fromText (the start address) and to.address are kept on the expense and shown with it; fromKind home keeps no address. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), notes: z.string().trim().min(1).optional(), category: expenseCategory, date: dateStr.optional(),
@@ -195,8 +195,8 @@ export const expensesAdd = defineCommand({
       ...(to ? { to: await resolveTo(w, to) } : {}),
       // An open bill has no payer yet, so there is nothing to pay anyone back for.
       ...(owed ? { owed: true, payBack: false } : {}),
-      // Gas is always paid back to whoever drove.
-      ...(!owed && i.category === "gas" ? { payBack: true } : {}),
+      // Gas is paid back to whoever drove unless the caller says not (payBack:false: they cover their own).
+      ...(!owed && i.category === "gas" && i.payBack !== false ? { payBack: true } : {}),
       ...(gas ? { gas: { ...gas, overridden: i.amount !== gas.estimateCents } } : {}),
     });
     if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
