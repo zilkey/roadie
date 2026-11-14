@@ -67,6 +67,8 @@ function present(ctx: { role: string }, kind: string, d: Record<string, unknown>
   if (kind === "availability") delete o.linkTokens;
   if (kind === "stagePlots") o.share = { on: !!(o.share as { on?: boolean } | undefined)?.on };
   if (kind === "musicians" && ctx.role === "admin") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active, archivedAt: o.archivedAt, email: o.email, phone: o.phone, payHandle: o.payHandle, userId: o.userId };
+  // MCP gets the login id too (no contact details): it is who expenses.add / estimateGas / people.updateDriving name.
+  if (kind === "musicians" && ctx.role === "mcp") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active, ...(o.userId ? { userId: o.userId } : {}) };
   if (kind === "musicians") return { id: o.id, name: o.name, instruments: o.instruments, active: o.active };
   return o;
 }
@@ -100,7 +102,7 @@ export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
   description:
     "Read one record by kind and id (kinds: " + READABLE.join(", ") + "). A pitch also includes its timeline and comments; a show, the comments carried over from its pitch. " +
-    "A venue includes this band's notes (and archived: true if the band hid it); a festival, edition, promoter or contact includes this band's notes (notes, payNotes, howToPitch), never another band's. Musicians include phone, email, pay handle and userId for admins (names only through MCP). showDeals and setlists have the same id as their show. " +
+    "A venue includes this band's notes (and archived: true if the band hid it); a festival, edition, promoter or contact includes this band's notes (notes, payNotes, howToPitch), never another band's. Musicians include phone, email, pay handle and userId for admins (through MCP: names, instruments and userId, the id expenses.add, expenses.estimateGas forId and people.updateDriving take). showDeals and setlists have the same id as their show. " +
     "A setlist's or template's totalSec is its full length: songs + breaks + transitionSec between each two songs in a row (a setlist uses its show's transitionSec, a template 30); quote that as the setlist's length.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {

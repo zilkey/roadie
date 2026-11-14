@@ -47,14 +47,15 @@ beforeEach(async () => {
   showB = await mk("2026-11-15", venueB);
 });
 
-test("musicians are whole for an admin and trimmed through mcp", async () => {
+test("musicians are whole for an admin and trimmed through mcp (no contact details, but the userId money tools need)", async () => {
   const full = await get(sys, "musicians", musId);
   assert.equal(full.email, "nora@example.com");
   assert.equal(full.phone, "555-0100");
   assert.equal(full.payHandle, "@nora");
   assert.ok(full.userId);
   const trim = await get(mcp, "musicians", musId);
-  assert.deepEqual(Object.keys(trim).sort(), ["active", "id", "instruments", "name"]);
+  assert.deepEqual(Object.keys(trim).sort(), ["active", "id", "instruments", "name", "userId"]);
+  assert.equal(trim.userId, full.userId);
   const rows = (await list(mcp, { kind: "musicians" })).rows;
   assert.equal(rows[0].email, undefined);
   assert.equal((await list(sys, { kind: "musicians" })).rows[0].email, "nora@example.com");
