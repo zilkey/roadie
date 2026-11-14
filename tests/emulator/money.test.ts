@@ -123,7 +123,7 @@ test("rehearsals.setExpenses: same member/admin split as shows, lines land on th
 test("gas expenses: members can't set the rehearsal location; fixing the amount marks the estimate overridden and keeps it", async () => {
   const rehearsalId = (await db.create(ctx, "rehearsals", { date: "2026-10-29", personnel: [], songs: [] })).id;
   const gas = {
-    fromKind: "home", to: { name: "The Attic" }, oneWayMiles: 18.4, roundTrip: true, miles: 36.8, mpg: 28,
+    fromKind: "home", fromText: "742 Evergreen Terrace, Denver, CO, USA", to: { name: "The Attic", address: "2363 Alder St, Denver, CO, USA" }, oneWayMiles: 18.4, roundTrip: true, miles: 36.8, mpg: 28,
     grade: "regular", priceMilli: 3790, priceArea: "Denver", priceWeek: "2026-10-19", seriesId: "Y05DE_EPMR", estimateCents: 498,
   };
   await assert.rejects(

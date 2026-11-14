@@ -12,7 +12,7 @@ export const expenseGasBase = z.strictObject({
   fromKind: z.enum(["home", "typed"]),
   /**
    * Where the trip started, as it was when the expense was logged: the typed address, or (fromKind home) the driver's
-   * home address at that time, so a later move doesn't rewrite history. Missing only on expenses logged before 2026-11.
+   * home address at that time, so a later move doesn't rewrite history. Required once stored (see expenseGas).
    */
   fromText: z.string().optional(),
   to: z.strictObject({ name: z.string().optional(), address: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
@@ -35,7 +35,14 @@ export const expenseGasBase = z.strictObject({
   /** True when the saved amount differs from estimateCents (set by the server, kept on later amount edits). */
   overridden: z.boolean(),
 });
-export const expenseGas = expenseGasBase;
+/**
+ * The gas trip as stored: the start address and the destination's address are always kept (expenses.add fills them
+ * from the payer's home and the rehearsal's location); the input, expenseGasBase, may leave them to the server.
+ */
+export const expenseGas = expenseGasBase.extend({
+  fromText: z.string().min(1),
+  to: expenseGasBase.shape.to.extend({ address: z.string().min(1) }),
+});
 export type ExpenseGas = z.infer<typeof expenseGas>;
 
 export const Expense = entity({

@@ -7,6 +7,7 @@
  */
 import { test, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { AppError } from "@/server/errors";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -53,9 +54,15 @@ const LOFT = { name: "The Attic", address: "2363 Alder St, Denver, CO, USA", lat
 const HOME = { address: "742 Evergreen Terrace, Denver, CO, USA", lat: 39.7005, lng: -104.9503 };
 // A frozen gas estimate in the shape expenses.add stores (18.4 mi each way, round trip, 28 MPG, $3.790/gal): 498 cents.
 const GAS = {
-  fromKind: "home" as const, to: LOFT, oneWayMiles: 18.4, roundTrip: true, miles: 36.8, mpg: 28, grade: "regular" as const,
+  fromKind: "home" as const, fromText: HOME.address, to: LOFT, oneWayMiles: 18.4, roundTrip: true, miles: 36.8, mpg: 28, grade: "regular" as const,
   priceMilli: 3790, priceArea: "Denver", priceWeek: "2026-10-19", seriesId: "EMM_EPM0R5_PTE_R20_DPG", estimateCents: 498,
 };
+
+test("a gas expense needs where the trip started and where it went: without them (and no home or rehearsal location to fill in) it is refused", async () => {
+  const { fromText: _from, ...noFrom } = GAS;
+  await assert.rejects(cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", gas: noFrom }), (e: AppError) => e.code === "invalid_input" && /start/.test(e.message));
+  await assert.rejects(cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", gas: { ...GAS, to: { name: LOFT.name } } }), (e: AppError) => e.code === "invalid_input" && /go/.test(e.message));
+});
 
 test("gas is its own category: category gas pays back by default, and payBack false (the driver covers it) sticks", async () => {
   const g = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", gas: GAS });

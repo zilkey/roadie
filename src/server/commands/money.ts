@@ -163,7 +163,9 @@ async function gasSnapshot(gas: z.infer<typeof GasIn>, payer: Doc, rehearsal: Do
   const to = gas.to.address || !loc?.address ? gas.to : { ...gas.to, name: gas.to.name ?? loc.name, address: loc.address, lat: gas.to.lat ?? loc.lat, lng: gas.to.lng ?? loc.lng };
   const car = carFor(driving, carId);
   const carName = gas.carName ?? (car && car.mpg === gas.mpg ? car.name : undefined);
-  return { ...gas, ...(fromText ? { fromText } : {}), to: Object.fromEntries(Object.entries(to).filter(([, v]) => v !== undefined)), ...(carName ? { carName } : {}) };
+  if (!fromText) throw new AppError("invalid_input", "Where did the trip start? Send fromText, or save a home address for a home trip", 400);
+  if (!to.address) throw new AppError("invalid_input", "Where did the trip go? Send to.address, or put it on a rehearsal with a location", 400);
+  return { ...gas, fromText, to: Object.fromEntries(Object.entries(to).filter(([, v]) => v !== undefined)), ...(carName ? { carName } : {}) };
 }
 
 /** What the form sends after an estimate: the frozen gas numbers; the server sets `overridden` from the amount. */
