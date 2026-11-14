@@ -366,27 +366,46 @@ async function bandShow(w: Writer, id: string) {
 
 // ---------- comments (the whole band) ----------
 
-const ownComment = async (w: Writer, showId: string, commentId: string) => {
+/** The comment to change: the author's own, or any one for an admin. */
+const changeableComment = async (w: Writer, showId: string, commentId: string) => {
   await requireShow(w, showId);
   const c = await w.get(`shows/${showId}/comments`, commentId);
   if (!c || c.deletedAt) throw new AppError("not_found", "Comment not found", 404);
-  if (c.authorId !== w.ctx.uid) throw new AppError("forbidden", "You can only change your own comments", 403);
+  if (c.authorId !== w.ctx.uid && w.ctx.role !== "admin") throw new AppError("forbidden", "You can only change your own comments", 403);
   return c;
 };
+const commentAudience = z.enum(["band", "admins"]);
+const noPrivateForMembers = (ctx: Ctx, audience?: string) => {
+  if (audience === "admins" && ctx.role === "member") throw new AppError("forbidden", "Only admins can post private comments", 403);
+};
 export const showsComment = defineCommand({
-  name: "shows.comment", roles: ["admin", "member", "mcp"], description: "Comment on a show. The whole band reads it (audience band).",
-  input: z.strictObject({ id: z.string().min(1), body: z.string().trim().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => { await requireShow(w, i.id); return w.create(`shows/${i.id}/comments`, { authorId: ctx.uid, body: i.body, audience: "band" }); }),
+  name: "shows.comment", roles: ["admin", "member", "mcp"],
+  description: "Comment on a show. audience band: the whole band reads it; admins: Private, admins only. An admin's comment defaults to admins, everyone else's to band.",
+  input: z.strictObject({ id: z.string().min(1), body: z.string().trim().min(1), audience: commentAudience.optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    noPrivateForMembers(ctx, i.audience);
+    await requireShow(w, i.id);
+    return w.create(`shows/${i.id}/comments`, { authorId: ctx.uid, body: i.body, audience: i.audience ?? (ctx.role === "admin" ? "admins" : "band") });
+  }),
 });
 export const showsEditComment = defineCommand({
-  name: "shows.editComment", roles: ["admin", "member", "mcp"], description: "Edit your own comment on a show.",
-  input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1), body: z.string().trim().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => { await ownComment(w, i.id, i.commentId); return w.update(`shows/${i.id}/comments`, i.commentId, { body: i.body }); }),
+  name: "shows.editComment", roles: ["admin", "member", "mcp"],
+  description: "Edit a comment on a show: its body (marks it edited) and/or its audience (band or admins = Private). Your own comments; admins can edit anyone's.",
+  input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1), body: z.string().trim().min(1).optional(), audience: commentAudience.optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    noPrivateForMembers(ctx, i.audience);
+    const c = await changeableComment(w, i.id, i.commentId);
+    const patch: Record<string, unknown> = {};
+    if (i.body !== undefined && i.body !== c.body) Object.assign(patch, { body: i.body, edited: true });
+    if (i.audience && i.audience !== c.audience) patch.audience = i.audience;
+    if (!Object.keys(patch).length) return { id: i.commentId };
+    return w.update(`shows/${i.id}/comments`, i.commentId, patch);
+  }),
 });
 export const showsRemoveComment = defineCommand({
-  name: "shows.removeComment", roles: ["admin", "member", "mcp"], description: "Delete your own comment on a show.",
+  name: "shows.removeComment", roles: ["admin", "member", "mcp"], description: "Delete a comment on a show. Your own comments; admins can delete anyone's.",
   input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => { await ownComment(w, i.id, i.commentId); return w.softDelete(`shows/${i.id}/comments`, i.commentId); }),
+  run: (ctx, i) => run(ctx, async (w) => { await changeableComment(w, i.id, i.commentId); return w.softDelete(`shows/${i.id}/comments`, i.commentId); }),
 });
 
 export const showsCalendarPreview = defineCommand({

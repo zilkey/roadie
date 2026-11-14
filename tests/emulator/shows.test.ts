@@ -134,16 +134,32 @@ test("status changes: setStatus keeps who, when and why; a blank reason clears i
   assert.ok(!registry["shows.setStatus"].roles.includes("member"));
 });
 
-test("comments: the whole band posts; only the author edits or deletes", async () => {
+test("comments: members post to the band; authors and admins edit or delete; edits are marked", async () => {
   const r = await create();
   const c = await cmd("shows.comment", { id: r.id, body: "Parking is behind the building" }, mctx);
-  const doc = (await db.get(`shows/${r.id}/comments`, c.id))!;
-  assert.equal(doc.audience, "band"); assert.equal(doc.authorId, "m-hugo");
+  let doc = (await db.get(`shows/${r.id}/comments`, c.id))!;
+  assert.equal(doc.audience, "band"); assert.equal(doc.authorId, "m-hugo"); assert.equal(doc.edited, undefined);
+  await assert.rejects(cmd("shows.comment", { id: r.id, body: "secret", audience: "admins" }, mctx), /Only admins/);
   await cmd("shows.editComment", { id: r.id, commentId: c.id, body: "Parking is behind the building, not on Terry" }, mctx);
-  assert.match((await db.get(`shows/${r.id}/comments`, c.id))!.body, /not on Terry/);
-  await assert.rejects(cmd("shows.editComment", { id: r.id, commentId: c.id, body: "x" }), /your own comments/);
-  await assert.rejects(cmd("shows.removeComment", { id: r.id, commentId: c.id }), /your own comments/);
-  await cmd("shows.removeComment", { id: r.id, commentId: c.id }, mctx);
+  doc = (await db.get(`shows/${r.id}/comments`, c.id))!;
+  assert.match(doc.body, /not on Terry/); assert.equal(doc.edited, true);
+  await assert.rejects(cmd("shows.editComment", { id: r.id, commentId: c.id, audience: "admins" }, mctx), /Only admins/);
+  // An admin edits someone else's comment, and can make it Private.
+  await cmd("shows.editComment", { id: r.id, commentId: c.id, body: "Park on Terry after 6", audience: "admins" });
+  doc = (await db.get(`shows/${r.id}/comments`, c.id))!;
+  assert.equal(doc.body, "Park on Terry after 6"); assert.equal(doc.audience, "admins"); assert.equal(doc.authorId, "m-hugo");
+  // A member can't touch an admin's comment.
+  const a = await cmd("shows.comment", { id: r.id, body: "Deal is 70/30" });
+  assert.equal((await db.get(`shows/${r.id}/comments`, a.id))!.audience, "admins");
+  await assert.rejects(cmd("shows.editComment", { id: r.id, commentId: a.id, body: "x" }, mctx), /your own comments/);
+  await assert.rejects(cmd("shows.removeComment", { id: r.id, commentId: a.id }, mctx), /your own comments/);
+  // Audience-only change doesn't mark it edited.
+  await cmd("shows.editComment", { id: r.id, commentId: a.id, audience: "band" });
+  doc = (await db.get(`shows/${r.id}/comments`, a.id))!;
+  assert.equal(doc.audience, "band"); assert.equal(doc.edited, undefined);
+  const b = await cmd("shows.comment", { id: r.id, body: "Everyone: load in at 5", audience: "band" });
+  assert.equal((await db.get(`shows/${r.id}/comments`, b.id))!.audience, "band");
+  await cmd("shows.removeComment", { id: r.id, commentId: c.id });
   assert.ok((await db.get(`shows/${r.id}/comments`, c.id))!.deletedAt);
 });
 

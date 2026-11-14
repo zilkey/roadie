@@ -23,25 +23,26 @@ export function Comments({ show, admin }: { show: ShowRow; admin: boolean }) {
 
   const post = useCommand();
   const [draft, setDraft] = useState("");
+  const [audience, setAudience] = useState<Audience>("admins");
   const [editing, setEditing] = useState<string | null>(null);
 
   async function send() {
     const body = draft.trim();
     if (!body) return;
-    if (await post.call("shows.comment", { id: show.id, body })) setDraft("");
+    if (await post.call("shows.comment", { id: show.id, body, ...(admin ? { audience } : {}) })) { setDraft(""); setAudience("admins"); }
   }
 
   return (
     <ShowCard title="Comments" testid="comments" aside={<span className="s" data-testid="comments-count">{comments.length}</span>}>
       {comments.map((c) => c.id === editing
-        ? <EditRow key={c.id} showId={show.id} c={c} name={nameOf(c.authorId)} onDone={() => setEditing(null)} />
+        ? <EditRow key={c.id} showId={show.id} c={c} name={nameOf(c.authorId)} admin={admin} onDone={() => setEditing(null)} />
         : (
           <div key={c.id} className="flex gap-3" data-testid="comment" data-id={c.id}>
             <span className="avatar" aria-hidden>{initials(nameOf(c.authorId))}</span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="s"><b>{nameOf(c.authorId)}</b> · {dayOf(c.createdAt)}{!c.audience && <> · <span data-testid="comment-from-pitch">From the pitch</span></>}</span>
+              <span className="s"><b>{nameOf(c.authorId)}</b> · {dayOf(c.createdAt)}{!c.audience && <> · <span data-testid="comment-from-pitch">From the pitch</span></>}{admin && c.audience !== "band" && <> · <span data-testid="comment-private">Private</span></>}{c.edited && <> · <span data-testid="comment-edited">edited</span></>}</span>
               <span className="whitespace-pre-line break-words" data-testid="comment-body">{c.body}</span>
-              {c.authorId === uid && <div><button type="button" className="card-edit" style={{ padding: 0 }} onClick={() => setEditing(c.id)} data-testid="comment-edit">Edit</button></div>}
+              {(c.authorId === uid || admin) && <div><button type="button" className="card-edit" style={{ padding: 0 }} onClick={() => setEditing(c.id)} data-testid="comment-edit">Edit</button></div>}
             </div>
           </div>
         ))}
@@ -49,7 +50,8 @@ export function Comments({ show, admin }: { show: ShowRow; admin: boolean }) {
         <label htmlFor={`comment-new-${show.id}`} className="sr-only">Add a comment</label>
         <AutoGrowTextarea id={`comment-new-${show.id}`} placeholder="Write a comment…" value={draft} onChange={setDraft} data-testid="comment-input" />
         <ErrorBox error={post.error} />
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {admin ? <AudienceSeg name={`comment-new-audience-${show.id}`} value={audience} onChange={setAudience} testid="comment-audience" /> : <span />}
           <button type="button" className="btn acc" disabled={!draft.trim() || post.busy} onClick={() => void send()} data-testid="comment-post">Post</button>
         </div>
       </div>
@@ -57,12 +59,27 @@ export function Comments({ show, admin }: { show: ShowRow; admin: boolean }) {
   );
 }
 
-function EditRow({ showId, c, name, onDone }: { showId: string; c: { id: string; body: string; createdAt?: unknown }; name: string; onDone(): void }) {
+type Audience = "admins" | "band";
+
+/** Who reads an admin's comment: Private (admins only, the default) or the whole band. */
+function AudienceSeg({ name, value, onChange, testid }: { name: string; value: Audience; onChange(a: Audience): void; testid: string }) {
+  return (
+    <div className="seg" role="radiogroup" aria-label="Who can see it" data-testid={testid}>
+      <label><input type="radio" name={name} checked={value === "admins"} onChange={() => onChange("admins")} data-testid={`${testid}-private`} />Private</label>
+      <label><input type="radio" name={name} checked={value === "band"} onChange={() => onChange("band")} data-testid={`${testid}-band`} />All band members</label>
+    </div>
+  );
+}
+
+function EditRow({ showId, c, name, admin, onDone }: { showId: string; c: Comment & { id: string }; name: string; admin: boolean; onDone(): void }) {
   const cmd = useCommand();
   const [body, setBody] = useState(c.body);
+  // Carried over from the pitch (no audience) reads as Private.
+  const [audience, setAudience] = useState<Audience>(c.audience === "band" ? "band" : "admins");
   async function save() {
     if (!body.trim()) return;
-    if (await cmd.call("shows.editComment", { id: showId, commentId: c.id, body: body.trim() })) onDone();
+    const audienceChanged = admin && audience !== (c.audience === "band" ? "band" : "admins");
+    if (await cmd.call("shows.editComment", { id: showId, commentId: c.id, body: body.trim(), ...(audienceChanged ? { audience } : {}) })) onDone();
   }
   async function remove() {
     if (!window.confirm("Delete this comment?")) return;
@@ -75,6 +92,7 @@ function EditRow({ showId, c, name, onDone }: { showId: string; c: { id: string;
         <span className="s"><b>{name}</b> · {dayOf(c.createdAt)} · editing</span>
         <label htmlFor={`comment-edit-${c.id}`} className="sr-only">Edit comment</label>
         <AutoGrowTextarea id={`comment-edit-${c.id}`} value={body} onChange={setBody} data-testid="comment-edit-input" />
+        {admin && <AudienceSeg name={`comment-edit-audience-${c.id}`} value={audience} onChange={setAudience} testid="comment-edit-audience" />}
         <ErrorBox error={cmd.error} />
         <div className="flex items-center justify-between gap-2">
           <button type="button" className="link" style={{ color: "var(--danger)", minHeight: 44 }} disabled={cmd.busy} onClick={() => void remove()} data-testid="comment-delete">Delete</button>

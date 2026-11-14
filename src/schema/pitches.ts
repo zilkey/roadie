@@ -28,9 +28,10 @@ export type Pitch = z.infer<typeof Pitch>;
 
 /**
  * pitches/{id}/comments/{id}. Also shows/{id}/comments/{id}: the pitch's comments copied over when it is booked (same author, same time),
- * and the band's own comments on the show (audience "band", written by shows.comment). Missing audience = admins only.
+ * and comments written on the show by shows.comment: audience "band" (the whole band reads it) or "admins" (Private: admins only, an admin's
+ * default). Missing audience = carried over from the pitch, admins only. edited: the body was changed after posting (shows.editComment).
  */
-export const Comment = entity({ authorId: id, body: z.string().min(1), audience: z.literal("band").optional() });
+export const Comment = entity({ authorId: id, body: z.string().min(1), audience: z.enum(["band", "admins"]).optional(), edited: z.boolean().optional() });
 export const CommentInput = Comment.omit(serverMask);
 export type Comment = z.infer<typeof Comment>;
 
