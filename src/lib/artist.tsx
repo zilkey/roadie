@@ -11,8 +11,13 @@ export interface CurrentArtist {
   artistId: string;
   slug: string;
   name: string;
-  /** Your role in this artist. */
+  /** Your role in this artist, as the screens should treat it: "member" while an admin previews as a band member. */
   role: "admin" | "member";
+  /** Your actual role, whatever the preview. */
+  realRole: "admin" | "member";
+  /** An admin is looking at the app as a band member sees it (screens only; the server still knows you as an admin). */
+  previewAsMember: boolean;
+  setPreviewAsMember(on: boolean): void;
   /** The live artists/{id} document (null while loading). */
   doc: Row<Artist> | null;
 }

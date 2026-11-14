@@ -38,13 +38,29 @@ export function ArtistGate({ slug, children }: { slug: string; children: React.R
     setCommandArtist(id);
     return () => setCommandArtist(null, id);
   }, [access?.artistId]);
+  // "Preview as band member": an admin sees every screen as a member would until Exit (or leaving the band). Not remembered across reloads.
+  const [previewSlug, setPreviewSlug] = useState<string | null>(null);
+  const preview = previewSlug === slug && access?.role === "admin";
   const value = useMemo<CurrentArtist | null>(() => access
-    ? { artistId: access.artistId, slug: access.slug, name: (live.doc?.name as string | undefined) ?? access.name, role: access.role, doc: live.doc }
-    : null, [access, live.doc]);
+    ? {
+      artistId: access.artistId, slug: access.slug, name: (live.doc?.name as string | undefined) ?? access.name, role: preview ? "member" : access.role, doc: live.doc,
+      realRole: access.role, previewAsMember: preview, setPreviewAsMember: (on: boolean) => setPreviewSlug(on ? slug : null),
+    }
+    : null, [access, live.doc, preview, slug]);
 
   if (state.status !== "ready") return null;
   if (!value) return rechecked === slug ? <NotAMember slug={slug} /> : null;
-  return <ArtistContext.Provider value={value}><Shell>{children}</Shell></ArtistContext.Provider>;
+  return (
+    <ArtistContext.Provider value={value}>
+      {preview && (
+        <div className="preview-banner" role="status" data-testid="preview-banner">
+          <span>Previewing as a band member: this is what they see.</span>
+          <button type="button" className="btn sm" onClick={() => value.setPreviewAsMember(false)} data-testid="preview-exit">Exit preview</button>
+        </div>
+      )}
+      <Shell>{children}</Shell>
+    </ArtistContext.Provider>
+  );
 }
 
 function NotAMember({ slug }: { slug: string }) {

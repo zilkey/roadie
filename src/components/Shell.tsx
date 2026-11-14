@@ -42,7 +42,7 @@ const MENU_HEAD = "px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
 
 /** A button that opens a `.menu-list` under it. Any click inside the list closes it; so do Escape and a click outside. */
-function Dropdown({ label, testid, trigger, className, listTestid, left, children }: {
+export function Dropdown({ label, testid, trigger, className, listTestid, left, children }: {
   label: string; testid: string; trigger: React.ReactNode; className: string; listTestid?: string; left?: boolean; children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);

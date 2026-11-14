@@ -12,6 +12,7 @@ import { CalendarSend } from "@/components/CalendarSend";
 import type { Contact, Edition, Venue } from "@/schema";
 import type { ShowRow } from "../common";
 import { UnfinishedPlaceholder } from "./kit";
+import { DayPreview, dayMinute } from "./DayPreview";
 import { DayOfContact } from "./DayOfContact";
 import { ShowTourRow, useShowTour } from "./ShowTourRow";
 
@@ -132,14 +133,32 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
     : <span className="text-[1.0625rem] font-bold" data-testid="where-venue">{show.editionId && kindOf(show) !== "house" ? "Venue TBD" : showName(show)}</span>;
 
   const arrives = tourInfo.arrival && <span className="s d-muted" data-testid="where-arrival"> · arriving {fmtTime(tourInfo.arrival)} from the tour&apos;s drive</span>;
-  const cell = (k: TimeKey, label: string) => (
-    <div key={k} className="grid min-w-0 content-start gap-0.5"><span className="lbl">{label}</span>
-      <InlineValue testid={`where-${k}`} label={label} kind="time" value={t[k] ?? ""} canEdit={admin} autoStart={addingTimes && k === "loadIn" && nothing}
-        display={<b>{k === "set" ? setText : fmtTime(t[k] ?? "")}</b>} emptyLabel="Add…" className="self-start"
-        onSave={(v) => saveTimes({ [k]: v })} error={cmdError} />
-      {k === "loadIn" && t.loadIn && arrives}
+  const row = (k: TimeKey, label: string) => (
+    <div key={k} className="contents" data-testid={`where-row-${k}`}>
+      <span className="lbl self-center">{label}</span>
+      <div className="flex min-w-0 flex-wrap items-center">
+        <InlineValue testid={`where-${k}`} label={label} kind="time" value={t[k] ?? ""} canEdit={admin} autoStart={addingTimes && k === "loadIn" && nothing}
+          display={<b>{k === "set" ? setText : fmtTime(t[k] ?? "")}</b>} emptyLabel="Add…" className="justify-self-start"
+          onSave={(v) => saveTimes({ [k]: v })} error={cmdError} />
+        {k === "loadIn" && t.loadIn && arrives}
+      </div>
     </div>
   );
+  const lengthRow = (
+    <div key="length" className="contents" data-testid="where-row-length">
+      <span className="lbl self-center">Set length</span>
+      <div className="flex min-w-0 items-center">
+        <InlineValue testid="where-length" label="Set length" kind="text" value={len ? fmtDuration(len) : ""} canEdit={admin} placeholder="2h, 2:30, 90m"
+          display={<b>{len ? fmtDuration(len) : ""}</b>} className="justify-self-start"
+          validate={(v) => (v && parseDuration(v) === null ? "Couldn't read that. Try 2h, 2:30 or 90m." : null)}
+          onSave={(v) => saveTimes({ setLengthSec: v ? parseDuration(v) : null })} error={cmdError} />
+      </div>
+    </div>
+  );
+  // In the order they happen: the times that are set by clock time, then the empty ones in their usual order. Set length follows the set.
+  const shown = TIMES.filter(([k]) => k !== "showStart" || t.showStart);
+  const ordered = [...shown.filter(([k]) => t[k]).sort((a, b) => dayMinute(t[a[0]]!) - dayMinute(t[b[0]]!)), ...shown.filter(([k]) => !t[k])];
+  const rows = ordered.flatMap(([k, label]) => (k === "set" ? [row(k, label), lengthRow] : [row(k, label)]));
 
   const f = form;
   return (
@@ -150,12 +169,7 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
           : admin && <PencilButton label="Change venue or date" onClick={start} testid="where-when-edit" />}
       </div>
       <div className="grid gap-4">
-        {!editing ? (
-          <div className="grid gap-1">
-            {nameEl}
-            {mapLabel && <a href={mapsUrl(mapQ)} target="_blank" rel="noopener noreferrer" data-testid="where-maps">{mapLabel} · Open in Google Maps ↗</a>}
-          </div>
-        ) : (
+        {editing && (
           <>
             <div className="grid gap-3.5 sm:grid-cols-2">
               <label className="grid gap-1"><L>Where</L>
@@ -190,34 +204,38 @@ export function WhereWhenCard({ show, admin }: { show: ShowRow; admin: boolean }
             <hr style={{ border: 0, borderTop: "1px solid var(--border)", margin: 0 }} />
           </>
         )}
-        {nothing && !addingTimes ? (
-          <UnfinishedPlaceholder testid="where-no-times" lead="No times yet."
-            actions={admin ? <button type="button" className="btn ghost sm" onClick={() => setAddingTimes(true)} data-testid="where-add-times">Add times</button> : undefined}>
-            Add load-in, soundcheck, doors and set time so everyone knows when to show up.
-          </UnfinishedPlaceholder>
-        ) : (
-          <div className="grid gap-2">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="where-times">
-              {cell("loadIn", "Load in")}{cell("soundcheck", "Soundcheck")}{cell("doors", "Doors")}
-              {t.showStart ? cell("showStart", "Show starts") : null}
-              {cell("set", "Set starts")}
-              <div className="grid min-w-0 content-start gap-0.5"><span className="lbl">Set length</span>
-                <InlineValue testid="where-length" label="Set length" kind="text" value={len ? fmtDuration(len) : ""} canEdit={admin} placeholder="2h, 2:30, 90m"
-                  display={<b>{len ? fmtDuration(len) : ""}</b>} className="self-start"
-                  validate={(v) => (v && parseDuration(v) === null ? "Couldn't read that. Try 2h, 2:30 or 90m." : null)}
-                  onSave={(v) => saveTimes({ setLengthSec: v ? parseDuration(v) : null })} error={cmdError} />
+        <div className={`grid gap-5${nothing ? "" : " md:grid-cols-2"}`}>
+          <div className="grid min-w-0 content-start gap-4">
+            {!editing && (
+              <div className="grid justify-items-start gap-1">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  {nameEl}
+                  <a href={mapsUrl(mapQ)} target="_blank" rel="noopener noreferrer" className="text-[0.9375rem]" data-testid="where-maps">Directions ↗</a>
+                </div>
+                {mapLabel && <span className="s" data-testid="where-address-line">{mapLabel}</span>}
               </div>
-            </div>
-            {addingTimes && admin && <span className="s" data-testid="where-times-hint">Tab moves to the next time. Each one saves as you leave it.</span>}
+            )}
+            {nothing && !addingTimes ? (
+              <UnfinishedPlaceholder testid="where-no-times" lead="No times yet."
+                actions={admin ? <button type="button" className="btn ghost sm" onClick={() => setAddingTimes(true)} data-testid="where-add-times">Add times</button> : undefined}>
+                Add load-in, soundcheck, doors and set time so everyone knows when to show up.
+              </UnfinishedPlaceholder>
+            ) : (
+              <div className="grid content-start gap-2">
+                <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5" data-testid="where-times">{rows}</div>
+                {addingTimes && admin && <span className="s" data-testid="where-times-hint">Tab moves to the next time. Each one saves as you leave it.</span>}
+              </div>
+            )}
+            {!editing && <ShowTourRow show={show} admin={admin} info={tourInfo} onPick={pickTour} />}
+            <DayOfContact show={show} admin={admin} />
+            {!editing && (
+              <div className="s flex flex-wrap items-center gap-x-5 gap-y-1" data-testid="where-foot">
+                <CalendarSend kind="shows" id={show.id} eventId={show.calendarEventId} admin={admin} off={isOff(show)} testid="where-calendar" />
+              </div>
+            )}
           </div>
-        )}
-        {!editing && <ShowTourRow show={show} admin={admin} info={tourInfo} onPick={pickTour} />}
-        <DayOfContact show={show} admin={admin} />
-        {!editing && (
-          <div className="s flex flex-wrap items-center gap-x-5 gap-y-1" data-testid="where-foot">
-            <CalendarSend kind="shows" id={show.id} eventId={show.calendarEventId} admin={admin} off={isOff(show)} testid="where-calendar" />
-          </div>
-        )}
+          {!nothing && <DayPreview times={t} />}
+        </div>
       </div>
     </section>
   );

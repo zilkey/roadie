@@ -22,10 +22,14 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await newShow(page, "2027-05-07");
   const card = page.getByTestId("where-when");
 
-  // Empty: venue link, maps link, placeholders, footer
+  // Empty: venue link with Directions beside it (both just their text), the address under, placeholders, footer
   await expect(card.getByTestId("where-venue")).toHaveText("Deep End");
   await expect(card.getByTestId("where-maps")).toHaveAttribute("href", /google\.com\/maps\/search\/\?api=1&query=/);
-  await expect(card.getByTestId("where-maps")).toContainText("Open in Google Maps");
+  await expect(card.getByTestId("where-maps")).toHaveText("Directions ↗");
+  const [venueBox, mapsBox, cardBox] = await Promise.all([card.getByTestId("where-venue").boundingBox(), card.getByTestId("where-maps").boundingBox(), card.boundingBox()]);
+  expect(mapsBox!.x).toBeGreaterThan(venueBox!.x + venueBox!.width); // beside the venue, not under it
+  expect(mapsBox!.width).toBeLessThan(cardBox!.width / 3); // the link is its text, not the row
+  await expect(card.getByTestId("where-preview")).toHaveCount(0); // no times, no calendar
   await expect(card.getByTestId("where-no-times")).toContainText("No times yet.");
   await expect(card.getByTestId("where-no-contact")).toContainText("No day-of contact.");
   await expect(card.getByTestId("where-foot")).toContainText("Not on the band calendar");
@@ -62,6 +66,18 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await expect(card.getByTestId("where-length")).toHaveText("2h");
   await expect(card.getByTestId("where-set")).toContainText("6:30 pm – 8:30 pm");
   await expect(card.getByTestId("where-doors")).toHaveText("Add…"); // doors not set
+
+  // The times read top to bottom in the order they happen (empty ones last), labels left and values right
+  await expect(card.getByTestId("where-times").locator("[data-testid^=where-row-]")).toHaveCount(5);
+  expect(await card.getByTestId("where-times").locator("[data-testid^=where-row-]").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid"))))
+    .toEqual(["where-row-loadIn", "where-row-soundcheck", "where-row-set", "where-row-length", "where-row-doors"]);
+  // The calendar preview: one block per time, the set running its length
+  const preview = card.getByTestId("where-preview");
+  await expect(preview.getByTestId("where-preview-loadIn")).toContainText("Load in");
+  await expect(preview.getByTestId("where-preview-set")).toContainText("6:30 pm – 8:30 pm");
+  const [lb, sb] = await Promise.all([preview.getByTestId("where-preview-loadIn").boundingBox(), preview.getByTestId("where-preview-set").boundingBox()]);
+  expect(sb!.y).toBeGreaterThan(lb!.y);
+  expect(sb!.height).toBeGreaterThan(lb!.height * 2); // 2h set vs 45 min load-in
 
   // Day-of contact from the popover: "Someone else…" becomes a day-of contact of the venue
   await card.getByTestId("where-add-contact").click();
@@ -169,4 +185,32 @@ test("a member sees where and when as plain text", async ({ page }) => {
   await expect(card.getByTestId("where-when-edit")).toHaveCount(0);
   await expect(card.locator("button.val")).toHaveCount(0);
   await expect(card.getByTestId("where-dayof")).toBeVisible(); // the seeded show has one: text and a tel: link, no button
+});
+
+test("the show's ⋮ menu: preview as band member until Exit, and Archive show lives there too", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await newShow(page, "2027-06-04");
+  await expect(page.getByTestId("show-archive")).toHaveCount(0); // tucked in the menu
+  await page.getByTestId("show-menu").click();
+  await expect(page.getByTestId("show-menu-list")).toBeVisible();
+  await page.getByTestId("show-preview-member").click();
+
+  // The member view: banner, no pencils or menu, and it stays on across pages
+  await expect(page.getByTestId("preview-banner")).toContainText("Previewing as a band member");
+  await expect(page.getByTestId("show-menu")).toHaveCount(0);
+  await expect(page.getByTestId("where-when-edit")).toHaveCount(0);
+  await page.getByTestId("back").click();
+  await expect(page).toHaveURL(/\/shows$/);
+  await expect(page.getByTestId("preview-banner")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByTestId("show-page")).toBeVisible();
+  await expect(page.getByTestId("preview-banner")).toBeVisible();
+  await page.getByTestId("preview-exit").click();
+  await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+  await expect(page.getByTestId("where-when-edit")).toBeVisible();
+
+  page.once("dialog", (d) => void d.accept());
+  await page.getByTestId("show-menu").click();
+  await page.getByTestId("show-archive").click();
+  await expect(page).toHaveURL(/\/shows$/);
 });

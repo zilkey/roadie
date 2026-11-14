@@ -1,6 +1,7 @@
 "use client";
 import { BackLink } from "@/components/BackLink";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import { Dropdown } from "@/components/Shell";
 import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { ErrorBox, useCommand } from "@/components/ui";
@@ -44,7 +45,8 @@ function Page() {
 /**
  * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Promotion / Finances. The checklists are a 360px column on the right from lg up
  * (on every tab, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
- * Comments and Archive stay in the main column. There is no page-level Edit: values edit where they sit, and only real forms flip.
+ * Comments stay in the main column. Admins get a ⋮ menu top right: Preview as band member (Exit is in the banner it shows), Archive show. There is no page-level Edit:
+ * values edit where they sit, and only real forms flip.
  */
 function ShowView({ show }: { show: ShowRow }) {
   const p = useProfile();
@@ -54,6 +56,11 @@ function ShowView({ show }: { show: ShowRow }) {
   const tab: Tab = TABS.includes(sp.get("tab") as Tab) ? (sp.get("tab") as Tab) : "details";
   const setTab = (t: Tab) => router.replace(`/shows/${show.id}${t === "details" ? "" : `?tab=${t}`}`);
   const { call, error, busy } = useCommand();
+  const { setPreviewAsMember } = useArtist();
+  async function archive() {
+    if (!confirm(show.calendarEventId ? "Archive this show? Its event comes off the band calendar too." : "Archive this show?")) return;
+    if (await call("shows.remove", { id: show.id })) router.replace("/shows");
+  }
 
   return (
     <div className="show-page" data-testid="show-page" data-show-id={show.id}>
@@ -64,7 +71,17 @@ function ShowView({ show }: { show: ShowRow }) {
             <h1 className="page-title" data-testid="page-title">{show.editionName ? `${show.editionName} ${fmtLongYear(show.date)}` : `${showName(show)} · ${fmtLongYear(show.date)}`}</h1>
             <StatusPill show={show} admin={admin} />
           </div>
+          {admin && (
+            <Dropdown label="Show actions" testid="show-menu" listTestid="show-menu-list" className="ib" trigger={
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
+            }>
+              <button type="button" role="menuitem" className="menu-item" onClick={() => setPreviewAsMember(true)} data-testid="show-preview-member">Preview as band member</button>
+              <div className="menu-sep" role="separator" />
+              <button type="button" role="menuitem" className="menu-item danger" disabled={busy} onClick={() => void archive()} data-testid="show-archive">Archive show</button>
+            </Dropdown>
+          )}
         </div>
+        <ErrorBox error={error} />
       </header>
 
       <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["promotion", "Promotion"], ["finances", "Finances"]]} />
@@ -100,13 +117,6 @@ function ShowView({ show }: { show: ShowRow }) {
         <div className="show-main show-after">
           <ShowFansBanner showId={show.id} />
           <div className="mt-3"><Comments show={show} admin={admin} /></div>
-          {admin && (
-            <div className="grid gap-2">
-              <ErrorBox error={error} />
-              <button type="button" className="btn outline danger justify-self-start" disabled={busy} data-testid="show-archive"
-                onClick={async () => { if (confirm(show.calendarEventId ? "Archive this show? Its event comes off the band calendar too." : "Archive this show?") && (await call("shows.remove", { id: show.id }))) router.replace("/shows"); }}>Archive show</button>
-            </div>
-          )}
         </div>
       </div>
     </div>
