@@ -63,12 +63,14 @@ export function Dropdown({ label, testid, trigger, className, listTestid, left, 
 }
 
 /**
- * The avatar menu's rows: your name, your profile, Customize menu, Integrations (admins), Sign out. On desktop, band
+ * The avatar menu's rows: your name, your profile, Customize menu, Integrations (admins), Preview as band member
+ * (admins; Exit preview while previewing), Sign out. On desktop, band
  * settings and the switcher live in the band menu; the phone bar has no band menu, so `phone` puts Switch band and
  * Artist settings (admins) here instead.
  */
 function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onEdit }: { name: string; role: string; signOut(): void; signoutTestid: string; switchTo?: string; phone?: boolean; onEdit(): void }) {
   const on = useOn();
+  const { realRole, previewAsMember, setPreviewAsMember } = useArtist();
   return (
     <>
       <div className="px-3 py-2" data-testid="whoami"><div className="text-sm font-bold">{name}</div><div className="s">{role}</div></div>
@@ -78,6 +80,11 @@ function AccountItems({ name, role, signOut, signoutTestid, switchTo, phone, onE
       <Link href="/me" role="menuitem" data-testid="side-me" aria-current={on("/me") ? "page" : undefined} className={`menu-item${on("/me") ? " text-accent" : ""}`}>Your profile</Link>
       <button type="button" role="menuitem" className="menu-item" data-testid="account-edit-menu" onClick={onEdit}>Customize menu</button>
       {role === "admin" && <Link href="/admin/mcp" role="menuitem" data-testid="side-admin-mcp" aria-current={on("/admin/mcp") ? "page" : undefined} className={`menu-item${on("/admin/mcp") ? " text-accent" : ""}`}>Integrations</Link>}
+      {realRole === "admin" && (
+        <button type="button" role="menuitem" className="menu-item" data-testid={phone ? "account-preview-member-mobile" : "account-preview-member"} onClick={() => setPreviewAsMember(!previewAsMember)}>
+          {previewAsMember ? "Exit preview" : "Preview as band member"}
+        </button>
+      )}
       <div className="menu-sep" role="separator" />
       <button type="button" role="menuitem" className="menu-item" data-testid={signoutTestid} onClick={signOut}>Sign out</button>
     </>

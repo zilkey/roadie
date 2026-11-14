@@ -216,6 +216,32 @@ test("the show's ⋮ menu: preview as band member until Exit, and Archive show l
   await expect(page).toHaveURL(/\/shows$/);
 });
 
+test("the account menu: Preview as band member on any page, Exit preview from the same menu", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/songs"));
+  await page.getByTestId("account-menu").click();
+  await expect(page.getByTestId("side-admin-mcp")).toBeVisible(); // an admin row
+  await page.getByTestId("account-preview-member").click();
+  await expect(page.getByTestId("preview-banner")).toContainText("Previewing as a band member");
+
+  // Member view: the admin-only rows are gone, but the menu still offers the way back
+  await page.getByTestId("account-menu").click();
+  await expect(page.getByTestId("side-admin-mcp")).toHaveCount(0);
+  await expect(page.getByTestId("account-preview-member")).toHaveText("Exit preview");
+  await page.getByTestId("account-preview-member").click();
+  await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+  await page.getByTestId("account-menu").click();
+  await expect(page.getByTestId("side-admin-mcp")).toBeVisible();
+  await expect(page.getByTestId("account-preview-member")).toHaveText("Preview as band member");
+});
+
+test("a band member's account menu has no Preview as band member", async ({ page }) => {
+  await signInAs(page, "hugo");
+  await page.getByTestId("account-menu").click();
+  await expect(page.getByTestId("signout")).toBeVisible();
+  await expect(page.getByTestId("account-preview-member")).toHaveCount(0);
+});
+
 test("a confirmed venue show gets an Add to Bandsintown to-do: Open Bandsintown, Mark as listed", async ({ page }) => {
   await signInAs(page, "rudy");
   await newShow(page, "2027-06-11");
