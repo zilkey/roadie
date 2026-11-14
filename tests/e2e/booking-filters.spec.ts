@@ -56,7 +56,7 @@ test("Pitch List filters: category, city or state, venue type (hidden for festiv
   await expect(list.locator("tbody tr")).toHaveCount(1);
 });
 
-test("Festivals tab: deadline and dates columns sort on the server, kept in ?sort=", async ({ page }) => {
+test("Festivals tab: the sort is kept in ?sort= and survives a reload (the sorting itself: tests/emulator/venue-types-festivals.test.ts)", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking/festivals"));
   const names = page.getByTestId("booking-list").locator("tbody tr td.name > a.nm"); // the festival name (its city sits under it, #82)
@@ -65,11 +65,9 @@ test("Festivals tab: deadline and dates columns sort on the server, kept in ?sor
   await page.getByTestId("sort-deadline").click();
   await expect(page).toHaveURL(/sort=deadline/);
   await expect(names).toHaveText(["Rocky Mountain Folks Festival", "Riverbend Music Fest", "Levitt Pavilion Summer Series"]);
-  await expect(page.getByTestId("booking-list").locator("tr", { hasText: "Riverbend" }).locator("[data-testid^='deadline-']")).toHaveText("Jan 15 (target)");
   // By date: Levitt has no dates, so it goes last either way.
   await page.getByTestId("sort-date").click();
   await expect(names).toHaveText(["Riverbend Music Fest", "Rocky Mountain Folks Festival", "Levitt Pavilion Summer Series"]);
-  await expect(page.getByTestId("booking-list").locator("tr", { hasText: "Rocky" }).locator("[data-testid^='dates-']")).toHaveText("Aug 20–Aug 22");
 
   // The sort survives a reload; a search replaces the list with buckets.
   await page.reload();

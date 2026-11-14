@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, mmmD } from "./dates";
 
 async function openShow(page: Page, venue: string, date: string) {
   await page.goto("/signin");
@@ -10,8 +11,40 @@ async function openShow(page: Page, venue: string, date: string) {
   await expect(page.getByTestId("sound")).toBeVisible();
 }
 
+/** Puts the hold back as the seed has it, so a retry after a half-done attempt starts clean. */
+async function reset(page: Page) {
+  await page.getByTestId("sound-venueProvided").click();
+  await expect(page.getByTestId("sound-venueProvided")).toBeChecked();
+  if (await page.getByTestId("sound-notes-view").isVisible()) {
+    await page.getByTestId("sound-notes-view").click();
+    await page.getByTestId("sound-notes").fill("");
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("sound-add-notes")).toBeVisible();
+  }
+  await page.getByTestId("show-tab-promotion").click();
+  if (await page.getByTestId("ticket-link").count()) {
+    await page.getByTestId("ticket-url").locator(".pen").click();
+    await page.getByTestId("ticket-url-input").fill("");
+    await page.getByTestId("ticket-url-input").press("Enter");
+    await expect(page.getByTestId("ticket-link")).toHaveCount(0);
+  }
+  while (await page.getByTestId("doc-remove").count()) {
+    const n = await page.getByTestId("doc-remove").count();
+    await page.getByTestId("doc-remove").first().click();
+    await expect(page.getByTestId("doc-remove")).toHaveCount(n - 1);
+  }
+  while (await page.getByTestId("poster-remove").count()) {
+    const n = await page.getByTestId("poster-remove").count();
+    page.once("dialog", (d) => d.accept());
+    await page.getByTestId("poster-remove").first().click();
+    await expect(page.getByTestId("poster-remove")).toHaveCount(n - 1);
+  }
+  await page.getByTestId("show-tab-details").click();
+}
+
 test("Sound and Promotion cards edit and save on a private hold", async ({ page }) => {
-  await openShow(page, "Pine Hollow Lounge", "Jan 16");
+  await openShow(page, "Pine Hollow Lounge", mmmD(SEED.hold));
+  await reset(page);
 
   // Sound: one card, no Edit. The toggle saves at once; notes save when you leave the box, and clicking them edits again.
   const sound = page.getByTestId("sound");
@@ -35,9 +68,9 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await expect(page.getByTestId("posters-none")).toHaveText("No posters yet.");
   await expect(page.getByTestId("show-folder-link")).toHaveCount(0);
   await page.getByTestId("poster-upload-input").setInputFiles({ name: "Pine Hollow poster.png", mimeType: "image/png", buffer: Buffer.from("not really a png") });
-  await expect(page.getByTestId("poster-upload-done")).toHaveText("Uploaded to 2027-01-16 Pine Hollow Lounge.");
+  await expect(page.getByTestId("poster-upload-done")).toHaveText(`Uploaded to ${SEED.hold} Pine Hollow Lounge.`);
   await expect(page.getByTestId("poster-title")).toHaveText("Pine Hollow poster.png");
-  await expect(page.getByTestId("show-folder-link")).toContainText("2027-01-16 Pine Hollow Lounge");
+  await expect(page.getByTestId("show-folder-link")).toContainText(`${SEED.hold} Pine Hollow Lounge`);
   await page.reload();
   await expect(page.getByTestId("poster-title")).toHaveText("Pine Hollow poster.png");
 

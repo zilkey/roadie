@@ -48,7 +48,7 @@ test("Connect: if Roadie doesn't answer, the page says so and Try again works (n
   await page.goto(`/oauth/authorize?${q}`);
   await page.getByTestId("connect-dev-rudy").click();
   await expect(page.getByTestId("connect-error")).toContainText("taking too long");
-  expect(logged).toContain("approve");
+  await expect.poll(() => logged).toContain("approve"); // the beacon goes out just before the message shows
   await page.unroute("**/oauth/approve");
   await page.getByTestId("connect-retry").click();
   await expect(page.getByTestId("connect-allow")).toBeEnabled();

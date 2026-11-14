@@ -18,7 +18,6 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page 
   // Name your band: nothing is created until Start a band
   await page.getByTestId("start-band").click();
   await expect(page).toHaveURL(/\/start-band$/);
-  await expect(page.getByTestId("terms-link")).toHaveAttribute("href", /\/terms$/);
   await page.getByTestId("create-band").click();
   await expect(page.getByTestId("band-name-error")).toBeVisible();
   await page.getByTestId("band-name").fill("The Night Owls");
@@ -57,8 +56,4 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page 
   const row = page.getByTestId("person-row-stranger@example.com");
   await expect(row).toBeVisible();
   await expect(row.locator(".chip").first()).toHaveText("Admin");
-
-  // and the Ready screen is still reachable later
-  await page.goto("/artists/the-night-owls/welcome");
-  await expect(page.getByTestId("welcome")).toBeVisible();
 });

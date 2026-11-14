@@ -1,5 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, day, fmtLongYear, mmmD } from "./dates";
+
+// Dates the shows made here sit on: far enough ahead to stay upcoming, apart from the seed and from each other.
+const D_FILL = day(200), D_PENCIL = day(214), D_PENCIL2 = day(215), D_MENU = day(228), D_BIT = day(242);
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -19,7 +23,7 @@ async function newShow(page: Page, date: string) {
 
 test("an admin fills in where and when from the empty card", async ({ page }) => {
   await signInAs(page, "rudy");
-  await newShow(page, "2027-05-07");
+  await newShow(page, D_FILL);
   const card = page.getByTestId("where-when");
 
   // Empty: venue link with Directions beside it (both just their text), the address under, placeholders, footer
@@ -96,7 +100,7 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   // The saved contact now heads the venue's day-of contacts; Cancel and Escape change nothing
   await card.getByTestId("where-dayof").click();
   await expect(menu).toContainText("Day-of contacts at Deep End");
-  await expect(menu.getByRole("radio", { name: /Taproom Tom/ })).toBeChecked();
+  await expect(menu.getByRole("radio", { name: /Taproom Tom/ }).first()).toBeChecked();
   await menu.getByTestId("dayof-opt-none").check();
   await expect(menu.getByTestId("dayof-save")).toHaveText("Clear contact");
   await menu.getByTestId("dayof-cancel").click();
@@ -117,7 +121,7 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   const dlg = page.getByTestId("where-calendar-dialog");
   await expect(dlg.getByTestId("cal-preview-calendar")).toHaveText("Nora Quill Band");
   await expect(dlg.getByTestId("cal-preview-title")).toContainText("at Deep End");
-  await expect(dlg.getByTestId("cal-preview-when")).toHaveText(/May 7, 2027 · 5:00 pm – /);
+  await expect(dlg.getByTestId("cal-preview-when")).toContainText(`${fmtLongYear(D_FILL)} · 5:00 pm – `);
   await expect(dlg.getByTestId("cal-preview-where")).toContainText("Deep End");
   await expect(dlg.getByTestId("cal-preview-invitees")).toHaveText("Nobody"); // no one is playing yet
   await expect(dlg.getByTestId("cal-preview-notes")).toContainText("Load in 5:00 pm");
@@ -139,7 +143,7 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
   await menu.getByTestId("dayof-save").click();
   await expect(card.getByTestId("where-no-contact")).toContainText("No day-of contact.");
   await card.getByTestId("where-add-contact").click();
-  await menu.getByRole("radio", { name: /Taproom Tom/ }).check();
+  await menu.getByRole("radio", { name: /Taproom Tom/ }).first().check();
   await expect(menu.getByTestId("dayof-save")).toHaveText("Use Taproom");
   await menu.getByTestId("dayof-save").click();
   await expect(card.getByTestId("where-dayof")).toContainText("Taproom Tom · (303) 555-0117");
@@ -147,7 +151,7 @@ test("an admin fills in where and when from the empty card", async ({ page }) =>
 
 test("the pencil changes the venue and date; it autosaves and Done closes it", async ({ page }) => {
   await signInAs(page, "rudy");
-  await newShow(page, "2027-05-21");
+  await newShow(page, D_PENCIL);
   const card = page.getByTestId("where-when");
 
   await card.getByTestId("where-when-edit").click();
@@ -164,7 +168,7 @@ test("the pencil changes the venue and date; it autosaves and Done closes it", a
 
   await card.getByTestId("where-venue-select").selectOption({ label: "Washington's · Fort Collins" });
   await expect(card.getByTestId("error")).toHaveCount(0);
-  await card.getByTestId("where-date").fill("2027-05-22");
+  await card.getByTestId("where-date").fill(D_PENCIL2);
   await expect(card.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await card.getByTestId("where-when-done").click();
   await expect(card).not.toHaveAttribute("data-editing", "1");
@@ -172,13 +176,13 @@ test("the pencil changes the venue and date; it autosaves and Done closes it", a
 
   await page.reload();
   await expect(card.getByTestId("where-venue")).toHaveText("Washington's");
-  await expect(page.getByTestId("page-title")).toContainText("May 22");
+  await expect(page.getByTestId("page-title")).toContainText(mmmD(D_PENCIL2));
 });
 
 test("a member sees where and when as plain text", async ({ page }) => {
   await signInAs(page, "hugo");
   await page.goto(A("/shows"));
-  const id = await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).first().getAttribute("data-id");
+  const id = await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: mmmD(SEED.deepEnd) }).first().getAttribute("data-id");
   await page.goto(A(`/shows/${id}`));
   const card = page.getByTestId("where-when");
   await expect(card.getByTestId("where-venue")).toBeVisible();
@@ -189,7 +193,7 @@ test("a member sees where and when as plain text", async ({ page }) => {
 
 test("preview as band member from a show until Exit, and Archive show lives in the show's ⋮ menu", async ({ page }) => {
   await signInAs(page, "rudy");
-  await newShow(page, "2027-06-04");
+  await newShow(page, D_MENU);
   await expect(page.getByTestId("show-archive")).toHaveCount(0); // tucked in the menu
   await page.getByTestId("show-menu").click();
   await expect(page.getByTestId("show-menu-list")).toBeVisible();
@@ -247,7 +251,7 @@ test("a band member's account menu has no Preview as band member", async ({ page
 
 test("a confirmed venue show gets an Add to Bandsintown to-do: Open Bandsintown, Mark as listed", async ({ page }) => {
   await signInAs(page, "rudy");
-  await newShow(page, "2027-06-11");
+  await newShow(page, D_BIT);
   // The to-do sits on the show's checklists (a new Promotion list here), with the link beside it
   await expect(page.locator(".show-side").getByText("Add to Bandsintown").first()).toBeVisible();
   await expect(page.locator(".show-side [data-testid^=checklist-bandsintown-]").first()).toHaveAttribute("href", /artists\.bandsintown\.com\/artists\/1234567\/events\/new/);

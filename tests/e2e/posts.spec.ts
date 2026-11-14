@@ -34,6 +34,23 @@ async function menuSwitch(page: Page, key: string) {
   return page.getByTestId(`menu-switch-${key}`);
 }
 
+/** Deletes drafts a failed earlier attempt of a test left behind (their photos go back to the inbox), so a retry starts clean. */
+async function clearDrafts(page: Page) {
+  for (;;) {
+    await page.goto(A("/posts"));
+    const drafts = page.getByTestId("posts-drafts");
+    await expect(drafts).toBeVisible();
+    const left = drafts.locator('li[data-testid^="post-"]');
+    if ((await left.count()) === 0) return;
+    await left.first().getByTestId("post-title").click();
+    await expect(page).toHaveURL(/\/posts\/(?!photos)[^/?]+$/);
+    page.once("dialog", (d) => void d.accept());
+    await page.getByTestId("editor-delete").click();
+    await expect(page).toHaveURL(/\/posts$/);
+  }
+}
+const denverDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
 test.afterAll(async ({ request }) => { await setNoraMenu(request, null); await scenario(request, { scenario: "one", kind: "system", revoked: false, failContainers: false }); });
 
 test("Posts starts in More for a new admin; switching it on sticks; members don't get it", async ({ page, request, browser }) => {
@@ -72,6 +89,16 @@ test("Posts starts in More for a new admin; switching it on sticks; members don'
 
 test("the Instagram & Facebook card: Working, Sign in again (here and on Posts)", async ({ page, request }) => {
   await signInAs(page, "rudy");
+  // A retry meets the connection the first attempt made: disconnect it first, so this starts from "not connected".
+  await page.goto(A("/admin/mcp"));
+  const card0 = page.getByTestId("meta-card");
+  await expect(card0.getByTestId("meta-none").or(card0.getByTestId("meta-connected"))).toBeVisible();
+  if (await card0.getByTestId("meta-connected").isVisible()) {
+    page.once("dialog", (d) => void d.accept());
+    await card0.getByTestId("meta-disconnect").click();
+    await expect(card0.getByTestId("meta-none")).toBeVisible();
+  }
+  await scenario(request, { scenario: "one", revoked: false });
   await page.goto(A("/posts"));
   await expect(page.getByTestId("posts-not-connected")).toContainText("Connect it in Settings › Integrations");
   await page.getByTestId("posts-not-connected").getByRole("link").click();
@@ -104,25 +131,31 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   await page.goto(A("/posts"));
   await page.getByTestId("posts-tab-photos").click();
   await expect(page).toHaveURL(/\/posts\/photos$/);
-  // No Socials folder yet: Photos says where to choose it.
-  await expect(page.getByTestId("error")).toContainText("Choose the Socials folder in Settings › Google first");
+  // No Socials folder yet: Photos says where to choose it. (A retry meets the folder and Set up the first attempt did: those
+  // "not yet" checks are skipped then, since the state they look at is gone.)
+  const err = page.getByTestId("error");
+  const rail = page.getByTestId("photos-rail");
+  await expect(err.or(rail)).toBeVisible();
+  if (await err.isVisible()) {
+    await expect(err).toContainText("Choose the Socials folder in Settings › Google first");
 
-  await page.goto(A("/admin/google"));
-  const folder = page.getByTestId("google-posts-folder");
-  await folder.getByTestId("posts-folder-change").click();
-  await folder.getByTestId("posts-folder-q").fill("Socials");
-  await folder.getByTestId("posts-folder-search").click();
-  await folder.getByTestId("posts-folder-hit-Socials").getByTestId("posts-folder-choose").click();
-  await expect(folder.getByTestId("posts-folder-note")).toContainText("Socials folder saved");
+    await page.goto(A("/admin/google"));
+    const folder = page.getByTestId("google-posts-folder");
+    await folder.getByTestId("posts-folder-change").click();
+    await folder.getByTestId("posts-folder-q").fill("Socials");
+    await folder.getByTestId("posts-folder-search").click();
+    await folder.getByTestId("posts-folder-hit-Socials").getByTestId("posts-folder-choose").click();
+    await expect(folder.getByTestId("posts-folder-note")).toContainText("Socials folder saved");
+    await page.goto(A("/posts/photos"));
+  }
 
   // Chosen but not set up: the photos show, Upload is off.
-  await page.goto(A("/posts/photos"));
-  await expect(page.getByTestId("photos-upload-input")).toBeDisabled();
-  await expect(page.getByTestId("photos-upload-needs-folder")).toHaveText("Set up the Socials folder in Settings › Google");
-  const rail = page.getByTestId("photos-rail");
+  await expect(rail).toBeVisible();
+  await expect(page.getByTestId("photos-upload-needs-folder").or(page.locator('[data-testid="photos-upload-input"]:enabled'))).toBeAttached(); // status loaded
+  const notSetUp = await page.getByTestId("photos-upload-input").isDisabled();
+  if (notSetUp) await expect(page.getByTestId("photos-upload-needs-folder")).toHaveText("Set up the Socials folder in Settings › Google");
   await expect(rail.getByTestId("photos-folder-fake-folder-socials-phone")).toContainText("Jeff's phone spring 26");
-  await expect(rail.getByTestId("photos-folder-fake-folder-socials-phone")).toContainText("6");
-  // IMG_2210 was taken at 01:30 on Oct 11: it's on Oct 10, labelled with that night's show.
+  await expect(rail.getByTestId("photos-folder-fake-folder-socials-phone").locator("span.s")).toHaveText("6");
   const oct10 = page.getByTestId("photo-day-2026-10-10");
   await expect(oct10.getByTestId("photo-day-label-2026-10-10")).toContainText("Creamery Arts Center");
   await expect(oct10.getByTestId("photo-fake-social-late")).toBeVisible();
@@ -136,8 +169,10 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   await oct10.getByTestId("photo-day-all-2026-10-10").click();
   await expect(page.getByTestId("photos-picked")).toHaveText(`${2 + (await oct10.locator("li").count()) - 1} picked`);
   // Not set up yet: Make the draft is off, and says why.
-  await expect(page.getByTestId("photos-add")).toBeDisabled();
-  await expect(page.getByTestId("photos-not-set-up")).toHaveText("Set up the Socials folder in Settings › Google");
+  if (notSetUp) {
+    await expect(page.getByTestId("photos-add")).toBeDisabled();
+    await expect(page.getByTestId("photos-not-set-up")).toHaveText("Set up the Socials folder in Settings › Google");
+  }
   await page.getByTestId("photos-clear").click();
   await expect(page.getByTestId("photos-bar")).toHaveCount(0);
 
@@ -146,16 +181,20 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   await expect(page.getByTestId("photo-grid").locator("li")).toHaveCount(1);
   await rail.getByTestId("photos-folder-all").click();
 
-  await page.goto(A("/admin/google"));
-  await folder.getByTestId("socials-setup-button").click();
-  await expect(folder.getByTestId("socials-posts-row")).toHaveText("Working");
+  if (notSetUp) {
+    await page.goto(A("/admin/google"));
+    const folder = page.getByTestId("google-posts-folder");
+    await folder.getByTestId("socials-setup-button").click();
+    await expect(folder.getByTestId("socials-posts-row")).toHaveText("Working");
+  }
   await page.goto(A("/posts/photos"));
   await expect(page.getByTestId("photos-upload-input")).toBeEnabled();
+  const crowd = `Deep End crowd ${Date.now().toString(36)}.jpg`; // stamped: a retry uploads a new one
   await page.getByTestId("photos-upload-input").setInputFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
   await expect(page.locator(".err")).toContainText("Roadie takes JPEG, HEIC, PNG and WebP photos");
-  await page.getByTestId("photos-upload-input").setInputFiles({ name: "Deep End crowd.jpg", mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
+  await page.getByTestId("photos-upload-input").setInputFiles({ name: crowd, mimeType: "image/jpeg", buffer: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
   await expect(page.getByTestId("photos-upload-done")).toContainText("Uploaded to Socials");
-  await expect(page.getByTestId("photo-grid").locator('[title="Deep End crowd.jpg"]')).toBeVisible();
+  await expect(page.getByTestId("photo-grid").locator(`[title="${crowd}"]`)).toBeVisible();
 
   // The Posts tab has no drafts yet.
   await page.getByTestId("photos-rail-posts").click();
@@ -165,6 +204,7 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
 test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the caption and alt text autosave; Delete draft puts them back", async ({ page, request }) => {
   // Socials was chosen and set up by the Photos test above.
   await signInAs(page, "rudy");
+  await clearDrafts(page);
   await page.goto(A("/posts/photos"));
   const picks = ["fake-social-loose-2", "fake-social-late", "fake-social-rotated", "fake-social-heic-1", "fake-social-loose-1"];
   for (const p of picks) await page.getByTestId(`photo-${p}`).click();
@@ -182,11 +222,12 @@ test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the captio
   const order = () => page.getByTestId("editor-photos").locator("li").evaluateAll((ls) => ls.map((l) => l.getAttribute("data-testid")!.replace("editor-photo-", "")));
   await expect.poll(order).toEqual(picks);
   // Drive has the folder holding them.
-  const folder = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("DRAFT - Hi-Dive announcement")}`)).json()) as { id: string; name: string }[])
-    .find((f) => f.name === "DRAFT - Hi-Dive announcement")!;
-  expect(folder).toBeTruthy();
-  const inFolder = await (await request.get(`${DRIVE}/files/list?parents=${folder.id}&kind=images`)).json();
-  expect(inFolder.files.map((f: { id: string }) => f.id).sort()).toEqual([...picks].sort());
+  // (A retry may find an emptied folder of the same name from the first attempt: look for the one holding the picks.)
+  const folders = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("DRAFT - Hi-Dive announcement")}`)).json()) as { id: string; name: string }[])
+    .filter((f) => f.name === "DRAFT - Hi-Dive announcement");
+  expect(folders.length).toBeGreaterThan(0);
+  const held = await Promise.all(folders.map(async (f) => ((await (await request.get(`${DRIVE}/files/list?parents=${f.id}&kind=images`)).json()) as { files: { id: string }[] }).files.map((x) => x.id).sort()));
+  expect(held).toContainEqual([...picks].sort());
 
   // Reorder with the buttons (a phone's way), then the caption and an alt text; all autosave.
   await page.getByTestId("editor-down-fake-social-loose-2").click();
@@ -220,7 +261,9 @@ test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the captio
 
 test("Post now: off while Instagram needs a sign-in; then the carousel goes out in the editor's order and Drive shows YYYY-MM-DD - <name>", async ({ page, request }) => {
   // Socials was set up and Instagram connected by the tests above.
+  await scenario(request, { revoked: false }); // a retry may meet the revoked token the first attempt set
   await signInAs(page, "rudy");
+  await clearDrafts(page);
   await page.goto(A("/posts/photos"));
   const picks = ["fake-social-loose-1", "fake-social-late", "fake-social-rotated", "fake-social-heic-1", "fake-social-loose-2"];
   for (const p of picks) await page.getByTestId(`photo-${p}`).click();
@@ -248,9 +291,14 @@ test("Post now: off while Instagram needs a sign-in; then the carousel goes out 
   await expect(post.getByTestId("post-account")).toContainText("A carousel of 5 photos goes to @noraquillband");
   await expect(post.getByTestId("post-no-alt")).toContainText("None of the photos have alt text.");
   await expect(post.getByTestId("post-drive-note")).toContainText("Posts/DRAFT - Thanks, Denver");
+  // The server names the folder with the day it publishes, a few seconds after the click: take the day on both sides of the wait,
+  // so a run across midnight in Denver passes either way.
+  const before = denverDay();
   await post.getByTestId("post-now").click();
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  await expect(post.getByTestId("post-done-folder")).toContainText(`Posts/${today} - Thanks, Denver`, { timeout: 30_000 });
+  await expect(post.getByTestId("post-done-folder")).toContainText(" - Thanks, Denver", { timeout: 30_000 });
+  const shown = (await post.getByTestId("post-done-folder").textContent()) ?? "";
+  const today = [before, denverDay()].find((d) => shown.includes(`Posts/${d} - Thanks, Denver`));
+  expect(today, `folder text: ${shown}`).toBeTruthy();
   await expect(post.getByTestId("post-done-permalink")).toHaveAttribute("href", /instagram\.com\/p\/FAKE/);
   await expect(page.getByTestId("celebration-title")).toHaveText("Posted!");
   await expect(page.getByTestId("celebration-text")).toHaveText("Thanks, Denver is on Instagram");
@@ -261,7 +309,7 @@ test("Post now: off while Instagram needs a sign-in; then the carousel goes out 
   expect(last.caption).toBe("Thank you, Denver!");
   expect(last.children!.map((c) => new URL(c.imageUrl).pathname)).toEqual([0, 1, 2, 3, 4].map((i) => `/api/posts/media/${id}/${i}`));
   const names = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("Thanks, Denver")}`)).json()) as { name: string }[]).map((f) => f.name);
-  expect(names).toContain(`${today} - Thanks, Denver`);
+  expect(names).toContain(`${today!} - Thanks, Denver`);
   expect(names).not.toContain("DRAFT - Thanks, Denver");
 
   // The editor is read-only now, and Posts lists it as posted.
@@ -287,6 +335,7 @@ test("A video alone posts as a Reel; a video too long for a carousel is flagged 
   const fullSet = await addVideo(request, "Full set.mp4", 90_000);
   const crowd = await addVideo(request, "Crowd.mp4", 10_000);
   await signInAs(page, "rudy");
+  await clearDrafts(page);
   await page.goto(A("/posts/photos"));
   await expect(page.getByTestId(`photo-video-${encore}`)).toHaveText("▶ 0:15");
 

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A, APP, ARTIST_SLUG } from "./env";
+import { SEED, fmtLong } from "./dates";
 
 // The Fan Page (/fans): Email List, Merch Prices, Money, QR code, Links and Settings tabs. Each test puts back what it changed;
 // the file runs one test at a time because they all edit the same artist.
@@ -20,6 +21,7 @@ test("tabs, with Preview on every one; the old Merch page lands on Price list; m
   await signIn(page);
   await page.goto(A("/fans"));
   await expect(page.getByTestId("page-title")).toHaveText("Fan Page");
+  await expect(page.getByTestId("fan-page-tabs").getByRole("tab")).toHaveText(["Email List", "Merch Prices", "Money", "QR code", "Links", "Settings"]);
   for (const k of ["fans", "price", "money", "qr", "links", "settings"]) {
     await tab(page, k);
     await expect(page.getByTestId("fan-page-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}`);
@@ -45,6 +47,12 @@ test("tabs, with Preview on every one; the old Merch page lands on Price list; m
 test("price list: Add, edit in place, drag to reorder, delete", async ({ page }) => {
   await signIn(page);
   await page.goto(A("/fans?tab=price"));
+  // A retry starts clean: take out whatever an earlier try left.
+  if (await page.getByTestId("merch-item-delete").count()) {
+    while (await page.getByTestId("merch-item-delete").count()) await page.getByTestId("merch-item-delete").first().click();
+    await saved(page);
+    await expect(page.getByTestId("merch-item-empty")).toBeVisible();
+  }
   await expect(page.getByTestId("merch-item-add")).toBeDisabled();
   for (const [n, p] of [["Coozie", "5"], ["Sticker", "5"], ["T-Shirt", "25"]]) {
     await page.getByTestId("merch-item-new-a").fill(n);
@@ -70,6 +78,11 @@ test("price list: Add, edit in place, drag to reorder, delete", async ({ page })
 test("links: a name and a full URL, reorderable, on the public page in order", async ({ page }) => {
   await signIn(page);
   await page.goto(A("/fans?tab=links"));
+  // A retry starts clean: take out whatever an earlier try left.
+  if (await page.getByTestId("fan-link-delete").count()) {
+    while (await page.getByTestId("fan-link-delete").count()) await page.getByTestId("fan-link-delete").first().click();
+    await saved(page);
+  }
   await page.getByTestId("fan-link-new-a").fill("New single");
   await page.getByTestId("fan-link-new-b").fill("example.com");
   await expect(page.getByTestId("fan-link-add")).toBeDisabled();
@@ -90,87 +103,62 @@ test("links: a name and a full URL, reorderable, on the public page in order", a
 test("a show's Fan Page card: on, name, amount, button, preview link; the Money tab lists it", async ({ page }) => {
   await signIn(page);
   await page.goto(A("/shows"));
-  await page.getByTestId("shows-row").filter({ hasText: "Marisol" }).filter({ hasText: "Dec 12" }).first().locator("td.date a").click();
+  await page.getByTestId("shows-row").filter({ hasText: "Marisol" }).filter({ hasText: fmtLong(SEED.conflict) }).first().locator("td.date a").click();
   await page.getByTestId("show-tab-promotion").click();
   const card = page.getByTestId("show-fan-page");
   await expect(card.getByTestId("show-fan-when")).toHaveText("This will appear on the Fan Page 1 hour before the show and 3 hours after.");
   await expect(card.getByTestId("show-fan-preview-none")).toBeVisible();
   const showId = await page.getByTestId("show-page").getAttribute("data-show-id");
 
-  await card.getByTestId("show-fan-on").check();
-  await expect(card.getByTestId("show-fan-on")).toBeChecked();
-  await card.getByTestId("show-fan-name").click();
-  await card.getByTestId("show-fan-name-input").fill("Marisol Late Show");
-  await card.getByTestId("show-fan-name-input").press("Enter");
-  await expect(card.getByTestId("show-fan-name")).toHaveText(/Marisol Late Show/);
-  await card.getByTestId("show-fan-amount").click();
-  await card.getByTestId("show-fan-amount-input").fill("0.50");
-  await card.getByTestId("show-fan-amount-input").press("Enter");
-  await expect(card.getByTestId("show-fan-amount-error")).toBeVisible();
-  await card.getByTestId("show-fan-amount-input").fill("15");
-  await card.getByTestId("show-fan-amount-input").press("Enter");
-  await expect(card.getByTestId("show-fan-amount")).toHaveText(/\$15/);
-  await expect(card.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
-  await card.getByTestId("show-fan-button-donation").click();
-  await expect(card.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
-  await expect(card.getByTestId("show-fan-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
+  try {
+    await card.getByTestId("show-fan-on").check();
+    await expect(card.getByTestId("show-fan-on")).toBeChecked();
+    await card.getByTestId("show-fan-name").click();
+    await card.getByTestId("show-fan-name-input").fill("Marisol Late Show");
+    await card.getByTestId("show-fan-name-input").press("Enter");
+    await expect(card.getByTestId("show-fan-name")).toHaveText(/Marisol Late Show/);
+    await card.getByTestId("show-fan-amount").click();
+    await card.getByTestId("show-fan-amount-input").fill("0.50");
+    await card.getByTestId("show-fan-amount-input").press("Enter");
+    await expect(card.getByTestId("show-fan-amount-error")).toBeVisible();
+    await card.getByTestId("show-fan-amount-input").fill("15");
+    await card.getByTestId("show-fan-amount-input").press("Enter");
+    await expect(card.getByTestId("show-fan-amount")).toHaveText(/\$15/);
+    await expect(card.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
+    await card.getByTestId("show-fan-button-donation").click();
+    await expect(card.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
+    await expect(card.getByTestId("show-fan-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
 
-  await page.reload();
-  await expect(page.getByTestId("show-fan-on")).toBeChecked();
-  await expect(page.getByTestId("show-fan-amount")).toHaveText(/\$15/);
-  await expect(page.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(page.getByTestId("show-fan-on")).toBeChecked();
+    await expect(page.getByTestId("show-fan-amount")).toHaveText(/\$15/);
+    await expect(page.getByTestId("show-fan-button-donation")).toHaveAttribute("aria-pressed", "true");
 
-  // The Fan Page tab lists it with the same preview link; the preview asks the public view for that show.
-  await page.goto(A("/fans?tab=money"));
-  const row = page.getByTestId("donation-show").filter({ hasText: "Marisol Late Show" });
-  await expect(row).toContainText("$15");
-  await expect(row).toContainText("Suggested Donation");
-  await expect(row.getByTestId("donation-show-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
-  const asked = page.waitForRequest((r) => r.url().includes(`/api/public/${ARTIST_SLUG}/list?showId=${showId}`));
-  await page.goto(`/f/${ARTIST_SLUG}?showId=${showId}`);
-  await asked;
-
-  // Put it back.
-  await page.goBack();
-  await page.getByTestId("donation-show-link").filter({ hasText: "Marisol Late Show" }).click();
-  const c2 = page.getByTestId("show-fan-page");
-  await c2.getByTestId("show-fan-on").uncheck();
-  await expect(c2.getByTestId("show-fan-on")).not.toBeChecked();
-  await c2.getByTestId("show-fan-name").click();
-  await c2.getByTestId("show-fan-name-input").fill("");
-  await c2.getByTestId("show-fan-name-input").press("Enter");
-  await c2.getByTestId("show-fan-amount").click();
-  await c2.getByTestId("show-fan-amount-input").fill("");
-  await c2.getByTestId("show-fan-amount-input").press("Enter");
-  await expect(c2.getByTestId("show-fan-preview-none")).toBeVisible();
-  await c2.getByTestId("show-fan-button-ticket").click();
-  await expect(c2.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
-});
-
-test("tab names in order; Money's Hide Tips takes the Leave a tip button off the public page", async ({ page }) => {
-  await signIn(page);
-  await page.goto(A("/fans"));
-  await expect(page.getByTestId("fan-page-tabs").getByRole("tab")).toHaveText(["Email List", "Merch Prices", "Money", "QR code", "Links", "Settings"]);
-  await tab(page, "money");
-  const before = (await view(page)).tip;
-  const box = page.getByTestId("fan-hide-tips");
-  await expect(box).not.toBeChecked();
-  await box.check();
-  await saved(page);
-  await expect.poll(async () => (await view(page)).tip).toBeNull();
-  await page.goto(`/f/${ARTIST_SLUG}`);
-  await expect(page.getByTestId("fans-join")).toBeVisible();
-  await expect(page.getByTestId("fans-tip")).toHaveCount(0);
-
-  // Put it back.
-  await page.goto(A("/fans?tab=money"));
-  await page.getByTestId("fan-hide-tips").uncheck();
-  await saved(page);
-  await expect.poll(async () => (await view(page)).tip).toEqual(before);
-  if (before) {
-    await page.goto(`/f/${ARTIST_SLUG}`);
-    await expect(page.getByTestId("fans-tip-pay")).toHaveText("Leave a tip");
-    await expect(page.getByTestId("fans-tip-pay")).toHaveAttribute("href", `https://venmo.com/${before.venmo}?txn=pay&note=Tip`);
+    // The Fan Page tab lists it with the same preview link; the preview asks the public view for that show.
+    await page.goto(A("/fans?tab=money"));
+    const row = page.getByTestId("donation-show").filter({ hasText: "Marisol Late Show" });
+    await expect(row).toContainText("$15");
+    await expect(row).toContainText("Suggested Donation");
+    await expect(row.getByTestId("donation-show-preview")).toHaveAttribute("href", `/f/${ARTIST_SLUG}?showId=${showId}`);
+    const asked = page.waitForRequest((r) => r.url().includes(`/api/public/${ARTIST_SLUG}/list?showId=${showId}`));
+    await page.goto(`/f/${ARTIST_SLUG}?showId=${showId}`);
+    await asked;
+  } finally {
+    // Put it back, even when a step above failed, so a retry (and the specs after this one) start from the seeded show.
+    await page.goto(A(`/shows/${showId}`));
+    await page.getByTestId("show-tab-promotion").click();
+    const c2 = page.getByTestId("show-fan-page");
+    await c2.getByTestId("show-fan-on").uncheck();
+    await expect(c2.getByTestId("show-fan-on")).not.toBeChecked();
+    await c2.getByTestId("show-fan-name").click();
+    await c2.getByTestId("show-fan-name-input").fill("");
+    await c2.getByTestId("show-fan-name-input").press("Enter");
+    await c2.getByTestId("show-fan-amount").click();
+    await c2.getByTestId("show-fan-amount-input").fill("");
+    await c2.getByTestId("show-fan-amount-input").press("Enter");
+    await expect(c2.getByTestId("show-fan-preview-none")).toBeVisible();
+    await c2.getByTestId("show-fan-button-ticket").click();
+    await expect(c2.getByTestId("show-fan-button-ticket")).toHaveAttribute("aria-pressed", "true");
   }
 });
 

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { DRIVE, A } from "./env";
+import { SEED, fmtLong } from "./dates";
 
 
 async function signInAs(page: Page, key: string) {
@@ -174,9 +175,9 @@ test("build a setlist template, then seed a show's setlist from it against the s
   await glass.click();
   await expect(glass).toHaveAttribute("aria-pressed", "false");
 
-  // open the seeded Deep End show (Nov 14; other tests add more Deep End shows) and seed its Setlist tab from the template
+  // open the seeded Deep End show (other tests add more Deep End shows) and seed its Setlist tab from the template
   await page.goto(A("/shows"));
-  await page.locator("tr").filter({ hasText: "Deep End" }).filter({ hasText: "Nov 14" }).first().locator("td.date a").click();
+  await page.locator("tr").filter({ hasText: "Deep End" }).filter({ hasText: fmtLong(SEED.deepEnd) }).first().locator("td.date a").click();
   await page.getByTestId("show-tab-setlist").click();
   await expect(page.getByTestId("setlist-tab")).toBeVisible();
   await page.getByTestId("seed-template-actions").click();

@@ -114,7 +114,10 @@ async function expectFitted(page: Page, sheets: number) {
 }
 const near = (px: number, want: number) => { expect(px).toBeGreaterThanOrEqual(want * 0.7); expect(px).toBeLessThanOrEqual(want * 1.3); };
 
-test("the dialog's options each change the preview, and each toggle flips", async ({ page }) => {
+// What each option does to the sheets (short titles, key and song fields, breaks, transitions in the totals, my copy, per-set
+// splitting) is tests/unit/print.test.ts (buildSheets, printQuery). The dialog test only checks the wiring: the preview follows
+// the controls, and the controls are what builds the print link.
+test("the dialog's controls drive the preview", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A(`/setlists/${template25}`));
   await page.getByTestId("print-setlist").click();
@@ -123,79 +126,26 @@ test("the dialog's options each change the preview, and each toggle flips", asyn
   await expect(page.getByTestId("print-preview")).toBeVisible();
   await expect(page.getByTestId("print-go")).toHaveText(/^Print$/);
   await expect(page.getByTestId("print-sheet-count")).toHaveText(/^1 sheet$/);
-  await expect(page.getByTestId("print-size")).toBeVisible();
   const rows = page.getByTestId("print-preview").getByTestId("print-row");
   await expect(rows).toHaveCount(25);
   await expect(page.getByTestId("print-preview").getByTestId("print-break")).toHaveCount(1);
 
-  // Segmented buttons: one is pressed at a time; sheets per set splits the list in two.
-  const pressed = (id: string) => expect(page.getByTestId(id));
-  await pressed("print-copy-band").toHaveAttribute("aria-pressed", "true");
-  await pressed("print-copy-mine").toHaveAttribute("aria-pressed", "false");
+  // A segmented button: one is pressed at a time, and sheets per set splits the list in two.
+  await expect(page.getByTestId("print-sheets-one")).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("print-sheets-perSet").click();
-  await pressed("print-sheets-perSet").toHaveAttribute("aria-pressed", "true");
-  await pressed("print-sheets-one").toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByTestId("print-sheets-perSet")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("print-sheets-one")).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByTestId("print-sheet-count")).toHaveText(/^2 sheets$/);
   await expect(page.getByTestId("print-preview").getByTestId("print-sheet")).toHaveCount(2);
-  const size2 = await page.getByTestId("print-size").textContent();
   await page.getByTestId("print-sheets-one").click();
-  await pressed("print-sheets-one").toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("print-sheet-count")).toHaveText(/^1 sheet$/);
-  expect(size2).toBeTruthy();
 
-  // Short titles.
-  await expect(rows.nth(2)).not.toContainText("700 Miles (Reprise)");
-  await page.getByTestId("print-titles-short").click();
-  await pressed("print-titles-short").toHaveAttribute("aria-pressed", "true");
-  await pressed("print-titles-wrap").toHaveAttribute("aria-pressed", "false");
-  await expect(rows.nth(2)).toContainText("700 Miles (Reprise)");
-  await expect(rows.nth(0)).toContainText("Open Road Hymn");
-  await page.getByTestId("print-titles-wrap").click();
-  await expect(rows.nth(2)).not.toContainText("700 Miles (Reprise)");
-
-  // Fields: Key shows the key after the title; every field checkbox flips.
+  // A checkbox: Key shows the key after the title and flips back.
   await expect(rows.nth(0).getByTestId("print-key")).toHaveCount(0);
   await field(page, "key").check();
-  await expect(field(page, "key")).toBeChecked();
   await expect(rows.nth(0).getByTestId("print-key")).toHaveText("G");
   await field(page, "key").uncheck();
   await expect(rows.nth(0).getByTestId("print-key")).toHaveCount(0);
-  // A song field prints after the title on the band copy too, named.
-  await expect(rows.nth(0).getByTestId("print-fields")).toHaveCount(0);
-  await field(page, `field:${capoId}`).check();
-  await expect(rows.nth(0).getByTestId("print-fields")).toHaveText("Capo 1");
-  await field(page, `field:${capoId}`).uncheck();
-  await expect(rows.nth(0).getByTestId("print-fields")).toHaveCount(0);
-  // Only song fields marked In setlists are offered; Tempo always is.
-  await expect(page.getByTestId("print-field")).toHaveCount(7);
-  // Breaks off: the break box goes.
-  await field(page, "breaks").uncheck();
-  await expect(page.getByTestId("print-preview").getByTestId("print-break")).toHaveCount(0);
-  await field(page, "breaks").check();
-  await expect(page.getByTestId("print-preview").getByTestId("print-break")).toHaveCount(1);
-
-  // Header and paper.
-  // Transitions on by default; off, the footer's total gets shorter.
-  const transitions = page.getByTestId("print-transitions");
-  await expect(transitions).toBeChecked();
-  const footer = page.getByTestId("print-preview").getByTestId("print-footer").first();
-  const withGaps = await footer.textContent();
-  await transitions.uncheck();
-  await expect(footer).not.toHaveText(withGaps ?? "");
-  await transitions.check();
-  await expect(footer).toHaveText(withGaps ?? "");
-  await expect(page.getByTestId("print-paper")).toHaveValue("letter");
-  await page.getByTestId("print-paper").selectOption("a4");
-  await expect(page.getByTestId("print-paper")).toHaveValue("a4");
-  await expect(page.getByTestId("print-preview").getByTestId("print-sheet")).toHaveCount(1);
-  await page.getByTestId("print-paper").selectOption("letter");
-
-  // My copy is offered to Rudy (he is a musician of this band).
-  await page.getByTestId("print-copy-mine").click();
-  await expect(page.getByTestId("print-copy-mine")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("print-copy-band")).toHaveAttribute("aria-pressed", "false");
-  await page.getByTestId("print-copy-band").click();
-  await expect(page.getByTestId("print-copy-band")).toHaveAttribute("aria-pressed", "true");
 
   await page.getByTestId("print-close").click();
   await expect(dialog).toHaveCount(0);

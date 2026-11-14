@@ -28,7 +28,10 @@ async function removeConfig(page: Page, id: string, name: string) {
   await expect(page.getByTestId(`config-${id}`)).toHaveCount(0);
 }
 
-test("Lineups and links: add a configuration (needs a name, billed-as falls back), edit autosaves and Done closes, remove asks first; then add, edit and delete a link", async ({ page }) => {
+test("Lineups: add a configuration (needs a name, billed-as falls back), edit autosaves and Done closes, remove asks first", async ({ page }) => {
+  // a name of its own, so a retry never meets the first attempt's row
+  const stamp = String(Date.now() % 100000);
+  const NAME = `Sextet E2E ${stamp}`, ID = `sextet-e2e-${stamp}`;
   await openSettings(page);
   await page.getByTestId("add-config").click();
   const form = page.getByTestId("new-config");
@@ -41,7 +44,7 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await expect(add).toBeDisabled();
   await name.fill("   ");
   await expect(add).toBeDisabled();
-  await name.fill("Sextet E2E");
+  await name.fill(NAME);
   await expect(add).toBeEnabled();
   for (const who of ["Hugo", "Nora"]) {
     const chip = form.getByRole("button", { name: who });
@@ -52,7 +55,7 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await add.click();
   await expect(form).toHaveCount(0);
 
-  const row = page.getByTestId("config-sextet-e2e");
+  const row = page.getByTestId(`config-${ID}`);
   await expect(row).toContainText(ARTIST);
   await expect(row).toContainText("Hugo");
   await expect(row).toContainText("Nora");
@@ -73,7 +76,7 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await form.getByTestId("new-config-cancel").click();
 
   // edit autosaves, Done closes
-  await page.getByTestId("config-edit-sextet-e2e").click();
+  await page.getByTestId(`config-edit-${ID}`).click();
   const edit = page.getByTestId("edit-config");
   await expect(edit).toBeVisible();
   await edit.getByTestId("edit-config-billing").fill("Nora Quill Sextet");
@@ -85,7 +88,7 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await expect(row).toContainText("Nora Quill Sextet");
 
   // a blank Billed as falls back to the artist name
-  await page.getByTestId("config-edit-sextet-e2e").click();
+  await page.getByTestId(`config-edit-${ID}`).click();
   await expect(edit).toBeVisible();
   await edit.getByTestId("edit-config-billing").fill("");
   await edit.getByTestId("edit-config-done").click();
@@ -94,20 +97,31 @@ test("Lineups and links: add a configuration (needs a name, billed-as falls back
   await expect(row).not.toContainText("Nora Quill Sextet");
 
   // remove asks first; Keep backs out
-  await page.getByTestId("config-remove-sextet-e2e").click();
-  await expect(page.getByText("Remove Sextet E2E?")).toBeVisible();
-  await page.getByTestId("config-remove-keep-sextet-e2e").click();
-  await expect(page.getByText("Remove Sextet E2E?")).toHaveCount(0);
+  await page.getByTestId(`config-remove-${ID}`).click();
+  await expect(page.getByText(`Remove ${NAME}?`)).toBeVisible();
+  await page.getByTestId(`config-remove-keep-${ID}`).click();
+  await expect(page.getByText(`Remove ${NAME}?`)).toHaveCount(0);
   await expect(row).toBeVisible();
-  await removeConfig(page, "sextet-e2e", "Sextet E2E");
+  await removeConfig(page, ID, NAME);
   await page.reload();
   await expect(page.getByTestId("config-trio")).toBeVisible();
-  await expect(page.getByTestId("config-sextet-e2e")).toHaveCount(0);
+  await expect(page.getByTestId(`config-${ID}`)).toHaveCount(0);
+});
 
-  // Same sign-in, next page: the artist settings' links.
+test("Links on General Settings: add a link, edit it, delete it", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await expect(page).toHaveURL(/\/calendar$/);
   await openArtist(page);
   const card = page.getByTestId("links");
   await expect(card.getByTestId("link-spotify")).toBeVisible(); // seeded
+  // a failed earlier attempt may have left the TikTok link
+  if (await card.getByTestId("link-tiktok").count()) {
+    await card.getByTestId("link-tiktok-delete").click();
+    await expect(card.getByTestId("link-tiktok")).toHaveCount(0);
+    await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+    await page.reload();
+    await expect(card.getByTestId("link-spotify")).toBeVisible();
+  }
   await card.getByTestId("link-add-kind").selectOption("tiktok");
   await card.getByTestId("link-add-url").fill("tiktok.com/@noraquill");
   await card.getByTestId("link-add-save").click();
@@ -133,6 +147,12 @@ test("Genres on General Settings: added in lowercase, no duplicates, autosaved, 
   await expect(page).toHaveURL(/\/calendar$/); // signed in before the next page load
   await openArtist(page);
   const card = page.getByTestId("genres");
+  if (await card.getByTestId("genre-indie folk").count()) { // a failed earlier attempt left it
+    await card.getByTestId("genre-remove-indie folk").click();
+    await expect(card.getByTestId("genres-empty")).toBeVisible();
+    await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+    await page.reload();
+  }
   await card.getByTestId("genre-add-input").fill("  Indie   Folk ");
   await card.getByTestId("genre-add-save").click();
   await card.getByTestId("genre-add-input").fill("indie folk");

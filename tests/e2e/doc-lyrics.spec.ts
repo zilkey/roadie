@@ -63,17 +63,13 @@ test("the rehearsal song page shows the lyrics at the bottom too", async ({ brow
   await close();
 });
 
-test("an edited doc shows its new text; a doc the band account can't read says so with Share with band and Open in Drive", async ({ browser }) => {
+test("a doc the band account can't read says so with Share with band and Open in Drive", async ({ browser }) => {
   const { page, close } = await as(browser, "rudy");
   // noAccess hides the file from GET, so take its text from the test hook (an empty body changes nothing).
   const original = ((await (await setDoc({})).json()) as { text: string }).text;
   try {
     await openGlassCoast(page);
-    await expect(page.getByTestId("doc-text")).toContainText("Salt on the window");
-    expect((await setDoc({ text: "Glass Coast\n\nNew verse\nD    A\nWaves on the glass" })).ok).toBe(true);
-    await page.reload();
-    await expect(page.getByTestId("doc-text")).toContainText("Waves on the glass");
-    await expect(page.getByTestId("doc-text")).not.toContainText("Salt on the window");
+    await expect(page.getByTestId("doc-text")).toContainText("Salt on the window"); // (an edited doc being read again is in tests/emulator/doc-text.test.ts)
 
     await setDoc({ noAccess: true });
     await page.reload();

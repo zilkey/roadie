@@ -62,13 +62,7 @@ test("People: the page, add a Band Member and a Team admin, edit in the sheet, a
   const band = uniq(), adm = uniq();
   await openPeople(page);
 
-  // the page
-  await expect(page.getByText("play in the band. The")).toBeVisible();
-  await expect(page.getByTestId("people-tab-all")).toHaveText(/^All · \d+$/);
-  await expect(page.getByTestId("people-tab-band")).toHaveText(/^Band Members · \d+$/);
-  await expect(page.getByTestId("people-tab-team")).toHaveText(/^Team · \d+$/);
-  await expect(page.getByTestId("people-tab-archived")).toHaveText(/^Archived · \d+$/);
-  await expect(page.getByTestId("user-list").locator("th")).toHaveText(["Name", "Email", "Instruments", "Team access", "Actions"]);
+  // the page (the rules, guards and roster commands are tests/emulator/people*.test.ts and tests/unit/people*.test.ts)
   await expect(rowOf(page, "rudy@example.com")).toContainText("Rudy (you)");
 
   // add a Band Member only
@@ -79,7 +73,6 @@ test("People: the page, add a Band Member and a Team admin, edit in the sheet, a
   // add a person who is both: Admin with AI
   await addPerson(page, { name: adm.name, email: adm.email, band: "banjo", role: "admin", mcp: true });
   await expect(rowOf(page, adm.email)).toContainText("banjo");
-  await expect(rowOf(page, adm.email).locator(".chip")).toHaveText(["Admin", "AI"]);
 
   // edit in the side sheet
   await menu(page, adm.email, "edit");

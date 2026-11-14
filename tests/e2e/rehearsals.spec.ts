@@ -44,33 +44,27 @@ test("admin logs gas from the rehearsal's Money tab: round trip estimate, the li
   await close();
 });
 
-/** The expenses card links to the full form too, with the rehearsal preselected and gas the default. */
-test("the rehearsal expenses card opens the full expense form for that rehearsal", async ({ browser }) => {
-  const { page, close } = await as(browser, "hugo");
-  await openRehearsal(page, "Oct 29");
-  await page.getByTestId("reh-tab-money").click();
-  await page.getByTestId("expenses").getByTestId("expenses-full-form").click();
-  await expect(page).toHaveURL(/\/money\/expense\?rehearsalId=/);
-  await expect(page.getByText(/^Rehearsal · /)).toContainText("Oct 29");
-  await page.getByTestId("back").click();
-  await expect(page).toHaveURL(/\/rehearsals\/[^/]+\?tab=money$/);
-  await close();
-});
-
 /** Members add their own expense on a rehearsal through the shared card's full form; an admin sees it with who paid. */
-test("a member adds an expense on a rehearsal and an admin sees it", async ({ browser }) => {
+test("a member adds an expense on a rehearsal (the card links to the full form) and an admin sees it", async ({ browser }) => {
+  const what = `Room rental split ${Date.now().toString(36)}`; // stamped: a retry never meets a first attempt's line
   const hugo = await as(browser, "hugo");
   await openRehearsal(hugo.page, "Oct 29");
   await hugo.page.getByTestId("reh-tab-money").click();
   const card = hugo.page.getByTestId("expenses");
   await card.getByTestId("expenses-full-form").click();
+  // the full form opens for this rehearsal, gas the default; Back returns to its Money tab
+  await expect(hugo.page).toHaveURL(/\/money\/expense\?rehearsalId=/);
+  await expect(hugo.page.getByText(/^Rehearsal · /)).toContainText("Oct 29");
+  await hugo.page.getByTestId("back").click();
+  await expect(hugo.page).toHaveURL(/\/rehearsals\/[^/]+\?tab=money$/);
+  await card.getByTestId("expenses-full-form").click();
   await hugo.page.getByTestId("exp-cat").click();
   await hugo.page.getByTestId("exp-cat-opt-space").click();
   await hugo.page.getByTestId("exp-amount").fill("25");
-  await hugo.page.getByTestId("expense-what").fill("Room rental split");
+  await hugo.page.getByTestId("expense-what").fill(what);
   await hugo.page.getByTestId("exp-save").click();
   await expect(hugo.page).toHaveURL(/\/rehearsals\/[^/]+$/);
-  await expect(card.getByTestId("expense-row").filter({ hasText: "Room rental split" })).toBeVisible();
+  await expect(card.getByTestId("expense-row").filter({ hasText: what })).toBeVisible();
   await hugo.close();
 
   const rudy = await as(browser, "rudy");
@@ -78,7 +72,7 @@ test("a member adds an expense on a rehearsal and an admin sees it", async ({ br
   await rudy.page.getByTestId("reh-tab-money").click();
   // admins have no Expenses card: the member's expense is a line in Money out
   await expect(rudy.page.getByTestId("expenses")).toHaveCount(0);
-  await expect(rudy.page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]').filter({ hasText: "Room rental split" })).toBeVisible();
+  await expect(rudy.page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]').filter({ hasText: what })).toBeVisible();
   await rudy.close();
 });
 
@@ -112,68 +106,36 @@ test("your profile: the driving and gas card shows the seeded values and an MPG 
   }
 });
 
-/** The seeded Oct 29 rehearsal at The Attic. Saving never sends; the calendar button previews, then sends; Remove takes it off again. */
+/**
+ * The seeded Oct 29 rehearsal at The Attic: the preview opens, Send puts it on the band calendar, Remove takes it off.
+ * The rest (a deleted event staying deleted until "Put it back", linking an event already on the calendar) is
+ * tests/emulator/shows.test.ts ("Rehearsals: preview and send...", "Calendar: an event deleted in Google...", "Calendar: an event already on...").
+ */
 test("a rehearsal goes on the band calendar only from its button, after a preview", async ({ browser, request }) => {
   const { page, close } = await as(browser, "rudy");
   await openRehearsal(page, "Oct 29");
   const line = page.getByTestId("reh-calendar");
+  const dlg = page.getByTestId("reh-calendar-dialog");
+  // A retry may meet the event the first attempt sent: take it off first.
+  await expect(line).toContainText(/band calendar/);
+  if ((await line.textContent())?.includes("On the band calendar")) {
+    await page.getByTestId("reh-calendar-open").click();
+    await dlg.getByTestId("cal-remove").click();
+  }
   await expect(line).toContainText("Not on the band calendar");
   await page.getByTestId("reh-calendar-open").click();
-  const dlg = page.getByTestId("reh-calendar-dialog");
   await expect(dlg.getByTestId("cal-preview-calendar")).toHaveText("Nora Quill Band");
   await expect(dlg.getByTestId("cal-preview-title")).toHaveText(/rehearsal at The Attic$/);
   await expect(dlg.getByTestId("cal-preview-when")).toContainText("Oct 29");
   await expect(dlg.getByTestId("cal-preview-where")).toContainText("The Attic");
   await dlg.getByTestId("cal-send").click();
   await expect(line).toContainText("On the band calendar");
-  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { id: string; title: string }[];
-  const sent = events.find((e) => /rehearsal at The Attic$/.test(e.title));
-  expect(sent).toBeTruthy();
-
-  // Someone deletes it in Google Calendar: the preview says so, and only "Put it back" brings it back (#48)
-  await request.delete(`${CAL}/events/${sent!.id}`);
-  await page.getByTestId("reh-calendar-open").click();
-  await expect(dlg.getByTestId("cal-preview-deleted")).toContainText("Someone deleted this rehearsal's event");
-  await expect(dlg.getByTestId("cal-send")).toHaveText("Put it back");
-  await dlg.getByTestId("cal-send").click();
-  await expect(page.getByTestId("reh-calendar-note")).toContainText("Put back on the band calendar");
-  expect(((await (await request.get(`${CAL}/events/${sent!.id}`)).json()) as { cancelled?: boolean }).cancelled).toBeUndefined();
+  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { title: string }[];
+  expect(events.some((e) => /rehearsal at The Attic$/.test(e.title))).toBeTruthy();
 
   await page.getByTestId("reh-calendar-open").click();
   await dlg.getByTestId("cal-remove").click();
   await expect(line).toContainText("Not on the band calendar");
-  await close();
-});
-
-/** Someone already put Oct 29 on the band calendar by hand: the preview offers it, and linking sends nothing. */
-test("a rehearsal links to an event already on the band calendar instead of adding another", async ({ browser, request }) => {
-  const made = (await (await request.post(`${CAL}/events`, { data: { calendarId: "fake-band-calendar", title: "NQB Rehearsal", start: "2026-10-29T18:00:00", end: "2026-10-29T20:30:00", location: "The Attic" } })).json()) as { id: string };
-  // Not a rehearsal by its title, so not offered
-  const dentist = (await (await request.post(`${CAL}/events`, { data: { calendarId: "fake-band-calendar", title: "Dentist", start: "2026-10-29T09:00:00", end: "2026-10-29T10:00:00" } })).json()) as { id: string };
-  const { page, close } = await as(browser, "rudy");
-  await openRehearsal(page, "Oct 29");
-  const line = page.getByTestId("reh-calendar");
-  await expect(line).toContainText("Not on the band calendar");
-  await page.getByTestId("reh-calendar-open").click();
-  const dlg = page.getByTestId("reh-calendar-dialog");
-  const ev = dlg.getByTestId("cal-existing-event");
-  await expect(ev).toHaveCount(1);
-  await expect(ev).toContainText("NQB Rehearsal");
-  await expect(ev).toContainText("6:00 pm – 8:30 pm");
-  await expect(dlg.getByTestId("cal-send")).toHaveText("Add a new event");
-  await ev.getByTestId("cal-link").click();
-  await expect(line).toContainText("On the band calendar");
-  await expect(page.getByTestId("reh-calendar-note")).toContainText("Linked");
-  const events = (await (await request.get(`${CAL}/events?calendarId=fake-band-calendar`)).json()) as { title: string; start: string }[];
-  expect(events.filter((e) => e.start.startsWith("2026-10-29")).map((e) => e.title)).toEqual(["Dentist", "NQB Rehearsal"]);
-
-  // Update now shows the app's version, and Remove takes it off
-  await page.getByTestId("reh-calendar-open").click();
-  await expect(dlg.getByTestId("cal-send")).toHaveText("Update event");
-  await dlg.getByTestId("cal-remove").click();
-  await expect(line).toContainText("Not on the band calendar");
-  expect(((await (await request.get(`${CAL}/events/${made.id}`)).json()) as { cancelled?: boolean }).cancelled).toBe(true);
-  await request.delete(`${CAL}/events/${dentist.id}`);
   await close();
 });
 
@@ -315,11 +277,9 @@ test("an admin sets a bandmate's home and cars on People; the gas form asks whic
     await expect(modal.getByTestId("mo-gas-from-home")).toContainText("home");
     await expect(modal.getByTestId("mo-gas-estimate")).toContainText("needs a car");
     await modal.getByTestId("mo-gas-car").selectOption({ label: "Outback · 28 MPG" });
-    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("Outback, 28 mpg");
-    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$4.98");
+    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("Outback, 28 mpg"); // the miles-and-price math is tests/emulator/gas.test.ts
     await modal.getByTestId("mo-gas-car").selectOption({ label: "Truck · 14 MPG" });
     await expect(modal.getByTestId("mo-gas-estimate")).toContainText("Truck, 14 mpg");
-    await expect(modal.getByTestId("mo-gas-mpg")).toHaveCount(0);
   } finally {
     // leave Felix as seeded (no home, no car) for the other specs
     await openFelix();

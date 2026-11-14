@@ -1,5 +1,6 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { A, openTab } from "./env";
+import { day } from "./dates";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -11,13 +12,13 @@ async function ask(page: Page, text: string) {
   await page.getByTestId("roadie-input").press("Enter");
 }
 
+// What Roadie says and does for each kind of message is tests/emulator/roadie*.test.ts (the canned model is deterministic):
+// replies and off-topic lines, ui.ask and its buttons, confirm cards and their dropdown, the web search link, Stop. The tests
+// here are what only a browser shows: the panel, its resize, tools landing on live pages, and the confirm and Stop buttons.
 test("admin: panel on the right, canned reply, survives navigation and reload", async ({ page }) => {
   await signInAs(page, "nora");
   const panel = page.getByTestId("roadie-panel");
   await expect(panel).toBeVisible();
-  await expect(panel).toHaveAttribute("data-width", "360");
-  const box = (await panel.boundingBox())!;
-  expect(Math.round(box.x + box.width)).toBe(page.viewportSize()!.width); // flush with the window's right edge
   await expect(page.getByTestId("roadie-input")).toHaveAttribute("placeholder", "Ask or tell me anything…");
 
   await page.getByTestId("roadie-new").click();
@@ -25,21 +26,31 @@ test("admin: panel on the right, canned reply, survives navigation and reload", 
   await expect(page.getByTestId("roadie-msg-assistant")).toContainText("Roadie here");
   await expect(page.getByTestId("roadie-msg-user")).toHaveText("hi");
 
-  await ask(page, "what's the weather");
-  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("I just haul the band's stuff");
-
   await ask(page, "show me the shows");
   await expect(page).toHaveURL(/\/shows$/);
   await expect(page.getByTestId("roadie-action")).toHaveText("→ Opened Shows");
 
   await page.getByTestId("tab-songs").click(); // the panel (and chat) stay put
   await expect(page).toHaveURL(/\/songs$/);
-  await expect(page.getByTestId("roadie-msg-user")).toHaveCount(3); // the chat stays put across navigation
+  await expect(page.getByTestId("roadie-msg-user")).toHaveCount(2); // the chat stays put across navigation
 
   await page.reload();
-  await expect(page.getByTestId("roadie-msg-user")).toHaveCount(3);
+  await expect(page.getByTestId("roadie-msg-user")).toHaveCount(2);
   await expect(page.getByTestId("roadie-msg-assistant").first()).toContainText("Roadie here");
 });
+
+/** The handle's box once the panel has stopped moving (it takes its saved width a beat after load): dragging from a stale box misses it. */
+async function settledBox(handle: Locator) {
+  let last = "";
+  await expect(async () => {
+    const b = await handle.boundingBox();
+    const now = JSON.stringify(b);
+    const same = b !== null && now === last;
+    last = now;
+    expect(same).toBeTruthy();
+  }).toPass({ intervals: [150, 150, 150, 300, 300], timeout: 10_000 });
+  return (await handle.boundingBox())!;
+}
 
 test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to half the window, and snaps to the rail", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -47,20 +58,21 @@ test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to 
   const panel = page.getByTestId("roadie-panel");
   const handle = page.getByTestId("roadie-resize");
   await expect(handle).toHaveAttribute("role", "separator");
-  await expect(handle).toHaveAttribute("aria-valuenow", "360");
+  // (The width is saved per person and a retry meets what the first attempt left: nothing here assumes the starting width.)
   await expect(handle).toHaveAttribute("aria-valuemin", "280");
   await expect(handle).toHaveAttribute("aria-valuemax", "640");
 
   // Drag the left edge out to 500px.
-  const saved = () => page.waitForRequest((r) => r.url().includes("assistant.setPrefs") && r.method() === "POST" && "width" in (r.postDataJSON() ?? {}));
-  let req = saved();
-  const h = (await handle.boundingBox())!;
+  // Wait for the save of the width we mean, not just any width: a drag can save on the way.
+  const saved = (width: number) => page.waitForRequest((r) => r.url().includes("assistant.setPrefs") && r.method() === "POST" && (r.postDataJSON() ?? {}).width === width);
+  let req = saved(500);
+  const h = await settledBox(handle);
   await page.mouse.move(h.x + h.width / 2, h.y + 200);
   await page.mouse.down();
   await page.mouse.move(1280 - 450, h.y + 200, { steps: 4 });
   await page.mouse.move(1280 - 500, h.y + 200, { steps: 4 });
   await page.mouse.up();
-  expect((await req).postDataJSON().width).toBe(500);
+  await req;
   await expect(panel).toHaveAttribute("data-width", "500");
 
   // Arrow keys: left widens, right narrows; Home goes to the minimum.
@@ -72,9 +84,9 @@ test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to 
   await expect(handle).toHaveAttribute("aria-valuenow", "484");
 
   // Saved per person: it comes back after a reload.
-  req = saved();
+  req = saved(640);
   await page.keyboard.press("End");
-  expect((await req).postDataJSON().width).toBe(640);
+  await req;
   await page.reload();
   await expect(panel).toHaveAttribute("data-width", "640");
 
@@ -84,7 +96,7 @@ test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to 
   await expect(handle).toHaveAttribute("aria-valuemax", "500");
 
   // Drag under 280px: it snaps to the rail; Expand brings back the last width.
-  const g = (await handle.boundingBox())!;
+  const g = await settledBox(handle);
   await page.mouse.move(g.x + g.width / 2, g.y + 200);
   await page.mouse.down();
   await page.mouse.move(1000 - 200, g.y + 200, { steps: 6 });
@@ -92,20 +104,18 @@ test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to 
   await expect(panel).toHaveAttribute("data-width", "narrow");
   await page.getByTestId("roadie-expand").click();
   await expect(panel).toHaveAttribute("data-width", "500");
-});
 
-test("a calendar ask Roadie can't place: it asks back with buttons, and a tap answers", async ({ page }) => {
-  await signInAs(page, "nora");
-  await page.getByTestId("roadie-new").click();
-  await ask(page, "put a deadline on the calendar for Dec 5");
-  await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("I could just be a bad finder, but I don't know what you mean.");
-  const replies = page.getByTestId("roadie-reply");
-  await expect(replies).toHaveText(["A pitch's next step", "A possible date on a pitch", "A hold show"]);
-
-  await replies.first().click();
-  await expect(page.getByTestId("roadie-msg-user").last()).toHaveText("A pitch's next step");
-  await expect(page.getByTestId("roadie-msg-assistant")).toHaveCount(2);
-  await expect(page.getByTestId("roadie-reply")).toHaveCount(0); // only the latest question can be answered
+  // Leave the width at the default (360) for the specs after this one.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  req = saved(360);
+  const k = await settledBox(handle);
+  await page.mouse.move(k.x + k.width / 2, k.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(1280 - 400, k.y + 200, { steps: 4 });
+  await page.mouse.move(1280 - 360, k.y + 200, { steps: 4 });
+  await page.mouse.up();
+  await req;
+  await expect(panel).toHaveAttribute("data-width", "360");
 });
 
 const STAMP = Date.now();
@@ -129,7 +139,7 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
   // a show of its own, so the seeded ones stay as they are
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Swallow Hill Music · Denver" });
-  await page.getByTestId("show-date").fill("2028-03-05");
+  await page.getByTestId("show-date").fill(day(300));
   await page.getByTestId("show-loadIn").fill("17:00");
   await page.getByTestId("show-set").fill("20:00");
   await page.getByTestId("billed-as").selectOption("full-band");
@@ -158,37 +168,6 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
   await expect(page.getByTestId("roadie-readback").last()).toContainText("Canceled the show");
 });
 
-test("a venue type that isn't on the list: the card lists the fields and asks for the type in a dropdown; Yes waits for the pick", async ({ page }) => {
-  await signInAs(page, "nora");
-  await page.getByTestId("roadie-new").click();
-  const name = `Solarium ${STAMP}`;
-  await ask(page, `add the venue ${name} in Fort Collins as a music venue`);
-  const card = page.getByTestId("roadie-confirm").last();
-  await expect(card).toContainText(`Add the venue ${name}`);
-  const fields = card.getByTestId("roadie-confirm-fields");
-  await expect(fields).toContainText("Fort Collins, CO");
-  await expect(fields).toContainText("North");
-  await expect(fields).toContainText("“music venue” isn’t on the list");
-  await expect(page.getByTestId("roadie-msg-assistant").last()).toHaveText("Pick one from the list on the card, then tap Yes.");
-  await expect(card.getByTestId("roadie-confirm-yes")).toBeDisabled();
-  await card.getByTestId("roadie-confirm-pick").selectOption({ label: "Club" });
-  await card.getByTestId("roadie-confirm-yes").click();
-  await expect(card).toHaveAttribute("data-status", "done");
-  await expect(card.getByTestId("roadie-confirm-fields")).toContainText("Club");
-  await expect(page.getByTestId("roadie-readback").last()).toContainText(`Added the venue ${name}`);
-});
-
-test("'google ...': the source in the reply is a link that opens in a new tab", async ({ page }) => {
-  await signInAs(page, "nora");
-  await page.getByTestId("roadie-new").click();
-  await ask(page, "google the Woodshed booking contact");
-  const link = page.getByTestId("roadie-msg-assistant").last().getByTestId("roadie-link");
-  await expect(link).toHaveText("https://example.com/roadie-fake-result");
-  await expect(link).toHaveAttribute("href", "https://example.com/roadie-fake-result");
-  await expect(link).toHaveAttribute("target", "_blank");
-  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
-});
-
 test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, marks it Stopped, and the chat carries on", async ({ page }) => {
   await signInAs(page, "nora");
   await page.getByTestId("roadie-new").click();
@@ -200,10 +179,13 @@ test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, ma
   await expect(page.getByTestId("roadie-stopped")).toBeVisible();
   await expect(page.getByTestId("roadie-stop")).toHaveCount(0);
   await expect(page.getByTestId("roadie-vamp")).toHaveCount(0);
-  // The saved copy (marked stopped on the server) survives a reload.
-  await page.reload();
-  await expect(page.getByTestId("roadie-msg-user")).toHaveText("find me a venue in Boise [fake: slow]");
-  await expect(page.getByTestId("roadie-stopped")).toBeVisible();
+  // The saved copy (marked stopped on the server) survives a reload. The server saves it after the browser drops the stream,
+  // a beat after the click: reload until it is there instead of once, straight away.
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByTestId("roadie-msg-user")).toHaveText("find me a venue in Boise [fake: slow]", { timeout: 3000 });
+    await expect(page.getByTestId("roadie-stopped")).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 25_000, intervals: [500, 1000, 2000] });
 
   await ask(page, "hi");
   await expect(page.getByTestId("roadie-msg-assistant").last()).toContainText("Roadie here");

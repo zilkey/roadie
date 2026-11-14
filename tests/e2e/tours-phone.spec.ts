@@ -1,5 +1,7 @@
-import { test, expect, type Browser } from "@playwright/test";
-import { A } from "./env";
+import { test, expect, type APIRequestContext, type Browser } from "@playwright/test";
+import { APP, AUTH, FIRESTORE, A, ARTIST_SLUG } from "./env";
+import { day } from "./dates";
+import { dayLabel } from "../../src/lib/tours";
 
 async function as(browser: Browser, key: string, phone = false) {
   const ctx = await browser.newContext(phone ? { viewport: { width: 390, height: 844 } } : {});
@@ -13,7 +15,33 @@ async function as(browser: Browser, key: string, phone = false) {
 // Its own tour and its own venue (no pitch), so the file runs in any order.
 let tourUrl = "";
 const venueName = `Phone Venue ${Date.now()}`;
-const D1 = "2027-06-07", D2 = "2027-06-08";
+// Far enough out to clear the seed's dates and tours.spec's tour (days 115-126).
+const D1 = day(300), D2 = day(301), D3 = day(302);
+
+// The tour is removed through the command API in afterAll as well as by the last test, so a failed or retried group leaves none behind
+// (tours.spec.ts starts by expecting an empty Upcoming list).
+let api: APIRequestContext;
+let token: string;
+let artistId: string;
+test.beforeAll(async ({ playwright }) => {
+  api = await playwright.request.newContext();
+  const res = await api.post(`http://${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo`, {
+    data: {
+      postBody: `id_token=${encodeURIComponent(JSON.stringify({ sub: "dev-rudy", email: "rudy@example.com", email_verified: true, name: "Rudy" }))}&providerId=google.com`,
+      requestUri: "http://localhost", returnIdpSignInMethod: true, returnSecureToken: true,
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+  token = ((await res.json()) as { idToken: string }).idToken;
+  const artists = await api.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/artists`, { headers: { authorization: "Bearer owner" } });
+  const docs = ((await artists.json()) as { documents: { name: string; fields: { slug?: { stringValue: string } } }[] }).documents;
+  artistId = docs.find((d) => d.fields.slug?.stringValue === ARTIST_SLUG)!.name.split("/").pop()!;
+});
+test.afterAll(async () => {
+  // (already gone when the last test ran: the call then just says not found)
+  if (tourUrl) await api.post(`${APP}/api/commands/tours.remove`, { data: { id: tourUrl.split("/").pop() }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
+  await api.dispose();
+});
 
 test.describe.serial("tours on a phone", () => {
   test("setup: an unpitched venue and a tour", async ({ browser }) => {
@@ -29,7 +57,7 @@ test.describe.serial("tours on a phone", () => {
     await page.goto(A("/tours/new"));
     await page.getByTestId("tour-name-input").fill("Phone Run");
     await page.getByTestId("tour-start").fill(D1);
-    await page.getByTestId("tour-end").fill("2027-06-09");
+    await page.getByTestId("tour-end").fill(D3);
     await page.getByTestId("tour-act").selectOption({ label: "Duo" });
     await page.getByTestId("create-tour").click();
     await expect(page).toHaveURL(/\/tours\/(?!new)[^/?]+$/);
@@ -57,7 +85,7 @@ test.describe.serial("tours on a phone", () => {
     await page.getByTestId(`plan-day-add-${D2}`).click();
     const sheet = page.getByTestId("add-sheet");
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("heading")).toHaveText(/Add to .*Jun 8/);
+    await expect(sheet.getByRole("heading")).toHaveText(new RegExp(`Add to .*${dayLabel(D2)}`));
     await expect(sheet.getByTestId("add-sheet-tab-venues")).toBeChecked();
     // The day has no town: every venue with no pitch yet, searchable.
     await sheet.getByTestId("add-sheet-search").fill(venueName);

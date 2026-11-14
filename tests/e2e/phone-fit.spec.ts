@@ -1,8 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, mmmD } from "./dates";
 
 // #22: on a phone every main page fits the width, and the top bar, tab bar and Roadie pill stack without overlapping,
-// at 375 and 390px, light and dark, and with larger text (a 20px root, as a browser text-size setting gives rem).
+// at 375 and 390px (light only: colour doesn't move anything), and with larger text (a 20px root, as a browser text-size setting gives rem).
 
 async function signIn(page: Page) {
   await page.goto("/signin");
@@ -10,10 +11,10 @@ async function signIn(page: Page) {
   await expect(page).toHaveURL(/\/calendar$/);
 }
 
-/** The pages to check: Calendar, Money, the shows and songs lists, and the first show and song in them. */
+/** The pages to check: Calendar, Money, the shows and songs lists, the seeded Deep End show and the first song. */
 async function pages(page: Page) {
   await page.goto(A("/shows"));
-  const show = await page.locator('a[href*="/shows/"]:not([href*="/shows/new"])').first().getAttribute("href");
+  const show = await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: mmmD(SEED.deepEnd) }).locator("td.date a").first().getAttribute("href");
   await page.goto(A("/songs"));
   const song = await page.locator('a[href*="/songs/"]:not([href$="/new"])').first().getAttribute("href");
   expect(show).toBeTruthy();
@@ -30,7 +31,6 @@ async function check(page: Page, url: string, label: string) {
     const box = (id: string) => document.querySelector(`[data-testid="${id}"]`)!.getBoundingClientRect();
     return { scrollW: document.documentElement.scrollWidth, w: window.innerWidth, bar: box("phonebar"), tabs: box("bottom-tabs"), pill: box("roadie-pill") };
   });
-  console.log(`${label}: scrollW ${m.scrollW}/${m.w}, bar ${m.bar.height}, tabs ${m.tabs.height}, pill ${m.pill.height} with ${m.tabs.top - m.pill.bottom}px gap`);
   expect(m.scrollW, `${label}: no sideways scroll`).toBeLessThanOrEqual(m.w);
   expect(m.pill.bottom, `${label}: pill clears the tab bar`).toBeLessThanOrEqual(m.tabs.top);
   expect(m.tabs.top - m.pill.bottom, `${label}: pill sits just above the tab bar`).toBeLessThanOrEqual(12);
@@ -39,20 +39,17 @@ async function check(page: Page, url: string, label: string) {
 }
 
 for (const width of [375, 390]) {
-  for (const scheme of ["light", "dark"] as const) {
-    test(`phone fit at ${width}px, ${scheme}`, async ({ page }) => {
-      test.setTimeout(120_000);
-      await page.setViewportSize({ width, height: 812 });
-      await page.emulateMedia({ colorScheme: scheme });
-      await signIn(page);
-      const urls = await pages(page);
-      for (const url of urls) {
-        const m = await check(page, url, url);
-        expect(m.bar.height).toBe(48);
-        expect(m.tabs.height).toBe(56);
-      }
-    });
-  }
+  test(`phone fit at ${width}px`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width, height: 812 });
+    await signIn(page);
+    const urls = await pages(page);
+    for (const url of urls) {
+      const m = await check(page, url, url);
+      expect(m.bar.height).toBe(48);
+      expect(m.tabs.height).toBe(56);
+    }
+  });
 }
 
 test("phone fit at 375px with larger text", async ({ page }) => {

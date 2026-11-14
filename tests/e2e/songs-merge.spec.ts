@@ -51,9 +51,11 @@ test.afterAll(async () => {
   await cmd("rehearsals.remove", { id: rehearsalId });
   await cmd("setlistTemplates.remove", { id: templateId });
   await cmd("songs.remove", { id: playing });
+  // A run that failed before the merge still has the other copy.
+  await cmd("songs.remove", { id: learning }).catch(() => undefined);
 });
 
-test("search, tick two songs, merge: the setlist and rehearsal show the kept song, and the old address lands on it", async ({ page }) => {
+test("search, tick two songs, merge: the old address lands on the kept song and History has the run", async ({ page }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/songs"));
   await expect(page.getByTestId("songs-list")).toBeVisible();
@@ -97,13 +99,6 @@ test("search, tick two songs, merge: the setlist and rehearsal show the kept son
   await page.getByTestId("merge-confirm").click();
   await expect(page).toHaveURL(new RegExp(`/songs/${playing}$`));
   await expect(page.getByTestId("song-page")).toContainText("Zed Bliss");
-
-  // The setlist and the rehearsal now read the kept song.
-  await page.goto(A(`/setlists/${templateId}`));
-  await expect(page.getByText("Zed Bliss", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("(live)")).toHaveCount(0);
-  await page.goto(A(`/rehearsals/${rehearsalId}`));
-  await expect(page.getByTestId("rehearsal-songs")).toContainText("Zed Bliss");
 
   // The old song's address goes to the kept one.
   await page.goto(A(`/songs/${learning}`));

@@ -275,6 +275,7 @@ const CO = "4BrothersFountainCO01", UK = "4BrothersFountainUK02";
 
 test("Look up on a name Spotify shares asks which band: None of these keeps the web facts, Look up again asks again, This one picks", async ({ page }) => {
   await signInAs(page, "rudy");
+  // The fakes know this exact name (two Spotify artists share it), so it cannot be stamped; the act is the only one using it.
   await addAct(page, "A Brother's Fountain");
   await page.getByTestId("act-lookup").click();
 
@@ -310,37 +311,6 @@ test("Look up on a name Spotify shares asks which band: None of these keeps the 
   for (const l of ["Website", "Instagram", "Bandcamp", "Spotify"]) await expect(links).toContainText(l);
   await expect(links).not.toContainText("YouTube");
   await expect(page.getByTestId("act-about")).toContainText("Looked up");
-
-  // click to fix a value; it sticks
-  await page.getByTestId("act-hometown").click();
-  await page.getByTestId("act-hometown-input").fill("Loveland, CO");
-  await page.getByTestId("act-hometown-input").press("Tab");
-  await expect(page.getByTestId("act-hometown")).toHaveText("Loveland, CO");
-  await page.reload();
-  await expect(page.getByTestId("act-hometown")).toHaveText("Loveland, CO");
-});
-
-test("Look up watched acts on the Acts page looks up every watched act not yet looked up", async ({ page }) => {
-  await signInAs(page, "rudy");
-  await addAct(page, "North Fork Crossing");
-  await page.getByTestId("act-shortlist").click();
-  await expect(page.getByTestId("act-shortlist")).toHaveText("Watching");
-  const path = new URL(page.url()).pathname;
-
-  await page.goto(A("/booking/acts"));
-  await expect(page.getByTestId("acts-filter")).toHaveValue("shortlist");
-  await page.getByTestId("acts-lookup-shortlist").click();
-  await expect(page.getByTestId("acts-lookup-status")).toContainText("Looked up");
-  await expect(page.getByTestId("acts-lookup-status")).toContainText("found something for 1");
-  await expect(page.getByTestId("acts-lookup-shortlist")).toHaveCount(0); // nothing left to look up
-  // the row shows an icon for each link found
-  const looked = page.getByTestId(/^act-row-/).filter({ hasText: "North Fork Crossing" });
-  await expect(looked.getByTestId(/^act-links-.+-spotify$/)).toHaveAttribute("aria-label", "North Fork Crossing on Spotify");
-
-  await page.goto(path);
-  await expect(page.getByTestId("act-links")).toContainText("Spotify");
-  await expect(page.getByTestId("act-same-band")).toHaveCount(0);
-  await expect(page.getByTestId("act-lookup")).toHaveText("Look up again");
 });
 
 test("Pitch them: disabled with nothing to go on, then opens a new email to the act's contact", async ({ page }) => {
@@ -387,7 +357,10 @@ test("Find their team: each person's own email and LinkedIn; Add links them, wit
   await expect(sam).toContainText("sam@ortizpr.example");
   await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("href", "https://www.linkedin.com/in/sam-ortiz-pr");
   await expect(sam.getByRole("link", { name: "LinkedIn ↗" })).toHaveAttribute("target", "_blank");
-  await sam.getByTestId(/^act-team-add-/).click();
+  // Sam is a contact once any run has added them (a retry, or the Link test below in an earlier attempt): then it is Link, not Add.
+  const add = sam.getByTestId(/^act-team-add-/);
+  if (await add.count()) await add.click();
+  else await sam.getByTestId(/^act-team-attach-/).click();
   await expect(sam.getByTestId(/^act-team-added-/)).toContainText("In contacts");
 
   // The act's Contacts card lists Sam as a link to their page

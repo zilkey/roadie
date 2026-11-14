@@ -114,12 +114,7 @@ test("checklist templates: show templates have When and Type, sort by When, and 
   await expect(c.getByTestId(`template-when-tag-${id}`)).toHaveText("Pre Show");
   await c.getByTestId(`template-type-${id}`).selectOption("logistics");
   await expect(c.getByTestId(`template-type-tag-${id}`)).toHaveText("Logistics");
-  // Pre Show sorts ahead of every template with no When
-  await expect.poll(() => page.getByTestId("template-list").locator(":scope > li").evaluateAll((lis, me) => {
-    const at = lis.findIndex((li) => li.getAttribute("data-testid") === me);
-    const firstBlank = lis.findIndex((li) => !li.querySelector("[data-testid^=template-when-tag-]"));
-    return at >= 0 && (firstBlank < 0 || at < firstBlank);
-  }, `template-${id}`)).toBe(true);
+  // (that Pre Show sorts ahead of templates with no When: tests/unit/checklist-template-order.test.ts)
   await page.reload();
   await expect(card(page, name).getByTestId(`template-when-tag-${id}`)).toHaveText("Pre Show");
   await card(page, name).getByRole("button", { name: `${name} menu` }).click();

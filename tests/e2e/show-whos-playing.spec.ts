@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, mmmD } from "./dates";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -8,7 +9,7 @@ async function signInAs(page: Page, key: string) {
 }
 async function openShow(page: Page, venue: string) {
   await page.goto(A("/shows"));
-  const id = await page.getByTestId("shows-row").filter({ hasText: venue }).first().getAttribute("data-id");
+  const id = await page.getByTestId("shows-row").filter({ hasText: venue }).filter({ hasText: mmmD(SEED.hold) }).first().getAttribute("data-id");
   await page.goto(A(`/shows/${id}`));
   await expect(page.getByTestId("whos-playing")).toBeVisible();
 }

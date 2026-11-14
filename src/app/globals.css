@@ -524,7 +524,9 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 0.8125rem; }
 
 /* Booking detail pages (venue, festival, promoter, contact): one column of cards, shared ones carry a yellow top bar (everyone sees them), the band's private ones plain. */
-.d-page { display: grid; gap: 20px; max-width: 860px; margin: 0 auto; overflow-wrap: anywhere; }
+/* One column that may be narrower than its widest card: a wide table scrolls inside its card (.book-tw, .ts-scroll)
+   and never pushes the page under the Roadie panel. */
+.d-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; max-width: 860px; margin: 0 auto; overflow-wrap: anywhere; }
 .d-head { display: grid; gap: 6px; }
 .d-grp { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 600; color: var(--muted); margin-top: 8px; }
 .d-grp.shared { color: var(--admin-label); }

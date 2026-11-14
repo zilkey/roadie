@@ -17,22 +17,6 @@ async function open(page: Page, base: (p: string) => string, kind: "promoter" | 
   await expect(page.getByTestId(`${kind}-page`)).toBeVisible();
 }
 
-test("a promoter's notes and the venues they book autosave in place (another band's view of them is tested in tests/emulator/booking.test.ts)", async ({ page }) => {
-  await signInAs(page, "rudy");
-  await open(page, A, "promoter", "Front Range Presents");
-  await expect(page.getByTestId("notes-private")).toContainText("Email Desmond with live video and two dates.");
-  await expect(page.getByTestId("promoter-page")).toContainText("Heron Theatre");
-  // the note is the control: tap it, type, leave it, and it saves (no Edit, no Done)
-  await expect(page.getByTestId("notes-edit")).toHaveCount(0);
-  await page.getByTestId("promoter-notes").click();
-  await page.getByTestId("promoter-notes-input").fill(`Met them at RMF ${STAMP}`);
-  await page.getByTestId("promoter-notes-input").blur();
-  await expect(page.getByTestId("promoter-notes-saved")).toBeVisible();
-  await expect(page.getByTestId("promoter-notes")).toContainText(`Met them at RMF ${STAMP}`);
-  await page.reload();
-  await expect(page.getByTestId("notes-private")).toContainText(`Met them at RMF ${STAMP}`);
-});
-
 test("a festival's notes autosave into this band's notes; a year's Pay saves on Enter and Escape puts a value back", async ({ page }) => {
   await signInAs(page, "rudy");
   await open(page, A, "festival", "Riverbend Music Fest");

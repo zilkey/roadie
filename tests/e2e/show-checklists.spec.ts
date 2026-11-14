@@ -1,26 +1,42 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, mmmD } from "./dates";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
   await expect(page).toHaveURL(/\/calendar$/);
 }
-/** The seeded Deep End show (Nov 14): other specs add Deep End shows, so match the date too. Only the date cell links. */
+/** The seeded Deep End show (SEED.deepEnd): other specs add Deep End shows, so match the date too. Only the date cell links. */
 async function openDeepEnd(page: Page) {
   await page.goto(A("/shows"));
-  await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: "Nov 14" }).first().locator("td.date a").click();
+  await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: mmmD(SEED.deepEnd) }).first().locator("td.date a").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
   return page.getByTestId("checklists");
 }
 /** The card of the list with this exact name. */
 const card = (page: Page, name: string) =>
   page.locator('section[data-testid^="checklist-"]').filter({ has: page.getByRole("heading", { name, exact: true }) });
+/** Deletes lists a failed earlier attempt of this test left behind, so a retry starts clean. */
+async function clearLeftovers(page: Page) {
+  for (const name of ["Follow Up", "E2E Follow-up"]) {
+    for (;;) {
+      const c = card(page, name);
+      if ((await c.count()) === 0) break;
+      const id = await listId(c.first());
+      page.once("dialog", (d) => void d.accept());
+      await c.first().getByTestId(`checklist-${id}-actions`).click();
+      await page.getByTestId(`checklist-${id}-menu-delete`).click();
+      await expect(page.getByTestId(`checklist-${id}`)).toHaveCount(0);
+    }
+  }
+}
 const listId = async (c: ReturnType<typeof card>) => (await c.getAttribute("data-testid"))!.replace("checklist-", "");
 
 test("an admin adds a list from a template, works its to-dos in place, renames and deletes it", async ({ page }) => {
   await signInAs(page, "rudy");
   await openDeepEnd(page);
+  await clearLeftovers(page);
   await page.getByTestId("new-list-actions").click();
   await page.getByRole("menuitem", { name: "Follow Up", exact: true }).click();
   const c = card(page, "Follow Up");

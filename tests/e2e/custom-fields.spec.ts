@@ -1,5 +1,6 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { A } from "./env";
+import { day } from "./dates";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -32,7 +33,7 @@ test("Custom fields: define a show field in admin, fill it on a show, see it; a 
   // The field is on the show page's Custom fields card; fill it in.
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Deep End · Denver" });
-  await page.getByTestId("show-date").fill("2027-06-12");
+  await page.getByTestId("show-date").fill(day(201));
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   await expect(page.getByTestId("show-page")).toBeVisible();
@@ -78,7 +79,7 @@ test("Custom fields: a field ticked In table is a column in the Shows and Songs 
   // A show with a value: no column until the field is ticked.
   await page.goto(A("/shows/new"));
   await page.getByTestId("show-venue").selectOption({ label: "Deep End · Denver" });
-  await page.getByTestId("show-date").fill("2027-07-17");
+  await page.getByTestId("show-date").fill(day(236));
   await page.getByTestId("deal-guarantee").fill("100");
   await page.getByTestId("show-save").click();
   const card = page.getByTestId("custom-fields");

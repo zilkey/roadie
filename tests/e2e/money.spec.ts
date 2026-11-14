@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { openTab } from "./env";
+import { A, openTab } from "./env";
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
   await page.getByTestId(`dev-${key}`).click();
@@ -53,7 +53,9 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
 });
 
 
-test("Projects tab lists the seeded projects; New project adds Fall run and Cancel discards", async ({ page }) => {
+test("Projects tab lists the seeded projects; New project: Cancel discards, a new one opens and deletes", async ({ page }) => {
+  // (one default, Close vs delete and the closed-project rules are in tests/emulator/money-commands.test.ts)
+  const NAME = `Scratch ${Date.now()}`;
   await signInAs(page, "rudy");
   await openTab(page, "money");
   await page.getByTestId("money-seg-projects").click();
@@ -69,11 +71,16 @@ test("Projects tab lists the seeded projects; New project adds Fall run and Canc
 
   await page.getByTestId("new-project").click();
   await expect(page.getByTestId("np-name")).toHaveValue("");
-  await page.getByTestId("np-name").fill("Fall run");
-  await page.getByTestId("np-kind").selectOption("tour");
+  await page.getByTestId("np-name").fill(NAME);
   await page.getByTestId("np-add").click();
-  await expect(table).toContainText("Fall run");
-  await expect(table.locator("tr", { hasText: "Fall run" })).toContainText("Tour");
+  await expect(table).toContainText(NAME);
+  await table.locator("tr", { hasText: NAME }).click();
+  await expect(page.getByTestId("project-page")).toBeVisible();
+  page.once("dialog", (d) => void d.accept());
+  await page.getByTestId("project-actions").click();
+  await page.getByTestId("project-remove").click();
+  await expect(page).toHaveURL(/\/money\/projects$/);
+  await expect(table).not.toContainText(NAME);
 });
 
 test("the Wild Hearts LP project page shows its totals and records", async ({ page }) => {
@@ -92,22 +99,35 @@ test("the Wild Hearts LP project page shows its totals and records", async ({ pa
   await expect(records).not.toContainText("Bandcamp");
   await expect(records.locator("[data-testid^=project-record-expense-]", { hasText: "3 days tracking" })).toContainText("paid by Rudy");
   await expect(page.getByTestId("project-by-payer")).toBeVisible();
-  // Each record's project edits in place; the Bandcamp sale moves to the tour and back.
-  await page.getByTestId("project-flow-in").click();
-  const sel = records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]");
-  await sel.click();
-  await records.locator("[data-testid$=-project-input]").selectOption({ label: "Spring West Tour" });
-  await expect(records).not.toContainText("Bandcamp");
-  await expect(page.getByTestId("project-by-category")).toBeVisible();
-  await page.getByTestId("back").click();
-  await expect(page).toHaveURL(/\/money\/projects$/);
-  // ...and back, from the tour's page, so the release specs (which run after this file) still find it on the LP.
-  await page.getByTestId("projects-table").locator("tr", { hasText: "Spring West Tour" }).click();
-  await expect(page.getByTestId("project-page")).toContainText("Spring West Tour");
-  await page.getByTestId("project-flow-in").click();
-  await records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]").click();
-  await records.locator("[data-testid$=-project-input]").selectOption({ label: "Wild Hearts LP" });
-  await expect(records).not.toContainText("Bandcamp");
+  try {
+    // Each record's project edits in place; the Bandcamp sale moves to the tour and back.
+    await page.getByTestId("project-flow-in").click();
+    const sel = records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]");
+    await sel.click();
+    await records.locator("[data-testid$=-project-input]").selectOption({ label: "Spring West Tour" });
+    await expect(records).not.toContainText("Bandcamp");
+    await expect(page.getByTestId("project-by-category")).toBeVisible();
+    await page.getByTestId("back").click();
+    await expect(page).toHaveURL(/\/money\/projects$/);
+    // ...and back, from the tour's page, so the release specs (which run after this file) still find it on the LP.
+    await page.getByTestId("projects-table").locator("tr", { hasText: "Spring West Tour" }).click();
+    await expect(page.getByTestId("project-page")).toContainText("Spring West Tour");
+    await page.getByTestId("project-flow-in").click();
+    await records.locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" }).locator("[data-testid$=-project]").click();
+    await records.locator("[data-testid$=-project-input]").selectOption({ label: "Wild Hearts LP" });
+    await expect(records).not.toContainText("Bandcamp");
+  } finally {
+    // Whatever failed above, the Bandcamp sale goes back on the LP: the release specs after this file and a retry both read it there.
+    await page.goto(A("/money/projects"));
+    await page.getByTestId("projects-table").locator("tr", { hasText: "Spring West Tour" }).click();
+    await page.getByTestId("project-flow-in").click();
+    const stray = page.getByTestId("project-records").locator("[data-testid^=project-record-income-]", { hasText: "Bandcamp" });
+    if (await stray.count()) {
+      await stray.locator("[data-testid$=-project]").click();
+      await page.getByTestId("project-records").locator("[data-testid$=-project-input]").selectOption({ label: "Wild Hearts LP" });
+      await expect(stray).toHaveCount(0);
+    }
+  }
 });
 
 /** Pay one person's group from the We owe card: Money out opens on "We paid"; pick Venmo and save. */
@@ -118,36 +138,3 @@ async function payInModal(page: Page, group: import("@playwright/test").Locator,
   await dialog.getByTestId("mo-save").click();
   await expect(dialog).toHaveCount(0);
 }
-
-test("a project's ⋯ menu makes it the default and deletes it once nothing is on it; one with money only offers Close", async ({ page }) => {
-  const NAME = `Scratch ${Date.now()}`;
-  await signInAs(page, "rudy");
-  await openTab(page, "money");
-  await page.getByTestId("money-seg-projects").click();
-  await page.getByTestId("new-project").click();
-  await page.getByTestId("np-name").fill(NAME);
-  await page.getByTestId("np-add").click();
-  const table = page.getByTestId("projects-table");
-  await table.locator("tr", { hasText: NAME }).click();
-  await expect(page.getByTestId("project-page")).toBeVisible();
-
-  // Make it the default, then put the old default back so the rest of the suite still lands on General.
-  await page.getByTestId("project-actions").click();
-  await page.getByTestId("project-make-default").click();
-  await page.getByTestId("project-actions").click();
-  await expect(page.getByTestId("project-remove")).toHaveAttribute("aria-disabled", "true"); // the default can't go
-  await page.keyboard.press("Escape");
-  await page.getByTestId("back").click();
-  await table.locator("tr", { hasText: "General" }).first().click();
-  await page.getByTestId("project-actions").click();
-  await page.getByTestId("project-make-default").click();
-  await page.getByTestId("back").click();
-  await expect(table.locator("tr", { hasText: "General" }).first()).toContainText("default");
-
-  await table.locator("tr", { hasText: NAME }).click();
-  page.once("dialog", (d) => void d.accept());
-  await page.getByTestId("project-actions").click();
-  await page.getByTestId("project-remove").click();
-  await expect(page).toHaveURL(/\/money\/projects$/);
-  await expect(table).not.toContainText(NAME);
-});

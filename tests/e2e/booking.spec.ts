@@ -49,14 +49,24 @@ test("search buckets the results by kind, marks the match, and clearing brings t
   await expect(page).not.toHaveURL(/q=/);
 });
 
-test("flag a venue, move the pitch along, search finds it", async ({ page }) => {
+test("flag a venue, open its pitch, search finds it", async ({ page }) => {
+  // A venue made for this run (no pitch yet): a retry, or another spec, never finds it already flagged.
+  const name = `Flag Room ${Date.now()}`;
   await signInAs(page, "rudy");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-add-actions").click();
+  await page.getByTestId("add-venue").click();
+  await page.getByTestId("new-venue-name").fill(name);
+  await page.getByTestId("new-venue-city").fill("Boulder");
+  await page.getByTestId("new-venue-submit").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+
   await page.getByTestId("tab-booking").click();
   await expect(page.getByTestId("booking-seg-pitches")).toHaveAttribute("aria-current", "page"); // Booking opens on the Pitch List
-  await page.getByTestId("booking-search").fill("swallow");
+  await page.getByTestId("booking-search").fill(name);
   await expect(page.getByTestId("bucket-venues")).toBeVisible(); // a search replaces the tab with buckets
   await page.getByTestId("booking-seg-venues").click(); // and it follows to every tab
-  await expect(page).toHaveURL(/\/booking\/venues\?q=swallow/); // the tab's own page has mounted
+  await expect(page).toHaveURL(/\/booking\/venues\?q=/); // the tab's own page has mounted
   const row = page.getByTestId(/^row-venue-/);
   await expect(row).toHaveCount(1);
   const flag = row.locator("[data-testid^='flag-'][data-flagged]"); // the flag button itself, not its form's fields
@@ -99,39 +109,19 @@ test("flag a venue, move the pitch along, search finds it", async ({ page }) => 
 
   await page.getByTestId("booking-search").fill("");
   await page.getByTestId("booking-seg-pitches").click();
-  const swallow = page.getByTestId("pitch-list").locator("tr", { hasText: "Swallow Hill Music" });
-  await expect(swallow).toHaveCount(1);
-  await swallow.locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
+  const mine = page.getByTestId("pitch-list").locator("tr", { hasText: name });
+  await expect(mine).toHaveCount(1);
+  await mine.locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
 
   await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   await expect(page.getByTestId("pitched-as")).toHaveValue("duo"); // chosen on the flag form
   await expect(page.getByTestId("person-Nora")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("person-Hugo")).toHaveAttribute("aria-pressed", "false");
-  // dates from the flag form: Who's free columns, sorted
+  // dates from the flag form: Who's free columns, sorted. (Adding and removing them, the next step, status and comments are
+  // tests/emulator/booking.test.ts: pitch edits, move, comments, pitch dates.)
   const cols = page.getByTestId("pitch-dates").locator('[data-testid^="pitch-dates-col-"]');
   await expect(cols).toHaveCount(2);
   await expect(cols.nth(1)).toHaveText("Fri, May 1");
-  // add and remove on the pitch page autosave
-  await page.getByTestId("pitch-dates-date").fill("2099-04-01");
-  await page.getByTestId("pitch-dates-add").click();
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(cols).toHaveCount(3);
-  await expect(page.getByTestId("pitch-dates-col-1")).toHaveText("Wed, Apr 1"); // sorted: past, April, May
-  await page.getByTestId("pitch-dates-remove-1").click();
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(cols).toHaveCount(2);
-  await page.getByTestId("next-text").fill("Follow up");
-  await page.getByTestId("next-due").fill("2026-11-09");
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  await page.getByTestId("status").selectOption("pitched");
-  await expect(page.getByTestId("status")).toHaveValue("pitched");
-  await expect(page.getByTestId("timeline")).toContainText("Moved to Pitched");
-  await page.getByTestId("comment-input").fill("Great room for the trio");
-  await page.getByTestId("comment-send").click();
-  await expect(page.getByTestId("timeline")).toContainText("Great room for the trio");
-  await expect(page.getByTestId("comment-input")).toHaveValue("");
 });
 
 test("Ongoing (was the Pitch List): email and status columns, quiet rows turn yellow, statuses without Waiting", async ({ page }) => {
@@ -217,10 +207,10 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await expect(page.getByTestId("timeline").getByTestId("tl-emailSent")).toContainText(subject);
   // the thread is on the venue and listed on the Email card
   const card = page.getByTestId("pitch-email-card");
-  await expect(card.locator("h2")).toHaveText("Email · 1 thread");
-  await expect(card.getByTestId("email-threads").locator("a")).toHaveCount(1);
-  await expect(card.getByTestId("email-threads")).toContainText(subject);
-  await expect(card.getByTestId(/^thread-new-/)).toHaveCount(0);
+  // this run's thread (a retry, or an earlier spec, may have left others on the pitch)
+  const thread = card.getByTestId("email-threads").locator("a").filter({ hasText: subject });
+  await expect(thread).toHaveCount(1);
+  await expect(thread.getByTestId(/^thread-new-/)).toHaveCount(0);
 
   const msgs = (await (await request.get(`${GMAIL}/messages?account=rudy@example.com`)).json()) as { subject: string; to: string[]; threadId: string }[];
   const mine = msgs.find((m) => m.subject === subject);
@@ -233,41 +223,10 @@ test("send an email from a pitch; it shows in fake Gmail, on the timeline, and r
   await page.getByTestId("check-replies").click();
   await expect(page.getByTestId("replies-result")).toHaveText("1 new reply");
   await expect(page.getByTestId("tl-emailReply")).toContainText("Mid-November works.");
-  await expect(card.getByTestId(/^thread-new-/)).toHaveText("New reply");
-  await expect(card.getByTestId("email-threads")).toContainText("Mid-November works.");
-  await expect(card.getByTestId(/^thread-count-/)).toHaveText("2");
+  await expect(thread.getByTestId(/^thread-new-/)).toHaveText("New reply");
+  await expect(thread).toContainText("Mid-November works.");
+  await expect(thread.getByTestId(/^thread-count-/)).toHaveText("2");
   await expect(page.getByTestId("checked")).toHaveText("Checked just now");
-});
-
-test("create a promoter, a festival with a year, and open a contact", async ({ page }) => {
-  await signInAs(page, "rudy");
-  const stamp = Date.now();
-  await page.goto(A("/booking"));
-  await page.getByTestId("booking-add-actions").click();
-  await page.getByTestId("add-promoter").click();
-  await page.getByTestId("new-promoter-name").fill(`Promo ${stamp}`);
-  await page.getByTestId("new-promoter-submit").click();
-  await expect(page.getByTestId("promoter-page")).toBeVisible();
-
-  await page.goto(A("/booking"));
-  await page.getByTestId("booking-add-actions").click();
-  await page.getByTestId("add-festival").click();
-  await page.getByTestId("new-festival-name").fill(`Fest ${stamp}`);
-  await page.getByTestId("new-festival-city").fill("Greeley");
-  await page.getByTestId("new-festival-submit").click();
-  await expect(page.getByTestId("festival-page")).toBeVisible();
-  await page.getByTestId("add-edition").click();
-  await page.getByTestId("new-edition-label").fill("2099");
-  await page.getByTestId("new-edition-submit").click();
-  await expect(page.getByTestId("year-add-dialog")).toBeHidden();
-  const edition = page.getByTestId("festival-years").getByTestId(/^edition-/).first();
-  await expect(edition).toContainText("2099");
-  await edition.getByRole("link").click();
-  await expect(page.getByTestId("edition-page")).toBeVisible();
-
-  await page.goto(A("/contacts"));
-  await page.getByTestId(/^row-contact-/).first().getByTestId(/^contact-full-/).click();
-  await expect(page.getByTestId("contact-page")).toBeVisible();
 });
 
 test("Works with, Venues they book and Years: a plus adds, an × removes, no Edit on the card", async ({ page }) => {

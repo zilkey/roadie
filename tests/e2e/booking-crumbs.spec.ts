@@ -17,24 +17,28 @@ async function expectCurrent(page: Page, testid: string) {
 
 test("a pitch in a campaign: the sidebar marks the campaign and the crumbs lead back to it from Search Gmail, compose and find", async ({ page }) => {
   const name = `Crumbs ${Date.now()}`;
+  let campaignId = "";
+  let moved = false;
+  const pine = (page: Page) => page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']");
   await signInAs(page, "rudy");
-  await page.goto(A("/booking/campaigns"));
-  await expectCurrent(page, "booking-seg-campaigns");
-  await page.getByTestId("campaign-new").click();
-  await page.getByTestId("campaign-new-name").fill(name);
-  await page.getByTestId("campaign-new-create").click();
-  await expect(page).toHaveURL(/\/booking\/campaigns\/(?!ongoing)[^/?]+$/);
-  const campaignId = page.url().split("/").pop()!;
-  const seg = `booking-seg-campaign-${campaignId}`;
-  await expectCurrent(page, seg);
-
-  // Move Pine Hollow's pitch into it (moved back to Ongoing at the end: later specs find it there).
-  await page.getByTestId("booking-seg-pitches").click();
-  await expectCurrent(page, "booking-seg-pitches");
-  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  const select = page.getByTestId("pitch-campaign-select");
   try {
+    await page.goto(A("/booking/campaigns"));
+    await expectCurrent(page, "booking-seg-campaigns");
+    await page.getByTestId("campaign-new").click();
+    await page.getByTestId("campaign-new-name").fill(name);
+    await page.getByTestId("campaign-new-create").click();
+    await expect(page).toHaveURL(/\/booking\/campaigns\/(?!ongoing)[^/?]+$/);
+    campaignId = page.url().split("/").pop()!;
+    const seg = `booking-seg-campaign-${campaignId}`;
+    await expectCurrent(page, seg);
+
+    // Move Pine Hollow's pitch into it (moved back to Ongoing at the end: later specs find it there).
+    await page.getByTestId("booking-seg-pitches").click();
+    await expectCurrent(page, "booking-seg-pitches");
+    await pine(page).click();
+    const select = page.getByTestId("pitch-campaign-select");
     await select.selectOption({ label: name });
+    moved = true;
     await expect(page.getByTestId("crumb-2")).toHaveText(name); // Booking › Campaigns › the campaign › Pine Hollow Lounge
     await expectCurrent(page, seg);
 
@@ -69,15 +73,19 @@ test("a pitch in a campaign: the sidebar marks the campaign and the crumbs lead 
     await expect(page).toHaveURL(new RegExp(`/booking/campaigns/${campaignId}$`));
     await expect(page.getByTestId("pitch-list")).toContainText("Pine Hollow Lounge");
   } finally {
-    await page.goto(A("/booking/campaigns/" + campaignId));
-    await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-    await select.selectOption({ label: "Ongoing (no campaign)" });
-    await expect(page.getByTestId("crumb-2")).toHaveText("Ongoing");
-    // and close the campaign: while one is active, a flag asks which campaign (booking.spec flags straight onto Ongoing)
-    await page.goto(A("/booking/campaigns/" + campaignId));
-    page.once("dialog", (d) => void d.accept());
-    await page.getByTestId("campaign-more-actions").click();
-    await page.getByTestId("campaign-close").click();
-    await expect(page.getByTestId("campaign-closed")).toBeVisible();
+    if (campaignId) {
+      if (moved) {
+        await page.goto(A("/booking/campaigns/" + campaignId));
+        await pine(page).click();
+        await page.getByTestId("pitch-campaign-select").selectOption({ label: "Ongoing (no campaign)" });
+        await expect(page.getByTestId("crumb-2")).toHaveText("Ongoing");
+      }
+      // and close the campaign: while one is active, a flag asks which campaign (booking.spec flags straight onto Ongoing)
+      await page.goto(A("/booking/campaigns/" + campaignId));
+      page.once("dialog", (d) => void d.accept());
+      await page.getByTestId("campaign-more-actions").click();
+      await page.getByTestId("campaign-close").click();
+      await expect(page.getByTestId("campaign-closed")).toBeVisible();
+    }
   }
 });

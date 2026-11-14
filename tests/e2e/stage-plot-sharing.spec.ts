@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { APP, AUTH, FIRESTORE, A, ARTIST_SLUG } from "./env";
+import { SEED, mmmD } from "./dates";
 
 // Stage plots on a show: pick a plot, download the PDF, turn the engineer link on, open it logged out, turn it off. No screenshots.
 
@@ -30,6 +31,13 @@ async function cmd<T = Record<string, any>>(name: string, input: unknown): Promi
   expect(res.ok(), `${name}: ${await res.text()}`).toBeTruthy();
   return ((await res.json()) as { result: T }).result;
 }
+/** The seeded Pine Hollow Lounge hold, found by its date: the show every test here uses. */
+async function holdShowId() {
+  const { shows } = await cmd<{ shows: { id: string; date: string; name: string }[] }>("shows.list", { from: SEED.hold, to: SEED.hold });
+  const s = shows.find((x) => x.name.includes("Pine Hollow"));
+  expect(s, `the seeded Pine Hollow show on ${SEED.hold}`).toBeTruthy();
+  return s!.id;
+}
 async function openShow(page: Page, venue: string, date: string) {
   await page.goto("/signin");
   await page.getByTestId("dev-rudy").click();
@@ -54,7 +62,8 @@ test.afterAll(async () => {
 });
 
 test("pick a plot on a show, download the PDF, engineer link on, open it logged out, off kills it", async ({ page, browser }) => {
-  await openShow(page, "Pine Hollow Lounge", "Jan 16");
+  await cmd("shows.setStagePlot", { showId: await holdShowId(), stagePlotId: null }); // a retry finds the first attempt's pick (or a plot that is gone)
+  await openShow(page, "Pine Hollow Lounge", mmmD(SEED.hold));
   const card = page.getByTestId("stage-plot");
   await expect(card).toContainText("Pick a stage plot");
   await card.getByTestId("plot-pick").selectOption(plotId);
@@ -105,8 +114,7 @@ test("pick a plot on a show, download the PDF, engineer link on, open it logged 
 });
 
 test("members see the card only once a plot is picked, and can download but not change it", async ({ page }) => {
-  const showId = (await cmd<{ shows: { id: string; venue?: string }[] }>("shows.list", {})).shows?.[0]?.id;
-  test.skip(!showId, "no seeded show");
+  const showId = await holdShowId();
   await cmd("shows.setStagePlot", { showId, stagePlotId: plotId });
   await page.goto("/signin");
   await page.getByTestId("dev-hugo").click();
@@ -153,9 +161,7 @@ test("editor: the paper pick is remembered, Duplicate leaves a musician out, Arc
     await page.getByTestId(`dup-drop-${drummer.musicianId}`).check();
     await page.getByTestId("dup-go").click();
     await expect(page).toHaveURL(new RegExp(`/stage-plots/(?!${srcId}$)[^/]+$`));
-    await expect(page.getByTestId("page-title")).toHaveText("Dup test plot no drums");
-    await expect(page.getByTestId("ch-row")).toHaveCount(1);
-    await expect(page.locator('[data-testid="ch-row"][data-ch="1"]').getByTestId("ch-source")).toHaveValue("Vox");
+    await expect(page.getByTestId("page-title")).toHaveText("Dup test plot no drums"); // which inputs the copy keeps: tests/emulator/stage-plot-commands.test.ts
     const copyId = page.url().split("/").pop()!;
 
     // Archive the copy (confirm first): back to the list, and it is gone.

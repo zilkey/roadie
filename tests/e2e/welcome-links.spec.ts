@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { A } from "./env";
 
-test("links from the sign-up flow: validate, save once, land on Ready, shown in Settings", async ({ page }) => {
+test("links from the sign-up flow: save once, land on Ready, shown in Settings", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-rudy").click();
   await expect(page).toHaveURL(/\/calendar$/);
@@ -14,11 +14,8 @@ test("links from the sign-up flow: validate, save once, land on Ready, shown in 
 
   await page.getByTestId("wl-website").fill("welcome-links.example");
   await page.getByTestId("wl-instagram").fill("@welcomelinks");
-  await page.getByTestId("wl-signal").fill("https://example.com/not-signal");
-  await expect(page.getByTestId("wl-signal-hint")).toBeVisible();
-  await expect(page.getByTestId("wl-save")).toBeDisabled();
+  // (what counts as a good Signal / Instagram / website link: tests/unit/signal.test.ts, tests/unit/artist-links.test.ts)
   await page.getByTestId("wl-signal").fill("https://signal.group/#CjQKIabc");
-  await expect(page.getByTestId("wl-signal-hint")).toHaveCount(0);
   await page.getByTestId("wl-save").click();
 
   await expect(page).toHaveURL(/\/welcome$/);

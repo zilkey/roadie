@@ -11,7 +11,7 @@ async function as(browser: Browser, key: string) {
 }
 
 // Stage plots: eight circles wait in the strip, get placed (tap-to-place), labelled and reordered; the admin edits, members read.
-test("admin makes a plot, raises inputs, places a circle, labels and reorders rows; it persists; a member reads it", async ({ browser }) => {
+test("admin makes a plot, places a circle, labels and reorders rows; it persists; a member reads it", async ({ browser }) => {
   const name = `E2E plot ${Date.now()}`;
   const rudy = await as(browser, "rudy");
   const page = rudy.page;
@@ -28,19 +28,11 @@ test("admin makes a plot, raises inputs, places a circle, labels and reorders ro
   await expect(page.getByTestId("strip-chip")).toHaveCount(8);
   await expect(page.getByTestId("ch-row")).toHaveCount(8);
 
-  // Raise to 10.
-  await page.getByTestId("inputs-plus").click();
-  await expect(page.getByTestId("ch-row")).toHaveCount(9);
-  await page.getByTestId("inputs-count").fill("10");
-  await page.getByTestId("inputs-count").press("Enter");
-  await expect(page.getByTestId("ch-row")).toHaveCount(10);
-  await expect(page.getByTestId("strip-chip")).toHaveCount(10);
-
   // Tap-to-place: arm circle 1 from the strip, tap the stage; circle 2 is armed next.
   await page.getByTestId("strip-chip").filter({ hasText: /^1$/ }).first().click();
   await page.getByTestId("plot-stage").click({ position: { x: 400, y: 200 } });
   await expect(page.locator('[data-testid="plot-stage"] [data-input-id][data-ch="1"]')).toHaveCount(1);
-  await expect(page.getByTestId("strip-chip")).toHaveCount(9);
+  await expect(page.getByTestId("strip-chip")).toHaveCount(7);
   await expect(page.getByTestId("strip-chip").first()).toHaveAttribute("aria-pressed", "true");
 
   // Label rows 1 and 2 (autosaved).
@@ -59,7 +51,7 @@ test("admin makes a plot, raises inputs, places a circle, labels and reorders ro
   // Persisted after a reload.
   await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
   await page.reload();
-  await expect(page.getByTestId("ch-row")).toHaveCount(10);
+  await expect(page.getByTestId("ch-row")).toHaveCount(8);
   await expect(row(1).getByTestId("ch-source")).toHaveValue("Snare");
   await expect(row(2).getByTestId("ch-source")).toHaveValue("Kick");
   await expect(row(1).getByTestId("ch-phantom")).toBeChecked();

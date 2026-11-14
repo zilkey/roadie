@@ -39,6 +39,15 @@ export function useRoadie(onNavigated?: () => void) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
   const loaded = useRef(false);
+  /**
+   * Saves which conversation is open, one write at a time and in the order asked for. Sent side by side, "New chat"
+   * (none) and the first message's reply (its new conversation) can land the wrong way round, and the next page load
+   * opens an empty panel.
+   */
+  const threadSaves = useRef<Promise<unknown>>(Promise.resolve());
+  const saveThread = useCallback((id: string | null) => {
+    threadSaves.current = threadSaves.current.then(() => runCommand("assistant.setPrefs", { threadId: id })).catch(() => {});
+  }, []);
 
   useEffect(() => { setWidthState(readWidth()); }, []);
   // Take the saved width and conversation once, when the users doc first arrives.
@@ -89,7 +98,7 @@ export function useRoadie(onNavigated?: () => void) {
       // Where the reply will be saved: switch to its conversation now, so a Stop still shows the saved copy.
       if (e.threadId !== threadId) {
         setThreadId(e.threadId);
-        runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
+        saveThread(e.threadId);
       }
       setPending((p) => p && { ...p, replyId: e.messageId });
     } else if (e.type === "text") { acc.reply += e.delta; setPending((p) => p && { ...p, reply: p.reply + e.delta }); }
@@ -109,18 +118,18 @@ export function useRoadie(onNavigated?: () => void) {
       onNavigated?.();
     } else if (e.type === "done") {
       setThreadId(e.threadId);
-      runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
+      saveThread(e.threadId);
       setPending((p) => p && { ...p, doneId: e.messageId });
     } else if (e.type === "error") {
       // Saved anyway: stay in this thread so the retry has the message, and let the saved copy replace this one.
       acc.error = e.message;
       if (e.threadId && e.threadId !== threadId) {
         setThreadId(e.threadId);
-        runCommand("assistant.setPrefs", { threadId: e.threadId }).catch(() => {});
+        saveThread(e.threadId);
       }
       setPending((p) => p && { ...p, error: e.message, ...(e.messageId ? { doneId: e.messageId } : {}) });
     }
-  }, [router, onNavigated, slug, threadId]);
+  }, [router, onNavigated, slug, threadId, saveThread]);
 
   /**
    * Sends a message and streams the reply into `pending`. Resolves to the finished turn, or null when it didn't send (busy or empty).
@@ -179,8 +188,8 @@ export function useRoadie(onNavigated?: () => void) {
   const newChat = useCallback(() => {
     inFlight.current?.abort();
     setThreadId(undefined); setPending(null);
-    runCommand("assistant.setPrefs", { threadId: null }).catch(() => {});
-  }, []);
+    saveThread(null);
+  }, [saveThread]);
 
   /** Yes / Cancel on a confirm card, and Undo on a read-back line. The server does the work from what it stored; the page just shows the result. */
   const [notice, setNotice] = useState<string | null>(null);

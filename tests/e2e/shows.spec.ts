@@ -1,5 +1,12 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { CAL, GMAIL, A } from "./env";
+import { SEED, day, fmtPitchDate, mmmD } from "./dates";
+import { addDays } from "../../src/lib/shows";
+
+/** The date test 1 books the Heron show for, and the dates the ask tests add around the Creamery pitch's (a week apart). */
+const BOOKED = day(150);
+const EARLY = addDays(SEED.creamery1, -6); // before the pitch's first date, so it sorts first in the ask
+const LATE = addDays(SEED.creamery1, 1); // between the Marisol dates' two, on a different pitch
 
 
 async function signInAs(page: Page, key: string) {
@@ -52,13 +59,11 @@ test("Booked it turns a pitch into a show with a set length, show start and a de
   await page.getByTestId("billed-as").selectOption("full-band");
   await expect(page.getByTestId("play-Hugo")).toHaveAttribute("aria-pressed", "true");
 
-  await page.getByTestId("show-date").fill("2027-02-20");
+  await page.getByTestId("show-date").fill(BOOKED);
   await page.getByTestId("show-set").fill("20:00");
   await page.getByTestId("show-showStart").fill("19:30");
   await page.getByTestId("show-length").fill("1h 30m");
   await expect(page.getByTestId("show-length-says")).toHaveText("1 hour 30 minutes · ends at 9:30 PM");
-  await page.getByTestId("show-length").fill("2:30");
-  await expect(page.getByTestId("show-length-says")).toHaveText("2 hours 30 minutes · ends at 10:30 PM");
   await expect(page.getByTestId("show-notes")).toHaveCount(0);
   await page.getByTestId("sound").selectOption("bandProvided");
   await page.getByTestId("need-poster").click();
@@ -75,7 +80,7 @@ test("Booked it turns a pitch into a show with a set length, show start and a de
   const id = showId(page);
 
   // Saving the show sends nothing to Calendar
-  const findEv = async () => ((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).find((e) => !calIds.has(e.id) && e.title.includes("Heron Theatre") && e.start.startsWith("2027-02-20"));
+  const findEv = async () => ((await (await request.get(`${CAL}/events`)).json()) as CalEv[]).find((e) => !calIds.has(e.id) && e.title.includes("Heron Theatre") && e.start.startsWith(BOOKED));
   expect(await findEv()).toBeUndefined();
 
   // the pitch is booked and links to the show
@@ -111,32 +116,35 @@ test("Ask who's free: the pitch's dates ahead are picked, and Send says why it's
   };
   // Creamery has possible dates: each one is a column in Who's free and starts picked in the ask.
   await open("Creamery Arts Center");
-  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText("Fri, Mar 12");
-  await expect(page.getByTestId("ask-date-2027-03-12")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("ask-date-2027-03-19")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText(fmtPitchDate(SEED.creamery1));
+  await expect(page.getByTestId(`ask-date-${SEED.creamery1}`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId(`ask-date-${SEED.creamery2}`)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("whos-free-status")).toHaveText("Not asked yet");
   // Marisol has none: Send is off and says so until a date is added in the grid.
   await open("Marisol");
+  // (a retry finds the dates the first attempt left on the pitch: clear them first)
+  const dateX = page.getByTestId(/^pitch-dates-remove-\d+$/);
+  for (let n = await dateX.count(); n > 0; n--) { await dateX.first().click(); await expect(dateX).toHaveCount(n - 1); }
   await expect(page.getByTestId("ask-no-dates")).toBeVisible();
   await expect(page.getByTestId("ask-send")).toBeDisabled();
   await expect(page.getByTestId("ask-send-why")).toHaveText("Pick a date to send.");
   // A message typed before there's a date gets the real dates as they're added
   await expect(page.getByTestId("ask-message")).toHaveValue(/on \[date\]\./);
   await page.getByTestId("ask-message").fill("Hey all, Marisol on [date]. In?");
-  await page.getByTestId("pitch-dates-date").fill("2027-03-06");
+  await page.getByTestId("pitch-dates-date").fill(EARLY);
   await page.getByTestId("pitch-dates-add").click();
-  await expect(page.getByTestId("ask-date-2027-03-06")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Marisol on Sat, Mar 6. In?");
-  await page.getByTestId("pitch-dates-date").fill("2027-03-13");
+  await expect(page.getByTestId(`ask-date-${EARLY}`)).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("ask-message")).toHaveValue(`Hey all, Marisol on ${fmtPitchDate(EARLY)}. In?`);
+  await page.getByTestId("pitch-dates-date").fill(LATE);
   await page.getByTestId("pitch-dates-add").click();
-  await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Marisol on Sat, Mar 6 or Sat, Mar 13. In?");
+  await expect(page.getByTestId("ask-message")).toHaveValue(`Hey all, Marisol on ${fmtPitchDate(EARLY)} or ${fmtPitchDate(LATE)}. In?`);
   // Dates rewritten by hand aren't touched; a note offers the standard message
   await page.getByTestId("ask-message").fill("Hey all, Marisol in early March. In?");
-  await page.getByTestId("ask-date-2027-03-13").click();
+  await page.getByTestId(`ask-date-${LATE}`).click();
   await expect(page.getByTestId("ask-message")).toHaveValue("Hey all, Marisol in early March. In?");
-  await expect(page.getByTestId("ask-message-dates")).toContainText("Sat, Mar 6");
+  await expect(page.getByTestId("ask-message-dates")).toContainText(fmtPitchDate(EARLY));
   await page.getByTestId("ask-message-reset").click();
-  await expect(page.getByTestId("ask-message")).toHaveValue(/show at Marisol' Other Side on Sat, Mar 6\. Can you play\?/);
+  await expect(page.getByTestId("ask-message")).toHaveValue(new RegExp(`show at Marisol' Other Side on ${fmtPitchDate(EARLY)}\\. Can you play\\?`));
   await page.getByTestId("pitch-dates-remove-1").click();
   await expect(page.getByTestId("ask-send")).toBeEnabled();
   await expect(page.getByTestId("ask-send-why")).toHaveCount(0);
@@ -153,49 +161,52 @@ test("Ask who's free: one email per person for every date, a sub answers each da
   await page.getByTestId("pitch-list").locator("tr", { hasText: "Creamery Arts Center" }).locator("[data-testid^='flag-'][data-flagged='1']").click(); // the filled flag opens the pitch
   await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
   const pitchUrl = page.url();
-  await page.getByTestId("pitch-dates-date").fill("2027-03-06");
+  await page.getByTestId("pitch-dates-date").fill(EARLY);
   await page.getByTestId("pitch-dates-add").click();
-  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText("Sat, Mar 6");
-  await page.getByTestId("ask-date-2027-03-19").click(); // not this one
+  await expect(page.getByTestId("pitch-dates-col-0")).toHaveText(fmtPitchDate(EARLY));
+  await page.getByTestId(`ask-date-${SEED.creamery2}`).click(); // not this one
   await expect(page.getByTestId("ask-person-Hugo")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ask-person-Sam")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("ask-person-Sam").click();
-  await expect(page.getByTestId("ask-message")).toHaveValue(/show at Creamery Arts Center on Sat, Mar 6 or Fri, Mar 12\. Can you play\?/);
+  await expect(page.getByTestId("ask-message")).toHaveValue(new RegExp(`show at Creamery Arts Center on ${fmtPitchDate(EARLY)} or ${fmtPitchDate(SEED.creamery1)}\\. Can you play\\?`));
   await expect(page.getByTestId("ask-send")).toHaveText(/^Send \d+ emails$/);
+  // Count by this ask's own subject, so a retry (or another spec's ask about the same venue) can't change the number.
+  const ASKED = `${fmtPitchDate(EARLY)} or ${fmtPitchDate(SEED.creamery1)}`;
+  const toHugoNow = async () => ((await (await request.get(`${GMAIL}/messages?account=rudy@example.com`)).json()) as { to: string[]; subject: string; body: string }[])
+    .filter((m) => m.to.includes("hugo@example.com") && m.subject.includes("Creamery Arts Center") && m.subject.includes(ASKED));
+  const sentBefore = (await toHugoNow()).length;
   await page.getByTestId("ask-send").click();
 
   // Sam has no email: the link is shown to send by text. Others were emailed, once each for both dates.
   await expect(page.getByTestId("ask-result")).toContainText("Emailed");
   const link = (await page.getByTestId("ask-link-Sam").textContent())!.trim();
   expect(link).toMatch(/\/ask\/[^/]+\/[^/]+\/[\w-]{20,}$/);
-  const mail = (await (await request.get(`${GMAIL}/messages?account=rudy@example.com`)).json()) as { to: string[]; subject: string; body: string }[];
-  const toHugo = mail.filter((m) => m.to.includes("hugo@example.com") && m.subject.includes("Creamery Arts Center"));
-  expect(toHugo).toHaveLength(1);
-  expect(toHugo[0].subject).toContain("Sat, Mar 6 or Fri, Mar 12");
-  expect(toHugo[0].body).toMatch(/\/ask\//);
+  const toHugo = await toHugoNow();
+  expect(toHugo).toHaveLength(sentBefore + 1);
+  expect(toHugo.at(-1)!.body).toMatch(/\/ask\//);
 
   // Rudy's grid: everyone asked, no replies yet; Mar 19 wasn't asked about
-  await expect(page.getByTestId("free-Sam-2027-03-06")).toHaveText("No reply");
-  await expect(page.getByTestId("free-Sam-2027-03-19")).toHaveText("Not asked");
+  await expect(page.getByTestId(`free-Sam-${EARLY}`)).toHaveText("No reply");
+  await expect(page.getByTestId(`free-Sam-${SEED.creamery2}`)).toHaveText("Not asked");
   await expect(page.getByTestId("whos-free-status")).toContainText("via email");
 
   // the sub opens the link in a fresh browser with no login: one card per date
   const anon = await browser.newContext();
   const sub = await anon.newPage();
-  await sub.goto(link.replace("http://127.0.0.1:3100", ""));
+  await sub.goto(link);
   await expect(sub.getByTestId("ask-label")).toContainText("Creamery Arts Center");
-  await expect(sub.locator("[data-testid^='answer-2027-'][data-testid$='-yes']")).toHaveCount(2);
-  await sub.getByTestId("answer-2027-03-06-note").fill("Can do after 6");
-  await sub.getByTestId("answer-2027-03-06-yes").click();
-  await expect(sub.getByTestId("answer-2027-03-06-saved")).toBeVisible();
-  await expect(sub.getByTestId("answer-2027-03-06-yes")).toHaveAttribute("aria-pressed", "true");
-  await sub.getByTestId("answer-2027-03-12-maybe").click();
-  await expect(sub.getByTestId("answer-2027-03-12-maybe")).toHaveAttribute("aria-pressed", "true");
+  await expect(sub.locator("[data-testid^='answer-'][data-testid$='-yes']")).toHaveCount(2);
+  await sub.getByTestId(`answer-${EARLY}-note`).fill("Can do after 6");
+  await sub.getByTestId(`answer-${EARLY}-yes`).click();
+  await expect(sub.getByTestId(`answer-${EARLY}-saved`)).toBeVisible();
+  await expect(sub.getByTestId(`answer-${EARLY}-yes`)).toHaveAttribute("aria-pressed", "true");
+  await sub.getByTestId(`answer-${SEED.creamery1}-maybe`).click();
+  await expect(sub.getByTestId(`answer-${SEED.creamery1}-maybe`)).toHaveAttribute("aria-pressed", "true");
   await sub.reload();
-  await expect(sub.getByTestId("answer-2027-03-06-yes")).toHaveAttribute("aria-pressed", "true");
-  await expect(sub.getByTestId("answer-2027-03-06-note")).toHaveValue("Can do after 6");
+  await expect(sub.getByTestId(`answer-${EARLY}-yes`)).toHaveAttribute("aria-pressed", "true");
+  await expect(sub.getByTestId(`answer-${EARLY}-note`)).toHaveValue("Can do after 6");
   // a tampered link is refused
-  await sub.goto(link.slice(0, -3).replace("http://127.0.0.1:3100", "") + "xyz");
+  await sub.goto(link.slice(0, -3) + "xyz");
   await expect(sub.getByTestId("ask-problem")).toBeVisible();
   await anon.close();
 
@@ -203,22 +214,22 @@ test("Ask who's free: one email per person for every date, a sub answers each da
   const hugo = await as(browser, "hugo");
   await hugo.page.goto(pitchUrl);
   await expect(hugo.page.getByTestId("member-dates")).toBeVisible();
-  await hugo.page.getByTestId("answer-2027-03-12-no").click();
-  await expect(hugo.page.getByTestId("answer-2027-03-12-saved")).toBeVisible();
+  await hugo.page.getByTestId(`answer-${SEED.creamery1}-no`).click();
+  await expect(hugo.page.getByTestId(`answer-${SEED.creamery1}-saved`)).toBeVisible();
   await hugo.close();
 
   // Rudy sees it live
-  await expect(page.getByTestId("free-Sam-2027-03-06")).toContainText("Free");
-  await expect(page.getByTestId("free-Sam-2027-03-06")).toContainText("Can do after 6");
-  await expect(page.getByTestId("free-Sam-2027-03-12")).toHaveText("Maybe");
-  await expect(page.getByTestId("free-Hugo-2027-03-12")).toHaveText("Can't");
-  await expect(page.getByTestId("free-total-2027-03-06")).toHaveText(/^1 of \d+$/);
+  await expect(page.getByTestId(`free-Sam-${EARLY}`)).toContainText("Free");
+  await expect(page.getByTestId(`free-Sam-${EARLY}`)).toContainText("Can do after 6");
+  await expect(page.getByTestId(`free-Sam-${SEED.creamery1}`)).toHaveText("Maybe");
+  await expect(page.getByTestId(`free-Hugo-${SEED.creamery1}`)).toHaveText("Can't");
+  await expect(page.getByTestId(`free-total-${EARLY}`)).toHaveText(/^1 of \d+$/);
 
   // Rudy answers for himself on a date nobody asked him about
   await page.reload();
   await expect(page.getByTestId("my-dates")).toBeVisible();
-  await page.getByTestId("my-dates").getByTestId("answer-2027-03-19-yes").click();
-  await expect(page.getByTestId("my-dates").getByTestId("answer-2027-03-19-saved")).toBeVisible();
+  await page.getByTestId("my-dates").getByTestId(`answer-${SEED.creamery2}-yes`).click();
+  await expect(page.getByTestId("my-dates").getByTestId(`answer-${SEED.creamery2}-saved`)).toBeVisible();
 });
 
 test("Shows list: title row with New show and no subtitle; one table per tab; the tab survives a reload", async ({ page, browser }) => {
@@ -231,7 +242,7 @@ test("Shows list: title row with New show and no subtitle; one table per tab; th
   await expect(page.getByText("Upcoming, played, canceled and dropped.")).toHaveCount(0);
 
   await expect(heads(page, "upcoming")).toHaveText(["Date", "Venue", "Address", "Load in", "Sound check", "Doors", "Show starts", "Set starts", "Sound", "Contact", "Setlist"]);
-  const hi = page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: "Nov 14" });
+  const hi = page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: mmmD(SEED.deepEnd) });
   await expect(hi.locator("td").nth(5)).toHaveText("8:30 pm"); // doors
   await expect(hi.locator("td.addr a")).toHaveAttribute("href", /google\.com\/maps\/search\/\?api=1&query=7%20S%20Broadway/);
   await expect(hi.locator("td").nth(8)).toHaveText("They provide");

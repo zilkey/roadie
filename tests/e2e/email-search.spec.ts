@@ -14,6 +14,10 @@ test("Search Gmail: link the web form's auto-reply to the venue, find Rosa and t
   const auto = await receive({ from: "booking@pinehollow.example", to: ["rudy@example.com"], subject: autoSubject, body: "We got your application." });
   const hay = await receive({ from: "rosa@pinehollow.example", fromName: "Rosa Jackson", to: ["rudy@example.com"], subject: `Support slot ${stamp}`, body: "Dec 11 works.\n\nRosa Jackson\nTalent buyer, Pine Hollow Lounge\n(303) 555-0101" });
 
+  // Linking a thread makes each person on it a contact of the place, so the address this test adds is one that is never linked, and stamped so a retry finds it new.
+  const added = `bookings-${stamp}@pinehollow.example`;
+  await receive({ from: added, to: ["rudy@example.com"], subject: `Booking inbox ${stamp}`, body: "Send your dates." });
+
   await signInAs(page, "rudy");
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-pitches").click();
@@ -41,26 +45,13 @@ test("Search Gmail: link the web form's auto-reply to the venue, find Rosa and t
   const people = page.getByTestId("gmail-people");
   await expect(people.getByTestId("gmail-person-rosa@pinehollow.example")).toContainText("Talent buyer, Pine Hollow Lounge");
   await expect(people.getByTestId("gmail-known-rosa@pinehollow.example")).toHaveText("Already a contact");
-  await expect(page.getByTestId("gmail-add-booking@pinehollow.example")).toBeVisible();
-  await page.getByTestId("gmail-add-booking@pinehollow.example").click();
-  await expect(page.getByTestId("gmail-known-booking@pinehollow.example")).toHaveText("Added · Booking");
+  await expect(page.getByTestId(`gmail-add-${added}`)).toBeVisible();
+  await page.getByTestId(`gmail-add-${added}`).click();
+  await expect(page.getByTestId(`gmail-known-${added}`)).toHaveText("Added · Booking");
 
   // the venue's Contacts card lists the new address
   await page.goto(A("/booking/venues"));
   await page.getByTestId(/^row-venue-/).filter({ hasText: "Pine Hollow Lounge" }).getByTestId(/^page-link-/).click();
   await expect(page.getByTestId("venue-page")).toBeVisible();
-  await expect(page.getByTestId("contacts-panel")).toContainText("booking@pinehollow.example");
-});
-
-test("Reply from Roadie links the thread and opens it", async ({ page, request }) => {
-  const stamp = Date.now();
-  const hay = (await (await request.post(`${GMAIL}/messages/receive`, { data: { from: "rosa@pinehollow.example", fromName: "Rosa Jackson", to: ["rudy@example.com"], subject: `Dates ${stamp}`, body: "Which dates?" } })).json()) as { threadId: string };
-  await signInAs(page, "rudy");
-  await page.goto(A("/booking"));
-  await page.getByTestId("booking-seg-pitches").click();
-  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
-  await page.getByTestId("search-gmail").click();
-  await page.getByTestId(`gmail-reply-${hay.threadId}`).click();
-  // the thread page is another story; the link was made and we went to /booking/email/<id>
-  await expect(page).toHaveURL(/\/booking\/email\/[^/?]+$/);
+  await expect(page.getByTestId("contacts-panel")).toContainText(added);
 });

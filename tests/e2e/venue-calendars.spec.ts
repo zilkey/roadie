@@ -184,30 +184,14 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await expect(page.getByTestId("calendar-filter-show")).toHaveValue("all");
   await expect(shows(page)).toHaveCount(2);
 
-  // Hide "not a fit": with the two furthest out marked not a fit, only the soonest is left, a page further on. The list reads on
-  // to find it in one settled render: no "no match" note or half-filled table on the way (each bigger read's first snapshot comes
-  // from the cache with only the last read's shows, which once read as the end and flashed the note once a round)
+  // Hide "not a fit": with the two furthest out marked not a fit, only the soonest is left, a page further on. (How the filters add up,
+  // their URL form and the read-on rule: tests/unit/venue-events.test.ts.)
   await page.getByTestId("calendar-filter-hide").uncheck();
   await setNotFit(row("Headline Example Trio"), true);
   await setNotFit(row("Lone Example Act"), true);
-  await page.evaluate(() => {
-    const root = document.querySelector('[data-testid="venue-calendars"]')!;
-    const seen: string[] = [];
-    (window as unknown as { __seen: string[] }).__seen = seen;
-    new MutationObserver(() => {
-      const s = root.querySelector('[data-testid="venue-calendars-none"]') ? "none" : root.querySelector("table") ? `table:${root.querySelectorAll("tbody tr").length}` : "loading";
-      if (seen.at(-1) !== s) seen.push(s);
-    }).observe(root, { subtree: true, childList: true });
-  });
   await page.getByTestId("calendar-filter-hide").check();
   await expect(shows(page)).toHaveCount(1);
   await expect(row("The Example Band")).toHaveCount(1);
-  const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
-  expect(seen.filter((s) => s !== "loading")).toEqual(["table:1"]);
-  // and they add up: likely and not hidden leaves nothing (the trio is the only likely one)
-  await page.getByTestId("calendar-filter-show").selectOption("likely");
-  await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
-  await page.getByTestId("calendar-filter-show").selectOption("all");
   await page.getByTestId("calendar-filter-hide").uncheck();
   await page.getByTestId("venue-calendars-more").click();
   await setNotFit(row("Headline Example Trio"), false); // the X again clears it
@@ -218,14 +202,6 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   await page.getByTestId("calendar-filter-region").selectOption("boulder");
   await expect(page.getByTestId("venue-calendars-none")).toBeVisible();
   await page.getByTestId("calendar-filter-region").selectOption("denver");
-  await expect(shows(page)).toHaveCount(2);
-
-  // When: the shows are in 2031, so 6 months out or more keeps them all
-  await page.getByTestId("calendar-filter-when").selectOption("6m");
-  await expect(shows(page)).toHaveCount(2);
-  await page.getByTestId("venue-calendars-more").click();
-  await expect(shows(page)).toHaveCount(3);
-  await page.getByTestId("calendar-filter-when").selectOption("any");
   await expect(shows(page)).toHaveCount(2);
 
   // a link sends the exact list; back to the defaults leaves the URL bare

@@ -1,6 +1,19 @@
 import fs from "node:fs";
-import { test, expect, type Browser } from "@playwright/test";
-import { A } from "./env";
+import { test, expect, type APIRequestContext, type Browser } from "@playwright/test";
+import { APP, AUTH, FIRESTORE, A, ARTIST_SLUG } from "./env";
+import { SEED, fmtLongYear, fmtPitchDate, mmmD, monthOf } from "./dates";
+import { addDays } from "../../src/lib/shows";
+import { dayLabel, fmtTourDates } from "../../src/lib/tours";
+
+// The tour runs from three days before the Creamery pitch's first date to the day after its second, whatever today is.
+// Every day below is derived from START; the span can cross a month or a year, so nothing here assumes one calendar month.
+const START = addDays(SEED.creamery1, -3);
+const END = addDays(SEED.creamery2, 1);
+const END_EDITED = addDays(END, 1);
+const D_STAY = addDays(START, 1); // the notes and the stay (2 nights)
+const D_NIGHT2 = addDays(START, 2);
+const D_SWALLOW = addDays(SEED.creamery1, 2); // the Swallow Hill option
+const CREAMERY = SEED.creamery1;
 
 async function as(browser: Browser, key: string) {
   const ctx = await browser.newContext();
@@ -14,8 +27,28 @@ async function as(browser: Browser, key: string) {
 // One tour, made in the first test and read by the others (the suite runs in order on one seeded database).
 let tourUrl = "";
 
+// The tour is removed through the command API in afterAll, so a rerun (or a retry) starts without it and the Tours list is not left with it.
+let api: APIRequestContext;
+test.beforeAll(async ({ playwright }) => { api = await playwright.request.newContext(); });
+test.afterAll(async () => {
+  if (tourUrl) {
+    const auth = await api.post(`http://${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo`, {
+      data: {
+        postBody: `id_token=${encodeURIComponent(JSON.stringify({ sub: "dev-rudy", email: "rudy@example.com", email_verified: true, name: "Rudy" }))}&providerId=google.com`,
+        requestUri: "http://localhost", returnIdpSignInMethod: true, returnSecureToken: true,
+      },
+    });
+    const token = ((await auth.json()) as { idToken: string }).idToken;
+    const artists = await api.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/artists`, { headers: { authorization: "Bearer owner" } });
+    const docs = ((await artists.json()) as { documents: { name: string; fields: { slug?: { stringValue: string } } }[] }).documents;
+    const artistId = docs.find((d) => d.fields.slug?.stringValue === ARTIST_SLUG)!.name.split("/").pop()!;
+    await api.post(`${APP}/api/commands/tours.remove`, { data: { id: tourUrl.split("/").pop() }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
+  }
+  await api.dispose();
+});
+
 test.describe.serial("tours", () => {
-  /** The seeded Creamery Arts Center pitch offers Mar 12 and 19, 2027; the Duo act's project is Duo. */
+  /** The seeded Creamery Arts Center pitch offers SEED.creamery1 and creamery2; the Duo act's project is Duo. */
   test("admin creates a tour from a draft: nothing is made until Create Tour, and the pitch in range comes along", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(A("/tours"));
@@ -23,18 +56,18 @@ test.describe.serial("tours", () => {
     await expect(page).toHaveURL(/\/tours\/new$/);
 
     await page.getByTestId("tour-name-input").fill("Mountain West");
-    await page.getByTestId("tour-start").fill("2027-03-09");
-    await page.getByTestId("tour-end").fill("2027-03-20");
+    await page.getByTestId("tour-start").fill(START);
+    await page.getByTestId("tour-end").fill(END);
     await page.getByTestId("tour-act").selectOption({ label: "Duo" });
     await expect(page.getByTestId("tour-project").locator("option:checked")).toHaveText("Duo");
     await expect(page.getByTestId("tour-who-Rudy")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("tour-who-Hugo")).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTestId("tour-pitch-Creamery Arts Center")).toContainText("Mar 12");
+    await expect(page.getByTestId("tour-pitch-Creamery Arts Center")).toContainText(fmtPitchDate(CREAMERY));
     await expect(page.getByTestId("draft-status")).toHaveText("Draft saved");
 
     // A draft, not a tour: leaving and coming back finds the values, and the list is still empty.
     await page.goto(A("/tours"));
-    await expect(page.getByTestId("tours-empty")).toBeVisible();
+    await expect(page.getByTestId("tours-list").locator('[data-testid^="tour-row-"]').filter({ hasText: "Mountain West" })).toHaveCount(0);
     await page.goto(A("/tours/new"));
     await expect(page.getByTestId("tour-name-input")).toHaveValue("Mountain West");
     await expect(page.getByTestId("draft-restored")).toBeVisible();
@@ -44,7 +77,7 @@ test.describe.serial("tours", () => {
     tourUrl = new URL(page.url()).pathname;
     await expect(page.getByTestId("tour-title")).toContainText("Mountain West");
     await expect(page.getByTestId("tour-status-pill")).toHaveText("Planning");
-    await expect(page.getByTestId("tour-meta")).toHaveText("Mar 9–20, 2027 · Duo");
+    await expect(page.getByTestId("tour-meta")).toHaveText(`${fmtTourDates(START, END)} · Duo`);
     await expect(page.getByTestId("tour-tab-plan")).toHaveAttribute("aria-selected", "true");
 
     await page.getByTestId("back").click();
@@ -58,16 +91,16 @@ test.describe.serial("tours", () => {
   test("admin edits a detail in place on the Info tab, then undoes it", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(`${tourUrl}?tab=info`);
-    await expect(page.getByTestId("tour-end")).toHaveText("Sat, Mar 20, 2027");
+    await expect(page.getByTestId("tour-end")).toHaveText(fmtLongYear(END));
     await page.getByTestId("tour-end").click();
-    await page.getByTestId("tour-end-input").fill("2027-03-21");
+    await page.getByTestId("tour-end-input").fill(END_EDITED);
     await page.getByTestId("tour-end-input").press("Enter");
-    await expect(page.getByTestId("tour-end")).toHaveText("Sun, Mar 21, 2027");
-    await expect(page.getByTestId("tour-meta")).toHaveText("Mar 9–21, 2027 · Duo");
+    await expect(page.getByTestId("tour-end")).toHaveText(fmtLongYear(END_EDITED));
+    await expect(page.getByTestId("tour-meta")).toHaveText(`${fmtTourDates(START, END_EDITED)} · Duo`);
 
     await page.getByTestId("toast").filter({ hasText: "endDate" }).getByTestId("undo-button").click();
-    await expect(page.getByTestId("tour-end")).toHaveText("Sat, Mar 20, 2027");
-    await expect(page.getByTestId("tour-meta")).toHaveText("Mar 9–20, 2027 · Duo");
+    await expect(page.getByTestId("tour-end")).toHaveText(fmtLongYear(END));
+    await expect(page.getByTestId("tour-meta")).toHaveText(`${fmtTourDates(START, END)} · Duo`);
     await close();
   });
 
@@ -87,54 +120,54 @@ test.describe.serial("tours", () => {
     await expect(page.getByTestId("page-title")).toHaveText("Mountain West");
 
     await page.getByTestId("tour-tab-info").click();
-    await expect(page.getByTestId("tour-end")).toHaveText("Sat, Mar 20, 2027");
+    await expect(page.getByTestId("tour-end")).toHaveText(fmtLongYear(END));
     await expect(page.getByRole("button", { name: "Edit Ends" })).toHaveCount(0);
     await expect(page.getByTestId("tour-coming-Rudy")).toBeDisabled();
     await close();
   });
 
-  // The Plan tab. The tour is Mar 9–20, 2027, with the Creamery Arts Center pitch as options on Mar 12 and 19.
+  // The Plan tab. The tour runs START to END, with the Creamery Arts Center pitch as options on its two dates.
   test("plan: + between two entries adds there, and the order holds after a reload", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(tourUrl);
-    const day = page.getByTestId("plan-day-2027-03-10");
-    await expect(page.getByTestId("plan-day-2027-03-12").locator('[data-kind="option"]')).toContainText("Creamery Arts Center");
+    const day = page.getByTestId(`plan-day-${D_STAY}`);
+    await expect(page.getByTestId(`plan-day-${CREAMERY}`).locator('[data-kind="option"]')).toContainText("Creamery Arts Center");
 
     // An empty day: + Add → Note….
-    await day.getByTestId("plan-plus-2027-03-10-0-actions").click();
-    await page.getByTestId("plan-plus-2027-03-10-0-menu-note").click();
+    await day.getByTestId(`plan-plus-${D_STAY}-0-actions`).click();
+    await page.getByTestId(`plan-plus-${D_STAY}-0-menu-note`).click();
     await page.getByTestId("entry-text").fill("Load the van");
     await page.getByTestId("entry-add").click();
     await expect(day.getByTestId("plan-entry")).toHaveText([/Load the van/]);
 
     // After the note: a stay, with an explicit Add.
-    await day.getByTestId("plan-plus-2027-03-10-1-actions").click();
-    await page.getByTestId("plan-plus-2027-03-10-1-menu-stay").click();
+    await day.getByTestId(`plan-plus-${D_STAY}-1-actions`).click();
+    await page.getByTestId(`plan-plus-${D_STAY}-1-menu-stay`).click();
     await expect(page.getByTestId("entry-new-stay")).toBeVisible();
     await page.getByTestId("entry-name").fill("The van");
     await page.getByTestId("entry-add").click();
     await expect(day.getByTestId("plan-entry")).toHaveCount(2);
 
     // Between the two: another note lands in the middle.
-    await day.getByTestId("plan-plus-2027-03-10-1-actions").click();
-    await page.getByTestId("plan-plus-2027-03-10-1-menu-note").click();
+    await day.getByTestId(`plan-plus-${D_STAY}-1-actions`).click();
+    await page.getByTestId(`plan-plus-${D_STAY}-1-menu-note`).click();
     await page.getByTestId("entry-text").fill("Gas up");
     await page.getByTestId("entry-add").click();
     const order = [/Load the van/, /Gas up/, /Stay · The van/];
     await expect(day.getByTestId("plan-entry")).toHaveText(order);
     await page.reload();
-    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-entry")).toHaveText(order);
+    await expect(page.getByTestId(`plan-day-${D_STAY}`).getByTestId("plan-entry")).toHaveText(order);
 
     // The night of the 10th is covered now; the 9th still asks for one.
-    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-no-stay")).toHaveCount(0);
-    await expect(page.getByTestId("plan-day-2027-03-09").getByTestId("plan-no-stay")).toContainText("No stay tonight.");
+    await expect(page.getByTestId(`plan-day-${D_STAY}`).getByTestId("plan-no-stay")).toHaveCount(0);
+    await expect(page.getByTestId(`plan-day-${START}`).getByTestId("plan-no-stay")).toContainText("No stay tonight.");
     await close();
   });
 
   test("plan: clicking a stay opens it autosaving, with one Done", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(tourUrl);
-    const day = page.getByTestId("plan-day-2027-03-10");
+    const day = page.getByTestId(`plan-day-${D_STAY}`);
     await day.locator('[data-kind="stay"]').getByTestId("plan-entry-open").click();
     await expect(page.getByTestId("entry-edit-stay")).toBeVisible();
     await expect(page.getByTestId("entry-add")).toHaveCount(0);
@@ -147,7 +180,7 @@ test.describe.serial("tours", () => {
     await expect(day.locator('[data-kind="stay"]')).toContainText("Stay · Motel 6");
     await expect(day.locator('[data-kind="stay"]')).toContainText("2 nights");
     // Two nights cover the 11th too.
-    await expect(page.getByTestId("plan-day-2027-03-11").getByTestId("plan-no-stay")).toHaveCount(0);
+    await expect(page.getByTestId(`plan-day-${D_NIGHT2}`).getByTestId("plan-no-stay")).toHaveCount(0);
     await close();
   });
 
@@ -158,7 +191,7 @@ test.describe.serial("tours", () => {
     const item = page.getByTestId("tray-items").locator("li").filter({ hasText: "Swallow Hill Music" });
     // (An earlier spec may have pitched it already; then its open pitch gets the date.)
     await expect(item).toBeVisible();
-    const day = page.getByTestId("plan-day-2027-03-14");
+    const day = page.getByTestId(`plan-day-${D_SWALLOW}`);
     // The tray is sticky, so it stays beside the day while the day scrolls into view.
     await day.scrollIntoViewIfNeeded();
     await item.dragTo(day.locator(".tp-dlist"));
@@ -169,111 +202,26 @@ test.describe.serial("tours", () => {
   test("plan: a member sees the band's entries only, with nothing to change", async ({ browser }) => {
     const { page, close } = await as(browser, "hugo");
     await page.goto(tourUrl);
-    await expect(page.getByTestId("plan-day-2027-03-10").getByTestId("plan-entry")).toHaveText([/Load the van/, /Gas up/, /Stay · Motel 6/]);
+    await expect(page.getByTestId(`plan-day-${D_STAY}`).getByTestId("plan-entry")).toHaveText([/Load the van/, /Gas up/, /Stay · Motel 6/]);
     await expect(page.getByTestId("tour-tray")).toHaveCount(0);
     await expect(page.getByTestId("plan-bucket")).toHaveCount(0);
     await expect(page.locator('[data-kind="option"]')).toHaveCount(0);
     await expect(page.getByTestId("plan-entry-x")).toHaveCount(0);
     await expect(page.getByTestId("plan-entry-open")).toHaveCount(0);
-    await expect(page.getByTestId("plan-plus-2027-03-10-0-actions")).toHaveCount(0);
+    await expect(page.getByTestId(`plan-plus-${D_STAY}-0-actions`)).toHaveCount(0);
     await expect(page.getByTestId("plan-stat-open")).toHaveCount(0);
     await close();
   });
-  // Money. The tour has a drive on Mar 9 (no places), and the stay "Motel 6" on Mar 10-11.
-  test("money: a drive on Mar 9 for the money tests to pin to", async ({ browser }) => {
+  // Money. The tour has a drive on its first day (no places), and the stay "Motel 6" on the next two nights. (The tour totals, by day and
+  // pinned to a stay, are covered by tests/emulator/tours.test.ts and tests/unit/tours.test.ts.)
+  test("money: a drive on the first day for the expense test to pin to", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(tourUrl);
-    const day = page.getByTestId("plan-day-2027-03-09");
-    await day.getByTestId("plan-plus-2027-03-09-0-actions").click();
-    await page.getByTestId("plan-plus-2027-03-09-0-menu-drive").click();
+    const day = page.getByTestId(`plan-day-${START}`);
+    await day.getByTestId(`plan-plus-${START}-0-actions`).click();
+    await page.getByTestId(`plan-plus-${START}-0-menu-drive`).click();
     await page.getByTestId("entry-add").click();
     await expect(day.locator('[data-kind="drive"]')).toHaveCount(1);
-    await close();
-  });
-
-  test("money: admin logs a bill on the stay from the Money tab, marks it paid, and sees it under that day", async ({ browser }) => {
-    const VENDOR = `Motel Co ${Date.now()}`;
-    const BILL = `Two nights ${Date.now()}`;
-    const { page, close } = await as(browser, "rudy");
-    await page.goto(`${tourUrl}?tab=money`);
-    await expect(page.getByTestId("tour-money")).toBeVisible();
-    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$0.00");
-
-    await page.getByTestId("money-out-open").click();
-    const modal = page.getByTestId("money-out-modal");
-    await expect(modal).toBeVisible();
-    await modal.getByTestId("mo-owe").check();
-    await modal.getByTestId("mo-kind").selectOption("expense");
-    await modal.getByTestId("mo-cat").fill("gear");
-    await modal.getByTestId("mo-cat-opt-gear").click();
-    await modal.getByTestId("mo-who-input").fill(VENDOR);
-    await modal.getByTestId("mo-who-other").click();
-    await modal.getByTestId("mo-amount").fill("120");
-    await modal.getByTestId("mo-what").fill(BILL);
-    const stay = await modal.getByTestId("mo-on").locator("option", { hasText: "Motel 6" }).getAttribute("value");
-    await modal.getByTestId("mo-on").selectOption(stay!);
-    await modal.getByTestId("mo-save").click();
-    await expect(modal).toBeHidden();
-
-    const out = page.getByTestId("paid-out");
-    const row = out.locator('[data-testid^="expense-row-"]', { hasText: BILL });
-    await expect(row).toContainText("Mar 10");
-    await expect(row).toContainText("Motel 6");
-    await expect(row).toContainText("we owe");
-    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$120.00");
-    await expect(page.getByTestId("tour-day-2027-03-10")).toBeVisible();
-
-    await row.locator('[data-testid^="expense-mark-paid-"]').click();
-    const dialog = page.getByTestId("money-out-modal");
-    await expect(dialog.getByTestId("mark-paid-form")).toBeVisible();
-    await dialog.getByTestId("mp-save").click();
-    await expect(dialog).toBeHidden();
-    await expect(row).not.toContainText("we owe");
-    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$120.00");
-    await expect(page.getByTestId("tour-net-amount")).toContainText("120.00");
-
-    // Clicking the day narrows the Money out card to it; another day shows none of it; Show all clears.
-    await page.getByTestId("tour-day-2027-03-10").click();
-    await expect(out).toContainText(BILL);
-    await page.getByTestId("tour-day-2027-03-09").click();
-    await expect(out).not.toContainText(BILL);
-    await expect(page.getByTestId("paid-out-empty")).toBeVisible();
-    await page.getByTestId("tour-day-whole").click();
-    await expect(out).not.toContainText(BILL);
-    await page.getByTestId("tour-day-clear").click();
-    await expect(out).toContainText(BILL);
-    await expect(page.getByTestId("tour-day-total")).toContainText("$120.00");
-    await close();
-  });
-
-  test("money: + Money out in a stay's modal pins the expense to it; it shows there and on the Money tab", async ({ browser }) => {
-    const WHAT = `Parking ${Date.now()}`;
-    const { page, close } = await as(browser, "rudy");
-    await page.goto(tourUrl);
-    await page.getByTestId("plan-day-2027-03-10").locator('[data-kind="stay"]').getByTestId("plan-entry-open").click();
-    await expect(page.getByTestId("entry-edit-stay")).toBeVisible();
-    await page.getByTestId("entry-money-out").click();
-    const modal = page.getByTestId("money-out-modal");
-    await expect(modal).toBeVisible();
-    await expect(modal.getByTestId("mo-on").locator("option:checked")).toContainText("Motel 6");
-    await modal.getByTestId("mo-paid").check();
-    await modal.getByTestId("mo-kind").selectOption("expense");
-    await modal.getByTestId("mo-cat").fill("gear");
-    await modal.getByTestId("mo-cat-opt-gear").click();
-    await modal.getByTestId("mo-who-input").fill("City Garage");
-    await modal.getByTestId("mo-who-other").click();
-    await modal.getByTestId("mo-amount").fill("15");
-    await modal.getByTestId("mo-what").fill(WHAT);
-    await modal.getByTestId("mo-save").click();
-    await expect(modal).toBeHidden();
-    await expect(page.getByTestId("entry-money-row").filter({ hasText: WHAT })).toContainText("$15.00");
-    await page.getByTestId("entry-done").click();
-
-    await page.goto(`${tourUrl}?tab=money`);
-    const row = page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]', { hasText: WHAT });
-    await expect(row).toContainText("Mar 10");
-    await expect(row).toContainText("Motel 6");
-    await expect(page.getByTestId("tour-spent-amount")).toHaveText("$135.00");
     await close();
   });
 
@@ -298,18 +246,18 @@ test.describe.serial("tours", () => {
     await admin.page.goto(`${tourUrl}?tab=money`);
     const row = admin.page.getByTestId("paid-out").locator('[data-testid^="expense-row-"]', { hasText: WHAT });
     await expect(row).toContainText("Hugo paid");
-    await expect(row).toContainText("Mar 9");
+    await expect(row).toContainText(mmmD(START));
     await expect(row).toContainText("Drive");
-    await expect(admin.page.getByTestId("tour-spent-amount")).toHaveText("$173.50");
-    await admin.page.getByTestId("tour-day-2027-03-09").click();
+    await expect(admin.page.getByTestId("tour-spent-amount")).toHaveText("$38.50");
+    await admin.page.getByTestId(`tour-day-${START}`).click();
     await expect(admin.page.getByTestId("paid-out")).toContainText(WHAT);
     await admin.close();
   });
-  // Booking (#45). Creamery Arts Center is an option on Mar 12 and 19 since the first test.
+  // Booking (#45). Creamery Arts Center is an option on its two dates since the first test.
   test("booking: Book on an option with another option that night; the other waits in No date yet and we land on the show", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(tourUrl);
-    const day = page.getByTestId("plan-day-2027-03-12");
+    const day = page.getByTestId(`plan-day-${CREAMERY}`);
     await page.getByTestId("tray-search").fill("Marisol");
     const item = page.getByTestId("tray-items").locator("li").filter({ hasText: "Marisol' Other Side" });
     await day.scrollIntoViewIfNeeded();
@@ -319,8 +267,8 @@ test.describe.serial("tours", () => {
     await day.locator('[data-kind="option"]').filter({ hasText: "Creamery Arts Center" }).getByTestId("plan-book").click();
     const dialog = page.getByTestId("book-dialog");
     await expect(dialog).toContainText("Book Creamery Arts Center");
-    await expect(dialog.getByTestId("book-date-2027-03-12")).toBeChecked();
-    await expect(dialog.getByTestId("book-date-2027-03-19")).not.toBeChecked();
+    await expect(dialog.getByTestId(`book-date-${CREAMERY}`)).toBeChecked();
+    await expect(dialog.getByTestId(`book-date-${SEED.creamery2}`)).not.toBeChecked();
     const other = dialog.locator('fieldset[data-testid^="book-other-"]');
     await expect(other).toHaveCount(1);
     await expect(other).toContainText("Marisol' Other Side");
@@ -332,11 +280,11 @@ test.describe.serial("tours", () => {
     await expect(page.getByTestId("where-tour")).toContainText(/Mountain West · day \d+ of \d+/);
 
     await page.goto(tourUrl);
-    const booked = page.getByTestId("plan-day-2027-03-12");
+    const booked = page.getByTestId(`plan-day-${CREAMERY}`);
     await expect(booked.locator('[data-kind="show"]')).toContainText("Creamery Arts Center");
     await expect(booked.locator('[data-kind="option"]')).toHaveCount(0);
     await expect(booked.locator('[data-kind="stay"]')).toHaveCount(1);
-    await expect(page.getByTestId("plan-day-2027-03-19").locator('[data-kind="option"]')).toHaveCount(0);
+    await expect(page.getByTestId(`plan-day-${SEED.creamery2}`).locator('[data-kind="option"]')).toHaveCount(0);
     await expect(page.getByTestId("plan-bucket")).toContainText("Marisol' Other Side");
     await close();
   });
@@ -344,40 +292,40 @@ test.describe.serial("tours", () => {
   test("booking: a pitch's tour changes from the pitch page, and its option follows", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(tourUrl);
-    // Swallow Hill Music is an option on Mar 14 since the drag test.
-    await page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]').filter({ hasText: "Swallow Hill Music" }).locator("a").click();
+    // Swallow Hill Music is an option on D_SWALLOW since the drag test.
+    await page.getByTestId(`plan-day-${D_SWALLOW}`).locator('[data-kind="option"]').filter({ hasText: "Swallow Hill Music" }).locator("a").click();
     await expect(page).toHaveURL(/\/booking\/pitches\//);
     const card = page.getByTestId("pitch-tour-card");
     await expect(card.getByTestId("pitch-tour")).toContainText("Mountain West");
-    await expect(card.getByTestId("pitch-tour-plan")).toContainText("Sun Mar 14");
+    await expect(card.getByTestId("pitch-tour-plan")).toContainText(dayLabel(D_SWALLOW));
 
     await card.getByTestId("pitch-tour").click();
     await card.getByTestId("pitch-tour-input").selectOption({ value: "" });
     await expect(card.getByTestId("pitch-tour")).toContainText("No tour");
     await expect(card.getByTestId("pitch-tour-open")).toHaveCount(0);
     await page.goto(tourUrl);
-    await expect(page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]')).toHaveCount(0);
+    await expect(page.getByTestId(`plan-day-${D_SWALLOW}`).locator('[data-kind="option"]')).toHaveCount(0);
     await page.goBack();
 
     await page.getByTestId("pitch-tour").click();
     await page.getByTestId("pitch-tour-input").selectOption({ label: "Mountain West" });
-    await expect(page.getByTestId("pitch-tour-plan")).toContainText("Sun Mar 14");
+    await expect(page.getByTestId("pitch-tour-plan")).toContainText(dayLabel(D_SWALLOW));
     await page.getByTestId("pitch-tour-open").click();
-    await expect(page.getByTestId("plan-day-2027-03-14").locator('[data-kind="option"]')).toContainText("Swallow Hill Music");
+    await expect(page.getByTestId(`plan-day-${D_SWALLOW}`).locator('[data-kind="option"]')).toContainText("Swallow Hill Music");
     await close();
   });
   test("calendar: the Tours switch lays the tour over its days, and stays on for that person", async ({ browser }) => {
     const tourId = tourUrl.split("/").pop()!;
     const { page, close } = await as(browser, "rudy");
-    await page.goto(A("/calendar?m=2027-03"));
+    await page.goto(A(`/calendar?m=${monthOf(D_STAY)}`));
     const toggle = page.getByTestId("calendar-tours-toggle");
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByTestId(`tour-bar-${tourId}`)).toHaveCount(0);
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`tour-bar-${tourId}`)).toContainText("Mountain West");
-    await expect(page.getByTestId("day-2027-03-10").getByTestId("tour-chip").filter({ hasText: "Motel 6" })).toHaveCount(1);
-    await page.getByTestId("day-2027-03-12").click();
+    await expect(page.getByTestId(`day-${D_STAY}`).getByTestId("tour-chip").filter({ hasText: "Motel 6" })).toHaveCount(1);
+    await page.getByTestId(`day-${D_STAY}`).click();
     await expect(page.getByTestId("tour-panel")).toContainText("Mountain West");
 
     await page.reload();
@@ -389,7 +337,7 @@ test.describe.serial("tours", () => {
 
     // Another person's calendar never had it on.
     const hugo = await as(browser, "hugo");
-    await hugo.page.goto(A("/calendar?m=2027-03"));
+    await hugo.page.goto(A(`/calendar?m=${monthOf(D_STAY)}`));
     await expect(hugo.page.getByTestId("calendar-tours-toggle")).toHaveAttribute("aria-pressed", "false");
     await hugo.close();
   });
@@ -430,18 +378,19 @@ test.describe.serial("tours", () => {
     await close();
   });
 
-  // The Sheet tab (#52), on the plan the tests above built: Mar 10 has Load the van, Gas up and Motel 6 for 2 nights, Mar 12 the
-  // booked Creamery Arts Center, Mar 14 a Swallow Hill option, and Marisol waits in No date yet.
+  // The Sheet tab (#52), on the plan the tests above built: D_STAY has Load the van, Gas up and Motel 6 for 2 nights, the Creamery day the
+  // booked Creamery Arts Center, D_SWALLOW a Swallow Hill option, and Marisol waits in No date yet.
+  // (A member's sheet has no options, bucket or Copy: tests/unit/tours-sheet.test.ts and tests/emulator/tours-sheet.test.ts.)
   test("sheet: admin reads a row per day with options, downloads the CSV, then copies to Google Sheets and updates it", async ({ browser }) => {
     const { page, close } = await as(browser, "rudy");
     await page.goto(`${tourUrl}?tab=sheet`);
     await expect(page.getByTestId("tour-tab-sheet")).toHaveAttribute("aria-selected", "true");
-    const mar10 = page.getByTestId("sheet-row-2027-03-10");
+    const mar10 = page.getByTestId(`sheet-row-${D_STAY}`);
     await expect(mar10).toContainText("Load the van");
     await expect(mar10.getByTestId("sheet-stay")).toContainText("Motel 6");
-    await expect(page.getByTestId("sheet-row-2027-03-11").getByTestId("sheet-stay")).toContainText("night 2 of 2");
-    await expect(page.getByTestId("sheet-row-2027-03-12").getByTestId("sheet-show")).toContainText("Creamery Arts Center");
-    const mar14 = page.getByTestId("sheet-row-2027-03-14");
+    await expect(page.getByTestId(`sheet-row-${D_NIGHT2}`).getByTestId("sheet-stay")).toContainText("night 2 of 2");
+    await expect(page.getByTestId(`sheet-row-${CREAMERY}`).getByTestId("sheet-show")).toContainText("Creamery Arts Center");
+    const mar14 = page.getByTestId(`sheet-row-${D_SWALLOW}`);
     await expect(mar14.getByTestId("sheet-open-day")).toBeVisible();
     await expect(mar14.getByTestId("sheet-option")).toContainText("Swallow Hill Music");
     await expect(page.getByTestId("sheet-bucket")).toContainText("Marisol' Other Side");
@@ -468,21 +417,6 @@ test.describe.serial("tours", () => {
     await page.getByTestId("sheet-copy").click();
     await expect(page.getByText("Updated the Google Sheet")).toBeVisible();
     await expect(page.getByTestId("sheet-open")).toHaveAttribute("href", href!);
-    await close();
-  });
-
-  test("sheet: a member sees the band's rows only, and Open in Google Sheets but no Copy", async ({ browser }) => {
-    const { page, close } = await as(browser, "hugo");
-    await page.goto(`${tourUrl}?tab=sheet`);
-    await expect(page.getByTestId("sheet-row-2027-03-10")).toContainText("Load the van");
-    await expect(page.getByTestId("sheet-row-2027-03-12").getByTestId("sheet-show")).toContainText("Creamery Arts Center");
-    await expect(page.getByTestId("sheet-option")).toHaveCount(0);
-    await expect(page.getByTestId("sheet-open-day")).toHaveCount(0);
-    await expect(page.getByTestId("sheet-bucket")).toHaveCount(0);
-    await expect(page.getByTestId("sheet-entry")).toHaveCount(0);
-    await expect(page.getByTestId("sheet-copy")).toHaveCount(0);
-    await expect(page.getByTestId("sheet-open")).toBeVisible();
-    await expect(page.getByTestId("sheet-csv")).toBeVisible();
     await close();
   });
 });

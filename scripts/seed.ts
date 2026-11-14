@@ -21,6 +21,8 @@ import { fanId } from "@/server/fans";
 import { Timestamp } from "firebase-admin/firestore";
 import { VenueEvent } from "@/schema";
 import { eventId } from "@/server/events/refresh";
+import { SEED_DATES } from "./seed-dates";
+import { fmtPitchDate } from "@/lib/booking";
 
 const project = "demo-band-tracker";
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
@@ -126,7 +128,7 @@ async function main() {
   const marisol = await v("Marisol' Other Side", "club", "Denver", "denver", { capacity: 400, ages: "21" });
   const washingtons = await v("Washington's", "club", "Fort Collins", "north", { capacity: 450, ages: "21" });
   const swallow = await v("Swallow Hill Music", "listening", "Denver", "denver", { capacity: 250, ages: "all" });
-  // Calendar e2e: the room for the 2026-12-12 pitch date. No other seeded pitch targets it, and no e2e spec names it.
+  // Calendar e2e: the room for the SEED_DATES.conflict pitch date. No other seeded pitch targets it, and no e2e spec names it.
   const bluebird = await v("Bluebird Room", "club", "Denver", "denver", { capacity: 180, ages: "21" });
   // Venue Events tab e2e (#60): Bluebird Room's calendar is an iCal feed answered by fixtures/calendars (VENUE_EVENTS_FIXTURES, set by
   // playwright.config.ts; outside e2e a refresh of this made-up address just fails); Swallow Hill has no calendar Roadie can read.
@@ -167,16 +169,16 @@ async function main() {
   const pitch = (target: { kind: string; id: string; name: string }, status: string, extra: Record<string, unknown> = {}) =>
     create("pitches", { target, status, artistId: artist, pitchedAs: "trio", personnel: ["nora", "rudy", "hugo"].map((k) => mid[k]), assigneeId: uid.rudy, showIds: [], ...extra });
   await pitch({ kind: "venue", id: marisol, name: "Marisol' Other Side" }, "idea");
-  await pitch({ kind: "venue", id: creamery, name: "Creamery Arts Center" }, "toPitch", { nextStep: { text: "Fill out the spring submission form", due: "2026-11-05" }, dates: ["2027-03-12", "2027-03-19"] });
-  const pLost = await pitch({ kind: "venue", id: pinehollow, name: "Pine Hollow Lounge" }, "pitched", { nextStep: { text: "Follow up with Rosa", due: "2026-10-28" }, notes: "Support slot, winter.", dates: ["2026-09-12", "2027-01-16", "2027-01-23"] });
+  await pitch({ kind: "venue", id: creamery, name: "Creamery Arts Center" }, "toPitch", { nextStep: { text: "Fill out the spring submission form", due: "2026-11-05" }, dates: [SEED_DATES.creamery1, SEED_DATES.creamery2] });
+  const pLost = await pitch({ kind: "venue", id: pinehollow, name: "Pine Hollow Lounge" }, "pitched", { nextStep: { text: "Follow up with Rosa", due: "2026-10-28" }, notes: "Support slot, winter.", dates: ["2026-09-12", SEED_DATES.hold, SEED_DATES.holdAlt] });
   await pitch({ kind: "edition", id: folksEd, name: "Rocky Mountain Folks Festival 2027" }, "pitched", { assigneeId: uid.nora, nextStep: { text: "Check for decision", due: "2026-12-15" }, dates: ["2027-07-23"] });
   await pitch({ kind: "venue", id: fox, name: "Heron Theatre" }, "talking", { pitchedAs: "full-band", personnel: ["nora", "rudy", "hugo", "felix", "iris"].map((k) => mid[k]), lastContactAt: new Date(Date.now() - 3 * 86_400_000) });
   const pDeepend = await pitch({ kind: "venue", id: deepend, name: "Deep End" }, "booked");
   await pitch({ kind: "venue", id: washingtons, name: "Washington's" }, "declined", { notes: "Booked through spring." });
   await pitch({ kind: "edition", id: umsEd, name: "Riverbend Music Fest 2027" }, "dropped", { notes: "Too much travel for the fee." });
   await pitch({ kind: "edition", id: levittEd, name: "Levitt Pavilion Summer Series Summer 2027" }, "idea");
-  // Calendar e2e: a live pitch date on 2026-12-12, the same day as the confirmed show below (a show + pitch date conflict).
-  await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: ["2026-12-12"], lastContactAt: new Date(Date.now() - 20 * 86_400_000) }); // quiet: a yellow row on the Pitch List
+  // Calendar e2e: a live pitch date on SEED_DATES.conflict, the same day as the confirmed show below (a show + pitch date conflict).
+  await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: [SEED_DATES.conflict], lastContactAt: new Date(Date.now() - 20 * 86_400_000) }); // quiet: a yellow row on the Pitch List
   await create(`pitches/${pLost}/comments`, { authorId: uid.nora, body: "Mention the Roots show that drew 95." });
   await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
   await create(`pitches/${pLost}/activity`, { type: "note", text: "Rosa said to check back mid-November." });
@@ -246,7 +248,7 @@ async function main() {
     id, name, templateId: null, items: items.map(([iid, label, who, done]) => ({ id: iid, label, done, ...(who ? { ownerId: mid[who] } : {}) })),
   });
   const hiShow = await create("shows", {
-    ...showBase, date: "2026-11-14", status: "confirmed", venue: { id: deepend, name: "Deep End", address: "7 S Broadway, Denver", city: "Denver" },
+    ...showBase, date: SEED_DATES.deepEnd, status: "confirmed", venue: { id: deepend, name: "Deep End", address: "7 S Broadway, Denver", city: "Denver" },
     times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "full-band", personnel: cfg("full"),
     sound: { provider: "venueProvided", notes: "House engineer" }, dayOfContact: { name: "Deep End door manager", phone: "(303) 555-0142" },
     checklists: [...showBase.checklists, list("loadout", "Load-out", [["g1", "Get paid before leaving", "rudy", false], ["g2", "Sweep stage for cables", "felix", false], ["g3", "Bass rig", "hugo", false]])],
@@ -260,21 +262,21 @@ async function main() {
   await db.update(ctx, "pitches", pDeepend, { showIds: [hiShow] });
 
   const lakeShow = await create("shows", {
-    ...showBase, date: "2027-01-16", status: "hold", venue: { id: pinehollow, name: "Pine Hollow Lounge", address: "3602 E Colfax Ave, Denver", city: "Denver" },
+    ...showBase, date: SEED_DATES.hold, status: "hold", venue: { id: pinehollow, name: "Pine Hollow Lounge", address: "3602 E Colfax Ave, Denver", city: "Denver" },
     times: { set: "20:00", setLengthSec: 2400 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
     needs: { poster: true, backline: false, merch: false },
     checklists: [list("gear", "Gear", [["g1", "Keys rig", "rudy", false], ["g2", "Bass rig", "hugo", false], ["g3", "Merch table", "", false]])],
   });
   await create("showDeals", { pitchId: pLost, contactIds: [rosa], deal: "doorSplit", doorSplitPct: 70, ticketPrice: 1500 }, lakeShow);
   await create("availability", {
-    date: "2027-01-16", label: "Pine Hollow · Sat Jan 16", pitchId: pLost, showId: lakeShow, askedMusicianIds: ["nora", "rudy", "hugo"].map((k) => mid[k]),
+    date: SEED_DATES.hold, label: `Pine Hollow · ${fmtPitchDate(SEED_DATES.hold).replace(",", "")}`, pitchId: pLost, showId: lakeShow, askedMusicianIds: ["nora", "rudy", "hugo"].map((k) => mid[k]),
     responses: { [mid.nora]: { answer: "yes", by: "self", at: new Date() }, [mid.rudy]: { answer: "yes", by: "self", at: new Date() } },
     linkTokens: {}, sentAt: new Date(),
   });
 
-  // Calendar e2e: a confirmed show on 2026-12-12 at Marisol' Other Side (the same day as the Bluebird Room pitch date above).
+  // Calendar e2e: a confirmed show on SEED_DATES.conflict at Marisol' Other Side (the same day as the Bluebird Room pitch date above).
   await create("shows", {
-    ...showBase, date: "2026-12-12", status: "confirmed", venue: { id: marisol, name: "Marisol' Other Side", address: "Denver", city: "Denver" },
+    ...showBase, date: SEED_DATES.conflict, status: "confirmed", venue: { id: marisol, name: "Marisol' Other Side", address: "Denver", city: "Denver" },
     times: { loadIn: "19:00", soundcheck: "19:30", doors: "20:30", set: "21:15", setLengthSec: 2700 }, billedAs: "trio", personnel: cfg("trio"),
     sound: { provider: "venueProvided", notes: "House engineer" }, dayOfContact: { name: "Marisol' door manager", phone: "(303) 555-0188" },
   });
@@ -309,7 +311,7 @@ async function main() {
   const income = (input: Record<string, unknown>) => create("income", { artistId: artist, projectId: bandProject, ...input });
   // The played show's guarantee, received.
   await income({ date: "2026-10-10", amount: 45000, category: "guarantee", method: "check", from: "Creamery Arts Center", showId: playedShow, receivedAt: "2026-10-10", receivedBy: uid.rudy });
-  await income({ date: "2027-01-16", amount: 30000, category: "guarantee", from: "Pine Hollow Lounge", showId: lakeShow });
+  await income({ date: SEED_DATES.hold, amount: 30000, category: "guarantee", from: "Pine Hollow Lounge", showId: lakeShow });
   await income({ date: "2026-10-15", amount: 18400, category: "streaming", from: "Bandcamp", projectId: releaseProject, notes: "October sales, not yet transferred" });
   // Received, but nobody is down as receiving it (as Roadie logs it): Money › Taxes asks whose account it landed in.
   await income({ date: "2026-10-05", amount: 40000, category: "crowdfunding", from: "Backer pledges", projectId: releaseProject, receivedAt: "2026-10-05", method: "bank" });

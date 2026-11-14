@@ -42,6 +42,10 @@ test("undo from the History page for an app change restores the earlier value", 
 
   await page.goto(A("/booking"));
   await page.getByTestId("booking-seg-venues").click();
+  // the search works (a seeded venue is found) ...
+  await page.getByTestId("booking-search").fill("Pine Hollow");
+  await expect(page.getByTestId(/^row-venue-/).first()).toBeVisible();
+  // ... and the venue the undone run created is not in it
   await page.getByTestId("booking-search").fill(name);
   await expect(page.getByTestId(/^row-venue-/)).toHaveCount(0);
 });

@@ -1,5 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { A, FIRESTORE } from "./env";
+import { SEED } from "./dates";
 
 // The day-of banner (#66). The banner runs on the real clock, so the show and the rehearsal here are written straight into the
 // emulator with times relative to now (on the band's clock, America/Denver): copies of the seeded Deep End show and Loft rehearsal.
@@ -35,7 +36,8 @@ const nameOf = (f: Fields, key: string) => ((f[key] as { mapValue?: { fields?: {
 
 /** A confirmed show at the Deep End whose only time is a load-in at `loadInAt`. */
 async function putShow(request: APIRequestContext, loadInAt: number) {
-  const base = await seeded(request, "shows", (f) => nameOf(f, "venue") === "Deep End");
+  // the seeded show itself (not a Deep End show an earlier spec made), so the copy is the same every run
+  const base = await seeded(request, "shows", (f) => nameOf(f, "venue") === "Deep End" && (f.date as { stringValue?: string } | undefined)?.stringValue === SEED.deepEnd);
   const t = denver(loadInAt);
   await put(request, `shows/${SHOW}`, { ...base, date: str(t.date), status: str("confirmed"), times: { mapValue: { fields: { loadIn: str(t.time) } } } });
   return t;

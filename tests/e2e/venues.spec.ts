@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { A } from "./env";
+import { SEED, mmmD } from "./dates";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -7,6 +8,14 @@ async function signInAs(page: Page, key: string) {
   await expect(page).toHaveURL(/\/calendar$/);
 }
 const STAMP = Date.now();
+
+/** Shows -> the seeded Deep End show -> its venue (a member can; no search, so the duplicate "The Deep End" can't be picked by mistake). */
+async function openDeepEndVenueFromShow(page: Page) {
+  await page.goto(A("/shows"));
+  await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: mmmD(SEED.deepEnd) }).first().locator("td.date a").click();
+  await page.getByTestId("where-venue").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+}
 
 /** Booking -> search -> the venue's full record, as an admin of `base`. */
 async function openVenue(page: Page, base: (p: string) => string, search: string, exact?: string) {
@@ -23,9 +32,7 @@ async function openVenue(page: Page, base: (p: string) => string, search: string
 
 test("a member opens the venue from a show, sees the address but no notes, and fixes the capacity (autosaved, with a shared-for-everyone warning)", async ({ page }) => {
   await signInAs(page, "hugo"); // a member of Nora Quill Band
-  await page.goto(A("/shows"));
-  await page.getByTestId("shows-row").filter({ hasText: "Deep End" }).filter({ hasText: "Nov 14" }).first().locator("td.date a").click();
-  await page.getByTestId("where-venue").click();
+  await openDeepEndVenueFromShow(page);
   await expect(page.getByTestId("venue-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Deep End");
   await expect(page.getByTestId("room-address")).toContainText("7 S Broadway");
@@ -42,7 +49,7 @@ test("a member opens the venue from a show, sees the address but no notes, and f
 
   // fixing a fact: Edit opens the shared card in place with a warning that every band sees it; it autosaves, Done closes it
   const capacity = String(300 + (STAMP % 100));
-  await expect(page.getByTestId("room-capacity")).toHaveText("250");
+  await expect(page.getByTestId("room-capacity")).not.toHaveText(capacity); // (a retry finds the first attempt's number, so no fixed starting value)
   await page.getByTestId("room-edit").click();
   await expect(page.getByTestId("room-card")).toContainText("Every band on Roadie sees these details.");
   await expect(page.getByTestId("room-edit")).toHaveCount(0);
@@ -58,14 +65,24 @@ test("a member opens the venue from a show, sees the address but no notes, and f
 test("merge a duplicate venue into the room to keep: the old page redirects", async ({ page }) => {
   page.on("dialog", (d) => d.accept());
   await signInAs(page, "rudy");
-  await openVenue(page, A, "the deep end", "The Deep End");
+  // The duplicate is made here, with a name of its own, so a retry (or a rerun on the same data) has one to merge.
+  const dupName = `The Deep End ${STAMP}`;
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-add-actions").click();
+  await page.getByTestId("add-venue").click();
+  await page.getByTestId("new-venue-name").fill(dupName);
+  await page.getByTestId("new-venue-city").fill("Denver");
+  await page.getByTestId("new-venue-submit").click();
+  await expect(page.getByTestId("venue-page")).toBeVisible();
+  await expect(page.getByTestId("page-title")).toHaveText(dupName);
   const dupUrl = page.url();
   await page.getByTestId("venue-actions").click();
   await page.getByTestId("venue-menu-merge").click();
   await page.getByTestId("merge-search").fill("deep end");
-  await expect(page.getByTestId("merge-results")).not.toContainText("The Deep End"); // not into itself
-  await page.getByTestId(/^merge-pick-/).first().click();
-  await expect(page.getByTestId("merge-summary")).toContainText("Every band's shows, pitches and notes at The Deep End will move to Deep End");
+  await expect(page.getByTestId(/^merge-pick-/).first()).toBeVisible();
+  await expect(page.getByTestId("merge-results")).not.toContainText(dupName); // not into itself
+  await page.getByTestId(/^merge-pick-/).filter({ hasText: "Deep End" }).filter({ hasNotText: "The Deep End" }).first().click();
+  await expect(page.getByTestId("merge-summary")).toContainText(`Every band's shows, pitches and notes at ${dupName} will move to Deep End`);
   await page.getByTestId("merge-confirm").click();
   await expect(page.getByTestId("page-title")).toHaveText("Deep End");
   const keepUrl = page.url();
@@ -74,7 +91,7 @@ test("merge a duplicate venue into the room to keep: the old page redirects", as
   await page.goto(dupUrl);
   await expect(page).toHaveURL(keepUrl);
   await page.goto(A("/booking"));
-  await page.getByTestId("booking-search").fill("the deep-end");
+  await page.getByTestId("booking-search").fill(dupName);
   await expect(page.getByTestId(/^row-venue-/)).toHaveCount(0);
 });
 
@@ -103,6 +120,10 @@ test("venue contacts: the plus adds someone already in Contacts or a new person 
   await openVenue(page, A, "marisol", "Marisol' Other Side");
   const panel = page.getByTestId("contacts-panel");
   const dialog = page.getByTestId("contact-add-dialog");
+  // (a retry finds the people the first attempt left on the venue: take them off first)
+  const linked = panel.locator('[data-testid^="contact-remove-"]');
+  await expect(panel.getByText("No one yet.").or(linked.first())).toBeVisible();
+  for (let n = await linked.count(); n > 0; n--) { await linked.first().click(); await expect(linked).toHaveCount(n - 1); }
   await expect(panel).toContainText("No one yet.");
 
   // Already in Contacts: find Anika by where she works, pick her, Add to venue (Booking is ticked by default)
@@ -156,7 +177,7 @@ test("venue contacts: the plus adds someone already in Contacts or a new person 
 
 test("a venue is one page with tabs (#82): Pitch shows the active pitch, or Start a pitch with the past ones; Abandon is in the ⋮ menu", async ({ page }) => {
   await signInAs(page, "rudy");
-  await openVenue(page, A, "Pine Hollow Lounge"); // Heron Theatre gets booked by the shows spec; this pitch stays open
+  await openVenue(page, A, "Pine Hollow Lounge"); // this pitch stays open (the shows spec books Heron Theatre, not this one)
   await expect(page.getByTestId("venue-tab-details")).toHaveAttribute("aria-selected", "true");
   await page.getByTestId("venue-tab-pitch").click();
   await expect(page.getByTestId("pitch-body")).toBeVisible(); // the pitch's own content, under the venue's one header
@@ -166,7 +187,7 @@ test("a venue is one page with tabs (#82): Pitch shows the active pitch, or Star
   await expect(page.getByTestId("pitch-abandon")).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await openVenue(page, A, "Deep End", "Deep End");
+  await openDeepEndVenueFromShow(page);
   await page.getByTestId("venue-tab-pitch").click();
   await expect(page.getByTestId("venue-no-pitch")).toContainText("Start a pitch");
   await expect(page.getByTestId("venue-past-pitches")).toBeVisible(); // what came before, each opening its own pitch
