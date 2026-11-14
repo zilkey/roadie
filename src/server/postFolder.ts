@@ -8,7 +8,7 @@
  */
 import { db } from "./db";
 import { AppError } from "./errors";
-import { IntegrationError, type DriveFile, type DriveService } from "./integrations";
+import { IntegrationError, type DriveFile, type DriveListOpts, type DriveService } from "./integrations";
 import { FOLDER_MIME } from "./integrations/drive";
 import type { PostMedia } from "@/schema/posts";
 
@@ -18,7 +18,7 @@ export const NO_SOCIALS_FOLDER = "Choose the Socials folder in Settings › Goog
 export const PARENTS_PER_QUERY = 20;
 
 /** Every file of every page of a list() over `parents`, PARENTS_PER_QUERY parents at a time. */
-export async function listAll(drive: DriveService, parents: string[], kind: "folders" | "images" | "all", orderBy?: "createdTime desc"): Promise<DriveFile[]> {
+export async function listAll(drive: DriveService, parents: string[], kind: DriveListOpts["kind"], orderBy?: "createdTime desc"): Promise<DriveFile[]> {
   const out: DriveFile[] = [];
   for (let i = 0; i < parents.length; i += PARENTS_PER_QUERY) {
     let pageToken: string | undefined;

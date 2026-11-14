@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
 
+import { postKind } from "@/lib/photos";
+
 /** A draft as posts.list returns it (the fields the dialog needs). */
-export interface DraftRow { id: string; title?: string; status: string; count: number; driveFolderId?: string }
+export interface DraftRow { id: string; title?: string; status: string; count: number; videos: number; driveFolderId?: string }
 
 /**
- * Add to carousel draft: the picked photos go into a new draft (by name) or the end of an existing one. Either way they move
+ * Add to carousel draft: the picked photos and videos go into a new draft (by name) or the end of an existing one. Either way they move
  * in Drive, which the dialog says before anything happens. Only drafts with their own folder that are a draft or failed
  * can take photos. `onDone` gets the draft's id.
  */
@@ -61,15 +63,15 @@ export function AddToDraftDialog({ open, onClose, driveFileIds, onDone }: {
           <label key={d.id} className="flex items-center gap-2">
             <input type="radio" name="draft" checked={pick === d.id} onChange={() => setPick(d.id)} data-testid={`add-to-draft-${d.id}`} />
             <span className="min-w-0 flex-1 truncate">{d.title ?? "Untitled"}</span>
-            <span className="s">{d.count === 1 ? "1 photo" : `${d.count} photos`}</span>
+            <span className="s">{postKind(d.count, d.videos)}</span>
           </label>
         ))}
       </fieldset>
       <p className="s m-0" data-testid="add-to-draft-note">
-        {n === 1 ? "The photo moves" : `The ${n} photos move`} in Drive to <b>Posts/DRAFT - {name || "<name>"}</b>, out of the inbox.
-        Taking a photo out of the draft puts it back.
+        {n === 1 ? "It moves" : `The ${n} you picked move`} in Drive to <b>Posts/DRAFT - {name || "<name>"}</b>, out of the inbox.
+        Taking one out of the draft puts it back.
       </p>
-      {tooMany && <p className="err m-0" data-testid="add-to-draft-full">A post holds at most 10 photos{existing ? `; this one has room for ${room}` : ""}.</p>}
+      {tooMany && <p className="err m-0" data-testid="add-to-draft-full">A post holds at most 10 photos and videos{existing ? `; this one has room for ${room}` : ""}.</p>}
       <ErrorBox error={error} />
       <div className="flex justify-end gap-2">
         <button type="button" className="btn ghost" onClick={onClose} data-testid="add-to-draft-cancel">Cancel</button>

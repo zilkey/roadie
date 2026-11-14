@@ -8,7 +8,7 @@ export type PostStatus = z.infer<typeof postStatus>;
 /** Where the photo is centred in the crop: CSS object-position fractions on the upright photo. */
 const Focus = z.strictObject({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) });
 
-/** One photo of a post, from the band's Drive. */
+/** One photo or video of a post, from the band's Drive. A video (mimeType video/*) isn't cropped and has no alt text or focus. */
 export const PostMedia = z.strictObject({
   driveFileId: z.string().min(1),
   mimeType: z.string(),
@@ -19,6 +19,9 @@ export const PostMedia = z.strictObject({
   /** Size after EXIF rotation. */
   width: z.number().int().optional(),
   height: z.number().int().optional(),
+  /** A video's length and size, when Drive knows them: checked against Instagram's limits before posting. */
+  durationMs: z.number().int().optional(),
+  bytes: z.number().int().optional(),
   /** Drive's modifiedTime when picked; refreshed by posts.get. Signs the thumbnail, so an edited photo gets a new URL. */
   modifiedTime: z.string().optional(),
   alt: z.string().max(1000).optional(),
@@ -30,7 +33,8 @@ export const PostMedia = z.strictObject({
 export type PostMedia = z.infer<typeof PostMedia>;
 
 /**
- * posts/{id}: one Instagram post, a single photo or a carousel (media.length), from its draft to posted. A draft's photos sit
+ * posts/{id}: one Instagram post, a single photo, a Reel (a single video) or a carousel of photos and videos (media.length),
+ * from its draft to posted. A draft's photos sit
  * in its own folder in Socials/Posts (driveFolderId); Roadie alone keeps the status and the carousel order. Posts made by #49
  * have no title, aspect or driveFolderId until scripts/migrate-posts-49.ts moves them. Admins read; the server writes.
  */
@@ -49,6 +53,11 @@ export const Post = entity({
   /** When it went out (ISO). */
   postedAt: z.string().optional(),
   instagram: z.strictObject({ mediaId: z.string(), permalink: z.string().nullable() }).optional(),
+  /**
+   * The Instagram containers a publish made and hadn't posted yet (a video still processing when the request ran out of
+   * time): the next publish picks them up, unless the post has changed since (`key` is a hash of what they were made from).
+   */
+  pending: z.strictObject({ key: z.string(), creationId: z.string().optional(), children: z.array(z.string()).optional() }).optional(),
   /** Why it failed, in Instagram's words. */
   error: z.string().optional(),
   /** Posted, but renaming its folder failed: posts.tidy tries again. */

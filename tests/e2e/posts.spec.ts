@@ -271,3 +271,63 @@ test("Post now: off while Instagram needs a sign-in; then the carousel goes out 
   await expect(page.getByTestId("editor-status")).toHaveText("Posted");
   await expect(page.getByTestId("editor-caption")).toHaveCount(0);
 });
+
+/** A video in the Socials root, as Drive has it once it has processed it. Its id. */
+async function addVideo(request: APIRequestContext, name: string, durationMs: number) {
+  const res = await request.post(`${DRIVE}/files`, { data: {
+    name, mimeType: "video/mp4", parents: ["fake-folder-socials"], ownerEmail: "rudy@example.com", video: { width: 1080, height: 1920, durationMs }, size: 20_000_000,
+  } });
+  expect(res.ok()).toBeTruthy();
+  return ((await res.json()) as { id: string }).id;
+}
+
+test("A video alone posts as a Reel; a video too long for a carousel is flagged and Post is off", async ({ page, request }) => {
+  // Socials was set up and Instagram connected by the tests above.
+  const encore = await addVideo(request, "Encore.mp4", 15_000);
+  const fullSet = await addVideo(request, "Full set.mp4", 90_000);
+  const crowd = await addVideo(request, "Crowd.mp4", 10_000);
+  await signInAs(page, "rudy");
+  await page.goto(A("/posts/photos"));
+  await expect(page.getByTestId(`photo-video-${encore}`)).toHaveText("▶ 0:15");
+
+  // Too long to go in a carousel: said in the editor, and Post is off.
+  await page.getByTestId(`photo-${crowd}`).click();
+  await page.getByTestId(`photo-${fullSet}`).click();
+  await page.getByTestId("photos-add").click();
+  let dlg = page.getByTestId("add-to-draft");
+  await dlg.getByTestId("add-to-draft-title").fill("Full set");
+  await dlg.getByTestId("add-to-draft-go").click();
+  await expect(page.getByTestId("editor-title")).toHaveText("Full set");
+  await expect(page.getByTestId(`editor-video-${fullSet}`)).toHaveText("Video · 1:30");
+  await expect(page.getByTestId(`editor-video-problem-${fullSet}`)).toHaveText("Full set is 1:30: a video in a carousel can be at most 60 seconds. Post it alone, as a Reel");
+  await expect(page.getByTestId("editor-post")).toBeDisabled();
+
+  // One video: a Reel.
+  await page.goto(A("/posts/photos"));
+  await page.getByTestId(`photo-${encore}`).click();
+  await page.getByTestId("photos-add").click();
+  dlg = page.getByTestId("add-to-draft");
+  await dlg.getByTestId("add-to-draft-title").fill("Encore");
+  await dlg.getByTestId("add-to-draft-go").click();
+  await expect(page.getByTestId("editor-title")).toHaveText("Encore");
+  const id = page.url().split("/").pop()!;
+  await expect(page.getByTestId("editor-reel")).toContainText("Posts as a Reel");
+  await expect(page.getByTestId("editor-video-frame")).toBeVisible();
+  await page.getByTestId("editor-caption").fill("One more!");
+  await page.getByTestId("editor-caption").blur();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  await page.getByTestId("editor-post").click();
+  const post = page.getByTestId("post-dialog");
+  await expect(post.getByTestId("post-account")).toContainText("A Reel goes to @noraquillband");
+  await expect(post.getByTestId("post-no-alt")).toHaveCount(0);
+  await post.getByTestId("post-now").click();
+  await expect(post.getByTestId("post-done-permalink")).toHaveAttribute("href", /instagram\.com\/reel\/FAKE/, { timeout: 30_000 });
+
+  const media = ((await (await request.get(`${META}/__media`)).json()) as { media: { type: string; caption: string; videoUrl?: string }[] }).media;
+  const last = media[media.length - 1];
+  expect(last.type).toBe("REELS");
+  expect(last.caption).toBe("One more!");
+  expect(new URL(last.videoUrl!).pathname).toBe(`/api/posts/media/${id}/0`);
+  await post.getByTestId("post-done-close").click();
+  await expect(page.getByTestId(`post-${id}`)).toContainText("Reel · Posted");
+});

@@ -7,7 +7,7 @@ import { toast } from "@/components/Toasts";
 import { useAutosave } from "@/lib/autosave";
 import { useDragReorder } from "@/lib/drag-reorder";
 import { runCommand } from "@/lib/commands";
-import { CAPTION_MAX, HASHTAG_MAX, hashtagCount } from "@/lib/photos";
+import { CAPTION_MAX, HASHTAG_MAX, fmtDuration, hashtagCount, isVideo, videoProblem } from "@/lib/photos";
 import type { Post, PostMedia } from "@/schema/posts";
 import { PostDialog } from "@/components/posts/PostDialog";
 
@@ -22,7 +22,8 @@ const clamp = (n: number) => Math.min(1, Math.max(0, n));
  * preview and whether it's still in Drive. Caption, aspect, order, alt text and crop autosave through posts.updateDraft
  * (Firestore only, so each has its Undo toast); the pencil renames the draft and its folder (posts.rename); × and Remove take
  * a photo out (posts.removeFromDraft); Delete draft puts every photo back (posts.deleteDraft). Those three change Drive and
- * have no Undo. A posted post, or one being posted, is read-only.
+ * have no Undo. A posted post, or one being posted, is read-only. A video has no crop or alt text: it posts as it is, as a
+ * Reel when it's alone, and the editor says when it's outside Instagram's limits.
  */
 export function CarouselEditor({ post }: { post: Post & { id: string; rev?: number } }) {
   const router = useRouter();
@@ -90,7 +91,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
     if (await drive.call("posts.tidy", { id })) toast({ key: `posts.tidy:${id}`, text: "Drive is tidied" });
   }
   async function deleteDraft() {
-    if (!window.confirm(`Delete the draft ${post.title ?? ""}? Its photos go back where they came from in Socials.`)) return;
+    if (!window.confirm(`Delete the draft ${post.title ?? ""}? Everything in it goes back where it came from in Socials.`)) return;
     await as.flush();
     const r = await drive.call<{ folderLeft: boolean; notMoved: string[]; message?: string }>("posts.deleteDraft", { id });
     if (!r) return;
@@ -101,6 +102,8 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
 
   const caption = as.bind("caption", post.caption ?? "");
   const cur = media[at];
+  const reel = media.length === 1 && isVideo(media[0].mimeType);
+  const problems = Object.fromEntries(media.filter((m) => isVideo(m.mimeType)).map((m) => [m.driveFileId, videoProblem(m, media.length > 1)]));
   const tags = hashtagCount(caption.value);
 
   return (
@@ -140,24 +143,28 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,22rem)_1fr]">
         <div className="grid content-start gap-3">
-          {cur && <CropFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={shape} focus={cur.focus ?? CENTER} readOnly={readOnly}
-            onMove={(f) => setLocal(media.map((m, j) => (j === at ? { ...m, focus: f } : m)))} onDone={(f) => setItem(at, { focus: f }, true)} />}
-          <div className="flex items-center gap-2" role="group" aria-label="Shape">
+          {cur && (isVideo(cur.mimeType)
+            ? <VideoFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={reel ? "9:16" : shape} durationMs={cur.durationMs} />
+            : <CropFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={shape} focus={cur.focus ?? CENTER} readOnly={readOnly}
+              onMove={(f) => setLocal(media.map((m, j) => (j === at ? { ...m, focus: f } : m)))} onDone={(f) => setItem(at, { focus: f }, true)} />)}
+          {reel ? (
+            <p className="s m-0" data-testid="editor-reel">Posts as a Reel, as it is: a 9:16 video fills the screen.</p>
+          ) : <div className="flex items-center gap-2" role="group" aria-label="Shape">
             {(["4:5", "1:1"] as const).map((a) => (
               <button key={a} type="button" className={`btn sm ${shape === a ? "" : "ghost"}`} aria-pressed={shape === a} disabled={readOnly}
                 onClick={() => { setAspect(a); as.patch({ aspect: a }, { now: true }); }} data-testid={`editor-aspect-${a === "4:5" ? "45" : "11"}`}>
                 {a === "4:5" ? "4:5" : "Square"}
               </button>
             ))}
-            {!readOnly && <span className="s">Drag the photo to move the crop.</span>}
-          </div>
+            {!readOnly && <span className="s">{cur && isVideo(cur.mimeType) ? "Videos aren't cropped: Instagram fits them to the carousel." : "Drag the photo to move the crop."}</span>}
+          </div>}
         </div>
 
         <div className="grid content-start gap-3">
           <ol className="m-0 grid list-none gap-2 p-0" aria-label="Photos in order" data-testid="editor-photos">
             {media.map((m, i) => {
               const st = photos[m.driveFileId];
-              const gone = st?.missing || st?.trashed;
+              const gone = st?.missing || st?.trashed, video = isVideo(m.mimeType), problem = problems[m.driveFileId];
               return (
                 <li key={m.driveFileId} {...(readOnly ? {} : drag.row(i))}
                   className={`grid grid-cols-[auto_auto_1fr_auto] items-center gap-2 rounded-lg border p-2 ${i === at ? "border-[var(--accent)]" : "border-line"} bg-surface`}
@@ -168,6 +175,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
                   <button type="button" className="relative h-14 w-14 overflow-hidden rounded-md bg-soft p-0" onClick={() => setAt(i)} aria-label={`Show ${label(m)}`} data-testid={`editor-pick-${m.driveFileId}`}>
                     {st?.thumb1080 && !gone && <img src={st.thumb1080} alt="" className="h-full w-full object-cover" />}
                     <span className="absolute left-0.5 top-0.5 rounded bg-black/60 px-1 text-xs font-bold text-white">{i + 1}</span>
+                    {video && <span className="absolute bottom-0.5 right-0.5 rounded bg-black/60 px-1 text-xs text-white" aria-hidden>▶</span>}
                   </button>
                   <div className="grid min-w-0 gap-1">
                     <span className="truncate text-sm" title={m.name}>{label(m)}</span>
@@ -175,6 +183,11 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
                       <span className="err m-0 text-sm" data-testid={`editor-missing-${m.driveFileId}`}>
                         {label(m)} is no longer in Drive{" "}
                         {!readOnly && <button type="button" className="btn ghost sm" disabled={drive.busy} onClick={() => void remove(m)} data-testid={`editor-missing-remove-${m.driveFileId}`}>Remove</button>}
+                      </span>
+                    ) : video ? (
+                      <span className="grid gap-0.5">
+                        <span className="s" data-testid={`editor-video-${m.driveFileId}`}>Video{m.durationMs !== undefined ? ` · ${fmtDuration(m.durationMs)}` : ""}</span>
+                        {problem && !readOnly && <span className="err m-0 text-sm" data-testid={`editor-video-problem-${m.driveFileId}`}>{problem}</span>}
                       </span>
                     ) : readOnly ? (m.alt && <span className="s">{m.alt}</span>) : (
                       <input className="input" placeholder="Alt text: what's in the photo" maxLength={1000} value={m.alt ?? ""} aria-label={`Alt text for ${label(m)}`}
@@ -195,7 +208,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
             })}
           </ol>
           {!readOnly && media.length < 10 && (
-            <Link href={`/posts/photos?draft=${id}`} className="btn ghost sm justify-self-start" onClick={() => void as.flush()} data-testid="editor-add-photos">Add photos</Link>
+            <Link href={`/posts/photos?draft=${id}`} className="btn ghost sm justify-self-start" onClick={() => void as.flush()} data-testid="editor-add-photos">Add photos or videos</Link>
           )}
 
           <label className="grid gap-1">
@@ -212,13 +225,29 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
           {!readOnly && (
             <div className="flex flex-wrap gap-2 border-t border-line pt-3">
               <button type="button" className="btn ghost sm" disabled={drive.busy} onClick={() => void deleteDraft()} data-testid="editor-delete">Delete draft</button>
-              <button type="button" className="btn sm ml-auto" disabled={drive.busy || media.some((m) => photos[m.driveFileId]?.missing || photos[m.driveFileId]?.trashed)}
+              <button type="button" className="btn sm ml-auto" disabled={drive.busy || media.some((m) => photos[m.driveFileId]?.missing || photos[m.driveFileId]?.trashed || problems[m.driveFileId])}
                 title="Post it to Instagram" onClick={() => setPosting(true)} data-testid="editor-post">Post…</button>
             </div>
           )}
           <PostDialog open={posting} onClose={() => setPosting(false)} post={{ id, title: post.title, media }} before={() => as.flush()} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A video's preview (Drive's still of it), whole inside the frame since a video isn't cropped: 9:16 for a Reel, else the
+ * carousel's shape.
+ */
+function VideoFrame({ src, shape, durationMs }: { src?: string; shape: "4:5" | "1:1" | "9:16"; durationMs?: number }) {
+  return (
+    <div className="relative mx-auto w-full overflow-hidden rounded-lg bg-black" data-testid="editor-video-frame"
+      style={{ aspectRatio: shape === "9:16" ? "9 / 16" : shape === "4:5" ? "4 / 5" : "1 / 1", maxWidth: shape === "9:16" ? "16rem" : undefined }}>
+      {src && <img src={src} alt="" draggable={false} className="absolute inset-0 h-full w-full object-contain" />}
+      <span className="absolute bottom-2 left-2 rounded bg-black/60 px-1.5 py-0.5 text-sm font-bold text-white">
+        ▶{durationMs !== undefined ? ` ${fmtDuration(durationMs)}` : ""}
+      </span>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import type { Role } from "../ctx";
 import { formatCents, INCOME_LABEL, METHOD_LABEL, PROJECT_KIND_LABEL } from "@/lib/money";
 import { RELEASE_KIND_LABEL } from "@/lib/releases";
 import { refsLabel, STATUS_LABEL, type SongRefs, type SongStatus } from "@/lib/music";
+import { postKind } from "@/lib/photos";
 
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
@@ -216,7 +217,7 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     const moving = others.map((o) => `${others.length > 1 ? `${song(o)}: ` : ""}${refsLabel(o.refs)}`).join("; ");
     return `Merge ${others.length ? others.map(song).join(" and ") : "the duplicate songs"} into ${song(b?.keep)}. Moving: ${moving || "everything attached"}. Blanks on the kept song are filled in, and the other${others.length === 1 ? " song is" : "s are"} archived; you can undo it`;
   },
-  "posts.publish": (i, b) => `Post ${i.label ?? b?.title ?? "the post"}${typeof b?.count === "number" ? ` (${b.count} photo${b.count === 1 ? "" : "s"})` : ""} to Instagram now`,
+  "posts.publish": (i, b) => `Post ${i.label ?? b?.title ?? "the post"}${typeof b?.count === "number" ? ` (${postKind(b.count, typeof b.videos === "number" ? b.videos : 0)})` : ""} to Instagram now`,
   "posts.deleteDraft": (i, b) => `Delete the draft ${i.label ?? b?.title ?? ""}`.trimEnd() + " and put its photos back in Socials",
   "posts.removeFromDraft": (i, b) => `Take ${b?.photo ?? "the photo"} out of ${i.label ?? b?.title ?? "the draft"}`,
   "posts.setup": () => "Set up the Socials folder and let the band add to it",

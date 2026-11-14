@@ -1,6 +1,6 @@
 export * from "./http";
 export { gmailClient, type GmailService } from "./gmail";
-export { driveClient, type DriveService, type DriveFile, type DrivePermission } from "./drive";
+export { driveClient, type DriveService, type DriveFile, type DriveListOpts, type DrivePermission } from "./drive";
 export { calendarClient, canWrite, type CalendarService, type CalInfo } from "./calendar";
 export { useRealGoogle, type TokenSource } from "./google";
 export { bandsintownClient, type BandsintownService } from "./bandsintown";

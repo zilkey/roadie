@@ -17,7 +17,7 @@ import { graph, signMetaState, verifyMetaState } from "@/server/meta/graph";
 import { GET as mediaGET } from "@/app/api/posts/media/[postId]/[index]/route";
 import { POST as uploadPOST } from "@/app/api/posts/upload/route";
 import { GET as thumbGET } from "@/app/api/posts/thumb/[artistId]/[fileId]/route";
-import { photosLimits } from "@/server/commands/posts";
+import { photosLimits, publishTiming, STILL_PROCESSING } from "@/server/commands/posts";
 import { findOrMakeFolder } from "@/server/driveFolders";
 import { thumbUrl } from "@/server/signedUrl";
 import { dayLabels, groupByDay } from "@/lib/photoDays";
@@ -375,7 +375,7 @@ test("upload: refused until Set up has run, for anything but a photo, and for me
   await cmd("posts.setup", {});
   const pdf = await upload(rudy.token, jpeg("x.pdf", "application/pdf"));
   assert.equal(pdf.status, 400);
-  assert.equal(pdf.json.error.message, "Roadie takes JPEG, HEIC, PNG and WebP photos");
+  assert.equal(pdf.json.error.message, "Roadie takes JPEG, HEIC, PNG and WebP photos, and MP4 and MOV videos");
   assert.equal((await upload(hugo.token, jpeg())).status, 403);
 
   const a = await upload(rudy.token, jpeg("Roots.jpg"));
@@ -390,6 +390,10 @@ test("upload: refused until Set up has run, for anything but a photo, and for me
   const heic = await upload(rudy.token, jpeg("IMG_2201.HEIC", "application/octet-stream"));
   assert.equal(heic.status, 200, JSON.stringify(heic.json));
   assert.equal(heic.json.mimeType, "image/heic");
+  // A video, a MOV from a phone as octet-stream too.
+  const mov = await upload(rudy.token, jpeg("IMG_2290.MOV", "application/octet-stream"));
+  assert.equal(mov.status, 200, JSON.stringify(mov.json));
+  assert.equal(mov.json.mimeType, "video/quicktime");
   assert.equal((await db.list("posts")).length, 0, "nothing is posted yet");
 });
 
@@ -575,10 +579,10 @@ test("posts.list: drafts (with failed and publishing) by latest change, then pos
   assert.deepEqual(r.drafts.map((p: any) => p.id), [draft, failed]); // eslint-disable-line @typescript-eslint/no-explicit-any
   assert.deepEqual(r.posts.map((p: any) => p.id), [posted2, posted1]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const d = r.drafts[0];
-  assert.deepEqual({ ...d, thumb: undefined }, { id: draft, title: "Hi-Dive announcement", status: "draft", count: 1, thumb: undefined, driveFolderId: "f1" });
+  assert.deepEqual({ ...d, thumb: undefined }, { id: draft, title: "Hi-Dive announcement", status: "draft", count: 1, videos: 0, thumb: undefined, driveFolderId: "f1" });
   assert.equal(d.thumb, thumbUrl(TEST_ARTIST, "fake-social-late", "2026-11-01T18:03:00.000Z", 400), "signed from the stored modifiedTime");
   assert.equal(r.drafts[1].error, "Instagram said: no");
-  assert.deepEqual({ ...r.posts[0], thumb: undefined }, { id: posted2, title: "Roots", status: "posted", postedAt: "2026-11-05T03:00:00.000Z", count: 1, thumb: undefined, permalink: null, driveTidy: { error: "Drive said no" } });
+  assert.deepEqual({ ...r.posts[0], thumb: undefined }, { id: posted2, title: "Roots", status: "posted", postedAt: "2026-11-05T03:00:00.000Z", count: 1, videos: 0, thumb: undefined, permalink: null, driveTidy: { error: "Drive said no" } });
   assert.equal(r.posts[1].permalink, "https://www.instagram.com/p/X/");
   assert.equal(r.posts[1].count, 2);
   assert.equal((await dispatch("posts.list", `Bearer ${hugo.token}`, {}, TEST_ARTIST)).status, 403, "members can't read posts");
@@ -672,7 +676,7 @@ test("createDraft: refuses, changing nothing, a photo outside Socials, one alrea
   const before = (await driveClient({ artistId: TEST_ARTIST }).list({ parents: [postsId], kind: "folders" })).files.length;
   await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-loose-2", "fake-social-loose-1"] }), "in_a_post", "IMG_4411 is already in Hi-Dive announcement");
   await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-photo-roots"] }), "not_in_socials", "Roots Music Project stage isn't in Socials");
-  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-pdf"] }), "invalid_input", "Set list isn't a photo. Roadie takes JPEG, HEIC, PNG and WebP photos");
+  await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-pdf"] }), "invalid_input", "Set list isn't a photo or video. Roadie takes JPEG, HEIC, PNG and WebP photos, and MP4 and MOV videos");
   await driveClient({ artistId: TEST_ARTIST }).trash("fake-social-loose-3");
   await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-loose-3"] }), "invalid_input", "Poster draft is in Drive's trash");
   assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID], "nothing moved");
@@ -703,7 +707,7 @@ test("addToDraft: appends the photos; at most 10 in all; a failed move puts back
   const many = SEEDED_PHOTOS.filter((x) => !["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"].includes(x)); // 7 more makes 10, plus one
   const drive = driveClient({ artistId: TEST_ARTIST });
   const extra = (await drive.upload({ name: "Extra.jpg", mimeType: "image/jpeg", parentId: SOCIALS_FOLDER_ID, data: new Blob([Buffer.from([0xff, 0xd8])]) })).id;
-  await refused(cmd("posts.addToDraft", { id, driveFileIds: [...many, extra] }), "invalid_input", "A post holds at most 10 photos");
+  await refused(cmd("posts.addToDraft", { id, driveFileIds: [...many, extra] }), "invalid_input", "A post holds at most 10 photos and videos");
 
   await driveScenario({ failMove: 2 });
   await assert.rejects(cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-loose-2", "fake-social-phone-5"] }));
@@ -870,6 +874,7 @@ test("policy: posts commands are offered to Roadie; setup and publish ask and ne
   assert.equal(needsConfirm("posts.rename", { id: "p", title: "x" }), false);
   assert.equal(needsConfirm("posts.tidy", { id: "p" }), false);
   assert.equal(summarize("posts.publish", { id: "p" }, undefined, { title: "Tour", count: 3 }), "Post Tour (3 photos) to Instagram now");
+  assert.equal(summarize("posts.publish", { id: "p" }, undefined, { title: "Encore", count: 1, videos: 1 }), "Post Encore (Reel) to Instagram now");
   assert.equal(summarize("posts.deleteDraft", { id: "p" }, undefined, { title: "Tour" }), "Delete the draft Tour and put its photos back in Socials");
   assert.equal(summarize("posts.removeFromDraft", { id: "p" }, undefined, { title: "Tour", photo: "IMG_4412" }), "Take IMG_4412 out of Tour");
   assert.equal(summarize("posts.setup", {}), "Set up the Socials folder and let the band add to it");
@@ -994,4 +999,181 @@ test("publish: a failed folder rename leaves the post posted with driveTidy; tid
   assert.equal((await db.get("posts", id))!.driveTidy, undefined);
   assert.equal(await folderOf(id), `${dateInBandZone()} - Roots`);
   assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
+});
+
+// ---------- videos: Reels and carousel videos ----------
+
+/** A video in the Socials root, as Drive has it once processed: 1080×1920, `durationMs` long, `size` bytes. Its id. */
+async function video(name = "Encore.mp4", durationMs = 15_000, size = 40 * 1024 * 1024, mimeType = "video/mp4") {
+  await tick();
+  const res = await fetch(`${process.env.DRIVE_BASE_URL}/files`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, mimeType, parents: [SOCIALS_FOLDER_ID], ownerEmail: "rudy@example.com", video: { width: 1080, height: 1920, durationMs }, size }) });
+  return ((await res.json()) as { id: string }).id;
+}
+/** Graph calls a publish makes, with the video ones. */
+function recordAll() {
+  const calls: string[] = [];
+  const orig = { ...graph };
+  for (const k of ["createImage", "createReel", "createCarouselItem", "createCarouselVideo", "createCarousel", "container", "publish", "permalink"] as const) {
+    (graph as any)[k] = (...args: unknown[]) => { calls.push(k); return (orig as any)[k](...args); }; // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+  return { calls: () => calls.filter((c) => c !== "container"), restore: () => Object.assign(graph, orig) };
+}
+type Pub = { type: string; caption: string; imageUrl: string; videoUrl?: string; permalink: string; children?: { imageUrl: string; videoUrl?: string; alt?: string }[] };
+const publishedAll = async () => ((await (await fetch(`${META}/__media`)).json()) as { media: Pub[] }).media;
+const fast = async <T>(f: () => Promise<T>) => {
+  const was = { ...publishTiming };
+  publishTiming.pollMs = 5;
+  try { return await f(); } finally { Object.assign(publishTiming, was); }
+};
+
+test("videos: Photos lists a video with its size and length; a draft keeps them; its thumbnail and media links work", async () => {
+  await chooseSocials();
+  const id = await video("Encore.mp4", 15_000, 1234);
+  const r = await cmd("posts.photos", {});
+  const v = r.photos.find((p: any) => p.driveFileId === id); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual({ ...v, thumb: undefined, takenAt: undefined }, { driveFileId: id, name: "Encore.mp4", mimeType: "video/mp4", width: 1080, height: 1920, durationMs: 15_000, folderId: SOCIALS_FOLDER_ID, thumb: undefined, takenAt: undefined });
+  assert.equal(r.photos[0].driveFileId, id, "newest added first");
+  const thumb = await thumbGET(new Request(`http://app${v.thumb}`), { params: Promise.resolve({ artistId: TEST_ARTIST, fileId: id }) });
+  assert.equal(thumb.status, 200, "Drive's still of the video");
+
+  const post = await oneDraft([id], "Encore");
+  const m = (await db.get("posts", post))!.media[0];
+  assert.deepEqual({ ...m, modifiedTime: typeof m.modifiedTime, url: typeof m.url },
+    { driveFileId: id, mimeType: "video/mp4", name: "Encore.mp4", width: 1080, height: 1920, durationMs: 15_000, bytes: 1234, modifiedTime: "string", url: "string", from: { folderId: SOCIALS_FOLDER_ID } });
+  const res = await media(signMediaUrl(TEST_ARTIST, post, 0));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-type"), "video/mp4");
+  assert.equal(res.headers.get("cache-control"), "private, no-store");
+  assert.match(Buffer.from(await res.arrayBuffer()).toString("latin1"), /ftypmp42/, "Drive's bytes, as they are");
+  // A video has no alt text or crop: the editor's whole items map leaves it as it is.
+  await cmd("posts.updateDraft", { id: post, patch: { items: { [id]: { alt: "Encore", focus: { x: 0, y: 0 } } } } });
+  const after = (await db.get("posts", post))!.media[0];
+  assert.equal(after.alt, undefined);
+  assert.equal(after.focus, undefined);
+  assert.deepEqual((await cmd("posts.list", {})).drafts.map((d: any) => [d.count, d.videos]), [[1, 1]]); // eslint-disable-line @typescript-eslint/no-explicit-any
+});
+
+test("publish: one video is a Reel (media_type REELS with its video URL and the caption), after Instagram has processed it", async () => {
+  await connect();
+  await chooseSocials();
+  const v = await video();
+  const id = await oneDraft([v], "Encore");
+  await cmd("posts.updateDraft", { id, patch: { caption: "One more! #encore" } });
+  await scenario({ videoPolls: 3 });
+  const g = recordAll();
+  try {
+    const r = await fast(() => cmd("posts.publish", { id }));
+    assert.equal(r.status, "posted", JSON.stringify(r));
+    assert.match(r.permalink, /^https:\/\/www\.instagram\.com\/reel\/FAKE\d+\/$/);
+    assert.deepEqual(g.calls(), ["createReel", "publish", "permalink"]);
+  } finally { g.restore(); }
+  const [m] = await publishedAll();
+  assert.equal(m.type, "REELS");
+  assert.equal(m.caption, "One more! #encore");
+  assert.equal(new URL(m.videoUrl!).pathname, `/api/posts/media/${id}/0`);
+  const p = (await db.get("posts", id))!;
+  assert.equal(p.status, "posted");
+  assert.equal(p.pending, undefined, "nothing left pending");
+  assert.equal(await folderOf(id), `${dateInBandZone()} - Encore`);
+});
+
+test("publish: a carousel can mix photos and videos: an image item or a VIDEO item each, in order, then the carousel", async () => {
+  await connect();
+  await chooseSocials();
+  const v = await video("Crowd.mov", 20_000, 5_000_000, "video/quicktime");
+  const id = await oneDraft(["fake-social-loose-1", v, "fake-social-late"], "Hi-Dive night");
+  await cmd("posts.updateDraft", { id, patch: { caption: "What a night", items: { "fake-social-loose-1": { alt: "Nora at the mic" }, [v]: {}, "fake-social-late": {} } } });
+  const g = recordAll();
+  try {
+    assert.equal((await fast(() => cmd("posts.publish", { id }))).status, "posted");
+    assert.deepEqual(g.calls(), ["createCarouselItem", "createCarouselVideo", "createCarouselItem", "createCarousel", "publish", "permalink"]);
+  } finally { g.restore(); }
+  const [m] = await publishedAll();
+  assert.equal(m.type, "CAROUSEL_ALBUM");
+  assert.deepEqual(m.children!.map((c) => [new URL(c.videoUrl || c.imageUrl).pathname, c.videoUrl ? "video" : "photo", c.alt]), [
+    [`/api/posts/media/${id}/0`, "photo", "Nora at the mic"], [`/api/posts/media/${id}/1`, "video", undefined], [`/api/posts/media/${id}/2`, "photo", undefined],
+  ]);
+  assert.equal((await cmd("posts.list", {})).posts[0].videos, 1);
+});
+
+test("publish: a video outside Instagram's limits fails before Instagram is asked; the same video alone posts as a Reel", async () => {
+  await connect();
+  await chooseSocials();
+  const long = await video("Full set.mp4", 90_000);
+  const id = await oneDraft(["fake-social-loose-1", long], "Full set");
+  const g = recordAll();
+  try {
+    const r = await cmd("posts.publish", { id });
+    assert.equal(r.status, "failed");
+    assert.equal(r.error, "Instagram won't take it: Full set is 1:30: a video in a carousel can be at most 60 seconds. Post it alone, as a Reel");
+    assert.deepEqual(g.calls(), [], "Instagram wasn't asked");
+  } finally { g.restore(); }
+  assert.equal(await folderOf(id), "DRAFT - Full set", "Drive untouched");
+  await cmd("posts.removeFromDraft", { id, driveFileId: "fake-social-loose-1" });
+  assert.equal((await fast(() => cmd("posts.publish", { id }))).status, "posted", "90 seconds is fine for a Reel");
+  assert.equal((await publishedAll())[0].type, "REELS");
+});
+
+test("publish: a video Instagram can't use fails with its reason and name; the containers aren't kept", async () => {
+  await connect();
+  await chooseSocials();
+  const v = await video("Encore.mp4");
+  const id = await oneDraft(["fake-social-loose-1", v], "Encore");
+  await scenario({ failItem: 2 });
+  const r = await fast(() => cmd("posts.publish", { id }));
+  assert.equal(r.status, "failed");
+  assert.equal(r.error, "Encore: Instagram couldn't take the video: Error: The video's duration is not supported.");
+  assert.equal((await db.get("posts", id))!.pending, undefined);
+});
+
+test("publish: a video still processing when time's up leaves the post failed, keeping the containers; posting again picks them up", async () => {
+  await connect();
+  await chooseSocials();
+  const v = await video();
+  const id = await oneDraft(["fake-social-loose-1", v], "Encore");
+  await scenario({ videoPolls: 1000 });
+  const was = { ...publishTiming };
+  Object.assign(publishTiming, { pollMs: 5, waitMs: 60 });
+  const g = recordAll();
+  try {
+    const r = await cmd("posts.publish", { id });
+    assert.deepEqual(r, { status: "failed", error: STILL_PROCESSING, processing: true });
+    assert.deepEqual(g.calls(), ["createCarouselItem", "createCarouselVideo"]);
+    const p = (await db.get("posts", id))!;
+    assert.equal(p.status, "failed");
+    assert.equal(p.error, STILL_PROCESSING);
+    assert.equal(p.pending.children.length, 2);
+    assert.equal(await folderOf(id), "DRAFT - Encore", "Drive untouched");
+  } finally { g.restore(); Object.assign(publishTiming, was); }
+  // Instagram finishes the video; the next publish makes no new item containers.
+  await scenario({ finishVideos: true });
+  const g2 = recordAll();
+  try {
+    assert.equal((await fast(() => cmd("posts.publish", { id }))).status, "posted");
+    assert.deepEqual(g2.calls(), ["createCarousel", "publish", "permalink"], "the item containers were picked up");
+  } finally { g2.restore(); }
+  assert.equal((await db.get("posts", id))!.pending, undefined);
+  assert.equal((await publishedAll()).length, 1);
+});
+
+test("publish: a post changed since its containers were made starts over", async () => {
+  await connect();
+  await chooseSocials();
+  const v = await video();
+  const id = await oneDraft([v], "Encore");
+  await scenario({ videoPolls: 1000 });
+  const was = { ...publishTiming };
+  Object.assign(publishTiming, { pollMs: 5, waitMs: 60 });
+  try {
+    assert.equal((await cmd("posts.publish", { id })).processing, true);
+  } finally { Object.assign(publishTiming, was); }
+  await cmd("posts.updateDraft", { id, patch: { caption: "A new caption" } });
+  await scenario({ videoPolls: 0 });
+  const g = recordAll();
+  try {
+    assert.equal((await fast(() => cmd("posts.publish", { id }))).status, "posted");
+    assert.deepEqual(g.calls(), ["createReel", "publish", "permalink"], "a new Reel container, with the new caption");
+  } finally { g.restore(); }
+  assert.equal((await publishedAll())[0].caption, "A new caption");
 });
