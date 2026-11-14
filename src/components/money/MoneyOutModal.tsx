@@ -619,15 +619,15 @@ function useEditWho() {
   return { users: users.rows ?? [], options };
 }
 
-/** A gas expense's frozen trip, read-only: where from and to (when the addresses were kept), miles, MPG and the price used. */
+/** A gas expense's frozen trip, read-only: where from and to as they were that day, miles, the car and its MPG, and the price used. */
 function GasTrip({ g }: { g: NonNullable<Expense["gas"]> }) {
   const to = [g.to.name, g.to.address].filter(Boolean).join(", ");
   return (
     <div className="grid gap-1 text-sm" data-testid="mo-gas-trip">
       <span className="lbl">Trip</span>
-      <span data-testid="mo-gas-from">From: {g.fromKind === "typed" && g.fromText ? g.fromText : "home"}</span>
+      <span data-testid="mo-gas-from">From: {g.fromText ? `${g.fromText}${g.fromKind === "home" ? " (home)" : ""}` : "home"}</span>
       {to && <span data-testid="mo-gas-to">To: {to}</span>}
-      <span>{g.miles.toFixed(1)} mi {g.roundTrip ? "round trip" : "one way"} · {g.mpg} MPG · ${(g.priceMilli / 1000).toFixed(2)}/gal ({g.priceArea}, week of {g.priceWeek})</span>
+      <span>{g.miles.toFixed(1)} mi {g.roundTrip ? "round trip" : "one way"} · {g.carName ? `${g.carName}, ` : ""}{g.mpg} MPG · ${(g.priceMilli / 1000).toFixed(2)}/gal ({g.priceArea}, week of {g.priceWeek})</span>
     </div>
   );
 }

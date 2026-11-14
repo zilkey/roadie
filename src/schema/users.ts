@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AssistantPrefs } from "./assistant";
+import { DrivingSettings } from "./driving";
 import { entity, serverMask, email, id } from "./common";
 
 /**
@@ -24,6 +25,8 @@ export const User = entity({
   artists: z.array(Membership).refine((ms) => new Set(ms.map((m) => m.artistId)).size === ms.length, "One entry per artist"),
   musicianId: id.optional(),
   prefs: z.strictObject({ assistant: AssistantPrefs.optional() }).optional(),
+  /** Home address and cars, for gas estimates (people.updateDriving / me.updateDriving). */
+  driving: DrivingSettings.optional(),
 });
 export const UserInput = User.omit(serverMask);
 export type User = z.infer<typeof User>;

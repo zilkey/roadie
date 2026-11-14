@@ -13,17 +13,23 @@ export const geoPoint = z.strictObject({
 });
 export type GeoPoint = z.infer<typeof geoPoint>;
 
+/** One car a person drives. Gas estimates use its MPG and fuel grade. */
+export const Car = z.strictObject({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  mpg: z.number().positive().optional(),
+  fuelGrade,
+});
+export type Car = z.infer<typeof Car>;
+
 /**
- * users/{uid}/private/driving. Read and written ONLY through src/server/driving.ts (admin SDK, like userPrefs),
- * never through db.ts: a history entry would put the home address where admins can read it. Rules let only the
- * owner read it; the server reads it for estimates and never returns the address to anyone else.
+ * A person's Driving & gas settings: users/{uid}.driving. Written through db.ts like any other field (history, undo),
+ * by me.updateDriving (their own) and people.updateDriving (admins, for a bandmate). Admins and the person read it.
+ * With one car, gas estimates use it; with several, the estimate asks which (expenses.estimateGas carId).
  */
 export const DrivingSettings = z.strictObject({
   home: geoPoint.optional(),
-  carName: z.string().optional(),
-  mpg: z.number().positive().optional(),
-  fuelGrade,
-  updatedAt: ts,
+  cars: z.array(Car).refine((cs) => new Set(cs.map((c) => c.id)).size === cs.length, "One entry per car").optional(),
 });
 export type DrivingSettings = z.infer<typeof DrivingSettings>;
 

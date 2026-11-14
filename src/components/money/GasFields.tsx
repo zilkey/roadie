@@ -10,10 +10,14 @@ import type { Rehearsal, User } from "@/schema";
 
 /** What expenses.estimateGas replies with (numbers, or `missing`; the saved home as homeAddress). */
 interface Estimate {
-  missing: ("mpg" | "home" | "destination" | "price")[];
+  missing: ("car" | "mpg" | "home" | "destination" | "price")[];
   fromKind: "home" | "typed"; roundTrip: boolean;
   /** The driver's saved home, when From is it. */
   homeAddress?: string;
+  /** The driver's cars, when they have more than one: the form asks which. */
+  cars?: { id: string; name: string; mpg?: number }[];
+  /** The car the estimate used. */
+  carId?: string; carName?: string;
   oneWayMiles?: number; miles?: number; mpg?: number; grade?: "regular" | "midgrade" | "premium" | "diesel";
   priceMilli?: number; priceArea?: string; priceWeek?: string; seriesId?: string; source?: string; estimateCents?: number;
 }
@@ -60,6 +64,7 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
     if (o.roundTrip !== undefined) setRoundTrip(o.roundTrip);
   }, [o.from, o.to, o.roundTrip]);
   const [mpgText, setMpgText] = useState("");
+  const [carId, setCarId] = useState("");
   const [saveHome, setSaveHome] = useState(true);
   const [saveMpg, setSaveMpg] = useState(true);
   const [setRehearsal, setSetRehearsal] = useState(true);
@@ -81,7 +86,7 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
   }, [o.active, o.venueText]);
 
   function setDriver(id: string) {
-    setPick(id); setNeed({ mpg: false, home: false, dest: false }); setLast(null); setMpgText("");
+    setPick(id); setNeed({ mpg: false, home: false, dest: false }); setLast(null); setMpgText(""); setCarId("");
     if (!fromTyped) { setFromPick(null); setFromText(""); }
   }
 
@@ -91,6 +96,7 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
     ...(toPick ? { to: toPick } : {}),
     ...(o.rehearsalId ? { rehearsalId: o.rehearsalId } : {}),
     ...(mpgTyped ? { mpg: mpgNum } : {}),
+    ...(carId ? { carId } : {}),
     roundTrip,
   };
   const key = JSON.stringify(input);
@@ -110,6 +116,9 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
   const missing = cur?.missing ?? [];
   const good = cur && cur.missing.length === 0 && cur.estimateCents && cur.miles && cur.oneWayMiles && cur.mpg && cur.priceMilli && cur.priceArea && cur.priceWeek && cur.seriesId && cur.grade ? cur : null;
 
+  /** The driver's cars to pick from (only when there are several); kept from the last estimate while the next one runs. */
+  const cars = last?.r.cars ?? [];
+  const usedCar = cur?.carId ? { id: cur.carId, name: cur.carName ?? "" } : null;
   const showMpgBox = need.mpg || missing.includes("mpg") || mpgTyped;
   const showHomeBox = need.home || missing.includes("home");
   const showToBox = o.rehearsalId ? !rehHasLoc : true;
@@ -119,12 +128,12 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
     const toOut = toPick ?? (rehLoc ? { name: rehLoc.name, address: rehLoc.address, lat: rehLoc.lat, lng: rehLoc.lng } : {});
     const gas = good && cents > 0 ? {
       fromKind: good.fromKind, ...(good.fromKind === "typed" && fromPick ? { fromText: fromPick.address } : {}),
-      to: toOut, oneWayMiles: good.oneWayMiles!, roundTrip: good.roundTrip, miles: good.miles!, mpg: good.mpg!, grade: good.grade!,
+      to: toOut, oneWayMiles: good.oneWayMiles!, roundTrip: good.roundTrip, miles: good.miles!, mpg: good.mpg!, ...(good.carName ? { carName: good.carName } : {}), grade: good.grade!,
       priceMilli: good.priceMilli!, priceArea: good.priceArea!, priceWeek: good.priceWeek!, seriesId: good.seriesId!, estimateCents: good.estimateCents!,
     } : undefined;
     return {
       ...(gas ? { gas } : {}),
-      ...(gas && showMpgBox && mpgTyped && saveMpg ? { saveMpg: true } : {}),
+      ...(gas && showMpgBox && mpgTyped && saveMpg ? { saveMpg: true, ...(good?.carId ? { carId: good.carId } : {}) } : {}),
       ...(gas && showHomeBox && fromPick && saveHome ? { saveAsHome: { ...(fromPick.name ? { name: fromPick.name } : {}), address: fromPick.address, lat: fromPick.lat, lng: fromPick.lng } } : {}),
       ...(gas && isAdmin && o.rehearsalId && !rehHasLoc && toPick && setRehearsal ? { setAsRehearsalLocation: { ...(toPick.name ? { name: toPick.name } : {}), address: toPick.address, lat: toPick.lat, lng: toPick.lng } } : {}),
     };
@@ -132,6 +141,7 @@ export function useGas(o: { active: boolean; drivers: readonly Row<User>[]; defa
   return {
     ...o, fromTyped, driverId, driverName, setDriver, forOther, isAdmin, est, cur, good, missing, rehLoc, rehHasLoc, showMpgBox, showHomeBox, showToBox, payload,
     fromPick, fromText, setFromPick, setFromText, toPick, toText, setToPick, setToText, roundTrip, setRoundTrip, mpgText, setMpgText,
+    cars, carId, setCarId, usedCar,
     saveHome, setSaveHome, saveMpg, setSaveMpg, setRehearsal, setSetRehearsal,
   };
 }
@@ -155,8 +165,8 @@ export function GasFields({ g, testid, you, hideDriver, hideSetRehearsal }: {
   const miles = g.good?.miles ?? g.cur?.miles;
   const oneWay = g.cur?.oneWayMiles;
   const rehName = g.rehLoc?.name || g.rehLoc?.address;
-  const estimate = oneWay === undefined ? (g.missing.includes("home") ? "needs a start address" : g.missing.includes("destination") ? "needs a destination" : g.est.busy ? "working it out" : "")
-    : `${g.roundTrip ? `${oneWay} mi × 2 = ${miles} mi` : `${oneWay} mi one way`}${g.cur?.mpg ? ` · ${g.cur.mpg} mpg` : ""}${g.cur?.priceMilli ? ` · $${(g.cur.priceMilli / 1000).toFixed(2)}/gal${g.cur.priceArea ? ` ${g.cur.priceArea}` : ""}` : ""}`;
+  const estimate = g.missing.includes("car") ? "needs a car" : oneWay === undefined ? (g.missing.includes("home") ? "needs a start address" : g.missing.includes("destination") ? "needs a destination" : g.est.busy ? "working it out" : "")
+    : `${g.roundTrip ? `${oneWay} mi × 2 = ${miles} mi` : `${oneWay} mi one way`}${g.cur?.mpg ? ` · ${g.cur.carName ? `${g.cur.carName}, ` : ""}${g.cur.mpg} mpg` : ""}${g.cur?.priceMilli ? ` · $${(g.cur.priceMilli / 1000).toFixed(2)}/gal${g.cur.priceArea ? ` ${g.cur.priceArea}` : ""}` : ""}`;
   return (
     <>
       {!hideDriver && <label className="grid gap-1">
@@ -207,7 +217,16 @@ export function GasFields({ g, testid, you, hideDriver, hideSetRehearsal }: {
           <span className="block rounded-full" style={{ width: 20, height: 20, background: "#fff" }} />
         </span>
       </button>
-      {g.driverId && g.showMpgBox && (
+      {g.driverId && g.cars.length > 1 && (
+        <label className={g.missing.includes("car") ? warnBox : "grid gap-1"} style={g.missing.includes("car") ? warnStyle : undefined}>
+          <span className="lbl" style={g.missing.includes("car") ? { color: "inherit" } : undefined}>{you ? "Which car did you drive?" : `Which car did ${who} drive?`}</span>
+          <select className="select" value={g.carId} onChange={(e) => g.setCarId(e.target.value)} data-testid={`${testid}-car`}>
+            <option value="">Pick a car</option>
+            {g.cars.map((c) => <option key={c.id} value={c.id}>{c.name}{c.mpg !== undefined ? ` · ${c.mpg} MPG` : ""}</option>)}
+          </select>
+        </label>
+      )}
+      {g.driverId && g.showMpgBox && !g.missing.includes("car") && (
         <div className={warnBox} style={warnStyle}>
           {g.missing.includes("mpg") && <b>We need {poss} MPG to estimate this</b>}
           <label className="grid gap-1"><span className="lbl" style={{ color: "inherit" }}>Miles per gallon</span>
@@ -215,7 +234,7 @@ export function GasFields({ g, testid, you, hideDriver, hideSetRehearsal }: {
               <input className="input" style={{ width: 120 }} inputMode="decimal" placeholder="e.g. 28" value={g.mpgText} onChange={(e) => g.setMpgText(e.target.value)} data-testid={`${testid}-mpg`} />
               <a href="https://www.fueleconomy.gov/feg/findacar.shtml" target="_blank" rel="noreferrer">Look up the car's MPG</a>
             </div></label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={g.saveMpg} onChange={(e) => g.setSaveMpg(e.target.checked)} data-testid={`${testid}-save-mpg`} /><span>{you ? "Save as my MPG" : `Save as ${poss} MPG`}</span></label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={g.saveMpg} onChange={(e) => g.setSaveMpg(e.target.checked)} data-testid={`${testid}-save-mpg`} /><span>{g.usedCar?.name ? `Save as the ${g.usedCar.name}'s MPG` : you ? "Save as my MPG" : `Save as ${poss} MPG`}</span></label>
         </div>
       )}
       <div className="s" aria-live="polite" data-testid={`${testid}-estimate`}>

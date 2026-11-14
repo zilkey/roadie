@@ -73,9 +73,9 @@ before(async () => {
     await setDoc(doc(d, "payouts/to-hugo-gone"), { deletedAt: new Date(), artistId: "x", to: { userId: "hugo", name: "Hugo" }, kind: "pay", amount: 1, projectId: "band" });
     await setDoc(doc(d, "unsubmittedDrafts/rudy__expenses"), { uid: "rudy", path: "expenses", values: { a: 1 } });
     await setDoc(doc(d, "unsubmittedDrafts/hugo__shows~x"), { uid: "hugo", path: "shows/x", values: { a: 2 } });
-    // Driving & gas: private per-user settings, the shared weekly price cache, and the server-only route cache.
-    await setDoc(doc(d, "users/rudy/private/driving"), { home: { address: "1 Secret Way" }, mpg: 28, fuelGrade: "regular" });
-    await setDoc(doc(d, "users/hugo/private/driving"), { mpg: 34, fuelGrade: "regular" });
+    // Driving & gas: settings on each person's users doc, the shared weekly price cache, and the server-only route cache.
+    await setDoc(doc(d, "users/rudy"), { ...live, name: "Rudy", driving: { home: { address: "1 Main St", lat: 1, lng: 2 }, cars: [] } });
+    await setDoc(doc(d, "users/hugo"), { ...live, name: "Hugo", driving: { cars: [{ id: "c1", name: "Fit", mpg: 34, fuelGrade: "regular" }] } });
     await setDoc(doc(d, "fuelPrices/Y05DE_EPMR"), { area: "Denver", areaKind: "metro", grade: "regular", priceMilli: 3790, week: "2026-10-19" });
     await setDoc(doc(d, "routeCache/abc123"), { oneWayMiles: 18.4 });
     await setDoc(doc(d, "stagePlotTokens/plot1"), { token: "secret-token" });
@@ -181,7 +181,7 @@ test("noBand: signed in with empty claims reads no band data, lists nothing, and
   for (const c of [...ALL, ...SIGNED_IN_READS, "venueTypes", "setlistTemplates", "availability", "expenses", "venueNotes", "fans", "ledger"]) await assertFails(getDoc(doc(fresh(), c, "x")));
   for (const c of ["users", "musicians", "artists", "shows", "venues", "pitches", "checklistTemplates"]) await assertFails(getDocs(collection(fresh(), c)));
   await assertFails(getDocs(collectionGroup(fresh(), "history")));
-  await assertFails(getDoc(doc(fresh(), "users/rudy/private/driving")));
+  await assertFails(getDoc(doc(fresh(), "users/rudy")));
   await assertFails(getDoc(doc(fresh(), "unsubmittedDrafts/rudy__expenses")));
 });
 
@@ -242,15 +242,15 @@ test("unsubmittedDrafts: only the owner reads their own; admins, members and ano
   await assertFails(getDoc(doc(admin(), "users/rudy/drafts/show__new"))); // the old location is gone
 });
 
-test("driving settings: nobody but the owner reads users/{uid}/private/driving, admins included; no client writes", async () => {
-  await assertSucceeds(getDoc(doc(admin(), "users/rudy/private/driving")));
-  await assertSucceeds(getDoc(doc(hugo(), "users/hugo/private/driving")));
-  await assertFails(getDoc(doc(admin(), "users/hugo/private/driving"))); // not even an admin
-  await assertFails(getDoc(doc(hugo(), "users/rudy/private/driving")));
-  await assertFails(getDoc(doc(anon(), "users/rudy/private/driving")));
-  await assertFails(getDoc(doc(noRole(), "users/rudy/private/driving")));
-  await assertFails(setDoc(doc(admin(), "users/rudy/private/driving"), { mpg: 1 }));
-  await assertFails(updateDoc(doc(hugo(), "users/hugo/private/driving"), { mpg: 1 }));
+test("driving settings (users/{uid}.driving): admins read everyone's, a member only their own; no client writes", async () => {
+  await assertSucceeds(getDoc(doc(admin(), "users/rudy")));
+  await assertSucceeds(getDoc(doc(admin(), "users/hugo"))); // admins see and edit bandmates' homes and cars (People)
+  await assertSucceeds(getDoc(doc(hugo(), "users/hugo"))); // My settings
+  await assertFails(getDoc(doc(hugo(), "users/rudy")));
+  await assertFails(getDoc(doc(anon(), "users/rudy")));
+  await assertFails(getDoc(doc(noRole(), "users/rudy")));
+  await assertFails(setDoc(doc(admin(), "users/rudy"), { driving: { cars: [] } }));
+  await assertFails(updateDoc(doc(hugo(), "users/hugo"), { driving: { cars: [] } }));
 });
 
 test("fuelPrices: any signed-in user reads; routeCache nobody; no client writes", async () => {

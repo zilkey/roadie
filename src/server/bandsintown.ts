@@ -104,7 +104,7 @@ export async function checkBandsintown(ctx: Ctx, artistId: string, showId?: stri
   await run(ctx, async (w) => {
     const today = dateInBandZone(w.now.toDate());
     const shows = showId ? [await w.get("shows", showId)].filter((s): s is Doc => !!s)
-      : (await w.query("shows", (q) => q.where("artistId", "==", artistId))).filter((s) => (s.date as string) >= today);
+      : await w.query("shows", (q) => q.where("artistId", "==", artistId).where("date", ">=", today));
     for (const s of shows) {
       if (s.deletedAt || s.artistId !== artistId || kindOf(s as never) === "house") continue;
       const lists = (s.checklists ?? []) as ChecklistLike[];

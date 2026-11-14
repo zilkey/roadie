@@ -10,7 +10,10 @@ import { payoutTo } from "./payouts";
  */
 export const expenseGasBase = z.strictObject({
   fromKind: z.enum(["home", "typed"]),
-  /** Only when fromKind is "typed". */
+  /**
+   * Where the trip started, as it was when the expense was logged: the typed address, or (fromKind home) the driver's
+   * home address at that time, so a later move doesn't rewrite history. Missing only on expenses logged before 2026-11.
+   */
   fromText: z.string().optional(),
   to: z.strictObject({ name: z.string().optional(), address: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
   oneWayMiles: z.number().positive(),
@@ -18,6 +21,8 @@ export const expenseGasBase = z.strictObject({
   /** oneWayMiles × (roundTrip ? 2 : 1), as estimated. */
   miles: z.number().positive(),
   mpg: z.number().positive(),
+  /** The car the estimate used (its name when the expense was logged), when the driver has cars saved. */
+  carName: z.string().optional(),
   grade: fuelGrade,
   /** $/gal × 1000 */
   priceMilli: z.number().int().positive(),
@@ -30,7 +35,7 @@ export const expenseGasBase = z.strictObject({
   /** True when the saved amount differs from estimateCents (set by the server, kept on later amount edits). */
   overridden: z.boolean(),
 });
-export const expenseGas = expenseGasBase.refine((g) => g.fromKind === "typed" || g.fromText === undefined, 'fromKind "home" never stores an address');
+export const expenseGas = expenseGasBase;
 export type ExpenseGas = z.infer<typeof expenseGas>;
 
 export const Expense = entity({

@@ -78,9 +78,9 @@ async function main() {
   }
 
   // Driving settings for the admin (Rudy), so gas estimates work out of the box. The member gets none (no home, no car).
-  await updateDriving(uid.rudy, {
+  await updateDriving(ctx, uid.rudy, {
     home: { address: "742 Evergreen Terrace, Denver, CO, USA", lat: 39.7005, lng: -104.9503 },
-    carName: "Subaru Outback", mpg: 28, fuelGrade: "regular",
+    cars: [{ name: "Subaru Outback", mpg: 28, fuelGrade: "regular" }],
   });
   // The stored EIA price for Denver metro, regular: fresh enough that the gas estimate never calls EIA.
   const denver = areaFor("Denver County", "CO");

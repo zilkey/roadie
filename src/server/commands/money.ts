@@ -4,12 +4,12 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { defineCommand } from "./types";
 import { driveClient, orsClient } from "../integrations";
-import { getDriving, updateDriving } from "../driving";
+import { carFor, getDriving, withMpg, writeDriving } from "../driving";
 import { gasCents, tripMiles } from "../gas/math";
 import { routeMiles } from "../gas/route";
 import { areaFor, priceFor } from "../gas/price";
 import { requireContact } from "../venues";
-import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind } from "@/schema";
+import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind, type DrivingSettings } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
 import { isOwedBill, owesBack } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
@@ -151,6 +151,21 @@ async function refreshMoved(w: Writer, kind: "expenses" | "income" | "payouts", 
 
 // ---------- expenses ----------
 
+/**
+ * The trip as it was that day, kept on the expense so later changes (a move, a sold car) don't rewrite it: the start
+ * address (a home trip copies the payer's home), the destination's address (a rehearsal's location when none was sent),
+ * and the car's name when the estimate used one of the payer's cars (carId, else their only car, when its MPG matches).
+ */
+async function gasSnapshot(gas: z.infer<typeof GasIn>, payer: Doc, rehearsal: Doc | null, carId?: string) {
+  const driving = (payer.driving ?? {}) as DrivingSettings;
+  const loc = rehearsal?.location as { name?: string; address?: string; lat?: number; lng?: number } | undefined;
+  const fromText = gas.fromText ?? (gas.fromKind === "home" ? driving.home?.address : undefined);
+  const to = gas.to.address || !loc?.address ? gas.to : { ...gas.to, name: gas.to.name ?? loc.name, address: loc.address, lat: gas.to.lat ?? loc.lat, lng: gas.to.lng ?? loc.lng };
+  const car = carFor(driving, carId);
+  const carName = gas.carName ?? (car && car.mpg === gas.mpg ? car.name : undefined);
+  return { ...gas, ...(fromText ? { fromText } : {}), to: Object.fromEntries(Object.entries(to).filter(([, v]) => v !== undefined)), ...(carName ? { carName } : {}) };
+}
+
 /** What the form sends after an estimate: the frozen gas numbers; the server sets `overridden` from the amount. */
 const GasIn = expenseGasBase.omit({ overridden: true });
 
@@ -160,7 +175,7 @@ export const expensesAdd = defineCommand({
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Woodshed $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
-    "A gas expense (category gas) carries the frozen estimate in `gas` and is paid back unless payBack is false (the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source and areaKind). With fromKind typed, fromText (the start address) and to.address are kept on the expense and shown with it; fromKind home keeps no address. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
+    "A gas expense (category gas) carries the frozen estimate in `gas` and is paid back unless payBack is false (the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, carName, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source, areaKind, carId, cars and homeAddress). The start and end addresses are kept on the expense as they were that day: send fromText for a typed start (with fromKind home the server copies the payer's saved home into fromText), and to with its address (a rehearsal's location is filled in when to.address is missing). carName is filled from the payer's car when the estimate used one. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else): saveMpg puts gas.mpg on the car carId (the estimate's carId), else their only car, else a new car named \"Car\"; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), notes: z.string().trim().min(1).optional(), category: expenseCategory, date: dateStr.optional(),
@@ -168,8 +183,10 @@ export const expensesAdd = defineCommand({
     tourId: id1.optional(), tourEntryId: id1.optional(),
     receipt: driveRef.optional(), userId: z.string().min(1).optional(), payBack: z.boolean().optional(),
     to: PayoutTo.optional(), owed: z.boolean().optional(),
-    /** Save gas.mpg to the payer's driving settings (userId, else the caller). */
+    /** Save gas.mpg to the payer's driving settings (userId, else the caller): on car carId, else their only car, else a new one. */
     saveMpg: z.boolean().optional(),
+    /** The payer's car the estimate used (expenses.estimateGas carId), for saveMpg. */
+    carId: z.string().min(1).optional(),
     /** Save this typed From (with coordinates) as the payer's home address (userId, else the caller). */
     saveAsHome: geoPoint.optional(),
     /** Admins only: set this typed To as the rehearsal's location (needs rehearsalId). */
@@ -189,7 +206,7 @@ export const expensesAdd = defineCommand({
     const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const tour = await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show });
-    const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;
+    const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, carId, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;
     const r = await w.create("expenses", {
       ...rest, ...tour, userId, date: i.date ?? todayServer(), ...(projectId ? { projectId } : {}),
       ...(to ? { to: await resolveTo(w, to) } : {}),
@@ -197,15 +214,17 @@ export const expensesAdd = defineCommand({
       ...(owed ? { owed: true, payBack: false } : {}),
       // Gas is paid back to whoever drove unless the caller says not (payBack:false: they cover their own).
       ...(!owed && i.category === "gas" && i.payBack !== false ? { payBack: true } : {}),
-      ...(gas ? { gas: { ...gas, overridden: i.amount !== gas.estimateCents } } : {}),
+      ...(gas ? { gas: { ...(await gasSnapshot(gas, u, rehearsal, carId)), overridden: i.amount !== gas.estimateCents } } : {}),
     });
     if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
+    // The payer's driving settings change in the same run, so undoing it puts them back too.
+    if (saveAsHome) await writeDriving(w, userId, { home: saveAsHome });
+    if (saveMpg && gas) {
+      const p = withMpg(((await w.get("users", userId))?.driving ?? {}) as Parameters<typeof withMpg>[0], gas.mpg, carId);
+      if (p) await writeDriving(w, userId, p);
+    }
     return r;
    });
-    // Side writes after the transaction (run() can retry; updateDriving is a direct write).
-    const payer = i.userId ?? ctx.uid;
-    if (i.saveMpg && i.gas) await updateDriving(payer, { mpg: i.gas.mpg });
-    if (i.saveAsHome) await updateDriving(payer, { home: i.saveAsHome });
     if (i.setAsRehearsalLocation && i.rehearsalId) await db.update(ctx, "rehearsals", i.rehearsalId, { location: i.setAsRehearsalLocation });
     return r;
   },
@@ -221,21 +240,27 @@ export const expensesEstimateGas = defineCommand({
   name: "expenses.estimateGas", roles: ["admin", "member", "mcp"],
   description: "Estimate gas money for a trip, no write: miles (via driving directions), the person's MPG, and the local EIA weekly gas price. " +
     "From defaults to the person's saved home address, To to the rehearsal's location (rehearsalId); pass from/to (with coordinates) to override. " +
-    "forId (admins only) estimates for a bandmate using their saved home and MPG — the reply includes their saved home as homeAddress. " +
-    "Returns estimateCents plus the frozen numbers for expenses.add, or `missing` (mpg|home|destination|price) naming what to ask for; it never throws for missing info.",
+    "forId (admins only) estimates for a bandmate using their saved home and car — the reply includes their saved home as homeAddress. " +
+    "MPG and fuel grade come from the person's car: carId picks one of their cars; with exactly one car it is used; with several and no carId the reply lists them in `cars` ({id, name, mpg}) and `missing` has \"car\": ask which car, then estimate again with carId (a typed mpg also works). The reply names the car used (carId, carName). " +
+    "Returns estimateCents plus the frozen numbers for expenses.add, or `missing` (car|mpg|home|destination|price) naming what to ask for; it never throws for missing info.",
   input: z.strictObject({
     forId: z.string().min(1).optional(),
     from: z.strictObject({ address: z.string().min(1), lat: z.number(), lng: z.number() }).optional(),
     to: z.strictObject({ name: z.string().optional(), address: z.string().min(1), lat: z.number(), lng: z.number() }).optional(),
     rehearsalId: z.string().min(1).optional(),
     mpg: z.number().positive().optional(),
+    carId: z.string().min(1).optional(),
     roundTrip: z.boolean().default(true),
   }),
   async run(ctx, i): Promise<{
-    missing: ("mpg" | "home" | "destination" | "price")[];
+    missing: ("car" | "mpg" | "home" | "destination" | "price")[];
     fromKind: "home" | "typed"; roundTrip: boolean;
     /** The person's saved home address, when From is their home. */
     homeAddress?: string;
+    /** The person's cars, when they have more than one (the form's picker). */
+    cars?: { id: string; name: string; mpg?: number }[];
+    /** The car used: the one asked for, else the only one. */
+    carId?: string; carName?: string;
     oneWayMiles?: number; miles?: number; mpg?: number; grade?: z.infer<typeof fuelGrade>;
     priceMilli?: number; priceArea?: string; priceWeek?: string; seriesId?: string; areaKind?: FuelAreaKind;
     /** "Denver-area average · EIA weekly, Oct 19" */
@@ -248,13 +273,17 @@ export const expensesEstimateGas = defineCommand({
     if (i.rehearsalId && (!reh || reh.deletedAt)) throw new AppError("not_found", "Rehearsal not found", 404);
     const settings = await getDriving(target);
     const fromKind = i.from ? "typed" as const : "home" as const;
-    const from = i.from ?? settings?.home ?? undefined;
+    const from = i.from ?? settings.home ?? undefined;
     const loc = reh?.location as { lat?: number; lng?: number } | undefined;
     const to = i.to ?? (typeof loc?.lat === "number" && typeof loc?.lng === "number" ? { lat: loc.lat, lng: loc.lng } : undefined);
-    const mpg = i.mpg ?? settings?.mpg ?? undefined;
-    const grade = settings?.fuelGrade ?? "regular";
-    const gaps = new Set<"mpg" | "home" | "destination" | "price">();
-    if (!mpg) gaps.add("mpg");
+    const cars = settings.cars ?? [];
+    if (i.carId && !cars.some((c) => c.id === i.carId)) throw new AppError("not_found", "No such car", 404);
+    const car = carFor(settings, i.carId);
+    const mpg = i.mpg ?? car?.mpg ?? undefined;
+    const grade = car?.fuelGrade ?? "regular";
+    const gaps = new Set<"car" | "mpg" | "home" | "destination" | "price">();
+    if (!i.mpg && !car && cars.length > 1) gaps.add("car");
+    else if (!mpg) gaps.add("mpg");
     if (!from) gaps.add("home");
     if (!to) gaps.add("destination");
 
@@ -271,10 +300,12 @@ export const expensesEstimateGas = defineCommand({
       } catch { /* degrade to the price gap */ }
     }
     if (from && !price) gaps.add("price");
-    const missing = (["mpg", "home", "destination", "price"] as const).filter((g) => gaps.has(g));
+    const missing = (["car", "mpg", "home", "destination", "price"] as const).filter((g) => gaps.has(g));
     return {
       missing, fromKind, roundTrip: i.roundTrip,
-      ...(fromKind === "home" && settings?.home?.address ? { homeAddress: settings.home.address } : {}),
+      ...(fromKind === "home" && settings.home?.address ? { homeAddress: settings.home.address } : {}),
+      ...(cars.length > 1 ? { cars: cars.map((c) => ({ id: c.id, name: c.name, ...(c.mpg !== undefined ? { mpg: c.mpg } : {}) })) } : {}),
+      ...(car ? { carId: car.id, carName: car.name } : {}),
       ...(oneWayMiles !== undefined ? { oneWayMiles, miles } : {}),
       ...(mpg ? { mpg } : {}), grade,
       ...(price ? { priceMilli: price.priceMilli, priceArea: price.area, priceWeek: price.week, seriesId: price.seriesId, areaKind: price.areaKind, source: price.source } : {}),

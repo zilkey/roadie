@@ -34,6 +34,7 @@
     "restore": "tsx scripts/restore.ts",
     "align-auth": "FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9319 GCLOUD_PROJECT=demo-band-tracker tsx scripts/align-auth.ts",
     "migrate:posts-49": "tsx scripts/migrate-posts-49.ts",
+    "migrate:driving": "tsx scripts/migrate-driving.ts",
     "test:all": "tsx scripts/test-all.ts"
   },
   "dependencies": {

@@ -4,6 +4,8 @@ import { OptionalEmail, PEOPLE_MESSAGES, parseInstruments, validatePerson } from
 import { Sheet } from "@/components/Sheet";
 import { ErrorBox } from "@/components/ui";
 import { Chips, FieldError, Icons, TextField, firstName, guards, useAct, type Person } from "./shared";
+import { DrivingFields, carsChanged, draftsToCars, homeLabel, toDrafts, type CarDraft, type DrivingPatch } from "./DrivingFields";
+import type { GeoPoint } from "@/schema";
 
 export type Removal = "removeTeam" | "removeBand" | "archive";
 
@@ -15,6 +17,12 @@ export function PersonSheet({ person: p, all, onClose, onRemoval }: { person: Pe
     name: p.name, email: p.u ? p.u.email : p.m?.email ?? "", phone: p.m?.phone ?? "", payHandle: p.m?.payHandle ?? "",
     instruments: p.m && p.band ? p.m.instruments.join(", ") : "", role: p.role || "member", mcp: p.mcp,
   });
+  // Driving & gas (people with a sign-in: gas is logged per login). Saved with the rest on Save.
+  const drv = p.u?.driving;
+  const [homeText, setHomeText] = useState(homeLabel(drv?.home));
+  const [home, setHome] = useState<GeoPoint | null | undefined>(undefined); // undefined = unchanged, null = cleared
+  const [cars, setCars] = useState<CarDraft[]>(() => toDrafts(drv?.cars));
+  const [carErrors, setCarErrors] = useState<Record<string, string>>({});
   const errs = { ...fields, ...local };
   const set = (patch: Partial<typeof f>, clear: string[] = []) => { setF((x) => ({ ...x, ...patch })); setLocal((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !clear.includes(k)))); };
   const team = !!p.role;
@@ -28,7 +36,9 @@ export function PersonSheet({ person: p, all, onClose, onRemoval }: { person: Pe
     const v = validatePerson({ name: f.name, bandMember: p.band, team, instruments: f.instruments, email: f.email, role: team ? f.role : "", mcpAccess: f.mcp });
     const errors: Record<string, string> = v.errors ? { ...v.errors } : {};
     if (!team && !OptionalEmail.safeParse(f.email).success) errors.email = PEOPLE_MESSAGES.email;
-    if (Object.keys(errors).length) { setLocal(errors); return; }
+    const typedCars = p.u ? draftsToCars(cars) : null;
+    setCarErrors(typedCars?.errors ?? {});
+    if (Object.keys(errors).length || Object.keys(typedCars?.errors ?? {}).length) { setLocal(errors); return; }
     setLocal({});
     const name = f.name.trim();
     if (p.u) {
@@ -37,6 +47,10 @@ export function PersonSheet({ person: p, all, onClose, onRemoval }: { person: Pe
       if (f.role !== p.role) { patch.role = f.role; if (f.role === "admin" && f.mcp !== p.mcp) patch.mcpAccess = f.mcp; }
       else if (f.mcp !== p.mcp) patch.mcpAccess = f.mcp;
       if (Object.keys(patch).length && !(await act("users.update", { id: p.u.id, patch }))) return;
+      const driving: DrivingPatch = {};
+      if (home !== undefined && (home?.address ?? null) !== (drv?.home?.address ?? null)) driving.home = home;
+      if (typedCars && carsChanged(drv?.cars, typedCars.cars)) driving.cars = typedCars.cars;
+      if (Object.keys(driving).length && !(await act("people.updateDriving", { userId: p.u.id, ...driving }))) return;
     }
     if (p.m && p.band) {
       const patch: Record<string, unknown> = {};
@@ -85,6 +99,15 @@ export function PersonSheet({ person: p, all, onClose, onRemoval }: { person: Pe
           <section className="sec" aria-labelledby="ps-band">
             <div className="grid"><h3 id="ps-band" className="font-bold">Band Member</h3><span className="s">Plays in the band: lineups, setlists, pay.</span></div>
             <TextField id="ps-instruments" label="Instruments" value={f.instruments} onChange={(v) => set({ instruments: v }, ["instruments"])} error={errs.instruments} field="instruments" testid="person-sheet-instruments" hint="Separate with commas." />
+          </section>
+        )}
+
+        {p.u && (
+          <section className="sec" aria-labelledby="ps-driving" data-testid="person-sheet-driving">
+            <div className="grid"><h3 id="ps-driving" className="font-bold">Driving &amp; gas</h3><span className="s">Home address and cars, for {first}&apos;s gas expenses. With more than one car, you pick the car when logging gas.</span></div>
+            <DrivingFields testid="person-sheet" homeText={homeText} rows={cars} setRows={(r) => { setCars(r); setCarErrors({}); }} errors={carErrors}
+              onPickHome={(h) => { setHome(h); setHomeText(homeLabel(h)); }}
+              onHomeText={(t) => { setHomeText(t); setHome(t.trim() ? undefined : null); }} />
           </section>
         )}
 

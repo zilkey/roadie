@@ -90,21 +90,22 @@ test("your profile: the driving and gas card shows the seeded values and an MPG 
   await page.getByTestId("account-menu").click();
   await page.getByRole("menuitem", { name: "Your profile" }).click();
   await expect(page.getByTestId("me-driving-card")).toBeVisible();
-  await expect(page.getByTestId("me-mpg-value")).toHaveText("28");
-  await expect(page.getByTestId("me-car-value")).toBeVisible();
+  await expect(page.getByTestId("me-home-value")).toContainText("Evergreen");
+  await expect(page.getByTestId("me-car-value-0")).toHaveText("Subaru Outback · 28 MPG · Regular");
 
-  // saved settings edit field-by-field behind Edit; MPG saves on blur
+  // saved settings edit behind Edit; a car's MPG saves on blur
   const setMpg = async (v: string) => {
     await page.getByTestId("me-edit").click();
-    await page.getByTestId("me-mpg").fill(v);
-    await page.getByTestId("me-mpg").blur();
+    await page.getByTestId("me-car-mpg-0").fill(v);
+    await page.getByTestId("me-car-mpg-0").blur();
+    await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
     await page.getByTestId("me-done").click();
-    await expect(page.getByTestId("me-mpg-value")).toHaveText(v);
+    await expect(page.getByTestId("me-car-value-0")).toContainText(`${v} MPG`);
   };
   try {
     await setMpg("30");
     await page.reload();
-    await expect(page.getByTestId("me-mpg-value")).toHaveText("30");
+    await expect(page.getByTestId("me-car-value-0")).toContainText("30 MPG");
   } finally {
     // put the seeded value back, so the rehearsal expense checks above see 28 MPG
     await setMpg("28");
@@ -278,4 +279,58 @@ test("a rehearsal song's metronome starts from the list and stops from the song 
   await onSong.click();
   await expect(onSong).toHaveAttribute("aria-pressed", "false");
   await close();
+});
+
+/** People: an admin gives a bandmate a home and two cars in their Edit sheet; logging their gas then asks which car. */
+test("an admin sets a bandmate's home and cars on People; the gas form asks which car and uses its MPG", async ({ browser }) => {
+  const { page, close } = await as(browser, "rudy");
+  const openFelix = async () => {
+    await page.goto(A("/admin/people"));
+    await page.getByTestId("person-row-felix@example.com").getByTestId("person-actions").click();
+    await page.getByTestId("person-menu-edit").click();
+    await expect(page.getByTestId("person-sheet-driving")).toBeVisible();
+  };
+  await openFelix();
+  const sheet = page.getByTestId("person-sheet");
+  await sheet.getByTestId("person-sheet-home").fill("742 Evergreen");
+  await sheet.getByTestId("person-sheet-home-suggestion").first().click();
+  await sheet.getByTestId("person-sheet-car-add").click();
+  await sheet.getByTestId("person-sheet-car-name-0").fill("Outback");
+  await sheet.getByTestId("person-sheet-car-mpg-0").fill("28");
+  await sheet.getByTestId("person-sheet-car-add").click();
+  await sheet.getByTestId("person-sheet-car-name-1").fill("Truck");
+  await sheet.getByTestId("person-sheet-car-mpg-1").fill("abc");
+  await sheet.getByTestId("person-sheet-save").click();
+  await expect(sheet.getByTestId("person-sheet-car-mpg-error-1")).toHaveText("Enter a number above 0"); // nothing saved yet
+  await sheet.getByTestId("person-sheet-car-mpg-1").fill("14");
+  await sheet.getByTestId("person-sheet-save").click();
+  await expect(sheet).toBeHidden();
+
+  try {
+    await openRehearsal(page, "Oct 29");
+    await page.getByTestId("reh-tab-money").click();
+    await page.getByTestId("money-out-open").click();
+    const modal = page.getByTestId("money-out-modal");
+    await modal.getByTestId("mo-gas-driver").selectOption({ label: "Felix" });
+    await expect(modal.getByTestId("mo-gas-from-home")).toContainText("home");
+    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("needs a car");
+    await modal.getByTestId("mo-gas-car").selectOption({ label: "Outback · 28 MPG" });
+    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("Outback, 28 mpg");
+    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("$4.98");
+    await modal.getByTestId("mo-gas-car").selectOption({ label: "Truck · 14 MPG" });
+    await expect(modal.getByTestId("mo-gas-estimate")).toContainText("Truck, 14 mpg");
+    await expect(modal.getByTestId("mo-gas-mpg")).toHaveCount(0);
+  } finally {
+    // leave Felix as seeded (no home, no car) for the other specs
+    await openFelix();
+    await sheet.getByTestId("person-sheet-home").fill("");
+    await sheet.getByTestId("person-sheet-car-remove-1").click();
+    await sheet.getByTestId("person-sheet-car-remove-0").click();
+    await sheet.getByTestId("person-sheet-save").click();
+    await expect(sheet).toBeHidden();
+    await openFelix();
+    await expect(sheet.getByTestId("person-sheet-car-name-0")).toHaveCount(0);
+    await expect(sheet.getByTestId("person-sheet-home")).toHaveValue("");
+    await close();
+  }
 });
