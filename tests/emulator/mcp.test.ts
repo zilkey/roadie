@@ -111,11 +111,11 @@ const EXPECTED = [
   "tours.entries.add", "tours.entries.update", "tours.entries.move", "tours.entries.remove", "tours.book",
   // money, stats
   "income.add", "income.update", "income.remove", "income.setReceived", "payouts.add", "payouts.update", "payouts.remove", "payouts.markPaid",
-  "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
+  "expenses.add", "expenses.update", "expenses.remove", "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid", "expenses.estimateGas", "stats.pull", "stats.importCsv", "stats.current",
   // acts (#77): finding acts, the shortlist, our take
   "acts.find", "acts.create", "acts.update", "acts.shortlist", "acts.note",
   // geo (address typeahead, read-only)
-  "geo.autocomplete",
+  "geo.autocomplete", "people.updateDriving",
   // posts (#75): the Socials folder; the rest of Posts joins as its phases land
   "posts.setup", "posts.photos", "posts.list", "posts.get", "posts.createDraft", "posts.addToDraft", "posts.updateDraft", "posts.rename", "posts.removeFromDraft", "posts.deleteDraft", "posts.publish", "posts.tidy",
   // read tools and undo
@@ -133,7 +133,7 @@ test("the tool list is exactly the registry commands allowed for MCP (the access
   }
   const names = new Set(tools.map((t) => t.name));
   for (const banned of ["users.add", "users.update", "users.remove", "musicians.create", "musicians.update", "musicians.remove", "artists.update",
-    "pitches.sendEmail", "pitches.checkReplies", "availability.mark", "availability.answer", "expenses.add", "venues.remove"]) {
+    "pitches.sendEmail", "pitches.checkReplies", "availability.mark", "availability.answer", "venues.remove"]) {
     assert.equal(names.has(banned), false, `${banned} must not be an MCP tool`);
   }
   // JSON schema comes from the Zod input

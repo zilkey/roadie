@@ -8,6 +8,9 @@ import { geoPoint, fuelGrade, type DrivingSettings } from "@/schema";
 import { defineCommand } from "./types";
 import { orsClient, type OrsPlace } from "../integrations";
 import { updateDriving } from "../driving";
+import { db } from "../db";
+import { AppError } from "../errors";
+import type { Membership } from "@/schema";
 
 export const meUpdateDriving = defineCommand({
   name: "me.updateDriving", roles: ["admin", "member"],
@@ -21,6 +24,30 @@ export const meUpdateDriving = defineCommand({
   }),
   async run(ctx, i): Promise<DrivingSettings> {
     return updateDriving(ctx.uid, i);
+  },
+});
+
+/**
+ * An admin (or the MCP connector, which acts for one) saves a bandmate's Driving & gas settings, so their gas estimates
+ * use their own home and car. Same private doc and no history as me.updateDriving (see driving.ts): it can't be undone
+ * with history.undoRun, so the reply says what is now saved.
+ */
+export const peopleUpdateDriving = defineCommand({
+  name: "people.updateDriving", roles: ["admin", "mcp"],
+  description: "Save a band member's Driving & gas settings, used by expenses.estimateGas (forId) and gas expenses: home address (with coordinates, from geo.autocomplete), car name (\"2010 Honda Fit\"), MPG, fuel grade (regular|midgrade|premium|diesel). " +
+    "userId is whose (context.now band[].userId, or a records.get user). null clears a field. Not undoable with history.undoRun; the reply is what is now saved. The home address stays private: it is never put on an expense.",
+  input: z.strictObject({
+    userId: z.string().min(1),
+    home: geoPoint.nullable().optional(),
+    carName: z.string().trim().min(1).nullable().optional(),
+    mpg: z.number().positive().nullable().optional(),
+    fuelGrade: fuelGrade.optional(),
+  }),
+  async run(ctx, { userId, ...patch }): Promise<DrivingSettings> {
+    const u = await db.get("users", userId);
+    if (!u || u.deletedAt || (ctx.artistId && !((u.artists ?? []) as Membership[]).some((m) => m.artistId === ctx.artistId)))
+      throw new AppError("not_found", "Not a member of this band", 404);
+    return updateDriving(userId, patch);
   },
 });
 
@@ -41,4 +68,4 @@ export const geoAutocomplete = defineCommand({
   },
 });
 
-export const meCommands = [meUpdateDriving, geoAutocomplete];
+export const meCommands = [meUpdateDriving, peopleUpdateDriving, geoAutocomplete];

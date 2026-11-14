@@ -243,3 +243,33 @@ test("geo.autocomplete returns places with coordinates (and county/state for the
   assert.ok(s.address && typeof s.lat === "number" && typeof s.lng === "number");
   assert.ok(r.suggestions.some((x: any) => x.county), "at least one suggestion carries a county");
 });
+
+// ---------- the MCP connector (Claude's app) ----------
+
+test("MCP: estimate a bandmate's gas, save their car, and log the expense in their name", async () => {
+  const { callTool } = await import("../../mcp/tools");
+  const tctx: Ctx = { uid: ctx.uid, role: "mcp", via: "mcp", runId: newRunId() };
+  const call = async (name: string, args: unknown) => JSON.parse((await callTool(name, args, async () => tctx)).content[0].text);
+  const saved = await call("people.updateDriving", { userId: memberUid, carName: "2010 Honda Fit", mpg: 30 });
+  assert.equal(saved.result.mpg, 30);
+  assert.equal((await getDriving(memberUid))?.carName, "2010 Honda Fit");
+  const est = (await call("expenses.estimateGas", { forId: memberUid, from: HOME, to: LOFT })).result;
+  assert.deepEqual(est.missing, []);
+  assert.equal(est.mpg, 30, "the saved MPG is used");
+  const { source: _s, areaKind: _a, missing: _m, homeAddress: _h, estimateCents, ...nums } = est;
+  const add = await call("expenses.add", {
+    amount: estimateCents, what: "Gas", category: "gas", userId: memberUid, date: "2026-10-29",
+    gas: { ...nums, fromText: HOME.address, to: LOFT, estimateCents },
+  });
+  assert.ok(add.result?.id, JSON.stringify(add));
+  const x = (await db.get("expenses", add.result.id))!;
+  assert.equal(x.userId, memberUid);
+  assert.equal(x.payBack, true);
+  assert.equal(x.gas.overridden, false);
+  assert.equal(x.gas.mpg, 30);
+  const upd = await call("expenses.update", { id: add.result.id, patch: { amount: estimateCents + 100 } });
+  assert.ok(!upd.error, JSON.stringify(upd));
+  assert.equal((await db.get("expenses", add.result.id))!.gas.overridden, true);
+  const gone = await call("people.updateDriving", { userId: "nobody", mpg: 20 });
+  assert.equal(gone.error.code, "not_found");
+});

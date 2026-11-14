@@ -155,12 +155,12 @@ async function refreshMoved(w: Writer, kind: "expenses" | "income" | "payouts", 
 const GasIn = expenseGasBase.omit({ overridden: true });
 
 export const expensesAdd = defineCommand({
-  name: "expenses.add", roles: ["admin", "member"],
+  name: "expenses.add", roles: ["admin", "member", "mcp"],
   description: "Add an expense: amount in cents, what it was for (a short title), notes (optional: the details, shown under the title), category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Woodshed $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
-    "A gas expense (category gas) carries the frozen estimate in `gas` and is always paid back. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
+    "A gas expense (category gas) carries the frozen estimate in `gas` and is always paid back: gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source and areaKind). saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else); setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), notes: z.string().trim().min(1).optional(), category: expenseCategory, date: dateStr.optional(),
@@ -284,7 +284,7 @@ export const expensesEstimateGas = defineCommand({
 });
 
 export const expensesUpdate = defineCommand({
-  name: "expenses.update", roles: ["admin", "member"],
+  name: "expenses.update", roles: ["admin", "member", "mcp"],
   description: "Fix an expense until it's paid back: what, notes (null clears), amount, payBack, category (gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other), to (who was paid, same shapes as expenses.add; null clears), date, receipt (null clears), showId (null clears), projectId (an open project), tourId / tourEntryId (null clears). Admins may also move it to another payer (userId). Members only their own.",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({
     what: z.string().trim().min(1).optional(), notes: z.string().trim().min(1).nullable().optional(), amount: z.number().int().positive().optional(), payBack: z.boolean().optional(), date: dateStr.optional(),
@@ -311,7 +311,7 @@ export const expensesUpdate = defineCommand({
 });
 
 export const expensesRemove = defineCommand({
-  name: "expenses.remove", roles: ["admin", "member"], description: "Remove an expense that hasn't been paid back. Members only their own.",
+  name: "expenses.remove", roles: ["admin", "member", "mcp"], description: "Remove an expense that hasn't been paid back. Members only their own.",
   input: z.strictObject({ id: z.string().min(1) }),
   run: (ctx, { id }) => run(ctx, async (w) => {
     const x = await requireExpense(w, id);
