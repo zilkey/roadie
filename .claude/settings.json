@@ -7,8 +7,14 @@
       "Bash(npm run import:*)",
       "Bash(npm run -s import:*)",
       "Bash(GCLOUD_PROJECT=roadie-prod-iab npm run import:*)",
-      "Bash(npm run check:roadie*)",
-      "Bash(npm run eval:roadie*)"
+      "Bash(npm run check:roadie)",
+      "Bash(npm run check:roadie:vertex)"
+    ],
+    "ask": [
+      "Bash(npm run eval:roadie*)",
+      "Bash(*npm run eval:roadie*)",
+      "Bash(npm run check:acts:vertex*)",
+      "Bash(npm run dev:vertex*)"
     ]
   }
 }

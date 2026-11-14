@@ -75,7 +75,8 @@ It prints each turn's tool calls and reply, then a pass/fail list. Billed to the
 The cheap half of that is `npm run check:roadie:vertex`: one tiny call that hands the real model every tool Roadie offers
 an admin, as the flow sends them, and fails if the endpoint refuses the schemas (2026-10-29: every Roadie message in prod
 died with "required fields ['route'] are not defined" because one enum field had no `type`; the canned model can't see
-that). Run it before any push of `main`, since App Hosting deploys every push. It uses the service-account key in
+that). Run it before pushing `main` whenever a change touches what Roadie or MCP offers the model, since App Hosting
+deploys every push (AGENTS.md, rule 5). It uses the service-account key in
 `.secrets` so nobody has to log in, which needs that account to hold the Vertex AI User role once:
 
 ```sh

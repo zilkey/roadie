@@ -1,24 +1,26 @@
 ---
 name: implement-in-worktree
-description: Implement a story or feature in its own git worktree with its own test ports, run the unit and e2e suites there until green, then squash it onto main and fast-forward main for the developer to test by hand. Use when asked to "implement in a worktree", "build this in a worktree", or to work on a story in parallel with other sessions.
+description: The way every change ships, local or cloud. Build it in its own git worktree with its own test ports, run the unit and e2e suites there until green, squash it onto main, push main (App Hosting deploys it), clean up the worktree and branches, and mark the session √. Use for every change unless Jeff says otherwise.
 ---
 
 # Implement in a worktree
 
 Several sessions may be building at once. Each one gets its own worktree, branch and test ports, so its test runs
 never collide with another session's or with `npm run dev:all` in the main checkout. Main stays the integration
-point: you only touch it at the end, with one fast-forward.
+point: you only touch it at the end, with one fast-forward and a push. The standing rules are in AGENTS.md ("How Jeff
+works"): questions go upfront, done means live, and real-model runs need a yes.
 
-Running `npm test` and `npm run e2e` **is** part of this skill: inside a worktree, on the claimed ports, it
-overrides the usual "don't run tests" rule. Never run them on the default ports, and never from the main checkout.
+Running `npm test` and `npm run e2e` **is** part of this skill, always: inside the worktree, on the claimed ports.
+Never run them on the default ports, and never from the main checkout.
 
 ## 1. Set up
 
-Pick a short kebab-case slug from the story (e.g. `whos-free`). From the main checkout
-(`~/workspace/roadie`), which must be on `main`:
+Pick a short kebab-case slug from the story (e.g. `whos-free`). From the main checkout (`~/workspace/roadie` locally,
+the session's repo directory in a cloud session), start from the latest pushed main:
 
 ```sh
-git worktree add ../roadie-<slug> -b <slug> main
+git fetch origin main
+git worktree add ../roadie-<slug> -b <slug> origin/main
 cd ../roadie-<slug>
 npm ci > junk.ci.txt 2>&1; echo ci=$?; tail -3 junk.ci.txt
 ```
@@ -39,6 +41,16 @@ task actually needs them, and **copy them: `cp -R`, never `ln -s`**. A symlink i
 will happily commit (2026-10-29: a `.secrets -> ../band-tracker/.secrets` link slipped into a squash because the
 ignore rule was `.secrets/`, directories only; the fast-forward then replaced the main checkout's real `.secrets`
 folder with the link and both keys were lost). Do all further work, edits included, inside the worktree path.
+
+In a cloud session, Playwright may want a newer Chromium build than the one installed in `/opt/pw-browsers`. If e2e
+says "Executable doesn't exist" or "npx playwright install", don't install anything. Point it at the installed build
+under the revision name it expects (the revision is in `node_modules/playwright-core/browsers.json`):
+
+```sh
+B=$SCRATCHPAD/pw; mkdir -p $B; R=<revision>
+for d in /opt/pw-browsers/*-[0-9]*; do n=$(basename $d); case $n in ffmpeg*) ln -sfn $d $B/$n;; *) ln -sfn $d $B/${n%-*}-$R;; esac; done
+export PLAYWRIGHT_BROWSERS_PATH=$B   # prefix every e2e run with this
+```
 
 ## 2. Claim test ports
 
@@ -101,8 +113,9 @@ TEST_PORT_OFFSET=30 FIREBASE_TEST_CONFIG=firebase.worktree.json npm run e2e 2>&1
 When typecheck, `npm test` and `npm run e2e` all pass:
 
 ```sh
-git rebase main                         # resolve conflicts; rerun the suites if the rebase changed code
-git reset --soft main
+git fetch origin main
+git rebase origin/main                  # resolve conflicts; rerun the suites if the rebase changed code
+git reset --soft origin/main
 git commit                              # one commit: a short title like the recent `git log` ones, a body if useful
 ```
 
@@ -111,35 +124,48 @@ End the commit message with the attribution trailer from the system reminder.
 Then, before touching main, **prove the commit carries no stray files**. Both checks must print nothing:
 
 ```sh
-git diff --name-only --diff-filter=A main HEAD | git check-ignore --no-index --stdin   # added paths main would ignore
-git diff-tree -r --no-commit-id HEAD main | awk '$2 == "120000" || $1 == ":120000" {print}'                                # symlinks in the diff
+git diff --name-only --diff-filter=A origin/main HEAD | git check-ignore --no-index --stdin   # added paths main would ignore
+git diff-tree -r --no-commit-id HEAD origin/main | awk '$2 == "120000" || $1 == ":120000" {print}'                                # symlinks in the diff
 ```
 
 If either prints a path, `git rm --cached` it, amend, and rerun the checks. Never merge a commit that adds a
 symlink or an ignored path: the fast-forward checks it out in the main checkout and overwrites whatever is there,
 including gitignored folders like `.secrets/`.
 
-## 6. Merge for human testing
+## 6. Check the real model, if the change reaches it
+
+If the change touches what Roadie or MCP offers the model (commands, tool schemas or descriptions,
+`src/server/assistant/`, `mcp/`), run `npm run check:roadie:vertex` once (one call, seconds, pre-approved). In a cloud
+session, prefix it with the key from AGENTS.md. Run slower real-model runs (`npm run eval:roadie`) only if Jeff said
+yes upfront.
+
+## 7. Ship it: push main (this deploys)
 
 ```sh
-git -C ~/workspace/roadie status --short    # must be clean
-git -C ~/workspace/roadie merge --ff-only <slug>
-ls -la ~/workspace/roadie/.secrets ~/workspace/roadie/src/lib/band.ts   # still real files, not links
+git push origin HEAD:main               # App Hosting deploys every push to main
 ```
 
-- If main has uncommitted changes, stop and ask the developer; don't stash or commit them.
-- If `--ff-only` fails because main moved, go back to step 5 (rebase, rerun the suites if anything changed, squash
-  again).
-- Don't push.
+- If the push is rejected because main moved, go back to step 5: fetch, rebase, rerun the suites if anything changed,
+  squash again, push.
+- If `firestore.rules`, `firestore.indexes.json` or TTL settings changed, deploy them too:
+  `npx firebase deploy --only firestore --project roadie-prod-iab`.
+- Locally, also bring the main checkout up to date when it's clean (`git -C ~/workspace/roadie status --short` prints
+  nothing): `git -C ~/workspace/roadie pull --ff-only`, then check that `.secrets` and `src/lib/band.ts` are still
+  real files, not links. If it has uncommitted changes, leave it alone and say so.
 
-## 7. Clean up and hand over
+## 8. Clean up and mark it done
 
 ```sh
 npm run worktree:ports -- release
-cd ~/workspace/roadie
-git worktree remove ../roadie-<slug>     # it holds no unmerged work now
-git branch -d <slug>
+cd <main checkout>
+git worktree remove ../roadie-<slug>
+git branch -D <slug>
+git push origin --delete <slug> 2>/dev/null   # if it was ever pushed
 ```
 
-Then tell the developer: the commit on main, what to try in the running dev app (pages, flows, seed data needed), and which
-specs were added or changed. If anything was skipped or still fails, say so with the output.
+In a cloud session, also delete the session's own `claude/*` branch from origin, once its work is on main. Then rename
+the session to `√ <title>` with `set_session_title`. Locally there's no tool for that: start the final message with
+"√ Live".
+
+The final message says: what is live and the commit on main, what to try in the app, which specs were added or
+changed, and anything skipped or still failing, with the output.
