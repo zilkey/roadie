@@ -42,7 +42,7 @@ function After() {
 
 interface Rating { show: number; venue: number; crowd: string; paid: string; notes: string }
 
-/** shows.afterShow is a one-shot action (marks the show played, syncs listings): the button stays, the answers are a draft per show. */
+/** shows.afterShow is a one-shot action (marks the show played): the button stays, the answers are a draft per show. */
 function AfterForm({ id, show, deal }: { id: string; show: Row<Show>; deal: Row<ShowDeal> | null }) {
   const { call, error, busy } = useCommand();
   const r = deal?.rating;

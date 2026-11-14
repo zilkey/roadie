@@ -10,10 +10,13 @@ export type ShowStatus = z.infer<typeof showStatus>;
 /**
  * One item on a checklist (a show's, a release's or the Social Media sidebar's). ownerId is a musician (missing = unassigned).
  * doneAt (ISO instant) and doneBy (uid) are set when it is ticked. pinnedAt/pinnedBy (uid) are set while an admin has it pinned to To Dos.
+ * bandsintown: the show's "Add to Bandsintown" item (added by Roadie to confirmed venue shows; src/server/bandsintown.ts). Ticked by
+ * hand or when Bandsintown lists an event that day there; eventUrl is that listing.
  */
 export const checklistItem = z.strictObject({
   id, label: z.string().min(1), done: z.boolean(), ownerId: id.optional(), doneAt: z.string().optional(), doneBy: z.string().optional(),
   pinnedAt: z.string().optional(), pinnedBy: z.string().optional(),
+  bandsintown: z.literal(true).optional(), eventUrl: z.string().optional(),
 });
 /** templateId: the checklist template it was made from or saved as (null = none). List order is array order. */
 export const checklist = z.strictObject({ id, name: z.string().min(1), templateId: id.nullable(), items: z.array(checklistItem) });
@@ -83,7 +86,7 @@ export const Show = entity({
   calendarHash: z.string().optional(),
   /** Musicians the calendar event invites, when shows.create was told (sendInvites). Unset: everyone in personnel who has an email. */
   calendarInviteeIds: z.array(id).optional(),
-  /** Publish to Bandsintown: listed there once the show is confirmed (src/server/showSync.ts). Missing = not published. */
+  /** Legacy: Roadie once "published" to Bandsintown (a fake that never reached it). Never written now; old documents keep it. */
   publishToBandsintown: z.boolean().optional(),
   ticketUrl: z.string().optional(),
   /**
@@ -91,12 +94,13 @@ export const Show = entity({
    * Suggested Donation. While `on`, it shows from 1 hour before the show time to 3 hours after (fanPageWindow). Missing = off.
    */
   fanPage: ShowFanPage.optional(),
+  /** Legacy: the fake Bandsintown sync's state. Never written now; old documents keep it. Bandsintown is a checklist item (checklistItem.bandsintown). */
   listings: z.strictObject({
     bandsintown: z.strictObject({
       eventId: z.string().optional(), state: z.enum(["pending", "listed", "error"]),
       syncedAt: z.string().optional(), error: z.string().optional(),
     }).optional(),
-  }),
+  }).optional(),
 });
 export const ShowInput = Show.omit(serverMask);
 export type Show = z.infer<typeof Show>;

@@ -1,10 +1,10 @@
+import { ensureBandsintownItem } from "../bandsintown";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { route } from "../gas/route";
-import { syncShow } from "../showSync";
 import { BAND_TIME_ZONE, dateInBandZone } from "@/lib/timezone";
 import { showCity, showName } from "@/lib/shows";
 import { sortedDates } from "@/lib/booking";
@@ -547,8 +547,8 @@ export const toursBook = defineCommand({
       }
       return { showId, entryId: e.id, dropped };
     });
-    const sync = await syncShow(ctx, out.showId);
-    return { ...out, warnings: sync.warnings };
+    await ensureBandsintownItem(ctx, out.showId);
+    return { ...out, warnings: [] as string[] };
   },
 });
 

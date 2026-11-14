@@ -130,7 +130,7 @@ test("shows.setStagePlot picks by hand; staleShows lists upcoming shows that nee
   const { rudy, id } = await setup();
   const show = (date: string, extra: Record<string, unknown> = {}) => db.create(sys, "shows", {
     date, status: "confirmed", artistId: TEST_ARTIST, billedAs: "full", personnel: [], sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false },
-    docs: [], times: {}, listings: {}, fields: [], venue: { id: "v", name: "Top Hat" }, ...extra,
+    docs: [], times: {}, fields: [], venue: { id: "v", name: "Top Hat" }, ...extra,
   });
   const upcoming = await show("2099-01-10");
   await show("2000-01-10"); // past: never listed

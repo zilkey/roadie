@@ -24,7 +24,6 @@ const EXAMPLES = [
   { label: "Before you pitch dates", prompt: "Is everyone free on March 14, 15 and 16? I want to offer those dates to a venue." },
   { label: "Show recap", prompt: "Summarize our last 5 shows: venues, deals, and how much we made." },
   { label: "Song files", prompt: "Which songs are missing a chart or a demo? List them." },
-  { label: "Bandsintown check", prompt: "Are all our confirmed upcoming shows listed on Bandsintown? Flag anything that doesn't match." },
   { label: "Release stats", prompt: "How did our Spotify followers and monthly listeners change in the two weeks after our last release?" },
 ];
 

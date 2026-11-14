@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { nameOf } from "../common";
 import { AssigneeSelect } from "./shared";
+import { BandsintownLink } from "./BandsintownLink";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ChecklistItem as Item } from "@/lib/shows";
 import type { Musician } from "@/schema";
@@ -98,6 +99,7 @@ export function ChecklistItem({ item, people, musicians, busy, onToggle, onSave,
             className="min-w-0 grow basis-0 break-words rounded-[4px] py-1 outline-offset-2 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
             style={item.done ? { textDecoration: "line-through", color: "var(--muted)" } : undefined}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); start(); } }}>{item.label}</span>
+          {item.bandsintown && <BandsintownLink done={item.done} eventUrl={item.eventUrl} testid={`checklist-bandsintown-${item.id}`} />}
           <span className="s min-w-0 max-w-[40%] truncate" data-testid={`checklist-owner-${item.id}`}>{item.ownerId ? nameOf(musicians, item.ownerId) : "Unassigned"}</span>
           {onPin && pinned && !item.done && <span className="tag shrink-0" data-testid={`checklist-pinned-${item.id}`}>On To Dos</span>}
           {onPin && !item.done && (

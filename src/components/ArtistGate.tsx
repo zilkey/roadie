@@ -54,7 +54,7 @@ export function ArtistGate({ slug, children }: { slug: string; children: React.R
     <ArtistContext.Provider value={value}>
       {preview && (
         <div className="preview-banner" role="status" data-testid="preview-banner">
-          <span>Previewing as a band member: this is what they see.</span>
+          <span>Previewing as a band member</span>
           <button type="button" className="btn sm" onClick={() => value.setPreviewAsMember(false)} data-testid="preview-exit">Exit preview</button>
         </div>
       )}

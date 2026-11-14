@@ -197,6 +197,7 @@ test("the show's ⋮ menu: preview as band member until Exit, and Archive show l
 
   // The member view: banner, no pencils or menu, and it stays on across pages
   await expect(page.getByTestId("preview-banner")).toContainText("Previewing as a band member");
+  await expect(page.getByTestId("preview-exit")).toBeInViewport({ ratio: 1 }); // Exit is always reachable
   await expect(page.getByTestId("show-menu")).toHaveCount(0);
   await expect(page.getByTestId("where-when-edit")).toHaveCount(0);
   await page.getByTestId("back").click();
@@ -213,4 +214,18 @@ test("the show's ⋮ menu: preview as band member until Exit, and Archive show l
   await page.getByTestId("show-menu").click();
   await page.getByTestId("show-archive").click();
   await expect(page).toHaveURL(/\/shows$/);
+});
+
+test("a confirmed venue show gets an Add to Bandsintown to-do: Open Bandsintown, Mark as listed", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await newShow(page, "2027-06-11");
+  // The to-do sits on the show's checklists (a new Promotion list here), with the link beside it
+  await expect(page.locator(".show-side").getByText("Add to Bandsintown").first()).toBeVisible();
+  await expect(page.locator(".show-side [data-testid^=checklist-bandsintown-]").first()).toHaveAttribute("href", /artists\.bandsintown\.com\/artists\/1234567\/events\/new/);
+
+  await page.getByTestId("show-tab-promotion").click();
+  await expect(page.getByTestId("bit-state")).toHaveText("Not listed yet");
+  await page.getByTestId("bit-mark").click();
+  await expect(page.getByTestId("bit-state")).toHaveText("Listed");
+  await expect(page.getByTestId("bit-mark")).toHaveCount(0);
 });

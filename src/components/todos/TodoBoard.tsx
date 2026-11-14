@@ -13,6 +13,7 @@ import { PageTitle } from "@/components/ui";
 import { toast, UNDO_MS } from "@/components/Toasts";
 import { confetti } from "@/components/Celebrate";
 import { PinIcon } from "@/components/shows/checklists/ChecklistItem";
+import { BandsintownLink } from "@/components/shows/checklists/BandsintownLink";
 import { activePeople, useChecklistTemplates } from "@/components/shows/checklists/shared";
 import { Menu } from "@/components/Menu";
 import { InlineValue } from "@/components/InlineValue";
@@ -261,6 +262,7 @@ function Card({ item, musicians, grip, onUp, onDown }: { item: BoardItem; musici
           {a.type === "checklist" && (item.ownerId ? <span className="td-who">{nameOf(musicians, item.ownerId)}</span> : <span>Unassigned</span>)}
           {item.chip && <span className={`chip ${item.chip.tone}`}>{item.chip.text}</span>}
           {item.note && <span>{item.note}</span>}
+          {item.bandsintown && <BandsintownLink done={item.done} eventUrl={item.bandsintown.eventUrl} testid={`todos-bandsintown-${item.key}`} />}
         </div>
       </div>
       {a.type === "checklist" && !item.done && <PinButton item={item} onPin={(pinned) => act("checklists.pin", { kind: a.kind, id: a.id, listId: a.listId, itemId: a.itemId, pinned })} />}

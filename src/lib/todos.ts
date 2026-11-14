@@ -32,6 +32,8 @@ export interface BoardItem {
   key: string;
   label: string;
   done: boolean;
+  /** A show's "Add to Bandsintown" item: the card gets the Open Bandsintown link. */
+  bandsintown?: { eventUrl?: string };
   /** A musician; missing = unassigned. Booking cards have none. */
   ownerId?: string;
   /** Booking cards: the pitch's assignee (a user id). */
@@ -120,6 +122,7 @@ export function movedOrder(col: BoardColumn, group: number, from: number, to: nu
 function checklistItems(kind: ChecklistKind, id: string, list: ChecklistLike, keep: (i: ChecklistItem) => boolean, source?: BoardItem["source"]): BoardItem[] {
   return list.items.filter(keep).map((i) => ({
     key: itemKey(kind, id, list.id, i.id), label: i.label, done: i.done, ownerId: i.ownerId, pinned: !!i.pinnedAt,
+    ...(i.bandsintown ? { bandsintown: { eventUrl: i.eventUrl } } : {}),
     ...(source ? { source } : {}), action: { type: "checklist", kind, id, listId: list.id, itemId: i.id },
   }));
 }

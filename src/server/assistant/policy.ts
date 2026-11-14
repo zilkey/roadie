@@ -53,7 +53,7 @@ export const ALWAYS_CONFIRM: readonly string[] = [
   "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid",                                         // money
   "income.add", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
   "projects.create", "projects.update", "projects.close", "projects.reopen",                                 // what the money is for
-  "shows.cancel", "shows.drop", "shows.setStatus", "shows.sync", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
+  "shows.cancel", "shows.drop", "shows.setStatus", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix", "releases.files.copyToFolder",   // changes Drive sharing
   "stagePlots.shareLink", "stagePlots.shareOff",                                          // makes a public link; kills the one the engineer has
   "stats.pull",                                                                          // calls out
@@ -97,7 +97,7 @@ export const BULK_LIMIT = 5;
 const ONE_RECORD_LISTS = new Set(["shows.setChecklists", "shows.setFields", "shows.setExpenses", "rehearsals.setExpenses", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "setlistTemplates.update", "setlistTemplates.create", "setlists.setItems", "setlists.seed", "artists.update", "rehearsals.create", "rehearsals.update", "rehearsals.importSetlist", "songs.create", "files.attach", "releases.create", "releases.tracks.add", "releases.tracks.update", "releases.tracks.reorder", "releases.files.attach", "releases.files.copyToFolder", "tours.create", "tours.update", "tours.addPitch", "posts.updateDraft", "shows.posters.attach", "stagePlots.updateInputs", "stagePlots.reorderInputs", "stagePlots.move", "stagePlots.addItems", "stagePlots.removeItems", "stagePlots.setMonitors"]);
 
 /** Reads never ask, whatever they are given. */
-const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "bandsintown.reconcile", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get"]);
+const READ_ONLY = new Set(["checklistTemplates.list", "records.get", "records.list", "shows.list", "search", "availability.check", "stats.movement", "stats.current", "pitches.needingFollowUp", "songs.missingFiles", "receipts.search", "drive.search", "expenses.estimateGas", "geo.autocomplete", "people.list", "help.explain", "setlists.printLink", "setlists.printPrefs", "stagePlots.list", "stagePlots.get", "stagePlots.staleShows", "stagePlots.engineerLink", "fans.list", "fans.counts", "fans.near", "fans.newSince", "fans.forBandzoogle", "shows.calendarPreview", "rehearsals.calendarPreview", "tours.list", "tours.get", "tours.summary", "posts.photos", "posts.list", "posts.get"]);
 
 /** Commands that only read. Everything else may write (the taint rule in tools.ts asks first for all of them). */
 export const isReadOnly = (name: string) => READ_ONLY.has(name);
@@ -120,7 +120,7 @@ export function needsConfirm(name: string, input: unknown): boolean {
   if (ALWAYS_CONFIRM.includes(name) || isRemove(name)) return true;
   if (name === "venues.update" && sharedVenueFields(input).length) return true;
   const o = (input ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (name === "shows.update" && (o.patch?.status !== undefined || o.patch?.publishToBandsintown !== undefined)) return true; // cancels, or lists on / takes off Bandsintown
+  if (name === "shows.update" && (o.patch?.status !== undefined)) return true; // cancels
   if (READ_ONLY.has(name) || ONE_RECORD_LISTS.has(name)) return false;
   const walk = (v: unknown, depth: number): boolean => {
     if (Array.isArray(v)) return v.length > BULK_LIMIT || (depth < 2 && v.some((x) => walk(x, depth + 1)));
@@ -152,7 +152,6 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
     const p = (i.patch ?? {}) as Record<string, unknown>, l = i.label ? ` ${i.label}` : " the show";
     const out: string[] = [];
     if (p.status !== undefined) out.push(`Change the show${i.label ? ` ${i.label}` : ""} to ${p.status}${p.reason ? ` (${p.reason})` : ""}`);
-    if (p.publishToBandsintown !== undefined) out.push(p.publishToBandsintown ? `List${l} on Bandsintown` : `Take${l} off Bandsintown`);
     return out.join("; ");
   },
   "shows.calendar": (i) => (i.on ? `${i.restore ? "Put back the deleted event for" : "Put"} the show${i.label ? ` ${i.label}` : ""} on the band calendar and invite the band` : `Take the show${i.label ? ` ${i.label}` : ""} off the band calendar`),

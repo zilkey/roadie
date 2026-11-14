@@ -382,10 +382,13 @@ dialog.pitch-dlg::backdrop { background: var(--backdrop); }
   .show-side { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
   .show-main { grid-column: 1; }
 }
-/* "Preview as band member": a bar across the top while an admin sees the app as a member does. */
-.preview-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px;
-  padding: 8px 16px; background: var(--accent); color: var(--on-accent); font-size: 0.875rem; font-weight: 600; }
-.preview-banner .btn { background: var(--on-accent); color: var(--accent); border-color: transparent; }
+/* "Preview as band member": a pill floating at the bottom of the screen (above the phone's tab bar) while an admin sees the app as a
+   member does. Fixed, so it never depends on the page layout and Exit is always in reach. */
+.preview-banner { position: fixed; z-index: 80; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px); padding: 8px 8px 8px 16px; border-radius: 999px;
+  background: var(--accent); color: var(--on-accent); font-size: 0.875rem; font-weight: 600; box-shadow: 0 10px 30px var(--shadow); }
+.preview-banner .btn { flex: none; background: var(--on-accent); color: var(--accent); border-color: transparent; }
+@media (max-width: 719px) { .preview-banner { bottom: calc(84px + env(safe-area-inset-bottom)); font-size: 0.8125rem; } }
 /* Where & when's day preview: the show's times as a calendar day column (hour lines on the left, blocks to their right). */
 .day-preview { position: relative; min-width: 0; border: 1px solid var(--border); border-radius: 14px; background: var(--page); }
 .day-hour { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--border); }

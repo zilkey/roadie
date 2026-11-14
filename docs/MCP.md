@@ -73,7 +73,7 @@ Use one of the two, not both. Run `/mcp` in Claude Code to check it is connected
 
 ## What it can do
 
-Every command in the registry whose roles include `mcp` is a tool, named like the command (`venues.create`, `shows.update`, ...), with the description and a JSON schema generated from the command's Zod input. Plus read tools: `search`, `records.get`, `records.list`, `pitches.needingFollowUp`, `songs.missingFiles` (with sharing problems), `availability.check` (list of dates), `bandsintown.reconcile`, `stats.current`, `stats.movement`, `fans.counts`, `fans.near`, `fans.newSince` (counts only; `fans.list`, `fans.forBandzoogle` and the fan write commands are for artist admins), `history.myRuns`, `history.undoRun`.
+Every command in the registry whose roles include `mcp` is a tool, named like the command (`venues.create`, `shows.update`, ...), with the description and a JSON schema generated from the command's Zod input. Plus read tools: `search`, `records.get`, `records.list`, `pitches.needingFollowUp`, `songs.missingFiles` (with sharing problems), `availability.check` (list of dates), `stats.current`, `stats.movement`, `fans.counts`, `fans.near`, `fans.newSince` (counts only; `fans.list`, `fans.forBandzoogle` and the fan write commands are for artist admins), `history.myRuns`, `history.undoRun`.
 
 Money: `expenses.add` / `expenses.update` / `expenses.remove` act as an admin (so Claude can log gas in a bandmate's name after `expenses.estimateGas { forId }`), and `people.updateDriving` saves a band member's home, car name and MPG for their future estimates. Driving settings are private and have no history, so `history.undoRun` can't undo them.
 
@@ -84,4 +84,4 @@ What it cannot do (not tools at all): users, musicians admin, AI keys, `pitches.
 
 ## Undo rules
 
-Newest change first: created records are archived, edited records get their earlier values back, archived records come back. Each reversal is written to history under a new run id (undo that run to redo). Ledger entries and stat snapshots are never edited, so they are skipped and listed as "needs a manual correction": add a correction in Money. Undo reverts Firestore only: emails already sent, Calendar events and Bandsintown listings made by the run are not undone (use `shows.sync` / `shows.calendar` afterwards).
+Newest change first: created records are archived, edited records get their earlier values back, archived records come back. Each reversal is written to history under a new run id (undo that run to redo). Ledger entries and stat snapshots are never edited, so they are skipped and listed as "needs a manual correction": add a correction in Money. Undo reverts Firestore only: emails already sent, Calendar events made by the run are not undone (use `shows.calendar` afterwards).

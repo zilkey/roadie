@@ -43,7 +43,7 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
 
   // Promotion: no Edit. The ticket link is a value; docs add through the plus and leave through their ×.
   await expect(page.getByTestId("promotion-edit")).toHaveCount(0);
-  await expect(page.getByTestId("docs-none")).toHaveText("Stage plot, poster, etc.");
+  await expect(page.getByTestId("docs-none")).toHaveText("No docs yet");
   await page.getByTestId("ticket-url").click();
   await page.getByTestId("ticket-url-input").fill("https://tickets.example.com/pine-hollow");
   await page.getByTestId("ticket-url-input").press("Enter");
@@ -58,13 +58,11 @@ test("Sound and Promotion cards edit and save on a private hold", async ({ page 
   await page.reload();
   await expect(page.getByTestId("ticket-link")).toHaveAttribute("href", "https://tickets.example.com/pine-hollow");
   await expect(page.getByTestId("doc-link")).toHaveText("Stage plot");
-  await expect(page.getByTestId("bit-state")).toHaveText("Not listed");
-  await expect(page.getByTestId("bit-detail")).toHaveText("Not published.");
-  // Publish: a hold is published but waits to be confirmed before it lists
-  await page.getByTestId("bit-publish").click();
-  await expect(page.getByTestId("bit-detail")).toHaveText("Published: it lists once the show is confirmed.");
-  await page.getByTestId("bit-unpublish").click();
-  await expect(page.getByTestId("bit-publish")).toBeVisible();
+  // Bandsintown: Roadie can't publish there. A hold has no to-do yet; Open Bandsintown goes to Bandsintown for Artists' new-event form.
+  await expect(page.getByTestId("bit-publish")).toHaveCount(0);
+  await expect(page.getByTestId("bit-state")).toHaveCount(0);
+  await expect(page.getByTestId("bit-detail")).toHaveText("Once the show is confirmed it gets an \"Add to Bandsintown\" to-do.");
+  await expect(page.getByTestId("bit-open")).toHaveAttribute("href", "https://artists.bandsintown.com/artists/1234567/events/new?version=multi-step&step=type");
 
   // Clean up so reruns start from the same place
   await page.getByTestId("ticket-url").locator(".pen").click(); // the pencil edits; the link itself opens the site

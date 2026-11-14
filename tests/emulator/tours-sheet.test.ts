@@ -22,7 +22,7 @@ before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "fakes-"));
   const s = await startAll({ dataDir: dir, ephemeral: true });
   stop = s.close;
-  for (const [name, env] of [["fake-ors", "ORS_BASE_URL"], ["fake-drive", "DRIVE_BASE_URL"], ["fake-bandsintown", "BANDSINTOWN_BASE_URL"], ["fake-calendar", "CALENDAR_BASE_URL"]] as const) {
+  for (const [name, env] of [["fake-ors", "ORS_BASE_URL"], ["fake-drive", "DRIVE_BASE_URL"], ["fake-calendar", "CALENDAR_BASE_URL"]] as const) {
     if (s.running[name]) process.env[env] = s.running[name].url;
   }
 });

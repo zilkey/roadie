@@ -21,6 +21,7 @@ import { FanPageCard } from "@/components/shows/page/FanPageCard";
 import { PromotionCard } from "@/components/shows/page/PromotionCard";
 import { PostersCard } from "@/components/shows/page/PostersCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
+import { bandsintownItemOf, useBandsintownAutoCheck } from "@/components/shows/checklists/BandsintownLink";
 import { Comments } from "@/components/shows/page/Comments";
 import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
@@ -57,6 +58,8 @@ function ShowView({ show }: { show: ShowRow }) {
   const setTab = (t: Tab) => router.replace(`/shows/${show.id}${t === "details" ? "" : `?tab=${t}`}`);
   const { call, error, busy } = useCommand();
   const { setPreviewAsMember } = useArtist();
+  const bit = bandsintownItemOf(show.checklists ?? []);
+  useBandsintownAutoCheck(show.id, !!bit && !bit.item.done, admin);
   async function archive() {
     if (!confirm(show.calendarEventId ? "Archive this show? Its event comes off the band calendar too." : "Archive this show?")) return;
     if (await call("shows.remove", { id: show.id })) router.replace("/shows");

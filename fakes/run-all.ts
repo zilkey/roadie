@@ -2,14 +2,13 @@
 import { fakeGmail } from "./fake-gmail/server";
 import { fakeDrive } from "./fake-drive/server";
 import { fakeCalendar } from "./fake-calendar/server";
-import { fakeBandsintown } from "./fake-bandsintown/server";
 import { fakeSpotify } from "./fake-spotify/server";
 import { fakeOrs } from "./fake-ors/server";
 import { fakeEia } from "./fake-eia/server";
 import { fakeMeta } from "./fake-meta/server";
 import type { RunningFake } from "./lib";
 
-export const allFakes = [fakeGmail, fakeDrive, fakeCalendar, fakeBandsintown, fakeSpotify, fakeOrs, fakeEia, fakeMeta];
+export const allFakes = [fakeGmail, fakeDrive, fakeCalendar, fakeSpotify, fakeOrs, fakeEia, fakeMeta];
 
 export async function startAll(opts: { dataDir?: string; ephemeral?: boolean } = {}): Promise<{ running: Record<string, RunningFake>; close: () => Promise<void> }> {
   const running: Record<string, RunningFake> = {};

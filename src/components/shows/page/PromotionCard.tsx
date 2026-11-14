@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
-import { fmtInstant } from "@/lib/timezone";
-import { isPublished } from "@/lib/shows";
+import { kindOf } from "@/lib/shows";
+import Link, { useMaybeArtist } from "@/lib/artist";
+import { bandsintownNewEventUrl } from "@/lib/bandsintown";
+import { bandsintownItemOf } from "@/components/shows/checklists/BandsintownLink";
 import type { ShowRow } from "../common";
 import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { ShowCard } from "./kit";
@@ -10,26 +12,23 @@ import { ShowCard } from "./kit";
 type Doc = ShowRow["docs"][number];
 const wire = (docs: Doc[]) => docs.map((d) => ({ title: d.title, driveFileId: d.driveFileId ?? "", url: d.url }));
 
-/** Promotion, with no flip: the ticket link is a value, Bandsintown (Publish puts the show on it), docs as a list with a plus. */
+/** Promotion, with no flip: the ticket link is a value; Bandsintown (Open Bandsintown, and the show's "Add to Bandsintown" to-do); docs as a list with a plus. */
 export function PromotionCard({ show, admin }: { show: ShowRow; admin: boolean }) {
   const { call, error, busy } = useCommand();
   const ticket = useCommand();
   const docsCmd = useCommand();
-  const [warn, setWarn] = useState<string[]>([]);
+  const bandsintownUrl = bandsintownNewEventUrl(useMaybeArtist()?.doc?.bandsintown?.artistId);
   const [adding, setAdding] = useState(false);
   const [nt, setNt] = useState(""); const [nu, setNu] = useState("");
 
-  const bit = show.listings.bandsintown;
-  const published = isPublished(show);
-  const eligible = published && show.status === "confirmed";
-  const when = bit?.syncedAt ? fmtInstant(bit.syncedAt) : "";
-  const detail = bit?.state === "listed" ? `Last synced ${when}`
-    : bit?.state === "error" ? `${bit.error ?? "Sync failed"}${when ? ` · ${when}` : ""}`
-    : bit?.state === "pending" ? "Waiting to sync."
-    : eligible ? "Waiting to sync." : !published ? "Not published." : show.status === "hold" ? "Published: it lists once the show is confirmed." : "Only confirmed shows are listed.";
-
-  async function publish(on: boolean) { const r = await call<{ warnings: string[] }>("shows.update", { id: show.id, patch: { publishToBandsintown: on } }); if (r) setWarn(r.warnings ?? []); }
-  async function sync() { const r = await call<{ warnings: string[] }>("shows.sync", { id: show.id }); if (r) setWarn(r.warnings ?? []); }
+  const bit = bandsintownItemOf(show.checklists ?? []);
+  const listed = !!bit?.item.done;
+  const isHouse = kindOf(show) === "house";
+  const detail = bit ? (listed ? "On Bandsintown." : "Add it on Bandsintown for Artists, then tick it here or in the Promotion checklist.")
+    : isHouse ? "Private events don't go on Bandsintown."
+    : show.status === "hold" ? "Once the show is confirmed it gets an \"Add to Bandsintown\" to-do."
+    : "Not on the show's checklists.";
+  const mark = (done: boolean) => bit && call("checklists.check", { kind: "show", id: show.id, listId: bit.listId, itemId: bit.item.id, done });
   const saveDocs = (docs: Doc[]) => docsCmd.call("shows.update", { id: show.id, patch: { docs: wire(docs) } });
   async function addDoc() {
     if (!(nt.trim() && nu.trim())) return;
@@ -49,23 +48,21 @@ export function PromotionCard({ show, admin }: { show: ShowRow; admin: boolean }
               onSave={async (v) => !!(await ticket.call("shows.update", { id: show.id, patch: { ticketUrl: v || null } }))} />
           )}
         </div>
-        <div className="grid gap-1">
+        <div className="grid gap-1" data-testid="bit">
           <div className="flex items-center justify-between gap-2">
             <b className="text-[0.9375rem]">Bandsintown</b>
-            <span className={`chip ${bit?.state === "listed" ? "g" : bit?.state === "error" ? "a" : ""}`} data-testid="bit-state">
-              {bit?.state === "listed" ? "Listed" : bit?.state === "error" ? "Error" : bit?.state === "pending" ? "Pending" : "Not listed"}
-            </span>
+            {bit && <span className={`chip ${listed ? "g" : ""}`} data-testid="bit-state">{listed ? "Listed" : "Not listed yet"}</span>}
           </div>
           <span className="s" data-testid="bit-detail">{detail}</span>
           {admin && (
-            <div className="flex flex-wrap gap-2">
-              {published
-                ? <button type="button" className="btn outline sm" disabled={busy} onClick={() => void publish(false)} data-testid="bit-unpublish">Take off Bandsintown</button>
-                : <button type="button" className="btn acc sm" disabled={busy} onClick={() => void publish(true)} data-testid="bit-publish">Publish to Bandsintown</button>}
-              {eligible && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void sync()} data-testid="bit-sync">Sync Bandsintown now</button>}
+            <div className="flex flex-wrap items-center gap-2">
+              {bandsintownUrl
+                ? <a href={bandsintownUrl} target="_blank" rel="noopener noreferrer" className={`btn sm ${bit && !listed ? "acc" : "outline"}`} data-testid="bit-open">Open Bandsintown ↗</a>
+                : <Link href="/admin/artist#bandsintown" className="btn outline sm" data-testid="bit-setup">Set up Bandsintown</Link>}
+              {bit && !listed && <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void mark(true)} data-testid="bit-mark">Mark as listed</button>}
+              {listed && bit?.item.eventUrl && <a href={bit.item.eventUrl} target="_blank" rel="noopener noreferrer" className="btn ghost sm" data-testid="bit-listing">See the listing ↗</a>}
             </div>
           )}
-          {warn.map((w) => <span key={w} className="s">{w}</span>)}
           <ErrorBox error={error} />
         </div>
         <div className="grid gap-1">
@@ -84,10 +81,10 @@ export function PromotionCard({ show, admin }: { show: ShowRow; admin: boolean }
               )}
             </div>
           ))}
-          {!show.docs.length && !adding && <span className="s" data-testid="docs-none">Stage plot, poster, etc.</span>}
+          {!show.docs.length && !adding && <span className="s" data-testid="docs-none">No docs yet</span>}
           {adding && (
             <div className="flex flex-wrap gap-2" data-testid="doc-add-row">
-              <input className="input !w-auto min-w-0 flex-1" aria-label="Doc title" placeholder="Title (stage plot, poster…)" autoFocus value={nt} onChange={(e) => setNt(e.target.value)}
+              <input className="input !w-auto min-w-0 flex-1" aria-label="Doc title" placeholder="Title" autoFocus value={nt} onChange={(e) => setNt(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Escape") closeAdd(); }} data-testid="doc-title" />
               <input className="input !w-auto min-w-0 flex-1" aria-label="Doc link" type="url" placeholder="Link" value={nu} onChange={(e) => setNu(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") void addDoc(); if (e.key === "Escape") closeAdd(); }} data-testid="doc-url" />

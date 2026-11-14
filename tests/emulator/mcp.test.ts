@@ -29,7 +29,6 @@ before(async () => {
   const s = await startAll({ dataDir: dir, ephemeral: true });
   stop = s.close;
   process.env.GMAIL_BASE_URL = s.running["fake-gmail"].url;
-  process.env.BANDSINTOWN_BASE_URL = s.running["fake-bandsintown"].url;
 });
 after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true }); });
 
@@ -87,7 +86,7 @@ const EXPECTED = [
   // pitches, comments, email templates, drafts
   "pitches.flag", "pitches.update", "pitches.move", "pitches.comment", "pitches.log", "emailTemplates.create", "emailTemplates.update", "pitches.draftEmail",
   // shows
-  "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.sync", "shows.setChecklists", "shows.checkItem", "shows.calendarPreview", "shows.calendar", "shows.calendarLink", "showDeals.update",
+  "shows.create", "shows.update", "shows.setStatus", "shows.cancel", "shows.drop", "shows.setChecklists", "shows.checkItem", "shows.calendarPreview", "shows.calendar", "shows.calendarLink", "showDeals.update",
   "shows.comment", "shows.editComment", "shows.removeComment", "shows.folder", "shows.posters.attach", "shows.posters.remove",
   "shows.afterShow", "checklistTemplates.list", "checklistTemplates.create", "checklistTemplates.update", "checklistTemplates.reorder", "checklistTemplates.remove",
   // availability: ask and read, not mark
@@ -119,7 +118,7 @@ const EXPECTED = [
   // posts (#75): the Socials folder; the rest of Posts joins as its phases land
   "posts.setup", "posts.photos", "posts.list", "posts.get", "posts.createDraft", "posts.addToDraft", "posts.updateDraft", "posts.rename", "posts.removeFromDraft", "posts.deleteDraft", "posts.publish", "posts.tidy",
   // read tools and undo
-  "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "bandsintown.reconcile", "stats.movement",
+  "search", "records.get", "records.list", "shows.list", "pitches.needingFollowUp", "songs.missingFiles", "availability.check", "stats.movement",
   "history.undoRun", "history.myRuns",
 ].sort();
 
@@ -314,7 +313,7 @@ test("stdio entry: MCP_TOKEN authenticates, tools list, a bad token fails fast",
   await assert.rejects(bad.connect(new StdioClientTransport({ command: "npx", args: ["tsx", "mcp/server.ts", "--stdio"], env: { ...env, MCP_TOKEN: "btk_wrong" }, stderr: "ignore" })));
 });
 
-test("read tools: search, follow-ups, availability, missing files, Bandsintown reconcile, stats movement", async () => {
+test("read tools: search, follow-ups, availability, missing files, stats movement", async () => {
   const ctx = { ...mcpCtx(), artistId: "a" };
   const call = async (n: string, a: unknown) => parse(await callTool(n, a, async () => ctx)).result;
   const contact = await db.create(admin, "contacts", { artistId: "a", name: "Wren Booker", emails: ["wren@example.com"], phones: [] });
@@ -335,27 +334,14 @@ test("read tools: search, follow-ups, availability, missing files, Bandsintown r
   assert.match(f.pitches[0].reasons[0], /No contact for 2\d days/);
   assert.equal(f.pitches[0].people[0].emails[0], "wren@example.com");
 
-  const mk = (date: string, status: string, pub = false) => ({
+  const mk = (date: string, status: string) => ({
     date, status, venue: { id: v.id, name: "Heron Theatre", city: "Boulder" }, times: { set: "20:00" }, artistId: "a", personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [], publishToBandsintown: pub, listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   });
-  await db.create(admin, "shows", mk("2027-05-01", "confirmed", true));
+  await db.create(admin, "shows", mk("2027-05-01", "confirmed"));
   await db.create(admin, "shows", mk("2027-05-02", "hold"));
   const av = await call("availability.check", { dates: ["2027-05-01", "2027-05-02", "2027-05-03"] });
   assert.deepEqual(av.dates.map((d: any) => d.verdict), ["conflict", "conflict", "free"]);
-
-  // Bandsintown: the public confirmed show is not listed yet, then it is, then a changed time is a mismatch
-  let r = await call("bandsintown.reconcile", { today: "2027-01-01" });
-  assert.equal(r.missingOnBandsintown.length, 1);
-  const sh = (await db.list("shows")).find((x) => x.date === "2027-05-01")!;
-  const ev = await (await import("@/server/integrations")).bandsintownClient().create({ datetime: "2027-05-01T21:00:00", venueName: "Heron Theatre", city: "Boulder" });
-  await (await import("@/server/integrations")).bandsintownClient().create({ datetime: "2027-06-01T21:00:00", venueName: "Ghost Hall", city: "Denver" });
-  r = await call("bandsintown.reconcile", { today: "2027-01-01" });
-  assert.equal(r.missingOnBandsintown.length, 0);
-  assert.equal(r.mismatches[0].showId, sh.id);
-  assert.ok(r.mismatches[0].diffs.datetime);
-  assert.equal(r.notExpected[0].venue, "Ghost Hall");
-  await (await import("@/server/integrations")).bandsintownClient().delete(ev.id);
 
   // songs
   const withFile = await db.create(admin, "songs", { title: "Has File", status: "active" });

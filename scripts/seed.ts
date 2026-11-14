@@ -55,6 +55,8 @@ async function main() {
       { id: "nora-solo", name: "Nora solo", billingName: "Nora Quill", musicianIds: [mid.nora] },
     ],
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/noraquill", website: "https://noraquill.example" },
+    // An artist ID only: "Open Bandsintown" links work; no API key, so nothing ever calls Bandsintown.
+    bandsintown: { artistId: "1234567" },
     driveFolderId: "fake-band-folder",
     rehearsalFolderId: "fake-folder-rehearsals",
     showsFolderId: "fake-folder-shows",
@@ -232,7 +234,7 @@ async function main() {
     full: ["nora", "rudy", "hugo", "felix", "iris"], trio: ["nora", "rudy", "hugo"],
   } as Record<string, string[]>)[artistCfg].map((k) => mid[k]);
   const showBase = {
-    artistId: artist, projectId: bandProject, needs: { poster: true, backline: false, merch: true }, docs: [], publishToBandsintown: true, listings: {},
+    artistId: artist, projectId: bandProject, needs: { poster: true, backline: false, merch: true }, docs: [],
     checklists: [{ id: "promo", name: "Promo", templateId: promoTemplate, items: [
       { id: "c1", label: "Make show poster", done: true, ownerId: mid.nora, doneAt: "2026-10-20T18:00:00.000Z", doneBy: uid.nora },
       { id: "c2", label: "Post on social media", done: false, ownerId: mid.rudy },
@@ -260,7 +262,7 @@ async function main() {
   const lakeShow = await create("shows", {
     ...showBase, date: "2027-01-16", status: "hold", venue: { id: pinehollow, name: "Pine Hollow Lounge", address: "3602 E Colfax Ave, Denver", city: "Denver" },
     times: { set: "20:00", setLengthSec: 2400 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
-    needs: { poster: true, backline: false, merch: false }, publishToBandsintown: false,
+    needs: { poster: true, backline: false, merch: false },
     checklists: [list("gear", "Gear", [["g1", "Keys rig", "rudy", false], ["g2", "Bass rig", "hugo", false], ["g3", "Merch table", "", false]])],
   });
   await create("showDeals", { pitchId: pLost, contactIds: [rosa], deal: "doorSplit", doorSplitPct: 70, ticketPrice: 1500 }, lakeShow);
@@ -280,7 +282,7 @@ async function main() {
   const playedShow = await create("shows", {
     ...showBase, date: "2026-10-10", status: "played", venue: { id: creamery, name: "Creamery Arts Center", address: "Boulder", city: "Boulder" },
     times: { loadIn: "17:00", set: "20:00", setLengthSec: 3000 }, billedAs: "trio", personnel: cfg("trio"), sound: { provider: "venueProvided" },
-    needs: { poster: false, backline: false, merch: true }, checklists: [], publishToBandsintown: true,
+    needs: { poster: false, backline: false, merch: true }, checklists: [],
   });
   await create("showDeals", { contactIds: [wren], deal: "guarantee", paidAttendance: 112 }, playedShow);
 

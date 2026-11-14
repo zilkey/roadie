@@ -14,7 +14,7 @@ const cmd = async (name: string, input: unknown, c: Ctx) => {
 };
 const base = {
   status: "confirmed", personnel: [], sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false },
-  docs: [], listings: {}, place: { city: "Denver" }, times: {},
+  docs: [], place: { city: "Denver" }, times: {},
 };
 
 async function world() {

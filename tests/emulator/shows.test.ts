@@ -8,7 +8,7 @@ import { BAND_CALENDAR_ID, READONLY_CALENDAR_ID } from "../../fakes/fake-calenda
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { calendarClient, bandsintownClient, gmailClient } from "@/server/integrations";
+import { calendarClient, gmailClient } from "@/server/integrations";
 import { answerByToken, viewByToken } from "@/server/availability";
 import { firestore } from "@/server/admin";
 import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
@@ -28,7 +28,6 @@ before(async () => {
   stop = s.close;
   process.env.GMAIL_BASE_URL = s.running["fake-gmail"].url;
   process.env.CALENDAR_BASE_URL = s.running["fake-calendar"].url;
-  process.env.BANDSINTOWN_BASE_URL = s.running["fake-bandsintown"].url;
 });
 after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true }); });
 
@@ -39,8 +38,8 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
 
 beforeEach(async () => {
   await resetEmulators();
-  for (const f of ["fake-gmail", "fake-calendar", "fake-bandsintown"]) {
-    const url = { "fake-gmail": process.env.GMAIL_BASE_URL, "fake-calendar": process.env.CALENDAR_BASE_URL, "fake-bandsintown": process.env.BANDSINTOWN_BASE_URL }[f]!;
+  for (const f of ["fake-gmail", "fake-calendar"]) {
+    const url = { "fake-gmail": process.env.GMAIL_BASE_URL, "fake-calendar": process.env.CALENDAR_BASE_URL }[f]!;
     await fetch(url + "/__reset", { method: "POST" });
   }
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" });
@@ -65,7 +64,7 @@ beforeEach(async () => {
 const create = (extra: Record<string, unknown> = {}) =>
   cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLengthSec: 2400 }, needs: { poster: true, backline: false, merch: true }, ...extra });
 
-test("Booked it: show + showDeal in one go, pitch linked and booked, no checklists, personnel, calendar", async () => {
+test("Booked it: show + showDeal in one go, pitch linked and booked, only the Bandsintown to-do, personnel, calendar", async () => {
   const r = await create({ deal: { deal: "guarantee", guarantee: 30000 }, dayOfContact: { name: "Sam", phone: "(303) 555-0117" } });
   const show = (await db.get("shows", r.id))!;
   const deal = (await db.get("showDeals", r.id))!;
@@ -81,7 +80,9 @@ test("Booked it: show + showDeal in one go, pitch linked and booked, no checklis
   assert.deepEqual(show.personnel, [ids.nora, ids.rudy, ids.hugo]);
   assert.deepEqual(show.sound, { provider: "venueProvided", notes: "House engineer" });
   assert.equal(show.venue.address, "7 S Broadway, Denver");
-  assert.deepEqual(show.checklists, [], "lists are picked by hand now: none are built from the show's sound or needs");
+  // Lists are picked by hand (none are built from sound or needs), except a confirmed venue show's "Add to Bandsintown" item, in a new Promotion list
+  assert.deepEqual(show.checklists.map((l: any) => [l.name, l.templateId, l.items.map((i: any) => [i.label, i.done, i.bandsintown])]),
+    [["Promotion", null, [["Add to Bandsintown", false, true]]]]);
   assert.equal(show.checklist, undefined); assert.equal(show.gear, undefined);
   const pitch = (await db.get("pitches", pitchId))!;
   assert.deepEqual(pitch.showIds, [r.id]);
@@ -144,64 +145,6 @@ test("comments: the whole band posts; only the author edits or deletes", async (
   await assert.rejects(cmd("shows.removeComment", { id: r.id, commentId: c.id }), /your own comments/);
   await cmd("shows.removeComment", { id: r.id, commentId: c.id }, mctx);
   assert.ok((await db.get(`shows/${r.id}/comments`, c.id))!.deletedAt);
-});
-
-test("Bandsintown: public + confirmed lists it; holds and private stay off; changes update; cancel removes", async () => {
-  const hold = await create({ status: "hold", publishToBandsintown: true });
-  assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
-  const priv = await create({ date: "2027-02-06", publishToBandsintown: false });
-  assert.equal((await db.get("shows", priv.id))!.listings.bandsintown, undefined);
-  assert.equal((await bandsintownClient().list()).length, 0);
-
-  const r = await create({ date: "2027-02-13", publishToBandsintown: true, ticketUrl: "https://tix.example/1", times: { set: "21:15", setLengthSec: 2700 } });
-  let show = (await db.get("shows", r.id))!;
-  const bit = show.listings.bandsintown;
-  assert.equal(bit.state, "listed");
-  assert.ok(bit.syncedAt && bit.eventId);
-  assert.equal((await bandsintownClient().list())[0].timeZone, "America/Denver");
-  let events = await bandsintownClient().list();
-  assert.equal(events.length, 1);
-  assert.equal(events[0].datetime, "2027-02-13T21:15:00");
-  assert.equal(events[0].venueName, "Deep End");
-  assert.equal(events[0].city, "Denver");
-  assert.equal(events[0].region, "CO");
-  assert.equal(events[0].ticketUrl, "https://tix.example/1");
-
-  // promoting the hold to confirmed lists it
-  await cmd("shows.update", { id: hold.id, patch: { status: "confirmed" } });
-  assert.equal((await db.get("shows", hold.id))!.listings.bandsintown.state, "listed");
-  assert.equal((await bandsintownClient().list()).length, 2);
-
-  // date and time change updates the same event, not a new one
-  await cmd("shows.update", { id: r.id, patch: { date: "2027-02-14", times: { set: "20:30", setLengthSec: 2700 } } });
-  events = (await bandsintownClient().list()).filter((e) => e.id === bit.eventId);
-  assert.equal(events[0].datetime, "2027-02-14T20:30:00");
-  assert.equal((await bandsintownClient().list()).length, 2);
-
-  // going private removes it
-  await cmd("shows.update", { id: hold.id, patch: { publishToBandsintown: false } });
-  assert.equal((await db.get("shows", hold.id))!.listings.bandsintown, undefined);
-  assert.equal((await bandsintownClient().list()).length, 1);
-
-  // cancel removes it
-  await cmd("shows.cancel", { id: r.id });
-  show = (await db.get("shows", r.id))!;
-  assert.equal(show.status, "canceled");
-  assert.equal(show.listings.bandsintown, undefined);
-  assert.equal((await bandsintownClient().list()).length, 0);
-});
-
-test("Bandsintown failure is recorded on the show, not thrown; retry works", async () => {
-  const good = process.env.BANDSINTOWN_BASE_URL;
-  process.env.BANDSINTOWN_BASE_URL = "http://127.0.0.1:1";
-  const r = await create({ publishToBandsintown: true });
-  assert.ok(r.warnings.some((w: string) => w.startsWith("Bandsintown")));
-  const bad = (await db.get("shows", r.id))!.listings.bandsintown;
-  assert.equal(bad.state, "error");
-  assert.ok(bad.error);
-  process.env.BANDSINTOWN_BASE_URL = good;
-  await cmd("shows.sync", { id: r.id });
-  assert.equal((await db.get("shows", r.id))!.listings.bandsintown.state, "listed");
 });
 
 const useBandCalendar = (id = BAND_CALENDAR_ID) => db.update(ctx, "artists", artistId, { calendar: { id, name: "Nora Quill Band" } });
@@ -597,24 +540,21 @@ test("booking a pitch with an open ask links the ask to the show", async () => {
   assert.equal((await db.get("availability", a.id))!.showId, s.id);
 });
 
-test("shows.remove archives the show and its deal and clears the listings", async () => {
-  const r = await create({ publishToBandsintown: true });
-  assert.equal((await bandsintownClient().list()).length, 1);
+test("shows.remove archives the show and its deal", async () => {
+  const r = await create({});
   await cmd("shows.remove", { id: r.id });
   assert.equal(await db.list("shows").then((l) => l.length), 0);
-  assert.equal((await bandsintownClient().list()).length, 0);
   assert.equal((await calendarClient().list()).length, 0);
 });
 
-test("cancel and drop: status and reason in one write (blank = no reason); update clears it; listings come off", async () => {
-  const a = await create({ publishToBandsintown: true, status: "confirmed" });
+test("cancel and drop: status and reason in one write (blank = no reason); update clears it", async () => {
+  const a = await create({ status: "confirmed" });
   await cmd("shows.cancel", { id: a.id, reason: "  They double-booked the patio.  " });
   let s = (await db.get("shows", a.id))!;
   assert.equal(s.status, "canceled"); assert.equal(s.reason, "They double-booked the patio.");
   const h = await db.history("shows", a.id, 5);
   const write = h.find((e) => e.diff.status)!;
   assert.ok(write.diff.reason, "status and reason are one history entry");
-  assert.deepEqual(s.listings, {});
   const b = await create({ date: "2027-02-01" });
   await cmd("shows.drop", { id: b.id, reason: "   " });
   s = (await db.get("shows", b.id))!;
@@ -657,15 +597,11 @@ test("house concert: no venue, hosts + place; name, kind and band-PA default; va
   await assert.rejects(cmd("shows.create", { date: "2027-03-07", hostContactIds: ["nope"], place: { city: "Lyons" } }), /Host contact not found/);
 });
 
-test("house concert: renaming a host updates the show; Bandsintown never sees the host or address", async () => {
+test("house concert: renaming a host updates the show", async () => {
   const host = (await cmd("contacts.create", { name: "Pat", emails: [], phones: [] })).id;
-  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" }, publishToBandsintown: true });
+  const r = await cmd("shows.create", { date: "2027-04-10", hostContactIds: [host], place: { city: "Longmont", address: "1 Elm" } });
   await cmd("contacts.update", { id: host, patch: { name: "Pat Example" } });
   assert.equal((await db.get("shows", r.id))!.hostName, "Pat Example");
-  const [ev] = await bandsintownClient().list();
-  assert.equal(ev.venueName, "House concert");
-  assert.equal(ev.city, "Longmont");
-  assert.doesNotMatch(JSON.stringify(ev), /Pat|Elm/);
 });
 
 test("switching a show between a venue and a house; it always keeps a place", async () => {

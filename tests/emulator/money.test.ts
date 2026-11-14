@@ -47,7 +47,7 @@ beforeEach(async () => {
   const venue = (await db.create(ctx, "venues", { name: "Deep End", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" })).id;
   showId = (await db.create(ctx, "shows", {
     date: "2026-10-10", status: "played", venue: { id: venue, name: "Deep End" }, times: {}, artistId: "a", personnel: [ids.nora, ids.rudy, ids.hugo],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [], listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [],
   })).id;
   await db.create(ctx, "showDeals", { contactIds: [], deal: "guarantee" }, { id: showId });
 });

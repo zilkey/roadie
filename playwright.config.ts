@@ -5,7 +5,7 @@
 // A running `npm run dev:all` is never reused or touched.
 import path from "node:path";
 import { defineConfig, devices } from "@playwright/test";
-import { APP, AUTH, BIT, CAL, DRIVE, EIA, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, META, ORS, SPOTIFY } from "./tests/e2e/env";
+import { APP, AUTH, CAL, DRIVE, EIA, FAKE_PORT_OFFSET, FIRESTORE, GMAIL, META, ORS, SPOTIFY } from "./tests/e2e/env";
 
 /** "-2" for shard 2; empty when Playwright is run by hand without scripts/e2e.ts. */
 const SHARD = process.env.E2E_SHARD ? `-${process.env.E2E_SHARD}` : "";
@@ -52,7 +52,7 @@ export default defineConfig({
         GCLOUD_PROJECT: "demo-band-tracker",
         FIRESTORE_EMULATOR_HOST: FIRESTORE,
         FIREBASE_AUTH_EMULATOR_HOST: AUTH,
-        GMAIL_BASE_URL: GMAIL, DRIVE_BASE_URL: DRIVE, CALENDAR_BASE_URL: CAL, BANDSINTOWN_BASE_URL: BIT, SPOTIFY_BASE_URL: SPOTIFY,
+        GMAIL_BASE_URL: GMAIL, DRIVE_BASE_URL: DRIVE, CALENDAR_BASE_URL: CAL, SPOTIFY_BASE_URL: SPOTIFY,
         ORS_BASE_URL: ORS, EIA_BASE_URL: EIA,
         // Instagram & Facebook against fakes/fake-meta: a made-up app, its dialog and Graph.
         META_APP_ID: "fake-meta-app", META_CONFIG_ID: "fake-meta-config", META_APP_SECRET: "fake-meta-secret", META_TOKEN_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",

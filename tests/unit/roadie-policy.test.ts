@@ -3,10 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isExcluded, needsConfirm, summarize } from "@/server/assistant/policy";
 
-test("confirm: status changes and Bandsintown listing on shows.update; calendar sends; shows.create never touches Calendar", () => {
+test("confirm: status changes on shows.update; calendar sends; shows.create never touches Calendar", () => {
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { status: "canceled" } }), true);
-  assert.equal(needsConfirm("shows.update", { id: "x", patch: { publishToBandsintown: true } }), true);
-  assert.equal(needsConfirm("shows.update", { id: "x", patch: { publishToBandsintown: false } }), true);
   assert.equal(needsConfirm("shows.update", { id: "x", patch: { times: { loadIn: "18:00" } } }), false);
   assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v" }), false);
   assert.equal(needsConfirm("shows.create", { date: "2026-11-14", venueId: "v", sendInvites: true }), false);
@@ -33,10 +31,8 @@ test("eligibility: band settings are open except creating a band; users.addToBan
   assert.equal(isExcluded("google.connectUrl"), true);
 });
 
-test("summaries: cancel, Bandsintown, calendar send, archive, remove field", () => {
+test("summaries: cancel, calendar send, archive, remove field", () => {
   assert.equal(summarize("shows.update", { id: "x", patch: { status: "canceled", reason: "rain" } }, "Deep End · 2026-11-14"), "Change the show Deep End · 2026-11-14 to canceled (rain)");
-  assert.equal(summarize("shows.update", { id: "x", patch: { publishToBandsintown: true } }, "Deep End"), "List Deep End on Bandsintown");
-  assert.equal(summarize("shows.update", { id: "x", patch: { publishToBandsintown: false } }, "Deep End"), "Take Deep End off Bandsintown");
   assert.equal(summarize("shows.calendar", { id: "x", on: true }, "Deep End"), "Put the show Deep End on the band calendar and invite the band");
   assert.equal(summarize("shows.calendar", { id: "x", on: false }, "Deep End"), "Take the show Deep End off the band calendar");
   assert.equal(summarize("musicians.archive", { id: "m" }, "Mae"), "Archive Mae: they leave the band and lose their sign-in for this band");

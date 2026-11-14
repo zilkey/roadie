@@ -124,7 +124,7 @@ test("denormalization: renaming a venue/song/festival refreshes copies", async (
   const v = await db.create(ctx(), "venues", venue("Pine Hollow"));
   const show = await db.create(ctx(), "shows", {
     date: "2027-01-16", status: "confirmed", venue: { id: v.id, name: "Pine Hollow", city: "Denver" }, times: {}, artistId: "a1", personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [], listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   });
   const pitch = await db.create(ctx(), "pitches", { target: { kind: "venue", id: v.id, name: "Pine Hollow" }, status: "idea", artistId: "a1", personnel: [], showIds: [] });
   await db.update(ctx(), "venues", v.id, { name: "Pine Hollow Lounge" });

@@ -246,7 +246,7 @@ test("venues.mergeInto: moves every band's shows, pitches and notes, fills the s
   const pitch = await cmd("pitches.flag", { kind: "venue", id: dup.id });
   const show = await db.create(ctx, "shows", {
     date: "2027-01-01", status: "confirmed", venue: { id: dup.id, name: "The Deep End", address: "Denver", city: "Denver" }, times: {}, artistId: TEST_ARTIST, personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [], listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   });
   const m = asOther(); // a different band's admin merges: allowed, and it moves everyone's records
   const res = await run_("venues.mergeInto", { from: dup.id, into: keep.id }, m);

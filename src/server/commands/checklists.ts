@@ -5,7 +5,8 @@ import { idInput } from "./util";
 import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { templateKind, type ChecklistItem, type ChecklistKind, type ChecklistLike } from "@/lib/shows";
-import { checklistKind } from "@/schema";
+import { checklistKind, templateType, templateWhen } from "@/schema";
+import { bandsintownItem, templateTakesBandsintown } from "../bandsintown";
 
 // Checklists live on a show (shows/{id}.checklists), a release (releases/{id}.checklists) or the Social Media sidebar
 // (socialChecklists/{artistId}.checklists, one per artist, made by its first list). The checklists.* commands take {kind, id};
@@ -74,7 +75,7 @@ const kindIn = { kind: checklistKind, id: z.string().min(1) };
 const listIn = { ...kindIn, listId: z.string().min(1) };
 const itemIn = { ...listIn, itemId: z.string().min(1) };
 const ownerIn = z.string().min(1).nullable().optional();
-const checklistItemIn = z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional() });
+const checklistItemIn = z.strictObject({ id: z.string().min(1).optional(), label: z.string().trim().min(1), done: z.boolean().default(false), ownerId: z.string().min(1).optional(), bandsintown: z.boolean().optional(), eventUrl: z.string().optional() });
 const checklistIn = z.strictObject({ id: z.string().min(1).optional(), name: z.string().trim().min(1), templateId: z.string().min(1).nullable().optional(), items: z.array(checklistItemIn) });
 /** The checklists.* names are the app's (not Roadie's yet: it keeps the shows.* ones). */
 const ITEM_ROLES: Command["roles"] = ["admin", "member"];
@@ -92,7 +93,7 @@ export const checklistsSet = defineCommand({
       if (!c.done) return pin;
       return { ...pin, ...(old?.done && old.doneAt ? { doneAt: old.doneAt, doneBy: old.doneBy } : { doneAt: w.now.toDate().toISOString(), doneBy: ctx.uid }) };
     };
-    const lists = i.checklists.map((l) => ({ ...l, id: l.id ?? newId(), templateId: l.templateId ?? null, items: l.items.map((c) => ({ ...c, id: c.id ?? newId(), ...keep(c) })) }));
+    const lists = i.checklists.map((l) => ({ ...l, id: l.id ?? newId(), templateId: l.templateId ?? null, items: l.items.map(({ bandsintown, ...c }) => ({ ...c, id: c.id ?? newId(), ...keep(c), ...(bandsintown ? { bandsintown: true } : {}) })) }));
     return writeLists(w, h, lists as ChecklistLike[]);
   }),
 });
@@ -112,6 +113,11 @@ export const checklistsAdd = defineCommand({
       const t = await requireTemplate(w, i.templateId, h.artistId);
       if (templateKind(t as { appliesTo?: ChecklistKind }) !== i.kind) throw new AppError("invalid_input", `That template isn't a ${NOUN[i.kind]} template`, 400);
       list = { ...list, name: t.name as string, templateId: t.id, items: (t.items as { label: string }[]).map((x) => ({ id: newId(), label: x.label, done: false })) };
+      // The first Promotion template brings a confirmed venue show's "Add to Bandsintown" item when the show doesn't have one yet.
+      if (i.kind === "show") {
+        const show = await w.get("shows", i.id);
+        if (show && await templateTakesBandsintown(w, show, t)) list = { ...list, items: [...list.items, bandsintownItem()] };
+      }
     } else list = { ...list, name: i.name };
     await writeLists(w, h, [...h.lists, list]);
     return { id: i.id, listId };
@@ -194,7 +200,7 @@ export const checklistsSaveAsTemplate = defineCommand({
     const h = await bandHost(w, i.kind, i.id);
     const list = listOf(h.lists, i.listId);
     const artistId = (await artistFor(w, h.artistId)).id;
-    const t = await w.create("checklistTemplates", { artistId, name: list.name, appliesTo: i.kind, order: nextOrder(await liveTemplates(w, artistId)), items: list.items.map((c) => ({ id: newId(), label: c.label })) });
+    const t = await w.create("checklistTemplates", { artistId, name: list.name, appliesTo: i.kind, order: nextOrder(await liveTemplates(w, artistId)), items: list.items.filter((c) => !c.bandsintown).map((c) => ({ id: newId(), label: c.label })) });
     await editList(w, h, i.listId, (l) => ({ ...l, templateId: t.id }));
     return { id: i.id, listId: i.listId, templateId: t.id };
   }),
@@ -209,7 +215,7 @@ export const checklistsUpdateTemplate = defineCommand({
     const list = listOf(h.lists, i.listId);
     if (!list.templateId) throw new AppError("invalid_state", "This list isn't from a template: save it as one instead", 409);
     const t = await requireTemplate(w, list.templateId, h.artistId);
-    await w.update("checklistTemplates", t.id, { name: list.name, items: list.items.map((c) => ({ id: newId(), label: c.label })) });
+    await w.update("checklistTemplates", t.id, { name: list.name, items: list.items.filter((c) => !c.bandsintown).map((c) => ({ id: newId(), label: c.label })) });
     return { id: i.id, listId: i.listId, templateId: t.id };
   }),
 });
@@ -250,28 +256,34 @@ const withItemIds = (items: z.infer<typeof templateItems>) => items.map((x) => (
 
 export const checklistTemplatesList = defineCommand({
   name: "checklistTemplates.list", roles: ["admin", "mcp"], input: z.strictObject({}),
-  description: "This artist's checklist templates in order: [{id, name, appliesTo (show|release|social: where 'New list' offers it), order, items: [{id, label}]}].",
+  description: "This artist's checklist templates in order: [{id, name, appliesTo (show|release|social: where 'New list' offers it), when (show templates: preShow|dayOf|postShow, or none), type (show templates: promotion|logistics, or none), order, items: [{id, label}]}]. The first show template of type promotion also gets the \"Add to Bandsintown\" item on confirmed venue shows.",
   run: (ctx) => run(ctx, async (w) => {
     const ts = await liveTemplates(w, (await artistFor(w)).id);
-    return { templates: ts.map((t) => ({ id: t.id, name: t.name, appliesTo: templateKind(t as { appliesTo?: ChecklistKind }), order: t.order, items: t.items })) };
+    return { templates: ts.map((t) => ({ id: t.id, name: t.name, appliesTo: templateKind(t as { appliesTo?: ChecklistKind }), when: t.when ?? null, type: t.type ?? null, order: t.order, items: t.items })) };
   }),
 });
 export const checklistTemplatesCreate = defineCommand({
   name: "checklistTemplates.create", roles: ["admin", "mcp"],
-  description: "Add a checklist template (last in order): name, appliesTo (show, release or social; default show) and items [{label}]. Lists of that kind can then add it.",
-  input: z.strictObject({ name: z.string().trim().min(1), appliesTo: checklistKind.default("show"), items: templateItems.default([]) }),
+  description: "Add a checklist template (last in order): name, appliesTo (show, release or social; default show), for show templates optionally when (preShow|dayOf|postShow) and type (promotion|logistics), and items [{label}]. Lists of that kind can then add it.",
+  input: z.strictObject({ name: z.string().trim().min(1), appliesTo: checklistKind.default("show"), when: templateWhen.optional(), type: templateType.optional(), items: templateItems.default([]) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const artistId = (await artistFor(w)).id;
-    return w.create("checklistTemplates", { artistId, name: i.name, appliesTo: i.appliesTo, order: nextOrder(await liveTemplates(w, artistId)), items: withItemIds(i.items) });
+    const show = i.appliesTo === "show";
+    return w.create("checklistTemplates", { artistId, name: i.name, appliesTo: i.appliesTo, ...(show && i.when ? { when: i.when } : {}), ...(show && i.type ? { type: i.type } : {}), order: nextOrder(await liveTemplates(w, artistId)), items: withItemIds(i.items) });
   }),
 });
 export const checklistTemplatesUpdate = defineCommand({
   name: "checklistTemplates.update", roles: ["admin", "mcp"],
-  description: "Edit a checklist template: name, appliesTo (show|release|social: moves it to that kind), items (the whole list, in order: [{id?, label}]). Call checklistTemplates.list first and keep each existing item's id, or the item is recreated with a new one. Lists already made from it are not touched.",
-  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), appliesTo: checklistKind.optional(), items: templateItems.optional() }) }),
+  description: "Edit a checklist template: name, appliesTo (show|release|social: moves it to that kind), when (preShow|dayOf|postShow; null clears) and type (promotion|logistics; null clears) for show templates, items (the whole list, in order: [{id?, label}]). Call checklistTemplates.list first and keep each existing item's id, or the item is recreated with a new one. Lists already made from it are not touched.",
+  input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().trim().min(1).optional(), appliesTo: checklistKind.optional(), when: templateWhen.nullable().optional(), type: templateType.nullable().optional(), items: templateItems.optional() }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     await requireTemplate(w, id);
-    return w.update("checklistTemplates", id, { ...(patch.name ? { name: patch.name } : {}), ...(patch.appliesTo ? { appliesTo: patch.appliesTo } : {}), ...(patch.items ? { items: withItemIds(patch.items) } : {}) });
+    // when/type belong to show templates: moving one to releases or Social Media clears them.
+    const offShows = patch.appliesTo && patch.appliesTo !== "show";
+    return w.update("checklistTemplates", id, {
+      ...(patch.name ? { name: patch.name } : {}), ...(patch.appliesTo ? { appliesTo: patch.appliesTo } : {}), ...(patch.items ? { items: withItemIds(patch.items) } : {}),
+      ...(offShows ? { when: null, type: null } : { ...(patch.when !== undefined ? { when: patch.when } : {}), ...(patch.type !== undefined ? { type: patch.type } : {}) }),
+    });
   }),
 });
 export const checklistTemplatesReorder = defineCommand({

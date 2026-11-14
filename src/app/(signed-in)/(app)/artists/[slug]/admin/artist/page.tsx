@@ -192,6 +192,35 @@ function FansMerchCard({ features, payment, wording, onFeature, onPayment, onWor
   );
 }
 
+type Bit = NonNullable<Artist["bandsintown"]>;
+/**
+ * Bandsintown: the artist ID (the number in your Bandsintown for Artists links) makes "Open Bandsintown" go straight to adding an
+ * event; the API key lets Roadie see which shows are already listed and tick their "Add to Bandsintown" to-dos. Autosaved.
+ */
+function BandsintownCard({ bit, onChange }: { bit: Bit; onChange: (next: Bit) => void }) {
+  const badId = !!bit.artistId && !/^\d+$/.test(bit.artistId.trim());
+  return (
+    <section className="card" id="bandsintown" data-testid="bandsintown-card" aria-labelledby="bandsintown-title">
+      <div><h2 id="bandsintown-title" className="text-lg font-bold">Bandsintown</h2>
+        <p className="s">Roadie can&apos;t add shows to Bandsintown for you. With these, a confirmed show&apos;s &quot;Add to Bandsintown&quot; to-do opens the right page, and ticks itself once the show is listed.</p></div>
+      <ul className="link-list">
+        <li>
+          <label htmlFor="bit-artist-id">Artist ID</label>
+          <input id="bit-artist-id" className="input" inputMode="numeric" value={bit.artistId ?? ""} placeholder="15563770" spellCheck={false} aria-invalid={badId}
+            data-testid="bit-artist-id" onChange={(e) => onChange({ ...bit, artistId: e.target.value })} />
+        </li>
+        <li>
+          <label htmlFor="bit-app-id">API key</label>
+          <input id="bit-app-id" className="input" value={bit.appId ?? ""} spellCheck={false} autoCapitalize="none" autoComplete="off"
+            data-testid="bit-app-id" onChange={(e) => onChange({ ...bit, appId: e.target.value })} />
+        </li>
+      </ul>
+      {badId ? <span className="err" data-testid="bit-artist-id-hint">Use the number from your Bandsintown for Artists link (artists.bandsintown.com/artists/<b>15563770</b>/…).</span>
+        : <span className="s">Artist ID: the number in your Bandsintown for Artists address bar. API key: the app_id Bandsintown gave the band.</span>}
+    </section>
+  );
+}
+
 function ArtistEditor() {
   const { error } = useCommand();
   const artist = useArtist().doc ?? undefined;
@@ -201,11 +230,12 @@ function ArtistEditor() {
   const [payment, setPayment] = useState("");
   const [wording, setWording] = useState("");
   const [genres, setGenres] = useState<string[]>([]);
-  const resetFrom = (a: Artist) => { setLinks(a.links ?? {}); setGenres(a.genres ?? []); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
+  const [bit, setBit] = useState<Bit>({});
+  const resetFrom = (a: Artist) => { setBit(a.bandsintown ?? {}); setLinks(a.links ?? {}); setGenres(a.genres ?? []); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
   const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, scope: "general", title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
-  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features, artist.genres] : null);
+  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features, artist.genres, artist.bandsintown] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return null;
@@ -228,6 +258,12 @@ function ArtistEditor() {
     if (r && "error" in r) return as.hold("the payment app needs a Venmo link (or delete it)");
     as.patch({ paymentUrl: r?.url ?? null });
   }
+  function editBit(next: Bit) {
+    setBit(next);
+    const artistId = next.artistId?.trim(), appId = next.appId?.trim();
+    if (artistId && !/^\d+$/.test(artistId)) return as.hold("the Bandsintown artist ID is a number");
+    as.patch({ bandsintown: artistId || appId ? { ...(artistId ? { artistId } : {}), ...(appId ? { appId } : {}) } : null });
+  }
   function editGenres(next: string[]) { setGenres(next); as.patch({ genres: next.length ? next : null }); }
   function editWording(next: string) { setWording(next); as.patch({ listWording: next.trim() || null }); }
   function editFeature(k: "fans" | "merch", on: boolean) { const next = { ...features, [k]: on }; setFeatures(next); as.patch({ features: next }); }
@@ -239,6 +275,7 @@ function ArtistEditor() {
       <LinksCard links={links} onChange={editLinks} />
       <GenresCard genres={genres} onChange={editGenres} />
       <BandChatCard url={signal} onChange={editSignal} />
+      <BandsintownCard bit={bit} onChange={editBit} />
       <FansMerchCard features={features} payment={payment} wording={wording} onFeature={editFeature} onPayment={editPayment} onWording={editWording} />
     </div>
   );

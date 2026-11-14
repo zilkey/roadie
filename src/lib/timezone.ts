@@ -1,6 +1,6 @@
 /**
  * The one place the band's timezone lives. The band is in Colorado, so every "today", every wall-clock show time
- * and every payload sent to Calendar or Bandsintown is interpreted in America/Denver, whatever the server or the
+ * and every payload sent to Calendar is interpreted in America/Denver, whatever the server or the
  * viewer's browser is set to.
  */
 export const BAND_TIME_ZONE = "America/Denver";

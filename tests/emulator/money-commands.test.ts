@@ -21,7 +21,6 @@ before(async () => {
   stop = s.close;
   process.env.GMAIL_BASE_URL = s.running["fake-gmail"].url;
   process.env.CALENDAR_BASE_URL = s.running["fake-calendar"].url;
-  process.env.BANDSINTOWN_BASE_URL = s.running["fake-bandsintown"].url;
 });
 after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true }); });
 
@@ -51,7 +50,7 @@ const defaults = async () => (await db.list("projects")).filter((p) => p.isDefau
 const mkShow = async (extra: Record<string, unknown> = {}) => {
   const id = (await db.create(ctx, "shows", {
     date: "2026-11-10", status: "confirmed", venue: { id: "v", name: "Deep End" }, times: {}, artistId: TEST_ARTIST, personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [], listings: {}, ...extra,
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [], ...extra,
   })).id;
   await db.create(ctx, "showDeals", { contactIds: [], deal: "guarantee" }, { id });
   return id;

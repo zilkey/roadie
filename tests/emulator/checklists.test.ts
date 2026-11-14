@@ -16,7 +16,7 @@ const cmd = async (name: string, input: unknown, c: Ctx) => {
 };
 const base = {
   status: "confirmed", personnel: [], sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false },
-  docs: [], listings: {}, place: { city: "Denver" }, times: {},
+  docs: [], place: { city: "Denver" }, times: {},
 };
 const show = async (extra: Record<string, unknown> = {}, artistId = TEST_ARTIST) =>
   (await db.create(importCtx(), "shows", { ...base, date: "2027-01-16", artistId, checklists: [], ...extra })).id;

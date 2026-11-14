@@ -25,7 +25,6 @@ before(async () => {
   stop = s.close;
   process.env.GMAIL_BASE_URL = s.running["fake-gmail"].url;
   process.env.CALENDAR_BASE_URL = s.running["fake-calendar"].url;
-  process.env.BANDSINTOWN_BASE_URL = s.running["fake-bandsintown"].url;
 });
 after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true }); });
 

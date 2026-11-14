@@ -1,3 +1,4 @@
+import { ensureBandsintownItem } from "../bandsintown";
 import { randomUUID } from "node:crypto";
 import { dateInBandZone } from "@/lib/timezone";
 import { z } from "zod";
@@ -6,7 +7,6 @@ import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { syncShow, type SyncResult } from "../showSync";
 import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
 import { noteOf, requireContact, setContactRoles } from "../venues";
 import { dayOfContactOf } from "@/lib/venues";
@@ -69,7 +69,7 @@ function configOf(artist: Doc, billedAs?: string | null) {
   if (!c) throw new AppError("invalid_input", `No configuration "${billedAs}"`, 400);
   return c;
 }
-const done = (id: string, sync: SyncResult) => ({ id, warnings: sync.warnings, bandsintown: sync.bandsintown });
+const done = (id: string) => ({ id, warnings: [] as string[] });
 
 // ---------- list ----------
 
@@ -126,7 +126,7 @@ export const ShowCreateIn = z.strictObject({
     editionId: z.string().min(1).optional(), editionName: z.string().optional(), times: times.default({}),
     billedAs: z.string().min(1).nullable().optional(), personnel: z.array(z.string().min(1)).optional(), sendInvites: z.boolean().optional(),
     sound: soundSchema.optional(), needs: needs.default({ poster: false, backline: false, merch: false }),
-    publishToBandsintown: z.boolean().default(false), ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
+    ticketUrl: z.string().optional(), dayOfContact: dayOfContact.optional(),
     copyPitchComments: z.boolean().default(false), deal: DealIn.default({ deal: "guarantee" }),
   });
 
@@ -138,20 +138,20 @@ export const showsCreate = defineCommand({
     "status hold|confirmed (default confirmed); kind: venue|house|festival|radio|other (default from the rest). editionId links a festival year (editionName is then always the festival name and year label). " +
     "billedAs is a configuration id (context.now artist.configurations; null = none, no personnel) and fills personnel; sound defaults from the venue; needs (poster/backline/merch). " +
     "times: loadIn, soundcheck, doors, showStart, set (HH:MM) and setLengthSec (seconds). deal.guarantee is cents and becomes an income record (guarantee, from the venue, not yet received: income.setReceived when it arrives). The show's project is billedAs's configuration project, else the default project. " +
-    "The show starts with no checklists (shows.addChecklist). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
-    "It never touches Google Calendar (that is shows.calendar, on purpose). sendInvites decides who the calendar event will invite when it is sent: true only the configuration's members on the team with an email, false nobody; omitted everyone in personnel with an email. publishToBandsintown lists the show on Bandsintown once confirmed. " +
+    "The show starts with no checklists (shows.addChecklist), except that a confirmed venue or festival show gets an \"Add to Bandsintown\" item (in its Promotion list, or a new one). copyPitchComments (needs pitchId) copies the pitch's comments onto the show. " +
+    "It never touches Google Calendar (that is shows.calendar, on purpose). sendInvites decides who the calendar event will invite when it is sent: true only the configuration's members on the team with an email, false nobody; omitted everyone in personnel with an email. " +
     "dayOfContact {name, phone?, contactId?} defaults to the venue's first day-of contact (contacts.setRoles); a contactId at a venue also makes them a day-of contact there.",
   input: ShowCreateIn,
   async run(ctx, i) {
     const id = await run(ctx, (w) => createShow(w, ctx, i));
-    return done(id, await syncShow(ctx, id));
+    await ensureBandsintownItem(ctx, id);
+    return done(id);
   },
 });
 
 /**
  * The booking path: the show, its deal, the guarantee as income, and, with a pitchId, the pitch booked ("Booked it").
- * One writer, so tours.book can book an option in the same transaction as its tour changes. Bandsintown (syncShow) is the
- * caller's to run after the transaction. Returns the show id.
+ * One writer, so tours.book can book an option in the same transaction as its tour changes. Returns the show id.
  */
 export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCreateIn>): Promise<string> {
   const venue = i.venueId ? await requireVenue(w, i.venueId) : null;
@@ -179,7 +179,7 @@ export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCrea
     editionId: edition?.id, editionName: edition ? editionLabel(edition) : i.editionName, times: i.times, artistId: artist.id,
     billedAs, projectId: await defaultProjectIdFor(w, artist.id, billedAs), personnel, calendarInviteeIds, sound: snd, needs: i.needs,
     checklists: [],
-    docs: [], publishToBandsintown: i.publishToBandsintown, ticketUrl: i.ticketUrl, listings: {}, dayOfContact: dayOf,
+    docs: [], ticketUrl: i.ticketUrl, dayOfContact: dayOf,
     statusHistory: [{ status: i.status, by: ctx.uid, at: w.now.toDate().toISOString() }],
   });
   const d = i.deal;
@@ -233,14 +233,13 @@ async function tickDayOf(w: Writer, venue: Doc, artistId: string, contactId: str
 
 // ---------- update ----------
 
-const SHOW_SYNC_FIELDS = ["date", "status", "venue", "place", "hostName", "times", "personnel", "billedAs", "publishToBandsintown", "public", "ticketUrl", "sound", "editionName", "dayOfContact"];
 const showPatch = z.strictObject({
   date: dateStr.optional(), status: z.enum(["hold", "confirmed", "played", "canceled", "dropped"]).optional(), reason: z.string().nullable().optional(), kind: showKind.optional(),
   venueId: z.string().min(1).nullable().optional(), place: place.nullable().optional(), hostContactIds: z.array(z.string().min(1)).optional(),
   editionId: z.string().min(1).nullable().optional(), editionName: z.string().nullable().optional(), times: times.optional(), billedAs: z.string().min(1).nullable().optional(),
   personnel: z.array(z.string().min(1)).optional(), sound: soundSchema.optional(), needs: needs.optional(),
   docs: z.array(z.strictObject({ title: z.string(), driveFileId: z.string(), url: z.string() })).optional(),
-  publishToBandsintown: z.boolean().optional(), ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
+  ticketUrl: z.string().nullable().optional(), dayOfContact: dayOfContact.nullable().optional(),
   transitionSec: z.union([z.literal(15), z.literal(30), z.literal(60), z.literal(90)]).optional(),
   projectId: z.string().min(1).optional(),
   fanPage: ShowFanPage.optional(),
@@ -252,12 +251,11 @@ export const showsUpdate = defineCommand({
     "Edit a show. Patch: date, status (hold|confirmed|played|canceled|dropped; to cancel or drop use shows.setStatus / shows.cancel / shows.drop, which ask first; 'played' is set here or by shows.afterShow), reason (why it was canceled or dropped; null clears), kind, " +
     "venueId (from a venue search; null = no venue: needs place), place {city, address?} (null clears), hostContactIds ([] clears), editionId (null unlinks; sets editionName), " +
     "times {loadIn, soundcheck, doors, showStart, set, setLengthSec (seconds)} and sound REPLACE the whole object: send every key you want to keep. personnel and docs REPLACE the lists: read the show first and resend them all. " +
-    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, publishToBandsintown (listed once confirmed), ticketUrl, fanPage {on, name?, amountCents?, button: ticket|donation} (the show's Venmo line on the public fan page, shown while on from 1h before the show time to 3h after; REPLACES the whole object), dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30), projectId (the project its money belongs to, an open one from context.now projects; money already recorded stays where it is). A status change is added to statusHistory. " +
+    "billedAs is a configuration id (context.now artist.configurations; also refills personnel unless personnel is given), needs, ticketUrl, fanPage {on, name?, amountCents?, button: ticket|donation} (the show's Venmo line on the public fan page, shown while on from 1h before the show time to 3h after; REPLACES the whole object), dayOfContact {name, phone?, contactId?} (null clears; a contactId at a venue also makes them a day-of contact there), transitionSec (15|30|60|90: the average song-to-song gap counted into the setlist length; default 30), projectId (the project its money belongs to, an open one from context.now projects; money already recorded stays where it is). A status change is added to statusHistory. " +
     "Checklists are not touched (use the shows.*Checklist* commands). " +
-    "Changing date, time, venue, people, status or publishToBandsintown re-syncs Bandsintown (canceled or dropped takes it off). Google Calendar is never touched: resend the event with shows.calendar.",
+    "Google Calendar is never touched: resend the event with shows.calendar.",
   input: z.strictObject({ id: z.string().min(1), patch: showPatch }),
   async run(ctx, { id, patch }) {
-    let touchesSync = false;
     await run(ctx, async (w) => {
       const before = await requireShow(w, id);
       const { venueId, hostContactIds, editionId, ...rest } = patch;
@@ -295,10 +293,10 @@ export const showsUpdate = defineCommand({
         const venue = await w.get("venues", after.venue.id);
         if (venue && !venue.deletedAt) await tickDayOf(w, venue, artist.id, patch.dayOfContact.contactId);
       }
-      touchesSync = SHOW_SYNC_FIELDS.some((f) => JSON.stringify(before[f]) !== JSON.stringify(after[f]));
       return r;
     });
-    return done(id, touchesSync ? await syncShow(ctx, id) : { warnings: [] });
+    await ensureBandsintownItem(ctx, id);
+    return done(id);
   },
 });
 
@@ -315,34 +313,35 @@ async function setStatus(ctx: Ctx, i: { id: string; reason?: string }, status: "
     if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
     return w.update("shows", i.id, { status, reason: reason ?? null, statusHistory: historyWith(w, before, status, reason) });
   });
-  return done(i.id, await syncShow(ctx, i.id));
+  await ensureBandsintownItem(ctx, i.id);
+  return done(i.id);
 }
 const setOff = (ctx: Ctx, i: z.infer<typeof offInput>, status: "canceled" | "dropped") => setStatus(ctx, i, status);
 
 export const showsSetStatus = defineCommand({
   name: "shows.setStatus", roles: ["admin", "mcp"],
   description: "Change a show's status: hold (penciled in), confirmed, canceled (the venue called it off) or dropped (we called it off), with an optional reason. " +
-    "Each change is kept in statusHistory with who and when. Canceled or dropped takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
+    "Each change is kept in statusHistory with who and when. Its Calendar event stays on canceled or dropped until shows.calendar on:false.",
   input: z.strictObject({ id: z.string().min(1), status: z.enum(["hold", "confirmed", "canceled", "dropped"]), reason: z.string().optional() }),
   run: (ctx, i) => setStatus(ctx, i, i.status),
 });
 
 export const showsCancel = defineCommand({
   name: "shows.cancel", roles: ["admin", "mcp"], input: offInput,
-  description: "Cancel a show: they called it off (dropped means we pulled out). Optional reason. Takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
+  description: "Cancel a show: they called it off (dropped means we pulled out). Optional reason. Its Calendar event stays until shows.calendar on:false.",
   run: (ctx, i) => setOff(ctx, i, "canceled"),
 });
 
 export const showsDrop = defineCommand({
   name: "shows.drop", roles: ["admin", "mcp"], input: offInput,
-  description: "Drop a show: we pulled out (canceled means they called it off). Optional reason. Takes it off Bandsintown; its Calendar event stays until shows.calendar on:false.",
+  description: "Drop a show: we pulled out (canceled means they called it off). Optional reason. Its Calendar event stays until shows.calendar on:false.",
   run: (ctx, i) => setOff(ctx, i, "dropped"),
 });
 
 export const showsRemove = defineCommand({
   name: "shows.remove", roles: ["admin"], input: idInput,
   description: "Archive a show (and its deal) that was entered by mistake. A real cancellation is shows.cancel (they called it off) or shows.drop (we pulled out), which keep the history. " +
-    "Takes it off Bandsintown and off the band calendar (history.undoRun puts the event back); if the calendar can't be reached, nothing is removed.",
+    "Takes it off the band calendar (history.undoRun puts the event back); if the calendar can't be reached, nothing is removed.",
   async run(ctx, { id }) {
     // The event first: a show gone from the app must not stay on everyone's calendar. The show keeps calendarEventId, so Undo can bring the event back.
     const before = await db.get("shows", id);
@@ -352,15 +351,8 @@ export const showsRemove = defineCommand({
       await w.softDelete("shows", id);
       if (await w.get("showDeals", id)) await w.softDelete("showDeals", id);
     });
-    return done(id, await syncShow(ctx, id));
+    return done(id);
   },
-});
-
-export const showsSync = defineCommand({
-  name: "shows.sync", roles: ["admin", "mcp"],
-  input: z.strictObject({ id: z.string().min(1) }),
-  description: "Retry the Bandsintown sync after an error or warning (if publishToBandsintown). To list or unlist on Bandsintown set publishToBandsintown with shows.update. Google Calendar is shows.calendar.",
-  async run(ctx, i) { return done(i.id, await syncShow(ctx, i.id)); },
 });
 
 // ---------- checklists: see ./checklists.ts ----------
@@ -469,7 +461,8 @@ export const showsAfter = defineCommand({
         ...(i.paidAttendance !== undefined ? { paidAttendance: i.paidAttendance } : {}),
       });
     });
-    return done(i.id, await syncShow(ctx, i.id));
+    await ensureBandsintownItem(ctx, i.id);
+    return done(i.id);
   },
 });
 
@@ -495,7 +488,7 @@ export const showsSetFields = defineCommand({
 });
 
 export const showCommands = [
-  showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove, showsSync,
+  showsList, showsCreate, showsUpdate, showsSetStatus, showsCancel, showsDrop, showsRemove,
   showsSetFields, showsComment, showsEditComment, showsRemoveComment, showsCalendarPreview, showsCalendar, showsCalendarLink, showDealsUpdate, showsAfter,
   ...checklistCommands,
 ];

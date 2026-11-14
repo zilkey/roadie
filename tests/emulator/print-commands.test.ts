@@ -114,7 +114,7 @@ test("setlists.printLink for a show points at the show's setlist id", async () =
   const v = await db.create(importCtx(), "venues", venue("Deep End"));
   const show = await db.create(importCtx(), "shows", {
     artistId: TEST_ARTIST, date: "2026-11-14", status: "confirmed", venue: { id: v.id, name: "Deep End", city: "Denver" }, times: {}, personnel: [],
-    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [], listings: {},
+    sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [],
   });
   await db.create(importCtx(), "setlists", { items }, { id: show.id });
   const r = await call(rudy.token, "setlists.printLink", { showId: show.id, paper: "a4" });

@@ -6,10 +6,15 @@ import type { ChecklistTemplate, Musician } from "@/schema";
 
 export type TemplateRow = Row<ChecklistTemplate>;
 
-/** An artist's live checklist templates, in order. Admins only (rules): members get an empty list without asking. */
+const WHEN_RANK: Record<string, number> = { preShow: 0, dayOf: 1, postShow: 2 };
+/** Templates in the order "New list" and the templates page show them: by When (Pre Show, Day Of, Post Show, then none), then by order. */
+export const byWhenThenOrder = <T extends { when?: string; order: number }>(ts: readonly T[]) =>
+  [...ts].sort((a, b) => (WHEN_RANK[a.when ?? ""] ?? 3) - (WHEN_RANK[b.when ?? ""] ?? 3) || a.order - b.order);
+
+/** An artist's live checklist templates, by When then order. Admins only (rules): members get an empty list without asking. */
 export function useChecklistTemplates(artistId: string | undefined, admin: boolean) {
   const c = useCollection<ChecklistTemplate>("checklistTemplates", { where: [["artistId", "==", artistId ?? "none"]], skip: !admin || !artistId });
-  return { templates: [...(c.rows ?? [])].sort((a, b) => a.order - b.order), loading: c.loading };
+  return { templates: byWhenThenOrder(c.rows ?? []), loading: c.loading };
 }
 
 /** Who a to-do can be assigned to: the band's active musicians. */

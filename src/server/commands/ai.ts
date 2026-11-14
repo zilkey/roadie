@@ -6,17 +6,15 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { db, type Doc } from "../db";
 import { AppError } from "../errors";
-import { bandsintownClient } from "../integrations";
 import { undoRun, runsOf } from "../undo";
 import { buildSearchItems, searchItems, isActive, todayStr, followUpFor, QUIET_DAYS, type FollowUpPitchLike } from "@/lib/booking";
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { DEFAULT_TRANSITION_SEC, setlistTotal, transitionOf } from "@/lib/music";
-import { bandsintownEligible } from "../showSync";
 import { bandFolderId, bandmates } from "../music";
 import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
 import { bandNotesBy, withBandNote } from "../bandNotes";
 import { dateStr, isNotedKind } from "@/schema";
-import { isOff, publicShowName, showName, type ShowPlaceLike, isPublished } from "@/lib/shows";
+import { isOff, publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
 const strict = z.strictObject;
@@ -273,43 +271,6 @@ export const availabilityCheck = defineCommand({
   },
 });
 
-// ---------- bandsintown.reconcile ----------
-
-export const bandsintownReconcile = defineCommand({
-  name: "bandsintown.reconcile", roles: [...READ],
-  description:
-    "Compare our shows with what Bandsintown lists. Reports: confirmed published upcoming shows not listed (fix with shows.sync), listings with no matching eligible show " +
-    "(holds, unpublished, canceled, dropped or unknown), and listings whose date, time, venue or ticket link differ from the show.",
-  input: strict({ today: dateStr.optional() }),
-  async run(ctx, i) {
-    const today = i.today ?? todayStr();
-    const [shows, events] = await Promise.all([db.list("shows"), bandsintownClient().list()]);
-    const byId = new Map(events.map((e) => [e.id, e]));
-    const matched = new Set<string>();
-    const missing: unknown[] = [], mismatches: unknown[] = [];
-    let ok = 0;
-    const upcoming = shows.filter((s) => s.date >= today);
-    for (const s of upcoming.filter(bandsintownEligible)) {
-      const t = s.times as { set?: string; doors?: string };
-      const want = { datetime: `${s.date}T${t.set ?? t.doors ?? "20:00"}:00`, venueName: publicShowName(s as ShowPlaceLike), ticketUrl: (s.ticketUrl as string | undefined) ?? undefined };
-      const linked = s.listings?.bandsintown?.eventId as string | undefined;
-      const ev = (linked && byId.get(linked)) || events.find((e) => !matched.has(e.id) && e.datetime.slice(0, 10) === s.date && e.venueName === want.venueName);
-      if (!ev) { missing.push({ showId: s.id, date: s.date, venue: want.venueName, state: s.listings?.bandsintown?.state ?? "not listed" }); continue; }
-      matched.add(ev.id);
-      const diffs: Record<string, { show: unknown; bandsintown: unknown }> = {};
-      if (ev.datetime.slice(0, 16) !== want.datetime.slice(0, 16)) diffs.datetime = { show: want.datetime, bandsintown: ev.datetime };
-      if (ev.venueName !== want.venueName) diffs.venueName = { show: want.venueName, bandsintown: ev.venueName };
-      if ((ev.ticketUrl ?? undefined) !== want.ticketUrl) diffs.ticketUrl = { show: want.ticketUrl ?? null, bandsintown: ev.ticketUrl ?? null };
-      if (Object.keys(diffs).length) mismatches.push({ showId: s.id, eventId: ev.id, diffs }); else ok++;
-    }
-    const unexpected = events.filter((e) => !matched.has(e.id)).map((e) => {
-      const s = shows.find((x) => x.listings?.bandsintown?.eventId === e.id) ?? shows.find((x) => x.date === e.datetime.slice(0, 10) && publicShowName(x as ShowPlaceLike) === e.venueName);
-      return { eventId: e.id, datetime: e.datetime, venue: e.venueName, showId: s?.id ?? null, why: !s ? "No show matches" : s.deletedAt ? "Show is archived" : s.status === "played" ? "Played show (history)" : !isPublished(s) ? "Show isn't published to Bandsintown" : s.status !== "confirmed" ? `Show is ${s.status}` : "Show is eligible but this listing does not match it" };
-    }).filter((u) => u.why !== "Played show (history)");
-    return { today, ok, missingOnBandsintown: missing, notExpected: unexpected, mismatches };
-  },
-});
-
 // ---------- stats.movement ----------
 
 export const statsMovementCmd = defineCommand({
@@ -354,6 +315,6 @@ export const historyMyRuns = defineCommand({
 });
 
 export const aiCommands = [
-  search, recordsGet, recordsList, pitchesNeedingFollowUp, songsMissingFiles, availabilityCheck, bandsintownReconcile, statsMovementCmd,
+  search, recordsGet, recordsList, pitchesNeedingFollowUp, songsMissingFiles, availabilityCheck, statsMovementCmd,
   historyUndoRun, historyMyRuns,
 ];

@@ -3,7 +3,6 @@ export { gmailClient, type GmailService } from "./gmail";
 export { driveClient, type DriveService, type DriveFile, type DriveListOpts, type DrivePermission } from "./drive";
 export { calendarClient, canWrite, type CalendarService, type CalInfo } from "./calendar";
 export { useRealGoogle, type TokenSource } from "./google";
-export { bandsintownClient, type BandsintownService } from "./bandsintown";
 export { spotifyClient, spotifyCatalog, spotifyArtistId, type SpotifyService, type SpotifyCatalog, type SpotifyHit } from "./spotify";
 export { orsClient, type OrsService, type OrsPlace } from "./ors";
 export { eiaClient, type EiaService, type EiaWeeklyPrice } from "./eia";

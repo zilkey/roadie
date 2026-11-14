@@ -3,7 +3,7 @@ import { roleIn } from "@/schema/users";
 
 export type Sound = { provider: "venueProvided" | "bandProvided"; notes?: string };
 export type Needs = { poster: boolean; backline: boolean; merch: boolean };
-export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; doneAt?: string; doneBy?: string; pinnedAt?: string; pinnedBy?: string }
+export interface ChecklistItem { id: string; label: string; done: boolean; ownerId?: string; doneAt?: string; doneBy?: string; pinnedAt?: string; pinnedBy?: string; bandsintown?: true; eventUrl?: string }
 export interface ChecklistLike { id: string; name: string; templateId?: string | null; items: ChecklistItem[] }
 /** What a checklist hangs off. "social" is the Social Media sidebar: one set of lists per artist, its id the artist's. */
 export type ChecklistKind = "show" | "release" | "social";
@@ -34,7 +34,7 @@ export function showName(s: ShowPlaceLike): string {
   if (kindOf(s) === "house") return s.hostName ? `House concert · ${s.hostName}` : "House concert";
   return s.editionName ?? KIND_LABEL[kindOf(s)];
 }
-/** What the outside world sees (Bandsintown): never a host's name or a home address. */
+/** What the outside world sees: never a host's name or a home address. */
 export const publicShowName = (s: ShowPlaceLike) => (s.venue ? s.venue.name : kindOf(s) === "house" ? "House concert" : showName(s));
 export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
 export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
@@ -62,9 +62,9 @@ export function calendarInvitees(
 }
 
 /** The templates every new artist starts with (seedDefaultTemplates: artists.create, scripts/seed.ts). */
-export const DEFAULT_TEMPLATES: { name: string; items: string[] }[] = [
-  { name: "Promo", items: ["Make show poster", "Post on social media", "Send email to email list"] },
-  { name: "Follow Up", items: ["Post on social media"] },
+export const DEFAULT_TEMPLATES: { name: string; when?: "preShow" | "dayOf" | "postShow"; type?: "promotion" | "logistics"; items: string[] }[] = [
+  { name: "Promo", when: "preShow", type: "promotion", items: ["Make show poster", "Post on social media", "Send email to email list"] },
+  { name: "Follow Up", when: "postShow", items: ["Post on social media"] },
 ];
 
 // ---------- dates and times ----------

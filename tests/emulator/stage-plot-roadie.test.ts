@@ -50,7 +50,7 @@ async function tool(s: Awaited<ReturnType<typeof sess>>, name: string, input: un
 const plot = async (id: string) => (await db.get("stagePlots", id))! as Row;
 const mkShow = (venue: string, date: string, extra: Row = {}) => db.create(sys, "shows", {
   date, status: "confirmed", artistId: TEST_ARTIST, billedAs: "full-band", personnel: [], sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false },
-  docs: [], times: {}, listings: {}, fields: [], venue: { id: `v-${venue}`, name: venue }, ...extra,
+  docs: [], times: {}, fields: [], venue: { id: `v-${venue}`, name: venue }, ...extra,
 }).then((r) => r.id);
 
 /** A five-person plot: kick (Felix), snare (Felix), keys L/R (Rudy), lead amp (Iris), bass DI (Hugo), vocal (Nora), placed on the stage. */

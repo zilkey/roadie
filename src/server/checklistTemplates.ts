@@ -10,7 +10,7 @@ export async function seedDefaultTemplates(w: Writer, artistId: string): Promise
   let order = Math.max(-1, ...have.map((t) => t.order as number)) + 1;
   const ids: string[] = [];
   for (const t of DEFAULT_TEMPLATES) {
-    ids.push((await w.create("checklistTemplates", { artistId, name: t.name, order: order++, items: t.items.map((label) => ({ id: newId(), label })) })).id);
+    ids.push((await w.create("checklistTemplates", { artistId, name: t.name, ...(t.when ? { when: t.when } : {}), ...(t.type ? { type: t.type } : {}), order: order++, items: t.items.map((label) => ({ id: newId(), label })) })).id);
   }
   return ids;
 }

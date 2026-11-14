@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { startAll } from "../../fakes/run-all";
 import { spotifyCatalog } from "@/server/integrations/spotify";
-import { gmailClient, driveClient, calendarClient, bandsintownClient, spotifyClient, IntegrationError } from "@/server/integrations";
+import { gmailClient, driveClient, calendarClient, spotifyClient, IntegrationError } from "@/server/integrations";
 
 let stop: () => Promise<void>;
 let urls: Record<string, string>;
@@ -111,18 +111,6 @@ test("calendar: create, update, list, delete", async () => {
   await c.delete(e.id);
   assert.equal((await c.list()).length, 0);
   await assert.rejects(c.delete(e.id), IntegrationError);
-});
-
-test("bandsintown: create, update, list, delete", async () => {
-  const b = bandsintownClient(urls["fake-bandsintown"]);
-  const e = await b.create({ datetime: "2026-12-05T20:00:00", venueName: "Bluebird Theater", city: "Denver", region: "CO" });
-  assert.equal(e.artist, "Nora Quill Band");
-  await b.create({ datetime: "2026-11-01T20:00:00", venueName: "Fox", city: "Boulder" });
-  assert.equal((await b.list())[0].venueName, "Fox");
-  assert.equal((await b.update(e.id, { ticketUrl: "https://tix.example" })).ticketUrl, "https://tix.example");
-  await b.delete(e.id);
-  assert.equal((await b.list()).length, 1);
-  await assert.rejects(b.create({ datetime: "x" } as never), /400/);
 });
 
 test("spotify: daily history with drift, today's numbers", async () => {

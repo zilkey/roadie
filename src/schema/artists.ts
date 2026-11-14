@@ -175,6 +175,12 @@ export const Artist = entity({
   /** The merch price list on the public fan page, in order. Shown when features.merch is on and paymentUrl is set. */
   merchItems: z.array(MerchItem).max(50).optional(),
   fanPageStyle: FanPageStyle.optional(),
+  /**
+   * The band on Bandsintown (General Settings): artistId (the number in its Bandsintown for Artists URLs) builds the
+   * "Open Bandsintown" link; appId (the band's Bandsintown API key) lets Roadie read the band's listed events to tick a show's
+   * "Add to Bandsintown" item. Read-only: Bandsintown has no way to add an event from Roadie.
+   */
+  bandsintown: z.strictObject({ artistId: z.string().trim().regex(/^\d+$/, "Use the number from your Bandsintown for Artists link").optional(), appId: z.string().trim().min(1).optional() }).optional(),
   /** True hides the fan page's "Leave a tip" button (Fan Page › Money). Missing = the button shows whenever there is a Venmo link. */
   hideTips: z.boolean().optional(),
   /** The fan page's own links, in order, listed under merch. */
