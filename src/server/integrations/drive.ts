@@ -27,6 +27,8 @@ export interface DriveFile {
   size?: number;
   /** imageMediaMetadata. width/height as Drive reports them (before rotation). time is "YYYY:MM:DD HH:MM:SS", camera-local. */
   image?: { width: number; height: number; time?: string; rotation?: number };
+  /** videoMediaMetadata: Drive fills it in once it has processed the video, so a just-uploaded video may not have it yet. */
+  video?: { width: number; height: number; durationMs?: number };
   /** A short-lived link to Drive's preview image; thumbnail() fetches it at a size. */
   thumbnailLink?: string;
   trashed?: boolean;
@@ -37,8 +39,11 @@ export interface DriveList { files: DriveFile[]; nextPageToken?: string }
 export interface DriveListOpts {
   /** Files whose parent is any of these. */
   parents: string[];
-  /** images: mimeType contains "image/", or a photo extension (HEIC often comes as octet-stream). */
-  kind: "folders" | "images" | "all";
+  /**
+   * images: mimeType contains "image/", or a photo extension (HEIC often comes as octet-stream). media: images, plus
+   * mimeType contains "video/" or a video extension (.mp4, .mov).
+   */
+  kind: "folders" | "images" | "media" | "all";
   orderBy?: "createdTime desc";
   /** Default 1000. */
   pageSize?: number;
@@ -124,12 +129,13 @@ export function fakeDriveClient(baseUrl: string): DriveService {
 interface GPermission { type: "user" | "group" | "domain" | "anyone"; role: string; emailAddress?: string; domain?: string }
 interface GFile {
   id: string; name: string; mimeType: string; owners?: { emailAddress?: string }[]; parents?: string[]; permissions?: GPermission[]; createdTime?: string; modifiedTime?: string; webViewLink?: string;
-  size?: string; imageMediaMetadata?: { width?: number; height?: number; time?: string; rotation?: number }; thumbnailLink?: string; trashed?: boolean;
+  size?: string; imageMediaMetadata?: { width?: number; height?: number; time?: string; rotation?: number };
+  videoMediaMetadata?: { width?: number; height?: number; durationMillis?: string }; thumbnailLink?: string; trashed?: boolean;
 }
 type Sharing = Pick<DriveFile, "permissions" | "anyoneWithLink" | "domains">;
 
 const PERM_FIELDS = "emailAddress,role,type,domain";
-const FILE_FIELDS = `id,name,mimeType,owners(emailAddress),parents,permissions(${PERM_FIELDS}),createdTime,modifiedTime,webViewLink,size,imageMediaMetadata(width,height,time,rotation),thumbnailLink,trashed`;
+const FILE_FIELDS = `id,name,mimeType,owners(emailAddress),parents,permissions(${PERM_FIELDS}),createdTime,modifiedTime,webViewLink,size,imageMediaMetadata(width,height,time,rotation),videoMediaMetadata(width,height,durationMillis),thumbnailLink,trashed`;
 const ALL_DRIVES = { supportsAllDrives: "true" };
 /** Drive query string literal. */
 const lit = (v: string) => `'${v.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
@@ -159,6 +165,10 @@ function toFile(f: GFile): DriveFile {
       width: f.imageMediaMetadata.width, height: f.imageMediaMetadata.height,
       ...(f.imageMediaMetadata.time ? { time: f.imageMediaMetadata.time } : {}), ...(f.imageMediaMetadata.rotation !== undefined ? { rotation: f.imageMediaMetadata.rotation } : {}),
     } } : {}),
+    ...(f.videoMediaMetadata?.width && f.videoMediaMetadata.height ? { video: {
+      width: f.videoMediaMetadata.width, height: f.videoMediaMetadata.height,
+      ...(f.videoMediaMetadata.durationMillis ? { durationMs: Number(f.videoMediaMetadata.durationMillis) } : {}),
+    } } : {}),
     ...(f.thumbnailLink ? { thumbnailLink: f.thumbnailLink } : {}), ...(f.trashed !== undefined ? { trashed: f.trashed } : {}),
   };
 }
@@ -166,7 +176,9 @@ function toFile(f: GFile): DriveFile {
 /** Drive's query for list(): any of the parents, not trashed, and the kind. */
 export function listQuery(parents: string[], kind: DriveListOpts["kind"]): string {
   const q = `(${parents.map((p) => `${lit(p)} in parents`).join(" or ")}) and trashed = false`;
-  if (kind === "images") return `${q} and (mimeType contains 'image/' or name contains '.heic' or name contains '.HEIC' or name contains '.heif')`;
+  const images = "mimeType contains 'image/' or name contains '.heic' or name contains '.HEIC' or name contains '.heif'";
+  if (kind === "images") return `${q} and (${images})`;
+  if (kind === "media") return `${q} and (${images} or mimeType contains 'video/' or name contains '.mp4' or name contains '.MP4' or name contains '.mov' or name contains '.MOV')`;
   if (kind === "folders") return `${q} and mimeType = '${FOLDER_MIME}'`;
   return q;
 }

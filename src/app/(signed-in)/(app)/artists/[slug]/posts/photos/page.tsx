@@ -11,7 +11,7 @@ import { PostsTabs } from "@/components/posts/PostsTabs";
 import { PhotoGrid, type GridPhoto } from "@/components/posts/PhotoGrid";
 import { AddToDraftDialog } from "@/components/posts/AddToDraftDialog";
 import { dayLabels, groupByDay, type LabelRehearsal, type LabelShow } from "@/lib/photoDays";
-import { PHOTO_TYPES, PHOTOS_ONLY, photoType } from "@/lib/photos";
+import { MEDIA_ONLY, PHOTO_TYPES, VIDEO_TYPES, mediaType } from "@/lib/photos";
 
 interface Folder { id: string; name: string; parentId: string; count: number }
 interface Photos { folders: Folder[]; photos: GridPhoto[]; capped: boolean }
@@ -20,8 +20,8 @@ interface Photos { folders: Folder[]; photos: GridPhoto[]; capped: boolean }
 export default function PhotosPage() { return <AdminOnly><Suspense fallback={null}><PhotosTab /></Suspense></AdminOnly>; }
 
 /**
- * Posts › Photos: the Socials inbox (every folder under Socials except Posts/), grouped by the day each photo was taken and
- * labelled with that day's shows and rehearsals. A rail picks a folder; photos are picked in order, and Add to carousel draft
+ * Posts › Photos: the Socials inbox's photos and videos (every folder under Socials except Posts/), grouped by the day each
+ * was taken and labelled with that day's shows and rehearsals. A rail picks a folder; photos are picked in order, and Add to carousel draft
  * makes a draft of them (or adds them to one). Opened from the editor's Add photos (`?draft=<id>`), the bar adds to that draft.
  */
 function PhotosTab() {
@@ -60,10 +60,10 @@ function PhotosTab() {
   return (
     <div className="grid gap-5 pb-20">
       <PageTitle title="Social Media" center actions={
-        <Upload<{ driveFileId: string }> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ".heic", ".heif"].join(",")} testid="photos-upload" disabled={!setUp}
+        <Upload<{ driveFileId: string }> url="/api/posts/upload" label="Upload" accept={[...PHOTO_TYPES, ...VIDEO_TYPES, ".heic", ".heif", ".mov", ".mp4"].join(",")} testid="photos-upload" disabled={!setUp}
           tooBig="Put it in the Socials folder in Drive instead."
           needsFolder={<Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link>}
-          check={(f) => (photoType(f.name, f.type) ? null : PHOTOS_ONLY)}
+          check={(f) => (mediaType(f.name, f.type) ? null : MEDIA_ONLY)}
           onUploaded={load} />
       } />
       <PostsTabs at="photos" />
@@ -74,13 +74,13 @@ function PhotosTab() {
           <div className="grid content-start gap-4">
             {data.capped && <p className="s m-0" data-testid="photos-capped">Showing the 2,000 most recently added.</p>}
             {data.photos.length === 0
-              ? <p className="s m-0" data-testid="photos-none">No photos here yet. Add them to the Socials folder in Drive, or upload one.</p>
+              ? <p className="s m-0" data-testid="photos-none">No photos or videos here yet. Add them to the Socials folder in Drive, or upload one.</p>
               : <PhotoGrid days={days} selected={selected} onChange={setSelected} />}
           </div>
         </div>
       )}
       {selected.length > 0 && (
-        <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-3 border-t border-line bg-surface px-4 py-3 shadow-lg" role="region" aria-label="Picked photos" data-testid="photos-bar">
+        <div className="sticky bottom-0 z-10 -mx-4 flex items-center gap-3 border-t border-line bg-surface px-4 py-3 shadow-lg" role="region" aria-label="Picked photos and videos" data-testid="photos-bar">
           <b data-testid="photos-picked">{selected.length} picked</b>
           {!setUp && <span className="s" data-testid="photos-not-set-up"><Link href="/admin/google" className="underline">Set up the Socials folder in Settings › Google</Link></span>}
           {add.error && <span className="err" role="alert" data-testid="photos-add-error">{add.error}</span>}

@@ -7,10 +7,11 @@ import { runCommand } from "@/lib/commands";
 import { fmtInstant } from "@/lib/timezone";
 import { PostsTabs } from "@/components/posts/PostsTabs";
 import type { MetaStatus } from "@/components/posts/MetaCard";
+import { postKind } from "@/lib/photos";
 
 /** A post as posts.list returns it. */
 interface PostRow {
-  id: string; title?: string; status: "draft" | "publishing" | "posted" | "failed"; postedAt?: string; count: number; thumb?: string;
+  id: string; title?: string; status: "draft" | "publishing" | "posted" | "failed"; postedAt?: string; count: number; videos: number; thumb?: string;
   permalink?: string | null; error?: string; driveTidy?: { error: string };
 }
 
@@ -70,7 +71,7 @@ function PostSection({ title, testid, rows, empty, onTidied }: { title: string; 
             <span className="grid min-w-0 flex-1 gap-0.5">
               <Link href={`/posts/${p.id}`} className="truncate font-bold no-underline hover:underline" data-testid="post-title">{p.title ?? <i className="s">Untitled</i>}</Link>
               <span className="s" data-testid="post-meta">
-                {p.count === 1 ? "1 photo" : `${p.count} photos`}
+                {postKind(p.count, p.videos)}
                 {p.status === "draft" && " · Draft"}
                 {p.postedAt && ` · Posted ${fmtInstant(p.postedAt)}`}
               </span>

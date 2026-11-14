@@ -7,8 +7,10 @@
  * exercised for real. POST /__scenario sets what the next sign-in finds:
  * { scenario: one | several | none | personal | declined | cancel, kind, systemExpiresIn (seconds, 0 = never), revoked,
  *   failContainers, fetchMedia, failItem (the nth carousel item container from now fails), ageHours (makes every token issued so
- *   far that many hours older) }. Containers take alt_text (images only, 1,000 characters), is_carousel_item, and
- *   media_type=CAROUSEL with 2–10 finished item children.
+ *   far that many hours older), videoPolls (how many status checks a video container answers IN_PROGRESS before it's
+ *   FINISHED; default 1), finishVideos (every video container still processing is done at its next check) }. Containers take alt_text (images only, 1,000 characters), is_carousel_item, media_type=REELS (a
+ *   video_url and the caption), media_type=VIDEO with is_carousel_item (a carousel's video), and media_type=CAROUSEL with
+ *   2–10 finished item children. A video container fetches its video_url like an image container its image_url.
  */
 import { defineFake, runIfMain, esc, HttpError, type Route } from "../lib";
 
@@ -16,13 +18,20 @@ export type MetaScenario = "one" | "several" | "none" | "personal" | "declined" 
 type Kind = "system" | "instagram";
 interface Token { token: string; kind: Kind; long: boolean; issuedAt: number; expiresAt: number /* 0 = never */ }
 interface Container {
-  id: string; igId: string; imageUrl: string; caption: string; status_code: "FINISHED" | "ERROR" | "PUBLISHED"; status: string;
+  id: string; igId: string; imageUrl: string; caption: string; status_code: "IN_PROGRESS" | "FINISHED" | "ERROR" | "PUBLISHED"; status: string;
+  /** A Reel or a carousel's video: its video_url, and how many more status checks answer IN_PROGRESS. */
+  videoUrl?: string; reel?: boolean; polls?: number;
   /** An image container that is one photo of a carousel (is_carousel_item=true). */
   item?: boolean; alt?: string;
   /** A carousel container (media_type=CAROUSEL): its item containers, in order. */
   children?: string[];
 }
-interface Media { id: string; igId: string; caption: string; imageUrl: string; permalink: string; at: string; children?: { imageUrl: string; alt?: string }[]; alt?: string }
+interface Media {
+  id: string; igId: string; caption: string; imageUrl: string; permalink: string; at: string; alt?: string;
+  /** IMAGE, REELS (one video) or CAROUSEL_ALBUM, as Graph's media_product_type/media_type says. videoUrl: a Reel's video. */
+  type: "IMAGE" | "REELS" | "CAROUSEL_ALBUM"; videoUrl?: string;
+  children?: { imageUrl: string; videoUrl?: string; alt?: string }[];
+}
 export interface MetaState {
   seq: number;
   scenario: MetaScenario;
@@ -38,6 +47,8 @@ export interface MetaState {
   /** The nth carousel item container from now ends in ERROR (1 = the next one). */
   failItem?: number;
   items?: number;
+  /** How many status checks a new video container answers IN_PROGRESS (default 1). */
+  videoPolls?: number;
   tokens: Token[];
   containers: Container[];
   media: Media[];
@@ -95,8 +106,27 @@ const content = (prefix: string): Route<MetaState>[] => [
       s.containers.push(c);
       return { id: c.id };
     }
-    if (!body.image_url) return graphError("The parameter image_url is required.");
     const item = body.is_carousel_item === "true";
+    if (body.media_type === "REELS" || body.media_type === "VIDEO") {
+      if (body.media_type === "VIDEO" && !item) return graphError("The VIDEO media type is no longer supported for a feed post. Use REELS.", 9004);
+      if (body.media_type === "REELS" && item) return graphError("A Reel can't be a carousel item: use media_type=VIDEO.");
+      if (!body.video_url) return graphError("The parameter video_url is required.");
+      if (body.image_url) return graphError("A video container takes video_url, not image_url.");
+      if (body.alt_text) return graphError("alt_text is only supported on image containers.");
+      if (item && body.caption) return graphError("A carousel item can't have a caption.");
+      const c: Container = { id: `container-${++s.seq}`, igId: params.igId, imageUrl: "", videoUrl: body.video_url, caption: body.caption ?? "", status_code: "IN_PROGRESS", status: "In Progress",
+        polls: s.videoPolls ?? 1, ...(item ? { item } : { reel: true }) };
+      const failItem = item && s.failItem !== undefined && ++s.items! === s.failItem;
+      if (s.failContainers || failItem) Object.assign(c, { status_code: "ERROR", status: "Error: The video's duration is not supported.", polls: 0 });
+      else if (s.fetchMedia) {
+        const res = await fetch(body.video_url).catch(() => null);
+        const ok = !!res?.ok && !!res.headers.get("content-type")?.startsWith("video/") && (await res.arrayBuffer()).byteLength > 0;
+        if (!ok) Object.assign(c, { status_code: "ERROR", status: "Error: Media download has failed. The media URI doesn't meet our requirements.", polls: 0 });
+      }
+      s.containers.push(c);
+      return { id: c.id };
+    }
+    if (!body.image_url) return graphError("The parameter image_url is required.");
     if (item && body.caption) return graphError("A carousel item can't have a caption.");
     const c: Container = { id: `container-${++s.seq}`, igId: params.igId, imageUrl: body.image_url, caption: body.caption ?? "", status_code: "FINISHED", status: "Finished: Media has been uploaded and it is ready to be published.",
       ...(item ? { item } : {}), ...(body.alt_text ? { alt: body.alt_text } : {}) };
@@ -116,8 +146,9 @@ const content = (prefix: string): Route<MetaState>[] => [
     if (!c || c.status_code !== "FINISHED" || c.item) return graphError("Media ID is not available", 9007);
     c.status_code = "PUBLISHED";
     const kids = c.children?.map((id) => s.containers.find((x) => x.id === id)!);
-    const m: Media = { id: `media-${++s.seq}`, igId: c.igId, caption: c.caption, imageUrl: kids ? kids[0].imageUrl : c.imageUrl, permalink: `https://www.instagram.com/p/FAKE${s.seq}/`, at: new Date().toISOString(),
-      ...(kids ? { children: kids.map((k) => ({ imageUrl: k.imageUrl, ...(k.alt ? { alt: k.alt } : {}) })) } : {}), ...(c.alt ? { alt: c.alt } : {}) };
+    const m: Media = { id: `media-${++s.seq}`, igId: c.igId, caption: c.caption, imageUrl: kids ? kids[0].imageUrl : c.imageUrl, permalink: `https://www.instagram.com/${c.reel ? "reel" : "p"}/FAKE${s.seq}/`, at: new Date().toISOString(),
+      type: kids ? "CAROUSEL_ALBUM" : c.reel ? "REELS" : "IMAGE", ...(c.reel ? { videoUrl: c.videoUrl } : {}),
+      ...(kids ? { children: kids.map((k) => ({ imageUrl: k.imageUrl, ...(k.videoUrl ? { videoUrl: k.videoUrl } : {}), ...(k.alt ? { alt: k.alt } : {}) })) } : {}), ...(c.alt ? { alt: c.alt } : {}) };
     s.media.push(m);
     return { id: m.id };
   }],
@@ -127,6 +158,8 @@ const content = (prefix: string): Route<MetaState>[] => [
     if (isErr(t)) return t;
     if (IG[params.id]) return s.scenario === "personal" ? PERSONAL : { id: params.id, username: IG[params.id] };
     const c = s.containers.find((x) => x.id === params.id);
+    if (c?.status_code === "IN_PROGRESS" && !(c.polls! > 0)) Object.assign(c, { status_code: "FINISHED", status: "Finished: Media has been uploaded and it is ready to be published." });
+    if (c?.status_code === "IN_PROGRESS") c.polls!--;
     if (c) return { id: c.id, status_code: c.status_code, status: c.status };
     const m = s.media.find((x) => x.id === params.id);
     if (m) return { id: m.id, permalink: m.permalink };
@@ -201,7 +234,8 @@ const routes: Route<MetaState>[] = [
   // For tests: what's been published (each carousel with its photos' URLs and alt text, in order).
   ["GET", "/__media", (_req, s) => ({ media: s.media })],
   ["POST", "/__scenario", ({ body }, s) => {
-    for (const k of ["scenario", "kind", "systemExpiresIn", "revoked", "failContainers", "fetchMedia"] as const) if (body[k] !== undefined) (s as unknown as Record<string, unknown>)[k] = body[k];
+    for (const k of ["scenario", "kind", "systemExpiresIn", "revoked", "failContainers", "fetchMedia", "videoPolls"] as const) if (body[k] !== undefined) (s as unknown as Record<string, unknown>)[k] = body[k];
+    if (body.finishVideos) for (const c of s.containers) if (c.status_code === "IN_PROGRESS") c.polls = 0;
     if (body.failItem !== undefined) { s.failItem = Number(body.failItem) || undefined; s.items = 0; }
     if (body.ageHours) for (const t of s.tokens) t.issuedAt -= Number(body.ageHours) * 60 * 60_000;
     return { ok: true };
@@ -214,6 +248,6 @@ export const fakeMeta = defineFake<MetaState>({
   name: "fake-meta", defaultPort: 3208, initial, routes, formApi: true,
   page: (s) => `<p>Scenario: <b>${esc(s.scenario)}</b> · ${esc(s.kind)} token${s.revoked ? " · revoked" : ""}${s.failContainers ? " · containers fail" : ""}</p>
 <h2>Published</h2><table><tr><th>Id</th><th>Account</th><th>Caption</th><th>Image URL</th><th>At</th></tr>${s.media.slice().reverse().map((m) =>
-    `<tr><td>${esc(m.id)}</td><td>@${esc(IG[m.igId])}</td><td><pre>${esc(m.caption)}</pre></td><td>${(m.children ?? [{ imageUrl: m.imageUrl, alt: m.alt }]).map((k) => `${esc(k.imageUrl.split("?")[0])}${k.alt ? ` (alt: ${esc(k.alt)})` : ""}`).join("<br>")}</td><td>${esc(m.at)}</td></tr>`).join("")}</table>`,
+    `<tr><td>${esc(m.id)}</td><td>@${esc(IG[m.igId])}</td><td><pre>${esc(m.caption)}</pre></td><td>${(m.children ?? [{ imageUrl: m.imageUrl, videoUrl: m.videoUrl, alt: m.alt }]).map((k) => `${esc((k.videoUrl || k.imageUrl).split("?")[0])}${k.videoUrl ? " (video)" : ""}${k.alt ? ` (alt: ${esc(k.alt)})` : ""}`).join("<br>")}</td><td>${esc(m.at)}</td></tr>`).join("")}</table>`,
 });
 runIfMain(import.meta, fakeMeta);

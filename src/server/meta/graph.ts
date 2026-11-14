@@ -136,6 +136,15 @@ export const graph = {
   /** One photo of a carousel: an image container with is_carousel_item (no caption; the carousel has it). */
   createCarouselItem: (igId: string, t: Tok, imageUrl: string, alt?: string) =>
     api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { image_url: imageUrl, is_carousel_item: "true", alt_text: alt || undefined }),
+  /**
+   * A Reel (a one-video post): media_type=REELS with the video's URL and the caption. share_to_feed puts it on the profile
+   * grid as well as the Reels tab. alt_text isn't supported on Reels.
+   */
+  createReel: (igId: string, t: Tok, videoUrl: string, caption: string) =>
+    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { media_type: "REELS", video_url: videoUrl, caption, share_to_feed: "true" }),
+  /** One video of a carousel: media_type=VIDEO with is_carousel_item (no caption, no alt text). */
+  createCarouselVideo: (igId: string, t: Tok, videoUrl: string) =>
+    api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { media_type: "VIDEO", video_url: videoUrl, is_carousel_item: "true" }),
   /** The carousel container: 2–10 finished item containers, in order, with the caption. */
   createCarousel: (igId: string, t: Tok, children: string[], caption: string) =>
     api<{ id: string }>(t, "POST", `/${encodeURIComponent(igId)}/media`, { media_type: "CAROUSEL", children: children.join(","), caption }),

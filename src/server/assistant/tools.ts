@@ -362,16 +362,17 @@ async function labelFor(s: Session, name: string, input: unknown): Promise<strin
   } catch { return undefined; }
 }
 
-/** A post's card names it: its title, how many photos, and the photo being taken out (posts aren't records.get kinds). */
+/** A post's card names it: its title, how many photos and videos, and the one being taken out (posts aren't records.get kinds). */
 const POST_CARDS = /^posts\.(publish|deleteDraft|removeFromDraft)$/;
 async function fillPost(s: Session, input: unknown): Promise<{ input: unknown; before?: Row }> {
   const i = (input ?? {}) as Row;
   if (typeof i.id !== "string") return { input };
   const p = await db.get("posts", i.id).catch(() => null);
   if (!p || p.deletedAt || p.artistId !== s.artistId) return { input };
-  const media = (p.media ?? []) as { driveFileId: string; name?: string }[];
+  const media = (p.media ?? []) as { driveFileId: string; name?: string; mimeType?: string }[];
   const photo = media.find((m) => m.driveFileId === i.driveFileId)?.name?.replace(/\.[^.]+$/, "");
-  return { input, before: { ...(p.title ? { title: p.title } : {}), count: media.length, ...(photo ? { photo } : {}) } };
+  const videos = media.filter((m) => m.mimeType?.startsWith("video/")).length;
+  return { input, before: { ...(p.title ? { title: p.title } : {}), count: media.length, ...(videos ? { videos } : {}), ...(photo ? { photo } : {}) } };
 }
 
 /** Partial nested patches (one time, one address line) are filled from the record: the commands replace the whole object. null removes a key. */

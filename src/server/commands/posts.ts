@@ -3,11 +3,13 @@
  * docs/designs/posts-carousels/folder-model.md: the inbox, plus Socials/Posts with one folder per post. posts.setup makes
  * Posts/ and lets the band add to Socials. Photos are picked from the inbox (posts.photos) into a draft (posts.createDraft),
  * which moves them into Posts/DRAFT - <title>; the editor changes the draft (updateDraft: Firestore only) and the commands
- * that move or rename in Drive can't be undone (src/server/undo.ts). posts.publish posts a draft to the band's Instagram now,
- * as one photo or a carousel, then renames its folder YYYY-MM-DD - <title>. Meta fetches each photo from a signed URL on our
- * server (src/server/meta/media.ts), which renders it from Drive, so nothing outside Drive keeps a copy. Photos uploaded on
- * Posts go to Drive first (/api/posts/upload), into the Socials root.
+ * that move or rename in Drive can't be undone (src/server/undo.ts). Videos (MP4, MOV) go through the same steps as photos.
+ * posts.publish posts a draft to the band's Instagram now, as one photo, a Reel (one video) or a carousel of photos and
+ * videos, then renames its folder YYYY-MM-DD - <title>. Meta fetches each photo and video from a signed URL on our server
+ * (src/server/meta/media.ts), which renders it from Drive, so nothing outside Drive keeps a copy. Files uploaded on Posts go
+ * to Drive first (/api/posts/upload), into the Socials root.
  */
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { db } from "../db";
@@ -20,7 +22,7 @@ import { findOrMakeFolder } from "../driveFolders";
 import { POSTS_FOLDER_NAME, inboxFolders, isEmpty, listAll, moveBack, moveInto, socialsOf, uniqueName } from "../postFolder";
 import { thumbUrl } from "../signedUrl";
 import { dateInBandZone, dateTimeInBandZone } from "@/lib/timezone";
-import { HASHTAG_MAX, PHOTOS_ONLY, hashtagCount, photoType } from "@/lib/photos";
+import { HASHTAG_MAX, MEDIA_ONLY, hashtagCount, isVideo, mediaType, videoProblem } from "@/lib/photos";
 import { HEIC_PREVIEW, fromPreview, noPreview } from "../postPhoto";
 import { postStatus, type PostMedia } from "@/schema/posts";
 import { graph, GraphError, type Tok } from "../meta/graph";
@@ -64,9 +66,12 @@ export const postsSetup = defineCommand({
 
 // ---------- reading: the inbox's photos, and the posts ----------
 
-/** A photo in the inbox, as Posts › Photos shows it. width/height are upright; takenAt is "YYYY-MM-DD HH:MM", camera-local. */
+/**
+ * A photo or video in the inbox, as Posts › Photos shows it. width/height are upright; takenAt is "YYYY-MM-DD HH:MM",
+ * camera-local; durationMs is a video's length, when Drive knows it.
+ */
 export interface Photo {
-  driveFileId: string; name: string; mimeType: string; width?: number; height?: number; takenAt: string; folderId: string; thumb: string;
+  driveFileId: string; name: string; mimeType: string; width?: number; height?: number; durationMs?: number; takenAt: string; folderId: string; thumb: string;
 }
 export interface PhotoFolder { id: string; name: string; parentId: string; count: number }
 
@@ -81,13 +86,21 @@ const exifTime = (t?: string) => {
   return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : null;
 };
 
-/** A Drive photo as a Photo: upright size (an odd rotation swaps width and height), when it was taken, and a signed thumbnail. */
-function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: string): Photo {
+/** Upright size: an odd rotation swaps a photo's width and height; a video's are as Drive says. */
+const sizeOf = (f: DriveFile) => {
   const im = f.image, odd = (im?.rotation ?? 0) % 2 === 1;
+  if (im) return { width: odd ? im.height : im.width, height: odd ? im.width : im.height };
+  return f.video ? { width: f.video.width, height: f.video.height } : {};
+};
+
+/** A Drive photo or video as a Photo: upright size, a video's length, when it was taken, and a signed thumbnail. */
+function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: string): Photo {
+  const im = f.image;
   const created = Date.parse(f.createdAt);
   return {
     driveFileId: f.id, name: f.name, mimeType,
-    ...(im ? { width: odd ? im.height : im.width, height: odd ? im.width : im.height } : {}),
+    ...sizeOf(f),
+    ...(f.video?.durationMs !== undefined ? { durationMs: f.video.durationMs } : {}),
     takenAt: exifTime(im?.time) ?? (Number.isNaN(created) ? "" : dateTimeInBandZone(new Date(created))),
     folderId, thumb: thumbUrl(artistId, f.id, f.modifiedTime, 400),
   };
@@ -95,8 +108,8 @@ function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: str
 
 export const postsPhotos = defineCommand({
   name: "posts.photos", roles: ["admin", "mcp"],
-  description: "The photos in the band's Socials inbox (Socials and every folder under it except Posts, where photos already used in a post live), newest added first, at most the 2,000 most recently added. " +
-    "Also lists the inbox folders, each with how many photos it holds itself. Give `folder` (a folder id) for that folder and its subfolders only. Each photo says when it was taken (camera time) and which folder it's in.",
+  description: "The photos and videos in the band's Socials inbox (Socials and every folder under it except Posts, where those already used in a post live), newest added first, at most the 2,000 most recently added. " +
+    "Also lists the inbox folders, each with how many photos and videos it holds itself. Give `folder` (a folder id) for that folder and its subfolders only. Each says when it was taken (camera time) and which folder it's in; a video (mimeType video/*) says how long it is (durationMs) when Drive knows.",
   input: z.strictObject({ folder: z.string().min(1).optional() }),
   async run(ctx, { folder }) {
     const artistId = artistOf(ctx);
@@ -114,8 +127,8 @@ export const postsPhotos = defineCommand({
     const known = new Set([socialsId, ...all.map((f) => f.id)]), wanted = new Set(within);
     const counts = new Map<string, number>();
     const photos: (Photo & { addedAt: string })[] = [];
-    for (const f of await listAll(drive, [...known], "images", "createdTime desc")) {
-      const mimeType = photoType(f.name, f.mimeType), folderId = f.parents.find((p) => known.has(p));
+    for (const f of await listAll(drive, [...known], "media", "createdTime desc")) {
+      const mimeType = mediaType(f.name, f.mimeType), folderId = f.parents.find((p) => known.has(p));
       if (!mimeType || !folderId) continue;
       counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
       if (wanted.has(folderId)) photos.push({ ...photoOf(artistId, f, mimeType, folderId), addedAt: f.createdAt });
@@ -131,11 +144,12 @@ export const postsPhotos = defineCommand({
 });
 
 /**
- * A post in the Posts tab's lists. thumb is the first photo's, signed from its stored modifiedTime (no Drive call).
- * driveFolderId is its folder in Socials/Posts: a draft without one (a #49 post not migrated yet) can't take photos.
+ * A post in the Posts tab's lists. count is how many photos and videos it has, videos how many of them are videos (one
+ * video alone is a Reel). thumb is the first item's, signed from its stored modifiedTime (no Drive call). driveFolderId is its
+ * folder in Socials/Posts: a draft without one (a #49 post not migrated yet) can't take photos.
  */
 export interface PostRow {
-  id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; thumb?: string; driveFolderId?: string;
+  id: string; title?: string; status: z.infer<typeof postStatus>; postedAt?: string; count: number; videos: number; thumb?: string; driveFolderId?: string;
   permalink?: string | null; error?: string; driveTidy?: { error: string };
 }
 
@@ -143,7 +157,7 @@ const millis = (t: unknown) => (t as { toMillis?(): number } | undefined)?.toMil
 
 export const postsList = defineCommand({
   name: "posts.list", roles: ["admin", "mcp"],
-  description: "The band's posts made in Roadie: `drafts` (drafts, failed posts and any being posted right now, most recently changed first) and `posts` (posted to Instagram, newest first), each with its title, status, photo count, Instagram link and any error.",
+  description: "The band's posts made in Roadie: `drafts` (drafts, failed posts and any being posted right now, most recently changed first) and `posts` (posted to Instagram, newest first), each with its title, status, how many photos and videos it has (count) and how many are videos (one video alone is a Reel), Instagram link and any error.",
   input: z.strictObject({}),
   async run(ctx) {
     const artistId = artistOf(ctx);
@@ -151,7 +165,7 @@ export const postsList = defineCommand({
     const rowOf = (d: Record<string, unknown>): PostRow => {
       const media = (d.media as PostMedia[] | undefined) ?? [], first = media[0];
       return {
-        id: d.id as string, status: d.status as PostRow["status"], count: media.length,
+        id: d.id as string, status: d.status as PostRow["status"], count: media.length, videos: media.filter((m) => isVideo(m.mimeType)).length,
         ...(d.title ? { title: d.title as string } : {}),
         ...(d.postedAt ? { postedAt: d.postedAt as string } : {}),
         ...(d.driveFolderId ? { driveFolderId: d.driveFolderId as string } : {}),
@@ -168,19 +182,50 @@ export const postsList = defineCommand({
   },
 });
 
-/** How long to wait for Instagram to take the photo. Tests shorten it. */
-export const publishTiming = { pollMs: 1500, tries: 40 };
+/**
+ * How often publish asks Instagram whether its containers are ready, and how long it waits in all: under App Hosting's
+ * 60-second request limit, since a video can take Instagram minutes. Tests shorten them.
+ */
+export const publishTiming = { pollMs: 1500, waitMs: 45_000 };
 
-/** Wait until the container is FINISHED; ERROR or EXPIRED fail with Instagram's status text. */
-async function finished(containerId: string, token: Tok) {
-  for (let i = 0; i < publishTiming.tries; i++) {
-    const c = await graph.container(containerId, token);
-    if (c.status_code === "FINISHED") return;
-    if (c.status_code === "ERROR" || c.status_code === "EXPIRED") throw new GraphError(400, `Instagram couldn't take the photo: ${c.status || c.status_code}`);
+/** Said when Instagram hadn't finished by publishTiming.waitMs; the containers are kept (Post.pending) for the next try. */
+export const STILL_PROCESSING = "Instagram is still processing it. Post it again in a minute or two to finish: Roadie picks up where it left off";
+
+/** Instagram hadn't finished the containers by the deadline. */
+class StillProcessing extends Error {}
+/** A container Instagram couldn't use, with the photo's or video's name. */
+class ItemError extends GraphError {
+  constructor(public label: string | undefined, message: string) { super(400, message); }
+}
+
+/** A container to wait for, and the photo or video it's for (none for the carousel itself). */
+interface Waiting { id: string; label?: string; video?: boolean }
+
+/**
+ * Wait until every container is FINISHED, asking about the unfinished ones each round, until `deadline` (StillProcessing).
+ * ERROR or EXPIRED fail with Instagram's status text and the item's name.
+ */
+async function finished(items: Waiting[], token: Tok, deadline: number) {
+  let left = items;
+  for (;;) {
+    const next: Waiting[] = [];
+    for (const it of left) {
+      const c = await graph.container(it.id, token);
+      if (c.status_code === "FINISHED") continue;
+      if (c.status_code === "ERROR" || c.status_code === "EXPIRED") throw new ItemError(it.label, `Instagram couldn't take the ${it.video ? "video" : "photo"}: ${c.status || c.status_code}`);
+      next.push(it);
+    }
+    left = next;
+    if (!left.length) return;
+    if (Date.now() + publishTiming.pollMs > deadline) throw new StillProcessing();
     await new Promise((r) => setTimeout(r, publishTiming.pollMs));
   }
-  throw new GraphError(504, "Instagram is still working on the photo. Check Instagram in a few minutes before posting it again.");
 }
+
+/** What a post's containers are made from (caption, shape, and each item with its version, alt text and crop), hashed: Post.pending.key. */
+const pendingKey = (p: PostDoc) => createHash("sha256").update(JSON.stringify([
+  p.caption ?? "", (p as { aspect?: string }).aspect ?? "4:5", p.media.map((m) => [m.driveFileId, m.modifiedTime ?? "", m.alt ?? "", m.focus ?? null]),
+])).digest("base64url");
 
 // ---------- drafts: one folder per post in Socials/Posts ----------
 
@@ -189,13 +234,16 @@ export const PUBLISHING_LOCKED = "This post is being posted right now";
 export const NO_FOLDER = "This post has no folder in Drive yet; run the #49 migration first";
 export const DELETE_INSTEAD = "Delete the draft instead";
 export const MAX_PHOTOS = 10;
-export const TOO_MANY = "A post holds at most 10 photos";
+export const TOO_MANY = "A post holds at most 10 photos and videos";
 export const TOO_MANY_HASHTAGS = "A caption can have at most 30 hashtags";
 
 /** A photo's name as Roadie says it: the file name without its extension ("IMG_4410"). */
 export const photoLabel = (name?: string) => (name ?? "That photo").replace(/\.[^.]+$/, "");
 
-type PostDoc = Record<string, unknown> & { id: string; artistId: string; title?: string; status: string; media: PostMedia[]; driveFolderId?: string; caption: string; rev?: number };
+type PostDoc = Record<string, unknown> & {
+  id: string; artistId: string; title?: string; status: string; media: PostMedia[]; driveFolderId?: string; caption: string; rev?: number;
+  pending?: { key: string; creationId?: string; children?: string[] };
+};
 
 /** The band's live post, or a 404. */
 async function postOf(ctx: Ctx, id: string): Promise<PostDoc> {
@@ -218,8 +266,8 @@ const draftFolder = (title: string) => `DRAFT - ${title}`;
 interface Picked { file: DriveFile; mimeType: string; from: string }
 
 /**
- * The checks createDraft and addToDraft make before anything moves: each photo is in the inbox (Socials or a folder under it
- * but not under Posts/), is a photo and isn't in the trash. A photo in a post's folder names that post. Nothing changes here.
+ * The checks createDraft and addToDraft make before anything moves: each file is in the inbox (Socials or a folder under it
+ * but not under Posts/), is a photo or video and isn't in the trash. A photo in a post's folder names that post. Nothing changes here.
  */
 async function pickable(drive: DriveService, artistId: string, ids: string[]): Promise<Picked[]> {
   const { socialsId } = await socialsOf(artistId);
@@ -244,8 +292,8 @@ async function pickable(drive: DriveService, artistId: string, ids: string[]): P
     }
     const n = photoLabel(f.name);
     if (f.trashed) throw new AppError("invalid_input", `${n} is in Drive's trash`, 400);
-    const mimeType = photoType(f.name, f.mimeType);
-    if (!mimeType) throw new AppError("invalid_input", `${n} isn't a photo. ${PHOTOS_ONLY}`, 400);
+    const mimeType = mediaType(f.name, f.mimeType);
+    if (!mimeType) throw new AppError("invalid_input", `${n} isn't a photo or video. ${MEDIA_ONLY}`, 400);
     const from = f.parents.find((p) => inbox.has(p));
     if (!from) {
       for (const parent of f.parents) {
@@ -259,13 +307,15 @@ async function pickable(drive: DriveService, artistId: string, ids: string[]): P
   return out;
 }
 
-/** What the post keeps about a photo it was given: the moved file (its modifiedTime is after the move). */
+/** What the post keeps about a photo or video it was given: the moved file (its modifiedTime is after the move). */
 function mediaOf(p: Picked, moved: DriveFile): PostMedia {
-  const im = moved.image ?? p.file.image, odd = (im?.rotation ?? 0) % 2 === 1;
+  const f: DriveFile = { ...p.file, image: moved.image ?? p.file.image, video: moved.video ?? p.file.video };
   return {
     driveFileId: p.file.id, mimeType: p.mimeType, name: p.file.name,
     ...(p.file.webViewLink ? { url: p.file.webViewLink } : {}),
-    ...(im ? { width: odd ? im.height : im.width, height: odd ? im.width : im.height } : {}),
+    ...sizeOf(f),
+    ...(f.video?.durationMs !== undefined ? { durationMs: f.video.durationMs } : {}),
+    ...(isVideo(p.mimeType) && f.size !== undefined ? { bytes: f.size } : {}),
     ...((moved.modifiedTime ?? p.file.modifiedTime) ? { modifiedTime: (moved.modifiedTime ?? p.file.modifiedTime)! } : {}),
     from: { folderId: p.from },
   };
@@ -292,7 +342,7 @@ const ids = z.array(z.string().min(1)).min(1).max(MAX_PHOTOS);
 
 export const postsGet = defineCommand({
   name: "posts.get", roles: ["admin", "mcp"],
-  description: "One post with its photos in carousel order, each with a preview link and whether it's still in Drive (missing) or in Drive's trash (trashed). The post editor opens with this.",
+  description: "One post with its photos and videos in carousel order, each with a preview link and whether it's still in Drive (missing) or in Drive's trash (trashed). The post editor opens with this.",
   input: z.strictObject({ id: z.string().min(1) }),
   async run(ctx, { id }) {
     const artistId = artistOf(ctx);
@@ -325,8 +375,8 @@ export const postsGet = defineCommand({
 
 export const postsCreateDraft = defineCommand({
   name: "posts.createDraft", roles: ["admin", "mcp"],
-  description: "Make a draft post from 1–10 photos in the Socials inbox (driveFileIds, in carousel order): makes Socials/Posts/DRAFT - <title> in Drive and moves the photos into it, " +
-    "remembering the folder each came from. Refused, changing nothing, when a photo isn't in Socials or is already in another post. If a step fails, the moves are put back.",
+  description: "Make a draft post from 1–10 photos and videos in the Socials inbox (driveFileIds, in carousel order; one video alone posts as a Reel): makes Socials/Posts/DRAFT - <title> in Drive and moves them into it, " +
+    "remembering the folder each came from. Refused, changing nothing, when one isn't in Socials or is already in another post. If a step fails, the moves are put back.",
   input: z.strictObject({ title: z.string().trim().min(1).max(100), driveFileIds: ids }),
   async run(ctx, { title, driveFileIds }) {
     const artistId = artistOf(ctx);
@@ -352,7 +402,7 @@ export const postsCreateDraft = defineCommand({
 
 export const postsAddToDraft = defineCommand({
   name: "posts.addToDraft", roles: ["admin", "mcp"],
-  description: "Add photos from the Socials inbox to the end of a draft (at most 10 photos in all), moving them into the draft's folder in Drive. Same checks as createDraft; if a step fails, this call's moves are put back.",
+  description: "Add photos and videos from the Socials inbox to the end of a draft (at most 10 in all), moving them into the draft's folder in Drive. Same checks as createDraft; if a step fails, this call's moves are put back.",
   input: z.strictObject({ id: z.string().min(1), driveFileIds: ids }),
   async run(ctx, { id, driveFileIds }) {
     const artistId = artistOf(ctx);
@@ -378,7 +428,7 @@ const ItemEdit = z.strictObject({
 export const postsUpdateDraft = defineCommand({
   name: "posts.updateDraft", roles: ["admin", "mcp"],
   description: "Edit a draft (the editor autosaves through this): caption (at most 2,200 characters and 30 hashtags), aspect (4:5 or 1:1), order (every photo's driveFileId, in the new order) and items " +
-    "(driveFileId → { alt, focus }; send every photo's entry: alt is the alt text, \"\" clears it; focus {x,y} 0–1 is where the crop is centred). Changes only Roadie, never Drive.",
+    "(driveFileId → { alt, focus }; send every photo's entry: alt is the alt text, \"\" clears it; focus {x,y} 0–1 is where the crop is centred). A video isn't cropped and has no alt text on Instagram: its entry is ignored. Changes only Roadie, never Drive.",
   input: z.strictObject({
     id: z.string().min(1),
     patch: z.strictObject({
@@ -411,7 +461,7 @@ export const postsUpdateDraft = defineCommand({
       if (unknown) throw new AppError("invalid_input", `${unknown} isn't in this post`, 400);
       media = media.map((m) => {
         const e = patch.items![m.driveFileId];
-        if (!e) return m;
+        if (!e || isVideo(m.mimeType)) return m;
         const { alt: _a, focus: _f, ...rest } = m;
         const alt = e.alt !== undefined ? e.alt : m.alt, focus = e.focus !== undefined ? e.focus : m.focus;
         return { ...rest, ...(alt ? { alt } : {}), ...(focus ? { focus } : {}) };
@@ -530,7 +580,7 @@ async function tidyFolder(artistId: string, post: { driveFolderId?: string; post
   }
 }
 
-/** Instagram's reason, as the post keeps it: "Instagram …" as is, else "Instagram said: …", with the photo's name when it's one photo's. */
+/** Instagram's reason, as the post keeps it: "Instagram …" as is, else "Instagram said: …", with the item's name when it's one photo's or video's. */
 const graphReason = (e: GraphError, photo?: string) => {
   const msg = e.message.startsWith("Instagram") ? e.message : `Instagram said: ${e.message}`;
   return photo ? `${photo}: ${msg}` : msg;
@@ -538,8 +588,9 @@ const graphReason = (e: GraphError, photo?: string) => {
 
 export const postsPublish = defineCommand({
   name: "posts.publish", roles: ["admin", "mcp"],
-  description: "Post a draft (or a post that failed) to the band's Instagram now: one photo, or a carousel of 2–10 in the draft's order, each cropped to the post's shape (4:5 or square) around its focus, with its alt text and the caption. " +
-    "Renews the Instagram sign-in first when it's due. When it goes out, the post keeps its Instagram link and its folder in Drive is renamed YYYY-MM-DD - <title>. If Instagram refuses, the post is marked failed with the reason and Drive is left as it was; it can be posted again.",
+  description: "Post a draft (or a post that failed) to the band's Instagram now: one photo, a Reel (one video), or a carousel of 2–10 photos and videos in the draft's order. Photos are cropped to the post's shape (4:5 or square) around their focus, with their alt text; videos go as they are (a Reel is 3 seconds to 15 minutes, a carousel video 3 to 60 seconds). " +
+    "Renews the Instagram sign-in first when it's due. When it goes out, the post keeps its Instagram link and its folder in Drive is renamed YYYY-MM-DD - <title>. If Instagram refuses, the post is marked failed with the reason and Drive is left as it was; it can be posted again. " +
+    "A video Instagram is still processing after about 45 seconds leaves the post failed with `processing: true`: publish it again in a minute or two and it picks up where it left off.",
   input: z.strictObject({ id: z.string().min(1) }),
   async run(ctx, { id }) {
     const artistId = artistOf(ctx);
@@ -554,8 +605,19 @@ export const postsPublish = defineCommand({
       return p;
     });
     const drive = driveClient({ artistId });
+    const deadline = Date.now() + publishTiming.waitMs;
+    const carousel = post.media.length > 1, caption = post.caption ?? "";
+    // Containers an earlier publish made for this same post, still processing then: picked up rather than made again.
+    const key = pendingKey(post);
+    const prior = post.pending?.key === key ? post.pending : undefined;
+    const keep = (p: { creationId?: string; children?: string[] }) => db.update(ctx, "posts", id, { pending: { key, ...p } });
     let photo: string | undefined;
     try {
+      // Instagram's limits on a video, when Drive says how long and how big it is: say so now rather than after it's sent.
+      for (const m of post.media) {
+        const why = isVideo(m.mimeType) ? videoProblem(m, carousel) : null;
+        if (why) throw new GraphError(400, `Instagram won't take it: ${why}`);
+      }
       // A HEIC posts from Drive's preview: say so now if Drive hasn't made one yet, rather than Instagram's vaguer error.
       for (const m of post.media) {
         if (!fromPreview(m.mimeType)) continue;
@@ -565,29 +627,44 @@ export const postsPublish = defineCommand({
           throw e;
         }
       }
-      let creationId: string;
-      if (post.media.length === 1) {
-        const m = post.media[0];
+      photo = undefined;
+      let creationId = prior?.creationId;
+      if (!carousel) {
+        const m = post.media[0], video = isVideo(m.mimeType);
         photo = photoLabel(m.name);
-        creationId = (await graph.createImage(igId, token, signMediaUrl(artistId, id, 0), post.caption ?? "", m.alt)).id;
-        await finished(creationId, token);
-      } else {
-        const children: string[] = [];
-        for (const [i, m] of post.media.entries()) {
-          photo = photoLabel(m.name);
-          const c = await graph.createCarouselItem(igId, token, signMediaUrl(artistId, id, i), m.alt);
-          await finished(c.id, token);
-          children.push(c.id);
+        if (!creationId) {
+          const url = signMediaUrl(artistId, id, 0);
+          creationId = (video ? await graph.createReel(igId, token, url, caption) : await graph.createImage(igId, token, url, caption, m.alt)).id;
+          await keep({ creationId });
         }
+        await finished([{ id: creationId, label: photo, video }], token, deadline);
+      } else {
+        let children = prior?.children?.length === post.media.length ? prior.children : undefined;
+        if (!children) {
+          children = [];
+          for (const [i, m] of post.media.entries()) {
+            photo = photoLabel(m.name);
+            const url = signMediaUrl(artistId, id, i);
+            children.push((isVideo(m.mimeType) ? await graph.createCarouselVideo(igId, token, url) : await graph.createCarouselItem(igId, token, url, m.alt)).id);
+          }
+          photo = undefined;
+          creationId = undefined;
+          await keep({ children });
+        }
+        const kids = children;
+        await finished(kids.map((c, i) => ({ id: c, label: photoLabel(post.media[i].name), video: isVideo(post.media[i].mimeType) })), token, deadline);
         photo = undefined;
-        creationId = (await graph.createCarousel(igId, token, children, post.caption ?? "")).id;
-        await finished(creationId, token);
+        if (!creationId) {
+          creationId = (await graph.createCarousel(igId, token, kids, caption)).id;
+          await keep({ children: kids, creationId });
+        }
+        await finished([{ id: creationId }], token, deadline);
       }
       photo = undefined;
       const media = await graph.publish(igId, token, creationId);
       const permalink = (await graph.permalink(media.id, token).catch(() => ({ permalink: undefined }))).permalink ?? null;
       const postedAt = new Date().toISOString();
-      await db.update(ctx, "posts", id, { status: "posted", postedAt, instagram: { mediaId: media.id, permalink }, error: null });
+      await db.update(ctx, "posts", id, { status: "posted", postedAt, instagram: { mediaId: media.id, permalink }, error: null, pending: null });
       // Then Drive: the folder takes the posted name. If Drive refuses, the post is still posted, with Finish tidying Drive.
       const tidyError = await tidyFolder(artistId, { ...post, postedAt });
       if (tidyError) {
@@ -596,9 +673,14 @@ export const postsPublish = defineCommand({
       }
       return { status: "posted" as const, permalink };
     } catch (e) {
+      // Still processing: failed for now, keeping the containers for the next try.
+      if (e instanceof StillProcessing) {
+        await db.update(ctx, "posts", id, { status: "failed", error: STILL_PROCESSING });
+        return { status: "failed" as const, error: STILL_PROCESSING, processing: true };
+      }
       // Anything else still leaves the post failed (never stuck on publishing), then goes up as an error. Drive is untouched.
-      const error = e instanceof GraphError ? graphReason(e, photo) : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`;
-      await db.update(ctx, "posts", id, { status: "failed", error });
+      const error = e instanceof GraphError ? graphReason(e, e instanceof ItemError ? e.label : photo) : `Something went wrong: ${e instanceof Error ? e.message : String(e)}`;
+      await db.update(ctx, "posts", id, { status: "failed", error, pending: null });
       if (!(e instanceof GraphError)) throw e;
       return { status: "failed" as const, error };
     }

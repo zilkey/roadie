@@ -1,7 +1,8 @@
 /**
- * The signed media URLs Meta fetches a post's photos from: /api/posts/media/{postId}/{index}?exp=…&sig=…, signed with
- * src/server/signedUrl.ts (scope "media", the photo's index in the post as the version; good for one to two hours). The route
- * renders the photo from Drive as the band account (cropped to the post's shape), so no public copy is ever made in Drive.
+ * The signed media URLs Meta fetches a post's photos and videos from: /api/posts/media/{postId}/{index}?exp=…&sig=…, signed
+ * with src/server/signedUrl.ts (scope "media", the item's index in the post as the version; good for one to two hours). The
+ * route renders a photo from Drive as the band account (cropped to the post's shape) and streams a video as it is, so no
+ * public copy is ever made in Drive.
  */
 import { appUrl } from "@/lib/app-url";
 import { signUrl, signedOk } from "../signedUrl";

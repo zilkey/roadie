@@ -7,12 +7,13 @@ import { celebratePost } from "@/components/Celebrate";
 import { dateInBandZone } from "@/lib/timezone";
 import type { MetaStatus } from "@/components/posts/MetaCard";
 import type { PostMedia } from "@/schema/posts";
+import { isVideo, videoProblem } from "@/lib/photos";
 
 interface Published { status: "posted" | "failed"; permalink?: string | null; error?: string; driveTidy?: { error: string } }
 
 /**
- * Post it (the canvas's *Post it* board): the Instagram account it goes to, a warning when a photo has no alt text, what
- * happens in Drive, and an explicit Post now (posts.publish). Off, with the connect or sign-in message, while Instagram isn't
+ * Post it (the canvas's *Post it* board): the Instagram account it goes to (as one photo, a Reel or a carousel), a warning
+ * when a photo has no alt text, a video outside Instagram's limits, what happens in Drive, and an explicit Post now (posts.publish). Off, with the connect or sign-in message, while Instagram isn't
  * connected or needs a new sign-in. Then *After posting*: the Instagram link and the folder's new name. `before` runs first
  * (the editor flushes its autosave). A successful post gets the confetti.
  */
@@ -31,7 +32,12 @@ export function PostDialog({ open, onClose, post, before }: {
 
   const n = post.media.length;
   const title = post.title ?? "Post";
-  const noAlt = post.media.filter((m) => !m.alt).length;
+  const photos = post.media.filter((m) => !isVideo(m.mimeType)), videos = n - photos.length;
+  const p = photos.length, noAlt = photos.filter((m) => !m.alt).length;
+  const problems = post.media.map((m) => (isVideo(m.mimeType) ? videoProblem(m, n > 1) : null)).filter((x): x is string => !!x);
+  const what = n === 1 ? (videos ? "A Reel" : "One photo")
+    : !videos ? `A carousel of ${n} photos`
+    : `A carousel of ${n}: ${p ? `${p} ${p === 1 ? "photo" : "photos"}, ` : ""}${videos} ${videos === 1 ? "video" : "videos"}`;
   const connected = status?.connection;
   const working = !!connected && !(status?.check && !status.check.working);
 
@@ -61,11 +67,13 @@ export function PostDialog({ open, onClose, post, before }: {
           ) : !working ? (
             <p className="err m-0" data-testid="post-sign-in-again">Sign in again: {status.check && !status.check.working ? status.check.reason : ""} <Link href="/admin/mcp" className="underline">Connect again in Settings › Integrations</Link>.</p>
           ) : (
-            <p className="m-0" data-testid="post-account">{n === 1 ? "One photo" : `A carousel of ${n} photos`} goes to <b>@{connected.instagram.username}</b> now.</p>
+            <p className="m-0" data-testid="post-account">{what} goes to <b>@{connected.instagram.username}</b> now.</p>
           )}
+          {problems.map((why) => <p key={why} className="err m-0" data-testid="post-video-problem">{why}</p>)}
+          {videos > 0 && <p className="s m-0" data-testid="post-video-note">Instagram takes a little while to process a video; Posting… can take up to a minute.</p>}
           {noAlt > 0 && (
             <p className="s m-0" data-testid="post-no-alt">
-              {noAlt === n ? (n === 1 ? "The photo has no alt text." : "None of the photos have alt text.") : `${noAlt} of the ${n} photos have no alt text.`}{" "}
+              {noAlt === p ? (p === 1 ? "The photo has no alt text." : "None of the photos have alt text.") : `${noAlt} of the ${p} photos have no alt text.`}{" "}
               People using screen readers won&apos;t know what&apos;s in {noAlt === 1 ? "it" : "them"}.
             </p>
           )}
@@ -75,7 +83,7 @@ export function PostDialog({ open, onClose, post, before }: {
           <ErrorBox error={error} />
           <div className="flex justify-end gap-2">
             <button type="button" className="btn ghost" onClick={onClose} disabled={busy} data-testid="post-cancel">Cancel</button>
-            <button type="button" className="btn" disabled={busy || !working} onClick={() => void go()} data-testid="post-now">
+            <button type="button" className="btn" disabled={busy || !working || problems.length > 0} onClick={() => void go()} data-testid="post-now">
               {busy ? "Posting…" : "Post now"}
             </button>
           </div>

@@ -28,6 +28,8 @@ export interface DriveFile {
   gdoc?: GDoc;
   /** Drive's imageMediaMetadata (the client's DriveFile.image): size as stored, before rotation; time is camera-local "YYYY:MM:DD HH:MM:SS". */
   image?: { width: number; height: number; time?: string; rotation?: number };
+  /** Drive's videoMediaMetadata (the client's DriveFile.video). A video made through POST /files gets 1080×1920, 15 seconds, unless the body says. */
+  video?: { width: number; height: number; durationMs?: number };
   size?: number;
   trashed?: boolean;
   thumbnailLink?: string;
@@ -140,7 +142,7 @@ const upright = (im: { width: number; height: number; rotation?: number }) => ((
 
 /** A preview like Drive's: an upright JPEG, its long edge `s`. A plain colour with a darker band across the top, so it isn't uniform. */
 async function thumbnailOf(f: DriveFile, s: number): Promise<Buffer> {
-  const { width, height } = f.image ? upright(f.image) : { width: s, height: s };
+  const { width, height } = f.image ? upright(f.image) : f.video ?? { width: s, height: s };
   const k = s / Math.max(width, height);
   const w = Math.max(1, Math.round(width * k)), h = Math.max(1, Math.round(height * k));
   const band = await sharp({ create: { width: w, height: Math.max(1, Math.round(h / 5)), channels: 3, background: { r: 40, g: 40, b: 60 } } }).png().toBuffer();
@@ -150,6 +152,11 @@ async function thumbnailOf(f: DriveFile, s: number): Promise<Buffer> {
 const isFolder = (f: DriveFile) => f.mimeType === MIME.folder;
 /** list()'s kind "images": an image type, or a HEIC/HEIF name (Drive's own query matches the name). */
 const isImage = (f: DriveFile) => f.mimeType.includes("image/") || /\.(heic|HEIC|heif)/.test(f.name);
+const isVideoFile = (f: { mimeType: string; name: string }) => f.mimeType.includes("video/") || /\.(mp4|MP4|mov|MOV)/.test(f.name);
+/** list()'s kind "media": images and videos. */
+const isMedia = (f: DriveFile) => isImage(f) || isVideoFile(f);
+/** The bytes the fake serves for any video: not a playable MP4, only something to fetch. */
+const FAKE_VIDEO = Buffer.from("\0\0\0\x18ftypmp42\0\0\0\0mp42isom fake video bytes");
 
 // ---------- Docs API documents (documents.get with includeTabsContent), the parts Roadie reads ----------
 
@@ -251,7 +258,7 @@ const routes: Route<DriveState>[] = [
   ["GET", "/files/list", ({ query }, s) => {
     const parents = (query.get("parents") ?? "").split(",").filter(Boolean), kind = query.get("kind") ?? "all";
     if (!parents.length) throw new HttpError(400, "Missing parents");
-    let files = s.files.filter((f) => !f.trashed && f.parents.some((p) => parents.includes(p)) && (kind === "folders" ? isFolder(f) : kind === "images" ? isImage(f) : true));
+    let files = s.files.filter((f) => !f.trashed && f.parents.some((p) => parents.includes(p)) && (kind === "folders" ? isFolder(f) : kind === "images" ? isImage(f) : kind === "media" ? isMedia(f) : true));
     if (query.get("orderBy") === "createdTime desc") files = files.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const size = Math.min(Number(query.get("pageSize") || 1000), 1000), start = Number(query.get("pageToken") || 0);
     const page = files.slice(start, start + size);
@@ -262,6 +269,10 @@ const routes: Route<DriveState>[] = [
     const at = new Date().toISOString();
     const f: DriveFile = { id: `fake-new-${++s.seq}`, name: body.name, mimeType: body.mimeType ?? MIME.doc, ownerEmail: body.ownerEmail, parents: emailsOf(body.parents), createdAt: at, modifiedTime: at, webViewLink: "", permissions: [{ email: body.ownerEmail, role: "owner" }], ...(typeof body.text === "string" ? { text: body.text } : {}) };
     f.webViewLink = link(f.id);
+    // A video: Drive's processed metadata and a preview, as if Drive had got to it. Tests set `video` and `size` to try the limits.
+    if (isVideoFile(f)) {
+      Object.assign(f, { video: body.video ?? { width: 1080, height: 1920, durationMs: 15_000 }, size: Number(body.size ?? FAKE_VIDEO.length), thumbnailLink: `${f.webViewLink}/thumbnail` });
+    }
     s.files.push(f);
     return f;
   }],
@@ -300,7 +311,7 @@ const routes: Route<DriveState>[] = [
   // A file's preview at "=s{size}", as the thumbnailLink serves it: an upright JPEG, its long edge `s`.
   ["GET", "/thumbnails/:id", async ({ params, query }, s) => {
     const f = find(s, params.id);
-    if (f.trashed || !isImage(f) || s.scenario?.noThumbnail?.includes(f.id)) throw new HttpError(404, "No thumbnail");
+    if (f.trashed || !isMedia(f) || s.scenario?.noThumbnail?.includes(f.id)) throw new HttpError(404, "No thumbnail");
     const size = Number(query.get("s") || 220);
     if (!Number.isInteger(size) || size < 1 || size > 4000) throw new HttpError(400, "Bad size");
     return { bytes: await thumbnailOf(f, size), type: MIME.jpeg };
@@ -316,7 +327,8 @@ const routes: Route<DriveState>[] = [
     if (f.text !== undefined) return { bytes: Buffer.from(f.text), type: "text/csv" };
     if (f.fixture) return { bytes: fixture(f.fixture), type: f.mimeType };
     if (f.mimeType === MIME.jpeg) return { bytes: PIXEL_JPEG, type: MIME.jpeg };
-    if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio and JPEGs");
+    if (isVideoFile(f)) return { bytes: FAKE_VIDEO, type: f.mimeType.startsWith("video/") ? f.mimeType : "application/octet-stream" };
+    if (!f.mimeType.startsWith("audio/")) throw new HttpError(400, "The fake only has bytes for audio, videos and JPEGs");
     return { bytes: tone(), type: "audio/wav" };
   }],
   // Drive's files.export, text/plain only: a Google Doc's text. Drive starts the export with a byte order mark and ends lines with CRLF; so does the fake.
