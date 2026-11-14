@@ -19,6 +19,9 @@ export const Configuration = z.strictObject({
   /** The project (projects/{id}) a new show billed as this configuration belongs to (Full band -> Band, Duo -> Duo). Missing = the default project. */
   defaultProjectId: id.optional(),
 });
+/** Where one person's own expenses go when no show, rehearsal or tour decides (Settings › Money). */
+export const ExpenseProject = z.strictObject({ userId: id, projectId: id });
+export type ExpenseProject = z.infer<typeof ExpenseProject>;
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({
   id,
@@ -231,6 +234,11 @@ export const Artist = entity({
    * accountOf). Only that admin can set it, to themself (google.useForBookingMail). Null or missing: each admin uses their own Gmail.
    */
   bookingMail: z.strictObject({ uid: z.string(), email: z.string() }).nullable().optional(),
+  /**
+   * Each person's default project for their own expenses (Settings › Money), at most one entry per person. Used when the expense has no
+   * show, rehearsal or tour project; a person with no entry (or whose project is closed) gets the artist's default project.
+   */
+  expenseProjects: z.array(ExpenseProject).refine((xs) => new Set(xs.map((x) => x.userId)).size === xs.length, "One entry per person").optional(),
   /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
   songFields: z.array(SongField).default([]),
   /** Same, for shows: filled in on the show page's Custom fields card (Show.fields). Changed only by artists.addShowField & co. */

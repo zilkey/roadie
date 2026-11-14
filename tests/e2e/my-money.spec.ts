@@ -42,8 +42,9 @@ test("member logs a food expense on the tour project and sees what the band owes
   await expect(paid).not.toContainText("Deep End show");
   await expect(paid).not.toContainText("Moonlighters");
 
-  // Projects: names, no money columns.
-  await page.getByTestId("projects-link").click();
+  // My money has no Projects button for a member. The list itself: names, no money columns.
+  await expect(page.getByTestId("projects-link")).toHaveCount(0);
+  await page.goto(page.url().replace(/\/money.*$/, "/money/projects"));
   await expect(page).toHaveURL(/\/money\/projects$/);
   await expect(page.getByText("Spring West Tour").first()).toBeVisible();
   await expect(page.getByText("Wild Hearts LP").first()).toBeVisible();

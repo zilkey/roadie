@@ -38,7 +38,7 @@ function AddExpense() {
   const router = useRouter();
   const sp = useSearchParams();
   const me = useProfile();
-  useArtist();
+  const { doc: artistDoc } = useArtist();
   const shows = useCollection<Show>("shows");
   const projects = useCollection<Project>("projects");
   const { call, error, busy } = useCommand();
@@ -108,7 +108,8 @@ function AddExpense() {
   const openProjects = (projects.rows ?? []).filter((p) => p.status === "open").sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
   const defaultId = defaultProject(projects.rows ?? [])?.id;
   const fixed = fromShow ? showDoc?.projectId : undefined;
-  const projectId = [fixed, pickedProject, tour?.projectId, rehearsal?.projectId, showDoc?.projectId, defaultId].find((id) => id && openProjects.some((p) => p.id === id)) ?? "";
+  const ownId = artistDoc?.expenseProjects?.find((x) => x.userId === me.uid)?.projectId; // their default, set by an admin on Settings › Money
+  const projectId = [fixed, pickedProject, tour?.projectId, rehearsal?.projectId, showDoc?.projectId, ownId, defaultId].find((id) => id && openProjects.some((p) => p.id === id)) ?? "";
   const sorted = [...(shows.rows ?? [])].filter((s) => !isOff(s)).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
 
   async function find() {

@@ -102,12 +102,11 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
           <span className="s" data-testid={`checklist-count-${list.id}`}>{done} of {list.items.length}</span>
           {admin && (
             <>
-              <button type="button" className="card-edit !px-0 !text-[0.875rem]" disabled={busy} onClick={() => void template()}
-                data-testid={`checklist-${templateLive ? "update" : "save"}-template-${list.id}`}>
-                {saved ? "Saved" : templateLive ? "Update template" : "Save as template"}
-              </button>
+              {saved && <span className="s" role="status" data-testid={`checklist-template-saved-${list.id}`}>Saved</span>}
               <Menu label={`Actions for ${list.name}`} testid={`checklist-${list.id}`} items={[
                 { key: "rename", label: "Rename", onSelect: startRename },
+                { key: "template", label: templateLive ? "Update template" : "Save as template", disabled: busy, onSelect: () => void template(),
+                  testid: `checklist-${templateLive ? "update" : "save"}-template-${list.id}` },
                 { key: "delete", label: "Delete list", danger: true, onSelect: () => void remove() },
               ]} />
             </>

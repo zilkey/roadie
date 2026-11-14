@@ -45,7 +45,6 @@ export function MyMoney() {
       <PageTitle title="My money" />
       <div className="flex flex-wrap gap-2">
         <Link href="/money/expense" className="btn acc" data-testid="add-expense-link">+ New expense</Link>
-        <Link href="/money/projects" className="btn ghost" data-testid="projects-link">Projects</Link>
       </div>
       <div className="card" data-testid="my-owed">
         <span className="lbl">The band owes you</span>

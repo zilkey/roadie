@@ -70,6 +70,7 @@ export const ROUTES = {
   fields: { title: "Custom fields", path: "/admin/fields" },
   people: { title: "People", path: "/admin/people" },
   checklistTemplates: { title: "Checklist templates", path: "/admin/checklists" },
+  moneySettings: { title: "Money", path: "/admin/money" },
   google: { title: "Google", path: "/admin/google" },
   mcp: { title: "Integrations", path: "/admin/mcp" },
   history: { title: "Activity", path: "/admin/history" },

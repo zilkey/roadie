@@ -93,16 +93,23 @@ const refresh = (w: Writer, ...showIds: unknown[]) => Promise.all([...new Set(sh
 
 /**
  * The project a new record lands on: the one asked for (must be open), else the show's (must be open), else the rehearsal's, else the
- * tour's "Money goes to" (a tourId with no show), else the default for
+ * tour's "Money goes to" (a tourId with no show), else the payer's own default project (expenses only), else the default for
  * the show's artist and billedAs. Throws when there is nowhere to put it.
  */
-async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null; rehearsal?: Doc | null; tourId?: string }): Promise<string> {
+async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null; rehearsal?: Doc | null; tourId?: string; payerId?: string }): Promise<string> {
   if (o.projectId) return (await requireOpenProject(w, o.projectId)).id;
   if (o.show?.projectId) return (await requireOpenProject(w, o.show.projectId as string)).id;
   if (o.rehearsal?.projectId) return (await requireOpenProject(w, o.rehearsal.projectId as string)).id;
   // Money added from a tour starts on its "Money goes to".
   if (o.tourId) return (await requireOpenProject(w, (await requireTourFor(w, o.tourId)).projectId as string)).id;
-  const id = await defaultProjectIdFor(w, (await artistFor(w, o.show?.artistId as string | undefined)).id, o.show?.billedAs as string | undefined);
+  const artist = await artistFor(w, o.show?.artistId as string | undefined);
+  // An expense with nothing else to go on lands on the payer's own default project (Settings › Money), while it is open.
+  const own = o.payerId ? (artist.expenseProjects as { userId: string; projectId: string }[] | undefined)?.find((x) => x.userId === o.payerId)?.projectId : undefined;
+  if (own) {
+    const p = await w.get("projects", own);
+    if (p && !p.deletedAt && p.status === "open") return own;
+  }
+  const id = await defaultProjectIdFor(w, artist.id, o.show?.billedAs as string | undefined);
   if (!id) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) or pass projectId", 409);
   return id;
 }
@@ -176,7 +183,7 @@ export const expensesAdd = defineCommand({
   description: "Add an expense: amount in cents, what it was for (a short title), notes (optional: the details, shown under the title), category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Woodshed $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
-    "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the default project. " +
+    "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the payer's own default project (Settings › Money), else the default project. " +
     "A gas expense (category gas) carries the frozen estimate in `gas` and is paid back unless payBack is false (the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, carName, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source, areaKind, carId, cars and homeAddress). The start and end addresses are kept on the expense as they were that day: send fromText for a typed start (with fromKind home the server copies the payer's saved home into fromText), and to with its address (a rehearsal's location is filled in when to.address is missing). carName is filled from the payer's car when the estimate used one. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else): saveMpg puts gas.mpg on the car carId (the estimate's carId), else their only car, else a new car named \"Car\"; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
@@ -205,7 +212,7 @@ export const expensesAdd = defineCommand({
     const show = i.showId ? await liveShow(w, i.showId) : null;
     const rehearsal = i.rehearsalId ? await liveRehearsal(w, i.rehearsalId) : null;
     if (i.gas && i.category !== "gas" && i.category !== "travel") throw new AppError("invalid_input", "A gas estimate goes on a gas expense", 400);
-    const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId });
+    const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId, payerId: i.owed ? undefined : userId });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const tour = await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show });
     const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, carId, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;

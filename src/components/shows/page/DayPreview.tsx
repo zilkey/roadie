@@ -20,12 +20,15 @@ interface Block { key: string; label: string; start: number; end: number; set?: 
 
 /**
  * The show's day as a calendar column: load in, soundcheck and doors each run until the next one starts; the set is
- * its own block for its length (an hour when there's no length); show starts is a line. Hours from the first time to
- * the end of the set.
+ * its own block for its length (an hour when there's no length); show starts is a line. With a set length but no set
+ * time, the set is drawn from show starts. Hours from the first time to the end of the set.
  */
 export function DayPreview({ times: t }: { times: Times }) {
+  // No set time, but a show start and a set length: the set runs from show starts.
+  const setAt = t.set ?? (t.setLengthSec ? t.showStart : undefined);
+  const at = { loadIn: t.loadIn, soundcheck: t.soundcheck, doors: t.doors, set: setAt };
   const steps = ([["loadIn", "Load in"], ["soundcheck", "Soundcheck"], ["doors", "Doors"], ["set", "Set"]] as const)
-    .filter(([k]) => t[k]).map(([k, label]) => ({ key: k as string, label, start: dayMinute(t[k]!) }))
+    .filter(([k]) => at[k]).map(([k, label]) => ({ key: k as string, label, start: dayMinute(at[k]!) }))
     .sort((a, b) => a.start - b.start);
   if (!steps.length && !t.showStart) return null;
   const blocks: Block[] = steps.map((s, i) => {

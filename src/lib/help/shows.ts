@@ -153,7 +153,7 @@ export const SHOW_TOPICS: HelpTopic[] = [
       "Each show has a \"Checklists\" column beside its tabs, with a count like \"3 of 9\". A list is a named set of to-dos. Anyone in the band can tick items, add one (\"Add a to-do…\"), edit it and assign it to a person (or leave it for \"Anyone\").",
       "Admins press \"+ New list\" to start from a template or a \"Blank list\", and use the list's menu to rename or delete it. \"Edit\" reorders lists once there are two or more.",
       "Templates are managed in Artist settings, \"Checklist templates\" (\"Manage templates\" links there), on tabs for Shows, Releases and Social media. \"+ New\" (top right) picks Show, Release or Social media template and adds it on that tab. A show template has When (Pre Show, Day Of, Post Show) and Type (Promotion, Logistics), shown as tags; templates sort by When, here and in \"+ New list\". The first Promotion template also lists \"Add to Bandsintown\", which Roadie adds on confirmed venue shows. Each template's menu renames it, moves it to another tab or deletes it, and the grip drags it into order. Adding a template to a show copies its items unticked and unassigned. Later template edits don't change lists already on shows.",
-      "\"Save as template\" on a list makes a new template from it. If the list came from a template, the button reads \"Update template\" and replaces that template's items (after a confirm).",
+      "\"Save as template\" in a list's menu makes a new template from it. If the list came from a template, the menu reads \"Update template\" and replaces that template's items (after a confirm).",
     ].join("\n\n"),
     related: ["showPage", "customFields"],
   },

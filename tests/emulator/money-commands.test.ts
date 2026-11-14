@@ -166,6 +166,23 @@ test("payouts: to resolves and copies the name; paidAt missing = owed; markPaid;
   assert.equal((await dealTotals(s)).paidOut, 0);
 });
 
+test("expenses: a person's default project (Settings › Money) beats the default, loses to a show's, is skipped once closed", async () => {
+  const tour = (await cmd("projects.create", { kind: "other", name: "Hugo's" })).id;
+  assert.ok(!registry["artists.update"].roles.includes("member"));
+  await cmd("artists.update", { id: TEST_ARTIST, patch: { expenseProjects: [{ userId: memberUid, projectId: tour }] } });
+  const project = async (id: string) => ((await db.get("expenses", id)) as any).projectId;
+  // Hugo's own, and one an admin logs for him: his project. The admin's own: the default.
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "strings", category: "gear" }, mctx)).id), tour);
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "strings", category: "gear", userId: memberUid })).id), tour);
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "strings", category: "gear" })).id), band);
+  // A show's project and one picked on the expense still win.
+  const s = await mkShow({ projectId: duo });
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "gas", category: "travel", showId: s }, mctx)).id), duo);
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "x", category: "gear", projectId: band }, mctx)).id), band);
+  // Closed: back to the default, no error.
+  await cmd("projects.close", { id: tour });
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "strings", category: "gear" }, mctx)).id), band);
+});
 test("expenses: default project, the show's project, admin on behalf, member refused", async () => {
   const s = await mkShow({ projectId: duo });
   const a = await cmd("expenses.add", { amount: 1000, what: "strings", category: "gear" });
