@@ -187,13 +187,16 @@ test("a member sees where and when as plain text", async ({ page }) => {
   await expect(card.getByTestId("where-dayof")).toBeVisible(); // the seeded show has one: text and a tel: link, no button
 });
 
-test("the show's ⋮ menu: preview as band member until Exit, and Archive show lives there too", async ({ page }) => {
+test("preview as band member from a show until Exit, and Archive show lives in the show's ⋮ menu", async ({ page }) => {
   await signInAs(page, "rudy");
   await newShow(page, "2027-06-04");
   await expect(page.getByTestId("show-archive")).toHaveCount(0); // tucked in the menu
   await page.getByTestId("show-menu").click();
   await expect(page.getByTestId("show-menu-list")).toBeVisible();
-  await page.getByTestId("show-preview-member").click();
+  await expect(page.getByTestId("show-menu-list").getByRole("menuitem")).toHaveText(["Archive show"]); // preview lives in the account menu
+  await page.keyboard.press("Escape");
+  await page.getByTestId("account-menu").click();
+  await page.getByTestId("account-preview-member").click();
 
   // The member view: banner, no pencils or menu, and it stays on across pages
   await expect(page.getByTestId("preview-banner")).toContainText("Previewing as a band member");

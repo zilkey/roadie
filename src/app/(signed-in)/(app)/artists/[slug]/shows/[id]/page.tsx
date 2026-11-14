@@ -1,6 +1,6 @@
 "use client";
 import { BackLink } from "@/components/BackLink";
-import { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import { useArtistRouter as useRouter } from "@/lib/artist";
 import { Dropdown } from "@/components/Shell";
 import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -46,7 +46,7 @@ function Page() {
 /**
  * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Promotion / Finances. The checklists are a 360px column on the right from lg up
  * (on every tab, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
- * Comments stay in the main column. Admins get a ⋮ menu top right: Preview as band member (Exit is in the banner it shows), Archive show. There is no page-level Edit:
+ * Comments stay in the main column. Admins get a ⋮ menu top right with Archive show (Preview as band member is in the account menu). There is no page-level Edit:
  * values edit where they sit, and only real forms flip.
  */
 function ShowView({ show }: { show: ShowRow }) {
@@ -57,7 +57,6 @@ function ShowView({ show }: { show: ShowRow }) {
   const tab: Tab = TABS.includes(sp.get("tab") as Tab) ? (sp.get("tab") as Tab) : "details";
   const setTab = (t: Tab) => router.replace(`/shows/${show.id}${t === "details" ? "" : `?tab=${t}`}`);
   const { call, error, busy } = useCommand();
-  const { setPreviewAsMember } = useArtist();
   const bit = bandsintownItemOf(show.checklists ?? []);
   useBandsintownAutoCheck(show.id, !!bit && !bit.item.done, admin);
   async function archive() {
@@ -78,8 +77,6 @@ function ShowView({ show }: { show: ShowRow }) {
             <Dropdown label="Show actions" testid="show-menu" listTestid="show-menu-list" className="ib" trigger={
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
             }>
-              <button type="button" role="menuitem" className="menu-item" onClick={() => setPreviewAsMember(true)} data-testid="show-preview-member">Preview as band member</button>
-              <div className="menu-sep" role="separator" />
               <button type="button" role="menuitem" className="menu-item danger" disabled={busy} onClick={() => void archive()} data-testid="show-archive">Archive show</button>
             </Dropdown>
           )}
