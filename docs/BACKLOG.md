@@ -24,3 +24,7 @@ Things that are decided but not done. Newest first within each group. Take an it
 - **Bulk check guesses from the input** (an array of more than 5). It should count the records a command would touch.
 - **Roadie calls commands through its own runner** (`src/server/assistant/run.ts`), not `dispatch`, so no `_meta` (idempotency, baseRev). Fold into `dispatch` with an exported "run with this Ctx" if wanted.
 - **Prefs writes show up in History.** Width and thread changes go through `db.update`. Consider a direct write like `touchLastUsed`.
+
+## Proposals
+
+- **Press module.** Outlets, press pitches and coverage, tied to a show or a release, separate from booking pitches. Feature ideas, a data model, open questions and how to buy media contact lists are in `docs/press-module.md`. Not decided yet.
