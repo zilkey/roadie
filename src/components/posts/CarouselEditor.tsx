@@ -10,6 +10,7 @@ import { runCommand } from "@/lib/commands";
 import { CAPTION_MAX, HASHTAG_MAX, fmtDuration, hashtagCount, isVideo, videoProblem } from "@/lib/photos";
 import type { Post, PostMedia } from "@/schema/posts";
 import { PostDialog } from "@/components/posts/PostDialog";
+import { PhotoViewer, ViewButton } from "@/components/posts/PhotoViewer";
 
 type Focus = { x: number; y: number };
 interface PhotoState { thumb1080: string; missing: boolean; trashed: boolean }
@@ -36,6 +37,7 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
   const [at, setAt] = useState(0);
   const [naming, setNaming] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
 
   const as = useAutosave({
     command: "posts.updateDraft", id, rev: post.rev, title: post.title ?? "Post",
@@ -102,6 +104,9 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
 
   const caption = as.bind("caption", post.caption ?? "");
   const cur = media[at];
+  // What the big viewer steps through: the post's photos and videos still in Drive, in order.
+  const viewable = media.filter((m) => photos[m.driveFileId]?.thumb1080 && !photos[m.driveFileId].missing && !photos[m.driveFileId].trashed)
+    .map((m) => ({ id: m.driveFileId, name: label(m), thumb: photos[m.driveFileId].thumb1080, video: isVideo(m.mimeType) }));
   const reel = media.length === 1 && isVideo(media[0].mimeType);
   const problems = Object.fromEntries(media.filter((m) => isVideo(m.mimeType)).map((m) => [m.driveFileId, videoProblem(m, media.length > 1)]));
   const tags = hashtagCount(caption.value);
@@ -143,10 +148,19 @@ export function CarouselEditor({ post }: { post: Post & { id: string; rev?: numb
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,22rem)_1fr]">
         <div className="grid content-start gap-3">
-          {cur && (isVideo(cur.mimeType)
-            ? <VideoFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={reel ? "9:16" : shape} durationMs={cur.durationMs} />
-            : <CropFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={shape} focus={cur.focus ?? CENTER} readOnly={readOnly}
-              onMove={(f) => setLocal(media.map((m, j) => (j === at ? { ...m, focus: f } : m)))} onDone={(f) => setItem(at, { focus: f }, true)} />)}
+          {cur && (
+            <div className="relative">
+              {isVideo(cur.mimeType)
+                ? <VideoFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={reel ? "9:16" : shape} durationMs={cur.durationMs} />
+                : <CropFrame key={cur.driveFileId} src={photos[cur.driveFileId]?.thumb1080} shape={shape} focus={cur.focus ?? CENTER} readOnly={readOnly}
+                  onMove={(f) => setLocal(media.map((m, j) => (j === at ? { ...m, focus: f } : m)))} onDone={(f) => setItem(at, { focus: f }, true)} />}
+              {viewable.some((v) => v.id === cur.driveFileId) && (
+                <ViewButton label={`See ${label(cur)} bigger`} onClick={() => setViewing(viewable.findIndex((v) => v.id === cur.driveFileId))}
+                  className="absolute right-2 top-2" testid="editor-view" />
+              )}
+            </div>
+          )}
+          <PhotoViewer items={viewable} at={viewing} onAt={setViewing} />
           {reel ? (
             <p className="s m-0" data-testid="editor-reel">Posts as a Reel, as it is: a 9:16 video fills the screen.</p>
           ) : <div className="flex items-center gap-2" role="group" aria-label="Shape">

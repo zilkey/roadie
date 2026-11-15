@@ -1,5 +1,6 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { PhotoViewer, ViewButton } from "@/components/posts/PhotoViewer";
 import { dayTitle, type PhotoDay } from "@/lib/photoDays";
 import { fmtDuration, isVideo } from "@/lib/photos";
 
@@ -11,13 +12,16 @@ export interface GridPhoto {
 /**
  * The inbox's photos and videos by day (a video marked with ▶ and its length), each day titled with its date and labelled with its shows and rehearsals. Picking is numbered:
  * `selected` is in tap order, which becomes the carousel's order. Click (or Space/Enter) toggles a photo, Shift-click adds
- * the range from the last photo clicked, and each day has Select all.
+ * the range from the last photo clicked, and each day has Select all. The corner button on a photo opens it big (PhotoViewer),
+ * where it can be picked too.
  */
 export function PhotoGrid({ days, selected, onChange }: {
   days: PhotoDay<GridPhoto>[]; selected: string[]; onChange(next: string[]): void;
 }) {
   const last = useRef<string | null>(null);
-  const flat = days.flatMap((d) => d.photos.map((p) => p.driveFileId));
+  const [viewing, setViewing] = useState<number | null>(null);
+  const items = days.flatMap((d) => d.photos.map((p) => ({ id: p.driveFileId, name: p.name, thumb: p.thumb, video: isVideo(p.mimeType) })));
+  const flat = items.map((p) => p.id);
 
   function toggle(id: string, shift: boolean) {
     const from = last.current ? flat.indexOf(last.current) : -1, to = flat.indexOf(id);
@@ -49,11 +53,12 @@ export function PhotoGrid({ days, selected, onChange }: {
                 {allIn ? "Clear day" : "Select all"}
               </button>
             </div>
-            <ul className="m-0 grid list-none grid-cols-3 gap-1 p-0 sm:grid-cols-4 sm:gap-2 lg:grid-cols-6">
+            {/* As many columns as fit the grid's own width (not the window's: the column is narrow when Checklists and Roadie are open), so a tile is never smaller than 6.5rem. */}
+            <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-1 p-0 sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] sm:gap-2">
               {d.photos.map((p) => {
                 const n = selected.indexOf(p.driveFileId) + 1, video = isVideo(p.mimeType);
                 return (
-                  <li key={p.driveFileId}>
+                  <li key={p.driveFileId} className="relative">
                     <button type="button" aria-pressed={n > 0} aria-label={`${p.name}${video ? ", video" : ""}${n ? `, picked ${n}` : ""}`} title={p.name}
                       onClick={(e) => toggle(p.driveFileId, e.shiftKey)}
                       className={`relative block aspect-square w-full overflow-hidden rounded-md bg-soft p-0 ${n ? "outline outline-3 outline-offset-[-3px] outline-[var(--accent)]" : ""}`}
@@ -68,6 +73,8 @@ export function PhotoGrid({ days, selected, onChange }: {
                         <span className="absolute right-1 top-1 grid h-6 min-w-6 place-items-center rounded-full bg-[var(--accent)] px-1 text-xs font-bold text-white" data-testid={`photo-pick-${p.driveFileId}`}>{n}</span>
                       )}
                     </button>
+                    <ViewButton label={`See ${p.name} bigger`} onClick={() => setViewing(flat.indexOf(p.driveFileId))}
+                      className="absolute bottom-1 right-1" testid={`photo-view-${p.driveFileId}`} />
                   </li>
                 );
               })}
@@ -75,6 +82,14 @@ export function PhotoGrid({ days, selected, onChange }: {
           </section>
         );
       })}
+      <PhotoViewer items={items} at={viewing} onAt={setViewing} action={(it) => {
+        const n = selected.indexOf(it.id) + 1;
+        return (
+          <button type="button" className={`btn sm ${n ? "acc" : ""}`} aria-pressed={n > 0} onClick={() => toggle(it.id, false)} data-testid="photo-viewer-pick">
+            {n ? `Picked · ${n}` : "Pick"}
+          </button>
+        );
+      }} />
     </div>
   );
 }

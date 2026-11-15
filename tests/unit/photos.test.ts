@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PHOTO_TYPES, VIDEO_TYPES, photoType, mediaType, hashtagCount, videoProblem, postKind, fmtDuration } from "@/lib/photos";
+import { PHOTO_TYPES, VIDEO_TYPES, photoType, mediaType, hashtagCount, videoProblem, postKind, fmtDuration, thumbAt } from "@/lib/photos";
 
 test("photoType: a photo mimeType as it is; else the type of a photo extension; else null", () => {
   for (const t of PHOTO_TYPES) assert.equal(photoType("x", t), t);
@@ -58,4 +58,9 @@ test("postKind: one photo, a Reel, photos, videos, or a mix", () => {
   assert.equal(postKind(2, 2), "2 videos");
   assert.equal(postKind(4, 1), "4 items: 3 photos, 1 video");
   assert.equal(postKind(3, 2), "3 items: 1 photo, 2 videos");
+});
+
+test("thumbAt: the same signed link at another size; only s changes", () => {
+  assert.equal(thumbAt("/api/posts/thumb/a/f?v=0&s=400&exp=9&sig=abc", 2048), "/api/posts/thumb/a/f?v=0&s=2048&exp=9&sig=abc");
+  assert.equal(thumbAt("/api/posts/thumb/a/f?s=1080&v=0&exp=9&sig=s=1", 2048), "/api/posts/thumb/a/f?s=2048&v=0&exp=9&sig=s=1");
 });

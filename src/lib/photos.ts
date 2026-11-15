@@ -85,3 +85,6 @@ export const HASHTAG_MAX = 30;
 export function hashtagCount(caption: string): number {
   return caption.match(/(^|\s)#[\p{L}\p{N}_]+/gu)?.length ?? 0;
 }
+
+/** A signed thumb link (thumbUrl in src/server/signedUrl.ts) at another of the sizes its route serves: `s` isn't signed, so only it changes. */
+export const thumbAt = (url: string, size: 400 | 1080 | 2048) => url.replace(/([?&]s=)\d+/, `$1${size}`);

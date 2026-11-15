@@ -176,6 +176,22 @@ test("Photos: Upload is off until Set up; the inbox by day, the late-night photo
   await page.getByTestId("photos-clear").click();
   await expect(page.getByTestId("photos-bar")).toHaveCount(0);
 
+  // The corner button opens a photo big (the 2048px preview) without picking it; → steps on; Pick works there; Escape closes.
+  const viewer = page.getByTestId("photo-viewer");
+  await page.getByTestId("photo-view-fake-social-late").click();
+  await expect(viewer.getByTestId("photo-viewer-img")).toHaveAttribute("src", /[?&]s=2048(&|$)/);
+  await expect(page.getByTestId("photos-bar")).toHaveCount(0);
+  const first = await viewer.getByTestId("photo-viewer-name").textContent();
+  const next = viewer.getByTestId("photo-viewer-next"), prev = viewer.getByTestId("photo-viewer-prev");
+  await ((await next.isEnabled()) ? next : prev).click();
+  await expect(viewer.getByTestId("photo-viewer-name")).not.toHaveText(first!);
+  await viewer.getByTestId("photo-viewer-pick").click();
+  await expect(viewer.getByTestId("photo-viewer-pick")).toHaveText("Picked · 1");
+  await page.keyboard.press("Escape");
+  await expect(viewer).toBeHidden();
+  await expect(page.getByTestId("photos-picked")).toHaveText("1 picked");
+  await page.getByTestId("photos-clear").click();
+
   // A folder in the rail shows only its photos.
   await rail.getByTestId("photos-folder-fake-folder-socials-2026-10").click();
   await expect(page.getByTestId("photo-grid").locator("li")).toHaveCount(1);
@@ -221,6 +237,12 @@ test("Drafts: pick 5, Make the draft (they leave the inbox), reorder, the captio
   await expect(page.getByTestId("editor-title")).toHaveText("Hi-Dive announcement");
   const order = () => page.getByTestId("editor-photos").locator("li").evaluateAll((ls) => ls.map((l) => l.getAttribute("data-testid")!.replace("editor-photo-", "")));
   await expect.poll(order).toEqual(picks);
+  // The corner of the preview opens the photo on show big, whole; × closes.
+  await page.getByTestId("editor-view").click();
+  await expect(page.getByTestId("photo-viewer-img")).toHaveAttribute("src", /[?&]s=2048(&|$)/);
+  await expect(page.getByTestId("photo-viewer-count")).toHaveText("1 of 5");
+  await page.getByTestId("photo-viewer-close").click();
+  await expect(page.getByTestId("photo-viewer")).toBeHidden();
   // Drive has the folder holding them.
   // (A retry may find an emptied folder of the same name from the first attempt: look for the one holding the picks.)
   const folders = ((await (await request.get(`${DRIVE}/files?q=${encodeURIComponent("DRAFT - Hi-Dive announcement")}`)).json()) as { id: string; name: string }[])
