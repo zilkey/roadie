@@ -205,7 +205,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
               <dt className="lbl">{d.label}</dt>
               <dd><InlineValue testid={`field-${d.id}`} label={d.label} kind="text" value={fieldVal(d.id)} canEdit={admin}
                 onSave={(v) => saveField(d.id, v)} error={as.error} />
-                {d.description && <p className="s m-0" data-testid={`field-help-${d.id}`}>{d.description}</p>}</dd>
+                {d.description && <p className="s sg-help" data-testid={`field-help-${d.id}`}>{d.description}</p>}</dd>
             </div>
           ))}
           {(admin || song.notes) && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}

@@ -484,11 +484,13 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sg-sech { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 /* Details: a definition list that reflows from one column on a phone to as many as fit. */
 .sg-dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px 24px; }
-.sg-dl > div { display: grid; gap: 4px; min-width: 0; }
+.sg-dl > div { display: grid; gap: 4px; min-width: 0; align-content: start; } /* A tall neighbour (help text) must not push this cell's value down. */
 .sg-dl dd { margin: 0; font-size: 1rem; font-weight: 700; }
+/* A field's help text under its value: small, muted, regular weight (not the value's bold). */
+.sg-dl .sg-help { margin: 2px 0 0; font-weight: 400; line-height: 1.35; }
 /* A full-width row (Notes) inside the details grid. */
 .sg-dl > .sg-wide { grid-column: 1 / -1; }
-.sg-dl .sg-note { margin: 0; font-size: 0.9375rem; font-weight: 400; white-space: pre-wrap; }
+.sg-dl .sg-note { font-size: 0.9375rem; font-weight: 400; white-space: pre-wrap; }
 /* A Google Doc's text (lyrics, a chord sheet) as the doc has it: monospace, its own line breaks and spaces, so chords stay over the words. */
 .doc-text { display: grid; gap: 1.5em; margin: 0; font-family: var(--f-mono); font-size: 0.875rem; line-height: 1.5; }
 .doc-text pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
