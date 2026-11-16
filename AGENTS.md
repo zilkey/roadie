@@ -38,6 +38,10 @@ Jeff asks for something and walks away. When he comes back it should be done and
    set to anything but `fake`. If you don't have a yes, skip it and say so.
 6. **Tests are free; run them.** Typecheck, `npm test` and `npm run e2e` run on the emulators and fakes. Run them in
    the worktree on its claimed ports (see the skill).
+7. **Never leave a failing test behind.** If typecheck, `npm test` or `npm run e2e` has any failure, fix it in the same
+   session before shipping, even when it also fails on main, looks unrelated, or looks flaky. Find the real cause: fix
+   the test when it is wrong or fragile (a fixed date, the machine's timezone, data other specs change), fix the app
+   when the app is wrong. Never skip, quarantine or loosen a test just to get green. Ship only on fully green suites.
 
 ## Cloud sessions: prod access is in the environment
 

@@ -178,10 +178,11 @@ test("after the show the row congratulates; Record the deets opens the show and 
   await expect(page).toHaveURL(new RegExp(`/shows/${SHOW}$`));
   const body = (await sent).postDataJSON() as { threadId?: string; message: string; pageContext: { route: string; recordKind?: string; recordId?: string } };
   expect(body.message).toBe("Ask me about the Deep End show");
-  expect(body.threadId).toBeUndefined(); // a new chat
+  // A new chat: the browser names the new conversation itself (a fresh Firestore id), so a Stop before the reply starts still finds it.
+  expect(body.threadId).toMatch(/^[A-Za-z0-9]{20}$/);
   expect(body.pageContext).toEqual({ route: "show", recordKind: "show", recordId: SHOW });
   const panel = page.getByTestId("roadie-panel");
-  await expect(panel.getByTestId("roadie-msg-user").last()).toHaveText("Ask me about the Deep End show");
+  await expect(panel.getByTestId("roadie-msg-user")).toHaveText(["Ask me about the Deep End show"]); // only this message: nothing from an earlier chat
   await expect(panel.getByTestId("roadie-msg-assistant").last()).toBeVisible();
 
   // On a phone, with Roadie closed, the sheet opens with it.

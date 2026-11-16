@@ -140,6 +140,34 @@ test("api: someone else's thread id starts a fresh thread; transcripts stay out 
   assert.equal(hist.docs.some((d) => String(d.data().path ?? d.data().collection ?? "").includes("assistant")), false);
 });
 
+test("api: a new thread under the id the browser picked; taken, malformed or foreign ids get a fresh one; a Stop before the first event still lands there", async () => {
+  const a = await makeUser("a@example.com", "admin");
+  const b = await makeUser("b@example.com", "admin");
+  const picked = firestore().collection("assistantThreads").doc().id;
+  const first = (await readSse(await post(a.token, { threadId: picked, message: "hi", pageContext: ctx }))).at(-1) as { threadId: string };
+  assert.equal(first.threadId, picked);
+  assert.equal((await firestore().collection("assistantThreads").doc(picked).get()).data()?.ownerUid, a.uid);
+  // Someone else asking for the same id (now taken) gets their own thread, not a's.
+  const theirs = (await readSse(await post(b.token, { threadId: picked, message: "hi", pageContext: ctx }))).at(-1) as { threadId: string };
+  assert.notEqual(theirs.threadId, picked);
+  // Only a Firestore auto-id is taken as given.
+  const odd = (await readSse(await post(a.token, { threadId: "not-an-auto-id", message: "hi", pageContext: ctx }))).at(-1) as { threadId: string };
+  assert.notEqual(odd.threadId, "not-an-auto-id");
+
+  // Stop before the browser read a single event: the turn is saved, stopped, in the thread it named.
+  const early = firestore().collection("assistantThreads").doc().id;
+  const stop = new AbortController();
+  stop.abort();
+  const res = await handleChat(`Bearer ${a.token}`, { threadId: early, message: "find me a venue in Boise [fake: slow]", pageContext: ctx }, null, stop.signal);
+  await res.body!.cancel().catch(() => {});
+  const msgs = firestore().collection("assistantThreads").doc(early).collection("messages");
+  const until = Date.now() + 8000;
+  let saved: FirebaseFirestore.DocumentData[] = [];
+  while (saved.length < 2 && Date.now() < until) { saved = (await msgs.orderBy("at").get()).docs.map((d) => d.data()); if (saved.length < 2) await new Promise((r) => setTimeout(r, 100)); }
+  assert.deepEqual(saved.map((m) => m.role), ["user", "assistant"]);
+  assert.equal(saved[1].stopped, true);
+});
+
 test("command: assistant.setPrefs stores width (rail or pixels) and thread, members refused", async () => {
   const admin = await makeUser("a@example.com", "admin");
   const member = await makeUser("m@example.com", "member");

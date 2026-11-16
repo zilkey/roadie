@@ -85,7 +85,9 @@ TEST_PORT_OFFSET=30 FIREBASE_TEST_CONFIG=firebase.worktree.json npm test 2>&1 | 
 TEST_PORT_OFFSET=30 FIREBASE_TEST_CONFIG=firebase.worktree.json npm run e2e 2>&1 | tee junk.e2e.txt
 ```
 
-- Run in the background for e2e (it takes minutes); read the tee'd file for failures.
+- Run in the background for e2e (it takes minutes); read the tee'd file for failures. On a small machine (a cloud
+  session has 4 CPUs) four shards starve each other and tests time out at random: use `E2E_SHARDS=2` there (about 20
+  minutes, so give the background job a timeout well past the default 30).
 - Rerun single specs while fixing, then the full suites once at the end. A single e2e spec works with the prefix
   (arguments go to Playwright, and named specs run in one shard):
 
@@ -102,15 +104,17 @@ TEST_PORT_OFFSET=30 FIREBASE_TEST_CONFIG=firebase.worktree.json npm run e2e 2>&1
     --only firestore,auth --project demo-band-tracker \
     "tsx --test --import ./tests/emulator/setup.mjs tests/emulator/foo.test.ts"
   ```
-- Fix failures your change caused. If a failure is clearly unrelated and also fails on main, note it and move on;
-  don't fix other features' tests here.
+- Fix every failure, not only the ones your change caused (AGENTS.md rule 7). A failure that also fails on main,
+  looks unrelated or looks flaky gets fixed here too, at its real cause, before you squash: a wrong or fragile test
+  (a fixed date, the machine's timezone, data other specs change) is fixed in the test, a wrong app in the app. Never
+  skip or quarantine a test. Ship only when typecheck, `npm test` and `npm run e2e` are all fully green.
 - If the e2e web server never starts, look at the first `[WebServer]` error in the tee'd file. "Could not find the
   Next.js package" means `node_modules` is a symlink or only partly installed; see step 1.
 - Don't run screenshot specs or before/after captures.
 
 ## 5. Squash onto main
 
-When typecheck, `npm test` and `npm run e2e` all pass:
+When typecheck, `npm test` and `npm run e2e` all pass, with no failure left anywhere:
 
 ```sh
 git fetch origin main

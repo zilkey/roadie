@@ -41,11 +41,17 @@ export const DraftSaveInput = z.strictObject({
   title: z.string().max(200).default(""),
   /** Edits only: the rev of the record the edits were made against (becomes `baseRev` when they are replayed). */
   rev: z.number().int().min(0).optional(),
+  /**
+   * Edits only: a save that was on its way when the draft was written, so whether it landed is unknown. It is replayed
+   * first, under its own clientMutationId (applied once: a repeat just returns the new rev), and `values` go on top of it.
+   */
+  sending: z.strictObject({ mutationId: z.string().min(1).max(100), patch: z.record(z.string(), z.unknown()).refine((v) => JSON.stringify(v).length <= DRAFT_MAX_BYTES, "Draft is too large") }).optional(),
 });
 export type DraftSaveInput = z.infer<typeof DraftSaveInput>;
 
 /** As stored (times are Firestore Timestamps). */
 export interface DraftDoc {
   uid: string; path: string; values: Record<string, unknown>; route: string; title: string; rev?: number;
+  sending?: { mutationId: string; patch: Record<string, unknown> };
   updatedAt: { toMillis(): number }; expiresAt: { toMillis(): number };
 }

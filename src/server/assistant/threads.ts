@@ -45,6 +45,21 @@ const CARD_STATE: Record<string, string> = { pending: "waiting for their Yes, no
 
 export const newThreadId = () => threads().doc().id;
 
+/** A Firestore auto-id: what the browser makes (doc(collection(...)).id) when it names a new conversation itself. */
+export const AUTO_ID = /^[A-Za-z0-9]{20}$/;
+
+/**
+ * The conversation a message goes to: the one asked for when it is the caller's; a new one under the id the browser
+ * picked when nobody has it yet (so a Stop before the first event still knows where the turn was saved); else a fresh one.
+ */
+export async function threadFor(uid: string, asked?: string): Promise<{ threadId: string; history: Turn[] | null }> {
+  if (!asked) return { threadId: newThreadId(), history: null };
+  const history = await loadHistory(uid, asked);
+  if (history) return { threadId: asked, history };
+  if (AUTO_ID.test(asked) && !(await threads().doc(asked).get()).exists) return { threadId: asked, history: null };
+  return { threadId: newThreadId(), history: null };
+}
+
 /** Make sure the thread doc exists before the flow runs, so runs and pending actions have somewhere to live. */
 export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date }) {
   const ref = threads().doc(a.threadId);

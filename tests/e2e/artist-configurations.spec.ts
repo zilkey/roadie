@@ -167,3 +167,39 @@ test("Genres on General Settings: added in lowercase, no duplicates, autosaved, 
   await page.reload();
   await expect(card.getByTestId("genres-empty")).toBeVisible();
 });
+
+test("Lineups: a remove made while the last edit is still saving survives a reload at once (the draft replays that save first)", async ({ page }) => {
+  const stamp = String(Date.now() % 100000);
+  const NAME = `Gone E2E ${stamp}`, ID = `gone-e2e-${stamp}`;
+  await openSettings(page);
+  await page.getByTestId("add-config").click();
+  await page.getByTestId("new-config-name").fill(NAME);
+  await page.getByTestId("new-config-add").click();
+  const row = page.getByTestId(`config-${ID}`);
+  await expect(row).toBeVisible();
+
+  // A slow server: the edit's save is still out when Remove is tapped and the page reloads.
+  let edits = 0;
+  await page.route("**/api/commands/artists.update", async (r) => {
+    edits++;
+    await new Promise((done) => setTimeout(done, 1500));
+    await r.continue().catch(() => {}); // the page that sent it may be gone by now
+  });
+  await page.getByTestId(`config-edit-${ID}`).click();
+  await page.getByTestId("edit-config-billing").fill("Gone Billing");
+  await page.getByTestId("edit-config-done").click();
+  await expect.poll(() => edits).toBeGreaterThan(0); // the edit is on its way
+  await page.getByTestId(`config-remove-${ID}`).click();
+  await page.getByTestId(`config-remove-yes-${ID}`).click();
+  await expect(row).toHaveCount(0);
+  await page.reload();
+
+  // Reopened: the draft sends the edit again (it lands once) and the removal after it, with no conflict against our own save.
+  await expect(page.getByTestId("config-trio")).toBeVisible();
+  await expect(page.getByTestId("save-status").first()).toHaveText("Saved", { timeout: 30_000 });
+  await expect(row).toHaveCount(0);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.reload();
+  await expect(page.getByTestId("config-trio")).toBeVisible();
+  await expect(row).toHaveCount(0);
+});

@@ -5,7 +5,7 @@ import { AppError, invalid } from "../errors";
 import { ChatRequest, type AssistantAction, type AssistantEvent, type ToolTrace } from "@/schema/assistant";
 import { getChatFlow } from "./flow";
 import type { Session } from "./run";
-import { ensureThread, loadHistory, newMessageId, newThreadId, saveTurn } from "./threads";
+import { ensureThread, newMessageId, saveTurn, threadFor } from "./threads";
 
 const sse = (e: AssistantEvent) => `data: ${JSON.stringify(e)}\n\n`;
 export const DROPPED = "Roadie dropped a cable. Try again.";
@@ -23,9 +23,8 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     if (!parsed.success) throw invalid(parsed.error);
     const req = parsed.data;
 
-    // A missing or foreign thread id just starts a fresh thread.
-    const history = req.threadId ? await loadHistory(ctx.uid, req.threadId) : null;
-    const threadId = history ? req.threadId! : newThreadId();
+    // The caller's own thread, a new one under the id the browser picked, or (missing or foreign) a fresh one.
+    const { threadId, history } = await threadFor(ctx.uid, req.threadId);
     const userAt = new Date();
     const enc = new TextEncoder();
     const user = await db.get("users", ctx.uid);

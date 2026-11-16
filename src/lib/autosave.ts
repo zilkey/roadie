@@ -11,7 +11,8 @@ export type SaveState = "idle" | "saving" | "saved" | "offline" | "error" | "con
 export const AUTOSAVE_MS = 800;
 const RETRY_MS = 5000;
 
-interface Job { patch: Record<string, unknown>; mutationId: string }
+/** `replay`: a save found in a restored draft that was on its way when the tab closed; it may already have landed. */
+interface Job { patch: Record<string, unknown>; mutationId: string; replay?: boolean }
 const emptyToNull = (s: string) => (s.trim() === "" ? null : s);
 
 /**
@@ -66,9 +67,14 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
   // Every patch not yet saved, and the rev it was made against: what the draft holds.
   const unsaved = useRef<Record<string, unknown>>({});
   const unsavedRev = useRef(0);
+  // The save on its way now. A draft written meanwhile names it: the page can close before its answer comes, and
+  // the edits after it were made on top of it (sent against the rev it will make). Opening the record again replays it
+  // first under the same clientMutationId (it lands once), so those edits never conflict with this person's own save.
+  const sending = useRef<Job | null>(null);
   const persist = useCallback(() => {
     const c = chRef.current; if (!c) return;
-    if (Object.keys(unsaved.current).length) c.set({ values: unsaved.current, title: cfg.current.title ?? "", route: window.location.pathname + window.location.search, rev: unsavedRev.current });
+    const s = sending.current;
+    if (Object.keys(unsaved.current).length) c.set({ values: unsaved.current, title: cfg.current.title ?? "", route: window.location.pathname + window.location.search, rev: unsavedRev.current, ...(s ? { sending: { mutationId: s.mutationId, patch: s.patch } } : {}) });
     else void c.clear();
   }, []);
 
@@ -90,8 +96,11 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
         retry.current = null;
         setStatus("saving"); setError(null);
         const { command: cmd, id: rid } = cfg.current;
+        sending.current = job;
+        if (Object.keys(unsaved.current).length) persist(); // the draft names this save while it is out
         try {
           const out = await runCommandFull(cmd, { id: rid, patch: job.patch }, { clientMutationId: job.mutationId, baseRev: baseRev.current, autosave: true });
+          sending.current = null;
           if (out.revs[rid]) baseRev.current = Math.max(baseRev.current, out.revs[rid]);
           for (const k of Object.keys(job.patch)) if (JSON.stringify(unsaved.current[k]) === JSON.stringify(job.patch[k])) delete unsaved.current[k];
           unsavedRev.current = baseRev.current;
@@ -101,7 +110,10 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
           }
           setStatus(held.current ? "conflict" : "saved");
         } catch (e) {
+          sending.current = null;
           const ce = e as CommandError;
+          // A replayed save that is refused now never landed either: drop it, the edits made on top of it follow.
+          if (job.replay && ce.code !== "offline") { persist(); continue; }
           if (ce.code === "offline") {
             retry.current = job; setStatus("offline");
             retryTimer.current = setTimeout(() => { retryTimer.current = null; void drain(); }, RETRY_MS);
@@ -155,6 +167,8 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
       if (!Object.keys(unsaved.current).length) { if (d.rev !== undefined) baseRev.current = d.rev; unsavedRev.current = baseRev.current; }
       pending.current = { ...d.values, ...pending.current };
       unsaved.current = { ...d.values, ...unsaved.current };
+      // A save that was on its way when the draft was written goes first (once: the server knows its clientMutationId).
+      if (d.sending && !retry.current) retry.current = { patch: d.sending.patch, mutationId: d.sending.mutationId, replay: true };
       setEdits((e) => ({ ...Object.fromEntries(Object.entries(d.values).filter(([, v]) => typeof v === "string" || v === null).map(([k, v]) => [k, (v as string | null) ?? ""])), ...e }));
       setRestored(d.values);
       setStatus("saving");

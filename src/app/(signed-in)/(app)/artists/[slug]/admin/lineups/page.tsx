@@ -25,7 +25,11 @@ function LineupsEditor() {
   const [cfgs, setCfgs] = useState<Cfg[]>([]);
   const ms = (musicians.rows ?? []).filter((m) => m.active).sort((a, b) => a.name.localeCompare(b.name));
   const resetFrom = (a: Artist) => setCfgs(a.configurations);
-  const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, scope: "lineups", title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
+  const as = useAutosave({
+    command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, scope: "lineups", title: artist?.name, onUseTheirs: () => artist && resetFrom(artist),
+    // Unsaved lineups from a page that closed before they were sent: show them while they go out.
+    onRestore: (p) => { if (Array.isArray(p.configurations)) setCfgs(p.configurations as Cfg[]); },
+  });
   const cfgDraft = useDraft(draftPath.newIn("configurations"), { name: "", billingName: "", musicianIds: [] as string[] }, { title: (v) => `New configuration${v.name ? ` · ${v.name}` : ""}` });
   const cfgMutation = useRef(newMutationId());
   const hasDraft = cfgDraft.restoredAt !== null;
@@ -33,8 +37,18 @@ function LineupsEditor() {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
+  // One that arrives while a save is still being wrapped up is taken once that save is done.
   const liveKey = JSON.stringify(artist ? artist.configurations : null);
-  useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const skipped = useRef(false);
+  useEffect(() => {
+    if (!artist) return;
+    if (as.isBusy()) { skipped.current = true; return; }
+    skipped.current = false;
+    resetFrom(artist);
+  }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (skipped.current && artist && !as.isBusy()) { skipped.current = false; resetFrom(artist); }
+  }, [as.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return null;
   const name = artist.name;

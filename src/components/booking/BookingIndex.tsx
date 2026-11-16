@@ -145,7 +145,8 @@ function Booking({ seg, campaign }: { seg: Tab; campaign?: CampaignKey }) {
     setSortState(s);
     const carried = new URLSearchParams(window.location.search).get("campaign");
     const qs = new URLSearchParams({ ...(q.trim() ? { q } : {}), ...(s !== "name" ? { sort: s } : {}), ...(carried ? { campaign: carried } : {}) }).toString();
-    router.replace(`/booking/festivals${qs ? `?${qs}` : ""}`);
+    // Straight into the address bar (it's this page's state, not a navigation): a reload right after the tap keeps the sort.
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
   };
   const version = useMemo(() => JSON.stringify([b.festivals.map((f) => [f.id, f.rev]), b.editions.map((e) => [e.id, e.rev])]), [b.festivals, b.editions]);
   const page = useFestivalPage({ q: q.trim(), sort, enabled: seg === "festivals", version });

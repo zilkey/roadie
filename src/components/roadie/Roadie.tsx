@@ -155,8 +155,10 @@ const MicIcon = () => (
 function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocus = false }: { messages: ChatMsg[]; pending: Pending | null; busy: boolean; send(t: string): unknown; stop(): void; on: Handlers; notice: string | null; voice: Voice; autoFocus?: boolean }) {
   const [text, setText] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
-  // Once the saved copy of the exchange arrives, `pending` stands in for it for one more render: hide the pair so it isn't doubled.
-  const at = pending?.doneId ? messages.findIndex((m) => m.id === pending.doneId) : -1;
+  // The saved copy of the exchange can arrive before the stream's last event: while `pending` is still on screen it stands
+  // in for that copy, so hide the saved pair (found by the reply id the stream named first) and it isn't doubled.
+  const replyId = pending?.doneId ?? pending?.replyId;
+  const at = replyId ? messages.findIndex((m) => m.id === replyId) : -1;
   const shown = at >= 0 ? messages.slice(0, Math.max(0, at - 1)) : messages;
   const end = useRef<HTMLDivElement>(null);
   const vamp = useVamp(busy && !pending?.reply && !pending?.actions.length);

@@ -94,14 +94,22 @@ test("the backup runs before the first delete, and holds the documents that were
 });
 
 test("the backup folder is stamped in local time, to the second", async () => {
-  // 21:07 local on Oct 24 is already Oct 25 UTC: the folder must say the 24th, the day it is where the wipe is run.
-  const evening = new Date(2026, 9, 24, 21, 7, 3);
-  assert.equal(localStamp(evening), "2026-10-24T21-07-03");
-  assert.equal(evening.toISOString().slice(0, 10), "2026-10-25", "a UTC date would have filed it under tomorrow");
-  // Two wipes in one sitting get two folders, so the second cannot overwrite the first one's backup.
-  assert.notEqual(localStamp(new Date(2026, 9, 24, 21, 7, 3)), localStamp(new Date(2026, 9, 24, 21, 7, 4)));
-  assert.match(localStamp(), /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/);
-  assert.ok(!localStamp().includes(":"), "no colons: they are awkward in paths");
+  // Run in Denver, west of UTC, whatever zone the machine is in (a cloud container is UTC, where local and UTC agree
+  // and the check below would prove nothing).
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Denver";
+  try {
+    // 21:07 local on Oct 24 is already Oct 25 UTC: the folder must say the 24th, the day it is where the wipe is run.
+    const evening = new Date(2026, 9, 24, 21, 7, 3);
+    assert.equal(localStamp(evening), "2026-10-24T21-07-03");
+    assert.equal(evening.toISOString().slice(0, 10), "2026-10-25", "a UTC date would have filed it under tomorrow");
+    // Two wipes in one sitting get two folders, so the second cannot overwrite the first one's backup.
+    assert.notEqual(localStamp(new Date(2026, 9, 24, 21, 7, 3)), localStamp(new Date(2026, 9, 24, 21, 7, 4)));
+    assert.match(localStamp(), /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/);
+    assert.ok(!localStamp().includes(":"), "no colons: they are awkward in paths");
+  } finally {
+    if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone;
+  }
 });
 
 test("a wipe with no date given writes a stamped folder and uses it", async () => {

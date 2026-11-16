@@ -17,7 +17,11 @@ export const DRAFT_SAVE_MS = 500;
 const RETRY_MS = 5000;
 const KEEPALIVE_MAX = 60_000; // browsers cap keepalive request bodies at 64KB
 
-export interface DraftPayload { values: Record<string, unknown>; title: string; route: string; /** Edits only: the record's rev the edits were made against. */ rev?: number }
+export interface DraftPayload {
+  values: Record<string, unknown>; title: string; route: string; /** Edits only: the record's rev the edits were made against. */ rev?: number;
+  /** Edits only: a save on its way when this was written (outcome unknown), replayed first. See DraftSaveInput. */
+  sending?: { mutationId: string; patch: Record<string, unknown> };
+}
 /** `sent`: a keepalive request went out and we couldn't see whether it landed. `cleared`: tombstone, the server doc is to be deleted. */
 type Local = ({ cleared: true } | ({ cleared?: false } & DraftPayload)) & { at: number; sent?: boolean };
 
@@ -80,7 +84,7 @@ export class DraftChannel {
     if (!l || l.sent) return;
     try {
       if (l.cleared) await runCommandQuiet("drafts.clear", { path: this.path });
-      else await runCommandQuiet("drafts.save", { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev });
+      else await runCommandQuiet("drafts.save", { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev, ...(l.sending ? { sending: l.sending } : {}) });
       removeLocal(this.uid, this.path, l.at);
       this.onStatus(readLocal(this.uid, this.path) ? "saving" : l.cleared ? "idle" : "saved");
     } catch (e) {
@@ -95,7 +99,7 @@ export class DraftChannel {
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     const l = readLocal(this.uid, this.path);
     if (!l || l.sent || !token) return;
-    const body = JSON.stringify(l.cleared ? { path: this.path } : { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev });
+    const body = JSON.stringify(l.cleared ? { path: this.path } : { path: this.path, values: l.values, title: l.title, route: l.route, rev: l.rev, ...(l.sending ? { sending: l.sending } : {}) });
     if (body.length > KEEPALIVE_MAX) return;
     writeLocal(this.uid, this.path, { ...l, sent: true });
     try {
@@ -113,7 +117,7 @@ export class DraftChannel {
   }
 }
 
-export interface OpenedDraft { values: Record<string, unknown>; rev?: number; title: string; route: string; /** When it was last written (ms). */ at: number }
+export interface OpenedDraft { values: Record<string, unknown>; rev?: number; sending?: DraftPayload["sending"]; title: string; route: string; /** When it was last written (ms). */ at: number }
 
 /**
  * What to show when a form opens: the draft at `path`, or null. A local copy that never reached the server wins (and is pushed);
@@ -125,7 +129,7 @@ export async function openDraft(uid: string, path: string): Promise<OpenedDraft 
   let server: OpenedDraft | null = null, known = true;
   try {
     const d = (await getDoc(doc(clientDb(), "unsubmittedDrafts", draftDocId(uid, path)))).data();
-    if (d && (d.expiresAt as { toMillis(): number }).toMillis() > Date.now()) server = { values: d.values, rev: d.rev, title: d.title, route: d.route, at: (d.updatedAt as { toMillis(): number }).toMillis() };
+    if (d && (d.expiresAt as { toMillis(): number }).toMillis() > Date.now()) server = { values: d.values, rev: d.rev, ...(d.sending ? { sending: d.sending } : {}), title: d.title, route: d.route, at: (d.updatedAt as { toMillis(): number }).toMillis() };
   } catch (e) {
     // Rules can't evaluate a missing doc's owner: "permission-denied" here means "no draft".
     if ((e as { code?: string }).code !== "permission-denied") known = false;

@@ -11,7 +11,7 @@ const col = () => firestore().collection("unsubmittedDrafts");
 
 export async function saveDraft(uid: string, input: DraftSaveInput, now = new Date()): Promise<{ path: string; updatedAt: number }> {
   await col().doc(draftDocId(uid, input.path)).set({
-    uid, path: input.path, values: input.values, route: input.route, title: input.title, ...(input.rev !== undefined && { rev: input.rev }),
+    uid, path: input.path, values: input.values, route: input.route, title: input.title, ...(input.rev !== undefined && { rev: input.rev }), ...(input.sending && { sending: input.sending }),
     updatedAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + DRAFT_TTL_MS),
   });
   return { path: input.path, updatedAt: now.getTime() };

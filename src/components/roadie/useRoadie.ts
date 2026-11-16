@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, type Timestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, type Timestamp } from "firebase/firestore";
 import { clientAuth, clientDb } from "@/lib/firebase-client";
 import { useProfile } from "@/lib/auth";
 import { useArtist } from "@/lib/artist";
@@ -67,27 +67,41 @@ export function useRoadie(onNavigated?: () => void) {
     runCommand("assistant.setPrefs", { width: w }).catch(() => {});
   }, []);
 
-  // Live transcript for the current thread (owner-only read).
+  // Live transcript for the current thread (owner-only read). A conversation stopped before the server answered may
+  // not exist yet when it opens (the read is refused until it does), so a refused listen is tried again a few times.
+  const [listenTry, setListenTry] = useState(0);
+  useEffect(() => { setListenTry(0); }, [threadId]);
   useEffect(() => {
     if (!threadId) { setMessages([]); return; }
-    return onSnapshot(
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const unsub = onSnapshot(
       query(collection(clientDb(), "assistantThreads", threadId, "messages"), orderBy("at")),
       (s) => setMessages(s.docs.map((d) => {
         const x = d.data() as { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; at?: Timestamp; stopped?: boolean };
         return { id: d.id, role: x.role, text: x.text, actions: x.actions ?? [], ...(x.stopped ? { stopped: true } : {}) };
       })),
-      () => setMessages([]),
+      () => {
+        setMessages([]);
+        if (listenTry < 10) retry = setTimeout(() => setListenTry((n) => n + 1), 1000);
+      },
     );
-  }, [threadId]);
+    return () => { unsub(); if (retry) clearTimeout(retry); };
+  }, [threadId, listenTry]);
 
   // The reply is shown from `pending` until the saved copy arrives (or a few seconds pass). A stopped reply is saved
   // once the server notices the Stop and the tool it was running finishes, so it is kept on screen until then.
   useEffect(() => {
+    // Stopped before the server named the reply: its saved copy is the conversation's last exchange once it lands.
+    if (pending?.stopped && !pending.doneId) {
+      const [u, a] = messages.slice(-2);
+      if (u?.role === "user" && u.text === pending.text && a?.role === "assistant" && a.stopped) setPending(null);
+      return;
+    }
     if (!pending?.doneId) return;
     if (messages.some((m) => m.id === pending.doneId)) { setPending(null); return; }
     const t = setTimeout(() => setPending(null), pending.stopped ? 60000 : 5000);
     return () => clearTimeout(t);
-  }, [pending?.doneId, pending?.stopped, messages]);
+  }, [pending?.doneId, pending?.stopped, pending?.text, messages]);
 
   type Turn = { reply: string; actions: AssistantAction[]; error?: string; stopped?: boolean };
   const inFlight = useRef<AbortController | null>(null);
@@ -139,8 +153,11 @@ export function useRoadie(onNavigated?: () => void) {
   const send = useCallback(async (text: string, opts?: { voice?: boolean; fresh?: boolean; pageContext?: PageContext }): Promise<Turn | null> => {
     const message = text.trim();
     if (!message || (pending && !pending.doneId && !pending.error && !pending.stopped)) return null;
-    const thread = opts?.fresh ? undefined : threadId;
+    // A new conversation gets its id here, not from the server's first event: a Stop tapped before that event
+    // arrives still knows which conversation the stopped turn is saved in (the server takes the id if it is free).
+    const thread = (opts?.fresh ? undefined : threadId) ?? doc(collection(clientDb(), "assistantThreads")).id;
     if (opts?.fresh) setThreadId(undefined);
+    let started = false;
     setNotice(null);
     setPending({ text: message, reply: "", actions: [] });
     const acc: Turn = { reply: "", actions: [] };
@@ -164,13 +181,20 @@ export function useRoadie(onNavigated?: () => void) {
         buf += dec.decode(value, { stream: true });
         const parts = buf.split("\n\n");
         buf = parts.pop() ?? "";
-        for (const part of parts) if (part.startsWith("data: ")) apply(JSON.parse(part.slice(6)), acc);
+        for (const part of parts) {
+          if (!part.startsWith("data: ")) continue;
+          const e = JSON.parse(part.slice(6)) as AssistantEvent;
+          if (e.type === "start") started = true;
+          apply(e, acc);
+        }
       }
     } catch (e) {
       if (ctl.signal.aborted) {
         // Stopped: what came in stays on screen, marked stopped, until the server's saved copy replaces it.
         acc.stopped = true;
         setPending((p) => p && { ...p, stopped: true, ...(p.replyId ? { doneId: p.replyId } : {}) });
+        // Stopped before the server said where: the turn goes to the id sent with it, so open that conversation.
+        if (!started && thread !== threadId) { setThreadId(thread); saveThread(thread); }
       } else {
         acc.error = e instanceof Error ? e.message : "Roadie is unavailable";
         setPending((p) => p && { ...p, error: acc.error });
@@ -179,7 +203,7 @@ export function useRoadie(onNavigated?: () => void) {
       if (inFlight.current === ctl) inFlight.current = null;
     }
     return { reply: acc.reply, actions: acc.actions, ...(acc.error ? { error: acc.error } : {}), ...(acc.stopped ? { stopped: true } : {}) };
-  }, [pending, threadId, path, apply]);
+  }, [pending, threadId, path, apply, saveThread]);
 
   /** Stop the reply being written. Whatever Roadie already did stands (and can be undone); nothing more runs. */
   const stop = useCallback(() => { inFlight.current?.abort(); }, []);

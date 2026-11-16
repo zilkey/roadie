@@ -387,7 +387,8 @@ test("money cards name the person, project and show; income.add asks and yes lan
 test("context: on the Shows page Roadie gets the rows of the tab in view", async () => {
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Bluebird")))) as { id: string };
   await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: "2026-09-01", venueId: v.id, status: "confirmed", times: { loadIn: "17:00", set: "20:00" } }));
-  const c = makeCtx(await sess());
+  // Pinned clock: the Deep End show (Nov 14) is upcoming and Bluebird (Sep 1) played, whatever day the suite runs.
+  const c = makeCtx(await sess({ now: new Date("2026-11-01T12:00:00-07:00") }));
   const up = (await pageList(c, { route: "shows" }))!;
   assert.equal(up.list, "shows");
   assert.equal(up.tab, "upcoming");

@@ -199,6 +199,11 @@ test("drafts: keyed by uid + path, last write wins, list newest first and own on
   // edits to an existing record: doc path, with the rev they were made against
   await call(rudy.token, "drafts.save", { path: draftPath.edit("shows", "s1"), values: { bandNotes: "x" }, route: "/shows/s1", title: "Fox", rev: 3 });
   assert.equal((await draftDoc(rudy.uid, "shows/s1"))!.rev, 3);
+  // ...and the save that was still on its way when it was written, replayed first when the record opens again
+  const sending = { mutationId: "abcdefgh-5678", patch: { bandNotes: "w" } };
+  await call(rudy.token, "drafts.save", { path: draftPath.edit("shows", "s1"), values: { bandNotes: "x" }, route: "/shows/s1", title: "Fox", rev: 3, sending });
+  assert.deepEqual((await draftDoc(rudy.uid, "shows/s1"))!.sending, sending);
+  assert.equal((await call(rudy.token, "drafts.save", { path: "shows/s1", values: {}, route: "/x", sending: { patch: {} } })).status, 400, "a replayed save needs its mutation id");
   // felix cannot clear rudy's: clear is always scoped to the caller's own uid
   await call(felix.token, "drafts.clear", { path: "expenses" });
   assert.equal((await listDrafts(rudy.uid)).length, 3);

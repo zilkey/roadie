@@ -16,17 +16,26 @@ export function canGoBack(s: string[]): boolean {
   return s.length >= 2;
 }
 
-/** Set by a back or forward step (the Back link's router.back, or the browser's) and cleared once the Shell records the new path. */
-let popped = false;
-if (typeof window !== "undefined") window.addEventListener("popstate", () => { popped = true; });
 /**
- * Whether the page now mounting was reached by a back or forward step; reading it clears it. Read it in a mount effect: a page's
- * effects run before the Shell's path effect in the same commit.
+ * The page a back or forward step (the Back link's router.back, or the browser's) landed on, until that page takes it. It is
+ * kept by path, not cleared when the Shell records the new path: the page can mount a commit or more after that (its code
+ * still loading, a loading screen first), and it must still know it was stepped back to. Going anywhere else drops it.
  */
-export function takeSteppedBack(): boolean { const p = popped; popped = false; return p; }
+let popped: string | null = null;
+if (typeof window !== "undefined") window.addEventListener("popstate", () => { popped = window.location.pathname; });
+/** Whether the page now mounting was reached by a back or forward step; reading it clears it. Read it in a mount effect. */
+export function takeSteppedBack(): boolean {
+  const p = popped !== null && popped === window.location.pathname;
+  popped = null;
+  return p;
+}
 
 /** Create forms (".../new") are never a place to go back to: they leave by router.replace, so they are not recorded. */
-export function recordPath(path: string) { popped = false; if (!path.endsWith("/new")) stack = nextStack(stack, path); listeners.forEach((l) => l()); }
+export function recordPath(path: string) {
+  if (popped !== null && popped !== path) popped = null;
+  if (!path.endsWith("/new")) stack = nextStack(stack, path);
+  listeners.forEach((l) => l());
+}
 const listeners = new Set<() => void>();
 /** For useSyncExternalStore: called after each recorded path, so a page can show where it was reached from (the Booking breadcrumbs). */
 export function subscribeNav(l: () => void) { listeners.add(l); return () => { listeners.delete(l); }; }
