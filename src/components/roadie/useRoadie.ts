@@ -40,14 +40,16 @@ export function useRoadie(onNavigated?: () => void) {
   const [pending, setPending] = useState<Pending | null>(null);
   const loaded = useRef(false);
   /**
-   * Saves which conversation is open, one write at a time and in the order asked for. Sent side by side, "New chat"
-   * (none) and the first message's reply (its new conversation) can land the wrong way round, and the next page load
-   * opens an empty panel.
+   * Every save of the panel's prefs (width and open conversation), one at a time and in the order made. Sent side by
+   * side they can land the wrong way round: "New chat" (none) after the first reply's conversation opens an empty panel
+   * next load, and a quick run of arrow keys can leave an older width saved. setPrefs also rewrites both fields from
+   * what it reads, so a width and a conversation saved together could undo each other.
    */
-  const threadSaves = useRef<Promise<unknown>>(Promise.resolve());
-  const saveThread = useCallback((id: string | null) => {
-    threadSaves.current = threadSaves.current.then(() => runCommand("assistant.setPrefs", { threadId: id })).catch(() => {});
+  const prefSaves = useRef<Promise<unknown>>(Promise.resolve());
+  const savePrefs = useCallback((p: { width?: Width; threadId?: string | null }) => {
+    prefSaves.current = prefSaves.current.then(() => runCommand("assistant.setPrefs", p)).catch(() => {});
   }, []);
+  const saveThread = useCallback((id: string | null) => savePrefs({ threadId: id }), [savePrefs]);
 
   useEffect(() => { setWidthState(readWidth()); }, []);
   // Take the saved width and conversation once, when the users doc first arrives.
@@ -64,8 +66,8 @@ export function useRoadie(onNavigated?: () => void) {
     setWidthState(w);
     if (!save) return;
     try { localStorage.setItem(WIDTH_KEY, String(w)); } catch { /* private mode */ }
-    runCommand("assistant.setPrefs", { width: w }).catch(() => {});
-  }, []);
+    savePrefs({ width: w });
+  }, [savePrefs]);
 
   // Live transcript for the current thread (owner-only read). A conversation stopped before the server answered may
   // not exist yet when it opens (the read is refused until it does), so a refused listen is tried again a few times.

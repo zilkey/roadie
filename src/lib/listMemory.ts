@@ -4,11 +4,20 @@
  * query, so each set of filters has its own), in memory for this tab. It's put back only on a back or forward step (the Back link
  * or the browser's), not when the list is opened afresh.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { takeSteppedBack } from "@/lib/navHistory";
 
-/** How long a step back keeps putting the list back in place while the page is still being drawn. */
-const RESTORE_MS = 1500, RESTORE_MAX_MS = 5000;
+/** How long a step back waits for the page to grow tall enough to reach the list's place. */
+const RESTORE_MAX_MS = 10_000;
+
+/**
+ * `<html data-list-restoring>` while a list is being put back (its pages reopening, then the scroll): what a test waits
+ * out before it scrolls the list itself, or the late restore would undo that scroll.
+ */
+function restoring(on: boolean) {
+  if (on) document.documentElement.dataset.listRestoring = "1";
+  else delete document.documentElement.dataset.listRestoring;
+}
 
 const places = new Map<string, { y: number; pages: number }>();
 
@@ -23,43 +32,47 @@ export function useListMemory(pages: number, setPages: (n: number) => void, read
   const pagesNow = useRef(pages);
   const cancel = useRef(() => {});
   pagesNow.current = pages;
-  useEffect(() => {
-    // Read the step on mount: this runs before the Shell's path effect, in the same commit.
-    const p = takeSteppedBack() ? places.get(here()) : undefined;
-    if (p) { target.current = p; if (p.pages !== pages) setPages(p.pages); }
+  // Armed before the first paint (a layout effect): a list on screen with a restore still to come could be scrolled by
+  // the person, or a test, and then put back under them. The mark follows the pending target, not the step: a remount
+  // (React's development double mount) has already used the step but still has the restore to do.
+  useLayoutEffect(() => {
+    if (!target.current) {
+      const p = takeSteppedBack() ? places.get(here()) : undefined;
+      if (p) { target.current = p; if (p.pages !== pages) setPages(p.pages); }
+    }
+    if (target.current) restoring(true);
     const save = () => { places.set(here(), { y: window.scrollY, pages: pagesNow.current }); };
     window.addEventListener("scroll", save, { passive: true });
-    return () => window.removeEventListener("scroll", save);
+    return () => { window.removeEventListener("scroll", save); if (target.current) restoring(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (target.current === null) places.set(here(), { y: window.scrollY, pages });
   }, [pages]);
-  // Scroll once the pages it had are open and drawn. The page can still be growing then (rows below the list, chips
-  // and images settling), and a scroll past its current end stops short: keep trying for a moment until it reaches the
-  // place or the page stops growing, and stop at once if the person scrolls or types themselves.
+  // Scroll once the pages it had are open and drawn. The page can still be shorter than the place then (rows below the
+  // list, chips and data settling, slower on a busy machine), and a scroll past its end stops short: keep the place until
+  // the page has grown enough to reach it, as long as RESTORE_MAX_MS, and let go at once if the person scrolls or types.
   useEffect(() => {
     if (!ready || target.current === null || pages < target.current.pages) return;
     const { y } = target.current;
     target.current = null;
-    const start = performance.now();
-    let frame = 0, until = start + RESTORE_MS, lastHeight = -1, done = false;
+    const root = document.documentElement;
     const inputs = ["wheel", "touchstart", "keydown", "mousedown"] as const;
-    const stop = () => {
+    let frame = 0, done = false;
+    const watch = new ResizeObserver(() => { frame = requestAnimationFrame(go); });
+    const cap = setTimeout(() => stop(), RESTORE_MAX_MS);
+    function stop() {
       if (done) return;
-      done = true; cancelAnimationFrame(frame);
+      done = true; restoring(false); cancelAnimationFrame(frame); clearTimeout(cap); watch.disconnect();
       for (const ev of inputs) window.removeEventListener(ev, stop);
-    };
-    for (const ev of inputs) window.addEventListener(ev, stop, { passive: true });
-    const go = () => {
+    }
+    function go() {
       if (done) return;
       window.scrollTo(0, y);
-      const height = document.documentElement.scrollHeight;
-      // Still growing: give it a little longer, never past RESTORE_MAX_MS.
-      if (height !== lastHeight) { lastHeight = height; until = Math.min(start + RESTORE_MAX_MS, Math.max(until, performance.now() + 300)); }
-      if (Math.abs(window.scrollY - y) > 1 && performance.now() < until) frame = requestAnimationFrame(go);
-      else stop();
-    };
+      if (Math.abs(window.scrollY - y) <= 1) stop(); // there: done (a page that later shrinks is clamped by the browser)
+    }
+    for (const ev of inputs) window.addEventListener(ev, stop, { passive: true });
+    watch.observe(root);
     frame = requestAnimationFrame(go);
     cancel.current = stop;
   }, [ready, pages]);

@@ -88,6 +88,7 @@ test("an admin browses every venue's upcoming shows, a page at a time, and opens
   await page.goBack();
   await page.setViewportSize({ width: 1280, height: 360 });
   await expect(shows(page)).toHaveCount(3);
+  await expect(page.locator("html")).not.toHaveAttribute("data-list-restoring"); // its own scroll back is done (to the top)
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const y = await page.evaluate(() => window.scrollY);
   expect(y).toBeGreaterThan(100);

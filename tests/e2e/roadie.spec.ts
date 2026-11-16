@@ -63,8 +63,9 @@ test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to 
   await expect(handle).toHaveAttribute("aria-valuemax", "640");
 
   // Drag the left edge out to 500px.
-  // Wait for the save of the width we mean, not just any width: a drag can save on the way.
-  const saved = (width: number) => page.waitForRequest((r) => r.url().includes("assistant.setPrefs") && r.method() === "POST" && (r.postDataJSON() ?? {}).width === width);
+  // Wait until the save of the width we mean has landed, not just any width (a drag can save on the way), and not just
+  // sent: a reload straight after the request goes out can beat the write.
+  const saved = (width: number) => page.waitForResponse((r) => r.url().includes("assistant.setPrefs") && r.request().method() === "POST" && (r.request().postDataJSON() ?? {}).width === width && r.ok());
   let req = saved(500);
   const h = await settledBox(handle);
   await page.mouse.move(h.x + h.width / 2, h.y + 200);
