@@ -172,15 +172,20 @@ test("'cancel the show': confirm card, Cancel leaves it, Yes cancels it", async 
 test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, marks it Stopped, and the chat carries on", async ({ page }) => {
   await signInAs(page, "nora");
   await page.getByTestId("roadie-new").click();
+  // Sent (the message and the Stop leave the browser as keepalive requests, so a reload after this can't lose them).
+  const sent = (path: string) => page.waitForRequest((r) => r.url().endsWith(`/api/assistant/${path}`) && r.method() === "POST");
+  const chat = sent("chat"), stopped = sent("stop");
   await ask(page, "find me a venue in Boise [fake: slow]");
   await expect(page.getByTestId("roadie-vamp")).toBeVisible();
   await expect(page.getByTestId("roadie-send")).toHaveCount(0);
   await page.getByTestId("roadie-stop").click();
+  await chat;
+  await stopped;
 
   await expect(page.getByTestId("roadie-stopped")).toBeVisible();
   await expect(page.getByTestId("roadie-stop")).toHaveCount(0);
   await expect(page.getByTestId("roadie-vamp")).toHaveCount(0);
-  // The saved copy (marked stopped on the server) survives a reload. The server saves it after the browser drops the stream,
+  // The saved copy (marked stopped on the server) survives a reload. The server saves it once it has the Stop,
   // a beat after the click: reload until it is there instead of once, straight away.
   await expect(async () => {
     await page.reload();

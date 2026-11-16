@@ -46,10 +46,11 @@ export function useRoadie(onNavigated?: () => void) {
    * what it reads, so a width and a conversation saved together could undo each other.
    */
   const prefSaves = useRef<Promise<unknown>>(Promise.resolve());
-  const savePrefs = useCallback((p: { width?: Width; threadId?: string | null }) => {
+  const savePrefs = useCallback((p: { width?: Width; threadId?: string | null; at?: number }) => {
     prefSaves.current = prefSaves.current.then(() => runCommand("assistant.setPrefs", p)).catch(() => {});
   }, []);
-  const saveThread = useCallback((id: string | null) => savePrefs({ threadId: id }), [savePrefs]);
+  // Stamped with when it was chosen: the chat request records a new conversation too, and the newer choice wins.
+  const saveThread = useCallback((id: string | null) => savePrefs({ threadId: id, at: Date.now() }), [savePrefs]);
 
   useEffect(() => { setWidthState(readWidth()); }, []);
   // Take the saved width and conversation once, when the users doc first arrives.
@@ -106,7 +107,12 @@ export function useRoadie(onNavigated?: () => void) {
   }, [pending?.doneId, pending?.stopped, pending?.text, messages]);
 
   type Turn = { reply: string; actions: AssistantAction[]; error?: string; stopped?: boolean };
-  const inFlight = useRef<AbortController | null>(null);
+  /**
+   * The message being answered. `answering` once the server has started its reply: until then a Stop must not drop the
+   * request (it may not have reached the server, and the message would be lost), so it is only marked and cut on arrival.
+   */
+  type InFlight = { ctl: AbortController; thread: string; replyId: string; answering: boolean; stopped: boolean };
+  const inFlight = useRef<InFlight | null>(null);
   /** Applies one event to the visible `pending` and to `acc`, the finished turn that `send` returns. */
   const apply = useCallback((e: AssistantEvent, acc: Turn) => {
     const add = (a: AssistantAction) => { acc.actions.push(a); setPending((p) => p && { ...p, actions: [...p.actions, a] }); };
@@ -159,20 +165,26 @@ export function useRoadie(onNavigated?: () => void) {
     // arrives still knows which conversation the stopped turn is saved in (the server takes the id if it is free).
     const thread = (opts?.fresh ? undefined : threadId) ?? doc(collection(clientDb(), "assistantThreads")).id;
     if (opts?.fresh) setThreadId(undefined);
+    // The reply's id, picked here too: a Stop names the turn even before the server has answered.
+    const replyId = doc(collection(clientDb(), "assistantThreads", thread, "messages")).id;
+    const sentAt = Date.now();
     let started = false;
     setNotice(null);
-    setPending({ text: message, reply: "", actions: [] });
+    setPending({ text: message, reply: "", actions: [], replyId });
     const acc: Turn = { reply: "", actions: [] };
     const ctl = new AbortController();
-    inFlight.current = ctl;
+    const cur: InFlight = { ctl, thread, replyId, answering: false, stopped: false };
+    inFlight.current = cur;
     try {
       const token = await clientAuth().currentUser?.getIdToken();
-      if (ctl.signal.aborted) throw ctl.signal.reason;
+      // keepalive: a message that was sent reaches the server even if the page reloads or closes before it is answered.
       const res = await fetch("/api/assistant/chat", {
-        method: "POST", signal: ctl.signal,
+        method: "POST", signal: ctl.signal, keepalive: true,
         headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() },
-        body: JSON.stringify({ threadId: thread, message, pageContext: opts?.pageContext ?? pageContextFor(path, window.location.search, window.location.hash), ...(opts?.voice ? { voice: true } : {}) }),
+        body: JSON.stringify({ threadId: thread, replyId, sentAt, message, pageContext: opts?.pageContext ?? pageContextFor(path, window.location.search, window.location.hash), ...(opts?.voice ? { voice: true } : {}) }),
       });
+      cur.answering = true;
+      if (cur.stopped) ctl.abort(); // stopped while it was on its way: the server has it now (and the stop), so let go
       if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error?.message ?? "Roadie is unavailable");
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -191,28 +203,45 @@ export function useRoadie(onNavigated?: () => void) {
         }
       }
     } catch (e) {
-      if (ctl.signal.aborted) {
+      if (cur.stopped) {
         // Stopped: what came in stays on screen, marked stopped, until the server's saved copy replaces it.
         acc.stopped = true;
-        setPending((p) => p && { ...p, stopped: true, ...(p.replyId ? { doneId: p.replyId } : {}) });
-        // Stopped before the server said where: the turn goes to the id sent with it, so open that conversation.
+        setPending((p) => p && { ...p, stopped: true, doneId: replyId });
+        // Stopped before the server said where: the turn goes to the ids sent with it, so open that conversation.
         if (!started && thread !== threadId) { setThreadId(thread); saveThread(thread); }
+      } else if (ctl.signal.aborted) {
+        // New chat dropped it: nothing to show.
       } else {
         acc.error = e instanceof Error ? e.message : "Roadie is unavailable";
         setPending((p) => p && { ...p, error: acc.error });
       }
     } finally {
-      if (inFlight.current === ctl) inFlight.current = null;
+      if (inFlight.current === cur) inFlight.current = null;
     }
     return { reply: acc.reply, actions: acc.actions, ...(acc.error ? { error: acc.error } : {}), ...(acc.stopped ? { stopped: true } : {}) };
   }, [pending, threadId, path, apply, saveThread]);
 
-  /** Stop the reply being written. Whatever Roadie already did stands (and can be undone); nothing more runs. */
-  const stop = useCallback(() => { inFlight.current?.abort(); }, []);
+  /**
+   * Stop the reply being written. Whatever Roadie already did stands (and can be undone); nothing more runs. The server
+   * is told in its own request (a dropped stream doesn't always reach it), and the stream is cut once it has begun.
+   */
+  const stop = useCallback(() => {
+    const cur = inFlight.current;
+    if (!cur || cur.stopped) return;
+    cur.stopped = true;
+    setPending((p) => p && { ...p, stopped: true, doneId: cur.replyId });
+    if (cur.thread !== threadId) { setThreadId(cur.thread); saveThread(cur.thread); }
+    void clientAuth().currentUser?.getIdToken().then((token) => fetch("/api/assistant/stop", {
+      method: "POST", keepalive: true,
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}`, ...artistHeaders() },
+      body: JSON.stringify({ threadId: cur.thread, replyId: cur.replyId }),
+    })).catch(() => undefined);
+    if (cur.answering) cur.ctl.abort();
+  }, [threadId, saveThread]);
 
   /** Start a fresh conversation (the old one stays in Firestore). */
   const newChat = useCallback(() => {
-    inFlight.current?.abort();
+    inFlight.current?.ctl.abort();
     setThreadId(undefined); setPending(null);
     saveThread(null);
   }, [saveThread]);

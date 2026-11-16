@@ -1,6 +1,6 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { handleChat } from "@/server/assistant/chat";
+import { handleChat, handleStop } from "@/server/assistant/chat";
 import { getChatFlow } from "@/server/assistant/flow";
 import { execTool } from "@/server/assistant/tools";
 import { ensureThread, loadHistory, newMessageId, newThreadId } from "@/server/assistant/threads";
@@ -166,6 +166,77 @@ test("api: a new thread under the id the browser picked; taken, malformed or for
   while (saved.length < 2 && Date.now() < until) { saved = (await msgs.orderBy("at").get()).docs.map((d) => d.data()); if (saved.length < 2) await new Promise((r) => setTimeout(r, 100)); }
   assert.deepEqual(saved.map((m) => m.role), ["user", "assistant"]);
   assert.equal(saved[1].stopped, true);
+});
+
+test("api: Stop as its own request ends the turn with no dropped stream, even sent before the turn arrives; only the person's own stop counts", async () => {
+  const admin = await makeUser("stop2@example.com", "admin", { name: "Rudy" });
+  const other = await makeUser("other@example.com", "admin", { name: "Felix" });
+  const member = await makeUser("member@example.com", "member", { name: "Hugo" });
+  const message = "find me a venue in Boise [fake: slow]";
+  const auto = () => firestore().collection("assistantThreads").doc().id;
+  const msgs = (t: string) => firestore().collection("assistantThreads").doc(t).collection("messages");
+  const until = async (t: string, n: number) => {
+    const end = Date.now() + 8000;
+    let docs: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+    while (Date.now() < end && (docs = (await msgs(t).orderBy("at").get()).docs).length < n) await new Promise((r) => setTimeout(r, 100));
+    return docs;
+  };
+
+  // Mid-turn, and the stream is never dropped (a server that doesn't hear the disconnect): the stop request ends it.
+  const thread1 = auto(), reply1 = auto();
+  const res = await handleChat(`Bearer ${admin.token}`, { threadId: thread1, replyId: reply1, message, pageContext: ctx });
+  const reader = res.body!.getReader();
+  const first = JSON.parse(new TextDecoder().decode((await reader.read()).value).replace(/^data: /, "")) as Extract<AssistantEvent, { type: "start" }>;
+  assert.deepEqual([first.threadId, first.messageId], [thread1, reply1], "the browser's ids");
+  // someone else's stop doesn't count
+  assert.equal((await handleStop(`Bearer ${other.token}`, { threadId: thread1, replyId: reply1 })).status, 200);
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.equal((await msgs(thread1).get()).size, 0, "still running");
+  const started = Date.now();
+  assert.equal((await handleStop(`Bearer ${admin.token}`, { threadId: thread1, replyId: reply1 })).status, 200);
+  const saved = await until(thread1, 2);
+  assert.ok(Date.now() - started < 5000, `stopped promptly (${Date.now() - started}ms)`);
+  assert.equal(saved[1].id, reply1);
+  assert.equal(saved[1].data().stopped, true);
+  await reader.cancel().catch(() => {});
+
+  // Before the turn arrives (Stop tapped while the request was still on its way): saved at once, stopped, message kept.
+  const thread2 = auto(), reply2 = auto();
+  await handleStop(`Bearer ${admin.token}`, { threadId: thread2, replyId: reply2 });
+  const t0 = Date.now();
+  const res2 = await handleChat(`Bearer ${admin.token}`, { threadId: thread2, replyId: reply2, message, pageContext: ctx });
+  await res2.text();
+  assert.ok(Date.now() - t0 < 5000, "no waiting on the model");
+  const saved2 = await until(thread2, 2);
+  assert.deepEqual(saved2.map((d) => d.data().role), ["user", "assistant"]);
+  assert.equal(saved2[0].data().text, message);
+  assert.equal(saved2[1].data().stopped, true);
+  assert.equal((await firestore().collection("assistantStops").doc(reply2).get()).exists, false, "the stop is cleared once used");
+
+  // Members have no Roadie; ids must be auto-ids.
+  assert.equal((await handleStop(`Bearer ${member.token}`, { threadId: thread2, replyId: reply2 })).status, 403);
+  assert.equal((await handleStop(`Bearer ${admin.token}`, { threadId: thread2, replyId: "../x" })).status, 400);
+  assert.equal((await handleStop(null, { threadId: thread2, replyId: reply2 })).status, 401);
+});
+
+test("api: a new conversation becomes the one the panel opens, set by the chat request; an older New chat landing late doesn't undo it", async () => {
+  const admin = await makeUser("open@example.com", "admin", { name: "Rudy" });
+  const prefs = async () => ((await firestore().collection("users").doc(admin.uid).get()).data()!.prefs?.assistant ?? {}) as { threadId?: string; threadAt?: number };
+  const t = firestore().collection("assistantThreads").doc().id;
+  await readSse(await post(admin.token, { threadId: t, sentAt: 2000, message: "hi", pageContext: ctx }));
+  assert.equal((await prefs()).threadId, t, "opened by the request that started it");
+  assert.equal((await prefs()).threadAt, 2000);
+  // New chat tapped before that message (at 1000), its save arriving after it: ignored
+  await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null, at: 1000 });
+  assert.equal((await prefs()).threadId, t);
+  // New chat tapped after it: wins
+  await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null, at: 3000 });
+  assert.equal((await prefs()).threadId, undefined);
+  // A message in a conversation already open doesn't touch it again
+  await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: t, at: 4000 });
+  await readSse(await post(admin.token, { threadId: t, sentAt: 3500, message: "hi", pageContext: ctx }));
+  assert.equal((await prefs()).threadAt, 4000);
+  assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null, at: -1 })).status, 400);
 });
 
 test("command: assistant.setPrefs stores width (rail or pixels) and thread, members refused", async () => {

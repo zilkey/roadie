@@ -60,6 +60,28 @@ export async function threadFor(uid: string, asked?: string): Promise<{ threadId
   return { threadId: newThreadId(), history: null };
 }
 
+/** The id the reply is saved under: the one the browser picked, when it is a fresh auto-id not used in this thread. */
+export async function replyIdFor(threadId: string, asked?: string): Promise<string> {
+  if (asked && AUTO_ID.test(asked) && !(await threads().doc(threadId).collection("messages").doc(asked).get()).exists) return asked;
+  return newMessageId();
+}
+
+// ---------- Stop (an explicit request, so it counts even when the dropped stream never reaches the server) ----------
+
+const stops = () => firestore().collection("assistantStops");
+/** How long a stop that no turn picked up is kept (a TTL policy deletes it; firestore.indexes.json). */
+const STOP_TTL_MS = 24 * 3600 * 1000;
+/** The person tapped Stop on this turn. Keyed by the reply id, which the browser picked, so it can come before the turn starts. */
+export async function requestStop(uid: string, threadId: string, replyId: string, now = new Date()) {
+  await stops().doc(replyId).set({ uid, threadId, at: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + STOP_TTL_MS) });
+}
+/** Whether this person asked to stop this turn. */
+export async function stopRequested(uid: string, replyId: string): Promise<boolean> {
+  const d = (await stops().doc(replyId).get()).data();
+  return !!d && d.uid === uid;
+}
+export async function clearStop(replyId: string) { await stops().doc(replyId).delete().catch(() => undefined); }
+
 /** Make sure the thread doc exists before the flow runs, so runs and pending actions have somewhere to live. */
 export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date }) {
   const ref = threads().doc(a.threadId);

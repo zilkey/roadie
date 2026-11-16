@@ -79,14 +79,24 @@ export const AssistantMessage = z.strictObject({
 });
 export type AssistantMessage = z.infer<typeof AssistantMessage>;
 
+/** A Firestore auto-id, as the browser makes them for a new conversation or reply. */
+const autoId = z.string().regex(/^[A-Za-z0-9]{20}$/);
+
 export const ChatRequest = z.strictObject({
   threadId: id.optional(),
+  /** The id the reply is saved under, picked by the browser so a Stop can name the turn before the server answers. */
+  replyId: autoId.optional(),
+  /** When it was sent, by the device's clock: a new conversation is opened as of then (see AssistantPrefs.threadAt). */
+  sentAt: z.number().int().min(0).optional(),
   message: z.string().trim().min(1).max(4000),
   pageContext: PageContext,
   /** The message was spoken into the mic (a transcript) and the reply will be read aloud. */
   voice: z.literal(true).optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
+
+/** POST /api/assistant/stop: the person tapped Stop on this turn (it may not have reached the server yet). */
+export const StopRequest = z.strictObject({ threadId: id, replyId: autoId });
 
 /** Server-sent events from POST /api/assistant/chat. */
 export type AssistantEvent =
@@ -132,4 +142,8 @@ export type UndoRequest = z.infer<typeof UndoRequest>;
 
 /** The Roadie panel: the rail, a dragged width in pixels, or `full` (older saves; read as the default size). */
 export const AssistantWidth = z.union([z.enum(["full", "narrow"]), z.number().int().min(280).max(4000)]);
-export const AssistantPrefs = z.strictObject({ width: AssistantWidth.optional(), threadId: id.optional() });
+export const AssistantPrefs = z.strictObject({
+  width: AssistantWidth.optional(), threadId: id.optional(),
+  /** When the person opened `threadId` (or New chat), by their device's clock: an older choice that lands late is ignored. */
+  threadAt: z.number().int().min(0).optional(),
+});
