@@ -4,7 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useArtist, useArtistRouter } from "@/lib/artist";
 import { fmtDate, todayStr } from "@/lib/booking";
 import { confetti } from "@/components/Celebrate";
-import { MONTHS, bucks, defaultReviewYear, hours, milesLine, num, stageLine, type Ranked, type YearReview as Review } from "@/lib/yearReview";
+import { MONTHS, bucks, defaultReviewYear, hours, milesLine, num, stageLine, versus, type PreviousReview, type Ranked, type YearReview as Review } from "@/lib/yearReview";
 import { useReviewData } from "./useReviewData";
 import s from "./review.module.css";
 
@@ -41,9 +41,29 @@ function RankList({ rows, unit }: { rows: Ranked[]; unit?: (n: number) => string
 
 interface SlideDef { key: string; palette: string; body: React.ReactNode }
 
-/** The slides for one year, in order. A slide with nothing to say is left out. */
-function slidesFor(r: Review, band: string): SlideDef[] {
+/** One line of the head-to-head slide: this year's bar over the year before's, each as wide as its share of the bigger one. */
+function Duel({ label, now, before, fmt = num }: { label: string; now: number; before: number; fmt?: (n: number) => string }) {
+  const max = Math.max(now, before, 1);
+  return (
+    <div className={s.duel} data-testid="review-duel">
+      <span className={s.duelLabel}>{label}</span>
+      <span className={s.duelRow}><i className={s.duelNow} style={{ width: `${Math.max(2, (now / max) * 100)}%` }} /><b>{fmt(now)}</b></span>
+      <span className={s.duelRow}><i style={{ width: `${Math.max(2, (before / max) * 100)}%` }} /><b>{fmt(before)}</b></span>
+    </div>
+  );
+}
+
+/** The slides for one year, in order. A slide with nothing to say is left out. With a year before to compare with, the big numbers say how they moved. */
+function slidesFor(r: Review, band: string, prev: PreviousReview | null): SlideDef[] {
   const out: SlideDef[] = [];
+  const p = prev?.review;
+  const than = prev ? (prev.samePoint ? `this point in ${prev.year}` : prev.year) : "";
+  /** "▲ Up 5 (+28%) from this point in 2025": nothing when there is no year before. */
+  const vs = (now: number, before: number | undefined, fmt?: (n: number) => string) => {
+    if (!prev || before === undefined) return null;
+    const v = versus(now, before, fmt);
+    return <p className={s.vs} data-dir={v.dir} data-testid="review-vs"><i aria-hidden>{v.dir === "up" ? "▲" : v.dir === "down" ? "▼" : "●"}</i>{v.dir === "same" ? `Same as ${than}` : `${v.text} from ${than}`}</p>;
+  };
   const add = (key: string, palette: string, body: React.ReactNode) => out.push({ key, palette, body });
   const big = (text: string) => `${s.big}${text.length > 5 ? ` ${s.long}` : ""}`;
 
@@ -62,6 +82,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>You played</p>
       <p className={s.big}><Count n={r.shows.count} /></p>
       <p className={s.unit}>{plural(r.shows.count, "show")}</p>
+      {vs(r.shows.count, p?.shows.count)}
       <p className={s.line}>
         {r.shows.cities > 0 && <>in <b>{r.shows.cities}</b> {plural(r.shows.cities, "city", "cities")}</>}
         {r.shows.cities > 0 && r.shows.venues > 0 && " "}
@@ -97,6 +118,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>On stage, you played</p>
       <p className={big(num(r.songs.played))}><Count n={r.songs.played} /></p>
       <p className={s.unit}>{plural(r.songs.played, "song")}</p>
+      {p && p.songs.played > 0 && vs(r.songs.played, p.songs.played)}
       <p className={s.line}><b>{num(r.songs.unique)}</b> different {plural(r.songs.unique, "one")}, across {r.songs.setlists} {plural(r.songs.setlists, "setlist")}</p>
       {r.songs.debuts.length > 0 && <p className={s.foot}>{r.songs.debuts.length} made {r.songs.debuts.length === 1 ? "its" : "their"} live debut: {r.songs.debuts.slice(0, 3).join(", ")}{r.songs.debuts.length > 3 ? " and more" : ""}.</p>}
     </>);
@@ -115,6 +137,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>You spent</p>
       <p className={s.big}><Count n={r.songs.stageSec} format={hours} /></p>
       <p className={s.unit}>{hours(r.songs.stageSec) === "1" ? "hour" : "hours"} on stage</p>
+      {p && p.songs.stageSec > 0 && vs(r.songs.stageSec, p.songs.stageSec, (n) => `${hours(n)} ${hours(n) === "1" ? "hour" : "hours"}`)}
       <p className={s.line}>{stageLine(r.songs.stageSec)}</p>
     </>);
   }
@@ -124,6 +147,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>It took practice</p>
       <p className={s.big}><Count n={r.rehearsals.count} /></p>
       <p className={s.unit}>{plural(r.rehearsals.count, "rehearsal")}</p>
+      {vs(r.rehearsals.count, p?.rehearsals.count)}
       <p className={s.line}>
         {r.rehearsals.sec > 0 && <><b>{hours(r.rehearsals.sec)}</b> {hours(r.rehearsals.sec) === "1" ? "hour" : "hours"} in the room</>}
         {r.rehearsals.sec > 0 && r.rehearsals.songs > 0 && ", "}
@@ -138,6 +162,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>You drove</p>
       <p className={big(num(r.miles.total))}><Count n={r.miles.total} /></p>
       <p className={s.unit}>{plural(r.miles.total, "mile")}</p>
+      {p && p.miles.total > 0 && vs(r.miles.total, p.miles.total, (n) => `${num(n)} ${plural(Math.round(n), "mile")}`)}
       <p className={s.line}>{milesLine(r.miles.total)}</p>
       <p className={s.foot}>
         {r.miles.trips} {plural(r.miles.trips, "trip")}
@@ -152,6 +177,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
       <p className={s.kicker}>You played to</p>
       <p className={big(num(r.crowd.total))}><Count n={r.crowd.total} /></p>
       <p className={s.unit}>{plural(r.crowd.total, "person", "people")}</p>
+      {p && p.crowd.total > 0 && vs(r.crowd.total, p.crowd.total)}
       {r.crowd.biggest && r.crowd.counted > 1 && <p className={s.line}>Biggest crowd: <b>{num(r.crowd.biggest.count)}</b> at {r.crowd.biggest.name}</p>}
       {r.crowd.avgStars !== undefined && <p className={s.foot}>You gave your shows {r.crowd.avgStars} stars on average{r.crowd.fiveStar > 0 ? `, and ${r.crowd.fiveStar} got all five` : ""}.</p>}
     </> : <>
@@ -166,6 +192,7 @@ function slidesFor(r: Review, band: string): SlideDef[] {
     add("money", s.night, <>
       <p className={s.kicker}>You made</p>
       <p className={big(bucks(r.money.in))} data-testid="review-money-in"><Count n={r.money.in} format={bucks} /></p>
+      {vs(r.money.in, p?.money.in, bucks)}
       <p className={s.line}>
         {bucks(r.money.out)} went out, so the year {r.soFar ? "is" : "ended"} <b>{r.money.net >= 0 ? `${bucks(r.money.net)} up` : `${bucks(-r.money.net)} down`}</b>
       </p>
@@ -228,6 +255,24 @@ function slidesFor(r: Review, band: string): SlideDef[] {
     </>);
   }
 
+  if (prev && p) {
+    const duels: React.ReactNode[] = [];
+    const duel = (label: string, now: number, before: number, fmt?: (n: number) => string) => { if (now || before) duels.push(<Duel key={label} label={label} now={now} before={before} fmt={fmt} />); };
+    duel("Shows", r.shows.count, p.shows.count);
+    duel("Songs played", r.songs.played, p.songs.played);
+    duel("Hours on stage", r.songs.stageSec, p.songs.stageSec, hours);
+    duel("Miles", r.miles.total, p.miles.total);
+    duel("Money made", r.money.in, p.money.in, bucks);
+    duel("Rehearsals", r.rehearsals.count, p.rehearsals.count);
+    if (duels.length > 1) {
+      add("versus", s.berry, <>
+        <p className={s.kicker}><span className={s.keyNow}>{r.year}</span> vs <span className={s.keyBefore}>{prev.year}</span></p>
+        <div className={s.duels}>{duels.slice(0, 5)}</div>
+        <p className={s.foot}>{prev.samePoint && prev.through ? `Both years through ${fmtDate(prev.through)}.` : `All of ${r.year} against all of ${prev.year}.`}</p>
+      </>);
+    }
+  }
+
   if (out.length === 1) {
     add("empty", s.night, <>
       <p className={s.kicker}>Nothing logged for {r.year} yet</p>
@@ -268,8 +313,8 @@ export function YearReview() {
   const q = useSearchParams().get("y") ?? "";
   const today = todayStr();
   const year = /^\d{4}$/.test(q) ? q : defaultReviewYear(today);
-  const { review, years, loading, error, feeds } = useReviewData(year);
-  const slides = useMemo(() => (review ? slidesFor(review, name) : []), [review, name]);
+  const { review, previous, years, loading, error, feeds } = useReviewData(year);
+  const slides = useMemo(() => (review ? slidesFor(review, name, previous) : []), [review, name, previous]);
 
   // The slide you're on belongs to the year it was reached in: another year starts over.
   const [pos, setPos] = useState({ year, i: 0 });

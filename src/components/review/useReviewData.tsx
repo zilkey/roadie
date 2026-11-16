@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useArtist } from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
-import { reviewYears, yearReview, type ReviewInput } from "@/lib/yearReview";
+import { previousReview, reviewYears, yearReview, type ReviewInput } from "@/lib/yearReview";
 import type { Expense, Fan, Income, Musician, Payout, Pitch, Rehearsal, Release, ReleaseTrack, Setlist, Show, ShowDeal, Song, StatSnapshot, Tour, TourEntry } from "@/schema";
 import type { Post } from "@/schema/posts";
 
@@ -69,6 +69,7 @@ export function useReviewData(year: string) {
   }, [loading, artist, today, artistId, entries, ...need.map((c) => c.rows), ...extra.map((c) => c.rows)]);
 
   const review = useMemo(() => (input ? yearReview({ ...input, year }) : null), [input, year]);
+  const previous = useMemo(() => (input ? previousReview({ ...input, year }) : null), [input, year]);
   const years = useMemo(() => (input ? reviewYears(input) : [today.slice(0, 4)]), [input, today]);
-  return { review, years, loading, error, feeds };
+  return { review, previous, years, loading, error, feeds };
 }

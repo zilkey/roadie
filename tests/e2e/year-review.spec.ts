@@ -43,6 +43,9 @@ test("an admin plays 2026: full screen, one stat per slide, through to the summa
   }
   for (const key of ["rehearsals", "crowd", "money", "lineups", "summary"]) expect(seen).toContain(key);
   expect(seen.indexOf("money")).toBeGreaterThan(seen.indexOf("shows"));
+  // The seed has nothing in 2025, so nothing is compared: no "vs" chips and no head-to-head slide.
+  expect(seen).not.toContain("versus");
+  await expect(page.getByTestId("review-vs")).toHaveCount(0);
 
   await expect(page.getByTestId("review-tiles")).toContainText("$850");
   await expect(page.getByTestId("review-next")).toBeDisabled();

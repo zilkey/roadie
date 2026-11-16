@@ -1,7 +1,7 @@
 /** Year in Review: what counts toward a year, and the words on the slides. */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bucks, defaultReviewYear, hours, milesLine, reviewSeason, reviewYears, yearReview, type ReviewInput, type ReviewShow } from "@/lib/yearReview";
+import { bucks, defaultReviewYear, hours, milesLine, previousReview, reviewSeason, reviewYears, versus, yearReview, type ReviewInput, type ReviewShow } from "@/lib/yearReview";
 
 const A = "artist1";
 const show = (id: string, date: string, extra: Partial<ReviewShow> = {}): ReviewShow => ({
@@ -192,4 +192,43 @@ test("the words: dollars, hours and the miles comparison", () => {
   assert.match(milesLine(6000), /2\.1 trips from New York to Los Angeles/);
   assert.match(milesLine(1000), /4% of the way around the Earth/);
   assert.match(milesLine(262), /10 marathons/);
+});
+
+test("previousReview: a year still going is set against the year before cut at the same day", () => {
+  const inc = (id: string, date: string, amount: number) => ({ id, artistId: A, date, amount, category: "guarantee", from: "Venue", projectId: "p", receivedAt: date });
+  const i = base({
+    shows: [show("n1", "2026-03-05"), show("n2", "2026-10-10"), show("p1", "2025-03-05"), show("p2", "2025-11-16"), show("p3", "2025-11-17"), show("p4", "2025-12-20")],
+    income: [inc("i1", "2026-10-10", 50000), inc("i2", "2025-03-05", 20000), inc("i3", "2025-12-20", 99999)],
+    rehearsals: [{ date: "2025-06-01", songs: [] }, { date: "2025-12-01", songs: [] }],
+    songs: [{ id: "s1", title: "Early", status: "active", createdMs: ms("2025-02-01") }, { id: "s2", title: "Late", status: "active", createdMs: ms("2025-12-01") }],
+  });
+  const prev = previousReview(i)!;
+  assert.equal(prev.year, "2025");
+  assert.equal(prev.samePoint, true);
+  assert.equal(prev.through, "2025-11-16");
+  assert.equal(prev.review.shows.count, 2);
+  assert.equal(prev.review.money.in, 20000);
+  assert.equal(prev.review.rehearsals.count, 1);
+  assert.equal(prev.review.songs.added, 1);
+  assert.equal(prev.review.soFar, false);
+
+  // A finished year is set against all of the year before.
+  const full = previousReview({ ...i, today: "2027-02-01" })!;
+  assert.equal(full.samePoint, false);
+  assert.equal(full.review.shows.count, 4);
+  assert.equal(full.review.money.in, 119999);
+});
+
+test("previousReview: null when the year before has nothing by then", () => {
+  assert.equal(previousReview(base({ shows: [show("n1", "2026-03-05"), show("late", "2025-12-20")] })), null);
+  assert.equal(previousReview(base({ year: "2024" })), null);
+});
+
+test("versus: up, down and same, with the percent when there was something before", () => {
+  assert.deepEqual(versus(23, 18), { dir: "up", text: "Up 5 (+28%)" });
+  assert.deepEqual(versus(10, 40), { dir: "down", text: "Down 30 (-75%)" });
+  assert.deepEqual(versus(7, 7), { dir: "same", text: "Same" });
+  assert.deepEqual(versus(5, 0), { dir: "up", text: "Up 5" });
+  assert.deepEqual(versus(1692100, 1500000, bucks), { dir: "up", text: "Up $1,921 (+13%)" });
+  assert.deepEqual(versus(100020, 100000, bucks), { dir: "same", text: "Same" });
 });

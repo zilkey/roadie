@@ -39,6 +39,8 @@ export interface ReviewInput {
   /** Today in the band's zone (YYYY-MM-DD). */
   today: string;
   artistId: string;
+  /** Count nothing dated after this day (YYYY-MM-DD). Missing = today. Comparisons use it: "this point last year". */
+  until?: string;
   shows: readonly ReviewShow[]; setlists: readonly ReviewSetlist[]; deals: readonly ReviewDeal[];
   rehearsals: readonly ReviewRehearsal[]; songs: readonly ReviewSong[];
   income: readonly (IncomeLike & { artistId?: string })[]; expenses: readonly ReviewExpense[]; payouts: readonly (PayoutLike & { artistId?: string })[];
@@ -126,8 +128,11 @@ export function reviewYears(i: Pick<ReviewInput, "today" | "artistId" | "shows" 
 
 export function yearReview(i: ReviewInput): YearReview {
   const { year, today, artistId } = i;
+  const cap = i.until ?? today;
+  const capMs = Date.parse(cap + "T23:59:59.999Z");
+  const madeIn = (ms: number | undefined) => msYear(ms) === year && ms! <= capMs;
   const allShows = mine(live(i.shows), artistId);
-  const playedEver = allShows.filter((s) => isPlayed(s, today)).sort((a, b) => a.date.localeCompare(b.date));
+  const playedEver = allShows.filter((s) => isPlayed(s, today) && s.date <= cap).sort((a, b) => a.date.localeCompare(b.date));
   const played = playedEver.filter((s) => inYear(s.date, year));
   const showById = new Map(allShows.map((s) => [s.id, s]));
   const at = (s: ReviewShow) => ({ name: showName(s), date: s.date });
@@ -167,7 +172,7 @@ export function yearReview(i: ReviewInput): YearReview {
   const debuts = earlierSetlists ? [...new Set(plays)].filter((k) => !before.has(k)).map((k) => titleOf.get(k) ?? k) : [];
 
   // ---- rehearsals ----
-  const rehearsals = live(i.rehearsals).filter((r) => inYear(r.date, year) && r.date <= today);
+  const rehearsals = live(i.rehearsals).filter((r) => inYear(r.date, year) && r.date <= cap);
   let rehearsalSec = 0;
   for (const r of rehearsals) {
     const a = mins(r.startTime), b = mins(r.endTime);
@@ -176,12 +181,12 @@ export function yearReview(i: ReviewInput): YearReview {
   const rehearsed = named(rank(rehearsals.flatMap((r) => (r.songs ?? []).map((x) => { if (!titleOf.has(x.songId)) titleOf.set(x.songId, x.title); return x.songId; }))));
 
   // ---- miles ----
-  const expenses = live(i.expenses).filter((x) => inYear(x.date, year) && x.date <= today);
+  const expenses = live(i.expenses).filter((x) => inYear(x.date, year) && x.date <= cap);
   const gas = expenses.filter((x) => x.gas);
   const gasTrips = gas.reduce((n, x) => n + x.gas!.miles, 0);
   const withGas = new Set(live(i.expenses).filter((x) => x.gas && x.tourEntryId).map((x) => x.tourEntryId!));
   const tourIds = new Set(mine(i.tours, artistId).map((t) => t.id));
-  const drives = live(i.tourEntries).filter((e) => e.kind === "drive" && tourIds.has(e.tourId) && inYear(e.date, year) && e.date! <= today && !withGas.has(e.id) && e.miles);
+  const drives = live(i.tourEntries).filter((e) => e.kind === "drive" && tourIds.has(e.tourId) && inYear(e.date, year) && e.date! <= cap && !withGas.has(e.id) && e.miles);
   const tourDrives = drives.reduce((n, e) => n + e.miles! * (e.roundTrip ? 2 : 1), 0);
 
   // ---- crowd and stars ----
@@ -192,7 +197,7 @@ export function yearReview(i: ReviewInput): YearReview {
 
   // ---- money ----
   const income = incomeSoFar(mine(i.income, artistId), today);
-  const rows = moneyRows({ income, expenses: i.expenses, payouts: mine(i.payouts, artistId) }).filter((r) => inYear(r.date, year) && r.date <= today);
+  const rows = moneyRows({ income, expenses: i.expenses, payouts: mine(i.payouts, artistId) }).filter((r) => inYear(r.date, year) && r.date <= cap);
   const sum = (xs: readonly { in: number; out: number }[], k: "in" | "out") => xs.reduce((n, r) => n + r[k], 0);
   const moneyIn = sum(rows, "in"), moneyOut = sum(rows, "out");
   const cat = new Map<string, number>(), perShow = new Map<string, number>(), perMonth = Array.from({ length: 12 }, () => 0);
@@ -205,7 +210,7 @@ export function yearReview(i: ReviewInput): YearReview {
   const best = [...perShow].filter(([id]) => showById.has(id)).sort((a, b) => b[1] - a[1])[0];
   const bestMonth = perMonth.reduce((b, n, m) => (n > perMonth[b] ? m : b), 0);
   const showIncome = [...perShow.values()].reduce((n, c) => n + c, 0);
-  const paidToPlayers = live(mine(i.payouts, artistId)).filter((p) => p.kind === "pay" && inYear(p.paidAt, year)).reduce((n, p) => n + p.amount, 0);
+  const paidToPlayers = live(mine(i.payouts, artistId)).filter((p) => p.kind === "pay" && inYear(p.paidAt, year) && p.paidAt! <= cap).reduce((n, p) => n + p.amount, 0);
 
   // ---- lineups ----
   const cfgName = new Map(i.configurations.map((c) => [c.id, c.name]));
@@ -216,15 +221,15 @@ export function yearReview(i: ReviewInput): YearReview {
   // ---- releases ----
   const releases = mine(live(i.releases), artistId).filter((r) => inYear(r.releaseDate, year));
   const trackCount = (id: string) => live(i.tracks).filter((t) => t.releaseId === id).length;
-  const out = releases.filter((r) => r.releaseDate! <= today).sort((a, b) => a.releaseDate!.localeCompare(b.releaseDate!))
+  const out = releases.filter((r) => r.releaseDate! <= cap).sort((a, b) => a.releaseDate!.localeCompare(b.releaseDate!))
     .map((r) => ({ title: r.title, kind: r.kind, date: r.releaseDate!, tracks: trackCount(r.id) }));
 
   // ---- reach ----
-  const fans = mine(live(i.fans), artistId).filter((f) => msYear(f.createdMs) === year);
-  const snaps = i.stats.filter((s) => inYear(s.date, year)).sort((a, b) => a.date.localeCompare(b.date));
+  const fans = mine(live(i.fans), artistId).filter((f) => madeIn(f.createdMs));
+  const snaps = i.stats.filter((s) => inYear(s.date, year) && s.date <= cap).sort((a, b) => a.date.localeCompare(b.date));
   const followers = snaps.filter((s) => typeof s.followers === "number");
   const lastOf = (f: "monthlyListeners" | "streams") => [...snaps].reverse().find((s) => typeof s[f] === "number")?.[f];
-  const pitches = mine(live(i.pitches), artistId).filter((p) => msYear(p.createdMs) === year && p.status !== "idea" && p.status !== "toPitch");
+  const pitches = mine(live(i.pitches), artistId).filter((p) => madeIn(p.createdMs) && p.status !== "idea" && p.status !== "toPitch");
 
   return {
     year, soFar: today.startsWith(year + "-"),
@@ -240,7 +245,7 @@ export function yearReview(i: ReviewInput): YearReview {
     songs: {
       played: plays.length, unique: new Set(plays).size, top: top.slice(0, 5), setlists, stageSec, debuts,
       opener: named(rank(openers))[0], closer: named(rank(closers))[0],
-      added: live(i.songs).filter((s) => msYear(s.createdMs) === year).length,
+      added: live(i.songs).filter((s) => madeIn(s.createdMs)).length,
     },
     rehearsals: { count: rehearsals.length, sec: rehearsalSec, songs: new Set(rehearsals.flatMap((r) => (r.songs ?? []).map((x) => x.songId))).size, top: rehearsed[0] },
     miles: {
@@ -266,10 +271,42 @@ export function yearReview(i: ReviewInput): YearReview {
       newFans: fans.length, fanCities: new Set(fans.flatMap((f) => (f.cities ?? []).map((c) => `${c.city}|${c.state ?? ""}`.toLowerCase()))).size,
       followers: followers.length ? { from: followers[0].followers!, to: followers[followers.length - 1].followers! } : undefined,
       monthlyListeners: lastOf("monthlyListeners"), streams: lastOf("streams"),
-      posts: mine(live(i.posts), artistId).filter((p) => inYear(p.postedAt?.slice(0, 10), year)).length,
+      posts: mine(live(i.posts), artistId).filter((p) => inYear(p.postedAt?.slice(0, 10), year) && p.postedAt!.slice(0, 10) <= cap).length,
       pitches: pitches.length, booked: pitches.filter((p) => p.status === "booked").length,
     },
   };
+}
+
+// ---------- the year before ----------
+
+export interface PreviousReview {
+  year: string; review: YearReview;
+  /** True when `review` stops at the same day of its year as today (the year in view is still going), so both cover the same stretch. */
+  samePoint: boolean;
+  /** The last day counted when samePoint (YYYY-MM-DD). */
+  through?: string;
+}
+/**
+ * The year before the one in view, to compare with. While the year in view is still going, the year before is cut at the
+ * same day, so "23 shows so far" is set against the shows played by this day last year, not all of last year's.
+ * Null when that stretch has nothing in it (the band's first year in Roadie).
+ */
+export function previousReview(i: ReviewInput): PreviousReview | null {
+  const year = String(Number(i.year) - 1);
+  const samePoint = i.today.startsWith(i.year + "-");
+  const through = samePoint ? year + i.today.slice(4) : undefined;
+  const review = yearReview({ ...i, year, until: through });
+  const any = review.shows.count || review.songs.played || review.rehearsals.count || review.miles.total || review.money.in || review.money.out;
+  return any ? { year, review, samePoint, through } : null;
+}
+
+/** How a number moved against the year before: "Up 5 (+28%)", "Down $1,200 (-12%)", "Same". The percent is left off when there was nothing before. */
+export function versus(now: number, before: number, fmt: (n: number) => string = num): { dir: "up" | "down" | "same"; text: string } {
+  const diff = now - before;
+  if (fmt(Math.abs(diff)) === fmt(0)) return { dir: "same", text: "Same" };
+  const pct = before > 0 ? Math.round((Math.abs(diff) / before) * 100) : 0;
+  const tail = pct >= 1 ? ` (${diff > 0 ? "+" : "-"}${num(pct)}%)` : "";
+  return diff > 0 ? { dir: "up", text: `Up ${fmt(diff)}${tail}` } : { dir: "down", text: `Down ${fmt(-diff)}${tail}` };
 }
 
 // ---------- words for the slides ----------

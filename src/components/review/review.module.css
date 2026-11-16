@@ -36,6 +36,22 @@
 .title { margin: 0; font-size: clamp(2.25rem, 9vmin, 6rem); font-weight: 900; line-height: .95; letter-spacing: -0.035em; }
 .tag { justify-self: start; padding: 6px 14px; border-radius: 999px; background: var(--pop); color: #14052e; font-size: clamp(0.8125rem, 2vmin, 1.0625rem); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 
+/* how the number moved against the year before */
+.vs { justify-self: start; display: inline-flex; align-items: center; gap: 8px; margin: 2px 0; padding: 6px 14px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 14%, transparent); font-size: clamp(0.875rem, 2.3vmin, 1.25rem); font-weight: 800; }
+.vs i { font-style: normal; font-size: .8em; color: var(--pop); }
+
+/* head to head: this year's bar over the year before's */
+.duels { display: grid; gap: clamp(10px, 1.8vmin, 16px); }
+.duel { display: grid; gap: 4px; }
+.duelLabel { font-size: clamp(0.8125rem, 1.8vmin, 1rem); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; opacity: .9; }
+.duelRow { display: flex; align-items: center; gap: 10px; }
+.duelRow i { flex: none; height: clamp(10px, 1.4vmin, 12px); max-width: calc(100% - 6.5em); border-radius: 999px; background: color-mix(in srgb, var(--ink) 38%, transparent); transform-origin: left; animation: widen .8s cubic-bezier(.2, .9, .3, 1) .45s both; }
+.duelRow i.duelNow { height: clamp(16px, 2.4vmin, 22px); background: var(--pop); }
+.duelRow b { font-size: clamp(0.875rem, 2.3vmin, 1.25rem); font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; opacity: .85; }
+.duelRow i.duelNow + b { font-size: clamp(1.125rem, 2.8vmin, 1.625rem); font-weight: 900; opacity: 1; }
+.keyNow { color: var(--pop); }
+.keyBefore { opacity: .7; }
+
 /* shows per month */
 .bars { display: grid; grid-template-columns: repeat(12, 1fr); align-items: end; gap: clamp(4px, 1vmin, 10px); height: clamp(72px, 16vmin, 160px); margin-top: 6px; }
 .bar { display: flex; flex-direction: column; align-items: stretch; gap: 4px; height: 100%; text-align: center; font-size: clamp(0.625rem, 1.6vmin, 0.875rem); font-weight: 800; }
@@ -102,6 +118,7 @@
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes widen { from { transform: scaleX(0); } to { transform: none; } }
 @keyframes grow { from { transform: scaleY(0); } to { transform: none; } }
 @keyframes fill { from { width: 0; } to { width: 100%; } }
 @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(4vmin, 6vmin) scale(1.12); } }
@@ -115,7 +132,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .slide, .inner > *, .rank li, .bar i, .blob, .ring, .pulse, .actions { animation: none; }
+  .slide, .inner > *, .rank li, .bar i, .duelRow i, .blob, .ring, .pulse, .actions { animation: none; }
   /* no auto-advance: the bar just shows where you are */
   .seg.on i { animation: none; width: 100%; }
 }
