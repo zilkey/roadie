@@ -4,8 +4,8 @@ import { entity, serverMask, id } from "./common";
 /** One to-do on a template: just its text (a list made from it gets new item ids, not done, unassigned). */
 export const templateItem = z.strictObject({ id, label: z.string().min(1) });
 
-/** What a checklist hangs off: a show, a release, or the band's Social Media sidebar (one per artist). */
-export const checklistKind = z.enum(["show", "release", "social"]);
+/** What a checklist hangs off: a show, a release, the band's Social Media sidebar (one per artist), or a song. */
+export const checklistKind = z.enum(["show", "release", "social", "song"]);
 export type ChecklistKind = z.infer<typeof checklistKind>;
 
 /** When a template's to-dos happen, for show templates. Templates sort by it (Pre Show, Day Of, Post Show, then none). */

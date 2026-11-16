@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { entity, serverMask, driveRef, id } from "./common";
+import { checklist } from "./shows";
 
 export const Song = entity({
   title: z.string().min(1),
@@ -15,6 +16,8 @@ export const Song = entity({
   notes: z.string().optional(),
   /** Values for the artist's songFields, by field id (not label: a rename keeps them). No entry = no value; never an empty string. */
   fields: z.array(z.strictObject({ fieldId: id, value: z.string() })).default([]),
+  /** The song's to-dos: named lists, in order, like a show's (song templates). Written by the checklists.* commands only. */
+  checklists: z.array(checklist).default([]),
   /** Set by songs.merge on a duplicate that was folded into another song (the doc is soft-deleted; its page redirects there). */
   mergedInto: id.optional(),
   /** Set by songs.merge on the song that was kept: the songs folded into it, so its history can say "Merged The Bliss (learning) into this song". */
@@ -23,5 +26,5 @@ export const Song = entity({
 /** What db.ts validates for `songs` (the merge markers are written by songs.merge only). */
 export const SongRecord = Song.omit(serverMask);
 /** What the songs commands accept. */
-export const SongInput = SongRecord.omit({ mergedInto: true, mergedFrom: true });
+export const SongInput = SongRecord.omit({ mergedInto: true, mergedFrom: true, checklists: true });
 export type Song = z.infer<typeof Song>;

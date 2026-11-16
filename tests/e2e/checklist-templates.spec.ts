@@ -72,6 +72,7 @@ test("checklist templates: tabs by kind in ?tab, New makes one on the tab, Move 
   await expect(tab("show")).toHaveText(/^Shows \(\d+\)$/);
   await expect(tab("release")).toHaveText(/^Releases \(\d+\)$/);
   await expect(tab("social")).toHaveText(/^Social media \(\d+\)$/);
+  await expect(tab("song")).toHaveText(/^Songs \(\d+\)$/);
 
   // The Releases tab: in the URL, its own New button
   await tab("release").click();
@@ -82,7 +83,7 @@ test("checklist templates: tabs by kind in ?tab, New makes one on the tab, Move 
 
   // Move to Social media: it leaves Releases and shows on Social media
   await card(page, name).getByRole("button", { name: `${name} menu` }).click();
-  await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Move to Shows", "Move to Social media", "Delete"]);
+  await expect(page.getByRole("menuitem")).toHaveText(["Rename", "Move to Shows", "Move to Social media", "Move to Songs", "Delete"]);
   await page.getByRole("menuitem", { name: "Move to Social media" }).click();
   await expect(card(page, name)).toHaveCount(0);
   await tab("social").click();

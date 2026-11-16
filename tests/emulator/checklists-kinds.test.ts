@@ -92,3 +92,23 @@ test("release and Social Media lists are admins' only; members keep show items",
   await cmd("checklists.addItem", { kind: "show", id: show, listId: s.listId, label: "Posters" }, member);
   assert.equal(((await db.get("shows", show))!.checklists as any[])[0].items.length, 1);
 });
+
+test("song to-dos: lists on the song from song templates; members tick and add items but not lists; songs.merge carries them over", async () => {
+  const { admin, member, show } = await world();
+  const song = (await db.create(importCtx(), "songs", { title: "Bluebird", status: "active", fields: [] })).id;
+  const dup = (await db.create(importCtx(), "songs", { title: "Bluebird (2)", status: "learning", fields: [] })).id;
+  const { id: tpl } = await cmd("checklistTemplates.create", { name: "MIDI", appliesTo: "song", items: [{ label: "Configure Nord/MC6/H90/Iridium MIDI" }] }, admin);
+  const { listId } = await cmd("checklists.add", { kind: "song", id: song, templateId: tpl }, admin);
+  await assert.rejects(cmd("checklists.add", { kind: "show", id: show, templateId: tpl }, admin), /isn't a Show template/);
+  const lists = async (id: string) => (await db.get("songs", id))!.checklists as any[];
+  const [{ items: [first] }] = await lists(song);
+  await cmd("checklists.check", { kind: "song", id: song, listId, itemId: first.id, done: true }, member);
+  await cmd("checklists.addItem", { kind: "song", id: song, listId, label: "Patch the H90 preset" }, member);
+  assert.deepEqual((await lists(song))[0].items.map((i: any) => [i.label, i.done]), [["Configure Nord/MC6/H90/Iridium MIDI", true], ["Patch the H90 preset", false]]);
+  await assert.rejects(cmd("checklists.add", { kind: "song", id: song, name: "Lyrics" }, member), /may not run/);
+  await assert.rejects(cmd("checklists.add", { kind: "song", id: "nope", name: "X" }, admin), /Song not found/);
+
+  await cmd("checklists.add", { kind: "song", id: dup, name: "Arrangement" }, admin);
+  await cmd("songs.merge", { keepId: song, mergeIds: [dup] }, admin);
+  assert.deepEqual((await lists(song)).map((l) => l.name), ["MIDI", "Arrangement"]);
+});

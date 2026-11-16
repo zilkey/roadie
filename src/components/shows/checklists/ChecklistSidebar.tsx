@@ -9,7 +9,7 @@ import { ChecklistCard } from "./ChecklistCard";
 import { useDragReorder } from "@/lib/drag-reorder";
 import { moved, useChecklistTemplates } from "./shared";
 
-/** What the lists hang off: a show, a release, or the Social Media sidebar (id = the artist's). */
+/** What the lists hang off: a show, a release, a song, or the Social Media sidebar (id = the artist's). */
 export interface ChecklistHost {
   kind: ChecklistKind;
   id: string;
@@ -20,6 +20,8 @@ export interface ChecklistHost {
 export interface ChecklistSidebarProps {
   host: ChecklistHost;
   admin: boolean;
+  /** The heading: "Checklists" unless given (a song's say "To dos"). */
+  title?: string;
 }
 
 const Chevron = ({ up }: { up?: boolean }) => (
@@ -28,7 +30,7 @@ const Chevron = ({ up }: { up?: boolean }) => (
   </svg>
 );
 
-export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
+export function ChecklistSidebar({ host, admin, title = "Checklists" }: ChecklistSidebarProps) {
   const lists = host.checklists;
   const { templates: all } = useChecklistTemplates(host.artistId, admin);
   const templates = all.filter((t) => templateKind(t) === host.kind);
@@ -84,7 +86,7 @@ export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
     return (
       <section className="card editing" data-testid="checklists" data-reordering="1">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold">Checklists</h2>
+          <h2 className="text-lg font-bold">{title}</h2>
           <span className="tag">Reordering</span>
         </div>
         <p className="s muted">Drag lists to reorder them. Edit items right on the list — no need to come here.</p>
@@ -118,7 +120,7 @@ export function ChecklistSidebar({ host, admin }: ChecklistSidebarProps) {
     <section className="grid gap-4" data-testid="checklists">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-bold">
-          Checklists{total > 0 && <> · <span data-testid="checklists-count">{done} of {total}</span></>}
+          {title}{total > 0 && <> · <span data-testid="checklists-count">{done} of {total}</span></>}
         </h2>
         {admin && (
           <div className="flex items-center gap-2">

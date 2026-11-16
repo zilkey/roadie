@@ -8,20 +8,20 @@ import { templateKind, type ChecklistItem, type ChecklistKind, type ChecklistLik
 import { checklistKind, templateType, templateWhen } from "@/schema";
 import { bandsintownItem, templateTakesBandsintown } from "../bandsintown";
 
-// Checklists live on a show (shows/{id}.checklists), a release (releases/{id}.checklists) or the Social Media sidebar
+// Checklists live on a show (shows/{id}.checklists), a release (releases/{id}.checklists), a song (songs/{id}.checklists) or the Social Media sidebar
 // (socialChecklists/{artistId}.checklists, one per artist, made by its first list). The checklists.* commands take {kind, id};
 // the older shows.* checklist commands are the same commands with kind "show". Members can tick, add, edit and remove items on
-// shows only (they can't read releases or Social Media); lists themselves, pins and templates are admins'.
+// shows and songs only (they can't read releases or Social Media); lists themselves, pins and templates are admins'.
 
 const newId = () => randomUUID().slice(0, 8);
-const COLLECTION: Record<ChecklistKind, string> = { show: "shows", release: "releases", social: "socialChecklists" };
-const NOUN: Record<ChecklistKind, string> = { show: "Show", release: "Release", social: "Social Media" };
+const COLLECTION: Record<ChecklistKind, string> = { show: "shows", release: "releases", social: "socialChecklists", song: "songs" };
+const NOUN: Record<ChecklistKind, string> = { show: "Show", release: "Release", social: "Social Media", song: "Song" };
 
 interface Host { kind: ChecklistKind; id: string; artistId: string | undefined; lists: ChecklistLike[]; exists: boolean }
 
 /** The show, release or Social Media sidebar a checklist call is for, checked against the caller's band. */
 async function bandHost(w: Writer, kind: ChecklistKind, id: string): Promise<Host> {
-  if (kind !== "show" && w.ctx.role === "member") throw new AppError("forbidden", `Only admins can change ${NOUN[kind]} checklists`, 403);
+  if (kind !== "show" && kind !== "song" && w.ctx.role === "member") throw new AppError("forbidden", `Only admins can change ${NOUN[kind]} checklists`, 403);
   if (kind === "social") {
     if (w.ctx.artistId && id !== w.ctx.artistId) throw new AppError("not_found", "Social Media checklists not found", 404);
     const d = await w.get(COLLECTION.social, id);
@@ -29,7 +29,8 @@ async function bandHost(w: Writer, kind: ChecklistKind, id: string): Promise<Hos
   }
   const d = await w.get(COLLECTION[kind], id);
   if (!d || d.deletedAt || (w.ctx.artistId && d.artistId && d.artistId !== w.ctx.artistId)) throw new AppError("not_found", `${NOUN[kind]} not found`, 404);
-  return { kind, id, artistId: d.artistId as string | undefined, lists: ((d.checklists ?? []) as ChecklistLike[]), exists: true };
+  // Songs carry no artistId yet (one band per project): theirs is the caller's.
+  return { kind, id, artistId: (d.artistId as string | undefined) ?? w.ctx.artistId, lists: ((d.checklists ?? []) as ChecklistLike[]), exists: true };
 }
 function writeLists(w: Writer, h: Host, lists: ChecklistLike[]) {
   if (h.kind === "social" && !h.exists) return w.create(COLLECTION.social, { artistId: h.id, checklists: lists }, { id: h.id });

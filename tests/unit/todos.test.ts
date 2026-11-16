@@ -21,9 +21,9 @@ const base = (over: Partial<BoardInput> = {}): BoardInput => ({
 const col = (cols: ReturnType<typeof buildBoard>, key: string) => cols.find((c) => c.key === key)!;
 const keys = (c: ReturnType<typeof buildBoard>[number]) => c.groups.flatMap((g) => g.items.map((i) => i.key));
 
-test("columns: Pinned, Booking, upcoming live shows soonest first, Releases, Social Media, Our list", () => {
+test("columns: Pinned, Booking, upcoming live shows soonest first, Releases, Songs, Social Media, Our list", () => {
   const cols = buildBoard(base());
-  assert.deepEqual(cols.map((c) => c.key), ["pinned", "booking", "show:s1", "show:s2", "releases", "social", "our"]);
+  assert.deepEqual(cols.map((c) => c.key), ["pinned", "booking", "show:s1", "show:s2", "releases", "songs", "social", "our"]);
   assert.deepEqual(keys(col(cols, "pinned")), ["show:s1:l1:i1", "release:r1:l1:t1"], "canceled shows' pins never show");
   assert.deepEqual(col(cols, "pinned").groups[0].items.map((i) => i.source?.text), ["Sat Nov 14 Hi-Dive › Advance", "Spring EP › Manufacturing"]);
   const hi = col(cols, "show:s1");
@@ -112,4 +112,26 @@ test("every list adds to-dos except Booking: checklists add to themselves, Our l
   assert.deepEqual(keys(col(cols, "our")), ["todo:t1"], "a pinned to-do leaves Our list");
   const p = col(cols, "pinned").groups[0].items.find((i) => i.key === "todo:t2")!;
   assert.deepEqual([p.pinned, p.source], [true, { text: "Our list" }]);
+});
+
+test("Songs: a group per song list (song › list, linking the song), A to Z; pins go to Pinned; dismiss; Add list skips retired songs", () => {
+  const songs = [
+    { id: "g2", title: "Wildflower", status: "active", checklists: [{ id: "m1", name: "MIDI", items: [item("w1", "Configure Nord/MC6/H90/Iridium MIDI", { ownerId: "jeff" }), item("w2", "Pinned one", { pinnedAt: "x" })] }] },
+    { id: "g1", title: "Bluebird", status: "learning", checklists: [{ id: "m1", name: "MIDI", items: [item("b1", "Configure Nord/MC6/H90/Iridium MIDI")] }] },
+    { id: "g3", title: "Old Song", status: "retired", checklists: [] },
+    { id: "g4", title: "Archived", status: "active", deletedAt: "x", checklists: [{ id: "m1", name: "MIDI", items: [item("z1", "Never")] }] },
+  ];
+  const cols = buildBoard(base({ songs }));
+  const c = col(cols, "songs");
+  assert.equal(c.title, "Songs");
+  assert.deepEqual(c.groups.map((g) => [g.key, g.titleLink?.text, g.titleLink?.href, g.title]), [["song:g1:m1", "Bluebird", "/songs/g1", "MIDI"], ["song:g2:m1", "Wildflower", "/songs/g2", "MIDI"]]);
+  assert.deepEqual(keys(c), ["song:g1:m1:b1", "song:g2:m1:w1"]);
+  assert.deepEqual(c.groups[0].add, { type: "checklist", kind: "song", id: "g1", listId: "m1" });
+  assert.deepEqual(c.groups[0].items[0].action, { type: "checklist", kind: "song", id: "g1", listId: "m1", itemId: "b1" });
+  assert.ok(keys(col(cols, "pinned")).includes("song:g2:m1:w2"));
+  assert.deepEqual(c.newList?.targets.map((t) => t.id), ["g1", "g2"], "retired and archived songs aren't offered");
+  assert.deepEqual(keys(col(buildBoard(base({ songs, mine: { musicianId: "dean", userId: "u" } })), "songs")), ["song:g1:m1:b1"], "Mine: Jeff's item isn't Dean's");
+  assert.deepEqual(col(buildBoard(base({ songs, dismissed: ["song:g1:m1"] })), "songs").groups.map((g) => g.key), ["song:g2:m1"]);
+  assert.deepEqual(dismissedLists(base({ songs, dismissed: ["song:g1:m1"] })), [{ key: "song:g1:m1", title: "Bluebird › MIDI" }]);
+  assert.ok(TODO_COLUMN_KEY.test("songs"));
 });

@@ -1,18 +1,18 @@
 /**
- * To Dos: one board of everything open across shows, releases, the Social Media sidebar, booking and Our list. Pure (no server or
+ * To Dos: one board of everything open across shows, releases, songs, the Social Media sidebar, booking and Our list. Pure (no server or
  * browser imports): the page builds its columns with `buildBoard`, the server checks keys with the patterns.
  *
- * Item keys: show:{showId}:{listId}:{itemId}, release:{releaseId}:{listId}:{itemId}, social:{artistId}:{listId}:{itemId},
+ * Item keys: show:{showId}:{listId}:{itemId}, release:{releaseId}:{listId}:{itemId}, song:{songId}:{listId}:{itemId}, social:{artistId}:{listId}:{itemId},
  * pitch:{pitchId}, todo:{id}. A checklist's key (what Dismiss stores) is the item key without the item: show:{showId}:{listId}.
- * Column keys: pinned, booking (Ongoing), campaign:{campaignId}, show:{showId}, releases, social, our.
+ * Column keys: pinned, booking (Ongoing), campaign:{campaignId}, show:{showId}, releases, songs, social, our.
  * Booking campaigns (#82 S12): a column per active campaign; Ongoing is just another campaign there (the old "booking" key, so saved orders hold).
  */
 import { followUpFor, fmtPitchDate, STATUS_LABEL, todayStr, type FollowUpPitchLike, type Status } from "./booking";
 import { homeOf, liveCampaigns, ONGOING, sortCampaigns, type CampaignLike } from "./campaigns";
 import { isOff, showName, type ChecklistItem, type ChecklistKind, type ChecklistLike, type ShowPlaceLike } from "./shows";
 
-export const TODO_COLUMN_KEY = /^(pinned|booking|releases|social|our|(show|campaign):[^:\s]+)$/;
-export const TODO_CHECKLIST_KEY = /^(show|release|social):[^:\s]+:[^:\s]+$/;
+export const TODO_COLUMN_KEY = /^(pinned|booking|releases|songs|social|our|(show|campaign):[^:\s]+)$/;
+export const TODO_CHECKLIST_KEY = /^(show|release|social|song):[^:\s]+:[^:\s]+$/;
 
 export const checklistKey = (kind: ChecklistKind, id: string, listId: string) => `${kind}:${id}:${listId}`;
 export const itemKey = (kind: ChecklistKind, id: string, listId: string, itemId: string) => `${checklistKey(kind, id, listId)}:${itemId}`;
@@ -76,6 +76,8 @@ export interface BoardColumn {
 
 export interface ShowLike extends ShowPlaceLike { id: string; date: string; status: string; checklists?: ChecklistLike[]; deletedAt?: unknown }
 export interface ReleaseLike { id: string; title: string; checklists?: ChecklistLike[] }
+/** A song (#songs): its lists make the Songs column, one group per list. Retired songs' lists still show; "+ Add list" offers the rest. */
+export interface SongLike { id: string; title: string; status?: string; checklists?: ChecklistLike[]; deletedAt?: unknown }
 export interface PitchLike extends FollowUpPitchLike { id: string; target: { kind: string; id: string; name: string }; assigneeId?: string; nextStep?: { text: string; due: string } | null; campaignId?: string | null }
 export interface TodoLike { id: string; label: string; done: boolean; ownerId?: string; pinnedAt?: string }
 
@@ -83,6 +85,8 @@ export interface BoardInput {
   artistId: string;
   shows: ShowLike[];
   releases: ReleaseLike[];
+  /** The band's songs: a Songs column, a group per list titled with the song. Missing = none. */
+  songs?: SongLike[];
   social: ChecklistLike[];
   pitches: PitchLike[];
   /** The band's campaigns (admins; #82): a column for each active one. */
@@ -139,6 +143,8 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   const shows = live.filter((s) => s.date >= today);
   const showTitle = (s: ShowLike) => `${shortDate(s.date)} ${showName(s)}`;
   const releaseHref = (r: ReleaseLike) => `/releases/${r.id}`;
+  const songs = (b.songs ?? []).filter((s) => !s.deletedAt).sort((x, y) => x.title.localeCompare(y.title));
+  const songHref = (s: SongLike) => `/songs/${s.id}`;
 
   const todoItem = (t: TodoLike, source?: BoardItem["source"]): BoardItem => ({
     key: `todo:${t.id}`, label: t.label, done: t.done, ownerId: t.ownerId, pinned: !!t.pinnedAt, ...(source ? { source } : {}), action: { type: "todo", id: t.id },
@@ -148,6 +154,7 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
   const pinned: BoardItem[] = [
     ...live.flatMap((s) => (s.checklists ?? []).flatMap((l) => checklistItems("show", s.id, l, (i) => !!i.pinnedAt, { text: `${showTitle(s)} › ${l.name}`, href: `/shows/${s.id}` }))),
     ...b.releases.flatMap((r) => (r.checklists ?? []).flatMap((l) => checklistItems("release", r.id, l, (i) => !!i.pinnedAt, { text: `${r.title} › ${l.name}`, href: releaseHref(r) }))),
+    ...songs.flatMap((s) => (s.checklists ?? []).flatMap((l) => checklistItems("song", s.id, l, (i) => !!i.pinnedAt, { text: `${s.title} › ${l.name}`, href: songHref(s) }))),
     ...b.social.flatMap((l) => checklistItems("social", b.artistId, l, (i) => !!i.pinnedAt, { text: `Social Media › ${l.name}`, href: "/posts" })),
     ...b.todos.filter((t) => t.pinnedAt).map((t) => todoItem(t, { text: "Our list" })),
   ];
@@ -199,6 +206,11 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
       newList: { kind: "release", targets: b.releases.map((r) => ({ id: r.id, label: r.title })) },
       groups: nonEmpty(ordered("releases", b.releases.flatMap((r) => (r.checklists ?? []).flatMap((l) => group("release", r.id, l, { titleLink: { text: r.title, href: releaseHref(r) } }))))),
     },
+    {
+      key: "songs", title: "Songs", chip: "Songs", href: "/songs",
+      newList: { kind: "song", targets: songs.filter((s) => s.status !== "retired").map((s) => ({ id: s.id, label: s.title })) },
+      groups: nonEmpty(ordered("songs", songs.flatMap((s) => (s.checklists ?? []).flatMap((l) => group("song", s.id, l, { titleLink: { text: s.title, href: songHref(s) } }))))),
+    },
     { key: "social", title: "Social Media", chip: "Social", href: "/posts", newList: { kind: "social", targets: [{ id: b.artistId, label: "Social Media" }] }, groups: nonEmpty(ordered("social", b.social.flatMap((l) => group("social", b.artistId, l)))) },
     {
       key: "our", title: "Our list", chip: "Our list", caption: "For the band, not tied to any show or release.",
@@ -210,10 +222,11 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
 export const columnCount = (c: BoardColumn) => c.groups.reduce((n, g) => n + g.items.filter((i) => !i.done).length, 0);
 
 /** The dismissed checklists that still exist, with a name to list under "Dismissed (n)". */
-export function dismissedLists(b: Pick<BoardInput, "artistId" | "shows" | "releases" | "social" | "dismissed">): { key: string; title: string }[] {
+export function dismissedLists(b: Pick<BoardInput, "artistId" | "shows" | "releases" | "songs" | "social" | "dismissed">): { key: string; title: string }[] {
   const names = new Map<string, string>();
   for (const s of b.shows) for (const l of s.checklists ?? []) names.set(checklistKey("show", s.id, l.id), `${shortDate(s.date)} ${showName(s)} › ${l.name}`);
   for (const r of b.releases) for (const l of r.checklists ?? []) names.set(checklistKey("release", r.id, l.id), `${r.title} › ${l.name}`);
+  for (const s of b.songs ?? []) if (!s.deletedAt) for (const l of s.checklists ?? []) names.set(checklistKey("song", s.id, l.id), `${s.title} › ${l.name}`);
   for (const l of b.social) names.set(checklistKey("social", b.artistId, l.id), `Social Media › ${l.name}`);
   return b.dismissed.filter((k) => names.has(k)).map((k) => ({ key: k, title: names.get(k)! }));
 }

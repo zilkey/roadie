@@ -21,6 +21,7 @@ import { DocText, googleDocsOf } from "@/components/music/DocText";
 import { AudioPanel, PlayToggle } from "@/components/music/AudioPlayer";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
 import { trackHref } from "@/components/releases/common";
+import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import type { Release, ReleaseTrack, Song } from "@/schema";
 
 export default function SongPage() {
@@ -120,7 +121,7 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
     if (prev.id === song.id && prev.status === "writing" && song.status !== "writing" && song.status !== "retired") celebrateSong(song.title, STATUS_LABEL[song.status]);
   }, [song.id, song.status, song.title]);
   // The artist's custom fields, in the artist's order. Each value edits in place; the patch is the whole list.
-  const artistDoc = useArtist().doc;
+  const { doc: artistDoc, artistId } = useArtist();
   const defs = artistDoc?.songFields ?? [];
   const saved = Object.fromEntries((song.fields ?? []).map((v) => [v.fieldId, v.value]));
   // A saved value shows at once; once the saved song catches up (a new rev), the song's own shows again.
@@ -210,6 +211,11 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           {(admin || song.notes) && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}
             className="sg-note" onSave={(v) => save("notes", v, { notes: v || null })} error={as.error} /></dd></div>}
         </dl>
+      </section>
+
+      {/* The song's to-dos: named lists like a show's (song templates). Members tick and add items; lists are admins'. */}
+      <section className="sg-sec" aria-label="To dos" data-testid="song-todos">
+        <ChecklistSidebar host={{ kind: "song", id: song.id, artistId, checklists: song.checklists ?? [] }} admin={admin} title="To dos" />
       </section>
 
       {admin && <OnReleases songId={song.id} />}

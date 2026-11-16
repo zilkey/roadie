@@ -59,7 +59,7 @@ export const songsMerge = defineCommand({
   description:
     "Fold duplicate songs into one (keepId), for example The Bliss once as Playing and once as Learning. Everything on mergeIds moves to the kept song: files (the same Drive file or link twice stays once), " +
     "song items and alternates on setlists and setlist templates (a set that has both plays the song twice), rehearsal songs (one entry, notes joined), release tracks (the earlier track stays) and the lyrics doc (the kept song's, else the first one found). " +
-    "The kept song keeps its title, key, BPM, length, writers and status; a blank one is filled from the others, notes are joined and custom fields combined (the kept song's value wins). " +
+    "Their to-do lists follow the kept song's. The kept song keeps its title, key, BPM, length, writers and status; a blank one is filled from the others, notes are joined and custom fields combined (the kept song's value wins). " +
     "The other songs are archived with a pointer to the kept one (their page redirects). One run: history.undoRun reverses all of it.",
   input: z.strictObject({ keepId: z.string().min(1), mergeIds: z.array(z.string().min(1)).min(1) }),
   run: (ctx, { keepId, mergeIds }) => run(ctx, async (w) => {
@@ -139,6 +139,9 @@ export const songsMerge = defineCommand({
     const patch: Record<string, unknown> = { ...filled };
     moved.lyrics = !!filled.lyricsDoc;
     patch.mergedFrom = [...((keep.mergedFrom ?? []) as unknown[]), ...others.map((o) => ({ id: o.id, title: o.title, status: o.status }))];
+    // To-do lists: the others' lists follow the kept song's, in order.
+    const lists = others.flatMap((o) => (o.checklists ?? []) as unknown[]);
+    if (lists.length) patch.checklists = [...((keep.checklists ?? []) as unknown[]), ...lists];
     await w.update("songs", keepId, patch);
     for (const o of others) {
       await w.update("songs", o.id, { mergedInto: keepId });

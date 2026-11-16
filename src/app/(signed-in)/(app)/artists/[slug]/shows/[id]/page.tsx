@@ -22,6 +22,7 @@ import { PromotionCard } from "@/components/shows/page/PromotionCard";
 import { PostersCard } from "@/components/shows/page/PostersCard";
 import { ChecklistSidebar } from "@/components/shows/checklists/ChecklistSidebar";
 import { bandsintownItemOf, useBandsintownAutoCheck } from "@/components/shows/checklists/BandsintownLink";
+import { SongTodosCard } from "@/components/shows/page/SongTodosCard";
 import { Comments } from "@/components/shows/page/Comments";
 import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
@@ -112,6 +113,7 @@ function ShowView({ show }: { show: ShowRow }) {
         <aside className="show-side" aria-label="Checklists">
           {tab === "finances" && admin && <div className="mb-3"><NetCard show={show} /></div>}
           <ChecklistSidebar host={{ kind: "show", id: show.id, artistId: show.artistId, checklists: show.checklists }} admin={admin} />
+          <SongTodosCard showId={show.id} artistId={show.artistId} admin={admin} />
         </aside>
 
         <div className="show-main show-after">

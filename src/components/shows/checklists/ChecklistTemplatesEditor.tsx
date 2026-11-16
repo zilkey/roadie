@@ -10,7 +10,7 @@ import { TEMPLATE_TYPE, TEMPLATE_WHEN, type TemplateType, type TemplateWhen } fr
 import { moved, useChecklistTemplates, type TemplateRow } from "./shared";
 
 /** The three tabs of Artist settings › Checklist templates, in order: [kind, tab label, the word in "New … template" and "Move to …"]. */
-export const TEMPLATE_KINDS: [ChecklistKind, string, string][] = [["show", "Shows", "show"], ["release", "Releases", "release"], ["social", "Social media", "social media"]];
+export const TEMPLATE_KINDS: [ChecklistKind, string, string][] = [["show", "Shows", "show"], ["release", "Releases", "release"], ["social", "Social media", "social media"], ["song", "Songs", "song"]];
 export const isTemplateKind = (v: string | null | undefined): v is ChecklistKind => TEMPLATE_KINDS.some(([k]) => k === v);
 
 export interface ChecklistTemplatesEditorProps {

@@ -6,7 +6,7 @@ import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { useCampaigns } from "@/components/booking/useCampaigns";
 import { runCommandFull } from "@/lib/commands";
 import { useDragReorder } from "@/lib/drag-reorder";
-import { applyOrder, buildBoard, columnCount, dismissedLists, movedOrder, type AddTarget, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type TodoLike } from "@/lib/todos";
+import { applyOrder, buildBoard, columnCount, dismissedLists, movedOrder, type AddTarget, type BoardColumn, type BoardGroup, type BoardItem, type PitchLike, type ReleaseLike, type ShowLike, type SongLike, type TodoLike } from "@/lib/todos";
 import type { ChecklistLike } from "@/lib/shows";
 import type { Musician } from "@/schema";
 import { PageTitle } from "@/components/ui";
@@ -32,8 +32,8 @@ async function act(name: string, input: unknown, ok?: { text: string; undo?: boo
 }
 
 /**
- * To Dos: everything open across shows, releases, the Social Media sidebar, booking and Our list, one column per source. Every list
- * but Booking adds to-dos at its bottom, and a column that holds checklists (a show, the releases, Social Media) ends in "+ Add list".
+ * To Dos: everything open across shows, releases, songs, the Social Media sidebar, booking and Our list, one column per source. Every list
+ * but Booking adds to-dos at its bottom, and a column that holds checklists (a show, the releases, the songs, Social Media) ends in "+ Add list".
  * Each list in those columns folds open and shut; what's folded is this person's own, on this device (localStorage).
  * Order (of items and of the columns), Focus and Dismiss are this person's own (userPrefs, Focus just for the visit);
  * ticking, pinning and Our list are the band's.
@@ -44,6 +44,7 @@ export function TodoBoard() {
   const mineOf = { where: [["artistId", "==", artistId] as [string, "==", string]] };
   const shows = useCollection<ShowLike>("shows", mineOf);
   const releases = useCollection<ReleaseLike>("releases", mineOf);
+  const songs = useCollection<SongLike>("songs"); // songs carry no artistId (one band per project for now)
   const pitches = useCollection<PitchLike>("pitches", mineOf);
   const todos = useCollection<TodoLike>("todos", mineOf);
   const campaigns = [...useCampaigns().live.values()]; // admins only: a column per active campaign (#82)
@@ -65,14 +66,14 @@ export function TodoBoard() {
   const order = { ...(prefs?.todoOrder ?? {}), ...moved };
   const dismissed = prefs?.todoDismissed ?? [];
   const input = {
-    artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], social: social?.checklists ?? [], pitches: pitches.rows ?? [], campaigns, todos: todos.rows ?? [],
+    artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], songs: songs.rows ?? [], social: social?.checklists ?? [], pitches: pitches.rows ?? [], campaigns, todos: todos.rows ?? [],
     order, dismissed, mine: mine ? { musicianId: p.musicianId, userId: p.userId } : null, showDone,
   };
   const cols = applyOrder(buildBoard(input), movedCols ?? prefs?.todoColumns);
   const focused = cols.find((c) => c.key === focus);
   const shown = focused ? [focused] : cols;
   const gone = dismissedLists(input);
-  const loading = [shows, releases, pitches, todos].some((c) => c.loading);
+  const loading = [shows, releases, songs, pitches, todos].some((c) => c.loading);
   const at = cols.some((c) => c.key === phoneCol) ? phoneCol : "pinned";
 
   const setOrder = (col: BoardColumn, keys: string[]) => {
@@ -110,7 +111,7 @@ export function TodoBoard() {
               <span className="font-semibold">{d.title}</span>
               <button type="button" className="btn sm ghost" data-testid={`todos-undismiss-${d.key}`} onClick={() => act("todos.undismiss", { key: d.key })}>Show again</button>
             </div>
-          )) : <p className="s m-0">Nothing dismissed. Dismiss a checklist to hide it from your To Dos; it stays on its show or release.</p>}
+          )) : <p className="s m-0">Nothing dismissed. Dismiss a checklist to hide it from your To Dos; it stays on its show, release or song.</p>}
         </div>
       )}
 
@@ -334,7 +335,7 @@ function AddItem({ target, testid }: { target: AddTarget; testid: string }) {
 
 /**
  * "+ Add list" at the bottom of a column that holds checklists (Jeff, 2026-11-12): the record page's "New list", a template for that
- * kind or a blank list (named, then Add). The releases column asks which release first.
+ * kind or a blank list (named, then Add). The releases and songs columns ask which one first.
  */
 function AddList({ newList, artistId, testid }: { newList: NonNullable<BoardColumn["newList"]>; artistId: string; testid: string }) {
   const { templates: all } = useChecklistTemplates(artistId, true);
