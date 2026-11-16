@@ -1,0 +1,10 @@
+.banner { position: relative; display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 14px 18px; overflow: hidden; border-radius: 16px; background: linear-gradient(110deg, #6d28d9 0%, #c026d3 45%, #ff2e7e 75%, #ff6a3d 100%); color: #fff; text-decoration: none; box-shadow: 0 6px 20px color-mix(in srgb, #c026d3 30%, transparent); transition: transform .15s; }
+.banner:hover { transform: translateY(-1px); }
+.banner:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.banner::after { content: ""; position: absolute; right: -40px; top: -60px; width: 180px; height: 180px; border-radius: 999px; background: #d4ff3f; opacity: .28; pointer-events: none; }
+.spark { flex: none; font-size: 1.75rem; line-height: 1; color: #d4ff3f; }
+.text { display: grid; flex: 1; min-width: 0; line-height: 1.25; }
+.text b { font-family: var(--f-display); font-size: 1.1875rem; font-weight: 900; letter-spacing: -0.01em; }
+.text span { font-size: 0.875rem; font-weight: 600; opacity: .92; }
+.go { position: relative; z-index: 1; flex: none; padding: 9px 16px; border-radius: 999px; background: #d4ff3f; color: #14052e; font-size: 0.875rem; font-weight: 800; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .banner { transition: none; } }

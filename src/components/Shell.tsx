@@ -155,8 +155,9 @@ function EditMenuDialog({ open, onClose, role, hidden, order, fans }: { open: bo
 }
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  // The print route is just the sheets: no nav, no Roadie column.
-  if (usePathname().endsWith("/print")) return <>{children}</>;
+  // The print route is just the sheets, and the Year in Review fills the screen: no nav, no Roadie column.
+  const path = usePathname();
+  if (path.endsWith("/print") || path.endsWith("/review")) return <>{children}</>;
   return <ShellFrame>{children}</ShellFrame>;
 }
 

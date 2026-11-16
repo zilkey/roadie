@@ -15,6 +15,7 @@ import { DayPanel } from "@/components/calendar/DayPanel";
 import { ComingUp } from "@/components/calendar/ComingUp";
 import { FinishSetupCard } from "@/components/welcome/FinishSetupCard";
 import { Legend } from "@/components/calendar/Legend";
+import { ReviewBanner } from "@/components/review/ReviewBanner";
 import s from "@/components/calendar/calendar.module.css";
 
 const LABEL: Record<CalendarLayer, string> = { all: "All", shows: "Shows", rehearsals: "Rehearsals", booking: "Booking" };
@@ -57,6 +58,7 @@ function Calendar() {
     <div className="grid gap-5" data-testid="calendar-page">
       {feeds}
       <PageTitle title="Calendar" />
+      {admin && <ReviewBanner />}
       {admin && <FinishSetupCard />}
       <div className={s.bar}>
         <Tabs<CalendarLayer> testid="calendar-filter" value={active} onChange={setLayer} options={layers.map((l) => [l, LABEL[l]])} />
