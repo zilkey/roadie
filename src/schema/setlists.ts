@@ -16,6 +16,8 @@ export const SetlistItem = z.strictObject({
   note: z.string().optional(),
   /** Song items only: alternates pinned to this song, in the order they were added. They move with it. */
   alts: z.array(SetlistAlt).optional(),
+  /** Song items only: what the band does to get into this song from the item above it (the "Show transitions" notes). It lives on the lower song, so it moves with it. */
+  transitionNote: z.string().optional(),
 });
 /** Reusable list: setlistTemplates/{autoId}. Song items are references; no show link. */
 export const SetlistTemplate = entity({

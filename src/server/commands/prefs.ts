@@ -4,7 +4,7 @@ import { PrintOptions } from "@/schema/print";
 import { AppError } from "../errors";
 import { db } from "../db";
 import { roleIn } from "@/schema";
-import { calendarTours, setCalendarTours, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
+import { calendarTours, setCalendarTours, setlistTransitions, setSetlistTransitions, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
 import { callerArtistId } from "../venues";
 import { defineCommand } from "./types";
 import { dayOfKey } from "@/lib/dayOf";
@@ -45,6 +45,17 @@ export const setlistsSetPrintPrefs = defineCommand({
   name: "setlists.setPrintPrefs", roles: ["admin", "member"], input: z.strictObject({ options: PrintOptions }),
   description: "Remember how the caller prints setlists for this artist; the Print dialog and setlists.printLink start from it. Personal: nobody else's prints change.",
   async run(ctx, i) { await setPrintPrefs(ctx.uid, await artistOf(ctx), i.options); return { options: i.options }; },
+});
+
+export const setlistsSetShowTransitions = defineCommand({
+  name: "setlists.setShowTransitions", roles: ["admin", "member"], input: z.strictObject({ on: z.boolean() }),
+  description: "Show (on:true) or hide the transitions between songs in the caller's setlist editors: under each song, what changes from the song above (its song fields marked In setlists) and the band's transition notes. Personal: nobody else's view changes. Off by default.",
+  async run(ctx, i) { await setSetlistTransitions(ctx.uid, i.on); return { on: i.on }; },
+});
+export const setlistsShowTransitions = defineCommand({
+  name: "setlists.showTransitions", roles: ["admin", "member"], input: z.strictObject({}),
+  description: "Whether the caller has Show transitions switched on in setlist editors.",
+  async run(ctx) { return { on: await setlistTransitions(ctx.uid) }; },
 });
 
 export const artistsSetupStatus = defineCommand({
@@ -89,4 +100,4 @@ export const dayOfDismiss = defineCommand({
   },
 });
 
-export const prefsCommands = [dayOfDismiss, calendarSetTours, calendarToursOn, artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs];
+export const prefsCommands = [dayOfDismiss, calendarSetTours, calendarToursOn, artistsSetupStatus, artistsDismissSetup, sectionsSetHidden, sectionsHidden, sectionsSetOrder, sectionsOrder, setlistsPrintPrefs, setlistsSetPrintPrefs, setlistsSetShowTransitions, setlistsShowTransitions];

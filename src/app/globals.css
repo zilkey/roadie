@@ -520,6 +520,9 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .sl-row.nolen { background: var(--admin-bg); border-color: var(--admin-border); }
 /* An alternate pinned under its song: orange, so it never reads as part of the set's running order. */
 .sl-alt { background: var(--alt-bg); border-color: var(--alt-border); color: var(--ink); }
+/* A transition into a song (Show transitions): an indented, dashed note above the song it leads into. */
+.sl-trans { background: color-mix(in srgb, var(--soft) 45%, var(--panel)); border: 1px dashed var(--line); color: var(--ink); }
+.sl-trans-note { min-height: 2.25rem; resize: vertical; font-size: 0.875rem; }
 .sl-alt-tag { flex: none; color: var(--alt-text); font-size: 0.6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .sg-warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); font-size: 0.8125rem; }
 

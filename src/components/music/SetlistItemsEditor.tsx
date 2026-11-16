@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Link from "@/lib/artist";
+import Link, { useArtist } from "@/lib/artist";
 import { Dialog } from "@/components/ui";
 import { SongSearch } from "./SongSearch";
 import { Metronome } from "./Metronome";
@@ -9,6 +9,8 @@ import { useDragReorder } from "@/lib/drag-reorder";
 import type { SetlistItem } from "@/schema";
 import type { z } from "zod";
 import type { SongRow } from "./common";
+import { useTransitionsPref } from "./useTransitionsPref";
+import { fmtChange, transitionAt } from "@/lib/transitions";
 
 export type SetlistItemT = z.infer<typeof SetlistItem>;
 
@@ -37,12 +39,30 @@ function BreakField({ value, display, parse, commit, label, testid, className }:
 }
 
 /**
+ * The band's notes for a transition: a textarea that saves when it loses focus (not on every key, so typing doesn't send
+ * a save per letter). Like BreakField's input it swallows drags, so selecting text never reorders the row.
+ */
+function TransitionNote({ value, commit, label }: { value: string; commit(v: string): void; label: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <textarea className="input sl-trans-note" rows={1} placeholder="What the band does…" aria-label={label} data-testid="transition-note-input"
+      value={draft ?? value} draggable onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { if (draft != null && draft.trim() !== value.trim()) commit(draft.trim()); setDraft(null); }}
+      onKeyDown={(e) => { if (e.key === "Escape") { setDraft(null); (e.target as HTMLTextAreaElement).blur(); } }} />
+  );
+}
+
+/**
  * What the server needs: songs by id (it fills title, length, key), breaks with their own title and length.
  * An off-library song (a one-off with no song behind it) has nothing to look up, so it carries its own title,
  * length and key -- dropping them here would blank the song's name on the next save.
  */
 export const itemsPayload = (items: SetlistItemT[]) => items.map((i) => {
-  const alts = i.alts?.length ? { alts: i.alts.map((a) => ({ songId: a.songId })) } : {};
+  const alts = {
+    ...(i.alts?.length ? { alts: i.alts.map((a) => ({ songId: a.songId })) } : {}),
+    ...(i.type === "song" && i.transitionNote?.trim() ? { transitionNote: i.transitionNote } : {}),
+  };
   if (i.type === "break") {
     return { type: "break", title: i.title, ...(i.lengthSec != null ? { lengthSec: i.lengthSec } : {}), ...(i.note ? { note: i.note } : {}) };
   }
@@ -58,6 +78,9 @@ export const itemsPayload = (items: SetlistItemT[]) => items.map((i) => {
  * so it drags with it, and it never counts toward the time. Stateless about saving: every change calls `onChange(next)` with the whole new list.
  * Every song (and alternate) with a tempo gets its metronome button.
  * `bpm` shows each song's tempo before its time, read live from the song (items don't carry a copy).
+ * "Show transitions" (a per-user switch) adds an indented section above every song that follows another item: what changes
+ * from the song above (the artist's song fields marked In setlists) and the band's notes. The notes live on the lower song's
+ * item (transitionNote), so they drag with it. After a break there is nothing to compare, so it's notes only.
  */
 export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Nothing in this setlist yet.", bpm = false }: {
   items: SetlistItemT[]; onChange(next: SetlistItemT[]): void; songs: SongRow[]; admin: boolean; empty?: string; bpm?: boolean;
@@ -66,6 +89,14 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
   const [breakTitle, setBreakTitle] = useState(DEFAULT_BREAK_TITLE);
   const [breakLen, setBreakLen] = useState(DEFAULT_BREAK_LEN);
   const [altFor, setAltFor] = useState<number | null>(null);
+  const showTr = useTransitionsPref();
+  const artist = useArtist();
+  const trFields = (artist.doc?.songFields ?? []).filter((f) => f.inSetlists);
+  const setNote = (i: number, note: string) => onChange(items.map((it, j) => {
+    if (j !== i) return it;
+    const { transitionNote: _old, ...rest } = it;
+    return note ? { ...rest, transitionNote: note } : rest;
+  }));
   const reorder = (from: number, to: number) => { const next = move(items, from, to); if (next !== items) onChange(next); };
   const dr = useDragReorder(reorder);
   const pickable = songs.filter((s) => s.status === "active" || s.status === "learning").sort((a, b) => a.title.localeCompare(b.title));
@@ -88,14 +119,34 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
 
   return (
     <div className="card">
+      {items.length > 1 && (
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <input type="checkbox" checked={showTr.on} onChange={(e) => showTr.set(e.target.checked)} data-testid="show-transitions" />
+          Show transitions
+        </label>
+      )}
       <ol className="grid gap-1.5" data-testid="setlist-items">
         {items.length === 0 && <li className="s">{empty}</li>}
         {items.map((it, i) => (
           <li key={`${i}-${it.songId ?? it.title}`} className={`sl-row grid gap-1.5 rounded-lg border p-2${it.type === "break" ? " break" : !it.lengthSec ? " nolen" : ""}`} data-testid={`item-${i}`}
             data-kind={it.type} data-nolen={it.type === "song" && !it.lengthSec ? "1" : undefined}
             {...(admin ? { ...dr.row(i), ...dr.handle(i) } : {})}>
+            {showTr.on && (() => {
+              const tr = transitionAt(items, i, songs, trFields);
+              if (!tr) return null;
+              return (
+                <div className="sl-trans ml-6 grid gap-1 rounded-md px-2 py-1.5 text-sm" data-testid="item-transition">
+                  {tr.changes.length
+                    ? <ul className="grid gap-0.5">{tr.changes.map((c) => <li key={c.fieldId} data-testid="transition-change">{fmtChange(c)}</li>)}</ul>
+                    : <span className="s" data-testid="transition-none">{tr.afterBreak ? "After the break" : "No changes"}</span>}
+                  {admin
+                    ? <TransitionNote value={tr.note} commit={(v) => setNote(i, v)} label={`Transition into ${songTitle(it)}`} />
+                    : tr.note && <p className="whitespace-pre-wrap" data-testid="transition-note">{tr.note}</p>}
+                </div>
+              );
+            })()}
             <div className="flex items-center gap-2">
-            {admin && <span className="cursor-grab select-none text-muted" aria-hidden>⋮⋮</span>}
+            {admin && <span className="cursor-grab select-none text-muted" aria-hidden data-testid="item-grip">⋮⋮</span>}
             <span className="min-w-0 flex-1 truncate">
               {it.type === "song" && it.songId ? <Link href={`/songs/${it.songId}`} className="font-semibold" data-testid="item-title">{songTitle(it)}</Link>
                 : it.type === "break" && admin ? <BreakField value={it.title} display={<span className="italic">{it.title}</span>} label="Break name" testid="item-title" parse={(s) => s.trim() || undefined} commit={(v) => setBreak(i, { title: String(v) })} />

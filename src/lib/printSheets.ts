@@ -5,20 +5,22 @@
  * A setlist is one flat list of songs and breaks: breaks split it into sets ("Set 1", "Set 2", ...). Song numbers run on
  * across sets. A break ends its set and prints as a dashed box when "breaks" is among the fields; the last set has none
  * unless the list ends with a break. With "alts" among the fields, a song's alternates print under it (titles only, no number,
- * and they add nothing to the set's length).
+ * and they add nothing to the set's length). With "transitions", the transition into each song (what changes from the song
+ * above in the printed song fields, then the band's notes) prints small above it.
  */
 import type { SongField } from "@/schema";
 import type { PrintOptions } from "@/schema/print";
 import { fmtLen } from "@/lib/music";
-import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, songFieldId } from "@/lib/print";
+import { FIELD_ALTS, FIELD_BREAKS, FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, FIELD_TRANSITIONS, songFieldId } from "@/lib/print";
+import { fmtChange, transitionAt } from "@/lib/transitions";
 
 export interface PrintSong { id: string; title: string; shortTitle?: string; key?: string; bpm?: number; lengthSec?: number; fields?: { fieldId: string; value: string }[] }
-export interface PrintItem { type: "song" | "break"; songId?: string; title: string; lengthSec?: number; key?: string; note?: string; alts?: { songId: string; title: string }[] }
+export interface PrintItem { type: "song" | "break"; songId?: string; title: string; lengthSec?: number; key?: string; note?: string; alts?: { songId: string; title: string }[]; transitionNote?: string }
 
 /** One extra-field value printed on a song row. */
 export interface RowField { id: string; label: string; value: string }
 export type SheetRow =
-  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; /** band copy: after the key; otherwise under the title or in columns */ fields: RowField[]; /** alternate titles, when "alts" is picked */ alts?: string[] }
+  | { kind: "song"; n: number; title: string; /** printed after the title (band copy, Key on) */ key?: string; /** band copy: after the key; otherwise under the title or in columns */ fields: RowField[]; /** alternate titles, when "alts" is picked */ alts?: string[]; /** the transition into this song, when "transitions" is picked: "Capo: 5 → 6 · Eric counts in" */ transition?: string }
   | { kind: "break"; /** e.g. "Merch + tip jar · BREAK 15" */ text: string };
 export interface PrintSet { name: string; lengthSec: number; rows: SheetRow[] }
 /**
@@ -88,6 +90,7 @@ export function buildSheets(input: BuildInput): BuildResult {
   ];
   const showBreaks = picked.has(FIELD_BREAKS);
   const showAlts = picked.has(FIELD_ALTS);
+  const showTransitions = picked.has(FIELD_TRANSITIONS);
   const songCount = input.items.filter((i) => i.type === "song").length;
   const layout: RowLayout = !mine ? "list" : selected.length >= 3 && songCount > 8 ? "table" : "underTitle";
 
@@ -97,7 +100,7 @@ export function buildSheets(input: BuildInput): BuildResult {
   let n = 0;
   const gap = options.transitions === false ? 0 : input.transitionSec ?? 0;
   let prev: PrintItem | undefined;
-  for (const item of input.items) {
+  for (const [idx, item] of input.items.entries()) {
     const after = prev;
     prev = item;
     const song = item.songId ? songsById.get(item.songId) : undefined;
@@ -125,7 +128,15 @@ export function buildSheets(input: BuildInput): BuildResult {
       return options.titles === "short" && s?.shortTitle ? s.shortTitle : s?.title ?? fallback;
     };
     const title = options.titles === "short" && song?.shortTitle ? song.shortTitle : item.title;
-    const alts = showAlts && item.alts?.length ? { alts: item.alts.map((a) => titleOf(a.songId, a.title)) } : {};
+    const alts = {
+      ...(showAlts && item.alts?.length ? { alts: item.alts.map((a) => titleOf(a.songId, a.title)) } : {}),
+      ...(() => {
+        // Not on the first song; after a break, the notes only (transitionAt compares nothing across a break).
+        const tr = showTransitions && n > 1 ? transitionAt(input.items, idx, songsById, songFields) : null;
+        const text = tr ? [...tr.changes.map(fmtChange), ...(tr.note ? [tr.note] : [])].join(" · ") : "";
+        return text ? { transition: text } : {};
+      })(),
+    };
     const value = (id: string): string => {
       if (id === FIELD_KEY) return key ?? "";
       if (id === FIELD_LENGTH) return fmtLen(sec || undefined);

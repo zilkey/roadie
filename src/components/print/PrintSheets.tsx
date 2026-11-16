@@ -117,8 +117,10 @@ const SetHeading = ({ set }: { set: PrintSet }) => (
 
 function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) {
   if (row.kind === "break") return <div className="ps-break" data-testid="print-break">{row.text}</div>;
+  const tr = row.transition ? <div className="ps-trans" data-testid="print-transition">{row.transition}</div> : null;
   if (layout === "underTitle") {
     return (
+      <>{tr}
       <div className="ps-row ps-under" data-testid="print-row">
         <span className="ps-n">{row.n}</span>
         <div className="ps-stack">
@@ -127,9 +129,11 @@ function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) 
           <Alts row={row} />
         </div>
       </div>
+      </>
     );
   }
   return (
+    <>{tr}
     <div className="ps-row" data-testid="print-row">
       <span className="ps-n">{row.n}</span>
       <span className="ps-stack">
@@ -141,6 +145,7 @@ function Row({ row, layout }: { row: SheetRow; layout: BuildResult["layout"] }) 
         <Alts row={row} />
       </span>
     </div>
+    </>
   );
 }
 
@@ -165,6 +170,7 @@ function Table({ sheet }: { sheet: PrintSheet }) {
             ? <div key={j} className="ps-tbreak" data-testid="print-break">{r.text}</div>
             : (
               <div key={j} className="ps-trow" data-testid="print-row">
+                {r.transition && <span className="ps-ttrans" data-testid="print-transition">{r.transition}</span>}
                 <span className="ps-n">{r.n}</span>
                 <span className="ps-t">{r.title}</span>
                 {r.fields.map((f) => <span key={f.id} className="ps-tf">{f.value}</span>)}
@@ -201,6 +207,8 @@ const CSS = `
 .ps-under{margin-bottom:calc(var(--u) * .2)}
 .ps-fields{font-size:calc(var(--u) * .43);font-weight:600;line-height:1.2}
 .ps-alts{font-size:calc(var(--u) * .5);font-weight:600;font-style:italic;line-height:1.15;color:#555}
+.ps-trans{margin-left:calc(var(--u) * 1.3);font-size:calc(var(--u) * .45);font-weight:600;font-style:italic;line-height:1.15;color:#555;border-left:2px solid #bbb;padding-left:calc(var(--u) * .2)}
+.ps-trow > .ps-ttrans{grid-column:2 / -1;font-size:.45em;font-weight:600;font-style:italic;color:#555;border-bottom:0;padding-bottom:0}
 .ps-trow > .ps-talt{grid-column:2 / -1;padding-top:0}
 .ps-break{margin-top:calc(var(--u) * .1);border:1.5px dashed #767676;border-radius:6px;padding:calc(var(--u) * .19) calc(var(--u) * .31);font-size:calc(var(--u) * .69);font-weight:600;font-style:italic}
 .ps-table{display:grid;column-gap:calc(var(--u) * .3);align-content:start}

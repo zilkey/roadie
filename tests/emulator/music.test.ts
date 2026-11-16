@@ -329,6 +329,31 @@ test("setlists: alternates ride on their song: copied from the song, no time, ca
   assert.deepEqual((await db.get("setlists", show3))!.items[0].alts.map((x: { songId: string }) => x.songId), [b, c]);
 });
 
+test("setlists: a transition note rides on the song below it: kept on save, trimmed, dropped on breaks, carried by seeding and templates", async () => {
+  const a = (await cmd("songs.create", { title: "Glass Coast", status: "active", lengthSec: 232 })).id;
+  const b = (await cmd("songs.create", { title: "Weathervane", status: "active", lengthSec: 250 })).id;
+  const v = (await cmd("venues.create", venue("Deep End"))).id;
+  const mkShow = async (date: string) => (await cmd("shows.create", { pitchId: (await cmd("pitches.flag", { kind: "venue", id: v })).id, date, venueId: v, times: { set: "20:00", setLengthSec: 2700 }, needs: { poster: false, backline: false, merch: false } })).id;
+  const show = await mkShow("2027-01-16");
+  await cmd("setlists.setItems", { showId: show, items: [
+    { type: "song", songId: a },
+    { type: "break", title: "Break", transitionNote: "breaks have none" },
+    { type: "song", songId: b, transitionNote: "  Capo to 6 while Jeff vamps  " },
+    { type: "song", title: "Cover", transitionNote: "   " },
+  ] });
+  let sl = (await db.get("setlists", show))!;
+  assert.deepEqual(sl.items.map((i: { transitionNote?: string }) => i.transitionNote), [undefined, undefined, "Capo to 6 while Jeff vamps", undefined]);
+  // reordering moves it with its song; a list read back can be resent as is
+  await cmd("setlists.setItems", { showId: show, items: [sl.items[2], sl.items[0]] });
+  sl = (await db.get("setlists", show))!;
+  assert.equal(sl.items[0].transitionNote, "Capo to 6 while Jeff vamps");
+  const show2 = await mkShow("2027-02-20");
+  await cmd("setlists.seed", { showId: show2, from: { kind: "show", id: show } });
+  assert.equal((await db.get("setlists", show2))!.items[0].transitionNote, "Capo to 6 while Jeff vamps");
+  const t = (await cmd("setlistTemplates.create", { name: "T", items: [{ type: "song", songId: a }, { type: "song", songId: b, transitionNote: "Eric counts in" }] })).id;
+  assert.equal((await db.get("setlistTemplates", t))!.items[1].transitionNote, "Eric counts in");
+});
+
 test("rehearsals: import songs from a setlist template (append and replace, breaks skipped); set and clear the location", async () => {
   const a = (await cmd("songs.create", { title: "Glass Coast", status: "active" })).id;
   const b = (await cmd("songs.create", { title: "Ruby Hill", status: "active" })).id;
@@ -395,7 +420,8 @@ test("only admins (or mcp) may write Music; members have no write commands", () 
   // rehearsals.setExpenses is Money, not Music: members enter their own expense lines, like shows.setExpenses
   // printing is a read plus personal prefs: members print too
   // files.docText reads a Google Doc's lyrics for the song page; its only write is the cached copy of the doc's text
-  const memberOk = new Set(["rehearsals.setExpenses", "setlists.printLink", "setlists.printPrefs", "setlists.setPrintPrefs", "files.docText", "setlists.pdf"]);
+  // the Show transitions switch is a personal pref: members flip their own
+  const memberOk = new Set(["rehearsals.setExpenses", "setlists.printLink", "setlists.printPrefs", "setlists.setPrintPrefs", "setlists.showTransitions", "setlists.setShowTransitions", "files.docText", "setlists.pdf"]);
   for (const [name, c] of Object.entries(registry)) {
     if (/^(songs|files|setlists|rehearsals|drive)\./.test(name) && !memberOk.has(name)) assert.ok(!c.roles.includes("member"), name);
   }

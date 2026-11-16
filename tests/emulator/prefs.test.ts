@@ -88,3 +88,15 @@ test("artists.setupStatus: a band of one has no people yet", async () => {
   const r = (await dispatch("artists.setupStatus", bearer(solo.token), {}, "test-artist")).json as { result: { people: boolean } };
   assert.equal(r.result.people, false);
 });
+
+test("setlists.setShowTransitions: per user, off by default", async () => {
+  const rudy = await makeUser("rudy@example.com", "admin");
+  const hugo = await makeUser("hugo@example.com", "member");
+  const on = async (tok: string) => ((await dispatch("setlists.showTransitions", bearer(tok), {})).json as { result: { on: boolean } }).result.on;
+  assert.equal(await on(rudy.token), false);
+  assert.equal((await dispatch("setlists.setShowTransitions", bearer(hugo.token), { on: true })).status, 200);
+  assert.equal(await on(hugo.token), true);
+  assert.equal(await on(rudy.token), false, "someone else's switch is untouched");
+  await dispatch("setlists.setShowTransitions", bearer(hugo.token), { on: false });
+  assert.equal(await on(hugo.token), false);
+});

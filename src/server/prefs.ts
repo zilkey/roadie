@@ -65,6 +65,15 @@ export async function setCalendarTours(uid: string, on: boolean): Promise<void> 
   await ref(uid).set({ uid, calendarTours: on }, { merge: true });
 }
 
+/** Whether the caller shows the transitions between songs in setlist editors (default off). */
+export async function setlistTransitions(uid: string): Promise<boolean> {
+  return (await ref(uid).get()).data()?.setlistTransitions === true;
+}
+
+export async function setSetlistTransitions(uid: string, on: boolean): Promise<void> {
+  await ref(uid).set({ uid, setlistTransitions: on }, { merge: true });
+}
+
 /** The day-of banner rows (#66) the caller hid in this artist: keys "{kind}:{id}:{date}" (dayOfKey). */
 export async function dayOfDismissed(uid: string, artistId: string): Promise<string[]> {
   const v = (await ref(uid).get()).data()?.dayOfDismissed?.[artistId];

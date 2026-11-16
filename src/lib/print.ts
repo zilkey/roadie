@@ -11,11 +11,13 @@ export const FIELD_TEMPO = "tempo";
 export const FIELD_BREAKS = "breaks";
 /** Alternates pinned to a song print small under it. Off by default. */
 export const FIELD_ALTS = "alts";
+/** The transition into each song (what changes from the song above, and the band's notes), printed small above it. Off by default. */
+export const FIELD_TRANSITIONS = "transitions";
 /** The extra-field id for one of the artist's song fields. */
 export const songFieldId = (id: string) => `field:${id}`;
 
 /** The extra fields every setlist offers (song fields come and go with the artist's Custom fields). */
-export const BUILTIN_FIELDS: readonly string[] = [FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, FIELD_BREAKS, FIELD_ALTS];
+export const BUILTIN_FIELDS: readonly string[] = [FIELD_KEY, FIELD_LENGTH, FIELD_TEMPO, FIELD_BREAKS, FIELD_ALTS, FIELD_TRANSITIONS];
 
 /**
  * Someone's stored print choices, read leniently: each option that still validates is kept and the rest fall back to the

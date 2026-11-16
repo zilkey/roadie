@@ -278,6 +278,8 @@ const ItemIn = z.strictObject({
   // Alternates pinned to a song: library songs only (title and key come from the song). Extra keys a stored copy carries
   // (title, key) are dropped, so a list read back with records.get can be resent as is.
   alts: z.array(z.object({ songId: z.string().min(1) })).optional(),
+  // Song items: the band's notes on getting into this song from the item above. It belongs to the lower song and moves with it.
+  transitionNote: z.string().optional(),
 }).refine((i) => i.type === "break" || !!i.songId || !!i.title?.trim(), "A song item needs a songId or a title")
   .refine((i) => i.type === "song" || !i.alts?.length, "Only a song can have alternates");
 
@@ -310,6 +312,7 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
     }
     return out.length ? { alts: out } : {};
   };
+  const tn = (i: z.infer<typeof ItemIn>) => (i.transitionNote?.trim() ? { transitionNote: i.transitionNote.trim() } : {});
   const out = [];
   for (const i of items) {
     if (i.type === "break") {
@@ -321,7 +324,7 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
       out.push({
         type: "song" as const, title: i.title!.trim(),
         ...(i.lengthSec != null ? { lengthSec: i.lengthSec } : {}), ...(i.key ? { key: i.key } : {}), ...(i.note ? { note: i.note } : {}),
-        ...await alts(i),
+        ...await alts(i), ...tn(i),
       });
       continue;
     }
@@ -330,7 +333,7 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
     out.push({
       type: "song" as const, songId: s.id, title: s.title as string,
       ...(s.lengthSec != null ? { lengthSec: s.lengthSec as number } : {}), ...(s.key ? { key: s.key as string } : {}), ...(i.note ? { note: i.note } : {}),
-      ...await alts(i),
+      ...await alts(i), ...tn(i),
     });
   }
   return out;
@@ -339,14 +342,14 @@ async function resolveItems(w: Writer, items: z.infer<typeof ItemIn>[], opts: { 
 export const setlistTemplatesCreate = defineCommand({
   name: "setlistTemplates.create",
   roles: ["admin", "mcp"],
-  description: "Create a reusable setlist template from songs and breaks, in order. A song item can carry alts: [{ songId }], alternate songs pinned to it (they don't count toward the time). totalSec is computed. Seed a show's setlist from it with setlists.seed.",
+  description: "Create a reusable setlist template from songs and breaks, in order. A song item can carry alts: [{ songId }], alternate songs pinned to it (they don't count toward the time), and transitionNote: what the band does to get into it from the item above. totalSec is computed. Seed a show's setlist from it with setlists.seed.",
   input: z.strictObject({ name: z.string().min(1), items: z.array(ItemIn).default([]) }),
   run: (ctx, { name, items }) => run(ctx, async (w) => w.create("setlistTemplates", { name, items: await resolveItems(w, items) })),
 });
 export const setlistTemplatesUpdate = defineCommand({
   name: "setlistTemplates.update",
   roles: ["admin", "mcp"],
-  description: "Rename a setlist template or replace its items (the full ordered list).",
+  description: "Rename a setlist template or replace its items (the full ordered list; song items keep alts and transitionNote only if you resend them).",
   input: z.strictObject({ id: z.string().min(1), patch: z.strictObject({ name: z.string().min(1).optional(), items: z.array(ItemIn).optional() }) }),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const p: Record<string, unknown> = {};
@@ -381,7 +384,7 @@ async function upsertShowSetlist(w: Writer, showId: string, items: Record<string
 export const setlistsSetItems = defineCommand({
   name: "setlists.setItems",
   roles: ["admin", "mcp"],
-  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song; songs still in the Writing phase can't be added. A song item can carry alts: [{ songId }], alternate songs pinned to it, which move with it and don't count toward the time. totalSec is computed.",
+  description: "Replaces the show's whole setlist with this ordered list of songs and breaks (creates it if the show has none): read records.get setlists (id = the show id) first and resend every item you keep.  Song items take title, length and key from the song; songs still in the Writing phase can't be added. A song item can carry alts: [{ songId }], alternate songs pinned to it, which move with it and don't count toward the time. A song item can also carry transitionNote: the band's plan for getting into this song from the item above it (who starts, a capo or guitar change, a segue); it lives on the lower song and moves with it. totalSec is computed.",
   input: z.strictObject({ showId: z.string().min(1), items: z.array(ItemIn) }),
   run: (ctx, { showId, items }) => run(ctx, async (w) => {
     await upsertShowSetlist(w, showId, await resolveItems(w, items, { keep: songIdsOf((await w.get("setlists", showId))?.items) }));
@@ -391,7 +394,7 @@ export const setlistsSetItems = defineCommand({
 export const setlistsSeed = defineCommand({
   name: "setlists.seed",
   roles: ["admin", "mcp"],
-  description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, alternates included, with song titles, lengths and keys refreshed from the songs). " +
+  description: "Seed a show's setlist from a setlist template or from another show's setlist (copies, alternates and transition notes included, with song titles, lengths and keys refreshed from the songs). " +
     'mode "replace" swaps the whole list (default), "append" adds to the end. Records where it came from; later edits to either side don\'t touch the other. Copying another show\'s setlist with mode "replace" also copies its average transition (transitionSec). ' +
     'Returns { showId, added, total (items), lengthSec (the full length: songs + breaks + transitions), transitionSec }.',
   input: z.strictObject({
