@@ -12,7 +12,6 @@ const flagFields = (kind: NotedKind): readonly string[] => BAND_NOTES[kind].flag
 export const noteFieldNames = (kind: NotedKind): readonly string[] => [...textFields(kind), ...listFields(kind), ...flagFields(kind)];
 export const isNoteField = (kind: NotedKind, k: string) => noteFieldNames(kind).includes(k);
 export const isListField = (kind: NotedKind, k: string) => listFields(kind).includes(k);
-export const isFlagField = (kind: NotedKind, k: string) => flagFields(kind).includes(k);
 
 /** The note fields of a notes doc (or of a command's input). Empty strings and lists, and false flags, count as unset. */
 export function noteFieldsOf(kind: NotedKind, d: object | null | undefined): BandNoteFields {

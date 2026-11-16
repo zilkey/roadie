@@ -1,6 +1,5 @@
 /** Money is integer cents everywhere. */
 export const dollarsToCents = (d: number | string) => Math.round(Number(d) * 100);
-export const centsToDollars = (c: number) => c / 100;
 export function formatCents(c: number): string {
   const sign = c < 0 ? "-" : "";
   const abs = Math.abs(c);
@@ -65,7 +64,6 @@ export const owesBack = (x: Pick<ExpenseLike, "owed" | "payBack" | "paidBackAt">
 export const countsAsPaidOut = (p: { kind: string }) => p.kind !== "reimbursement";
 const live = <T extends { deletedAt?: unknown }>(xs: readonly T[]) => xs.filter((x) => !x.deletedAt);
 export const sumExpenses = (xs: readonly { amount: number; deletedAt?: unknown }[]) => live(xs).reduce((n, x) => n + x.amount, 0);
-export const sumIncome = (lines: readonly { amount: number }[] = []) => lines.reduce((n, l) => n + l.amount, 0);
 
 /** What the band owes people back: live pay-back expenses not yet paid back. */
 export const owedExpenses = <T extends ExpenseLike>(xs: readonly T[]) => live(xs).filter(owesBack);

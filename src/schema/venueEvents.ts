@@ -128,7 +128,6 @@ export type VenueEventSource = z.infer<typeof VenueEventSource>;
 export const EVENT_TAKES = ["notFit", "interested", "pitched"] as const;
 /** The takes the commands set. */
 export const SHOW_TAKES = ["notFit"] as const;
-export const TAKE_LABEL: Record<(typeof EVENT_TAKES)[number], string> = { notFit: "Not a fit", interested: "Interested", pitched: "Pitched" };
 
 /** One band's take on a venue's show: `venueEventNotes/{artistId}__{eventId}`. */
 export const VenueEventNote = entity({

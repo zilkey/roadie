@@ -23,9 +23,6 @@ export function useMusic() {
   };
 }
 
-/** Active musicians with an email: the people who must be able to open every file. */
-export const bandMembers = (ms: Row<Musician>[]) => ms.filter((m) => m.active && m.email);
-
 const ICON_PATH: Record<MimeGroup | Provider, string[]> = {
   doc: ["M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5", "M9 13h6M9 17h6"],
   pdf: ["M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z", "M14 3v5h5", "M9 15h1.5a1.2 1.2 0 0 0 0-2.4H9V17"],
@@ -53,10 +50,6 @@ export function FileIcon({ mime, kind, provider }: { mime?: string; kind?: FileK
       </svg>
     </span>
   );
-}
-
-export function BackTo({ href, label }: { href: string; label: string }) {
-  return <Link href={href} className="s font-semibold" data-testid="back">← {label}</Link>;
 }
 
 export function Missing({ what }: { what: string }) {

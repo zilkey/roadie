@@ -86,14 +86,6 @@ export const placeInput = <P extends PlotShape>(plot: P, id: string, x: number, 
   mapInput(plot, id, (i) => ({ ...i, ...clampPoint(plot.stage, x, y) })) as P;
 /** Send an input's circle back to the strip. Its row and details stay. */
 export const unplaceInput = <P extends PlotShape>(plot: P, id: string): P => mapInput(plot, id, withoutXY) as P;
-export const placeMonitor = <P extends PlotShape>(plot: P, id: string, x: number, y: number): P => {
-  if (!plot.monitors.some((m) => m.id === id)) throw new Error(`No mix ${id}`);
-  return { ...plot, monitors: plot.monitors.map((m) => (m.id === id ? { ...m, ...clampPoint(plot.stage, x, y) } : m)) } as P;
-};
-export const unplaceMonitor = <P extends PlotShape>(plot: P, id: string): P => {
-  if (!plot.monitors.some((m) => m.id === id)) throw new Error(`No mix ${id}`);
-  return { ...plot, monitors: plot.monitors.map((m) => (m.id === id ? withoutXY(m) : m)) } as P;
-};
 
 export interface Move { id: string; x: number | null; y?: number; rot?: number }
 /**

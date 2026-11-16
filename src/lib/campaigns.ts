@@ -3,7 +3,7 @@
  * Every pitch is in one campaign. "Ongoing" is computed, never stored: a pitch with no campaignId, or an active pitch whose
  * campaign is closed (or gone). A closed campaign keeps every pitch that points at it, so its page is its history.
  */
-import { ACTIVE_STATUSES, isActive, STATUSES, type Status } from "./booking";
+import { isActive, STATUSES, type Status } from "./booking";
 
 export const ONGOING = "ongoing";
 export type CampaignKey = typeof ONGOING | (string & {});
@@ -36,8 +36,6 @@ export function statusCounts(ps: readonly CampaignPitchLike[]): { status: Status
   for (const p of ps) by.set(p.status, (by.get(p.status) ?? 0) + 1);
   return STATUSES.flatMap((s) => (by.get(s) ? [{ status: s, n: by.get(s)! }] : []));
 }
-
-export const activeCount = (ps: readonly CampaignPitchLike[]) => ps.filter((p) => (ACTIVE_STATUSES as string[]).includes(p.status)).length;
 
 /** Active campaigns by name, then closed ones by name: the All campaigns page and the sidebar. */
 export function sortCampaigns<C extends CampaignLike>(cs: Iterable<C>): { active: C[]; closed: C[] } {

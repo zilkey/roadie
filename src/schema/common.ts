@@ -36,7 +36,6 @@ export type ExpenseCategory = z.infer<typeof expenseCategory>;
 /** How money moved (income.method, payouts.method): no accounts, just the way it was paid. */
 export const paymentMethod = z.enum(["cash", "venmo", "check", "square", "card", "bank", "other"]);
 export type PaymentMethod = z.infer<typeof paymentMethod>;
-export const gearItem = z.strictObject({ label: z.string().min(1), musicianId: id.optional() });
 export const sound = z.strictObject({ provider: z.enum(["venueProvided", "bandProvided"]), notes: z.string().optional() });
 export const driveRef = z.strictObject({ driveFileId: z.string(), url: z.string() });
 

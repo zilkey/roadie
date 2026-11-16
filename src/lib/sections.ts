@@ -24,7 +24,6 @@ export function useHiddenSections() {
   }, [uid, role]);
   return { hidden, order, loaded };
 }
-export const useNavPrefs = useHiddenSections;
 
 /** Save the section order (command sections.setOrder). */
 export const setSectionOrder = (order: SectionId[]) => runCommand("sections.setOrder", { order });

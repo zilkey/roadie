@@ -38,8 +38,6 @@ export function showName(s: ShowPlaceLike): string {
 export const publicShowName = (s: ShowPlaceLike) => (s.venue ? s.venue.name : kindOf(s) === "house" ? "House concert" : showName(s));
 export const showCity = (s: ShowPlaceLike) => s.venue?.city ?? s.place?.city;
 export const showAddress = (s: ShowPlaceLike) => s.venue?.address ?? s.place?.address;
-/** Published to Bandsintown. */
-export const isPublished = (s: object) => (s as { publishToBandsintown?: boolean }).publishToBandsintown ?? false;
 /** "Robin Castellano & Anika Nair" */
 export const joinNames = (names: string[]) => names.filter(Boolean).join(" & ");
 
@@ -72,10 +70,6 @@ export const DEFAULT_TEMPLATES: { name: string; when?: "preShow" | "dayOf" | "po
 export const addDays = (date: string, n: number) => {
   const [y, m, d] = date.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-};
-export const daysBetween = (from: string, to: string) => {
-  const t = (s: string) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
-  return Math.round((t(to) - t(from)) / 86400000);
 };
 /** "19:15" -> "7:15 pm" */
 export function fmtTime(t?: string): string {

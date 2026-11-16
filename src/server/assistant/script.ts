@@ -1,4 +1,4 @@
-import { routeNames, routeForRecord, type RouteName } from "@/lib/routes";
+import { routeForRecord, type RouteName } from "@/lib/routes";
 import { BAND_SETTINGS } from "./policy";
 import { topicInWords } from "@/lib/help";
 
@@ -344,5 +344,3 @@ function followUp(t: string, steps: Step[], page?: Page, raw = t): Scripted {
   if (last.name === "shows.update") return { text: "Done." };
   return { text: "Done." };
 }
-
-export const knownRouteNames: string[] = routeNames;

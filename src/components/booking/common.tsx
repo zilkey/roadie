@@ -636,20 +636,6 @@ export function ContactsPanel({ kind, parentId, contactIds, contacts, roles, can
   );
 }
 
-export function PitchLinks({ pitches }: { pitches: PitchRow[] }) {
-  if (!pitches.length) return <div className="empty"><span>None yet.</span></div>;
-  return (
-    <div className="grid gap-2">
-      {pitches.map((p) => (
-        <Link key={p.id} href={`/booking/pitches/${p.id}`} className="card" data-testid={`pitch-link-${p.id}`}>
-          <div className="flex items-center justify-between gap-2"><b>{p.target.name}</b><StatusChip status={p.status} /></div>
-          {p.nextStep && <span className="s">Next: {p.nextStep.text} · {p.nextStep.due}</span>}
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 export function useNotFound<T>(loading: boolean, d: T | null, what: string) {
   if (loading) return <></>; // not null: callers do `if (nf) return nf`, and the top bar shows the wait
   if (!d) return <div className="empty" data-testid="not-found"><span>That {what} isn&apos;t here any more.</span> <Link href="/booking" className="font-bold">Back to Booking</Link></div>;

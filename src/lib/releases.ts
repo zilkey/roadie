@@ -9,8 +9,6 @@ export const RELEASE_KIND_LONG: Record<ReleaseKind, string> = { album: "Full-len
 export const RELEASE_KINDS: ReleaseKind[] = ["album", "ep", "single"];
 
 export const TRACK_STATUS_LABEL: Record<TrackStatus, string> = { tracking: "Tracking", overdubs: "Overdubs", mixing: "Mixing", mixed: "Mixed", mastered: "Mastered" };
-/** In the order a track moves through them. */
-export const TRACK_STATUSES: TrackStatus[] = ["tracking", "overdubs", "mixing", "mixed", "mastered"];
 const RANK: Record<TrackStatus, number> = { tracking: 0, overdubs: 1, mixing: 2, mixed: 3, mastered: 4 };
 /** Has the track got at least this far? */
 export const trackReached = (status: TrackStatus, step: TrackStatus) => RANK[status] >= RANK[step];

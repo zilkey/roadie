@@ -5,8 +5,6 @@ export type PanelWidth = "narrow" | number;
 export const MIN_PX = 280;
 /** The width a new admin gets, and what the old `full` setting meant. */
 export const DEFAULT_PX = 360;
-/** The rail's width. */
-export const RAIL_PX = 72;
 /** One arrow-key press. */
 export const STEP_PX = 16;
 

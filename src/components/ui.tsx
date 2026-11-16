@@ -26,15 +26,6 @@ export function PageTitle({ title, sub, back, pill, actions, center }: {
   );
 }
 
-export function Stub({ title, slice, children }: { title: string; slice: number; children?: React.ReactNode }) {
-  return (
-    <div className="grid gap-3">
-      <PageTitle title={title} />
-      <div className="card" data-testid="stub"><span className="s">Coming in slice {slice}.</span>{children}</div>
-    </div>
-  );
-}
-
 export function useCommand() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

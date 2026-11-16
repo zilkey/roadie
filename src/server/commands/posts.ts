@@ -77,7 +77,6 @@ export interface PhotoFolder { id: string; name: string; parentId: string; count
 
 /** How many photos Photos reads at most (the most recently added). Tests lower it. */
 export const photosLimits = { max: 2000 };
-export const CAPPED = "Showing the 2,000 most recently added";
 export const NOT_IN_SOCIALS = "That folder isn't in Socials";
 
 /** "YYYY:MM:DD HH:MM:SS" (imageMediaMetadata.time) → "YYYY-MM-DD HH:MM"; null when it isn't that shape. */

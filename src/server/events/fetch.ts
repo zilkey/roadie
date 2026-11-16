@@ -64,11 +64,6 @@ export async function fetchRaw(u: string, o: FetchOpts = {}): Promise<RawPage> {
   }
 }
 
-export async function fetchJson<T = unknown>(u: string, o: FetchOpts = {}): Promise<T> {
-  const r = await fetchRaw(u, { accept: "application/json,*/*;q=0.5", ...o });
-  try { return JSON.parse(r.body) as T; } catch { throw new AppError("fetch_failed", `${new URL(r.url).hostname} didn't send JSON`, 502); }
-}
-
 /**
  * The network side, swappable in tests: `setFetcher` installs a fake that answers from fixtures. Readers call `net.raw` / `net.json`.
  * Within one refresh run pages are cached by URL, so a preset page shared by several rooms (Z2, Rockhouse) is fetched once.

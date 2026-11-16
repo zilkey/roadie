@@ -20,7 +20,6 @@ export const BAND_NOTES = {
   acts: { coll: "actNotes", key: "actId", fields: ["note", "relationship"], lists: ["contactIds"], flags: ["shortlist", "weKnow"] },
 } as const;
 export type NotedKind = keyof typeof BAND_NOTES;
-export const NOTED_KINDS = Object.keys(BAND_NOTES) as NotedKind[];
 export const isNotedKind = (k: string): k is NotedKind => k in BAND_NOTES;
 export const bandNoteId = (artistId: string, entityId: string) => `${artistId}__${entityId}`;
 

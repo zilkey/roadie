@@ -5,7 +5,6 @@
  */
 import * as cheerio from "cheerio";
 import { z as gz } from "genkit";
-import type { VenueCalendar } from "@/schema";
 import { Net } from "./fetch";
 import { extract, type SelectorConfig } from "./selectors";
 import type { RawEvent } from "./types";
@@ -88,7 +87,3 @@ export async function suggestSelectors(url: string, opts: { net?: Net; problems?
   try { rows = extract(page.body, page.url, config); } catch { rows = []; }
   return { config, rows, model, ...(out.notes ? { notes: out.notes } : {}) };
 }
-
-/** A selectors calendar from a suggestion, for venues.setCalendar. */
-export const calendarOf = (url: string, s: SelectorConfig, filter?: Extract<VenueCalendar, { type: "selectors" }>["filter"]): VenueCalendar =>
-  ({ type: "selectors", url, item: s.item, fields: s.fields, ...(s.dateFormat ? { dateFormat: s.dateFormat } : {}), ...(filter ? { filter } : {}) });
