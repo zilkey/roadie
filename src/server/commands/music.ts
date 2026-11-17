@@ -253,7 +253,7 @@ export const songsCreate = defineCommand({
 export const songsUpdate = defineCommand({
   name: "songs.update",
   roles: ["admin", "mcp"],
-  description: "Edit a song. Renames and key/length changes flow into setlists and rehearsals.",
+  description: "Edit a song. Renames and key/length changes flow into setlists and rehearsals. defaultTransition is the band's usual way into the song; the setlist editor puts it on the song as its transition note when someone adds the song by hand (setlists already holding the song keep their own notes).",
   input: patchInput(SongInput),
   run: (ctx, { id, patch }) => db.update(ctx, "songs", id, patch as Record<string, unknown>),
 });

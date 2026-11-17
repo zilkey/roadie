@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "@/lib/artist";
 import { ErrorBox } from "@/components/ui";
 import { Menu } from "@/components/Menu";
@@ -61,7 +61,12 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
   const [book, setBook] = useState<BookTarget | null>(null);
   const [pick, setPick] = useState<{ date: string | null } | null>(null);
   const [sheet, setSheet] = useState<string | null>(null); // phone: the day whose + sheet is open
-  const [drag, setDrag] = useState<Drag | null>(null);
+  const [drag, setDragState] = useState<Drag | null>(null);
+  // What's being dragged, for the drag and drop handlers: a ref is current from dragstart on, while `drag` (the state that
+  // draws the drag) only arrives with the next render. A quick drag on a busy page used to drop before that render,
+  // into handlers that still thought nothing was being dragged, and the drop was lost.
+  const dragRef = useRef<Drag | null>(null);
+  const setDrag = (d: Drag | null) => { dragRef.current = d; setDragState(d); };
   const [over, setOver] = useState<Over | null>(null);
   const endDrag = () => { setDrag(null); setOver(null); };
 
@@ -99,7 +104,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
   }
 
   async function drop(date: string | null, slot: Slot) {
-    const d = drag;
+    const d = dragRef.current;
     endDrag();
     if (!d) return;
     if (d.type === "entry") {
@@ -124,7 +129,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
     "data-drag-row": "",
     "data-drag": drag?.type === "entry" && drag.id === e.id ? "from" : over?.id === e.id ? over.side : undefined,
     onDragOver: (ev: React.DragEvent<HTMLElement>) => {
-      if (!drag) return;
+      if (!dragRef.current) return;
       ev.preventDefault(); ev.stopPropagation();
       const r = ev.currentTarget.getBoundingClientRect();
       const side = ev.clientY < r.top + r.height / 2 ? "above" : "below";
@@ -135,7 +140,8 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
   const areaDrop = (date: string | null) => !admin ? {} : {
     "data-over": over && over.date === date && !over.id ? "" : undefined,
     onDragOver: (ev: React.DragEvent<HTMLElement>) => {
-      if (!drag || (date === null && !(drag.type === "venue" || drag.type === "pitch" || (drag.type === "entry" && drag.kind === "option")))) return;
+      const d = dragRef.current;
+      if (!d || (date === null && !(d.type === "venue" || d.type === "pitch" || (d.type === "entry" && d.kind === "option")))) return;
       ev.preventDefault();
       if (over?.date !== date || over.id) setOver({ date });
     },

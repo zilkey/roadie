@@ -13,6 +13,9 @@ const SITE_PATHS = "(?!privacy$|terms$|_next/|opengraph-image|[^/]+\\.[A-Za-z0-9
 // NEXT_DIST_DIR: the e2e run builds into its own folder so it can run next to `npm run dev` (Next allows one dev server per folder).
 const config: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // The e2e servers (.next-test-<n>) skip Next's upgrade reminder: under a coding agent it stops `next dev` once and only
+  // lets a prompt retry through, which an unattended test run never gets, so no test would run. Normal dev keeps it.
+  ...(process.env.NEXT_DIST_DIR?.startsWith(".next-test") ? { experimental: { agentUpgrade: false as const } } : {}),
   serverExternalPackages: ["firebase-admin", "genkit", "@genkit-ai/google-genai", "pdfkit"],
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   // App Hosting's Next adapter (14.0.21) builds standalone without copying public/, so the logos and icons 404 in prod.

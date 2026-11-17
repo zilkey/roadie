@@ -11,6 +11,7 @@ import type { z } from "zod";
 import type { SongRow } from "./common";
 import { useTransitionsPref } from "./useTransitionsPref";
 import { fmtChange, transitionAt } from "@/lib/transitions";
+import { runCommand } from "@/lib/commands";
 
 export type SetlistItemT = z.infer<typeof SetlistItem>;
 
@@ -50,6 +51,30 @@ function TransitionNote({ value, commit, label }: { value: string; commit(v: str
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { if (draft != null && draft.trim() !== value.trim()) commit(draft.trim()); setDraft(null); }}
       onKeyDown={(e) => { if (e.key === "Escape") { setDraft(null); (e.target as HTMLTextAreaElement).blur(); } }} />
+  );
+}
+
+/**
+ * "Make default": saves this transition note on the song (songs.update defaultTransition), so the song starts with it the
+ * next time someone adds it to a setlist by hand. Only for a library song with a note; once the note is the song's default
+ * it says so instead.
+ */
+function DefaultTransition({ note, song }: { note: string; song?: SongRow }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!song || !note) return null;
+  if ((song.defaultTransition ?? "").trim() === note) return <span className="s" data-testid="transition-is-default">The song's default transition</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <button type="button" className="btn ghost sm justify-self-start" disabled={busy} data-testid="transition-make-default"
+        onClick={async () => {
+          setBusy(true); setErr(null);
+          try { await runCommand("songs.update", { id: song.id, patch: { defaultTransition: note } }); }
+          catch (e) { setErr((e as Error).message); }
+          finally { setBusy(false); }
+        }}>Make default transition</button>
+      {err && <span className="s" style={{ color: "var(--danger)" }}>{err}</span>}
+    </span>
   );
 }
 
@@ -140,7 +165,10 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
                     ? <ul className="grid gap-0.5">{tr.changes.map((c) => <li key={c.fieldId} data-testid="transition-change">{fmtChange(c)}</li>)}</ul>
                     : <span className="s" data-testid="transition-none">{tr.afterBreak ? "After the break" : "No changes"}</span>}
                   {admin
-                    ? <TransitionNote value={tr.note} commit={(v) => setNote(i, v)} label={`Transition into ${songTitle(it)}`} />
+                    ? <>
+                        <TransitionNote value={tr.note} commit={(v) => setNote(i, v)} label={`Transition into ${songTitle(it)}`} />
+                        <DefaultTransition note={tr.note} song={it.songId ? songs.find((s) => s.id === it.songId) : undefined} />
+                      </>
                     : tr.note && <p className="whitespace-pre-wrap" data-testid="transition-note">{tr.note}</p>}
                 </div>
               );
@@ -205,7 +233,8 @@ export function SetlistItemsEditor({ items, onChange, songs, admin, empty = "Not
             <button className="btn ghost" disabled={!songId} data-testid="add-song-item" onClick={() => {
               const s = songs.find((x) => x.id === songId)!;
               setSongId("");
-              onChange([...items, { type: "song", songId: s.id, title: s.title, lengthSec: s.lengthSec, key: s.key }]);
+              // A song added by hand starts with its default transition (the song's "Make default" note), if it has one.
+              onChange([...items, { type: "song", songId: s.id, title: s.title, lengthSec: s.lengthSec, key: s.key, ...(s.defaultTransition?.trim() ? { transitionNote: s.defaultTransition.trim() } : {}) }]);
             }}>+ Song</button>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted" aria-hidden="true">

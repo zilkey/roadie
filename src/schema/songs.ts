@@ -14,6 +14,8 @@ export const Song = entity({
   status: z.enum(["active", "learning", "retired", "writing"]),
   lyricsDoc: driveRef.optional(),
   notes: z.string().optional(),
+  /** The band's usual way into this song (a setlist transition note). Set from a setlist's "Make default"; a song added to a setlist by hand starts with it as its transition note. */
+  defaultTransition: z.string().optional(),
   /** Values for the artist's songFields, by field id (not label: a rename keeps them). No entry = no value; never an empty string. */
   fields: z.array(z.strictObject({ fieldId: id, value: z.string() })).default([]),
   /** The song's to-dos: named lists, in order, like a show's (song templates). Written by the checklists.* commands only. */

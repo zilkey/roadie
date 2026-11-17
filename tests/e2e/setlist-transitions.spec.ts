@@ -100,6 +100,20 @@ test("show transitions: field changes and notes between songs, notes drag with t
   await expect(page.getByTestId("show-transitions")).toBeChecked();
   await expect(page.getByTestId("item-1").getByTestId("transition-note-input")).toHaveValue("Ingrid capos up while Eric vamps");
 
+  // Make default transition saves the note on the song; adding the song by hand brings it along
+  await expect(page.getByTestId("item-3").getByTestId("transition-make-default")).toBeVisible();
+  await page.getByTestId("item-1").getByTestId("transition-make-default").click();
+  await expect(page.getByTestId("item-1").getByTestId("transition-is-default")).toBeVisible();
+  await page.getByTestId("add-song-select").selectOption({ label: "Trans Bravo" });
+  await page.getByTestId("add-song-item").click();
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect(titles).toHaveText(["Trans Alpha", "Trans Bravo", "Break", "Trans Charlie", "Trans Bravo"]);
+  await expect(page.getByTestId("item-4").getByTestId("transition-note-input")).toHaveValue("Ingrid capos up while Eric vamps");
+  await expect(page.getByTestId("item-4").getByTestId("transition-change")).toHaveText(["Capo: 5 → 3"]);
+  await page.getByTestId("item-4").getByTestId("item-remove").click();
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  await expect(titles).toHaveText(["Trans Alpha", "Trans Bravo", "Break", "Trans Charlie"]);
+
   // Print: the Transitions field puts them above each song
   await page.getByTestId("print-setlist").click();
   const dialog = page.getByTestId("print-dialog");

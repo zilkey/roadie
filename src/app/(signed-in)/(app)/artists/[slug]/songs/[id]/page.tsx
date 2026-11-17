@@ -210,6 +210,9 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
           ))}
           {(admin || song.notes) && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}
             className="sg-note" onSave={(v) => save("notes", v, { notes: v || null })} error={as.error} /></dd></div>}
+          {(admin || song.defaultTransition) && <div className="sg-wide"><dt className="lbl">Default transition</dt><dd><InlineValue testid="field-default-transition" label="Default transition" kind="textarea" value={text("defaultTransition", song.defaultTransition)} canEdit={admin}
+            className="sg-note" onSave={(v) => save("defaultTransition", v, { defaultTransition: v.trim() || null })} error={as.error} />
+            <p className="s sg-help">Added to this song's transition note when it's put on a setlist by hand. Set it from a setlist with Make default transition.</p></dd></div>}
         </dl>
       </section>
 
