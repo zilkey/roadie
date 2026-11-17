@@ -24,6 +24,8 @@ import { WeKnowToggle } from "@/components/booking/WhoWeKnow";
 import { actSearchUrl, actStats, type EvLike, type TeamResult } from "@/lib/acts";
 import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
 import { dateInBandZone, fmtInstant } from "@/lib/timezone";
+import { useCanEditShared } from "@/lib/sharedEdit";
+import { AskToEdit } from "@/components/booking/AskToEdit";
 import { ACT_RELATIONSHIPS, ARTIST_LINKS, RELATIONSHIP_HINT, RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship, type ArtistLinkKey, type Show, type VenueEvent } from "@/schema";
 
 export default function Page() { return <AdminOnly><ActPage /></AdminOnly>; }
@@ -178,6 +180,8 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
   rooms: string[]; cities: string[]; posters: Poster[];
 }) {
   const lookup = useCommand();
+  // Shared facts: approved editors (and the act's creator, until adopted) click to fix them; Look up is a fill, not an edit, so it stays.
+  const can = useCanEditShared(act);
   const run = (spotifyId?: string | null) => void lookup.call("acts.lookup", { id, ...(spotifyId !== undefined ? { spotifyId } : {}) });
   const [addingGenre, setAddingGenre] = useState(false);
   const [addingLink, setAddingLink] = useState(false);
@@ -236,34 +240,34 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
   }
   const setGenres = (next: string[]) => update({ genres: next.length ? next : null });
   return (
-    <DetailCard title="About" testid="act-about" headerExtra={<span className="flex flex-wrap items-center gap-2">{google}{lookBtn(act.lookedUpAt ? "Look up again" : "Look up", "soft")}</span>}>
+    <DetailCard title="About" testid="act-about" headerExtra={<span className="flex flex-wrap items-center gap-2">{!can && <AskToEdit />}{google}{lookBtn(act.lookedUpAt ? "Look up again" : "Look up", "soft")}</span>}>
       {lookErr}
       <KV rows={[
-        ["Sounds like", <InlineValue key="d" testid="act-description" label="Sounds like" kind="textarea" value={act.description ?? ""} canEdit error={error} onSave={(v) => update({ description: v.trim() || null })} />],
+        ["Sounds like", <InlineValue key="d" testid="act-description" label="Sounds like" kind="textarea" value={act.description ?? ""} canEdit={can} error={error} onSave={(v) => update({ description: v.trim() || null })} />],
         ["Genres", (
           <span key="g" className="flex flex-wrap items-center gap-1.5" data-testid="act-genres">
             {genres.map((g) => (
-              <span key={g} className="chip w lg">{g}<button type="button" aria-label={`Remove ${g}`} onClick={() => void setGenres(genres.filter((x) => x !== g))}>×</button></span>
+              <span key={g} className="chip w lg">{g}{can && <button type="button" aria-label={`Remove ${g}`} onClick={() => void setGenres(genres.filter((x) => x !== g))}>×</button>}</span>
             ))}
             {addingGenre
-              ? <InlineValue testid="act-genre-new" label="New genre" kind="text" value="" autoStart canEdit error={error}
+              ? <InlineValue testid="act-genre-new" label="New genre" kind="text" value="" autoStart canEdit={can} error={error}
                   onSave={async (v) => { setAddingGenre(false); const g = v.trim(); return !g || genres.includes(g) ? true : setGenres([...genres, g]); }} />
-              : <PlusButton label="Add a genre" testid="act-genre-add" onClick={() => setAddingGenre(true)} />}
+              : can && <PlusButton label="Add a genre" testid="act-genre-add" onClick={() => setAddingGenre(true)} />}
           </span>
         )],
-        ["From", <InlineValue key="h" testid="act-hometown" label="From" kind="text" value={act.hometown ?? ""} canEdit error={error} onSave={(v) => update({ hometown: v.trim() || null })} />],
+        ["From", <InlineValue key="h" testid="act-hometown" label="From" kind="text" value={act.hometown ?? ""} canEdit={can} error={error} onSave={(v) => update({ hometown: v.trim() || null })} />],
         ["Links", (
           <span key="l" className="grid gap-2" data-testid="act-links">
             <span className="flex flex-wrap items-center gap-2">
               {links.map(([k, url]) => <a key={k} className="chip w" href={url} target="_blank" rel="noreferrer">{LINK_LABEL[k]} ↗</a>)}
-              {!addingLink && <PlusButton label="Add a link" testid="act-link-add" onClick={() => setAddingLink(true)} />}
+              {can && !addingLink && <PlusButton label="Add a link" testid="act-link-add" onClick={() => setAddingLink(true)} />}
             </span>
             {addingLink && <AddLink have={act.links ?? {}} onCancel={() => setAddingLink(false)} onSave={async (links) => { const ok = await update({ links }); if (ok) setAddingLink(false); return ok; }} />}
           </span>
         )],
       ]} />
       {picker}
-      <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}Click anything to fix it.</span>
+      <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}{can ? "Click anything to fix it." : ""}</span>
     </DetailCard>
   );
 }

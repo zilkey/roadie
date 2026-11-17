@@ -1,4 +1,5 @@
 "use client";
+import { useCanEditShared, usePlatformAdmin } from "@/lib/sharedEdit";
 import { Crumbs, campaignsCrumb, sectionCrumb } from "@/components/booking/BookingNav";
 import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
 import { usePlacePitch, PlaceMore } from "@/components/booking/PlacePitchTab";
@@ -40,6 +41,8 @@ function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; p
   const edit = useSingleEdit<"about">();
   const [addingContact, setAddingContact] = useState(false);
   const [linkingVenue, setLinkingVenue] = useState(false);
+  const canEditShared = useCanEditShared(shared);
+  const platformAdmin = usePlatformAdmin();
   const nf = useNotFound(loading, shared, "promoter");
   if (nf || !shared) return nf;
 
@@ -80,13 +83,13 @@ function PromoterPage({ placeId: id, pitchId, defaultTab }: { placeId: string; p
     <DetailPage testid="promoter-page" recordId={id} back={<Crumbs items={[...(place.crumb ? [campaignsCrumb, place.crumb] : [sectionCrumb("promoter")]), { label: p.name }]} back={<BackLink mode="back" href="/booking/promoters" label="All promoters" />} />} title={p.name}
       pill={place.pill}
       meta={`${KIND_LABEL[p.kind]}${venues.length ? ` · ${venues.length} venues` : ""}`}
-      more={<PlaceMore bookedIt={place.bookedIt} testid="promoter" items={[...place.moreItems, { key: "archive", label: "Archive promoter", danger: true, onSelect: archive }]} />}>
+      more={<PlaceMore bookedIt={place.bookedIt} testid="promoter" items={[...place.moreItems, ...(platformAdmin ? [{ key: "archive", label: "Archive promoter", danger: true, onSelect: archive }] : [])]} />}>
       <ErrorBox error={error} />
 {place.tabs("Promoter details")}
       {place.body}
       {place.tab === "details" && <>
       <CardGroup kind="shared">
-        <DetailCard title="About" edit={edit} editKey="about" warn={SHARED_WARN} editTestid="edit-toggle"
+        <DetailCard title="About" edit={edit} editKey="about" locked={!canEditShared} warn={SHARED_WARN} editTestid="edit-toggle"
           children={<KV rows={[["Website", website], ["Kind", KIND_LABEL[p.kind]]]} />}
           editChildren={
             <div>

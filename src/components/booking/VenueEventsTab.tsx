@@ -6,6 +6,7 @@
  * Each show has the same pitch flag and Not a fit as Booking's Venue calendars (ShowActions). The upcoming shows are furthest out
  * first, under the same filters as Venue calendars (ShowFilterBar), remembered on their own.
  */
+import { AskToEdit } from "./AskToEdit";
 import { useMemo, useState } from "react";
 import { useArtist } from "@/lib/artist";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
@@ -30,7 +31,7 @@ function ago(iso?: string) {
   return `${d} day${d === 1 ? "" : "s"} ago`;
 }
 
-export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }; admin: boolean }) {
+export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: Venue & { id: string }; admin: boolean; canEditShared?: boolean }) {
   const { artistId } = useArtist();
   const events = useCollection<VenueEvent>("venueEvents", { where: [["venueId", "==", venue.id]], includeDeleted: true });
   const { doc: health } = useDoc<VenueEventSource>("venueEventSources", venue.id, { includeDeleted: true });
@@ -62,7 +63,7 @@ export function VenueEventsTab({ venue, admin }: { venue: Venue & { id: string }
   return (
     <>
       <CardGroup kind="shared">
-        <SourceCard venue={venue} cal={cal} health={health} admin={admin} onSetup={() => setSetup(true)} />
+        <SourceCard venue={venue} cal={cal} health={health} admin={admin} canEdit={canEditShared} onSetup={() => setSetup(true)} />
         {cal?.type !== "manual" && (
           <DetailCard title={`Upcoming shows${events.rows ? ` (${shown.length === upcoming.length ? upcoming.length : `${shown.length} of ${upcoming.length}`})` : ""}`} testid="venue-events-upcoming">
             {!!upcoming.length && <div className="mb-3"><ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake={admin} testid="venue-events-filter" /></div>}
@@ -130,13 +131,13 @@ function whoOpens(events: Ev[]) {
     .sort((x, y) => y.count - x.count || y.latest.localeCompare(x.latest) || x.act.name.localeCompare(y.act.name));
 }
 
-function SourceCard({ venue, cal, health, admin, onSetup }: { venue: Venue & { id: string }; cal?: VenueCalendar; health: VenueEventSource | null; admin: boolean; onSetup(): void }) {
+function SourceCard({ venue, cal, health, admin, canEdit, onSetup }: { venue: Venue & { id: string }; cal?: VenueCalendar; health: VenueEventSource | null; admin: boolean; canEdit: boolean; onSetup(): void }) {
   const { call, error, busy } = useCommand();
   const href = cal ? calendarHref(cal) : undefined;
   const broken = !!health?.lastError;
   const zero = !broken && health?.lastSuccessAt && health.lastCount === 0;
   return (
-    <DetailCard title="Calendar" testid="venue-calendar-card" headerExtra={admin ? <button type="button" className="btn ghost sm" onClick={onSetup} data-testid="venue-calendar-setup">{cal ? "Change source" : "Set up"}</button> : undefined}>
+    <DetailCard title="Calendar" testid="venue-calendar-card" headerExtra={admin ? (canEdit ? <button type="button" className="btn ghost sm" onClick={onSetup} data-testid="venue-calendar-setup">{cal ? "Change source" : "Set up"}</button> : <AskToEdit testid="calendar-ask-to-edit" />) : undefined}>
       <ErrorBox error={error} />
       {!cal ? <div className="s" data-testid="venue-calendar-none">No calendar set up for this venue.</div>
         : cal.type === "manual" ? <div data-testid="venue-calendar-manual">{cal.note}</div>

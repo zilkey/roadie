@@ -2,6 +2,7 @@ import { adminAuth } from "@/server/admin";
 import { importCtx } from "@/server/ctx";
 import { db } from "@/server/db";
 import { startSession, syncClaims } from "@/server/session";
+import { addPlatformAdmins, approveEditor } from "@/server/platform";
 
 const fsHost = process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280";
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9319";
@@ -51,4 +52,17 @@ export async function readySession(authHeader: string) {
   const s = await startSession(authHeader);
   if (s.status !== "ready") throw new Error(`expected a ready session, got ${s.status}`);
   return s;
+}
+
+/**
+ * Approve people to change shared records (venues, acts, promoters, festivals, editions, venue types): tenancy phase 1. Tests that
+ * write the shared directory as a band person call this for them, like the real band is approved on prod.
+ */
+export async function approveTestEditors(...uids: string[]) {
+  for (const uid of uids) await approveEditor(uid, "test");
+}
+
+/** Make people platform admins (platform/admins): merge and remove shared entries, approve editors. */
+export async function makePlatformAdmins(...uids: string[]) {
+  await addPlatformAdmins(uids);
 }

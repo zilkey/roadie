@@ -15,6 +15,7 @@ import { fmtDate, isActive } from "@/lib/booking";
 import { fmtLong, showName } from "@/lib/shows";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Edition, Show } from "@/schema";
+import { useCanEditShared, usePlatformAdmin } from "@/lib/sharedEdit";
 
 /** A edition's one page (#82): Pitch | Festival details. Its own route opens Festival details; its pitch's route opens Pitch. */
 export function EditionWorkspace(props: { placeId: string; pitchId?: string; defaultTab: "pitch" | "details" }) { return <AdminOnly><EditionPage {...props} /></AdminOnly>; }
@@ -33,6 +34,8 @@ function EditionPage({ placeId: id, pitchId, defaultTab }: { placeId: string; pi
   const { call, error } = useCommand();
   const edit = useSingleEdit<"about">();
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && p.target.id === id), [b.pitches, artistId, id]);
+  const canEditShared = useCanEditShared(shared);
+  const platformAdmin = usePlatformAdmin();
   const nf = useNotFound(loading, shared, "year");
   if (nf || !shared) return nf;
 
@@ -52,13 +55,13 @@ function EditionPage({ placeId: id, pitchId, defaultTab }: { placeId: string; pi
     <DetailPage testid="edition-page" recordId={id} back={<Crumbs items={place.crumb ? [campaignsCrumb, place.crumb, { label: name }] : [sectionCrumb("edition"), { label: e.festivalName, href: hrefFor("festival", e.festivalId) }, { label: name }]} back={<BackLink mode="back" href={hrefFor("festival", e.festivalId)} label={e.festivalName} />} />} title={name}
       pill={place.pill}
       meta={e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : "Dates not set"}
-      more={<PlaceMore bookedIt={place.bookedIt} testid="edition" items={[...place.moreItems, { key: "archive", label: "Archive this year", danger: true, onSelect: archive }]} />}>
+      more={<PlaceMore bookedIt={place.bookedIt} testid="edition" items={[...place.moreItems, ...(platformAdmin ? [{ key: "archive", label: "Archive this year", danger: true, onSelect: archive }] : [])]} />}>
       <ErrorBox error={error} />
 {place.tabs("Festival details")}
       {place.body}
       {place.tab === "details" && <>
       <CardGroup kind="shared">
-        <DetailCard title="About this year" editKey="about" edit={edit} warn={SHARED_WARN} testid="edition-facts" editTestid="edit-toggle"
+        <DetailCard title="About this year" editKey="about" edit={edit} locked={!canEditShared} warn={SHARED_WARN} testid="edition-facts" editTestid="edit-toggle"
           editChildren={<div><EntityForm testid="edition-edit" fields={aboutFields} initial={editionForm.initial(e)} build={editionForm.build} autosave={autosave} /></div>}>
           <KV rows={[
             ["Dates", e.startDate ? `${fmtDate(e.startDate)}${e.endDate ? `–${fmtDate(e.endDate)}` : ""}` : ""],

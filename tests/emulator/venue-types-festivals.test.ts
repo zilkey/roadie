@@ -3,13 +3,15 @@ import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, approveTestEditors, makePlatformAdmins } from "./helpers";
 
 let ctx: Ctx;
 
 beforeEach(async () => {
   await resetEmulators();
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" });
+  await approveTestEditors(u.uid);
+  await makePlatformAdmins(u.uid); // renames and removes venue types for every band
   ctx = { uid: u.uid, role: "admin", via: "app", runId: newRunId() };
 });
 

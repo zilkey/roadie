@@ -325,7 +325,7 @@ export async function lookUpAct(ctx: Ctx, id: string, opts: { spotifyId?: string
       patch.sources = [...((act.sources as unknown[] | undefined) ?? []), { url: hit.url, checkedAt: now }];
     }
     const found = what(patch, act);
-    await run(ctx, (w) => w.update("acts", id, patch));
+    await run(ctx, (w) => w.asSystem(() => w.update("acts", id, patch)));
     return { id, name: act.name, state: found.length ? "found" : "nothing", found, sources: ((patch.sources ?? act.sources) as unknown[] | undefined)?.length ?? 0 };
   }
 
@@ -380,6 +380,6 @@ export async function lookUpAct(ctx: Ctx, id: string, opts: { spotifyId?: string
     lookupCandidates: candidates ?? null,
   };
   const found = what(patch, act);
-  await run(ctx, (w) => w.update("acts", id, patch));
+  await run(ctx, (w) => w.asSystem(() => w.update("acts", id, patch)));
   return { id, name: act.name, state: candidates ? "pick" : found.length ? "found" : "nothing", found, ...(candidates ? { candidates: candidates.length } : {}), sources: sources.length };
 }

@@ -8,9 +8,10 @@ import { dispatch } from "@/server/commands/dispatch";
 import { firestore } from "@/server/admin";
 import { clearDraft, listDrafts, saveDraft } from "@/server/drafts";
 import { DRAFT_TTL_MS, DRAFT_PATH, draftDocId, draftPath, pathOfDocId, isEditPath } from "@/schema/drafts";
-import { resetEmulators, makeUser, venue } from "./helpers";
+import { resetEmulators, makeUser, venue, approveTestEditors } from "./helpers";
 
-beforeEach(resetEmulators);
+// Venues stand in for any record here; the people editing them are approved shared editors, as on prod.
+beforeEach(async () => { await resetEmulators(); await approveTestEditors("rudy", "felix"); });
 const T0 = new Date("2026-10-01T12:00:00Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
 /** An app autosave caller with an injectable clock. */
@@ -105,6 +106,7 @@ test("baseRev: a field changed by someone else since is a conflict naming who an
   const id = await mk();
   const felix = await makeUser("felix@example.com", "admin", { name: "Felix" });
   const rudy = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
+  await approveTestEditors(felix.uid, rudy.uid);
   const base = (await db.get("venues", id))!.rev as number;
   await db.update({ ...importCtx(felix.uid), via: "app" }, "venues", id, { website: "from Felix" });
   const send = (patch: Record<string, unknown>, baseRev: number) =>
@@ -159,6 +161,7 @@ test("clientMutationId: a repeat returns the first result and does not write twi
 test("autosave through dispatch coalesces and returns the folded runId for Undo", async () => {
   const id = await mk();
   const rudy = await makeUser("rudy@example.com", "admin");
+  await approveTestEditors(rudy.uid);
   const send = async (website: string) => {
     const r = await dispatch("venues.update", bearer(rudy.token), { id, patch: { website }, _meta: { autosave: true, clientMutationId: `m-${website}-00000` } });
     assert.equal(r.status, 200);

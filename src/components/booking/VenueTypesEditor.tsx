@@ -5,10 +5,11 @@ import { Icons } from "@/components/people/shared";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useVenueTypes } from "@/lib/venueTypes";
 import type { Venue } from "@/schema";
+import { usePlatformAdmin } from "@/lib/sharedEdit";
 
 /**
  * The venue type list every band shares (venueTypes.*). Add, rename (its venues keep it: they hold the key), and remove a type no venue
- * has any more. A venue's form adds one too, with "Other…".
+ * has any more. A venue's form adds one too, with "Other…". Rename and remove change the list for every band: Roadie's platform admins only.
  */
 export function VenueTypesEditor() {
   const types = useVenueTypes();
@@ -18,6 +19,7 @@ export function VenueTypesEditor() {
   const [label, setLabel] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const platformAdmin = usePlatformAdmin();
   const usedOn = (id: string) => venues.filter((v) => v.type === id && !v.mergedInto).length;
 
   async function add() {
@@ -33,7 +35,7 @@ export function VenueTypesEditor() {
   return (
     <section className="card" data-testid="venue-types" aria-labelledby="venue-types-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 id="venue-types-title" className="text-lg font-bold">Types</h2><p className="s">Renaming a type renames it on its venues. A type can come off the list once no venue has it.</p></div>
+        <div><h2 id="venue-types-title" className="text-lg font-bold">Types</h2><p className="s">{platformAdmin ? "Renaming a type renames it on its venues. A type can come off the list once no venue has it." : "Anyone can add a type. Roadie's admins rename and remove them."}</p></div>
         {!adding && <button type="button" className="btn ghost" data-testid="add-venue-type" onClick={() => setAdding(true)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg> New type</button>}
       </div>
@@ -68,11 +70,11 @@ export function VenueTypesEditor() {
             <tr key={t.id} data-testid={`venue-type-${t.id}`} data-editing={editId === t.id ? "1" : undefined}>
               <td className="nm">{t.label}</td>
               <td>{n}</td>
-              <td className="act">
+              <td className="act">{platformAdmin && <>
                 <button type="button" className="icon-btn" aria-label={`Rename ${t.label}`} data-testid={`venue-type-edit-${t.id}`} onClick={() => { setName(t.label); setEditId(t.id); }}>{Icons.edit}</button>
                 <button type="button" className="icon-btn danger" aria-label={`Remove ${t.label}`} data-testid={`venue-type-remove-${t.id}`} disabled={busy || n > 0}
                   title={n > 0 ? `${n} ${n === 1 ? "venue has" : "venues have"} this type` : undefined} onClick={() => void remove(t.id, t.label)}>{Icons.trash}</button>
-              </td>
+              </>}</td>
             </tr>
           );
         })}</tbody>

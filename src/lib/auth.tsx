@@ -6,7 +6,15 @@ import { clientAuth } from "./firebase-client";
 
 /** One artist you can open, and your role there (from /api/session). */
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
-export interface Profile { uid: string; userId: string; name: string; email: string; musicianId?: string; mcpAccess: boolean; artists: ArtistAccess[] }
+export interface Profile {
+  uid: string; userId: string; name: string; email: string; musicianId?: string; mcpAccess: boolean; artists: ArtistAccess[];
+  /** Approved to change shared directory records (venues, acts, promoters, festivals) by a platform admin. */
+  sharedEditor?: boolean;
+  /** Runs Roadie itself (platform/admins): merges and removes shared entries, sees Admin › Platform. */
+  platformAdmin?: boolean;
+  /** Asked to edit shared records and still waiting. */
+  sharedEditRequested?: boolean;
+}
 type State =
   | { status: "loading" }
   | { status: "signedOut"; error?: string }

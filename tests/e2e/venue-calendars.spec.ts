@@ -136,7 +136,8 @@ test("Pitch this: one click adds the show to the venue's pitch; the filled flag 
   await flag.click();
   await dlg.getByTestId("unpitch-open").click();
   await expect(page).toHaveURL(/\/booking\/pitches\/[^/]+$/);
-  await expect(page.getByText("Added Headline Example Trio on Fri, May 9 (from the venue's calendar)")).toBeVisible();
+  // a retry adds the note again, next to the earlier attempt's: any one of them will do
+  await expect(page.getByText("Added Headline Example Trio on Fri, May 9 (from the venue's calendar)").first()).toBeVisible();
   await page.goBack();
   await everyShow(page);
 
@@ -273,10 +274,12 @@ test("Notes: click to edit in place without moving the row; the box grows as she
   }
   await expect(button).toContainText("Add a note");
 
-  // the layout, not the viewport: focusing the box may scroll the table's own scroller to show it
+  // the layout, not the viewport: focusing the box may scroll the table's own scroller to show it. The table's width (a growing box
+  // must not widen the column), not its height: that sums every other row too, and a row further down still settling (under a
+  // loaded machine) moved it by a pixel while this row stayed put.
   const layout = () => cell.evaluate((el) => {
     const td = el.closest("td")!, tr = td.parentElement as HTMLTableRowElement, table = td.closest("table")!;
-    return { td: [td.offsetLeft, td.offsetTop, td.offsetWidth, td.offsetHeight], row: [tr.offsetTop, tr.offsetHeight], table: [table.offsetWidth, table.offsetHeight] };
+    return { td: [td.offsetLeft, td.offsetTop, td.offsetWidth, td.offsetHeight], row: [tr.offsetTop, tr.offsetHeight], table: [table.offsetWidth] };
   });
   // the page settles first (the rows grow while the listing's data comes in)
   let before = await layout();

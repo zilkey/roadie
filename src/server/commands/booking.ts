@@ -12,6 +12,7 @@ import { bandNoteOf, bandNotesBy, createNoted, setVenuePromoters, updateNoted, w
 import { ensureVenueTypes, requireVenueType } from "../venueTypes";
 import { requireActiveCampaign } from "./campaigns";
 import { attachContact, detachContact, parentKind } from "../contactLinks";
+import { SHARED_EDIT_NOTE, requirePlatformAdmin } from "../platform";
 import { FESTIVAL_PAGE_SIZE, FESTIVAL_SORTS, festivalRows } from "@/lib/festivalPage";
 import {
   BAND_NOTES, VenueInput, VENUE_ROLE_FIELDS, venueNoteId, slug, PromoterInput, FestivalInput, EditionInput, ContactInput, EmailTemplateInput, pitchStatus, dateStr, email as emailSchema, lowerEmail, e164,
@@ -78,7 +79,7 @@ export const venuesUpdate = defineCommand({
   name: "venues.update", roles: [...VENUE_ROLES], input: patchInput(VenueIn),
   description:
     "Edit a venue. address and sound are whole objects (city and state required; sound needs provider): Roadie fills missing keys from the record, other callers send the whole object. notes and loadInNotes replace the text (to add, read first and resend). contactIds/promoterIds replace the list (prefer contacts.attach/detach for contacts; contacts.setRoles for who handles booking or is the day-of contact). ages is all|18|21. Name, address, type, region, capacity, ages, sound, website, instagram and sources are the SHARED room: a change here changes it for every band that uses Roadie, " +
-    "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds, promoterIds, bookingContactIds and dayOfContactIds are this band's private notes (admins only). Renaming updates its pitches and shows.",
+    "and your name goes in its history, so only change what you know is right. loadInNotes, notes, contactIds, promoterIds, bookingContactIds and dayOfContactIds are this band's private notes (admins only). Renaming updates its pitches and shows." + SHARED_EDIT_NOTE,
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
     const sharedPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => !isPrivateField(k) && v !== undefined));
     const privPatch = Object.fromEntries(Object.entries(patch).filter(([k, v]) => isPrivateField(k) && v !== undefined));
@@ -114,9 +115,9 @@ const joinText = (a?: string, b?: string) => (!a ? b : !b || a.includes(b) ? a :
 export const venuesMergeInto = defineCommand({
   name: "venues.mergeInto", roles: ["admin", "mcp"], input: z.strictObject({ from: z.string().min(1), into: z.string().min(1) }),
   description:
-    "Merge a duplicate venue (from) into the one to keep (into), for EVERY band: their shows, pitches, promoter and festival-year links move to `into`, each band's private notes are joined onto its notes for `into`, " +
+    "Merge a duplicate venue (from) into the one to keep (into), for EVERY band. Only Roadie's platform admins may merge; anyone else gets 403 forbidden: tell the person, don't retry. Their shows, pitches, promoter and festival-year links move to `into`, each band's private notes are joined onto its notes for `into`, " +
     "empty shared fields on `into` are filled from `from`, and `from` is archived with a pointer to `into` (its page redirects). One run: history.undoRun reverses it. Never returns another band's private notes.",
-  run: (ctx, { from, into }) => run(ctx, async (w) => {
+  run: async (ctx, { from, into }) => { await requirePlatformAdmin(ctx); return run(ctx, async (w) => {
     if (from === into) throw new AppError("invalid_input", "Pick a different venue to merge into", 400);
     const src = await requireVenue(w, from), dst = await requireVenue(w, into);
     const copy = { id: dst.id, name: dst.name as string, address: [dst.address?.street, dst.address?.city].filter(Boolean).join(", "), city: dst.address?.city as string | undefined };
@@ -160,7 +161,7 @@ export const venuesMergeInto = defineCommand({
     await w.update("venues", from, { mergedInto: into });
     await w.softDelete("venues", from);
     return { id: into, merged: from, moved };
-  }),
+  }); },
 });
 
 // ---------- venue types ----------
@@ -168,7 +169,7 @@ export const venuesMergeInto = defineCommand({
 /** The one list of venue types (src/schema/venueTypes.ts). A venue's type is the key; the label is what everyone sees. */
 export const venueTypesAdd = defineCommand({
   name: "venueTypes.add", roles: [...VENUE_ROLES], input: z.strictObject({ label: z.string().trim().min(1) }),
-  description: "Add a venue type (\"Winery\") to the list every band picks from, and return its key ({id}) to set as a venue's type. One that is already there (any case) is returned as it is ({existing: true}).",
+  description: "Add a venue type (\"Winery\") to the list every band picks from, and return its key ({id}) to set as a venue's type. One that is already there (any case) is returned as it is ({existing: true})." + SHARED_EDIT_NOTE,
   run: (ctx, { label }) => run(ctx, async (w) => {
     await ensureVenueTypes(w);
     const key = slug(label);
@@ -181,25 +182,25 @@ export const venueTypesAdd = defineCommand({
 });
 export const venueTypesRename = defineCommand({
   name: "venueTypes.rename", roles: ["admin"], input: z.strictObject({ id: z.string().min(1), label: z.string().trim().min(1) }),
-  description: "Rename a venue type for every band. Its venues keep it (they hold the key, not the name).",
-  run: (ctx, { id, label }) => run(ctx, async (w) => {
+  description: "Rename a venue type for every band (Roadie's platform admins only). Its venues keep it (they hold the key, not the name).",
+  run: async (ctx, { id, label }) => { await requirePlatformAdmin(ctx); return run(ctx, async (w) => {
     await ensureVenueTypes(w);
     const t = await w.get("venueTypes", id);
     if (!t || t.deletedAt) throw new AppError("not_found", "Venue type not found", 404);
     const clash = (await w.query("venueTypes", (q) => q.where("matchKey", "==", slug(label)).limit(2))).find((x) => x.id !== id);
     if (clash) throw new AppError("conflict", `There is already a type called ${clash.label}`, 409);
     return w.update("venueTypes", id, { label });
-  }),
+  }); },
 });
 export const venueTypesRemove = defineCommand({
   name: "venueTypes.remove", roles: ["admin"], input: idInput,
-  description: "Take a venue type off the list for every band. Refused while any venue still has it: change those venues first.",
-  run: (ctx, { id }) => run(ctx, async (w) => {
+  description: "Take a venue type off the list for every band (Roadie's platform admins only). Refused while any venue still has it: change those venues first.",
+  run: async (ctx, { id }) => { await requirePlatformAdmin(ctx); return run(ctx, async (w) => {
     await ensureVenueTypes(w);
     const used = await w.query("venues", (q) => q.where("type", "==", id));
     if (used.length) throw new AppError("conflict", `${used.length} ${used.length === 1 ? "venue has" : "venues have"} this type. Change ${used.length === 1 ? "it" : "them"} first.`, 409);
     return w.softDelete("venueTypes", id);
-  }),
+  }); },
 });
 
 export const promotersCreate = defineCommand({
@@ -211,12 +212,12 @@ export const promotersCreate = defineCommand({
 export const promotersUpdate = defineCommand({
   name: "promoters.update", roles: [...ROLES], input: patchInput(PromoterIn),
   description: "Edit a promoter. kind: promoter|venueGroup|nonprofit|buyer. venueIds/contactIds replace the lists; link contacts with contacts.attach. " +
-    "notes and howToPitch are this band's private notes (they replace the text: read first to add); everything else is shared with every band.",
+    "notes and howToPitch are this band's private notes (they replace the text: read first to add); everything else is shared with every band." + SHARED_EDIT_NOTE,
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "promoters", id, patch as Record<string, unknown>)),
 });
 export const promotersRemove = defineCommand({
-  name: "promoters.remove", roles: ["admin"], input: idInput, description: "Archive a promoter.",
-  run: (ctx, { id }) => db.softDelete(ctx, "promoters", id),
+  name: "promoters.remove", roles: ["admin"], input: idInput, description: "Archive a promoter for every band (Roadie's platform admins only).",
+  run: async (ctx, { id }) => { await requirePlatformAdmin(ctx); return db.softDelete(ctx, "promoters", id); },
 });
 
 export const festivalsCreate = defineCommand({
@@ -228,7 +229,7 @@ export const festivalsUpdate = defineCommand({
   name: "festivals.update", roles: [...ROLES], input: patchInput(FestivalIn),
   description: "Edit a festival. type: festival|series. contactIds replaces the list; link contacts with contacts.attach. Renaming updates its editions and their pitches. " +
     "address is {city, state}: the one town it happens in (a series in several towns: its main one). " +
-    "notes is this band's private notes (replaces the text: read first to add); everything else is shared with every band.",
+    "notes is this band's private notes (replaces the text: read first to add); everything else is shared with every band." + SHARED_EDIT_NOTE,
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "festivals", id, patch as Record<string, unknown>)),
 });
 export const festivalsPage = defineCommand({
@@ -252,11 +253,14 @@ export const festivalsPage = defineCommand({
   },
 });
 export const festivalsRemove = defineCommand({
-  name: "festivals.remove", roles: ["admin"], input: idInput, description: "Archive a festival and its editions.",
-  run: (ctx, { id }) => run(ctx, async (w) => {
-    for (const e of await w.query("editions", (q) => q.where("festivalId", "==", id))) await w.softDelete("editions", e.id);
-    return w.softDelete("festivals", id);
-  }),
+  name: "festivals.remove", roles: ["admin"], input: idInput, description: "Archive a festival and its editions for every band (Roadie's platform admins only).",
+  run: async (ctx, { id }) => {
+    await requirePlatformAdmin(ctx);
+    return run(ctx, async (w) => {
+      for (const e of await w.query("editions", (q) => q.where("festivalId", "==", id))) await w.softDelete("editions", e.id);
+      return w.softDelete("festivals", id);
+    });
+  },
 });
 
 export const editionsCreate = defineCommand({
@@ -270,12 +274,12 @@ export const editionsCreate = defineCommand({
 });
 export const editionsUpdate = defineCommand({
   name: "editions.update", roles: [...ROLES], input: patchInput(EditionIn.omit({ festivalId: true })),
-  description: "Edit an edition. Changing the label updates its pitches. notes and payNotes are this band's private notes (they replace the text: read first to add); everything else is shared with every band.",
+  description: "Edit an edition. Changing the label updates its pitches. notes and payNotes are this band's private notes (they replace the text: read first to add); everything else is shared with every band." + SHARED_EDIT_NOTE,
   run: (ctx, { id, patch }) => run(ctx, (w) => updateNoted(ctx, w, "editions", id, patch as Record<string, unknown>)),
 });
 export const editionsRemove = defineCommand({
-  name: "editions.remove", roles: ["admin"], input: idInput, description: "Archive an edition.",
-  run: (ctx, { id }) => db.softDelete(ctx, "editions", id),
+  name: "editions.remove", roles: ["admin"], input: idInput, description: "Archive an edition for every band (Roadie's platform admins only).",
+  run: async (ctx, { id }) => { await requirePlatformAdmin(ctx); return db.softDelete(ctx, "editions", id); },
 });
 
 export const contactsCreate = defineCommand({

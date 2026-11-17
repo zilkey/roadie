@@ -4,9 +4,10 @@ import { db, run } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { registry } from "@/server/commands/registry";
 import { undoRun } from "@/server/undo";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, approveTestEditors } from "./helpers";
 
-beforeEach(resetEmulators);
+// The people (and AI logins) editing shared venues here are approved shared editors, as on prod.
+beforeEach(async () => { await resetEmulators(); await approveTestEditors("ai-user", "ai", "me", "them", "rudy"); });
 const as = (uid: string, via: Ctx["via"] = "mcp", runId = newRunId()): Ctx => ({ uid, role: via === "mcp" ? "mcp" : "admin", via, runId });
 const hist = (runId: string) => db.listGroup("history", (q) => q.where("runId", "==", runId));
 

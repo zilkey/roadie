@@ -5,9 +5,10 @@ import { db, run, revId } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { historyOfRun, undoRun, runsOf } from "@/server/undo";
 import { firestore } from "@/server/admin";
-import { resetEmulators, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, venue, TEST_ARTIST, approveTestEditors } from "./helpers";
 
-beforeEach(resetEmulators);
+// "rudy" edits shared venues here: an approved shared editor, as on prod.
+beforeEach(async () => { await resetEmulators(); await approveTestEditors("rudy"); });
 const T0 = new Date("2026-10-01T12:00:00Z");
 const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, role: "admin", via: "app", runId: newRunId(), now: new Date(T0.getTime() + ms), ...extra });
 const cfg = (id: string, name: string) => ({ id, name, billingName: name, musicianIds: [] });

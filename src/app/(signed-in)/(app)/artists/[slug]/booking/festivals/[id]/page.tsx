@@ -22,6 +22,7 @@ import { InlineValue, PlusButton } from "@/components/InlineValue";
 import { cityState, fmtDate, isActive } from "@/lib/booking";
 import { withBandNote } from "@/lib/bandNotes";
 import type { Festival, Show } from "@/schema";
+import { useCanEditShared, usePlatformAdmin } from "@/lib/sharedEdit";
 
 export default function Page() { return <AdminOnly><FestivalPage /></AdminOnly>; }
 
@@ -58,6 +59,8 @@ function FestivalPage() {
   const editions = useMemo(() => b.editions.filter((e) => e.festivalId === id).sort((a, c) => c.year - a.year), [b.editions, id]);
   const editionIds = useMemo(() => new Set(editions.map((e) => e.id)), [editions]);
   const mine = useMemo(() => b.pitches.filter((p) => p.artistId === artistId && p.target.kind === "edition" && editionIds.has(p.target.id)), [b.pitches, artistId, editionIds]);
+  const canEditShared = useCanEditShared(shared);
+  const platformAdmin = usePlatformAdmin();
   const nf = useNotFound(loading, shared, "festival");
   if (nf || !shared) return nf;
 
@@ -77,11 +80,11 @@ function FestivalPage() {
   return (
     <DetailPage testid="festival-page" back={<Crumbs items={[sectionCrumb("festival"), { label: f.name }]} back={<BackLink mode="back" href="/booking/festivals" label="All festivals" />} />} title={f.name}
       pill={active ? <PitchedPill /> : undefined} meta={meta}
-      more={<Menu label="More actions" testid="festival" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive festival", danger: true, onSelect: archive }]} />}>
+      more={platformAdmin ? <Menu label="More actions" testid="festival" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "archive", label: "Archive festival", danger: true, onSelect: archive }]} /> : undefined}>
       <ErrorBox error={error} />
       <FestivalPitchCard editions={editions} mine={mine} upcoming={pitchCardFlag} threads={threads} />
       <CardGroup kind="shared">
-        <DetailCard title="About the festival" editKey="about" edit={edit} warn={SHARED_WARN} testid="festival-about" editTestid="edit-toggle"
+        <DetailCard title="About the festival" editKey="about" edit={edit} locked={!canEditShared} warn={SHARED_WARN} testid="festival-about" editTestid="edit-toggle"
           editChildren={
             <div>
               <EntityForm testid="festival-edit" fields={aboutFields} initial={festivalForm.initial(f)} build={festivalForm.build}
@@ -113,8 +116,8 @@ function FestivalPage() {
                         {dates && <span className="d-muted text-sm">{dates}</span>}
                       </div>
                       {pitchCardFlag?.id !== e.id && flag}
-                      <RowX label={`Delete ${e.label}`} testid={`year-remove-${e.id}`}
-                        onClick={() => { if (confirm(`Delete ${e.label}?`)) void call("editions.remove", { id: e.id }); }} />
+                      {platformAdmin && <RowX label={`Delete ${e.label}`} testid={`year-remove-${e.id}`}
+                        onClick={() => { if (confirm(`Delete ${e.label}?`)) void call("editions.remove", { id: e.id }); }} />}
                       {pitchCardFlag?.id !== e.id && <div className="w-full empty:hidden">{flagForm}</div>}
                     </>)}</Flagged>
                   </div>

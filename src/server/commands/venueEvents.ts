@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { defineCommand } from "./types";
+import { SHARED_EDIT_NOTE } from "../platform";
 import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { artistIdOf, callerArtistId } from "../venues";
@@ -30,7 +31,7 @@ async function venueTz(venueId: string | undefined) {
 
 export const venuesSetCalendar = defineCommand({
   name: "venues.setCalendar", roles: ["admin"],
-  description: "Set (or clear, with null) where a venue's event calendar is and how to read it. Shared with every band.",
+  description: "Set (or clear, with null) where a venue's event calendar is and how to read it. Shared with every band." + SHARED_EDIT_NOTE,
   input: z.strictObject({ id: z.string().min(1), calendar: VenueCalendar.nullable() }),
   run: (ctx, { id, calendar }) => run(ctx, async (w) => {
     const v = await w.get("venues", id);

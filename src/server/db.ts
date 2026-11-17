@@ -11,13 +11,14 @@ import type { Ctx } from "./ctx";
 import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
+import { SHARED_KINDS, accessOf, refusedMessage } from "./platform";
 
 export type Doc = DocumentData & { id: string };
 
 const COMMON = new Set<string>(commonKeys);
 /** Autosave patches fold into the previous history entry when it is at most this old. */
 export const COALESCE_MS = 2 * 60_000;
-const STAMP = new Set(["id", "schemaVersion", "createdAt", "updatedAt", "createdBy", "updatedBy", "via", "runId", "rev"]);
+const STAMP = new Set(["id", "schemaVersion", "createdAt", "updatedAt", "createdBy", "updatedBy", "via", "runId", "rev", "adoptedAt"]);
 
 const isPlain = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -186,6 +187,10 @@ export class Writer {
   private seq = 0;
   /** Set when an autosave update folded into an earlier history entry: the rest of this unit uses that entry's runId. */
   coalescedRunId?: string;
+  /** Above zero while denormalization hooks (or asSystem) run: their writes follow a change already allowed, so the shared-record check is skipped. */
+  private hookDepth = 0;
+  /** Shared records ("path/id") an approved editor is changing for the first time since someone else created them: stamped adoptedAt. */
+  private adopting = new Set<string>();
   constructor(private tx: Transaction, readonly ctx: Ctx) {
     this.now = ctx.now ? Timestamp.fromDate(ctx.now) : Timestamp.now();
   }
@@ -232,11 +237,40 @@ export class Writer {
       createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
     };
   }
-  private stampUpdate(prev: DocumentData, body: Record<string, unknown>, deletedAt: Timestamp | null): DocumentData {
+  private stampUpdate(path: string, prev: DocumentData, body: Record<string, unknown>, deletedAt: Timestamp | null): DocumentData {
+    const adoptedAt = prev.adoptedAt ?? (this.adopting.has(`${path}/${prev.id}`) ? this.now : undefined);
     return {
-      ...body, id: prev.id, schemaVersion: prev.schemaVersion ?? SCHEMA_VERSION, createdAt: prev.createdAt, createdBy: prev.createdBy,
+      ...body, ...(adoptedAt ? { adoptedAt } : {}), id: prev.id, schemaVersion: prev.schemaVersion ?? SCHEMA_VERSION, createdAt: prev.createdAt, createdBy: prev.createdBy,
       updatedAt: this.now, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt, rev: ((prev.rev as number | undefined) ?? 0) + 1,
     };
+  }
+
+  /**
+   * Run writes as the system, not the person: looked-up facts (act lookups) and other fills that aren't someone's edit.
+   * The shared-record check is skipped inside (phase 4 turns this into a SystemCtx).
+   */
+  async asSystem<T>(fn: () => Promise<T>): Promise<T> {
+    this.hookDepth++;
+    try { return await fn(); } finally { this.hookDepth--; }
+  }
+
+  /**
+   * May this call change the existing shared record `existing` (phase 1 of the tenancy plan)? Yes for anything that isn't a
+   * top-level shared kind, inside hooks and asSystem, for imports, for approved shared editors and platform admins, and for the
+   * record's creator until someone approved adopts it. An approved person's first change to someone else's record adopts it.
+   */
+  private async mayChangeShared(path: string, existing: DocumentData): Promise<boolean> {
+    if (path.includes("/") || !SHARED_KINDS.has(path)) return true;
+    if (this.hookDepth > 0 || this.ctx.via === "import") return true;
+    const a = await accessOf(this.ctx);
+    if (a.sharedEditor || a.platformAdmin) {
+      if (existing.createdBy !== this.ctx.uid && !existing.adoptedAt) this.adopting.add(`${path}/${existing.id}`);
+      return true;
+    }
+    return existing.createdBy === this.ctx.uid && !existing.adoptedAt;
+  }
+  private async requireMayChange(path: string, existing: DocumentData) {
+    if (!(await this.mayChangeShared(path, existing))) throw new AppError("not_approved", refusedMessage(path), 403);
   }
 
   private actor() {
@@ -364,11 +398,13 @@ export class Writer {
 
   private async mergeInto(path: string, existing: Doc, incoming: Record<string, unknown>) {
     const kind = kindOf(path);
+    // Adding "a venue that already exists" links to it; only an approved person's gaps fill the shared record.
+    if (!(await this.mayChangeShared(path, existing))) return { id: existing.id, merged: true };
     const base = writable(existing);
     const filled: Record<string, unknown> = { ...base };
     for (const [k, v] of Object.entries(incoming)) filled[k] = mergeFill(base[k], v);
     const { data, computed } = prepare(kind, filled);
-    const next = clean(this.stampUpdate(existing, { ...data, ...computed }, existing.deletedAt ?? null));
+    const next = clean(this.stampUpdate(path, existing, { ...data, ...computed }, existing.deletedAt ?? null));
     const diff = diffDocs(existing, next);
     if (Object.keys(diff).length) {
       await this.commit(path, existing.id, next, "merge", diff);
@@ -383,6 +419,7 @@ export class Writer {
     if (dm.immutable || dm.appendOnly) throw new AppError("immutable", `${kindOf(path)} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing || existing.deletedAt) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    await this.requireMayChange(path, existing);
     return this.mergeInto(path, existing, input);
   }
 
@@ -393,6 +430,7 @@ export class Writer {
     if (d.immutable || d.appendOnly) throw new AppError("immutable", `${kind} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing || existing.deletedAt) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    const allowed = await this.mayChangeShared(path, existing);
     const bad = Object.keys(patch).filter((k) => COMMON.has(k) || (computedFields[kind] ?? []).includes(k));
     if (bad.length) throw new AppError("invalid_input", `Cannot set server fields: ${bad.join(", ")}`, 400);
     const merged: Record<string, unknown> = { ...writable(existing) };
@@ -404,9 +442,10 @@ export class Writer {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits.some((h) => h.id !== id)) throw new AppError("duplicate", `Another ${kind} already matches that name`, 409);
     }
-    let next = clean(this.stampUpdate(existing, { ...data, ...computed }, null));
+    let next = clean(this.stampUpdate(path, existing, { ...data, ...computed }, null));
     const diff = diffDocs(existing, next);
     if (!Object.keys(diff).length) return { id, changed: false };
+    if (!allowed) throw new AppError("not_approved", refusedMessage(path), 403);
     const br = this.ctx.baseRev;
     if (br?.id === id) await this.checkConflict(path, id, br.rev, Object.keys(diff));
     const fold = await this.foldTarget(path, existing, diff);
@@ -425,7 +464,8 @@ export class Writer {
     const existing = await this.get(path, id);
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (existing.deletedAt) return { id, changed: false };
-    const next = clean(this.stampUpdate(existing, writable(existing), this.now));
+    await this.requireMayChange(path, existing);
+    const next = clean(this.stampUpdate(path, existing, writable(existing), this.now));
     await this.commit(path, id, next, "delete", diffDocs(existing, next));
     return { id, changed: true };
   }
@@ -434,7 +474,8 @@ export class Writer {
     const existing = await this.get(path, id);
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (!existing.deletedAt) return { id, changed: false };
-    const next = clean(this.stampUpdate(existing, writable(existing), null));
+    await this.requireMayChange(path, existing);
+    const next = clean(this.stampUpdate(path, existing, writable(existing), null));
     await this.commit(path, id, next, "restore", diffDocs(existing, next));
     return { id, changed: true };
   }
@@ -449,16 +490,20 @@ export class Writer {
     if (d.immutable) throw new AppError("immutable", `${kind} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    const allowed = await this.mayChangeShared(path, existing);
+    const refuse = () => { if (!allowed) throw new AppError("not_approved", refusedMessage(path), 403); };
     if (op === "create" || op === "restore") {
       if (existing.deletedAt) return { changed: false, as: "delete" };
-      const next = clean(this.stampUpdate(existing, writable(existing), this.now));
+      refuse();
+      const next = clean(this.stampUpdate(path, existing, writable(existing), this.now));
       await this.commit(path, id, next, "delete", diffDocs(existing, next));
       await this.afterChange(path, existing, next);
       return { changed: true, as: "delete" };
     }
     if (op === "delete") {
       if (!existing.deletedAt) return { changed: false, as: "restore" };
-      const next = clean(this.stampUpdate(existing, writable(existing), null));
+      refuse();
+      const next = clean(this.stampUpdate(path, existing, writable(existing), null));
       await this.commit(path, id, next, "restore", diffDocs(existing, next));
       await this.afterChange(path, existing, next);
       return { changed: true, as: "restore" };
@@ -479,9 +524,10 @@ export class Writer {
       if (v.before === null || v.before === undefined) delete merged[k]; else merged[k] = v.before;
     }
     const { data, computed: comp } = prepare(kind, merged);
-    const next = clean(this.stampUpdate(existing, { ...data, ...comp }, existing.deletedAt ?? null));
+    const next = clean(this.stampUpdate(path, existing, { ...data, ...comp }, existing.deletedAt ?? null));
     const changes = diffDocs(existing, next);
     if (!Object.keys(changes).length) return { changed: false, as: "update", ...(skipped.length ? { skipped } : {}) };
+    refuse();
     await this.commit(path, id, next, "update", changes);
     await this.afterChange(path, existing, next);
     return { changed: true, as: "update", ...(skipped.length ? { skipped } : {}) };
@@ -493,7 +539,7 @@ export class Writer {
     for (const h of denormalizers) {
       if (h.source !== kind) continue;
       if (h.watch.every((f) => same(before[f], after[f]))) continue;
-      await h.refresh(this, before.id, after, before);
+      await this.asSystem(() => h.refresh(this, before.id, after, before));
     }
   }
 }

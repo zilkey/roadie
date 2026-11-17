@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
 import { firestore } from "@/server/admin";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, approveTestEditors, makePlatformAdmins } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -32,6 +32,9 @@ beforeEach(async () => {
   await resetEmulators();
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" });
   uid = u.uid; token = u.token;
+  // Rudy and the member stand in for the real band: approved shared editors. Rudy also runs Roadie (merges are platform admins only).
+  await approveTestEditors(uid, "member-uid");
+  await makePlatformAdmins(uid);
   ctx = { uid, role: "admin", via: "app", runId: newRunId() };
   mids = [];
   for (const n of ["Nora", "Rudy", "Hugo"]) mids.push((await db.create(ctx, "musicians", { name: n, instruments: [], active: true })).id);
@@ -191,6 +194,7 @@ test("a member edits the shared room but is refused private fields (403 naming t
   assert.equal((await db.get("venues", v.id))!.capacity, 700, "a refused call writes nothing");
   // over HTTP: members may run venues.create/update but not remove or merge
   const m = await makeUser("mem@example.com", "member", { name: "Mem" });
+  await approveTestEditors(m.uid);
   assert.equal((await dispatch("venues.update", `Bearer ${m.token}`, { id: v.id, patch: { capacity: 710 } })).status, 200);
   assert.equal((await dispatch("venues.update", `Bearer ${m.token}`, { id: v.id, patch: { notes: "no" } })).status, 403);
   assert.equal((await dispatch("venues.remove", `Bearer ${m.token}`, { id: v.id })).status, 403);
@@ -248,7 +252,7 @@ test("venues.mergeInto: moves every band's shows, pitches and notes, fills the s
     date: "2027-01-01", status: "confirmed", venue: { id: dup.id, name: "The Deep End", address: "Denver", city: "Denver" }, times: {}, artistId: TEST_ARTIST, personnel: [],
     sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   });
-  const m = asOther(); // a different band's admin merges: allowed, and it moves everyone's records
+  const m = asOther(); // a platform admin merging from a different band: it moves everyone's records
   const res = await run_("venues.mergeInto", { from: dup.id, into: keep.id }, m);
   assert.equal(JSON.stringify(res).includes("secret"), false, "no band's private content comes back");
   assert.equal(res.moved.shows, 1); assert.equal(res.moved.pitches, 1);

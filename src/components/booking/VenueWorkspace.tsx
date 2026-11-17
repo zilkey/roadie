@@ -20,6 +20,7 @@ import { useVenueTypes, venueTypeLabel } from "@/lib/venueTypes";
 import { VenueEventsTab } from "@/components/booking/VenueEventsTab";
 import { VenueNetworkTab } from "@/components/booking/WhoWeKnow";
 import type { Show, Venue } from "@/schema";
+import { useCanEditShared, usePlatformAdmin } from "@/lib/sharedEdit";
 
 type Tab = "pitch" | "details" | "events" | "network";
 const ADMIN_TABS: Tab[] = ["pitch", "network"];
@@ -59,6 +60,8 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
   const [merging, setMerging] = useState(false);
   const [addingContact, setAddingContact] = useState(false);
   const [linking, setLinking] = useState(false); // the Booked by plus shows the promoter picker
+  const canEditRoom = useCanEditShared(v);
+  const platformAdmin = usePlatformAdmin();
   const mergedInto = v?.deletedAt ? v.mergedInto : undefined;
   useEffect(() => { if (mergedInto) router.replace(hrefFor("venue", mergedInto)); }, [mergedInto, router]);
   const nf = useNotFound(loading, v && !v.deletedAt ? v : null, "venue");
@@ -103,7 +106,8 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
             ...(pitch && pitch.status !== "dropped" ? [{ key: "abandon", testid: "pitch-abandon", label: "Abandon pitch", danger: true,
               onSelect: () => { if (confirm("Abandon this pitch? It moves to Past pitches.")) void call("pitches.move", { id: pitch.id, status: "dropped" }); } }] : []),
             ...(!archived ? [
-              { key: "merge", label: "Merge into another venue…", onSelect: () => setMerging(true) },
+              // Merging rewrites every band's shows, pitches and notes: Roadie's platform admins only.
+              ...(platformAdmin ? [{ key: "merge", label: "Merge into another venue…", onSelect: () => setMerging(true) }] : []),
               { key: "archive", label: "Archive venue", danger: true, onSelect: archiveVenue },
             ] : []),
           ]} />}
@@ -125,7 +129,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
           {past.map((p) => <Link key={p.id} href={`/booking/pitches/${p.id}`} className="flex flex-wrap items-center gap-2" data-testid={`venue-past-pitch-${p.id}`}><StatusChip status={p.status} /><span className="s">{p.createdAt ? new Date(p.createdAt.toMillis()).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : ""}</span></Link>)}
         </section>
       )}
-      {tab === "events" && <VenueEventsTab venue={v} admin={admin} />}
+      {tab === "events" && <VenueEventsTab venue={v} admin={admin} canEditShared={canEditRoom} />}
       {tab === "network" && admin && <VenueNetworkTab b={b} venue={{ id, ...mine }} />}
       {tab === "details" && <>
       {archived && (
@@ -136,7 +140,7 @@ function VenueView({ venueId: id, pitchId, defaultTab }: { venueId: string; pitc
         </div>
       )}
       <CardGroup kind="shared">
-        <DetailCard title="About the room" editKey="about" edit={edit} warn={VENUE_SHARED_WARN} testid="room-card" editTestid="room-edit" doneTestid="room-save"
+        <DetailCard title="About the room" editKey="about" edit={edit} locked={!canEditRoom} warn={VENUE_SHARED_WARN} testid="room-card" editTestid="room-edit" doneTestid="room-save"
           editChildren={
             <div data-testid="room-form">
               <EntityForm testid="room" fields={roomFields} initial={roomForm.initial(v)} build={roomForm.build}

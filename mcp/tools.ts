@@ -60,7 +60,9 @@ export function createMcpServer(authorize: () => Promise<Ctx>) {
     instructions:
       "Roadie for the Nora Quill Band. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). " +
       "A venue's name, address and house facts are one shared record that every band using Roadie sees: editing them changes the room for all of them. " +
-      "A venue's loadInNotes, notes, contacts and promoters are this band's private notes. Fix a duplicate venue with venues.mergeInto and a duplicate song with songs.merge. " +
+      "A venue's loadInNotes, notes, contacts and promoters are this band's private notes. " +
+      "Changing an existing shared record (venue, act, promoter, festival) needs a person a Roadie platform admin approved; anyone else gets 403 not_approved: say so, don't retry. " +
+      "Fix a duplicate venue with venues.mergeInto (platform admins only) and a duplicate song with songs.merge. " +
       "Money is integer cents. Dates are YYYY-MM-DD. You can draft emails (pitches.draftEmail) but never send them. " +
       "Input errors come back as {error:{code:'invalid_input', issues:[{path,message}]}}: fix the fields and retry. " +
       "Everything you change in this session shares one runId and can be undone with history.undoRun.",

@@ -3,6 +3,7 @@ import { usePathname } from "next/navigation";
 import { Link, useArtist, useHref } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import type { Musician } from "@/schema";
+import { usePlatformAdmin } from "@/lib/sharedEdit";
 
 const HEAD = "px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-muted";
 const GROUPS = [
@@ -10,12 +11,13 @@ const GROUPS = [
   { head: "Admin", items: [{ key: "google", href: "/admin/google", label: "Google" }, { key: "integrations", href: "/admin/mcp", label: "Integrations" }, { key: "activity", href: "/admin/history", label: "Activity" }] },
 ] as const;
 
-/** The artist-settings sub-nav: General, Lineups, People, Custom fields, Venue types, Checklist templates, Money under ARTIST SETTINGS; Google, Integrations, Activity under ADMIN. Counts show once loaded. */
+/** The artist-settings sub-nav: General, Lineups, People, Custom fields, Venue types, Checklist templates, Money under ARTIST SETTINGS; Google, Integrations, Activity (and Platform, for Roadie's platform admins) under ADMIN. Counts show once loaded. */
 export function SettingsNav() {
   const path = usePathname();
   const full = useHref();
   const { doc } = useArtist();
   const musicians = useCollection<Musician>("musicians");
+  const platformAdmin = usePlatformAdmin();
   const counts: Record<string, number | undefined> = {
     lineups: doc?.configurations.length,
     people: musicians.rows?.filter((m) => m.active).length,
@@ -24,7 +26,7 @@ export function SettingsNav() {
   const on = (href: string) => path === full(href) || path.startsWith(full(href) + "/");
   return (
     <nav aria-label="Artist settings" data-testid="settings-nav" className="flex-[1_1_220px] self-start rounded-lg border border-border bg-surface p-2">
-      {GROUPS.map((g) => (
+      {GROUPS.map((g) => ({ ...g, items: [...g.items, ...(g.head === "Admin" && platformAdmin ? [{ key: "platform", href: "/admin/platform", label: "Platform" }] : [])] })).map((g) => (
         <div key={g.head}>
           <div className={HEAD}>{g.head}</div>
           {g.items.map((i) => (

@@ -2,6 +2,8 @@ import { adminAuth } from "./admin";
 import { db, type Doc } from "./db";
 import { AppError } from "./errors";
 import { artistClaims, mcpIn, type Membership } from "@/schema/users";
+import { firestore } from "./admin";
+import { SHARED_EDIT_REQUESTS, accessFor } from "./platform";
 
 /** One artist the signed-in person can open in the app (admin or member there). */
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
@@ -51,10 +53,13 @@ export async function startSession(authHeader: string | null) {
   if (!memberships.some((x) => x.role === "admin" || x.role === "member")) throw new AppError("ai_only", "This login is for AI tools only; it can't sign in to the app", 403);
   const claims = claimsFor(user);
   await adminAuth().setCustomUserClaims(decoded.uid, claims);
+  // Who may change shared directory records (venues, acts…), and who runs Roadie itself (the Platform page).
+  const [access, asked] = await Promise.all([accessFor(user.id), firestore().collection(SHARED_EDIT_REQUESTS).doc(user.id).get()]);
   return {
     status: "ready" as const,
     uid: decoded.uid, userId: user.id, name: user.name as string, email,
     ...(user.musicianId ? { musicianId: user.musicianId as string } : {}),
     mcpAccess: ((user.artists ?? []) as Membership[]).some((x) => mcpIn(user, x.artistId)), artists: await artistsFor(user),
+    sharedEditor: access.sharedEditor, platformAdmin: access.platformAdmin, sharedEditRequested: asked.exists,
   };
 }

@@ -12,6 +12,7 @@ import { importCtx } from "../src/server/ctx";
 import { syncClaims } from "../src/server/session";
 import { slugForArtist } from "../src/schema/artists";
 import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
+import { addPlatformAdmins, approveArtist } from "../src/server/platform";
 import { execute } from "../src/server/commands/dispatch";
 import { seedDefaultTemplates } from "../src/server/checklistTemplates";
 import { updateDriving } from "@/server/driving";
@@ -78,6 +79,11 @@ async function main() {
     await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
     await syncClaims(u.uid);
   }
+
+  // Everyone in the band may change shared venues, acts and festivals (as on prod, tenancy phase 1); Rudy also runs Roadie itself
+  // (platform admin: merges, removes, Admin › Platform). Fern Valley Trio's Olga is left unapproved: she sees "Ask to edit".
+  await approveArtist(artist, "seed");
+  await addPlatformAdmins([uid.rudy]);
 
   // Driving settings for the admin (Rudy), so gas estimates work out of the box. The member gets none (no home, no car).
   await updateDriving(ctx, uid.rudy, {

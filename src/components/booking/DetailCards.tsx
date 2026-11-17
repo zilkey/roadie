@@ -3,6 +3,7 @@ import { useCallback, useId, useMemo, useState, type ReactNode } from "react";
 import { useArtist } from "@/lib/artist";
 import { FlagIcon } from "./common";
 import { PencilButton } from "@/components/InlineValue";
+import { AskToEdit } from "./AskToEdit";
 
 /** Shown at the top of an editing shared card. */
 export const SHARED_WARN = "Every band on Roadie sees these details.";
@@ -76,13 +77,14 @@ export function useSingleEdit<K extends string>() {
 /**
  * A card (yellow top bar when shared with every band, plain when `private`) with a title and, if `editKey` + `edit` are given, a pencil (`aria-label="Edit <title>"`; `editLabel` when the title is a node) that swaps `children` for `editChildren` plus a Done footer.
  * `warn` (editing only) shows a caution banner at the top. `headerExtra` sits beside the Edit link/tag. Autosave: Done just closes (after `onDone`).
+ * `locked` (a shared card the person isn't approved to change: useCanEditShared) shows "Ask to edit" instead of the pencil.
  */
-export function DetailCard<K extends string = string>({ title, editLabel, icon, private: priv, editKey, edit, warn, onDone, testid, editTestid, doneTestid, headerExtra, children, editChildren }: {
+export function DetailCard<K extends string = string>({ title, editLabel, icon, private: priv, editKey, edit, warn, onDone, testid, editTestid, doneTestid, headerExtra, children, editChildren, locked }: {
   title: ReactNode; editLabel?: string; icon?: ReactNode; private?: boolean; editKey?: K; edit?: ReturnType<typeof useSingleEdit<K>>; warn?: ReactNode;
-  onDone?(): void; testid?: string; editTestid?: string; doneTestid?: string; headerExtra?: ReactNode; children?: ReactNode; editChildren?: ReactNode;
+  onDone?(): void; testid?: string; editTestid?: string; doneTestid?: string; headerExtra?: ReactNode; children?: ReactNode; editChildren?: ReactNode; locked?: boolean;
 }) {
   const id = useId();
-  const canEdit = editKey !== undefined && !!edit;
+  const canEdit = editKey !== undefined && !!edit && !locked;
   const editing = canEdit && edit.is(editKey);
   return (
     <section className={`d-card${priv ? "" : " shared"}${editing ? " editing" : ""}`} aria-labelledby={id} data-testid={testid}>
@@ -90,6 +92,7 @@ export function DetailCard<K extends string = string>({ title, editLabel, icon, 
         <h2 id={id} className="d-ct">{icon}{title}</h2>
         <div className="flex items-center gap-2">
           {headerExtra}
+          {locked && editKey !== undefined && <AskToEdit />}
           {editing ? <span className="d-tag">Editing</span>
             : canEdit && <PencilButton label={`Edit ${editLabel ?? (typeof title === "string" ? title : "")}`.trim()} onClick={() => edit.open(editKey)} testid={editTestid} />}
         </div>

@@ -52,12 +52,17 @@ export const commonShape = {
   deletedAt: ts.nullable(),
   /** +1 on every write (create = 1). Documents written before this existed have none: treat as 0. */
   rev: z.number().int().optional(),
+  /**
+   * Shared directory records only (venues, acts, promoters, festivals, editions, venue types): when an approved shared editor first
+   * changed a record someone else created. From then on its creator needs approval like everyone else (src/server/platform.ts).
+   */
+  adoptedAt: ts.optional(),
 };
 export const commonKeys = Object.keys(commonShape) as (keyof typeof commonShape)[];
 /** Mask to `.omit()` the server-stamped fields to get the input schema. */
 export const serverMask = {
   id: true, schemaVersion: true, createdAt: true, updatedAt: true, createdBy: true, updatedBy: true,
-  via: true, runId: true, deletedAt: true, rev: true,
+  via: true, runId: true, deletedAt: true, rev: true, adoptedAt: true,
 } as const;
 
 /** Booking data keeps where each fact came from. */
