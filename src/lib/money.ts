@@ -44,6 +44,16 @@ export interface ProjectLike { id: string; kind: string; name: string; status: s
 export const projectOf = (x: { projectId?: string }, defaultProjectId: string | undefined) => x.projectId ?? defaultProjectId;
 export const defaultProject = <P extends ProjectLike>(projects: readonly P[]) => projects.find((p) => p.isDefault && !p.deletedAt);
 
+/** A person's own expense projects on one artist (Artist.expenseProjects): their default and, when admins limit it, what they can file to. */
+export type MemberProjects = { userId: string; projectId?: string; visibleProjectIds?: string[] };
+export const memberProjectsOf = (list: readonly MemberProjects[] | undefined, userId: string | undefined) => list?.find((x) => x.userId === userId);
+/** May this person file an expense to this project? No list = any project; their own default always. */
+export const canFileTo = (m: MemberProjects | undefined, projectId: string) =>
+  !m?.visibleProjectIds || m.visibleProjectIds.includes(projectId) || m.projectId === projectId;
+/** The open projects a person can pick from on their own expenses, in name order: every open one when admins haven't limited them. */
+export const fileableProjects = <P extends ProjectLike>(projects: readonly P[], m: MemberProjects | undefined) =>
+  projects.filter((p) => !p.deletedAt && p.status === "open" && canFileTo(m, p.id)).sort((a, b) => a.name.localeCompare(b.name));
+
 export const INCOME_LABEL: Record<string, string> = {
   guarantee: "Guarantee", door: "Door", tips: "Tips", merch: "Merch", streaming: "Streaming", digitalSales: "Digital sales", physical: "CDs and vinyl", preorders: "Pre-orders", crowdfunding: "Crowdfunding",
   sync: "Sync", grant: "Grant", gearSale: "Gear sale", other: "Other",

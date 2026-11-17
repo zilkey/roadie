@@ -63,7 +63,7 @@ async function clearOtherDefaults(w: Writer, artistId: string, keepId?: string) 
 
 export const projectsCreate = defineCommand({
   name: "projects.create", roles: ["admin"],
-  description: "Create a project, a bucket every income, expense and payout belongs to (Band is the default one; others are a duo, a release, a tour, a music video). " +
+  description: "Create a project, a bucket every income, expense and payout belongs to (General is the default one; others are a duo, a release, a tour, a music video). " +
     "kind: band|duo|release|tour|video|other, name. isDefault:true makes it THE default (the old one stops being it): money with no project lands there. Returns { id }.",
   input: z.strictObject({
     kind: projectKind, name: z.string().trim().min(1), isDefault: z.boolean().optional(),
@@ -123,8 +123,42 @@ export const projectsRemove = defineCommand({
     if (p.isDefault) throw new AppError("invalid_state", "That is the default project: make another project the default first", 409);
     const used = await projectInUse(w, id);
     if (used.length) throw new AppError("invalid_state", `${p.name} has ${used.join(", ")} on it: close it instead`, 409);
-    return w.softDelete("projects", id);
+    const r = await w.softDelete("projects", id);
+    // Nobody keeps a removed project as their default or in their list.
+    const a = await w.get("artists", p.artistId as string);
+    const list = (a?.expenseProjects ?? []) as { userId: string; projectId?: string; visibleProjectIds?: string[] }[];
+    if (list.some((x) => x.projectId === id || x.visibleProjectIds?.includes(id))) {
+      const next = list.map((x) => {
+        const { projectId, visibleProjectIds, ...rest } = x;
+        const vis = visibleProjectIds?.filter((v) => v !== id);
+        return { ...rest, ...(projectId && projectId !== id ? { projectId } : {}), ...(vis?.length ? { visibleProjectIds: vis } : {}) };
+      }).filter((x) => x.projectId || x.visibleProjectIds);
+      await w.update("artists", a!.id, { expenseProjects: next });
+    }
+    return r;
   }),
 });
 
-export const projectCommands = [projectsCreate, projectsUpdate, projectsClose, projectsReopen, projectsRemove];
+export const artistsSetMemberProjects = defineCommand({
+  name: "artists.setMemberProjects", roles: ["admin"],
+  description: "Set one person's projects for their own expenses (Settings › Money): projectId is their default project (null: the artist's default), " +
+    "visibleProjectIds the projects they can file expenses to (null or left empty: every open project). Their default is always one they can file to. " +
+    "An expense they add from a show, rehearsal or tour can still go on that record's project. Returns { ok }.",
+  input: z.strictObject({ userId: z.string().min(1), projectId: z.string().min(1).nullable().optional(), visibleProjectIds: z.array(z.string().min(1)).nullable().optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    const artist = await artistFor(w);
+    const u = await w.get("users", i.userId);
+    if (!u || u.deletedAt || !((u.artists ?? []) as { artistId: string }[]).some((m) => m.artistId === artist.id)) throw new AppError("not_found", "That person isn't in this band", 404);
+    for (const pid of [i.projectId, ...(i.visibleProjectIds ?? [])]) if (pid) await requireProject(w, pid);
+    const list = (artist.expenseProjects ?? []) as { userId: string; projectId?: string; visibleProjectIds?: string[] }[];
+    const cur = list.find((x) => x.userId === i.userId) ?? { userId: i.userId };
+    const projectId = i.projectId === undefined ? cur.projectId : i.projectId ?? undefined;
+    const vis = i.visibleProjectIds === undefined ? cur.visibleProjectIds : i.visibleProjectIds?.length ? [...new Set(i.visibleProjectIds)] : undefined;
+    const entry = { userId: i.userId, ...(projectId ? { projectId } : {}), ...(vis ? { visibleProjectIds: vis } : {}) };
+    const rest = list.filter((x) => x.userId !== i.userId);
+    await w.update("artists", artist.id, { expenseProjects: entry.projectId || entry.visibleProjectIds ? [...rest, entry] : rest });
+    return { ok: true };
+  }),
+});
+
+export const projectCommands = [projectsCreate, projectsUpdate, projectsClose, projectsReopen, projectsRemove, artistsSetMemberProjects];

@@ -33,7 +33,7 @@ import { loadHistory, saveTurn } from "../src/server/assistant/threads";
 import { upsertEvents } from "../src/server/events/refresh";
 import { checkRecorded, describe, POST_SHOW, recorded, seedWorld, type PostShowScenario, type ShowKey } from "./roadie-post-show";
 
-interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][]; cardVoice?: boolean }
+interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][]; cardVoice?: boolean; cardText?: RegExp }
 interface Turn extends Check { say: string; yes?: boolean }
 interface Scenario { name: string; route?: string; voice?: boolean; turns: Turn[]; postShow?: PostShowScenario }
 
@@ -117,7 +117,7 @@ async function seedMoney(artistId: string, slug: string) {
   const e = await adminAuth().createUser({ email, emailVerified: true, displayName: "Felix Brandt" });
   await db.create(sys, "users", { email, name: "Felix Brandt", artists: [{ artistId, role: "member" }] }, { id: e.uid });
   await db.create(sys, "musicians", { name: "Felix Brandt", instruments: ["drums"], active: true, userId: e.uid });
-  await db.create(sys, "projects", { artistId, kind: "band", name: "Band", status: "open", isDefault: true });
+  await db.create(sys, "projects", { artistId, kind: "band", name: "General", status: "open", isDefault: true });
   await db.create(sys, "projects", { artistId, kind: "video", name: "Lighthouse video", status: "open" });
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse({ name: "Pine Hollow", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" }))) as { id: string };
   let friday = dateInZone(TZ);
@@ -240,6 +240,7 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
     }
     if (t.cards !== undefined && cards !== t.cards) failures.push(`${where}: ${cards} card(s), expected ${t.cards}`);
     if (t.cardVoice !== undefined && out.actions.some((a) => a.kind === "confirm" && !!a.voice !== t.cardVoice)) failures.push(`${where}: a card ${t.cardVoice ? "lacks" : "has"} voice: true`);
+    if (t.cardText && !out.actions.some((a) => a.kind === "confirm" && t.cardText!.test(a.label))) failures.push(`${where}: no card matches ${t.cardText} (cards: ${out.actions.filter((a) => a.kind === "confirm").map((a) => a.label).join(" | ") || "none"})`);
     if (t.noAsk && asks) failures.push(`${where}: asked with buttons instead of acting`);
     if (t.text && !t.text.test(out.text)) failures.push(`${where}: reply doesn't match ${t.text}`);
     if (t.noText && t.noText.test(out.text)) failures.push(`${where}: reply matches ${t.noText}: "${out.text.slice(0, 160)}"`);

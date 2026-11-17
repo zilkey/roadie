@@ -20,7 +20,11 @@ export const Configuration = z.strictObject({
   defaultProjectId: id.optional(),
 });
 /** Where one person's own expenses go when no show, rehearsal or tour decides (Settings › Money). */
-export const ExpenseProject = z.strictObject({ userId: id, projectId: id });
+/**
+ * One person's projects for their own expenses: projectId is their default; visibleProjectIds (admins set it) is the projects they can
+ * file to. No list = every open project. Their default is always one of them.
+ */
+export const ExpenseProject = z.strictObject({ userId: id, projectId: id.optional(), visibleProjectIds: z.array(id).optional() });
 export type ExpenseProject = z.infer<typeof ExpenseProject>;
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({

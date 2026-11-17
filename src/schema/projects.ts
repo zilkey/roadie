@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { entity, serverMask, id, cents } from "./common";
 
-/** What a project is for: Band (the default bucket), Duo, a release, a tour, a music video, or anything else. */
+/** What a project is for: General (the default bucket), Duo, a release, a tour, a music video, or anything else. */
 export const projectKind = z.enum(["band", "duo", "release", "tour", "video", "other"]);
 export type ProjectKind = z.infer<typeof projectKind>;
 export const projectStatus = z.enum(["open", "closed"]);
@@ -17,7 +17,7 @@ export const Project = entity({
   kind: projectKind,
   name: z.string().min(1),
   status: projectStatus,
-  /** Exactly one project per artist: Band. Money with no projectId belongs here. */
+  /** Exactly one project per artist: General. Money with no projectId belongs here. */
   isDefault: z.boolean().optional(),
 });
 export const ProjectInput = Project.omit(serverMask);

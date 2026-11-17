@@ -13,7 +13,7 @@ import { areaFor, priceFor } from "../gas/price";
 import { requireContact } from "../venues";
 import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind, type DrivingSettings } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
-import { isOwedBill, owesBack } from "@/lib/money";
+import { canFileTo, isOwedBill, memberProjectsOf, owesBack, type MemberProjects } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 import { requireTrackOnProject } from "./releases";
 import { requireEntryOnTour, requireTourFor } from "./tours";
@@ -107,14 +107,42 @@ async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null;
   if (o.tourId) return (await requireOpenProject(w, (await requireTourFor(w, o.tourId)).projectId as string)).id;
   const artist = await artistFor(w, o.show?.artistId as string | undefined);
   // An expense with nothing else to go on lands on the payer's own default project (Settings › Money), while it is open.
-  const own = o.payerId ? (artist.expenseProjects as { userId: string; projectId: string }[] | undefined)?.find((x) => x.userId === o.payerId)?.projectId : undefined;
-  if (own) {
-    const p = await w.get("projects", own);
-    if (p && !p.deletedAt && p.status === "open") return own;
+  const mine = o.payerId ? memberProjectsOf(artist.expenseProjects as MemberProjects[] | undefined, o.payerId) : undefined;
+  // Their own default while it is open, else (when admins limited them) the first open project they can file to.
+  for (const pid of [mine?.projectId, ...(mine?.visibleProjectIds ?? [])]) {
+    if (!pid) continue;
+    const p = await w.get("projects", pid);
+    if (p && !p.deletedAt && p.status === "open") return pid;
   }
   const id = await defaultProjectIdFor(w, artist.id, o.show?.billedAs as string | undefined);
   if (!id) throw new AppError("invalid_state", "There is no default project yet: create one with projects.create (isDefault) or pass projectId", 409);
   return id;
+}
+/** What income.add / expenses.add / payouts.add are given that decides their project. */
+export type LandingInput = { projectId?: string; showId?: string; rehearsalId?: string; tourId?: string; userId?: string; owed?: boolean };
+/**
+ * The project an add would land on, worked out exactly as the add command does (projectFor, read-only), so a confirm card names
+ * the project the record will really get. Undefined when it can't tell (a missing show, a closed project): the add says why.
+ */
+export async function landingProject(ctx: Ctx, name: "income.add" | "expenses.add" | "payouts.add", i: LandingInput): Promise<string | undefined> {
+  try {
+    return await run(ctx, async (w) => {
+      const show = i.showId ? await liveShow(w, i.showId) : null;
+      const rehearsal = name !== "income.add" && i.rehearsalId ? await liveRehearsal(w, i.rehearsalId) : null;
+      const payerId = name === "expenses.add" && !i.owed ? (i.userId ?? ctx.uid) : undefined;
+      return projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId, payerId });
+    });
+  } catch { return undefined; }
+}
+/**
+ * A member files only to the projects admins let them (Settings › Money). An expense added from a show, rehearsal or tour may also
+ * go on that record's own project (`attached`), so gas for a Duo show works for someone who only sees General.
+ */
+async function requireFileable(w: Writer, userId: string, projectId: string, attached?: () => Promise<string | undefined>) {
+  const m = memberProjectsOf((await artistFor(w)).expenseProjects as MemberProjects[] | undefined, userId);
+  if (canFileTo(m, projectId)) return;
+  if (attached && (await attached().catch(() => undefined)) === projectId) return;
+  throw new AppError("forbidden", "You can't put expenses on that project", 403);
 }
 async function liveRehearsal(w: Writer, id: string) {
   const r = await w.get("rehearsals", id);
@@ -215,6 +243,7 @@ export const expensesAdd = defineCommand({
     const show = i.showId ? await liveShow(w, i.showId) : null;
     const rehearsal = i.rehearsalId ? await liveRehearsal(w, i.rehearsalId) : null;
     if (i.gas && i.category !== "gas" && i.category !== "travel") throw new AppError("invalid_input", "A gas estimate goes on a gas expense", 400);
+    if (ctx.role === "member" && i.projectId) await requireFileable(w, userId, i.projectId, show || rehearsal || i.tourId ? () => projectFor(w, { show, rehearsal, tourId: i.tourId }) : undefined);
     const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId, payerId: i.owed ? undefined : userId });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const tour = await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show });
@@ -349,6 +378,7 @@ export const expensesUpdate = defineCommand({
     if (patch.userId && !(await w.get("users", patch.userId))) throw new AppError("not_found", "User not found", 404);
     if (patch.showId) await liveShow(w, patch.showId);
     if (patch.projectId) await requireOpenProject(w, patch.projectId);
+    if (ctx.role === "member" && patch.projectId && patch.projectId !== x.projectId) await requireFileable(w, x.userId as string, patch.projectId);
     if (patch.releaseTrackId) await requireTrackOnProject(w, patch.projectId ?? (x.projectId as string | undefined), patch.releaseTrackId);
     const tour = await tourPatchFor(w, x, patch);
     // A new amount on a gas expense keeps the estimate but marks it overridden, so the frozen numbers stay honest.
@@ -450,7 +480,7 @@ function setExpensesFor(ctx: Ctx, target: ExpenseTarget, lines: z.infer<typeof E
         const userId = l.userId ?? ctx.uid;
         const u = await w.get("users", userId);
         if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
-        const projectId = await projectFor(w, { show: target.kind === "shows" ? rec : null });
+        const projectId = await projectFor(w, { show: target.kind === "shows" ? rec : null, rehearsal: target.kind === "rehearsals" ? rec : null, payerId: userId });
         const { id: _i, receipt, ...rest } = l;
         out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: await todayOf(ctx), ...(projectId ? { projectId } : {}), ...(rec.tourId ? { tourId: rec.tourId } : {}), [key]: target.id })).id);
         continue;

@@ -87,16 +87,19 @@ function Played({ shows, admin, cf }: { shows: ShowRow[]; admin: boolean; cf: Sh
   if (!shows.length) return <Empty tab="played">Nothing yet.</Empty>;
   const totals = (id: string) => deals.byId.get(id)?.totals;
   const sum = (k: "income" | "expenses") => rows.reduce((a, s) => a + (totals(s.id)?.[k] ?? 0), 0);
+  // Same math as showTotals() / the show page's Net card: income - paid out - expenses. No totals doc yet -> no Net.
+  const netOf = (id: string) => { const t = totals(id); return t ? t.income - (t.paidOut ?? 0) - t.expenses : undefined; };
+  const netSum = rows.reduce((a, s) => a + (netOf(s.id) ?? 0), 0);
   const foot = (
     <div className="show-foot" data-testid="shows-totals">
       <span>Showing {rows.length} of {shows.length}</span>
-      {admin && <span>Loaded: income <b>{fmtDollars(sum("income")) || "$0"}</b> · expenses <b>{fmtDollars(sum("expenses")) || "$0"}</b></span>}
+      {admin && <span>Loaded: income <b>{fmtDollars(sum("income")) || "$0"}</b> · expenses <b>{fmtDollars(sum("expenses")) || "$0"}</b> · net <b>{fmtDollars(netSum) || "$0"}</b></span>}
     </div>
   );
   return (
     <>
       <Wrap tab="played" foot={foot}>
-        <Head cols={[["Date"], ["Venue"], ["Duration"], ...(admin ? [["Total income", "num"], ["Total expenses", "num"]] as [string, string][] : [])]} cf={cf} />
+        <Head cols={[["Date"], ["Venue"], ["Duration"], ...(admin ? [["Total income", "num"], ["Total expenses", "num"], ["Net", "num"]] as [string, string][] : [])]} cf={cf} />
         <tbody>
           {rows.map((s) => (
             <tr key={s.id} data-testid="shows-row" data-id={s.id}>
@@ -104,6 +107,7 @@ function Played({ shows, admin, cf }: { shows: ShowRow[]; admin: boolean; cf: Sh
               <td className="t">{orDash(fmtDuration(s.times.setLengthSec))}</td>
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.income))}</td>}
               {admin && <td className="num">{orDash(fmtDollars(totals(s.id)?.expenses))}</td>}
+              {admin && <td className="num" data-testid="shows-net">{netOf(s.id) === undefined ? <Dash /> : fmtDollars(netOf(s.id)) || "$0"}</td>}
               <FieldCells s={s} cf={cf} />
             </tr>
           ))}

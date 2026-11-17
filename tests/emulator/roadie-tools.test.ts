@@ -384,6 +384,35 @@ test("money cards name the person, project and show; income.add asks and yes lan
   assert.equal(gas.action?.label, "We owe Felix Brandt $42 for gas");
 });
 
+test("money for a show on its own project: the card names the show's project, a default projectId is dropped, a named project wins", async () => {
+  const general = (await db.list(SYS, "projects")).find((p) => p.isDefault && !p.deletedAt)!;
+  const duo = (await registry["projects.create"].run(sys, { kind: "duo", name: "Duo" })) as { id: string };
+  const video = (await registry["projects.create"].run(sys, { kind: "video", name: "Lighthouse video" })) as { id: string };
+  await registry["shows.update"].run(sys, registry["shows.update"].input.parse({ id: showId, patch: { projectId: duo.id } }));
+  const s = await sess();
+  const card = async (name: string, input: Record<string, unknown>) => {
+    const events: AssistantEvent[] = [];
+    const out = await execTool(s, name, input, (e) => events.push(e));
+    return { out, summary: (events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }> | undefined)?.summary };
+  };
+  const yes = async (c: Awaited<ReturnType<typeof card>>) => assert.equal((await answerPending(who, { threadId: s.threadId, pendingId: (c.out.output as { pendingId: string }).pendingId, decision: "yes" })).status, "done");
+  const tips = { amount: 2000, category: "tips", from: "Tips", method: "venmo", receivedAt: "2026-11-14", showId };
+  const plain = await card("income.add", tips);
+  assert.match(plain.summary!, /\(tips, Venmo, Duo\)/);
+  const filled = await card("income.add", { ...tips, amount: 2100, projectId: general.id });
+  assert.match(filled.summary!, /\(tips, Venmo, Duo\)/);
+  const named = await card("income.add", { ...tips, amount: 2200, projectId: video.id });
+  assert.match(named.summary!, /Lighthouse video/);
+  for (const c of [plain, filled, named]) await yes(c);
+  const on = Object.fromEntries((await db.list(SYS, "income")).map((x) => [x.amount, x.projectId]));
+  assert.deepEqual(on, { 2000: duo.id, 2100: duo.id, 2200: video.id });
+  // A payout on the show's page lands on the show's project too.
+  const paid = await card("payouts.add", { to: { name: "Desmond" }, kind: "pay", amount: 8000, showId, paidAt: "2026-11-14", method: "cash" });
+  assert.match(paid.summary!, /Desmond/);
+  await yes(paid);
+  assert.equal((await db.list(SYS, "payouts")).find((x) => x.amount === 8000)?.projectId, duo.id);
+});
+
 test("context: on the Shows page Roadie gets the rows of the tab in view", async () => {
   const v = (await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Bluebird")))) as { id: string };
   await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date: "2026-09-01", venueId: v.id, status: "confirmed", times: { loadIn: "17:00", set: "20:00" } }));

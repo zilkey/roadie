@@ -12,7 +12,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { defaultProject, dollarsToCents, EXPENSE_LABEL, formatCents, parseDollars } from "@/lib/money";
+import { defaultProject, dollarsToCents, EXPENSE_LABEL, canFileTo, fileableProjects, formatCents, memberProjectsOf, parseDollars } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
 import { useTourEntries } from "@/components/tours/money";
 import type { Release, Project, Rehearsal, Show, Tour, User } from "@/schema";
@@ -105,7 +105,15 @@ function AddExpense() {
   // A gas estimate with nothing typed files as plain "Gas".
   const whatOut = note || (isGas && gas.good ? "Gas" : "");
   // Project: the show's, else the rehearsal's (changeable), else what was picked, else the default.
-  const openProjects = (projects.rows ?? []).filter((p) => p.status === "open").sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
+  const isAdmin = me.role === "admin";
+  const mine = memberProjectsOf(artistDoc?.expenseProjects, me.uid);
+  // Admins pick from every open project; a member from the ones an admin lets them file to, plus the opened-from show, rehearsal or tour's own project.
+  const attachedIds = [showDoc?.projectId, rehearsal?.projectId, tour?.projectId].filter((id): id is string => !!id);
+  const rows = projects.rows ?? [];
+  const openProjects = (isAdmin ? rows.filter((p) => p.status === "open" && !p.deletedAt) : [...fileableProjects(rows, mine), ...rows.filter((p) => p.status === "open" && !p.deletedAt && attachedIds.includes(p.id) && !canFileTo(mine, p.id))])
+    .sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
+  // A member with a single place to file (and nothing attached adding another) never sees the picker and sends no project: the server decides.
+  const onlyOne = !isAdmin && openProjects.length <= 1 && !fromProject;
   const defaultId = defaultProject(projects.rows ?? [])?.id;
   const fixed = fromShow ? showDoc?.projectId : undefined;
   const ownId = artistDoc?.expenseProjects?.find((x) => x.userId === me.uid)?.projectId; // their default, set by an admin on Settings › Money
@@ -122,7 +130,7 @@ function AddExpense() {
     const { setAsRehearsalLocation: _admin, ...gasBits } = gas.payload(cents) as ReturnType<typeof gas.payload> & { setAsRehearsalLocation?: unknown };
     void _admin;
     const r = await call("expenses.add", {
-      amount: cents, what: whatOut, category: cat, payBack, ...(projectId ? { projectId } : {}),
+      amount: cents, what: whatOut, category: cat, payBack, ...(projectId && !onlyOne ? { projectId } : {}),
       ...(tourId ? { tourId, ...(tourEntryId ? { tourEntryId } : {}) } : {}),
       ...(showId && !rehearsalId ? { showId } : {}), ...(rehearsalId ? { rehearsalId } : {}),
       ...(url ? { receipt: { driveFileId: fileIdOf(url), url } } : {}),
@@ -152,7 +160,7 @@ function AddExpense() {
         <label className="grid gap-1"><span className="lbl">What for</span>
           <input className="input" placeholder={isGas ? "Gas to Fort Collins" : cat === "gear" ? "Drum heads" : "What was it"} value={what} onChange={(e) => patch({ what: e.target.value })} data-testid="expense-what" /></label>
 
-        {!fromShow && <label className="grid gap-1"><span className="lbl">Project</span>
+        {!fromShow && !onlyOne && <label className="grid gap-1"><span className="lbl">Project</span>
           <Select testid="exp-project" value={projectId} onChange={(v) => patch({ projectId: v })} options={openProjects.map((p) => [p.id, p.name] as [string, string])} /></label>}
         {!rehearsalId && !fromShow && <label className="grid gap-1"><span className="lbl">For a show?</span>
           <select className="select" value={showId} onChange={(e) => patch({ showId: e.target.value })} data-testid="expense-show">

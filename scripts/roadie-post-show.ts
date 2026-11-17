@@ -10,6 +10,7 @@
  *            sub, is not in the band. Musicians aren't partitioned by band yet (records.list shows every band's), so
  *            seeding the same two names in every world made Roadie ask "which Wren?"; one world has them, once.
  *   venues   The Red Barn (Fort Collins), Pine Hollow (Denver), Odell Brewing (Fort Collins)
+ *   projects General (the default) in every world; the "duo" world adds Duo (tonight's show is on it) and Lighthouse video.
  *   shows    by world: see seedWorld. "tonight" is context.now's tonight (yesterday's date before 6am).
  *
  * After each turn the harness taps Yes on every card from that turn (`yes: false` leaves them), the way she would with
@@ -24,12 +25,14 @@ import { addDays } from "../src/lib/shows";
 import { tonightDate } from "../src/server/assistant/context";
 
 export type ShowKey = "tonight" | "afternoon" | "lastNight";
-export type WorldKind = "one" | "two" | "lastNight" | "owedGuarantee" | "payouts";
+export type WorldKind = "one" | "two" | "lastNight" | "owedGuarantee" | "payouts" | "duo";
 
 /** A turn's checks, as in roadie-eval.ts, plus `noArgs` (no call to the first regex whose input matches the second) and `yes`. */
 export interface PostShowTurn {
   say: string; calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean;
   args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][];
+  /** Some confirm card's label must match (the project it names, say). */
+  cardText?: RegExp;
   /** Tap Yes on this turn's cards before the next turn. Default true. */
   yes?: boolean;
 }
@@ -44,6 +47,8 @@ export interface Expect {
   notes?: RegExp[]; noNotes?: RegExp[];
   /** Shows that must have no income, no payouts and no rating: the one she was NOT talking about. */
   untouched?: ShowKey[];
+  /** The project (by name) every income and payout must be on. */
+  project?: string;
 }
 export interface PostShowScenario { name: string; world: WorldKind; page: "home" | "show" | "after"; turns: PostShowTurn[]; expect: Expect }
 
@@ -163,6 +168,17 @@ export const POST_SHOW: PostShowScenario[] = [
   { name: "post-show-the-rest-is-tips", world: "one", page: "home",
     turns: [{ say: "I counted 412 cash total tonight. Door was 300 and merch was 90, so the rest must be tips.", text: /22/ }],
     expect: { income: [{ category: "door", amount: 300, method: "cash" }, { category: "merch", amount: 90, method: "cash" }, { category: "tips", amount: 22, method: "cash" }] } },
+
+  // 15–17 (#86). Tonight's show is on the Duo project: money for it lands on Duo unless she names another project.
+  { name: "post-show-duo-show-page", world: "duo", page: "show",
+    turns: [{ say: "add $20 tips venmo", cardText: /\bDuo\b/ }],
+    expect: { income: [{ category: "tips", amount: 20, method: "venmo" }], project: "Duo" } },
+  { name: "post-show-duo-named-show", world: "duo", page: "home",
+    turns: [{ say: "add $20 tips venmo for tonight's Red Barn show", cardText: /\bDuo\b/ }],
+    expect: { income: [{ category: "tips", amount: 20, method: "venmo" }], project: "Duo" } },
+  { name: "post-show-duo-named-project", world: "duo", page: "show",
+    turns: [{ say: "put $15 merch cash on the Lighthouse video project", cardText: /Lighthouse video/ }],
+    expect: { income: [{ category: "merch", amount: 15, method: "cash" }], project: "Lighthouse video" } },
 ];
 
 // ---------- worlds ----------
@@ -176,7 +192,7 @@ export async function seedWorld(kind: WorldKind, artistId: string, member: { uid
     await db.create(sys, "musicians", { name: "Theo Park", instruments: ["drums"], active: true, userId: member.uid });
     await db.create(sys, "musicians", { name: "Wren Whitlock", instruments: ["bass"], active: true });
   }
-  await db.create(sys, "projects", { artistId, kind: "band", name: "Band", status: "open", isDefault: true });
+  await db.create(sys, "projects", { artistId, kind: "band", name: "General", status: "open", isDefault: true });
   const venue = (name: string, city: string) => call("venues.create", { name, type: "bar", address: { city, state: "CO" }, region: city === "Denver" ? "denver" : "north" });
   // A guarantee on the deal becomes an income record that is owed until income.setReceived (shows.create does this).
   const show = (venueId: string, date: string, set: string, guarantee?: number) =>
@@ -184,6 +200,11 @@ export async function seedWorld(kind: WorldKind, artistId: string, member: { uid
   const tonight = tonightDate(new Date(), await zoneOf(sys));
   const blue = await venue("The Red Barn", "Fort Collins");
   const shows: Partial<Record<ShowKey, string>> = { tonight: (await show(blue.id, tonight, "21:00", kind === "owedGuarantee" ? 30000 : undefined)).id };
+  if (kind === "duo") {
+    const duo = await call("projects.create", { kind: "duo", name: "Duo" });
+    await call("projects.create", { kind: "video", name: "Lighthouse video" });
+    await call("shows.update", { id: shows.tonight, patch: { projectId: duo.id } });
+  }
   if (kind === "two") shows.afternoon = (await show((await venue("Odell Brewing", "Fort Collins")).id, tonight, "14:00")).id;
   if (kind === "lastNight") shows.lastNight = (await show((await venue("Pine Hollow", "Denver")).id, addDays(tonight, -1), "21:00")).id;
   return shows;
@@ -201,9 +222,10 @@ export async function recorded(artistId: string, shows: Partial<Record<ShowKey, 
   const live = (rows: Row[]) => rows.filter((r) => !r.deletedAt);
   const income = live(await db.list(ctx, "income"));
   const payouts = live(await db.list(ctx, "payouts"));
+  const projects = Object.fromEntries((await db.list(ctx, "projects")).map((p) => [p.id, p.name as string]));
   const deals: Partial<Record<ShowKey, Row>> = {};
   for (const [k, id] of Object.entries(shows)) deals[k as ShowKey] = ((await db.get(ctx, "showDeals", id!)) ?? {}) as Row;
-  return { income, payouts, deals };
+  return { income, payouts, deals, projects };
 }
 
 /** One line per record, for the log and the baseline. */
@@ -234,6 +256,10 @@ export function checkRecorded(e: Expect, rec: Awaited<ReturnType<typeof recorded
   const total = e.income.reduce((n, x) => n + x.amount * 100, 0);
   if (sum(rec.income) !== total) fails.push(`income: ${usd(sum(rec.income))} recorded in all, expected ${usd(total)}`);
   for (const r of [...rec.income, ...rec.payouts]) if (r.showId !== showId) fails.push(`${r.category ?? `payout to ${r.to?.name}`} ${usd(r.amount)} is on ${r.showId ? "the wrong show" : "no show"}`);
+  if (e.project) for (const r of [...rec.income, ...rec.payouts]) {
+    const on = rec.projects[r.projectId as string] ?? "no project";
+    if (on !== e.project) fails.push(`${r.category ?? `payout to ${r.to?.name}`} ${usd(r.amount)} is on ${on}, expected ${e.project}`);
+  }
   const pay = e.payouts ?? [];
   for (const p of pay) {
     const rows = rec.payouts.filter((r) => p.to.test(String(r.to?.name ?? "")));

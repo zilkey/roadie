@@ -183,6 +183,41 @@ test("expenses: a person's default project (Settings › Money) beats the defaul
   await cmd("projects.close", { id: tour });
   assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "strings", category: "gear" }, mctx)).id), band);
 });
+test("member projects (#86): admins limit what a member files to; a show's own project still works; remove strips it; rehearsal lines use the rehearsal's", async () => {
+  const video = (await cmd("projects.create", { kind: "video", name: "Video" })).id;
+  const project = async (id: string) => ((await db.get(SYS, "expenses", id)) as any).projectId;
+  const entry = async () => ((await db.get(SYS, "artists", TEST_ARTIST)) as any).expenseProjects?.find((x: any) => x.userId === memberUid);
+  assert.ok(!registry["artists.setMemberProjects"].roles.includes("member"));
+  await code(cmd("artists.setMemberProjects", { userId: "nobody", visibleProjectIds: [band] }), "not_found");
+  await cmd("artists.setMemberProjects", { userId: memberUid, visibleProjectIds: [band] });
+  assert.deepEqual(await entry(), { userId: memberUid, visibleProjectIds: [band] });
+  // Outside the list: refused, unless it's the attached show's own project.
+  await code(cmd("expenses.add", { amount: 100, what: "x", category: "gear", projectId: duo }, mctx), "forbidden");
+  const s = await mkShow({ projectId: duo });
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "gas", category: "gas", showId: s, projectId: duo }, mctx)).id), duo);
+  // Changing an expense to a project outside the list is refused; other edits always work; admins aren't limited.
+  const mine = await cmd("expenses.add", { amount: 100, what: "strings", category: "gear" }, mctx);
+  assert.equal(await project(mine.id), band);
+  await code(cmd("expenses.update", { id: mine.id, patch: { projectId: video } }, mctx), "forbidden");
+  await cmd("expenses.update", { id: mine.id, patch: { what: "new strings", projectId: band } }, mctx);
+  await cmd("expenses.update", { id: mine.id, patch: { projectId: video } });
+  // The default counts as fileable; a closed default falls back to the first open project in the list.
+  await cmd("artists.setMemberProjects", { userId: memberUid, projectId: video, visibleProjectIds: [duo] });
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "x", category: "gear", projectId: video }, mctx)).id), video);
+  await cmd("projects.close", { id: video });
+  assert.equal(await project((await cmd("expenses.add", { amount: 100, what: "y", category: "gear" }, mctx)).id), duo);
+  // Clearing the list: back to every project. Removing a project strips it from every entry.
+  await cmd("artists.setMemberProjects", { userId: memberUid, visibleProjectIds: null });
+  assert.deepEqual(await entry(), { userId: memberUid, projectId: video });
+  const spare = (await cmd("projects.create", { kind: "other", name: "Spare" })).id;
+  await cmd("artists.setMemberProjects", { userId: memberUid, projectId: spare, visibleProjectIds: [spare] });
+  await cmd("projects.remove", { id: spare });
+  assert.equal(await entry(), undefined);
+  // rehearsals.setExpenses lines land on the rehearsal's project (not the default).
+  const rid = (await db.create(ctx, "rehearsals", { date: "2026-11-12", projectId: duo, artistId: TEST_ARTIST, personnel: [], songs: [] })).id;
+  const r = await cmd("rehearsals.setExpenses", { id: rid, lines: [{ what: "Room", amount: 4000, payBack: true }] }, mctx);
+  assert.equal(await project(r.added[0]), duo);
+});
 test("expenses: default project, the show's project, admin on behalf, member refused", async () => {
   const s = await mkShow({ projectId: duo });
   const a = await cmd("expenses.add", { amount: 1000, what: "strings", category: "gear" });

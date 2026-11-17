@@ -5,7 +5,7 @@ import { useProfile } from "@/lib/auth";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { ErrorBox, PageTitle, Select, useCommand } from "@/components/ui";
 import { WelcomeEmpty } from "@/components/WelcomeEmpty";
-import { CATEGORY_LABEL, defaultProject, formatCents, METHOD_LABEL, owesBack, parseDollars, PAYOUT_KIND_LABEL, projectOf, sumExpenses } from "@/lib/money";
+import { CATEGORY_LABEL, defaultProject, fileableProjects, formatCents, memberProjectsOf, METHOD_LABEL, owesBack, parseDollars, PAYOUT_KIND_LABEL, projectOf, sumExpenses } from "@/lib/money";
 import { showName as nameOfShow } from "@/lib/shows";
 import type { Expense, Payout, Project, Show } from "@/schema";
 
@@ -14,7 +14,7 @@ const shortDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("e
 /** Members: what the band owes them, their own expenses and what they've been paid. Rules allow only their own rows. */
 export function MyMoney() {
   const p = useProfile();
-  const { musicianId } = useArtist();
+  const { musicianId, doc: artistDoc } = useArtist();
   const expenses = useCollection<Expense>("expenses", { where: [["userId", "==", p.uid]] });
   const shows = useCollection<Show>("shows");
   const projects = useCollection<Project>("projects");
@@ -29,6 +29,10 @@ export function MyMoney() {
     .filter((x) => !!x.paidAt && !seen.has(x.id) && !!seen.add(x.id))
     .sort((a, b) => (a.paidAt! < b.paidAt! ? 1 : -1));
   const defaultId = defaultProject(projects.rows ?? [])?.id;
+  // A member picks only from the projects an admin lets them file to (plus the one the expense is already on).
+  const mineProjects = memberProjectsOf(artistDoc?.expenseProjects, p.uid);
+  const pickable = fileableProjects(projects.rows ?? [], mineProjects);
+  const optionsFor = (x: Expense) => [...pickable, ...(projects.rows ?? []).filter((pr) => pr.id === x.projectId && !pickable.some((o) => o.id === pr.id))];
   const projectName = (x: Expense) => projects.rows?.find((pr) => pr.id === projectOf(x, defaultId))?.name;
   const showName = (id?: string) => ((x) => x && nameOfShow(x))(shows.rows?.find((s) => s.id === id));
   // Nothing to show until their expenses and payouts are in: the owed count must never read 0 while loading.
@@ -54,7 +58,7 @@ export function MyMoney() {
       </div>
       <div className="grid content-start gap-2" data-testid="my-expenses">
         <span className="lbl">My expenses</span>
-        {mine.map((x) => <MyExpense key={x.id} x={x} project={projectName(x)} projects={(projects.rows ?? []).filter((pr) => pr.status === "open" || pr.id === x.projectId)} />)}
+        {mine.map((x) => <MyExpense key={x.id} x={x} project={projectName(x)} projects={optionsFor(x)} />)}
         <span className="s">You can edit or remove an expense until it's been paid back. After that, ask an admin to fix mistakes.</span>
       </div>
       <div className="grid content-start gap-2" data-testid="paid-to-me">
@@ -92,7 +96,7 @@ function MyExpense({ x, project, projects }: { x: Row<Expense>; project?: string
         <span className="grid justify-items-end gap-1"><span className="font-mono">{formatCents(x.amount)}</span>
           <span className={`chip ${paid && x.payBack !== false ? "g" : x.payBack === false ? "" : "owed"}`} data-testid={`expense-status-${x.id}`}>{status}</span></span>
       </div>
-      {!paid && projects.length > 0 && (
+      {!paid && projects.length > 1 && (
         <Select label="Project" testid={`expense-project-${x.id}`} value={x.projectId ?? projects.find((pr) => pr.isDefault)?.id ?? ""} options={projects.map((pr) => [pr.id, pr.name] as [string, string])}
           onChange={(v) => void call("expenses.update", { id: x.id, patch: { projectId: v } })} />
       )}

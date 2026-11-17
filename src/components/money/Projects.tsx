@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
-import Link, { useArtistRouter, useZone } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter, useZone } from "@/lib/artist";
+import { useProfile } from "@/lib/auth";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
-import { PROJECT_KIND_LABEL, defaultProject, formatCents, incomeSoFar, projectTotals } from "@/lib/money";
+import { PROJECT_KIND_LABEL, canFileTo, defaultProject, formatCents, memberProjectsOf, incomeSoFar, projectTotals } from "@/lib/money";
 import { todayStr } from "@/lib/booking";
 import type { Release, Expense, Income, Payout, Project } from "@/schema";
 
@@ -23,8 +24,13 @@ export function Projects({ admin, adding, onDoneAdding }: { admin: boolean; addi
   const payouts = useCollection<Payout>("payouts", { skip: !admin });
   const releases = useCollection<Release>("releases", { skip: !admin }); // releases are admins-only
   const router = useArtistRouter();
-  const all = projects.rows ?? [];
-  const def = defaultProject(all);
+  const { doc: artistDoc } = useArtist();
+  const me = useProfile();
+  const mine = memberProjectsOf(artistDoc?.expenseProjects, me.uid);
+  const everything = projects.rows ?? [];
+  const def = defaultProject(everything);
+  // Members see only the projects an admin lets them file to.
+  const all = admin ? everything : everything.filter((p) => canFileTo(mine, p.id));
   const sorted = [...all].sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
   const open = sorted.filter((p) => p.status !== "closed");
   const closed = sorted.filter((p) => p.status === "closed");

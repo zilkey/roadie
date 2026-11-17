@@ -7,6 +7,7 @@
 import { spend } from "../usage";
 import { z } from "zod";
 import { registry } from "../commands/registry";
+import { landingProject, type LandingInput } from "../commands/money";
 import type { Ctx, Role } from "../ctx";
 import { pathOf } from "@/schema/owners";
 import { AppError } from "../errors";
@@ -420,6 +421,7 @@ async function fillPayPerson(s: Session, input: unknown): Promise<{ input: unkno
  * markPaid, update, remove) the record's own amount and who. Best effort: a miss leaves the card plainer, never blocks it.
  */
 const MONEY_CARDS = /^(expenses\.add|expenses\.markPaid|income\.|payouts\.|projects\.)/;
+const ADDS = new Set(["income.add", "expenses.add", "payouts.add"]);
 async function fillMoney(s: Session, name: string, input: unknown): Promise<{ input: unknown; before?: Row }> {
   if (!MONEY_CARDS.test(name)) return { input };
   const i = (input ?? {}) as Row, l = lookups(s);
@@ -436,10 +438,23 @@ async function fillMoney(s: Session, name: string, input: unknown): Promise<{ in
     if ((name === "payouts.add" || name === "payouts.markPaid" || name === "expenses.payPerson") && i.paidBy) before.payer = await l.person(i.paidBy);
     const showId = i.showId ?? i.patch?.showId ?? rec?.showId;
     if (showId) { const sh = await l.get("shows", showId); before.show = sh ? showName(sh as ShowPlaceLike) : "the show"; }
-    const projectId = i.projectId ?? i.patch?.projectId ?? rec?.projectId;
+    let out = input;
+    let projectId: string | undefined = i.projectId ?? i.patch?.projectId ?? rec?.projectId;
+    if (ADDS.has(name)) {
+      const add = name as "income.add" | "expenses.add" | "payouts.add";
+      // Money for a show that is on its own project: a projectId the model filled in with the default project (General) is dropped,
+      // so the show's project wins. A project the user named (anything but the default) still wins over the show's.
+      if (typeof i.showId === "string" && typeof i.projectId === "string" && (await l.get("projects", i.projectId))?.isDefault) {
+        const { projectId: _drop, ...rest } = i;
+        const shows = await landingProject(makeCtx(s), add, rest);
+        if (shows && shows !== i.projectId) { out = rest; projectId = shows; }
+      }
+      // The card names the project the add will really land on: the same resolution the command runs.
+      if (!projectId) projectId = await landingProject(makeCtx(s), add, out as LandingInput);
+    }
     before.project = projectId ? ((await l.get("projects", projectId))?.name ?? "the project")
       : ((await runAs(makeCtx(s), "records.list", { kind: "projects", limit: 200 })).result as { rows: Row[] }).rows.find((p) => p.isDefault)?.name ?? "the project";
-    return { input, before };
+    return { input: out, before };
   } catch { return { input }; }
 }
 

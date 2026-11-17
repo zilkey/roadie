@@ -11,10 +11,11 @@ import { db, run } from "../src/server/db";
 import { importCtx, systemCtx } from "../src/server/ctx";
 import { syncClaims } from "../src/server/session";
 import { slugForArtist } from "../src/schema/artists";
-import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
+import { DEV_OTHER_BAND, DEV_PEOPLE, DEV_TWO_BAND_MEMBER } from "../src/lib/dev-people";
 import { addPlatformAdmins, approveArtist } from "../src/server/platform";
 import { execute } from "../src/server/commands/dispatch";
 import { snapshotId } from "../src/server/commands/stats";
+import { refreshDealTotals } from "../src/server/dealTotals";
 import { seedDefaultTemplates } from "../src/server/checklistTemplates";
 import { updateDriving } from "@/server/driving";
 import { areaFor, productFor } from "@/server/gas/price";
@@ -165,6 +166,7 @@ async function main() {
 
   // --- a second band on the same directory: its own notes on a shared room, and a duplicate room to merge ---
   const other = await seedOtherBand();
+  await seedTwoBandMember(ctx, artist, duoProject, other);
   await execute(bandCtx, "venues.update", { id: deepend, patch: { loadInNotes: "Alley door on Broadway; 20 minutes to load in.", notes: "Ask for Sam at the bar." } });
   await execute(other.ctx, "venues.update", { id: deepend, patch: { loadInNotes: "Fern Valley loads in the side door.", notes: "Ask for Rae. Fern Valley's own notes." } });
   // The same room entered twice ("The Deep End" does not dedupe against "Deep End"): venues.mergeInto fixes it.
@@ -338,6 +340,8 @@ async function main() {
     showId: hiShow, dueDate: "2026-11-15" });
   await create("payouts", { artistId: artist, projectId: bandProject, to: { musicianId: mid.felix, name: person("felix") }, kind: "pay", amount: 6000, what: "Deep End show",
     showId: hiShow, dueDate: "2026-11-15" });
+  // The money above was written straight to the database: give each show's deal the totals the money commands keep (the Played table and Net card read them).
+  for (const id of [playedShow, hiShow, lakeShow]) await run(importCtx(artist), (w) => refreshDealTotals(w, id));
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, snapshotId(artist, "spotifyApi", "2026-10-21"));
   await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, snapshotId(artist, "spotifyApi", "2026-10-22"));
 
@@ -364,6 +368,28 @@ async function seedOtherBand() {
   const general = (await db.create(ctx, "projects", { artistId: artist, status: "open", kind: "band", name: "General", isDefault: true })).id;
   await db.create(ctx, "expenses", { userId: u.uid, date: "2026-10-12", amount: 4200, category: "travel", what: "Fern Valley van rental", payBack: false, projectId: general });
   return { artist, ctx };
+}
+
+/**
+ * Wes: a member of BOTH bands, with a musician record in each and his own default expense project in each (artists.expenseProjects):
+ * Duo in Nora Quill Band, Recording in Fern Valley Trio. Neither is the band's default project (General), so tests/e2e/two-band-member.spec.ts
+ * can tell his default from the band's. No email on the musicians: the first band's Drive sharing checks list musicians with an email.
+ */
+async function seedTwoBandMember(noraCtx: ReturnType<typeof importCtx>, nora: string, noraDuo: string, fern: { artist: string; ctx: ReturnType<typeof importCtx> }) {
+  const p = DEV_TWO_BAND_MEMBER;
+  const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
+  const noraM = (await db.create(noraCtx, "musicians", { name: p.name, instruments: p.instruments, active: true })).id;
+  const fernM = (await db.create(fern.ctx, "musicians", { name: p.name, instruments: p.instruments, active: true })).id;
+  await db.create(noraCtx, "users", {
+    email: p.email, name: p.name,
+    artists: [{ artistId: nora, role: p.role, mcpAccess: false, musicianId: noraM }, { artistId: fern.artist, role: p.role, mcpAccess: false, musicianId: fernM }],
+  }, { id: u.uid });
+  await db.update(noraCtx, "musicians", noraM, { userId: u.uid });
+  await db.update(fern.ctx, "musicians", fernM, { userId: u.uid });
+  const recording = (await db.create(fern.ctx, "projects", { artistId: fern.artist, status: "open", kind: "release", name: "Recording" })).id;
+  await db.update(noraCtx, "artists", nora, { expenseProjects: [{ userId: u.uid, projectId: noraDuo }] });
+  await db.update(fern.ctx, "artists", fern.artist, { expenseProjects: [{ userId: u.uid, projectId: recording }] });
+  await syncClaims(u.uid);
 }
 
 /** The starting email templates. */

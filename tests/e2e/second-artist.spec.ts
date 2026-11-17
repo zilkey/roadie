@@ -1,8 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 
 // Tenancy phase 5: the browser asks Firestore only for the open artist. Olga is the only admin of Fern Valley Trio, the seed's second
-// artist. Under today's rules an admin of any artist may read every artist's records, so only the hooks' artist filter keeps Nora
-// Quill Band's songs, money and people off her screens.
+// artist. Firestore's rules are per artist too (an admin reads only the artists she belongs to), and the hooks' artist filter
+// narrows each screen to the open one, so Nora Quill Band's songs, money and people stay off hers.
 
 const FERN = (p: string) => `/artists/fern-valley-trio${p}`;
 /** Nora Quill Band's, from scripts/seed.ts: none may show up in Fern Valley. */

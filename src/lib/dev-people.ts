@@ -11,3 +11,5 @@ export const DEV_PEOPLE: DevPerson[] = [
 export const DEV_STRANGER = { key: "stranger", name: "Pat Stranger", email: "stranger@example.com" };
 /** A second band that shares the venue directory with the first (scripts/seed.ts): an admin of its own, with her own private venue notes. */
 export const DEV_OTHER_BAND = { artistName: "Fern Valley Trio", person: { key: "olga", name: "Olga Park", email: "olga@example.com", role: "admin", instruments: ["guitar"] } as DevPerson };
+/** A member of both seeded bands (Nora Quill Band and Fern Valley Trio), with a different default expense project in each (scripts/seed.ts). */
+export const DEV_TWO_BAND_MEMBER: DevPerson = { key: "wes", name: "Wes Marlow", email: "wes@example.com", role: "member", instruments: ["bass", "banjo"] };
