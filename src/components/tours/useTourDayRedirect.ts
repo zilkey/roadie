@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { useArtist, useArtistRouter } from "@/lib/artist";
+import { useArtist, useArtistRouter, useZone } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
 import { useCollection } from "@/lib/firestore-hooks";
 import { previousPath } from "@/lib/navHistory";
@@ -20,9 +20,10 @@ export function useTourDayRedirect() {
   const admin = profile.role === "admin";
   const landed = useRef(previousPath() === undefined); // the first page of this visit
   const tours = useCollection<Tour>("tours", { skip: admin || !landed.current }).rows;
+  const zone = useZone();
   useEffect(() => {
     if (admin || !landed.current || !tours) return;
-    const today = todayStr();
+    const today = todayStr(zone);
     const tour = tourToday(tours, today, musicianId);
     if (!tour) return;
     const key = `tourDayRedirect:${today}`;
@@ -32,5 +33,5 @@ export function useTourDayRedirect() {
     } catch { /* no storage: still go once per mount */ }
     landed.current = false;
     router.replace(`/tours/${tour.id}/day/${today}`);
-  }, [admin, tours, musicianId, router]);
+  }, [admin, tours, musicianId, router, zone]);
 }

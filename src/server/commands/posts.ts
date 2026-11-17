@@ -21,7 +21,8 @@ import { bandmates } from "../music";
 import { findOrMakeFolder } from "../driveFolders";
 import { POSTS_FOLDER_NAME, inboxFolders, isEmpty, listAll, moveBack, moveInto, socialsOf, uniqueName } from "../postFolder";
 import { thumbUrl } from "../signedUrl";
-import { dateInBandZone, dateTimeInBandZone } from "@/lib/timezone";
+import { dateInZone, dateTimeInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { HASHTAG_MAX, MEDIA_ONLY, hashtagCount, isVideo, mediaType, videoProblem } from "@/lib/photos";
 import { HEIC_PREVIEW, fromPreview, noPreview } from "../postPhoto";
 import { postStatus, type PostMedia } from "@/schema/posts";
@@ -90,14 +91,14 @@ const sizeOf = (f: DriveFile) => {
 };
 
 /** A Drive photo or video as a Photo: upright size, a video's length, when it was taken, and a signed thumbnail. */
-function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: string): Photo {
+function photoOf(artistId: string, f: DriveFile, mimeType: string, folderId: string, zone: string): Photo {
   const im = f.image;
   const created = Date.parse(f.createdAt);
   return {
     driveFileId: f.id, name: f.name, mimeType,
     ...sizeOf(f),
     ...(f.video?.durationMs !== undefined ? { durationMs: f.video.durationMs } : {}),
-    takenAt: exifTime(im?.time) ?? (Number.isNaN(created) ? "" : dateTimeInBandZone(new Date(created))),
+    takenAt: exifTime(im?.time) ?? (Number.isNaN(created) ? "" : dateTimeInZone(zone, new Date(created))),
     folderId, thumb: thumbUrl(artistId, f.id, f.modifiedTime, 400),
   };
 }
@@ -111,7 +112,7 @@ export const postsPhotos = defineCommand({
     const artistId = artistOf(ctx);
     const { socialsId } = await socialsOf(ctx);
     const drive = driveClient({ artistId });
-    const all = await inboxFolders(ctx, drive);
+    const all = await inboxFolders(ctx, drive), zone = await zoneOf(ctx);
     let within = [socialsId, ...all.map((f) => f.id)];
     if (folder && folder !== socialsId) {
       if (!all.some((f) => f.id === folder)) throw new AppError("not_in_socials", NOT_IN_SOCIALS, 400);
@@ -127,7 +128,7 @@ export const postsPhotos = defineCommand({
       const mimeType = mediaType(f.name, f.mimeType), folderId = f.parents.find((p) => known.has(p));
       if (!mimeType || !folderId) continue;
       counts.set(folderId, (counts.get(folderId) ?? 0) + 1);
-      if (wanted.has(folderId)) photos.push({ ...photoOf(artistId, f, mimeType, folderId), addedAt: f.createdAt });
+      if (wanted.has(folderId)) photos.push({ ...photoOf(artistId, f, mimeType, folderId, zone), addedAt: f.createdAt });
     }
     photos.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
     const capped = photos.length > photosLimits.max;
@@ -560,8 +561,8 @@ export const postsDeleteDraft = defineCommand({
 
 // ---------- posting ----------
 
-/** "YYYY-MM-DD - <title>": a posted post's folder, dated the day it posted in the band's timezone. */
-const postedFolder = (postedAt: string, title: string) => `${dateInBandZone(new Date(postedAt))} - ${title}`;
+/** "YYYY-MM-DD - <title>": a posted post's folder, dated the day it posted in the artist's timezone. */
+const postedFolder = (postedAt: string, title: string, zone: string) => `${dateInZone(zone, new Date(postedAt))} - ${title}`;
 
 /** Rename a posted post's folder to its posted name; the error's message when Drive refuses. */
 async function tidyFolder(ctx: Ctx, post: { driveFolderId?: string; postedAt?: string; title?: string }): Promise<string | null> {
@@ -569,7 +570,7 @@ async function tidyFolder(ctx: Ctx, post: { driveFolderId?: string; postedAt?: s
     const { postsId } = await setUpSocials(ctx);
     if (!post.driveFolderId || !post.postedAt) return null;
     const drive = driveClient({ artistId: ctx.artistId });
-    const name = await uniqueName(drive, postsId, postedFolder(post.postedAt, post.title ?? "Post"), post.driveFolderId);
+    const name = await uniqueName(drive, postsId, postedFolder(post.postedAt, post.title ?? "Post", await zoneOf(ctx)), post.driveFolderId);
     if ((await drive.get(post.driveFolderId)).name !== name) await drive.rename(post.driveFolderId, name);
     return null;
   } catch (e) {

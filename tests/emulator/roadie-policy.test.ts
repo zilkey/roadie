@@ -38,7 +38,7 @@ beforeEach(async () => {
   who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
   sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Nora", instruments: ["vocals"], active: true })).id;
-  await db.create(sys, "artists", {
+  await db.create(sys, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: { website: "https://a.example", spotify: "https://s.example" },
     configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [mus] }],
   }, { id: TEST_ARTIST });

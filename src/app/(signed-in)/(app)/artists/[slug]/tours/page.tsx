@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { useMemo, useState } from "react";
 import { PageTitle } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
@@ -22,7 +22,8 @@ export default function ToursPage() {
   const tours = useCollection<Tour>("tours", { where: [["artistId", "==", artistId]] });
   const [filter, setFilter] = useState<TourFilter>("upcoming");
   const [act, setAct] = useState("");
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const rows = useMemo(() => {
     const list = (tours.rows ?? []) as TourRow[];
     const shown = list.filter((t) => (filter === "all" || tourFilterOf(t, today) === filter) && (!act || t.billedAs === act));

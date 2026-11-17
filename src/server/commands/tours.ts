@@ -5,7 +5,8 @@ import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { route } from "../gas/route";
-import { BAND_TIME_ZONE, dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { venueZoneOr, zoneOf } from "../zone";
 import { showCity, showName } from "@/lib/shows";
 import { sortedDates } from "@/lib/booking";
 import type { ExpenseLike, IncomeLike, PayoutLike } from "@/lib/money";
@@ -32,7 +33,7 @@ const BAND = ["admin", "member", "mcp"] as const;
 const ADMIN = ["admin", "mcp"] as const;
 const MONEY = ["income", "expenses", "payouts"] as const;
 export const entriesPath = (artistId: string, tourId: string) => pathOf("entries", { artistId, parent: { kind: "tours", id: tourId } });
-const todayOf = (ctx: Ctx) => dateInBandZone(ctx.now ?? new Date());
+const todayOf = async (ctx: Ctx) => dateInZone(await zoneOf(ctx), ctx.now ?? new Date());
 const seesAll = (ctx: Ctx) => ctx.role !== "member";
 
 // ---------- helpers ----------
@@ -68,11 +69,11 @@ async function livePitch(w: Writer, id: string) {
   if (!p || p.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
   return p;
 }
-/** The show's room's time zone when it has one, else the band's. */
+/** The show's room's time zone when it has one, else the artist's. */
 async function tzOfShow(w: Writer, show: Doc): Promise<string> {
   const venueId = (show.venue as { id?: string } | undefined)?.id;
   const v = venueId ? await w.get("venues", venueId) : null;
-  return (v?.timeZone as string | undefined) ?? BAND_TIME_ZONE;
+  return venueZoneOr(v, await zoneOf(w.ctx));
 }
 /** End of `date` in the tour, after `after` / before `before` when given. */
 export async function positionOn(w: Writer, tourId: string, date: string | undefined, o: { after?: string; before?: string; skip?: string } = {}) {
@@ -146,11 +147,11 @@ async function addPitchTo(w: Writer, tour: Doc, pitch: Doc, more: string[] = [])
     if (have) { ids.push(have.id); continue; }
     const position = await positionOn(w, tour.id, date);
     if (bucket) { await w.update(entriesPath(w.ctx.artistId, tour.id), bucket.id, { date, position }); ids.push(bucket.id); bucket = undefined; continue; }
-    ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", date, position, visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
+    ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", date, position, visibility: "admins", tz: await zoneOf(w.ctx), pitchId: pitch.id })).id);
   }
   if (!dates.length) {
     if (bucket) ids.push(bucket.id);
-    else ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", position: await positionOn(w, tour.id, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
+    else ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", position: await positionOn(w, tour.id, undefined), visibility: "admins", tz: await zoneOf(w.ctx), pitchId: pitch.id })).id);
   }
   return { entryIds: ids };
 }
@@ -171,7 +172,7 @@ async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?:
   if (entry.date && ((pitch.dates as string[] | undefined) ?? []).includes(entry.date as string)) patch.dates = (pitch.dates as string[]).filter((d) => d !== entry.date);
   const left = (await liveEntries(w, tourId)).filter((e) => e.kind === "option" && e.pitchId === pitch.id && e.id !== entry.id);
   if (!left.length && pitch.tourId === tourId) {
-    if (o.bucket) await w.create(entriesPath(w.ctx.artistId, tourId), { tourId, kind: "option", position: await positionOn(w, tourId, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id });
+    if (o.bucket) await w.create(entriesPath(w.ctx.artistId, tourId), { tourId, kind: "option", position: await positionOn(w, tourId, undefined), visibility: "admins", tz: await zoneOf(w.ctx), pitchId: pitch.id });
     else patch.tourId = null;
   }
   if (o.nextStep) patch.nextStep = o.nextStep;
@@ -224,7 +225,7 @@ export const toursList = defineCommand({
     "Admins also get totals (cents, records tagged with the tour whatever their project: inReceived, inOwed, outPaid, outOwed, net, netIfSettled, expected for shows not played yet). Members get no options and no money.",
   input: z.strictObject({ status: tourStatus.optional() }),
   async run(ctx, i) {
-    const today = todayOf(ctx);
+    const today = await todayOf(ctx);
     const tours = (await db.list(ctx, "tours")).filter((t) => !i.status || t.status === i.status);
     const rows = await Promise.all(tours.map(async (t) => {
       const entries = await readEntries(ctx, t.id);
@@ -278,7 +279,7 @@ export const toursSummary = defineCommand({
       warnings,
     };
     if (!seesAll(ctx)) return out;
-    const today = todayOf(ctx);
+    const today = await todayOf(ctx);
     const money = await tourMoney(ctx, id);
     const entryDate = new Map(entries.map((e) => [e.id, e.date as string | undefined]));
     return {
@@ -414,7 +415,7 @@ export const toursEntriesAdd = defineCommand({
     return run(ctx, async (w) => {
       await requireTour(w, tourId);
       const r = await w.create(entriesPath(w.ctx.artistId, tourId), {
-        ...fields, tourId, kind, date, position: await positionOn(w, tourId, date, { after, before }), visibility: visibility ?? "band", tz: tz ?? BAND_TIME_ZONE,
+        ...fields, tourId, kind, date, position: await positionOn(w, tourId, date, { after, before }), visibility: visibility ?? "band", tz: tz ?? await zoneOf(w.ctx),
         ...(facts.miles !== null ? { miles: facts.miles } : {}), ...(facts.minutes !== null ? { minutes: facts.minutes } : {}),
       });
       return { id: r.id, ...(facts.miles !== null ? { miles: facts.miles } : {}), ...(facts.minutes !== null ? { minutes: facts.minutes } : {}) };
@@ -533,7 +534,7 @@ export const toursBook = defineCommand({
       for (const x of all.filter((x) => x.kind === "option" && x.date === i.date && x.pitchId !== pitch.id)) {
         const choice = typeof i.others === "string" ? i.others : i.others[x.pitchId as string] ?? "keep";
         if (choice === "keep") continue;
-        await dropOption(w, i.tourId, x, choice === "tellBooked" ? { nextStep: { text: `Tell them we're booked on ${dayLabel(i.date)}`, due: todayOf(ctx) } } : { bucket: true });
+        await dropOption(w, i.tourId, x, choice === "tellBooked" ? { nextStep: { text: `Tell them we're booked on ${dayLabel(i.date)}`, due: await todayOf(ctx) } } : { bucket: true });
         dropped.push(x.pitchId as string);
       }
       if (i.addStay) {

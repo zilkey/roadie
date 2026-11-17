@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { INCOME_LABEL, METHOD_LABEL, formatCents, parseDollars } from "@/lib/money";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { showName } from "@/lib/shows";
 import type { MoneyInModalProps } from "./modals";
 import { useDoc, type Row } from "@/lib/firestore-hooks";
@@ -13,6 +13,7 @@ import { TourFields, useTourPick } from "./TourFields";
 import { celebrateMoneyIn } from "@/components/Celebrate";
 import { useProfile } from "@/lib/auth";
 import { useAdmins } from "./MoneyNav";
+import { useZone } from "@/lib/artist";
 
 const KINDS = Object.entries(INCOME_LABEL) as [string, string][];
 
@@ -42,7 +43,8 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
   const [from, setFrom] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("");
-  const [when, setWhen] = useState(dateInBandZone());
+  const zone = useZone();
+  const [when, setWhen] = useState(dateInZone(zone));
   const me = useProfile();
   const [gotBy, setGotBy] = useState(me.uid);
 
@@ -60,7 +62,7 @@ function InForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mone
     if (!canSave || !cents) return;
     const r = await call("income.add", {
       amount: cents, category, from: who, projectId: ps.projectId, ...(ps.showId ? { showId: ps.showId } : {}), ...(tr.trackId ? { releaseTrackId: tr.trackId } : {}), ...tp.payload,
-      date: got ? when : dateInBandZone(), ...(got ? { method, receivedAt: when } : {}),
+      date: got ? when : dateInZone(zone), ...(got ? { method, receivedAt: when } : {}),
     });
     // The server puts received money on the caller's worksheet; someone else's account is one more call.
     if (r && got && gotBy !== me.uid && r.id) await call("income.assign", { id: r.id, receivedBy: gotBy });

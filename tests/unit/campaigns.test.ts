@@ -68,6 +68,7 @@ test("groupByPromoter: venues nest under their first promoter; the promoter's ow
   assert.deepEqual(groupByPromoter([{ kind: "promoter", id: "p", promoters: [] }]).map((x) => x.type), ["row"], "a promoter with no venues on the page is a plain row");
 });
 
+const DEN = "America/Denver";
 test("emailCells: initial email, follow-up (same thread or a new one), replied, due, New reply", async () => {
   const { emailCells } = await import("@/lib/emailCells");
   const at = (iso: string) => ({ toMillis: () => Date.parse(iso) });
@@ -75,30 +76,30 @@ test("emailCells: initial email, follow-up (same thread or a new one), replied, 
   const t = (id: string, o: Record<string, unknown>) => ({ id, subject: `S ${id}`, lastDate: "2026-10-20T10:00:00Z", lastDirection: "sent", messageCount: 1, target: { kind: "venue", id: "v1" }, createdAt: at("2026-10-20T10:00:00Z"), ...o });
   const today = "2026-11-12";
   const toPitch = { ...p, status: "toPitch" };
-  assert.deepEqual(emailCells(toPitch, [], "v1", today), { newReply: false, threads: [] }, "no email yet: nothing (the page offers Write it)");
-  assert.deepEqual(emailCells(p, [], "v1", today).followUp, { kind: "due", due: false, quiet: true, days: 24 }, "pitched outside Roadie: the follow-up is still owed, with no thread to reply in");
+  assert.deepEqual(emailCells(toPitch, [], "v1", today, DEN), { newReply: false, threads: [] }, "no email yet: nothing (the page offers Write it)");
+  assert.deepEqual(emailCells(p, [], "v1", today, DEN).followUp, { kind: "due", due: false, quiet: true, days: 24 }, "pitched outside Roadie: the follow-up is still owed, with no thread to reply in");
   // One email, no answer, 23 days quiet: the follow-up is due.
-  let c = emailCells(p, [t("a", { pitchId: "p1" })], "v1", today);
+  let c = emailCells(p, [t("a", { pitchId: "p1" })], "v1", today, DEN);
   assert.deepEqual(c.initial, { threadId: "a", subject: "S a", date: "2026-10-20" });
   assert.equal(c.followUp?.kind, "due");
   // A follow-up we sent in the same thread.
-  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDate: "2026-11-03T09:00:00Z" })], "v1", today);
+  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDate: "2026-11-03T09:00:00Z" })], "v1", today, DEN);
   assert.deepEqual(c.followUp, { kind: "sent", threadId: "a", subject: "S a", date: "2026-11-03", newThread: false, more: 0 });
   // A follow-up in a new thread is marked; they replied in the first: the latest thread decides.
-  c = emailCells(p, [t("a", { pitchId: "p1" }), t("b", { pitchId: "p1", createdAt: at("2026-11-05T00:00:00Z"), lastDate: "2026-11-05T00:00:00Z" })], "v1", today);
+  c = emailCells(p, [t("a", { pitchId: "p1" }), t("b", { pitchId: "p1", createdAt: at("2026-11-05T00:00:00Z"), lastDate: "2026-11-05T00:00:00Z" })], "v1", today, DEN);
   assert.deepEqual(c.followUp, { kind: "sent", threadId: "b", subject: "S b", date: "2026-11-05", newThread: true, more: 0 });
-  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDirection: "received", lastDate: "2026-10-30T00:00:00Z" })], "v1", today);
+  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDirection: "received", lastDate: "2026-10-30T00:00:00Z" })], "v1", today, DEN);
   assert.deepEqual([c.followUp?.kind, c.newReply], ["replied", true]);
-  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDirection: "received", lastDate: "2026-10-30T00:00:00Z", lastSeenAt: at("2026-10-31T00:00:00Z") })], "v1", today);
+  c = emailCells(p, [t("a", { pitchId: "p1", messageCount: 2, lastDirection: "received", lastDate: "2026-10-30T00:00:00Z", lastSeenAt: at("2026-10-31T00:00:00Z") })], "v1", today, DEN);
   assert.equal(c.newReply, false, "opened since");
   // No thread names the pitch: the place's threads since the pitch began; older mail and another pitch's threads don't count.
-  c = emailCells(p, [t("old", { createdAt: at("2026-01-01T00:00:00Z") }), t("other", { pitchId: "p0" }), t("new", {})], "v1", today);
+  c = emailCells(p, [t("old", { createdAt: at("2026-01-01T00:00:00Z") }), t("other", { pitchId: "p0" }), t("new", {})], "v1", today, DEN);
   assert.deepEqual(c.threads, ["new"]);
   // A thread linked long after it was sent (Find sent emails) dates from its first message, not from when Roadie got it.
-  c = emailCells(p, [t("late", { pitchId: "p1", firstDate: "2026-10-03T12:00:00Z", createdAt: at("2026-11-12T00:00:00Z") })], "v1", today);
+  c = emailCells(p, [t("late", { pitchId: "p1", firstDate: "2026-10-03T12:00:00Z", createdAt: at("2026-11-12T00:00:00Z") })], "v1", today, DEN);
   assert.equal(c.initial?.date, "2026-10-03");
   // S8: a thread covering several pitches counts for each.
-  c = emailCells(p, [t("shared", { pitchId: "p0", pitchIds: ["p0", "p1"] })], "v1", today);
+  c = emailCells(p, [t("shared", { pitchId: "p0", pitchIds: ["p0", "p1"] })], "v1", today, DEN);
   assert.equal(c.initial?.threadId, "shared");
 });
 

@@ -1,5 +1,6 @@
 /** `context.now` and `search`: Roadie's two read tools. Both go through commands, so they return only what the caller may read. */
-import { BAND_TIME_ZONE, dateInBandZone, fmtInstant } from "@/lib/timezone";
+import { dateInZone, fmtInstant } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { addDays, isOff, isPlayed, SHOW_FILTERS, showCity, showFilter, showName, type ShowFilter, type ShowPlaceLike } from "@/lib/shows";
 import { incomeSoFar, owedToUs, owesBack, weOwe, type ExpenseLike, type IncomeLike, type PayoutLike } from "@/lib/money";
 import { RECORD_ROUTES } from "@/lib/routes";
@@ -13,15 +14,15 @@ const list = async (ctx: Ctx, kind: string): Promise<Row[]> =>
 const showLine = (s: Row) => ({ id: s.id, venue: showName(s as ShowPlaceLike), city: showCity(s as ShowPlaceLike), kind: s.kind, date: s.date, status: s.status, times: s.times });
 
 /** Until 6:00 the next morning, "tonight" is still the show that just happened. */
-export function tonightDate(now: Date): string {
-  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: BAND_TIME_ZONE, hour: "numeric", hour12: false }).format(now)) % 24;
-  const today = dateInBandZone(now);
+export function tonightDate(now: Date, zone: string): string {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", hour12: false }).format(now)) % 24;
+  const today = dateInZone(zone, now);
   return hour < 6 ? addDays(today, -1) : today;
 }
 
 export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "role" | "musicianId">) {
   const now = ctx.now ?? new Date();
-  const today = dateInBandZone(now);
+  const zone = await zoneOf(ctx), today = dateInZone(zone, now);
   const admin = s.role === "admin"; // income and payouts are admin-only
   const [shows, income, expenses, payouts, projects, artists, musicians, tours] = await Promise.all([
     list(ctx, "shows"), admin ? list(ctx, "income") : [], list(ctx, "expenses"), admin ? list(ctx, "payouts") : [], list(ctx, "projects"), list(ctx, "artists"), list(ctx, "musicians"),
@@ -36,10 +37,10 @@ export async function contextNow(ctx: Ctx, s: Pick<Session, "uid" | "name" | "ro
   const owe = admin ? weOwe({ payouts: payouts as PayoutLike[], expenses: expenses as ExpenseLike[], musicianUserId: (id) => musicians.find((m) => m.id === id)?.userId ?? undefined, personName: nameOf }) : [];
   // A show that hasn't happened yet is not owed to us yet: its guarantee is dated on the show.
   const owed = admin ? owedToUs({ income: incomeSoFar(income as IncomeLike[], today) }) : { items: [], total: 0 };
-  const tonight = tonightDate(now);
+  const tonight = tonightDate(now, zone);
   return {
     speaker: { userId: s.uid, name: s.name, role: s.role, musicianId: s.musicianId ?? null },
-    now: now.toISOString(), localTime: fmtInstant(now, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: BAND_TIME_ZONE,
+    now: now.toISOString(), localTime: fmtInstant(now, zone, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }), timeZone: zone,
     today, tonight,
     artist: a ? { id: a.id, name: a.name, slug: a.slug, configurations: ((a.configurations ?? []) as Row[]).map((c) => ({ id: c.id, name: c.name })) } : null,
     band: team.map((m) => ({ musicianId: m.id, name: m.name, userId: m.userId ?? null, instruments: m.instruments ?? [] })),
@@ -97,7 +98,7 @@ export const PAGE_LIST_ROWS = 40;
 export async function pageList(ctx: Ctx, page: PageContext) {
   if (page.route !== "shows") return null;
   const tab: ShowFilter = (SHOW_FILTERS as readonly string[]).includes(page.tab ?? "") ? (page.tab as ShowFilter) : "upcoming";
-  const today = dateInBandZone(ctx.now ?? new Date());
+  const today = dateInZone(await zoneOf(ctx), ctx.now ?? new Date());
   // Same order as the page: Upcoming soonest first, the rest most recent first.
   const rows = (await list(ctx, "shows")).filter((s) => showFilter(s as never, today) === tab)
     .sort((a, b) => (tab === "upcoming" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)));

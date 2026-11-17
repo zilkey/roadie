@@ -1,6 +1,6 @@
 "use client";
 import { draftPath } from "@/schema/drafts";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { AdminOnly } from "@/components/Guard";
@@ -37,7 +37,7 @@ import { queueHref, type QueueItem } from "@/lib/emailQueue";
 import { FollowUpDialog } from "@/components/booking/FollowUpDialog";
 
 /** A new next step's date when only its words are given: a week out. */
-const weekOut = () => { const d = new Date(todayStr() + "T12:00:00"); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); };
+const weekOut = (zone: string) => { const d = new Date(todayStr(zone) + "T12:00:00"); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); };
 import type { EmailThread } from "@/schema";
 import type { Campaign } from "@/schema";
 import { WeKnowChip, useVenuesWeKnow } from "@/components/booking/WhoWeKnow";
@@ -119,22 +119,22 @@ function Booking({ seg, campaign }: { seg: Tab; campaign?: CampaignKey }) {
   const filtering = !!((status && status !== (camp?.status === "closed" ? "all" : "")) || category || place.length || typeFilter.length);
   const scoped = useMemo(() => scope ? b.pitches.filter(scope) : [], [b.pitches, scope]);
   // The email columns read every thread of the band once (#82 S7): admins only, like the rules.
-  const { artistId } = useArtist();
+  const { artistId, timeZone: zone } = useArtist();
   const threads = useCollection<EmailThread>("emailThreads", { where: [["artistId", "==", artistId]], skip: seg !== "pitches" }).rows as ThreadLike[] | undefined; // Firestore hands back Timestamps
   // Write emails (#82 S9): the active pitches with no email yet (To Pitch or Future Pitch), and those whose follow-up is due.
   const queues = useMemo(() => {
     const initial: QueueItem[] = [], followUp: QueueItem[] = [];
     if (!threads) return { initial, followUp };
-    const today = todayStr();
+    const today = todayStr(zone);
     for (const p of scoped) {
       if (!isActive(p.status)) continue;
       const place = p.target.kind === "edition" ? b.editions.find((e) => e.id === p.target.id)?.festivalId ?? p.target.id : p.target.id;
-      const c = emailCells(p, threads, place, today);
+      const c = emailCells(p, threads, place, today, zone);
       if (!c.initial && (p.status === "toPitch" || p.status === "idea")) initial.push({ pitchId: p.id });
       else if (c.followUp?.kind === "due") followUp.push({ pitchId: p.id, ...(c.followUp.threadId ? { threadId: c.followUp.threadId } : {}) });
     }
     return { initial, followUp };
-  }, [scoped, threads, b.editions]);
+  }, [scoped, threads, b.editions, zone]);
 
   // Festivals tab: the server searches, sorts and pages it (festivals.page); the rows are drawn from the live data in that order.
   const [sort, setSortState] = useState<FestivalSort>(() => {
@@ -412,11 +412,12 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
     : seg === "promoters" ? ["Promoter", "Name", "City", "Email", ...(compact ? [] : ["Phone"]), "Pitch"]
     : seg === "contacts" ? ["Name", "Organization", "City", "Email", "Phone"]
     : ["Name", "Initial email", "Follow-up", "Status", "Next step"]; // a campaign page (#82 S7)
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   // Pitch List: Pitched or Talking with no contact (or, never contacted, since it was added) for QUIET_DAYS turns the row yellow.
   const quiet = (r: ListRow) => {
     const p = r.pitch;
-    return seg === "pitches" && !!p && (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today) ?? 0) >= QUIET_DAYS;
+    return seg === "pitches" && !!p && (quietDays(p.status, (p.lastContactAt ?? p.createdAt)?.toMillis(), today, zone) ?? 0) >= QUIET_DAYS;
   };
   const link = (r: Ref, testid?: string) => <Link href={hrefFor(r.kind, r.id)} className="nm" data-testid={testid}>{hl(r.name)}</Link>;
   // A row with an active pitch opens the pitch from its name; the place page is one click under it ("Venue page"). Without a pitch the name is the place page.
@@ -473,7 +474,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
       <td className="ns" data-testid={`next-step-${r.id}`}>
         <InlineValue testid={`next-text-${r.id}`} label="Next step" kind="text" value={n?.text ?? ""} canEdit enterSaves error={editError} emptyLabel="Add a next step"
           onSave={async (v) => { const t = v.trim(); if (t === (n?.text ?? "")) return true;
-            return !!(await edit("pitches.update", { id: p.id, patch: { nextStep: t ? { text: t, due: n?.due ?? weekOut() } : null } })); }} />
+            return !!(await edit("pitches.update", { id: p.id, patch: { nextStep: t ? { text: t, due: n?.due ?? weekOut(zone) } : null } })); }} />
         {n && <span className="sub"><InlineValue testid={`next-due-${r.id}`} label="Next step date" kind="date" value={n.due} display={`by ${fmtDate(n.due)}`} canEdit error={editError}
           onSave={async (v) => !v || v === n.due || !!(await edit("pitches.update", { id: p.id, patch: { nextStep: { text: n.text, due: v } } }))} /></span>}
       </td>
@@ -493,7 +494,7 @@ export function BookingTable({ seg, rows, onFlag, sort = "name", onSort, q = "",
   );
 
   // Campaign pages (#82 S7): Initial email, Follow-up, Status (+ New reply), from the band's emailThreads and the pitch.
-  const cellsOf = (r: ListRow) => r.pitch ? emailCells(r.pitch, threads ?? [], r.kind === "edition" ? r.festival!.id : r.id, today) : null;
+  const cellsOf = (r: ListRow) => r.pitch ? emailCells(r.pitch, threads ?? [], r.kind === "edition" ? r.festival!.id : r.id, today, zone) : null;
   /** The three email cells of a row: Initial email, Follow-up, Status. `same`: a venue whose group row shows the shared email. */
   const emailParts = (r: ListRow, same = false): [ReactNode, ReactNode, ReactNode] => {
     const p = r.pitch, c = cellsOf(r);

@@ -1,11 +1,12 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { useMemo } from "react";
 import { PageTitle } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { AdminOnly } from "@/components/Guard";
 import { useCollection } from "@/lib/firestore-hooks";
 import { fmtLen } from "@/lib/music";
+import { todayStr } from "@/lib/booking";
 import { RELEASE_KIND_LONG, isReleased, totalLength, trackProgress } from "@/lib/releases";
 import { defaultProject, formatCents, projectTotals } from "@/lib/money";
 import { useReleases } from "@/components/releases/common";
@@ -27,6 +28,7 @@ function Releases() {
   const payouts = useCollection<Payout>("payouts", { skip: !admin });
   const projects = useCollection<Project>("projects", { skip: !admin });
 
+  const zone = useZone(), today = todayStr(zone);
   const rows = useMemo(() => {
     const def = defaultProject(projects.rows ?? [])?.id;
     return releases.map((a) => {
@@ -35,12 +37,12 @@ function Releases() {
       return { a, count: mine.length, len: totalLength(mine), p: trackProgress(mine), spent: t ? t.outPaid + t.outOwed : 0, earned: t ? t.inReceived + t.inOwed : 0 };
     }).sort((x, y) => {
       // Unreleased first, by release date (no date last), then title.
-      const rx = isReleased(x.a) ? 1 : 0, ry = isReleased(y.a) ? 1 : 0;
+      const rx = isReleased(x.a, today) ? 1 : 0, ry = isReleased(y.a, today) ? 1 : 0;
       if (rx !== ry) return rx - ry;
       const dx = x.a.releaseDate ?? "￿", dy = y.a.releaseDate ?? "￿";
       return dx < dy ? -1 : dx > dy ? 1 : x.a.title.localeCompare(y.a.title);
     });
-  }, [releases, tracks, admin, income.rows, expenses.rows, payouts.rows, projects.rows]);
+  }, [releases, tracks, admin, income.rows, expenses.rows, payouts.rows, projects.rows, today]);
 
   if (!loading && releases.length === 0) {
     return (
@@ -82,7 +84,7 @@ function Releases() {
                     </span>
                   </div>
                 </td>
-                <td className="whitespace-nowrap" data-testid="release-progress">{isReleased(a) ? <span className="pill ok">Released</span> : p.total ? `Tracked ${p.tracked}/${p.total} · Mixed ${p.mixed}/${p.total} · Mastered ${p.mastered}/${p.total}` : <span className="dash">No tracks yet</span>}</td>
+                <td className="whitespace-nowrap" data-testid="release-progress">{isReleased(a, today) ? <span className="pill ok">Released</span> : p.total ? `Tracked ${p.tracked}/${p.total} · Mixed ${p.mixed}/${p.total} · Mastered ${p.mastered}/${p.total}` : <span className="dash">No tracks yet</span>}</td>
                 <td className="len whitespace-nowrap">{count}{len ? ` · ${fmtLen(len)}` : ""}</td>
                 <td className="whitespace-nowrap">{a.releaseDate ? fmtRelease(a.releaseDate) : <span className="dash">Not set</span>}</td>
                 {admin && <td className="len">{formatCents(spent)}</td>}

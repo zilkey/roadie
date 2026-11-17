@@ -3,6 +3,7 @@ import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
+import { zoneOf } from "../zone";
 import type { Ctx } from "../ctx";
 import { plotLink, newToken, saveToken, readToken, deleteToken } from "../stagePlotShare";
 import { hashToken } from "../availability";
@@ -406,7 +407,7 @@ export const stagePlotsStaleShows = defineCommand({
       db.list(ctx, "stagePlots"),
       db.list(ctx, "shows"),
     ]);
-    const today = todayStr(ctx.now);
+    const today = todayStr(await zoneOf(ctx), ctx.now);
     const byId = new Map(plots.map((p) => [p.id, p]));
     const forLineup = (cfg: string) => plots.filter((p) => p.configurationId === cfg).sort((a, b) => String(a.name).localeCompare(String(b.name)))[0];
     const rows: Record<string, unknown>[] = [];

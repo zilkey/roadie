@@ -6,9 +6,8 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
-import { useArtist } from "@/lib/artist";
+import { useArtist, useZone } from "@/lib/artist";
 import { useProfile } from "@/lib/auth";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { fmtPitchDate, sortedDates, todayStr } from "@/lib/booking";
 import { askDatesPhrase, fmtLong, retargetAskMessage, type Answer } from "@/lib/shows";
 import { ANSWER_FOOT, ANSWER_WORD, DateAnswerCard } from "@/components/shows/DateAnswers";
@@ -48,6 +47,7 @@ export function PitchDates({ pitchId, dates, onDatesChange, onBlur, personnel, p
   pitchId: string; dates: string[]; onDatesChange(dates: string[]): void; onBlur(): void; personnel: string[]; place: string; musicians: Row<Musician>[];
 }) {
   const { asks, answer, asked } = usePitchAsks(pitchId);
+  const zone = useZone();
   // Dates that were asked about stay as columns after they leave the pitch's list, so their answers don't vanish.
   const cols = sortedDates([...new Set([...dates, ...asks.map((a) => a.date)])]);
   const ids = [...new Set([...personnel, ...asks.flatMap((a) => a.askedMusicianIds)])];
@@ -56,7 +56,7 @@ export function PitchDates({ pitchId, dates, onDatesChange, onBlur, personnel, p
   const best = Math.max(0, ...free);
   const everyDate = people.filter((p) => cols.length > 0 && cols.every((d) => answer(d, p.id))).length;
   const last = asks[0];
-  const lastAt = last ? new Date(ms(last.sentAt ?? last.createdAt)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "";
+  const lastAt = last ? new Date(ms(last.sentAt ?? last.createdAt)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone }) : "";
 
   const [draft, setDraft] = useState("");
   function add() {
@@ -166,6 +166,7 @@ function MyDates({ pitchId, dates }: { pitchId: string; dates: string[] }) {
 /** Ask who's free about any of the pitch's dates: one message, one link per person for every date picked. */
 function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians }: { pitchId: string; cols: string[]; defaultIds: string[]; place: string; musicians: Row<Musician>[] }) {
   const { call, error, busy } = useCommand();
+  const zone = useZone();
   const groupUrl = useArtist().doc?.signalGroupUrl;
   const lastChannel = useLastChannel();
   const answerPage = useAnswerPage();
@@ -177,7 +178,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
   const mutationId = useRef(newMutationId());
   const { picked, msg, seen } = draft.value;
   // Every date still ahead is in the ask until it's tapped off; one added to the pitch after a tap joins it too.
-  const fresh = cols.filter((d) => d >= todayStr() && !(seen ?? []).includes(d));
+  const fresh = cols.filter((d) => d >= todayStr(zone) && !(seen ?? []).includes(d));
   const on = draft.value.dates ? sortedDates([...new Set([...draft.value.dates.filter((d) => cols.includes(d)), ...fresh])]) : fresh;
   // No Signal group set: no choice at all, email as always.
   const channel: Channel = groupUrl ? (draft.value.channel ?? lastChannel ?? "email") : "email";

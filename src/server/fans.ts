@@ -14,8 +14,7 @@ import { inFanWindow, showTimeAt, signupShow, type PickableShow } from "@/lib/pi
 import { ARTIST_LINKS, normalizeInstagramUrl, paymentAppOf, type FanLink, type MerchItem } from "@/schema/artists";
 import type { ShowFanPage } from "@/schema/shows";
 import { withScheme } from "@/lib/links";
-import { dateInBandZone } from "@/lib/timezone";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
+import { zoneOf } from "./zone";
 import { publicShowName, showCity, type ShowPlaceLike } from "@/lib/shows";
 import { DEFAULT_LIST_WORDING, mergeCities, parseCity, sameCity, type CityLike } from "@/lib/fans";
 
@@ -52,7 +51,7 @@ export function showLabel(s: Doc): string {
   return city && !name.includes(city) ? `${name} · ${city}` : name;
 }
 
-/** Venue time zones by venue id (hand-picked on the venue; missing = the band's zone). */
+/** Venue time zones by venue id (hand-picked on the venue; missing = the artist's zone). */
 async function venueZones(ctx: Ctx, shows: Doc[]): Promise<Map<string, string>> {
   const ids = [...new Set(shows.map((s) => s.venue?.id as string | undefined).filter((x): x is string => !!x))];
   const docs = await Promise.all(ids.map((v) => db.get(ctx, "venues", v)));
@@ -113,8 +112,8 @@ export const publicNameOf = (a: Doc): string => (typeof a.publicName === "string
 /** The show a signup at `now` belongs to (signupShow over the artist's confirmed and played shows, each in its venue's zone). */
 async function currentShow(ctx: Ctx, now: Date): Promise<ShowDoc | null> {
   const shows = (await artistShows(ctx)).filter(countable) as ShowDoc[];
-  const zones = await venueZones(ctx, shows);
-  return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE });
+  const zones = await venueZones(ctx, shows), zone = await zoneOf(ctx);
+  return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? zone });
 }
 
 /**
@@ -125,10 +124,11 @@ async function currentShow(ctx: Ctx, now: Date): Promise<ShowDoc | null> {
 async function showsOnPage(ctx: Ctx, now: Date, previewId?: string): Promise<FanShowLine[]> {
   const live = (s: Doc) => !s.deletedAt && s.status !== "canceled" && s.status !== "dropped" && !!(s.fanPage as ShowFanPage | undefined)?.amountCents;
   const all = (await artistShows(ctx)).filter(live) as ShowDoc[];
-  const zones = await venueZones(ctx, all);
+  const zones = await venueZones(ctx, all), zone = await zoneOf(ctx);
+  const zoneFor = (s: Doc) => zones.get(s.venue?.id) ?? zone;
   const picked = all
-    .filter((s) => s.id === previewId || ((s.fanPage as ShowFanPage).on && inFanWindow(showTimeAt(s, zones.get(s.venue?.id) ?? BAND_TIME_ZONE), now)))
-    .sort((a, b) => a.date.localeCompare(b.date) || showTimeAt(a) - showTimeAt(b));
+    .filter((s) => s.id === previewId || ((s.fanPage as ShowFanPage).on && inFanWindow(showTimeAt(s, zoneFor(s)), now)))
+    .sort((a, b) => a.date.localeCompare(b.date) || showTimeAt(a, zoneFor(a)) - showTimeAt(b, zoneFor(b)));
   return picked.map((s) => {
     const f = s.fanPage as ShowFanPage;
     return { id: s.id, name: f.name?.trim() || publicShowName(s as unknown as ShowPlaceLike), amountCents: f.amountCents!, button: f.button ?? "ticket" };

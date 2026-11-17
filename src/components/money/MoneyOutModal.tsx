@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useArtist } from "@/lib/artist";
+import { useArtist, useZone } from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection, useDoc, useDocs, type Row } from "@/lib/firestore-hooks";
 import { PanelStatus, useInstantSave } from "@/components/shows/saved";
 import { useProfile } from "@/lib/auth";
 import { EXPENSE_LABEL, METHOD_LABEL, PAYOUT_KIND_LABEL, formatCents, parseDollars } from "@/lib/money";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { fmtLong, showName } from "@/lib/shows";
 import { roleIn, type Contact, type Expense, type Musician, type Payout, type Project, type Release, type ReleaseTrack, type Show, type User } from "@/schema";
 import { sortTracks } from "@/lib/releases";
@@ -318,7 +318,8 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
   const [link, setLink] = useState("");
   const [showLink, setShowLink] = useState(false);
   const [method, setMethod] = useState("");
-  const [when, setWhen] = useState(defaults?.drive?.date ?? dateInBandZone());
+  const zone = useZone();
+  const [when, setWhen] = useState(defaults?.drive?.date ?? dateInZone(zone));
   const [payer, setPayer] = useState(me.role === "admin" ? me.uid : "");
   const [payBack, setPayBack] = useState(false);
   // Reimbursable: the bandmate who paid out of pocket (the We owe card opens this on a person).
@@ -504,7 +505,8 @@ function MarkPaidForm({ onClose, target }: { onClose(): void; target: { kind: "e
   const expense = useDocs<Expense>("expenses", [target.id], { skip: target.kind !== "expense" });
   const payout = useDocs<Payout>("payouts", [target.id], { skip: target.kind !== "payout" });
   const [payer, setPayer] = useState(me.role === "admin" ? me.uid : "");
-  const [when, setWhen] = useState(dateInBandZone());
+  const zone = useZone();
+  const [when, setWhen] = useState(dateInZone(zone));
   const [method, setMethod] = useState("");
   const rec = target.kind === "expense" ? expense.rows[0] : payout.rows[0];
   const toName = target.kind === "expense" ? expense.rows[0]?.to?.name ?? expense.rows[0]?.what ?? "" : payout.rows[0]?.to.name ?? "";

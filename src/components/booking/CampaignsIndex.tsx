@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { DialogClose } from "@/components/booking/AddContactDialog";
@@ -31,16 +31,17 @@ function Campaigns() {
     return by;
   }, [b.pitches, live]);
   const history = (id: string) => b.pitches.filter((p) => p.campaignId === id);
-  const today = todayStr();
-  const due = (ps: PitchRow[]) => ps.filter((p) => followUpFor(p, today)).length;
+  const zone = useZone();
+  const today = todayStr(zone);
+  const due = (ps: PitchRow[]) => ps.filter((p) => followUpFor(p, today, zone)).length;
   const last = (ps: PitchRow[]) => Math.max(0, ...ps.map((p) => p.lastContactAt?.toMillis() ?? 0));
-  const day = (ms: number) => (ms ? fmtInstant(ms, { month: "short", day: "numeric" }) : <Dash />);
+  const day = (ms: number) => (ms ? fmtInstant(ms, zone, { month: "short", day: "numeric" }) : <Dash />);
   const roll = (ps: PitchRow[]) => {
     const c = statusCounts(ps);
     return c.length ? <span className="flex flex-wrap gap-1">{c.map(({ status, n }) => <StatusChip key={status} status={status} label={`${n} ${STATUS_LABEL[status]}`} />)}</span> : <Dash />;
   };
   const rows = [{ id: ONGOING, name: ROUTES.bookingPitches.title, sub: "Pitches not in another campaign", href: ROUTES.bookingPitches.path },
-    ...active.map((c) => ({ id: c.id, name: c.name, sub: c.createdAt ? `Started ${fmtInstant((c.createdAt as { toMillis(): number }).toMillis(), { month: "short", day: "numeric" })}` : "", href: `/booking/campaigns/${c.id}` }))];
+    ...active.map((c) => ({ id: c.id, name: c.name, sub: c.createdAt ? `Started ${fmtInstant((c.createdAt as { toMillis(): number }).toMillis(), zone, { month: "short", day: "numeric" })}` : "", href: `/booking/campaigns/${c.id}` }))];
 
   return (
     <div className="grid gap-5" data-testid="campaigns-page">

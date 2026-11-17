@@ -1,14 +1,13 @@
 "use client";
 import Link, { useArtist } from "@/lib/artist";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useCollection } from "@/lib/firestore-hooks";
 import { Flagged, FlagIcon, PitchDates, StatusPill, type PitchRow } from "@/components/booking/common";
 import { fmtDate, isActive, todayStr } from "@/lib/booking";
 import { ms, pastPitches, pitchLineParts, pitchOutcome, pitchWhen } from "@/lib/pitchSummary";
 import type { Edition, EmailThread, User } from "@/schema";
 
-const monDay = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
-const monYear = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: BAND_TIME_ZONE });
+const monDay = (t: unknown, zone: string) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone }) : "");
+const monYear = (t: number, zone: string) => new Date(t).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: zone });
 
 const ACTIVE_BORDER = "color-mix(in srgb, var(--accent) 45%, var(--border))";
 
@@ -24,12 +23,12 @@ function Head({ active, status, children }: { active: boolean; status?: string; 
 
 /** The active pitch: configuration, date chips, and last contact / next step / who's handling it. */
 function ActiveRow({ p, label }: { p: PitchRow; label?: string }) {
-  const { doc: artist } = useArtist();
+  const { doc: artist, timeZone: zone } = useArtist();
   const users = useCollection<User>("users").rows ?? [];
   const config = artist?.configurations.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet";
   const assignee = users.find((u) => u.id === p.assigneeId)?.name.split(" ")[0];
   const line = [
-    monDay(p.lastContactAt) && `Last contact ${monDay(p.lastContactAt)}`,
+    monDay(p.lastContactAt, zone) && `Last contact ${monDay(p.lastContactAt, zone)}`,
     p.nextStep?.text && `Next step: ${p.nextStep.text}${p.nextStep.due ? ` by ${fmtDate(p.nextStep.due)}` : ""}`,
     assignee && `${assignee}'s handling it`,
   ].filter(Boolean).join(" · ");
@@ -40,7 +39,7 @@ function ActiveRow({ p, label }: { p: PitchRow; label?: string }) {
           {label && <b>{label}</b>}
           {label && <StatusPill status={p.status} />}
           <b className="text-[1rem]" data-testid="pitch-config">{config}</b>
-          <PitchDates dates={p.dates} today={todayStr()} testid="pitch-dates-summary" empty="No dates yet" />
+          <PitchDates dates={p.dates} today={todayStr(zone)} testid="pitch-dates-summary" empty="No dates yet" />
         </div>
         {line && <span className="d-muted text-[0.875rem]" data-testid="pitch-summary-line">{line}</span>}
       </div>
@@ -61,11 +60,11 @@ export function usePlaceThreads(kind: "venue" | "promoter" | "festival", placeId
 
 /** "Pitched before: Duo, Mar 2026 · Became a show · see it", the most recent, then "and N more", then " · 3 email threads" linked to the newest thread. Nothing when there are neither. */
 function PastLine({ past, threads = [] }: { past: PitchRow[]; threads?: ThreadSummary[] }) {
-  const { doc: artist } = useArtist();
+  const { doc: artist, timeZone: zone } = useArtist();
   const parts = pitchLineParts(past.length > 0, threads.length);
   if (!parts.past && !parts.threads) return null;
   const name = (p: PitchRow) => artist?.configurations.find((c) => c.id === p.pitchedAs)?.name ?? "Not sure yet";
-  const when = (p: PitchRow) => (pitchWhen(p) ? `, ${monYear(pitchWhen(p))}` : "");
+  const when = (p: PitchRow) => (pitchWhen(p) ? `, ${monYear(pitchWhen(p), zone)}` : "");
   const [first, ...more] = past;
   const newest = [...threads].sort((a, b) => b.lastDate.localeCompare(a.lastDate))[0];
   return (

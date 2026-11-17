@@ -12,7 +12,7 @@ beforeEach(async () => { await resetEmulators(); await approveTestEditors("rudy"
 const T0 = new Date("2026-10-01T12:00:00Z");
 const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId(), now: new Date(T0.getTime() + ms), ...extra });
 const cfg = (id: string, name: string) => ({ id, name, billingName: name, musicianIds: [] });
-const artist = (configurations: unknown[]) => ({ name: "The Band", slug: "the-band", configurations, links: {}, driveFolderId: "d" });
+const artist = (configurations: unknown[]) => ({ name: "The Band", slug: "the-band", timeZone: "America/Denver", configurations, links: {}, driveFolderId: "d" });
 
 test("each change is an entry at {doc}/history/{rev}, only changed fields, same transaction; nothing at the top level", async () => {
   const ctx = importCtx(TEST_ARTIST, "tester", "run-1");

@@ -148,7 +148,7 @@ test("upsertEvents links acts: creates new ones once, reuses them on a second ru
 });
 
 test("upsertEvents does not make an act of this band's own name", async () => {
-  await db.create(ctx, "artists", { name: "The Moonlighters", slug: "moon", configurations: [], links: {}, driveFolderId: "" }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", name: "The Moonlighters", slug: "moon", configurations: [], links: {}, driveFolderId: "" }, { id: TEST_ARTIST });
   const v = await makeVenue("Pine Hollow Lounge");
   await upsertEvents(v, "selectors", [draft("s1", "2026-11-20", [["Moonlighters", "headliner"], ["Denson", "support"]])], NOW, TZ);
   assert.deepEqual((await db.list(SYS, "acts")).map((a) => a.name), ["Denson"]);

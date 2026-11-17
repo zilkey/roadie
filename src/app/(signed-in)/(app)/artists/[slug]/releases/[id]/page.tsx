@@ -3,7 +3,8 @@ import { BackLink } from "@/components/BackLink";
 import { AdminOnly } from "@/components/Guard";
 import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import { todayStr } from "@/lib/booking";
+import Link, { useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { SongSearch } from "@/components/music/SongSearch";
 import { Menu } from "@/components/Menu";
 import { InlineValue } from "@/components/InlineValue";
@@ -39,6 +40,8 @@ function Page() {
 
 function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
   const { admin, tracks } = d;
+  const zone = useZone();
+  const today = todayStr(zone);
   const router = useRouter();
   const raw = useSearchParams().get("tab");
   // Money is admins-only, even by URL: a member asking for it gets the tracks.
@@ -79,7 +82,7 @@ function ReleaseView({ d, release }: { d: ReleaseData; release: ReleaseRow }) {
                 : <div role="img" aria-label="No cover yet" className="grid h-[148px] w-[148px] shrink-0 place-items-center rounded-xl border-2 border-dashed text-sm font-semibold text-muted" data-testid="release-cover">Cover</div>}
               <div className="grid min-w-0 flex-1 content-start gap-2">
                 <div className="s" data-testid="release-kind">{RELEASE_KIND_LONG[release.kind]}</div>
-                <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate)}</div>
+                <div className="text-[0.9375rem]" data-testid="release-meta">{releaseMeta(release, tracks, fmtLen, fmtDate, today)}</div>
                 <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.9375rem]">
                   <span data-testid="release-progress">Tracked <b>{p.tracked}/{n}</b> · Mixed <b>{p.mixed}/{n}</b> · Mastered <b>{p.mastered}/{n}</b></span>
                   {admin && <Spent release={release} />}

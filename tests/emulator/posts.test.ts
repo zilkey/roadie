@@ -24,7 +24,7 @@ import { dayLabels, groupByDay } from "@/lib/photoDays";
 import sharp from "sharp";
 import { GET as callbackGET } from "@/app/api/meta/callback/route";
 import { SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { migratePosts49, titleFor, INTERRUPTED } from "../../scripts/migrate-posts-49";
 import { resetEmulators, makeUser, TEST_ARTIST, SYS } from "./helpers";
 import { undoRun } from "@/server/undo";
@@ -85,7 +85,7 @@ beforeEach(async () => {
   hugo = await makeUser("hugo@example.com", "member", { name: "Hugo" });
   ctx = { uid: rudy.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   for (const k of ["rudy", "nora"]) await db.create(ctx, "musicians", { name: k, instruments: [], active: true, email: `${k}@example.com` });
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
 // ---------- connecting ----------
@@ -420,7 +420,7 @@ test("migration: a dry run changes nothing; --apply moves each #49 photo into it
   assert.match(early.skipped[0].reason, /run Set up/);
   const { posts: { id: postsId } } = await cmd("posts.setup", {});
 
-  const created = dateInBandZone((await db.get(SYS, "posts", posted))!.createdAt.toDate());
+  const created = dateInZone("America/Denver", (await db.get(SYS, "posts", posted))!.createdAt.toDate());
   const before = JSON.stringify([await db.list(SYS, "posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
   const dry = await migratePosts49({ apply: false });
   assert.deepEqual(dry.migrated.map((m) => [m.postId, m.folder]).sort(), [[posted, `${created} - Roots Music Project, thank you!`], [stuck, `DRAFT - Photo ${created}`]].sort());
@@ -914,7 +914,7 @@ test("publish: one photo is one image container with its alt text, then publishe
   assert.equal(m.caption, "Thanks, Roots! #live");
   assert.equal(m.alt, "The band on the Roots stage");
   assert.match(m.imageUrl, new RegExp(`/api/posts/media/${id}/0\\?`));
-  assert.equal(await folderOf(id), `${dateInBandZone()} - Thanks, Roots`);
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Thanks, Roots`);
   await refused(cmd("posts.updateDraft", { id, patch: { caption: "x" } }), "post_locked", "This post has gone out; it can't be changed");
   await refused(cmd("posts.publish", { id }), "post_locked", "This post has gone out; it can't be changed");
 });
@@ -933,7 +933,7 @@ test("publish: a carousel is an item container per photo in the editor's order (
   assert.deepEqual(m.children!.map((c) => [new URL(c.imageUrl).pathname, c.alt]), [
     [`/api/posts/media/${id}/0`, undefined], [`/api/posts/media/${id}/1`, "Nora at the mic"], [`/api/posts/media/${id}/2`, undefined],
   ]);
-  assert.equal(await folderOf(id), `${dateInBandZone()} - Hi-Dive announcement`);
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Hi-Dive announcement`);
 });
 
 test("publish: a carousel item Instagram can't use leaves the post failed with the reason and the photo, Drive untouched; it can be posted again", async () => {
@@ -955,7 +955,7 @@ test("publish: a carousel item Instagram can't use leaves the post failed with t
   assert.equal((await cmd("posts.publish", { id })).status, "posted");
   const after = (await db.get(SYS, "posts", id))!;
   assert.equal(after.error, undefined, "the old reason is cleared");
-  assert.equal(await folderOf(id), `${dateInBandZone()} - Tour`);
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Tour`);
 });
 
 test("publish: a HEIC Drive has no preview of yet fails before Instagram is asked, saying so", async () => {
@@ -997,7 +997,7 @@ test("publish: a failed folder rename leaves the post posted with driveTidy; tid
   await driveScenario({ failRename: false });
   assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
   assert.equal((await db.get(SYS, "posts", id))!.driveTidy, undefined);
-  assert.equal(await folderOf(id), `${dateInBandZone()} - Roots`);
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Roots`);
   assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
 });
 
@@ -1075,7 +1075,7 @@ test("publish: one video is a Reel (media_type REELS with its video URL and the 
   const p = (await db.get(SYS, "posts", id))!;
   assert.equal(p.status, "posted");
   assert.equal(p.pending, undefined, "nothing left pending");
-  assert.equal(await folderOf(id), `${dateInBandZone()} - Encore`);
+  assert.equal(await folderOf(id), `${dateInZone("America/Denver")} - Encore`);
 });
 
 test("publish: a carousel can mix photos and videos: an image item or a VIDEO item each, in order, then the carousel", async () => {

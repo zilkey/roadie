@@ -38,6 +38,7 @@
     "migrate:driving": "tsx scripts/migrate-driving.ts",
     "migrate:tenancy": "tsx scripts/migrate-tenancy.ts",
     "migrate:time-zones": "tsx scripts/migrate-time-zones.ts",
+    "resync:calendar": "tsx scripts/resync-calendar.ts",
     "sync:claims": "tsx scripts/sync-claims.ts",
     "test:all": "tsx scripts/test-all.ts"
   },

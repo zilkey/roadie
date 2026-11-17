@@ -22,6 +22,8 @@ export interface CurrentArtist {
   musicianId?: string;
   /** The live artists/{id} document (null while loading). */
   doc: Row<Artist> | null;
+  /** The artist's IANA time zone (the live doc's, else the session's while it loads): every "today" and printed time uses it. */
+  timeZone: string;
 }
 
 export const ArtistContext = createContext<CurrentArtist | null>(null);
@@ -33,6 +35,8 @@ export function useArtist(): CurrentArtist {
   return a;
 }
 export const useMaybeArtist = () => useContext(ArtistContext);
+/** The artist's time zone ("America/Denver"): "today", printed times and day-of clocks in the browser. Only inside /artists/[slug]. */
+export const useZone = (): string => useArtist().timeZone;
 
 /**
  * Band pages write their links artist-relative ("/shows/1", "/booking"). Inside an artist these become

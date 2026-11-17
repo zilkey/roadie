@@ -41,7 +41,7 @@ beforeEach(async () => {
   }
   ids.sam = (await db.create(ctx, "musicians", { name: "sam", instruments: [], active: true })).id; // no email: not a "member" for sharing
   ids.gone = (await db.create(ctx, "musicians", { name: "gone", instruments: [], active: false, email: "gone@example.com" })).id;
-  await db.create(ctx, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", chartsFolderId: "fake-folder-charts", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", name: "Band", slug: "band", driveFolderId: "fake-band-folder", chartsFolderId: "fake-folder-charts", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
 test("drive.search returns audio/video/Docs/Word with who can't open each", async () => {

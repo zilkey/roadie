@@ -22,7 +22,7 @@ export type RoomRecord = Pick<VenueEventSource, "supportShare" | "billsSeen"> | 
 export const OPENER_DISCLAIMER = "A guess from the listing, not perfect.";
 
 /** Likely opener slot / Maybe (the reasons and the disclaimer as its title), On tour, New, Sold out, Cancelled. */
-export function EventBadges({ e, stats, today, isNew, genres }: { e: Ev; stats?: RoomRecord; today?: string; /** New since the viewer last looked (Venue calendars only) */ isNew?: boolean; genres?: OpenerCtx["genres"] }) {
+export function EventBadges({ e, stats, today, isNew, genres }: { e: Ev; stats?: RoomRecord; today: string; /** New since the viewer last looked (Venue calendars only) */ isNew?: boolean; genres?: OpenerCtx["genres"] }) {
   const o = openerChance(e, stats, today, genres);
   return (<>
     {(e.tourStops ?? 0) >= 2 && (

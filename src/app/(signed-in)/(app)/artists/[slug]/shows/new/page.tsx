@@ -3,7 +3,7 @@ import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
 import { Suspense, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { PageTitle, PickChip, useCommand } from "@/components/ui";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
@@ -45,6 +45,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   artist?: Row<Artist>; asks: Row<Availability>[];
 }) {
   const router = useRouter();
+  const zone = useZone();
   const { call, error, busy } = useCommand();
   const t = pitch?.target;
   const venueId = t?.kind === "venue" ? t.id : t?.kind === "promoter" ? promoters.find((p) => p.id === t.id)?.venueIds[0] ?? "" : "";
@@ -68,7 +69,7 @@ function NewShowForm({ pitchId, pitch, venues, promoters, editions, contacts, mu
   // A pitch with several dates: pick which become shows (one show each, sharing everything else). Default: the first upcoming one.
   const pitchDates = sortedDates(pitch?.dates);
   const [picked, setPicked] = useState<string[] | null>(null);
-  const firstUpcoming = pitchDates.find((d) => d >= todayStr()) ?? pitchDates[0];
+  const firstUpcoming = pitchDates.find((d) => d >= todayStr(zone)) ?? pitchDates[0];
   const chosen = pitchDates.length ? (picked ?? (firstUpcoming ? [firstUpcoming] : [])).slice().sort() : [];
   const extraIds = useRef<Record<string, string>>({});
 

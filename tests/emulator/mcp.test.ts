@@ -180,7 +180,7 @@ test("a good call returns the result and the session runId; dedupe merges instea
 
 test("MCP can draft an email but never send one", async () => {
   const { id: venueId } = await db.create(admin, "venues", venue("Marisol"));
-  const artist = await db.create(admin, "artists", { name: "Nora Quill Band", configurations: [] }).catch(() => null);
+  const artist = await db.create(admin, "artists", { timeZone: "America/Denver", name: "Nora Quill Band", configurations: [] }).catch(() => null);
   void artist;
   const p = await db.create(admin, "pitches", { target: { kind: "venue", id: venueId, name: "Marisol" }, status: "toPitch", personnel: [], showIds: [] });
   const gmail = gmailClient();

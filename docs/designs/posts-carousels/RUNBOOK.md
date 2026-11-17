@@ -197,7 +197,7 @@ These need the owner or production access. Record them as manual steps:
 - The token is renewed before the claim (the spec lists Start then Token), so a dead sign-in leaves the draft a draft instead of failed.
 - `publish` also clears `error` when it claims a failed post, so a successful re-post doesn't keep the old reason.
 - `tidy` that still fails throws `drive_tidy` (502) "Drive still said no: …" and keeps `driveTidy`.
-- The After-posting dialog computes the folder name client-side (`dateInBandZone()` + title); a ` (2)` suffix from a name clash wouldn't show there.
+- The After-posting dialog computes the folder name client-side (`dateInZone(zone)` + title, the artist's zone); a ` (2)` suffix from a name clash wouldn't show there.
 - The Photos page title also reads Social Media (the runbook named only `posts/page.tsx`); the tabs inside stay **Posts | Photos**.
 - e2e fix to phase 4's Drafts test: it read the draft id while the URL was still `/posts/photos` (the regex matched it); it now waits for the editor's URL.
 

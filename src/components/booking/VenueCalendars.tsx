@@ -15,7 +15,7 @@
  * a page can come up short; "Load more" still reads further. Genres come from every act (the Acts tab reads the same).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
 import { ErrorBox } from "@/components/ui";
@@ -29,7 +29,7 @@ import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
 import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
 import { REGION_LABEL, type Region } from "@/lib/regions";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import type { ActDoc, VenueEvent, VenueEventNote, VenueEventSource } from "@/schema";
 
 /** Shows per page. e2e sets a small one (NEXT_PUBLIC_VENUE_CALENDARS_PAGE) so its three fixture shows span two pages. */
@@ -57,7 +57,8 @@ function useLastLooked(): string | null {
 export function VenueCalendars() {
   const { artistId } = useArtist();
   const b = useBooking();
-  const today = dateInBandZone();
+  const zone = useZone();
+  const today = dateInZone(zone);
   // `pages` is how many pages the viewer asked for; `limit` is how far the query reads, grown past that when the filters hide rows.
   const [pages, setPages] = useState(1);
   const [limit, setLimit] = useState(CALENDARS_PAGE);

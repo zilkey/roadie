@@ -15,7 +15,7 @@ beforeEach(async () => {
   await resetEmulators();
   const admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
-  await db.create(importCtx(TEST_ARTIST), "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(importCtx(TEST_ARTIST), "artists", { timeZone: "America/Denver", slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   const v = (await call("venues.create", venue("Deep End"))) as { id: string };
   pitchId = ((await call("pitches.flag", { kind: "venue", id: v.id })) as { id: string }).id;
 });
@@ -60,7 +60,7 @@ test("needingFollowUp: Pitched and Talking quiet for 14 days, To Pitch never", a
   await call("pitches.move", { id: pitchId, status: "pitched" });
   await call("pitches.move", { id: other, status: "talking" });
   // Calendar days from the band-timezone today: a UTC date is a day ahead on Denver evenings.
-  const today = (days: number) => addDays(todayStr(), days);
+  const today = (days: number) => addDays(todayStr("America/Denver"), days); // the test artist is in Denver
   const quiet = async (days: number) => ((await call("pitches.needingFollowUp", { today: today(days) })) as { pitches: { id: string; reasons: string[] }[] })
     .pitches.filter((p) => p.reasons.some((r) => r.startsWith("No contact"))).map((p) => p.id).sort();
   assert.deepEqual(await quiet(13), []);

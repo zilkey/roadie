@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
 import { fmtInstant } from "@/lib/timezone";
+import { useZone } from "@/lib/artist";
 
 export interface MetaStatus {
   configured: boolean;
@@ -25,9 +26,9 @@ const cancelled = (why: string) => why === "user_denied" || why === "access_deni
   : `Instagram wasn't connected: ${why}.`;
 
 /** How long the sign-in lasts: renewed by Roadie, never expiring, or good until a date. */
-const lifetime = (c: NonNullable<MetaStatus["connection"]>) => c.renews ? "Roadie renews it"
+const lifetime = (c: NonNullable<MetaStatus["connection"]>, zone: string) => c.renews ? "Roadie renews it"
   : !c.expiresAt ? "Doesn't expire"
-  : `Good until ${fmtInstant(c.expiresAt, { month: "short", day: "numeric", year: "numeric" })}; connect again before then`;
+  : `Good until ${fmtInstant(c.expiresAt, zone, { month: "short", day: "numeric", year: "numeric" })}; connect again before then`;
 
 /**
  * Settings › Integrations › Instagram & Facebook (admins): the band's Instagram, connected once with Meta's Unified login
@@ -36,6 +37,7 @@ const lifetime = (c: NonNullable<MetaStatus["connection"]>) => c.renews ? "Roadi
  * live check each time the card opens.
  */
 export function MetaCard() {
+  const zone = useZone();
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const { call, error, busy, setError } = useCommand();
   const [note, setNote] = useState<string | null>(null);
@@ -78,8 +80,8 @@ export function MetaCard() {
         ) : c ? (
           <div className="grid gap-1" data-testid="meta-connected">
             <p className="m-0"><b data-testid="meta-account">@{c.instagram.username}</b> · {check?.working ? "Working" : "Sign in again"}</p>
-            <p className="s m-0" data-testid="meta-lifetime">{lifetime(c)}</p>
-            <p className="s m-0" data-testid="meta-by">Connected by {c.connectedBy.name} on {fmtInstant(c.connectedAt, { month: "short", day: "numeric" })}</p>
+            <p className="s m-0" data-testid="meta-lifetime">{lifetime(c, zone)}</p>
+            <p className="s m-0" data-testid="meta-by">Connected by {c.connectedBy.name} on {fmtInstant(c.connectedAt, zone, { month: "short", day: "numeric" })}</p>
             {check && !check.working && <p className="err m-0" data-testid="meta-reason">Instagram stopped answering: {check.reason} Connect again to fix it.</p>}
           </div>
         ) : (

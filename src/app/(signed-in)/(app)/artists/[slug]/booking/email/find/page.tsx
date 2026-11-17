@@ -6,7 +6,7 @@
  */
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle } from "@/components/ui";
 import { Crumbs, campaignsCrumb } from "@/components/booking/BookingNav";
@@ -16,7 +16,6 @@ import { runCommand, type CommandError } from "@/lib/commands";
 import { STATUS_LABEL, isActive, todayStr, type Status } from "@/lib/booking";
 import { emailCells, type ThreadLike } from "@/lib/emailCells";
 import { inCampaign, liveCampaigns, ONGOING } from "@/lib/campaigns";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { ROUTES } from "@/lib/routes";
 import type { EmailThread } from "@/schema";
 
@@ -25,7 +24,7 @@ type Found = { hits: Hit[] } | { error: string };
 const WHY: Record<Hit["why"], string> = { contact: "To a contact", subject: "Name in the subject", text: "Name in the email" };
 const AT_ONCE = 3;
 
-const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: BAND_TIME_ZONE });
+const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: zone });
 
 export default function Page() {
   return <AdminOnly><Suspense fallback={null}><FindSent /></Suspense></AdminOnly>;
@@ -35,7 +34,7 @@ function FindSent() {
   const params = useSearchParams();
   const campaign = params.get("campaign") || ONGOING;
   const b = useBooking();
-  const { artistId } = useArtist();
+  const { artistId, timeZone: zone } = useArtist();
   const threads = useCollection<EmailThread>("emailThreads", { where: [["artistId", "==", artistId]] }).rows as ThreadLike[] | undefined;
   const live = useMemo(() => liveCampaigns(b.campaigns), [b.campaigns]);
   const camp = campaign !== ONGOING ? live.get(campaign) : undefined;
@@ -46,8 +45,8 @@ function FindSent() {
   const [pitches, setPitches] = useState<PitchRow[] | null>(null);
   useEffect(() => {
     if (pitches || b.loading || !threads) return;
-    const today = todayStr();
-    setPitches(b.pitches.filter((p) => isActive(p.status) && inCampaign(p, campaign, live) && emailCells(p, threads, placeOf(p), today).threads.length === 0)
+    const today = todayStr(zone);
+    setPitches(b.pitches.filter((p) => isActive(p.status) && inCampaign(p, campaign, live) && emailCells(p, threads, placeOf(p), today, zone).threads.length === 0)
       .sort((x, y) => x.target.name.localeCompare(y.target.name)));
   }, [b.loading, threads, b.pitches]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -149,6 +148,7 @@ function Finder({ pitches, placeOf, title, back }: { pitches: PitchRow[]; placeO
 }
 
 function PitchFinds({ p, found, ticked, linked, disabled, onToggle }: { p: PitchRow; found?: Found; ticked: string[]; linked: string[]; disabled: boolean; onToggle(threadId: string): void }) {
+  const zone = useZone();
   const search = `/booking/email/search?target=${p.target.kind}:${p.target.id}&pitch=${p.id}`;
   return (
     <div className="grid gap-1.5 rounded-xl border p-3" style={{ borderColor: "var(--line)" }} data-testid={`find-pitch-${p.id}`}>
@@ -176,7 +176,7 @@ function PitchFinds({ p, found, ticked, linked, disabled, onToggle }: { p: Pitch
               <span className="s truncate">To {h.participants.join(", ") || "—"}</span>
               <span className="line-clamp-2 text-sm">{h.snippet}</span>
             </span>
-            <span className="s shrink-0">{short(h.lastDate)}</span>
+            <span className="s shrink-0">{short(h.lastDate, zone)}</span>
           </label>
         );
       })}

@@ -116,15 +116,16 @@ test("order and Dismiss are per person, in userPrefs, and touch nothing else", a
   assert.deepEqual((await firestore().doc(`userPrefs/${rudy.uid}`).get()).data()?.hiddenSections, ["money"], "other prefs are kept");
 });
 
+const DEN = "America/Denver";
 test("the follow-up rule (pure, shared with pitches.needingFollowUp): due next step, or Pitched/Talking quiet 14 days", () => {
   const at = (d: string) => ({ toMillis: () => Date.parse(d + "T18:00:00Z") });
   const today = "2026-11-12";
-  assert.equal(followUpFor({ status: "toPitch", createdAt: at("2026-01-01") }, today), null, "To Pitch never goes quiet");
-  assert.equal(followUpFor({ status: "pitched", lastContactAt: at("2026-10-30") }, today), null, "13 days");
-  assert.deepEqual(followUpFor({ status: "talking", lastContactAt: at("2026-10-29") }, today), { reasons: ["No contact for 14 days"], due: false, quiet: true, daysSinceContact: 14 });
-  assert.deepEqual(followUpFor({ status: "toPitch", nextStep: { text: "Send avails", due: "2026-11-12" }, createdAt: at("2026-11-01") }, today),
+  assert.equal(followUpFor({ status: "toPitch", createdAt: at("2026-01-01") }, today, DEN), null, "To Pitch never goes quiet");
+  assert.equal(followUpFor({ status: "pitched", lastContactAt: at("2026-10-30") }, today, DEN), null, "13 days");
+  assert.deepEqual(followUpFor({ status: "talking", lastContactAt: at("2026-10-29") }, today, DEN), { reasons: ["No contact for 14 days"], due: false, quiet: true, daysSinceContact: 14 });
+  assert.deepEqual(followUpFor({ status: "toPitch", nextStep: { text: "Send avails", due: "2026-11-12" }, createdAt: at("2026-11-01") }, today, DEN),
     { reasons: ['Next step "Send avails" was due 2026-11-12'], due: true, quiet: false, daysSinceContact: 11 });
-  assert.equal(followUpFor({ status: "pitched", nextStep: { text: "Later", due: "2026-11-13" }, lastContactAt: at("2026-11-10") }, today), null);
-  assert.equal(followUpFor({ status: "booked", nextStep: { text: "Old", due: "2026-01-01" } }, today), null, "not active");
-  assert.equal(followUpFor({ status: "pitched", lastContactAt: at("2026-11-01") }, today, 5)?.quiet, true, "quietDays is a parameter");
+  assert.equal(followUpFor({ status: "pitched", nextStep: { text: "Later", due: "2026-11-13" }, lastContactAt: at("2026-11-10") }, today, DEN), null);
+  assert.equal(followUpFor({ status: "booked", nextStep: { text: "Old", due: "2026-01-01" } }, today, DEN), null, "not active");
+  assert.equal(followUpFor({ status: "pitched", lastContactAt: at("2026-11-01") }, today, DEN, 5)?.quiet, true, "quietDays is a parameter");
 });

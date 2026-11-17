@@ -12,7 +12,7 @@ import { calendarClient, IntegrationError, type CalendarService } from "./integr
 import type { CalEventInput } from "./integrations/calendar";
 import { fmtDuration } from "@/lib/duration";
 import { addDays, fmtTime, isOff, showAddress, showCity, showName, type ShowPlaceLike } from "@/lib/shows";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
+import { showZone, zoneOf } from "./zone";
 
 export type CalendarKind = "shows" | "rehearsals";
 export interface Invitee { name: string; email: string }
@@ -61,7 +61,8 @@ async function load(ctx: Ctx, kind: CalendarKind, id: string) {
   return doc;
 }
 
-function showEvent(show: Doc, artist: Doc | null): Omit<CalEventInput, "attendees"> {
+/** The show's event; `zone` is its venue's, else the artist's (showZone). */
+function showEvent(show: Doc, artist: Doc | null, zone: string): Omit<CalEventInput, "attendees"> {
   const cfg = (artist?.configurations as { id: string; billingName: string }[] | undefined)?.find((c) => c.id === show.billedAs);
   const who = cfg?.billingName ?? artist?.name ?? "Show";
   const t = show.times as { loadIn?: string; soundcheck?: string; doors?: string; showStart?: string; set?: string; setLengthSec?: number };
@@ -74,18 +75,19 @@ function showEvent(show: Doc, artist: Doc | null): Omit<CalEventInput, "attendee
     dayOf && `Day-of contact: ${dayOf.name}${dayOf.phone ? ` ${dayOf.phone}` : ""}`,
   ].filter(Boolean).join("\n");
   return {
-    title: `${show.status === "hold" ? "HOLD: " : ""}${who} at ${showName(show as ShowPlaceLike)}`, ...eventTimes(show as unknown as Parameters<typeof eventTimes>[0]), timeZone: BAND_TIME_ZONE,
+    title: `${show.status === "hold" ? "HOLD: " : ""}${who} at ${showName(show as ShowPlaceLike)}`, ...eventTimes(show as unknown as Parameters<typeof eventTimes>[0]), timeZone: zone,
     location: [show.venue?.name, showAddress(show as ShowPlaceLike) ?? showCity(show as ShowPlaceLike)].filter(Boolean).join(", "), description: lines,
   };
 }
 
-function rehearsalEvent(r: Doc, artist: Doc | null): Omit<CalEventInput, "attendees"> {
+/** A rehearsal's event, on the artist's clock (`zone`). */
+function rehearsalEvent(r: Doc, artist: Doc | null, zone: string): Omit<CalEventInput, "attendees"> {
   const loc = r.location as { name?: string; address?: string } | undefined;
   const songs = (r.songs as { title: string; note?: string }[]).map((s) => `- ${s.title}${s.note ? ` (${s.note})` : ""}`);
   const description = [r.notes as string | undefined, songs.length ? `Songs:\n${songs.join("\n")}` : undefined].filter(Boolean).join("\n\n");
   return {
     title: `${artist?.name ? `${artist.name} rehearsal` : "Rehearsal"}${loc?.name ? ` at ${loc.name}` : ""}`, ...rehearsalTimes(r as unknown as Parameters<typeof rehearsalTimes>[0]),
-    timeZone: BAND_TIME_ZONE, location: [loc?.name, loc?.address].filter((x, i, a) => x && a.indexOf(x) === i).join(", "), description,
+    timeZone: zone, location: [loc?.name, loc?.address].filter((x, i, a) => x && a.indexOf(x) === i).join(", "), description,
   };
 }
 
@@ -106,7 +108,7 @@ async function build(ctx: Ctx, kind: CalendarKind, id: string) {
   const calendar = artist?.calendar as { id: string; name: string } | null | undefined;
   if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
   if (kind === "shows" && isOff(doc)) throw new AppError("invalid_input", `A ${doc.status} show doesn't go on the calendar. Remove its event instead.`, 400);
-  const body = kind === "shows" ? showEvent(doc, artist) : rehearsalEvent(doc, artist);
+  const body = kind === "shows" ? showEvent(doc, artist, await showZone(ctx, doc)) : rehearsalEvent(doc, artist, await zoneOf(ctx));
   const who = await invitees(ctx, kind, doc);
   const input: CalEventInput = { ...body, attendees: who.invitees.map((p) => p.email) };
   const hash = createHash("sha256").update(JSON.stringify([calendar.id, input])).digest("base64url").slice(0, 16);
@@ -149,6 +151,11 @@ async function sameDay(ctx: Ctx, kind: CalendarKind, doc: Doc, calendarId: strin
   }));
 }
 
+/** What the event would be sent as now, hashed like `calendarHash` (no Google call): differs from the stored hash when a send would change it. */
+export async function calendarHashNow(ctx: Ctx, kind: CalendarKind, id: string): Promise<string> {
+  return (await build(ctx, kind, id)).hash;
+}
+
 export async function calendarPreview(ctx: Ctx, kind: CalendarKind, id: string): Promise<CalendarPreview> {
   const { doc, calendar, input, who, hash } = await build(ctx, kind, id);
   // A Google error here just means we can't tell: the send says so if it matters.
@@ -156,7 +163,7 @@ export async function calendarPreview(ctx: Ctx, kind: CalendarKind, id: string):
   const deleted = ev === null || !!ev?.cancelled;
   return {
     calendar, action: doc.calendarEventId ? "update" : "create", unchanged: !!doc.calendarEventId && !deleted && doc.calendarHash === hash, deleted,
-    event: { title: input.title, start: input.start, end: input.end, allDay: !input.start.includes("T"), timeZone: input.timeZone ?? BAND_TIME_ZONE, location: input.location ?? "", description: input.description ?? "" },
+    event: { title: input.title, start: input.start, end: input.end, allDay: !input.start.includes("T"), timeZone: input.timeZone ?? (await zoneOf(ctx)), location: input.location ?? "", description: input.description ?? "" },
     ...who,
     existing: doc.calendarEventId ? [] : await sameDay(ctx, kind, doc, calendar.id),
   };

@@ -3,8 +3,7 @@ import { Crumbs, campaignCrumb, campaignsCrumb } from "@/components/booking/Book
 import type { Campaign } from "@/schema";
 import { PitchCampaignPicker } from "@/components/booking/MoveToCampaign";
 import { draftPath } from "@/schema/drafts";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
-import Link, { useArtist, useMaybeArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useMaybeArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
 import { ErrorBox, PageTitle, PickChip, Select, useCommand } from "@/components/ui";
 import { useAutosave } from "@/lib/autosave";
@@ -25,7 +24,7 @@ import { emailThreadId, roleIn, type Activity, type EmailThread, type Comment, t
 
 type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
-const when = (t?: unknown) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "");
+const when = (t: unknown, zone: string) => (ms(t) ? new Date(ms(t)).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone }) : "");
 
 /**
  * A pitch's own content: status, lineup, email, dates, tour, activity. On its own it has its own header (festival years and
@@ -117,7 +116,7 @@ export function PitchBody({ id, embedded = false, booking: extBooking, setBookin
   return (
     <div className={embedded ? "grid gap-5" : "show-page"} data-testid={embedded ? "pitch-body" : "pitch-page"} data-pitch-id={id}>
       {!embedded && <PageTitle back={<Crumbs items={[campaignsCrumb, home, { label: p.target.name }]} back={<BackLink href={home.href!} label={home.label} />} />} title={p.target.name}
-        sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt)}` : "No contact yet"}
+        sub={<>{p.lastContactAt ? `Last contact ${when(p.lastContactAt, current.timeZone)}` : "No contact yet"}
           <Link href={targetHref} className="s block font-semibold underline" data-testid="target-link">{p.target.kind === "venue" ? "Venue" : p.target.kind === "promoter" ? "Promoter" : "Festival"} page</Link></>}
         pill={<StatusPill status={p.status} />}
         actions={<div className="flex items-center gap-2">
@@ -216,7 +215,8 @@ export function PitchBody({ id, embedded = false, booking: extBooking, setBookin
 
 function TimelineRow({ t, threadHref }: { t: { at: number; who: string; kind: string; a: Row<Activity> & { body?: string } }; threadHref?: string }) {
   const a = t.a;
-  const date = t.at ? new Date(t.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE }) : "";
+  const zone = useZone();
+  const date = t.at ? new Date(t.at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone }) : "";
   let body: React.ReactNode;
   switch (t.kind) {
     case "status": body = a.fromStatus && a.toStatus ? <>Moved to <b>{STATUS_LABEL[a.toStatus]}</b>{a.text ? ` · ${a.text}` : ""}</> : <>{a.text ?? "Status set"}</>; break;

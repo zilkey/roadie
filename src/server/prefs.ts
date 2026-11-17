@@ -3,7 +3,7 @@ import { hiddenFromPrefs, normalizeOrder, SECTION_IDS, type SectionId } from "@/
 import type { PrintOptions } from "@/schema/print";
 import { readSavedPrintOptions } from "@/lib/print";
 import { pruneDismissed } from "@/lib/dayOf";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { firestore } from "./admin";
 
 const ref = (uid: string) => firestore().collection("userPrefs").doc(uid);
@@ -81,8 +81,8 @@ export async function dayOfDismissed(uid: string, artistId: string): Promise<str
 }
 
 /** Hides one row of the day-of banner for the caller. Keys older than a week are dropped on the way: their day is over. */
-export async function dismissDayOf(uid: string, artistId: string, key: string): Promise<string[]> {
-  const next = [...new Set([...pruneDismissed(await dayOfDismissed(uid, artistId), dateInBandZone()), key])];
+export async function dismissDayOf(uid: string, artistId: string, key: string, zone: string): Promise<string[]> {
+  const next = [...new Set([...pruneDismissed(await dayOfDismissed(uid, artistId), dateInZone(zone)), key])];
   await ref(uid).set({ uid, dayOfDismissed: { [artistId]: next } }, { merge: true });
   return next;
 }

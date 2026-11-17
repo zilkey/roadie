@@ -28,7 +28,7 @@ async function setup() {
   sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   for (const [key, name, instruments] of [["nora", "Nora", ["vocals", "guitar"]], ["rudy", "Rudy", ["keys"]], ["hugo", "Hugo", ["bass"]], ["iris", "Iris", ["lead guitar"]], ["felix", "Felix", ["drums"]]] as const)
     ids[key] = (await db.create(sys, "musicians", { name, instruments: [...instruments], active: true })).id;
-  await db.create(sys, "artists", {
+  await db.create(sys, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {},
     configurations: [
       { id: "duo", name: "Duo", billingName: "Nora Quill Duo", musicianIds: [ids.nora, ids.rudy] },

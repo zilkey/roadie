@@ -51,7 +51,7 @@ test("closed sign-up: someone an admin added with users.add still signs in to th
   const uid = (await adminAuth().getUserByEmail("new@example.com")).uid;
   assert.equal(uid, id);
   const s = await readySession(bearer(await idToken(uid)));
-  assert.deepEqual(s.artists, [{ artistId: "test-artist", slug: "test-band", name: "Test Band", role: "member" }]);
+  assert.deepEqual(s.artists, [{ artistId: "test-artist", slug: "test-band", name: "Test Band", role: "member", timeZone: "America/Denver" }]);
   // and Start a band stays shut for them too
   assert.equal((await call(await idToken(uid), { name: "Mine" })).json.error.code, "invite_only");
 });
@@ -80,7 +80,7 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   assert.equal((await db.history(SYS, "users", p.uid))[0].via, "app");
   // and the next sign-in opens the band
   const s = await readySession(bearer(await idToken(p.uid)));
-  assert.deepEqual(s.artists, [{ artistId: artist.id, slug: "the-night-owls", name: "The Night Owls", role: "admin" }]);
+  assert.deepEqual(s.artists, [{ artistId: artist.id, slug: "the-night-owls", name: "The Night Owls", role: "admin", timeZone: "America/Denver" }]);
 });
 
 test("artists.signUp: instruments make the creator a Band Member linked to their login", async () => {

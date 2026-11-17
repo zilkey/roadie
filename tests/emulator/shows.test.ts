@@ -49,7 +49,7 @@ beforeEach(async () => {
   for (const [k, email] of [["nora", "nora@example.com"], ["rudy", "rudy@example.com"], ["hugo", "hugo@example.com"], ["sam", undefined]] as const) {
     ids[k] = (await db.create(sys, "musicians", { name: k[0].toUpperCase() + k.slice(1), instruments: [], active: true, ...(email ? { email } : {}) })).id;
   }
-  artistId = (await db.create(sys, "artists", {
+  artistId = (await db.create(sys, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {},
     configurations: [
       { id: "trio", name: "Trio", billingName: "Nora Quill Trio", musicianIds: [ids.nora, ids.rudy, ids.hugo] },
@@ -734,4 +734,50 @@ test("day-of contacts: a new show takes the venue's first one; picking someone o
   await cmd("shows.update", { id: r.id, patch: { dayOfContact: { name: "Kim", contactId: kim } } });
   const n = (await db.get(SYS, "venueNotes", `${TEST_ARTIST}__${venueId}`))!;
   assert.deepEqual([n.bookingContactIds, n.dayOfContactIds], [[kim], [sam, kim]], "Kim keeps Booking and is now Day-of too");
+});
+
+test("Calendar: an event is in the venue's zone when it has one, else the artist's (a New York artist, a Chicago venue)", async () => {
+  await db.update(ctx, "artists", artistId, { timeZone: "America/New_York" });
+  const c: Ctx = { ...ctx, runId: newRunId() }; // a new call: zoneOf reads the artist once per call
+  await useBandCalendar();
+  const den = await cmd("shows.create", { pitchId, date: "2027-01-16", venueId, times: { loadIn: "18:00", set: "20:00", setLengthSec: 2400 } }, c);
+  const chiVenue = (await cmd("venues.create", venue("Hideout", "Chicago", { address: { city: "Chicago", state: "IL" }, timeZone: "America/Chicago" }), c)).id;
+  const chiPitch = (await cmd("pitches.flag", { kind: "venue", id: chiVenue, pitchedAs: "trio" }, c)).id;
+  const chi = await cmd("shows.create", { pitchId: chiPitch, date: "2027-01-20", venueId: chiVenue, times: { loadIn: "18:00", set: "20:00", setLengthSec: 2400 } }, c);
+  const reh = await cmd("rehearsals.create", { date: "2027-01-10", startTime: "19:00", endTime: "21:00", personnel: [ids.nora], songs: [] }, c);
+  const zoneOfPreview = async (kind: string, id: string) => (await cmd(`${kind}.calendarPreview`, { id }, { ...c, runId: newRunId() })).event.timeZone;
+  assert.equal(await zoneOfPreview("shows", den.id), "America/New_York", "Deep End has no zone of its own: the artist's");
+  assert.equal(await zoneOfPreview("shows", chi.id), "America/Chicago", "the venue's own zone");
+  assert.equal(await zoneOfPreview("rehearsals", reh.id), "America/New_York");
+  await cmd("shows.calendar", { id: chi.id, on: true }, { ...c, runId: newRunId() });
+  const ev = await calendarClient().get((await db.get(SYS, "shows", chi.id))!.calendarEventId);
+  assert.deepEqual([ev.start, ev.timeZone], ["2027-01-20T18:00:00", "America/Chicago"], "6 pm on Chicago's clock");
+});
+
+test("resync-calendar: sends again only future show events at a venue in another zone, whose event would change; a second run finds 0", async () => {
+  const { resyncCalendar } = await import("../../scripts/resync-calendar");
+  await useBandCalendar();
+  // Before phase 8 every event went out in the artist's (Denver) zone: send these while the Chicago room has no zone yet.
+  const chiVenue = (await cmd("venues.create", venue("Hideout", "Chicago", { address: { city: "Chicago", state: "IL" } }))).id;
+  const chiPitch = (await cmd("pitches.flag", { kind: "venue", id: chiVenue, pitchedAs: "trio" })).id;
+  const times = { loadIn: "18:00", set: "20:00", setLengthSec: 2400 };
+  const future = await cmd("shows.create", { pitchId: chiPitch, date: "2027-01-20", venueId: chiVenue, times });
+  const past = await cmd("shows.create", { pitchId: chiPitch, date: "2026-11-01", venueId: chiVenue, times });
+  const home = await create({});
+  for (const id of [future.id, past.id, home.id]) await cmd("shows.calendar", { id, on: true }, { ...ctx, runId: newRunId() });
+  const evOf = async (id: string) => calendarClient().get((await db.get(SYS, "shows", id))!.calendarEventId);
+  assert.equal((await evOf(future.id)).timeZone, "America/Denver");
+  await firestore().doc(`venues/${chiVenue}`).update({ timeZone: "America/Chicago" }); // the room's zone, picked later
+  const now = new Date("2026-11-17T18:00:00Z");
+
+  const dry = await resyncCalendar({ artist: artistId, uid: ctx.uid, apply: false, now });
+  assert.equal(dry.artistZone, "America/Denver");
+  assert.deepEqual(dry.shows.map((s) => [s.id, s.venueZone, s.result]), [[future.id, "America/Chicago", undefined]], "not the past show, not the Denver room");
+  assert.equal((await evOf(future.id)).timeZone, "America/Denver", "a dry run sends nothing");
+
+  const done = await resyncCalendar({ artist: artistId, uid: ctx.uid, apply: true, now });
+  assert.deepEqual(done.shows.map((s) => s.result), ["updated"]);
+  assert.deepEqual([(await evOf(future.id)).start, (await evOf(future.id)).timeZone], ["2027-01-20T18:00:00", "America/Chicago"]);
+  assert.equal((await evOf(past.id)).timeZone, "America/Denver", "past events are left alone");
+  assert.equal((await resyncCalendar({ artist: artistId, uid: ctx.uid, apply: false, now })).shows.length, 0);
 });

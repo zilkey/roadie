@@ -1,6 +1,5 @@
 /** Pure helpers for releases and their tracks (shared by the server commands, the pages and tests). */
 import type { ReleaseKind, TrackStatus } from "@/schema/releases";
-import { todayStr } from "./booking";
 import type { FileKind } from "./music";
 
 export const RELEASE_KIND_LABEL: Record<ReleaseKind, string> = { album: "Album", ep: "EP", single: "Single" };
@@ -92,10 +91,10 @@ export function mixLabel(f?: ReleaseFileLike): string {
 }
 
 /** A release is out once its release date has passed; without a date it is in the works. */
-export const isReleased = (a: { releaseDate?: string }, today = todayStr()) => !!a.releaseDate && a.releaseDate <= today;
+export const isReleased = (a: { releaseDate?: string }, today: string) => !!a.releaseDate && a.releaseDate <= today;
 
 /** What the header says: "10 tracks · 41:20 · Target release Mar 6" ("Released Mar 6" once the date has passed). */
-export function releaseMeta(a: { releaseDate?: string }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string, today = todayStr()): string {
+export function releaseMeta(a: { releaseDate?: string }, tracks: readonly { lengthSec?: number }[], fmtLen: (s: number) => string, fmtDate: (d: string) => string, today: string): string {
   const n = tracks.length;
   const len = totalLength(tracks);
   return [`${n} track${n === 1 ? "" : "s"}`, len ? fmtLen(len) : null, a.releaseDate ? `${isReleased(a, today) ? "Released" : "Target release"} ${fmtDate(a.releaseDate)}` : null].filter(Boolean).join(" · ");

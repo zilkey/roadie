@@ -7,7 +7,7 @@
  * Column keys: pinned, booking (Ongoing), campaign:{campaignId}, show:{showId}, releases, songs, social, our.
  * Booking campaigns (#82 S12): a column per active campaign; Ongoing is just another campaign there (the old "booking" key, so saved orders hold).
  */
-import { followUpFor, fmtPitchDate, STATUS_LABEL, todayStr, type FollowUpPitchLike, type Status } from "./booking";
+import { followUpFor, fmtPitchDate, STATUS_LABEL, type FollowUpPitchLike, type Status } from "./booking";
 import { homeOf, liveCampaigns, ONGOING, sortCampaigns, type CampaignLike } from "./campaigns";
 import { isOff, showName, type ChecklistItem, type ChecklistKind, type ChecklistLike, type ShowPlaceLike } from "./shows";
 
@@ -98,7 +98,9 @@ export interface BoardInput {
   /** Mine: only items assigned to this musician or to nobody (booking: assigned to this user or to nobody). */
   mine?: { musicianId?: string; userId: string } | null;
   showDone: boolean;
-  today?: string;
+  /** Today and the artist's zone (useZone()). */
+  today: string;
+  zone: string;
 }
 
 /** "Sat Nov 14". */
@@ -132,7 +134,7 @@ function checklistItems(kind: ChecklistKind, id: string, list: ChecklistLike, ke
 }
 
 export function buildBoard(b: BoardInput): BoardColumn[] {
-  const today = b.today ?? todayStr();
+  const today = b.today;
   const dismissed = new Set(b.dismissed);
   const mineItem = (i: BoardItem) => !b.mine || (i.action.type === "pitch" ? !i.assigneeId || i.assigneeId === b.mine.userId : !i.ownerId || i.ownerId === b.mine.musicianId);
   const shown = (i: BoardItem) => (b.showDone || !i.done) && mineItem(i);
@@ -161,7 +163,7 @@ export function buildBoard(b: BoardInput): BoardColumn[] {
 
   const camps = liveCampaigns(b.campaigns ?? []);
   const booking: (BoardItem & { home: string })[] = b.pitches.flatMap((p) => {
-    const f = followUpFor(p, today);
+    const f = followUpFor(p, today, b.zone);
     if (!f) return [];
     const href = `/booking/pitches/${p.id}`;
     const days = f.daysSinceContact ?? 0;

@@ -37,14 +37,15 @@ const ms = (t: ThreadLike) => (t.firstDate ? Date.parse(t.firstDate) : undefined
 const newReplyOn = (t: ThreadLike) => t.lastDirection === "received" && (!t.lastSeenAt || t.lastSeenAt.toMillis() < Date.parse(t.lastDate));
 
 /** `placeId`: where the pitch's threads live (an edition's are on its festival). */
-export function emailCells(p: CellPitch, threads: readonly ThreadLike[], placeId: string, today: string): EmailCells {
+/** `today` and `zone`: the artist's (useZone()). */
+export function emailCells(p: CellPitch, threads: readonly ThreadLike[], placeId: string, today: string, zone: string): EmailCells {
   const named = threads.filter((t) => pitchIdsOf(t).includes(p.id));
   const since = p.createdAt?.toMillis?.() ?? 0;
   const mine = (named.length ? named : threads.filter((t) => t.target.id === placeId && pitchIdsOf(t).length === 0 && ms(t) >= since)).slice().sort((a, b) => ms(a) - ms(b));
   const out: EmailCells = { newReply: mine.some(newReplyOn), threads: mine.map((t) => t.id) };
   if (!mine.length) {
     // No thread in Roadie, yet the pitch may have been pitched by hand or before Roadie: the To Dos rule still says when it's owed.
-    const f = followUpFor(p, today);
+    const f = followUpFor(p, today, zone);
     if (f && p.status !== "idea" && p.status !== "toPitch") out.followUp = { kind: "due", due: f.due, quiet: f.quiet, days: f.daysSinceContact };
     return out;
   }
@@ -62,7 +63,7 @@ export function emailCells(p: CellPitch, threads: readonly ThreadLike[], placeId
     out.followUp = { kind: "sent", threadId: first.id, subject: first.subject, date: first.lastDate.slice(0, 10), newThread: false, more: 0 };
     return out;
   }
-  const f = followUpFor(p, today);
+  const f = followUpFor(p, today, zone);
   if (f) out.followUp = { kind: "due", due: f.due, quiet: f.quiet, days: f.daysSinceContact, threadId: first.id };
   return out;
 }

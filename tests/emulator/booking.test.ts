@@ -38,7 +38,7 @@ beforeEach(async () => {
   ctx = { uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   mids = [];
   for (const n of ["Nora", "Rudy", "Hugo"]) mids.push((await db.create(ctx, "musicians", { name: n, instruments: [], active: true })).id);
-  artistId = (await db.create(ctx, "artists", {
+  artistId = (await db.create(ctx, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: { website: "https://band.example" },
     configurations: [
       { id: "trio", name: "Trio", billingName: "Trio", musicianIds: mids },

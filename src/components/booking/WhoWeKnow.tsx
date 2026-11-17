@@ -4,14 +4,14 @@
  * buys: the venue page's Network tab and the Venues list's "We know someone" chip. The paths come from src/lib/whoWeKnow.ts.
  */
 import { Fragment, useMemo } from "react";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { useArrayContainsAny, useCollection } from "@/lib/firestore-hooks";
 import { useCommand, ErrorBox } from "@/components/ui";
 import { DetailCard } from "@/components/booking/DetailCards";
 import { hrefFor, useBooking } from "@/components/booking/common";
 import { knownActIds, venueNetwork, venuesWeKnow, type NetworkAct, type Named, type PlayedShow, type TraceData, type TraceVenue, type VenueNetwork } from "@/lib/whoWeKnow";
 import { fmtEventYear } from "@/lib/venueEvents";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import type { ActNote, VenueEvent } from "@/schema";
 
 /** What the trace needs beyond useBooking: this band's act notes and the calendar shows of the acts we can reach. Admins only. */
@@ -97,7 +97,8 @@ function Rows<T>({ items, testid, keyOf, row }: { items: T[]; testid: (t: T) => 
  */
 export function VenueNetworkTab({ b, venue }: { b: ReturnType<typeof useBooking>; venue: TraceVenue }) {
   const data = useWeKnowData(b);
-  const today = dateInBandZone();
+  const zone = useZone();
+  const today = dateInZone(zone);
   const net = useMemo(() => venueNetwork(venue, data, today), [venue, data, today]);
   const actKey = (a: NetworkAct) => a.act.id;
   const actTestid = (a: NetworkAct) => `network-act-${a.act.id}`;

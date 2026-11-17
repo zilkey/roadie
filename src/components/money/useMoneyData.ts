@@ -4,6 +4,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { incomeSoFar, moneyRows } from "@/lib/money";
 import { todayStr } from "@/lib/booking";
 import type { Expense, Income, Musician, Payout, Project, Show, User } from "@/schema";
+import { useZone } from "@/lib/artist";
 
 /**
  * Everything the admin Money pages read: the records, money-so-far (a show that hasn't happened yet stays out: its
@@ -17,7 +18,8 @@ export function useMoneyData() {
   const shows = useCollection<Show>("shows");
   const musicians = useCollection<Musician>("musicians");
   const users = useCollection<User>("users");
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const inc = useMemo(() => incomeSoFar(income.rows ?? [], today), [income.rows, today]);
   const exp = useMemo(() => expenses.rows ?? [], [expenses.rows]);
   const pay = useMemo(() => payouts.rows ?? [], [payouts.rows]);

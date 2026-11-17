@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { clientDb } from "@/lib/firebase-client";
 import { useCollection, useDocs } from "@/lib/firestore-hooks";
 import { runCommand } from "@/lib/commands";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDirectionsHref, dayOfDismissLabel, dayOfItems, dayOfText, type DayOfItem, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
 import { askRoadie } from "@/components/roadie/ask";
 import { toast } from "@/components/Toasts";
@@ -54,11 +54,11 @@ function useDismissed(artistId: string): string[] {
  * tap opens the show and asks Roadie (in a new chat, about that show) to start the after-show interview.
  */
 export function DayOfBanner() {
-  const { artistId, role, doc: artist } = useArtist();
+  const { artistId, role, doc: artist, timeZone: zone } = useArtist();
   const slug = artist?.slug;
   const admin = role === "admin";
   const now = useNow();
-  const today = dateInBandZone(new Date(now));
+  const today = dateInZone(zone, new Date(now));
   const dates = useMemo(() => dayOfDates(today), [today]);
   const shows = useCollection<DayOfShow>("shows", { where: [["date", "in", dates]] });
   const rehearsals = useCollection<DayOfRehearsal>("rehearsals", { where: [["date", "in", dates]] });
@@ -72,8 +72,8 @@ export function DayOfBanner() {
     const zones = new Map(venues.rows.map((v) => [v.id, v.timeZone]));
     // Until a show's venue has loaded its time zone is unknown: leave it out rather than show it on the wrong clock.
     const ready = mine.filter((s) => !s.venue || !venues.loading || zones.has(s.venue.id));
-    return dayOfItems({ shows: ready, rehearsals: rehearsals.rows ?? [], now, artistId, zones, dismissed: [...stored, ...hiding] });
-  }, [mine, rehearsals.rows, venues.rows, venues.loading, now, artistId, stored, hiding]);
+    return dayOfItems({ shows: ready, rehearsals: rehearsals.rows ?? [], now, artistId, zone, zones, dismissed: [...stored, ...hiding] });
+  }, [mine, rehearsals.rows, venues.rows, venues.loading, now, artistId, zone, stored, hiding]);
 
   async function hide(item: DayOfItem) {
     setHiding((h) => [...h, item.key]);

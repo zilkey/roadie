@@ -29,8 +29,8 @@ beforeEach(async () => {
   ctx = { uid: a.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   const o = await makeUser("olga@example.com", "admin", { name: "Olga", artistId: OTHER });
   octx = { uid: o.uid, role: "admin", via: "app", runId: newRunId(), artistId: OTHER };
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
-  await db.create(octx, "artists", { slug: "other", name: "Other", driveFolderId: "", links: {}, configurations: [] }, { id: OTHER });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(octx, "artists", { timeZone: "America/Denver", slug: "other", name: "Other", driveFolderId: "", links: {}, configurations: [] }, { id: OTHER });
   v1 = (await cmd("venues.create", venue("Velour", "Provo"))).id;
   v2 = (await cmd("venues.create", venue("Kilby Court", "Salt Lake City"))).id;
 });

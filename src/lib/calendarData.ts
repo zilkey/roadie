@@ -19,7 +19,7 @@ const addDay = (d: string) => {
  * pitch next step and the next 6 opens/deadlines of editions not yet acted on and pitch next steps.
  */
 export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarItem[]; loading: boolean; admin: boolean } {
-  const { role, artistId } = useArtist();
+  const { role, artistId, timeZone } = useArtist();
   const admin = role === "admin";
   const shows = useCollection<Show>("shows");
   const rehearsals = useCollection<Rehearsal>("rehearsals");
@@ -30,7 +30,7 @@ export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarI
 
   const showRows = shows.rows, rehearsalRows = rehearsals.rows, festivalRows = festivals.rows, editionRows = editions.rows, pitchRows = pitches.rows;
   return useMemo(() => {
-    const today = todayStr();
+    const today = todayStr(timeZone);
     const items: CalendarItem[] = [];
     /** Shows and rehearsals: everyone's. */
     const bandItems: CalendarItem[] = [];
@@ -110,5 +110,5 @@ export function useCalendarItems(): { items: CalendarItem[]; comingUp: CalendarI
     }
 
     return { items, comingUp: upcoming([...bandItems, ...comingUp], today, admin ? 6 : 0), loading, admin };
-  }, [showRows, rehearsalRows, festivalRows, editionRows, pitchRows, admin, loading]);
+  }, [showRows, rehearsalRows, festivalRows, editionRows, pitchRows, admin, loading, timeZone]);
 }

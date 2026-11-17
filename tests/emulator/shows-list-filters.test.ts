@@ -36,7 +36,7 @@ beforeEach(async () => {
   await resetEmulators();
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" });
   ctx = { uid: u.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
-  await db.create(ctx, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   deepEnd = (await cmd("venues.create", venue("Deep End", "Denver"))).id;
   ogden = (await cmd("venues.create", venue("Ogden", "Denver"))).id;
   boulder = (await cmd("venues.create", venue("Heron Theatre", "Boulder"))).id;

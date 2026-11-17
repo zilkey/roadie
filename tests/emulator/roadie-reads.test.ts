@@ -39,7 +39,7 @@ beforeEach(async () => {
   sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   mcp = { ...sys, role: "mcp" };
   musId = (await db.create(sys, "musicians", { name: "Nora", instruments: ["vox"], active: true, email: "nora@example.com", phone: "555-0100", payHandle: "@nora", userId: admin.uid })).id;
-  await db.create(sys, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [musId] }] }, { id: TEST_ARTIST });
+  await db.create(sys, "artists", { timeZone: "America/Denver", slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [musId] }] }, { id: TEST_ARTIST });
   venueA = ((await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Deep End")))) as { id: string }).id;
   venueB = ((await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Bluebird")))) as { id: string }).id;
   const mk = async (date: string, venueId: string) => ((await registry["shows.create"].run(sys, registry["shows.create"].input.parse({ date, venueId, status: "hold", times: { loadIn: "19:00", set: "21:15" } }))) as { id: string }).id;

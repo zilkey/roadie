@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { useBooking } from "@/components/booking/common";
@@ -12,14 +11,14 @@ type Stamp = { toMillis(): number };
 const ms = (t?: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
 /** When Roadie last read the thread from Gmail. */
 const checkedAt = (t: EmailThread) => ms(t.syncedAt) || ms((t as unknown as { updatedAt?: unknown }).updatedAt);
-const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE });
+const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone });
 
 /**
  * The Email card on a pitch: the Gmail threads of the pitch's place (venue, promoter or festival), newest first. Threads
  * belong to the place, so they stay when the pitch closes. New email opens the compose page for this pitch.
  */
 export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId: string }) {
-  const { artistId } = useArtist();
+  const { artistId, timeZone: zone } = useArtist();
   const b = useBooking();
   const { call, error, busy } = useCommand();
   const [result, setResult] = useState<string | null>(null);
@@ -80,7 +79,7 @@ export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "prom
                   <span className="s truncate">{t.participants.map(nameOf).join(", ")}</span>
                   <span className="line-clamp-2 text-sm">{t.snippet}</span>
                 </span>
-                <span className="s shrink-0">{short(t.lastDate)}</span>
+                <span className="s shrink-0">{short(t.lastDate, zone)}</span>
               </Link>
             );
           })}

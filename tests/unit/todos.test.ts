@@ -4,7 +4,7 @@ import { applyOrder, buildBoard, dismissedLists, movedOrder, TODO_COLUMN_KEY, ty
 
 const item = (id: string, label: string, extra: Record<string, unknown> = {}) => ({ id, label, done: false, ...extra });
 const base = (over: Partial<BoardInput> = {}): BoardInput => ({
-  artistId: "a1", today: "2026-11-12", order: {}, dismissed: [], showDone: false, mine: null, pitches: [], todos: [],
+  artistId: "a1", today: "2026-11-12", zone: "America/Denver", order: {}, dismissed: [], showDone: false, mine: null, pitches: [], todos: [],
   shows: [
     { id: "s2", date: "2026-12-04", status: "confirmed", venue: { name: "Mercury Cafe" } as never, checklists: [{ id: "l1", name: "Advance", items: [item("m1", "Send the input list")] }] },
     { id: "s1", date: "2026-11-14", status: "confirmed", venue: { name: "Hi-Dive" } as never, checklists: [

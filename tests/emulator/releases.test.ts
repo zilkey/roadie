@@ -42,7 +42,7 @@ beforeEach(async () => {
   const m = await makeUser("hugo@example.com", "member", { name: "Hugo" });
   mctx = { uid: m.uid, role: "member", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   for (const k of ["rudy", "nora"]) await db.create(ctx, "musicians", { name: k, instruments: [], active: true, email: `${k}@example.com` });
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
   await cmd("projects.create", { kind: "band", name: "Band", isDefault: true });
   songs = [];
   for (const [title, lengthSec] of [["Glass Coast", 232], ["Weathervane", 250], ["Low Light", 211], ["Ruby Hill", 285]] as [string, number][]) {

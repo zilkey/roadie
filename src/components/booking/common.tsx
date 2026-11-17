@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { STATUS_LABEL, isActive, sortedDates, datePast, fmtPitchDate, todayStr, type Status } from "@/lib/booking";
@@ -146,7 +146,8 @@ export function ConfigurationPicker({ value, onChange, testid, onKeyDown }: { va
  * remove each. + (or Enter in the input) adds the typed date, the input clears, + is off while it is empty, a date already there is
  * ignored. `dates` is the sorted, unique list; the one control used by the flag form, the pitch page and the venue page.
  */
-export function PitchDatesField({ dates, onChange, onBlur, testid, today = todayStr() }: { dates: string[]; onChange(dates: string[]): void; onBlur?(): void; testid: string; today?: string }) {
+export function PitchDatesField({ dates, onChange, onBlur, testid, today: todayIn }: { dates: string[]; onChange(dates: string[]): void; onBlur?(): void; testid: string; today?: string }) {
+  const zone = useZone(), today = todayIn ?? todayStr(zone);
   const [draft, setDraft] = useState("");
   // A date typed but not added with + still counts: leaving the input (to Save, or to any other field) adds it.
   function add() {
@@ -268,7 +269,8 @@ export function PitchStrip({ pitch }: { pitch: PitchRow }) {
   const artist = useArtist();
   const config = artist.doc?.configurations?.find((c) => c.id === pitch.pitchedAs)?.name ?? "No configuration yet";
   const dates = sortedDates(pitch.dates);
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const last = useCollection<Comment>(`pitches/${pitch.id}/comments`, { order: ["createdAt", "desc"], limit: 1 }).rows?.[0];
   const at = last?.createdAt;
   const when = at ? (at instanceof Date ? at : at.toDate()).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";

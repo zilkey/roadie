@@ -7,7 +7,7 @@
  *
  * Per artist, as the band's Google account: every post with no driveFolderId gets a title (the caption's first 40
  * characters cut at a word, else "Photo <created date>") and its own folder in Posts/:
- *   - posted: "YYYY-MM-DD - <title>", dated the day it was created (band timezone);
+ *   - posted: "YYYY-MM-DD - <title>", dated the day it was created (the artist's timezone);
  *   - failed: "DRAFT - <title>", so it becomes an editable draft;
  *   - publishing (cut off before it posted): the same as failed, set to failed with "Interrupted before it posted".
  * Its photo moves in, remembering the month folder it came from (from.folderId), and name, size and modifiedTime are filled
@@ -18,7 +18,7 @@ import { db } from "@/server/db";
 import { importCtx, newRunId, systemCtx, type Ctx } from "@/server/ctx";
 import { driveClient, IntegrationError, type DriveFile, type DriveService } from "@/server/integrations";
 import { isEmpty, moveInto, uniqueName } from "@/server/postFolder";
-import { dateInBandZone } from "@/lib/timezone";
+import { DEFAULT_TIME_ZONE, dateInZone } from "@/lib/timezone";
 import type { PostMedia } from "@/schema/posts";
 
 export const INTERRUPTED = "Interrupted before it posted";
@@ -64,6 +64,7 @@ export async function migratePosts49(opts: { apply: boolean; log?: (s: string) =
   for (const artist of await db.list(systemCtx("migrate-posts-49"), "artists")) {
     const artistId = artist.id;
     const ctx: Ctx = importCtx(artistId, "migrate-posts-49", runId);
+    const zone = (artist.timeZone as string | undefined) || DEFAULT_TIME_ZONE; // the artist's own zone; the default only for an old doc without one
     const todo = (await db.list(ctx, "posts")).filter((p) => !p.driveFolderId);
     if (!todo.length) continue;
     const postsId = artist.postFoldersId as string | undefined;
@@ -73,7 +74,7 @@ export async function migratePosts49(opts: { apply: boolean; log?: (s: string) =
     }
     const drive = driveClient({ artistId });
     for (const p of todo) {
-      const created = dateInBandZone(dateOf(p.createdAt));
+      const created = dateInZone(zone, dateOf(p.createdAt));
       const title = titleFor(p.caption as string | undefined, created);
       const status = p.status as string;
       const posted = status === "posted";

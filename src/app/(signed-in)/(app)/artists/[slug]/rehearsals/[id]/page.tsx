@@ -2,7 +2,7 @@
 import { Metronome } from "@/components/music/Metronome";
 import { BackLink } from "@/components/BackLink";
 import { draftPath } from "@/schema/drafts";
-import Link, { useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { RehearsalLocationField, placeOf, type Place } from "@/components/rehearsals/RehearsalLocationField";
@@ -82,7 +82,8 @@ interface NewForm { date: string; location: RehearsalLocation | null; notes: str
 function NewRehearsal({ m }: { m: Music }) {
   const router = useRouter();
   const { call, error, busy } = useCommand();
-  const draft = useDraft<NewForm>(draftPath.newIn("rehearsals"), { date: todayStr(), location: null, notes: "", personnel: [], ran: {} }, {
+  const zone = useZone();
+  const draft = useDraft<NewForm>(draftPath.newIn("rehearsals"), { date: todayStr(zone), location: null, notes: "", personnel: [], ran: {} }, {
     title: (v) => `New rehearsal · ${v.date}${v.location?.name || v.location?.address ? ` · ${v.location?.name ?? v.location?.address}` : ""}`,
   });
   const [picks, setPicks] = useState<Pick[]>([]);

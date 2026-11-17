@@ -9,7 +9,7 @@ import { firestore } from "../admin";
 import { db, type Doc } from "../db";
 import { systemCtx } from "../ctx";
 import { AppError } from "../errors";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
+import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { roomStats } from "@/lib/venueEvents";
 import { VenueCalendar, VenueEvent, type VenueEventSource } from "@/schema";
 import { Net } from "./fetch";
@@ -149,7 +149,7 @@ export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Dat
   const v = await db.get(sys(), "venues", venueId);
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
   const now = opts.now ?? new Date();
-  const tz = (v.timeZone as string | undefined) || BAND_TIME_ZONE;
+  const tz = (v.timeZone as string | undefined) || DEFAULT_TIME_ZONE; // a system job has no artist: the venue's zone, else the default
   const base = { venueId, name: String(v.name), count: 0, upcoming: 0, added: 0, gone: 0, unparsed: 0, dropped: 0 };
   const parsed = VenueCalendar.safeParse(v.calendar);
   if (!v.calendar || !parsed.success) return { ...base, type: "none", skipped: "no calendar" };

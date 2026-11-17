@@ -42,7 +42,7 @@ beforeEach(async () => {
   const at = { role: "admin" as const, via: "app" as const, artistId: TEST_ARTIST, now: new Date("2026-11-14T18:00:00Z") };
   ctx = { uid: a.uid, runId: newRunId(), ...at };
   jeff = { uid: b.uid, runId: newRunId(), ...at };
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "fake-band-folder", links: {}, configurations: [] }, { id: TEST_ARTIST });
   await cmd("projects.create", { kind: "band", name: "Band", isDefault: true });
 });
 

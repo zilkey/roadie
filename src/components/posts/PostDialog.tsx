@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { runCommand } from "@/lib/commands";
 import { celebratePost } from "@/components/Celebrate";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import type { MetaStatus } from "@/components/posts/MetaCard";
 import type { PostMedia } from "@/schema/posts";
 import { isVideo, videoProblem } from "@/lib/photos";
@@ -21,6 +21,7 @@ export function PostDialog({ open, onClose, post, before }: {
   open: boolean; onClose(): void; before(): Promise<void>;
   post: { id: string; title?: string; media: PostMedia[] };
 }) {
+  const zone = useZone();
   const [status, setStatus] = useState<MetaStatus | null>(null);
   const [done, setDone] = useState<(Published & { folder: string }) | null>(null);
   const { call, error, busy, setError } = useCommand();
@@ -45,7 +46,7 @@ export function PostDialog({ open, onClose, post, before }: {
     await before();
     const r = await call<Published>("posts.publish", { id: post.id });
     if (r?.status === "failed") { setError(`Didn't post: ${r.error ?? "Instagram didn't say why."}`); return; }
-    if (r) { setDone({ ...r, folder: `${dateInBandZone()} - ${title}` }); celebratePost(title); }
+    if (r) { setDone({ ...r, folder: `${dateInZone(zone)} - ${title}` }); celebratePost(title); }
   }
 
   return (
@@ -78,7 +79,7 @@ export function PostDialog({ open, onClose, post, before }: {
             </p>
           )}
           <p className="s m-0" data-testid="post-drive-note">
-            In Drive, <b>Posts/DRAFT - {title}</b> becomes <b>Posts/{dateInBandZone()} - {title}</b>. If Instagram refuses it, nothing in Drive changes.
+            In Drive, <b>Posts/DRAFT - {title}</b> becomes <b>Posts/{dateInZone(zone)} - {title}</b>. If Instagram refuses it, nothing in Drive changes.
           </p>
           <ErrorBox error={error} />
           <div className="flex justify-end gap-2">

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { AdminOnly } from "@/components/Guard";
 import { runCommand } from "@/lib/commands";
@@ -58,6 +58,7 @@ function Posts() {
 
 function PostSection({ title, testid, rows, empty, onTidied }: { title: string; testid: string; rows: PostRow[]; empty: React.ReactNode; onTidied?(): void }) {
   const tidy = useCommand();
+  const zone = useZone();
   return (
     <section className="grid gap-2" aria-labelledby={`${testid}-title`} data-testid={testid}>
       <h2 id={`${testid}-title`} className="font-display text-lg font-bold">{title}</h2>
@@ -73,7 +74,7 @@ function PostSection({ title, testid, rows, empty, onTidied }: { title: string; 
               <span className="s" data-testid="post-meta">
                 {postKind(p.count, p.videos)}
                 {p.status === "draft" && " · Draft"}
-                {p.postedAt && ` · Posted ${fmtInstant(p.postedAt)}`}
+                {p.postedAt && ` · Posted ${fmtInstant(p.postedAt, zone)}`}
               </span>
               {p.status === "failed" && <span className="err m-0" data-testid="post-failed">Didn&apos;t post: {p.error ?? "Instagram didn't say why."}</span>}
               {p.status === "publishing" && <span className="s" data-testid="post-publishing">Posting…</span>}

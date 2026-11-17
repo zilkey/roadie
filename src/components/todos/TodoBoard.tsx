@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link, { useArtist } from "@/lib/artist";
+import { todayStr } from "@/lib/booking";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
 import { useCampaigns } from "@/components/booking/useCampaigns";
@@ -39,7 +40,7 @@ async function act(name: string, input: unknown, ok?: { text: string; undo?: boo
  * ticking, pinning and Our list are the band's.
  */
 export function TodoBoard() {
-  const { artistId, musicianId } = useArtist();
+  const { artistId, musicianId, timeZone: zone } = useArtist();
   const p = useProfile();
   const mineOf = { where: [["artistId", "==", artistId] as [string, "==", string]] };
   const shows = useCollection<ShowLike>("shows", mineOf);
@@ -67,7 +68,7 @@ export function TodoBoard() {
   const dismissed = prefs?.todoDismissed ?? [];
   const input = {
     artistId, shows: shows.rows ?? [], releases: releases.rows ?? [], songs: songs.rows ?? [], social: social?.checklists ?? [], pitches: pitches.rows ?? [], campaigns, todos: todos.rows ?? [],
-    order, dismissed, mine: mine ? { musicianId, userId: p.userId } : null, showDone,
+    today: todayStr(zone), zone, order, dismissed, mine: mine ? { musicianId, userId: p.userId } : null, showDone,
   };
   const cols = applyOrder(buildBoard(input), movedCols ?? prefs?.todoColumns);
   const focused = cols.find((c) => c.key === focus);

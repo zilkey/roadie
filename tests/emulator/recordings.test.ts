@@ -39,7 +39,7 @@ beforeEach(async () => {
   await fetch(process.env.DRIVE_BASE_URL + "/__reset", { method: "POST" });
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   const boot = importCtx(TEST_ARTIST, u.uid);
-  artistId = (await db.create(boot, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", rehearsalFolderId: RECORDINGS, links: {}, configurations: [] }, { id: TEST_ARTIST })).id;
+  artistId = (await db.create(boot, "artists", { timeZone: "America/Denver", name: "Band", slug: "band", driveFolderId: "fake-band-folder", rehearsalFolderId: RECORDINGS, links: {}, configurations: [] }, { id: TEST_ARTIST })).id;
   // The test user belongs to TEST_ARTIST; the shortcut tests need the membership to be the artist the token names.
   await db.update(boot, "users", u.uid, { artists: [{ artistId, role: "admin" }] });
   for (const k of ["nora", "rudy", "hugo"]) await db.create(importCtx(artistId, u.uid), "musicians", { name: k, instruments: [], active: true, email: `${k}@example.com` });

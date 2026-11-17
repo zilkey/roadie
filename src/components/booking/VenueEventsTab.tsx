@@ -8,7 +8,7 @@
  */
 import { AskToEdit } from "./AskToEdit";
 import { useMemo, useState } from "react";
-import { useArtist } from "@/lib/artist";
+import { useArtist, useZone } from "@/lib/artist";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
 import { Dialog, ErrorBox, useCommand } from "@/components/ui";
 import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
@@ -17,7 +17,7 @@ import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type RoomRecord } from "@/components/booking/VenueEventBits";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { CALENDAR_TYPES, PRESETS, type CalendarType, type ActDoc, type Venue, type VenueCalendar, type VenueEvent, type VenueEventNote, type VenueEventSource } from "@/schema";
 
 function ago(iso?: string) {
@@ -37,14 +37,15 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
   const { doc: health } = useDoc<VenueEventSource>("venueEventSources", venue.id, { includeDeleted: true });
   const notes = useCollection<VenueEventNote>("venueEventNotes", { where: [["artistId", "==", artistId], ["venueId", "==", venue.id]], skip: !admin });
   const takes = useMemo(() => new Map((notes.rows ?? []).map((n) => [n.eventId, n])), [notes.rows]);
-  const today = dateInBandZone();
+  const zone = useZone();
+  const today = dateInZone(zone);
   const all = useMemo(() => [...(events.rows ?? [])].sort(byWhen), [events.rows]);
   // Furthest out first, as Venue calendars sorts.
   const upcoming = useMemo(() => all.filter((e) => isUpcoming(e, today)).sort(latestFirst), [all, today]);
   const past = all.filter((e) => e.date < today).reverse();
   const [setup, setSetup] = useState(false);
   const cal = venue.calendar;
-  const openers = useMemo(() => whoOpens(all), [all]);
+  const openers = useMemo(() => whoOpens(all, today), [all, today]);
   const pitches = useCollection<{ status: string; campaignId?: string; target: { kind: string; id: string } }>("pitches", { where: [["artistId", "==", artistId]], skip: !admin });
   // The headliners' looked-up genres: the genre filter, and genre fit when the band has genres of its own.
   const ours = useOurGenres();
@@ -112,8 +113,8 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
  * "Who opens here" (#77): the acts seen in support slots at this room, most often first. Each with how many shows and its next one
  * (or, with none coming, its last). Gone shows don't count.
  */
-function whoOpens(events: Ev[]) {
-  const today = dateInBandZone();
+function whoOpens(events: Ev[], today: string) {
+
   const by = new Map<string, { key: string; act: Ev["acts"][number]; count: number; next?: string; latest: string }>();
   for (const e of events) {
     if (e.status === "gone") continue;

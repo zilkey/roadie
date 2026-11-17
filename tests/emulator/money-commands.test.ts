@@ -37,7 +37,7 @@ beforeEach(async () => {
   const m = await makeUser("hugo@example.com", "member", { name: "Hugo" });
   memberUid = m.uid;
   mctx = { uid: m.uid, role: "member", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   band = (await cmd("projects.create", { kind: "band", name: "Band", isDefault: true })).id;
   duo = (await cmd("projects.create", { kind: "duo", name: "Duo" })).id;
   await db.update(ctx, "artists", TEST_ARTIST, { configurations: [

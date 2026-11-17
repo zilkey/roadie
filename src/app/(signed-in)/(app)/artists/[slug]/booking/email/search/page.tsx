@@ -2,12 +2,11 @@
 import { Crumbs, placeTrail, usePitchCampaignCrumb } from "@/components/booking/BookingNav";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, PickChip, useCommand } from "@/components/ui";
 import { BackLink, Tabs, hrefFor, useBooking } from "@/components/booking/common";
 import { useProfile } from "@/lib/auth";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { nameFromAddress } from "@/lib/email-signature";
 import { roleFirst, fmtPhone } from "@/lib/venues";
 import { e164 } from "@/schema/normalize";
@@ -20,7 +19,7 @@ interface ThreadHit { threadId: string; subject: string; snippet: string; lastDa
 interface PersonHit { email: string; name: string; title?: string; phone?: string; lastDate: string; count: number; contactId?: string }
 type Place = { kind: Kind; id: string; name: string; word: string; attach: "venues" | "promoters" | "festivals"; placeId: string; href: string };
 
-const short = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE });
+const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone });
 const domainOf = (a: string) => a.split("@")[1] ?? "";
 
 export default function Page() {
@@ -81,6 +80,7 @@ function Search({ place, pitch, contacts, sharedDomain, account }: { place: Plac
 
 function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pitch?: string; contacts: Row<Contact>[]; sharedDomain: string }) {
   const router = useRouter();
+  const zone = useZone();
   const b = useBooking();
   const { call, error, busy } = useCommand();
   const [text, setText] = useState(place.name);
@@ -145,7 +145,7 @@ function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pi
                   <span className="s truncate">{who.join(", ")} · {h.messageCount} message{h.messageCount === 1 ? "" : "s"}</span>
                   <span className="line-clamp-2 text-sm">{h.snippet}</span>
                 </span>
-                <span className="s shrink-0">{short(h.lastDate)}</span>
+                <span className="s shrink-0">{short(h.lastDate, zone)}</span>
                 <span className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
                   {lid
                     ? <Link href={`/booking/email/${lid}`} className="btn sm" data-testid={`gmail-open-${h.threadId}`}>Open</Link>
@@ -164,6 +164,7 @@ function ThreadsTab({ place, pitch, contacts, sharedDomain }: { place: Place; pi
 
 function PeopleTab({ place, sharedDomain, active }: { place: Place; sharedDomain: string; active: boolean }) {
   const b = useBooking();
+  const zone = useZone();
   const { call, error, busy } = useCommand();
   const [q, setQ] = useState(sharedDomain);
   const [hits, setHits] = useState<PersonHit[] | null>(null);
@@ -211,7 +212,7 @@ function PeopleTab({ place, sharedDomain, active }: { place: Place; sharedDomain
                   <b className="truncate">{p.name || p.email}</b>
                   <span className="s"><span className="lbl">Email</span> {p.email}</span>
                   <span className="s"><span className="lbl">From signature</span> {p.title || p.phone ? [p.title, p.phone && fmtPhone(p.phone)].filter(Boolean).join(" · ") : "No signature"}</span>
-                  <span className="s"><span className="lbl">Last email</span> {short(p.lastDate)} · {p.count} message{p.count === 1 ? "" : "s"} with you</span>
+                  <span className="s"><span className="lbl">Last email</span> {short(p.lastDate, zone)} · {p.count} message{p.count === 1 ? "" : "s"} with you</span>
                 </span>
                 <span className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
                   {p.contactId || newId

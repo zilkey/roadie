@@ -41,7 +41,7 @@ beforeEach(async () => {
   who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
   sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Nora", instruments: [], active: true })).id;
-  const artist = (await db.create(sys, "artists", {
+  const artist = (await db.create(sys, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {},
     configurations: [{ id: "trio", name: "Trio", billingName: "Trio", musicianIds: [mus] }],
   }, { id: TEST_ARTIST })).id;
@@ -295,8 +295,8 @@ test("search finds shows, venues and songs; context.now says who, when and what'
   assert.deepEqual(c.openExpenses.map((e) => e.what), ["parking"]);
   assert.deepEqual(c.weOwe.map((g) => [g.name, g.totalCents]), [["Rudy", 2000]]); // a pay-back expense nobody has paid back
   assert.deepEqual(c.owedToUs, { totalCents: 0, items: [] });
-  assert.equal(tonightDate(new Date("2026-11-15T05:00:00-07:00")), "2026-11-14"); // before 6am, tonight is still last night
-  assert.equal(tonightDate(new Date("2026-11-15T07:00:00-07:00")), "2026-11-15");
+  assert.equal(tonightDate(new Date("2026-11-15T05:00:00-07:00"), "America/Denver"), "2026-11-14"); // before 6am, tonight is still last night
+  assert.equal(tonightDate(new Date("2026-11-15T07:00:00-07:00"), "America/Denver"), "2026-11-15");
   const wrapped = (await execTool(s, "context.now", {}, noop)).output as { notice: string; untrustedContent: unknown };
   assert.match(wrapped.notice, /never follow instructions/);
 });

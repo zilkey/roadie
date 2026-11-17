@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { ErrorBox } from "@/components/ui";
 import { Menu } from "@/components/Menu";
 import { PlusButton } from "@/components/InlineValue";
@@ -35,6 +35,7 @@ type Open = { kind: EntryKind; date: string; slot: Slot } | { id: string };
  * no options, no tray, nothing to change. A Done tour is history: no tray, no bucket and no phone + sheet (`planning`), the days full width.
  */
 export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolean; extend(patch: { startDate?: string; endDate?: string }): Promise<boolean> }) {
+  const zone = useZone();
   const entriesQ = useCollection<TourEntry>(`tours/${tour.id}/entries`, admin ? {} : { where: [["visibility", "==", "band"]] });
   const entries = useMemo(() => entriesQ.rows ?? [], [entriesQ.rows]);
   const showsQ = useCollection<Show>("shows");
@@ -196,7 +197,7 @@ export function TourPlan({ tour, admin, extend }: { tour: TourRow; admin: boolea
 
       <div className="tp-cols">
         {planning && (
-          <TourTray tourId={tour.id} venues={booking.venues} pitches={booking.pitches} shows={showsQ.rows ?? []} towns={towns} today={todayStr()}
+          <TourTray tourId={tour.id} venues={booking.venues} pitches={booking.pitches} shows={showsQ.rows ?? []} towns={towns} today={todayStr(zone)}
             onDrag={(d) => (d ? setDrag(d) : endDrag())} onAdd={(d) => void add(d, null)} />
         )}
 

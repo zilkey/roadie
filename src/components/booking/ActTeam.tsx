@@ -8,7 +8,7 @@
  */
 import { useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { TEAM_ROLE_LABEL, teamContactInput, teamContactMatch, teamContactPatch, teamSearchUrl, type TeamPerson, type TeamResult } from "@/lib/acts";
 import { todayStr } from "@/lib/booking";
 import { ContactLinks, hrefFor, type Noted } from "@/components/booking/common";
@@ -36,13 +36,14 @@ export function TeamFindings({ result, actId, actName, hasWebsite, contacts, lin
   linkedIds: string[]; onClose(): void;
 }) {
   const { call, error, busy } = useCommand();
+  const zone = useZone();
   const [added, setAdded] = useState<Map<number, string>>(new Map());
   const linked = contacts.filter((c) => linkedIds.includes(c.id));
   // A match among the act's own contacts wins over one elsewhere in the band's.
   const matchOf = (p: TeamPerson) => teamContactMatch(p, linked) ?? teamContactMatch(p, contacts);
   const link = (c: Noted<Row<Contact>>) => call("contacts.attach", { contactId: c.id, kind: "acts", id: actId });
   const add = async (p: TeamPerson, i: number) => {
-    const r = await call<{ id: string }>("contacts.create", { ...teamContactInput(p, actName, todayStr()), attachTo: { kind: "acts", id: actId } });
+    const r = await call<{ id: string }>("contacts.create", { ...teamContactInput(p, actName, todayStr(zone)), attachTo: { kind: "acts", id: actId } });
     if (r) setAdded((s) => new Map(s).set(i, r.id));
   };
   const addInfo = (c: Noted<Row<Contact>>, patch: Record<string, unknown>) => call("contacts.update", { id: c.id, patch });
@@ -67,7 +68,7 @@ export function TeamFindings({ result, actId, actName, hasWebsite, contacts, lin
         const c = matchOf(p);
         const isLinked = !!c && linkedIds.includes(c.id);
         const contactId = c?.id ?? added.get(i);
-        const patch = c && teamContactPatch(p, c, actName, todayStr());
+        const patch = c && teamContactPatch(p, c, actName, todayStr(zone));
         return (
           <div key={`${p.email ?? p.name}-${i}`} className="flex flex-wrap items-center gap-3" data-testid={`act-team-person-${i}`}>
             <span className="grid min-w-0 flex-[1_1_240px] gap-0.5">

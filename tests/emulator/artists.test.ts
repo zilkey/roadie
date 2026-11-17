@@ -70,7 +70,7 @@ test("artists.update: slug is validated, unique among artists, and only for the 
 
 test("membership: the request names the artist; non-members are refused; your role is the one in that artist", async () => {
   await makeArtist("Band A", "band-a", "a");
-  await makeArtist("Band B", "band-b", "b");
+  await makeArtist("Band B", "band-b", "b", "America/New_York");
   await makeArtist("Band C", "band-c", "c");
   const mia = await makeUser("mia@example.com", "admin", { artists: [{ artistId: "a", role: "admin" }, { artistId: "b", role: "member" }] });
   const sam = await makeUser("sam@example.com", "member", { artistId: "a" });
@@ -101,22 +101,22 @@ test("membership: the request names the artist; non-members are refused; your ro
   assert.equal((await call("c")).status, 403);
 });
 
-test("session: lists your app artists (slug, name, role), sets {artists} claims; ai memberships stay out", async () => {
-  await makeArtist("Band B", "band-b", "b");
+test("session: lists your app artists (slug, name, role, time zone), sets {artists} claims; ai memberships stay out", async () => {
+  await makeArtist("Band B", "band-b", "b", "America/New_York");
   await makeArtist("Band A", "band-a", "a");
   await makeArtist("Bots", "bots", "z");
   const mia = await makeUser("mia@example.com", "admin", { artists: [{ artistId: "b", role: "member" }, { artistId: "a", role: "admin" }, { artistId: "z", role: "ai" }] });
   const s = await readySession(bearer(await idToken(mia.uid)));
   assert.deepEqual(s.artists, [
-    { artistId: "a", slug: "band-a", name: "Band A", role: "admin" },
-    { artistId: "b", slug: "band-b", name: "Band B", role: "member" },
+    { artistId: "a", slug: "band-a", name: "Band A", role: "admin", timeZone: "America/Denver" },
+    { artistId: "b", slug: "band-b", name: "Band B", role: "member", timeZone: "America/New_York" },
   ]);
   assert.deepEqual((await adminAuth().getUser(mia.uid)).customClaims, { artists: { b: "member", a: "admin" }, adminOf: ["a"], musicians: {} });
 });
 
 test("users.*: per artist. Adding someone from another artist joins them; removing takes them out of this artist only", async () => {
   await makeArtist("Band A", "band-a", "a");
-  await makeArtist("Band B", "band-b", "b");
+  await makeArtist("Band B", "band-b", "b", "America/New_York");
   const anna = await makeUser("anna@example.com", "admin", { artistId: "a" });
   const ben = await makeUser("ben@example.com", "admin", { artistId: "b" });
   // Anna already belongs to A, so B's add is an invite she accepts (tenancy phase 4); accepting joins her.
@@ -147,7 +147,7 @@ test("users.*: per artist. Adding someone from another artist joins them; removi
 
 test("records.get / records.list: artist docs and other artists' shows and pitches stay in their artist", async () => {
   await makeArtist("Band A", "band-a", "a");
-  await makeArtist("Band B", "band-b", "b");
+  await makeArtist("Band B", "band-b", "b", "America/New_York");
   const v = await db.create(SYS, "venues", venue("Deep End"));
   const mine = await db.create(SYS, "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
   const theirs = await db.create(SYS, "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "b", personnel: [], showIds: [] });
@@ -163,7 +163,7 @@ test("records.get / records.list: artist docs and other artists' shows and pitch
 
 test("MCP keys work on one artist: the one they name; a key that names none is refused", async () => {
   await makeArtist("Band A", "band-a", "a");
-  await makeArtist("Band B", "band-b", "b");
+  await makeArtist("Band B", "band-b", "b", "America/New_York");
   const key = async (userId: string, artistId?: string) => {
     const token = `btk_${randomBytes(32).toString("base64url")}`;
     // A key with no artist can't be made through the Writer any more (mcpTokens.artistId is required): write the old shape directly.

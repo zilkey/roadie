@@ -17,6 +17,7 @@ import { FinishSetupCard } from "@/components/welcome/FinishSetupCard";
 import { Legend } from "@/components/calendar/Legend";
 import { ReviewBanner } from "@/components/review/ReviewBanner";
 import s from "@/components/calendar/calendar.module.css";
+import { useZone } from "@/lib/artist";
 
 const LABEL: Record<CalendarLayer, string> = { all: "All", shows: "Shows", rehearsals: "Rehearsals", booking: "Booking" };
 
@@ -36,7 +37,8 @@ function Calendar() {
   const pathname = usePathname();
   const param = useSearchParams().get("m") ?? "";
   useTourDayRedirect();
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const ym = /^\d{4}-(0[1-9]|1[0-2])$/.test(param) ? param : today.slice(0, 7);
   const { items, comingUp, admin } = useCalendarItems();
   const [layer, setLayer] = useState<CalendarLayer>("all");

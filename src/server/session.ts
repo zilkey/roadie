@@ -6,9 +6,10 @@ import { AppError } from "./errors";
 import { adminOfClaims, artistClaims, mcpIn, musicianClaims, type Membership } from "@/schema/users";
 import { firestore } from "./admin";
 import { SHARED_EDIT_REQUESTS, accessFor } from "./platform";
+import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 
 /** One artist the signed-in person can open in the app (admin or member there). */
-export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
+export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member"; timeZone: string }
 
 /**
  * The custom claims for a users doc: `{artists: {artistId: role}, adminOf: [artistId], musicians: {artistId: musicianId}, musicianId?}`.
@@ -52,7 +53,7 @@ export async function artistsFor(user: Doc): Promise<ArtistAccess[]> {
   const docs = await Promise.all(ms.map((m) => db.get(sys, "artists", m.artistId)));
   return ms.flatMap((m, i) => {
     const a = docs[i];
-    return a && !a.deletedAt && typeof a.slug === "string" ? [{ artistId: m.artistId, slug: a.slug, name: a.name as string, role: m.role as "admin" | "member" }] : [];
+    return a && !a.deletedAt && typeof a.slug === "string" ? [{ artistId: m.artistId, slug: a.slug, name: a.name as string, role: m.role as "admin" | "member", timeZone: (a.timeZone as string | undefined) || DEFAULT_TIME_ZONE }] : [];
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 

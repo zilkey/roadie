@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { dayOfAfter, dayOfAsk, dayOfCongrats, dayOfDates, dayOfDirectionsHref, dayOfDismissLabel, dayOfItems, dayOfKey, dayOfText, pruneDismissed, rehearsalItem, showItem, zonedInstant, type DayOfRehearsal, type DayOfShow } from "@/lib/dayOf";
 
 /** An instant from a Denver wall clock in November (MST, UTC-7): at("2026-11-10", "14:00"). */
+const DEN = "America/Denver", NYC = "America/New_York", CHI = "America/Chicago";
 const at = (date: string, time: string) => Date.parse(`${date}T${time}:00-07:00`);
 const show = (id: string, times: DayOfShow["times"], extra: Partial<DayOfShow> = {}): DayOfShow =>
   ({ id, date: "2026-11-10", status: "confirmed", artistId: "a1", venue: { id: `v-${id}`, name: `Venue ${id}`, city: "Provo" }, times, ...extra });
@@ -22,7 +23,7 @@ test("zonedInstant: a wall clock in a zone, in winter and summer time", () => {
 });
 
 test("a show: from 3 hours before load-in until 3 hours after its last time", () => {
-  const s = showItem(show("s1", { loadIn: "17:00", soundcheck: "18:00", doors: "19:00", set: "21:00" }));
+  const s = showItem(show("s1", { loadIn: "17:00", soundcheck: "18:00", doors: "19:00", set: "21:00" }), undefined, DEN);
   assert.equal(s.start, at("2026-11-10", "14:00"));
   assert.equal(s.end, at("2026-11-11", "00:00"));
   assert.ok(!on(s, at("2026-11-10", "13:59")), "not before");
@@ -35,43 +36,43 @@ test("a show: from 3 hours before load-in until 3 hours after its last time", ()
 });
 
 test("a show without a load-in falls back to the next earliest time", () => {
-  assert.equal(showItem(show("s", { soundcheck: "18:00", doors: "19:00", set: "21:00" })).start, at("2026-11-10", "15:00"));
-  assert.equal(showItem(show("s", { doors: "19:00", showStart: "20:00" })).start, at("2026-11-10", "16:00"));
-  assert.equal(showItem(show("s", { showStart: "20:00", set: "21:15" })).start, at("2026-11-10", "17:00"));
-  const only = showItem(show("s", { set: "21:00" }));
+  assert.equal(showItem(show("s", { soundcheck: "18:00", doors: "19:00", set: "21:00" }), undefined, DEN).start, at("2026-11-10", "15:00"));
+  assert.equal(showItem(show("s", { doors: "19:00", showStart: "20:00" }), undefined, DEN).start, at("2026-11-10", "16:00"));
+  assert.equal(showItem(show("s", { showStart: "20:00", set: "21:15" }), undefined, DEN).start, at("2026-11-10", "17:00"));
+  const only = showItem(show("s", { set: "21:00" }), undefined, DEN);
   assert.equal(only.start, at("2026-11-10", "18:00"));
   assert.equal(only.end, at("2026-11-11", "00:00"));
   // Entered out of order (soundcheck before load-in): the earliest still opens the window, nothing rolls to tomorrow.
-  const odd = showItem(show("s", { loadIn: "17:00", soundcheck: "16:00", set: "21:00" }));
+  const odd = showItem(show("s", { loadIn: "17:00", soundcheck: "16:00", set: "21:00" }), undefined, DEN);
   assert.equal(odd.start, at("2026-11-10", "13:00"));
   assert.equal(odd.end, at("2026-11-11", "00:00"));
   assert.deepEqual(odd.points.map((p) => p.label), ["Soundcheck", "Load-in", "Set starts"]);
 });
 
-test("a show's times are on the venue's clock; no zone (or a bad one) is the band's", () => {
-  const chicago = showItem(show("s", { loadIn: "17:00", set: "21:00" }), "America/Chicago");
+test("a show's times are on the venue's clock; no zone (or a bad one) is the artist's", () => {
+  const chicago = showItem(show("s", { loadIn: "17:00", set: "21:00" }), "America/Chicago", DEN);
   assert.equal(chicago.start, Date.parse("2026-11-10T20:00:00Z"), "2 pm in Chicago is 1 pm in Denver");
   assert.equal(chicago.end, Date.parse("2026-11-11T06:00:00Z"));
   assert.equal(chicago.zone, "America/Chicago");
-  assert.equal(showItem(show("s", { loadIn: "17:00" })).zone, "America/Denver");
-  assert.equal(showItem(show("s", { loadIn: "17:00" }), "Not/AZone").start, at("2026-11-10", "14:00"));
+  assert.equal(showItem(show("s", { loadIn: "17:00" }), undefined, DEN).zone, "America/Denver");
+  assert.equal(showItem(show("s", { loadIn: "17:00" }), "Not/AZone", DEN).start, at("2026-11-10", "14:00"));
   // dayOfItems looks the zone up by the show's venue id.
   const s = show("s", { loadIn: "17:00", set: "21:00" });
   const zones = new Map([[s.venue!.id, "America/Chicago"]]);
-  assert.equal(dayOfItems({ shows: [s], rehearsals: [], now: at("2026-11-10", "13:30"), zones }).length, 1, "on by Chicago's clock");
-  assert.equal(dayOfItems({ shows: [s], rehearsals: [], now: at("2026-11-10", "13:30") }).length, 0, "not yet by Denver's");
+  assert.equal(dayOfItems({ shows: [s], rehearsals: [], now: at("2026-11-10", "13:30"), zones, zone: DEN }).length, 1, "on by Chicago's clock");
+  assert.equal(dayOfItems({ shows: [s], rehearsals: [], now: at("2026-11-10", "13:30"), zone: DEN }).length, 0, "not yet by Denver's");
 });
 
 test("crossing midnight: a time after midnight is the same night, and the window runs into the next day", () => {
-  const late = showItem(show("s", { doors: "22:00", set: "00:30" }));
+  const late = showItem(show("s", { doors: "22:00", set: "00:30" }), undefined, DEN);
   assert.equal(late.start, at("2026-11-10", "19:00"));
   assert.equal(late.points[1].at, at("2026-11-11", "00:30"));
   assert.equal(late.end, at("2026-11-11", "03:30"));
   assert.ok(on(late, at("2026-11-11", "01:00")), "still up after midnight");
   // An early load-in opens the window the evening before.
-  assert.equal(showItem(show("s", { loadIn: "01:30", set: "09:00" })).start, at("2026-11-09", "22:30"));
+  assert.equal(showItem(show("s", { loadIn: "01:30", set: "09:00" }), undefined, DEN).start, at("2026-11-09", "22:30"));
   // A rehearsal that ends after midnight.
-  const r = rehearsalItem(reh("r", { startTime: "22:00", endTime: "01:00" }));
+  const r = rehearsalItem(reh("r", { startTime: "22:00", endTime: "01:00" }), DEN);
   assert.equal(r.end, at("2026-11-11", "01:00"));
   assert.ok(on(r, at("2026-11-11", "00:30")));
   // The banner asks for yesterday's, today's and tomorrow's dates, so both ends are covered.
@@ -80,33 +81,33 @@ test("crossing midnight: a time after midnight is the same night, and the window
 });
 
 test("no times at all: all day on its date, midnight to midnight in its zone", () => {
-  const s = showItem(show("s", {}));
+  const s = showItem(show("s", {}), undefined, DEN);
   assert.equal(s.start, at("2026-11-10", "00:00"));
   assert.equal(s.end, at("2026-11-11", "00:00"));
   assert.equal(dayOfText(s, at("2026-11-10", "09:00")), "Today");
-  const noTimes = showItem({ ...show("s", {}), times: undefined });
+  const noTimes = showItem({ ...show("s", {}), times: undefined }, undefined, DEN);
   assert.equal(noTimes.start, s.start);
-  const chicago = showItem(show("s", {}), "America/Chicago");
+  const chicago = showItem(show("s", {}), "America/Chicago", DEN);
   assert.equal(chicago.start, Date.parse("2026-11-10T06:00:00Z"));
-  const r = rehearsalItem(reh("r"));
+  const r = rehearsalItem(reh("r"), DEN);
   assert.equal(r.start, at("2026-11-10", "00:00"));
   assert.equal(r.end, at("2026-11-11", "00:00"));
   assert.equal(dayOfText(r, at("2026-11-10", "09:00")), "Today");
   // Only an end time: all day until then.
-  const ends = rehearsalItem(reh("r", { endTime: "21:00" }));
+  const ends = rehearsalItem(reh("r", { endTime: "21:00" }), DEN);
   assert.equal(ends.start, at("2026-11-10", "00:00"));
   assert.equal(ends.end, at("2026-11-10", "21:00"));
   assert.equal(dayOfText(ends, at("2026-11-10", "09:00")), "Today, until 9:00 pm");
 });
 
 test("a rehearsal: from 3 hours before its start until its end time, or 3 hours after the start", () => {
-  const r = rehearsalItem(reh("r1", { startTime: "19:00", endTime: "21:00", location: { name: "Woodshed" } }));
+  const r = rehearsalItem(reh("r1", { startTime: "19:00", endTime: "21:00", location: { name: "Woodshed" } }), DEN);
   assert.equal(r.start, at("2026-11-10", "16:00"));
   assert.equal(r.end, at("2026-11-10", "21:00"));
   assert.equal(r.href, "/rehearsals/r1");
   assert.equal(r.title, "Woodshed");
   assert.equal(r.key, "rehearsal:r1:2026-11-10");
-  const open = rehearsalItem(reh("r2", { startTime: "19:00" }));
+  const open = rehearsalItem(reh("r2", { startTime: "19:00" }), DEN);
   assert.equal(open.end, at("2026-11-10", "22:00"));
   assert.equal(open.title, "");
 });
@@ -125,7 +126,7 @@ test("only this artist's confirmed shows, inside their window, and not the dismi
     show("yesterday", { loadIn: "17:00" }, { date: "2026-11-09" }),
   ];
   const rehearsals = [reh("r-on", { startTime: "16:00" }), reh("r-later", { startTime: "20:00" }), reh("r-gone", { startTime: "09:00", endTime: "11:00" })];
-  const ids = (dismissed: string[] = []) => dayOfItems({ shows, rehearsals, now, artistId: "a1", dismissed }).map((x) => x.id);
+  const ids = (dismissed: string[] = []) => dayOfItems({ shows, rehearsals, now, artistId: "a1", dismissed, zone: DEN }).map((x) => x.id);
   assert.deepEqual(ids(), ["r-on", "on"]);
   assert.deepEqual(ids([dayOfKey("show", "on", "2026-11-10")]), ["r-on"], "a dismissed row is gone, the other stays");
   assert.deepEqual(ids([dayOfKey("show", "on", "2026-11-09")]), ["r-on", "on"], "a dismissal for another date doesn't count");
@@ -135,7 +136,7 @@ test("only this artist's confirmed shows, inside their window, and not the dismi
 test("stacked rows: by when each first appears, then its first time, shows before rehearsals", () => {
   const shows = [show("evening", { loadIn: "17:00", set: "21:00" }), show("radio", { set: "12:30" }), show("b-tie", { loadIn: "14:00" }), show("a-tie", { loadIn: "14:00" })];
   const rehearsals = [reh("reh", { startTime: "14:00", endTime: "16:00" }), reh("allday")];
-  const order = (time: string) => dayOfItems({ shows, rehearsals, now: at("2026-11-10", time), artistId: "a1" }).map((x) => x.id);
+  const order = (time: string) => dayOfItems({ shows, rehearsals, now: at("2026-11-10", time), artistId: "a1", zone: DEN }).map((x) => x.id);
   // All day (since midnight) first, then radio (9:30), then the three that appear at 11:00: shows by id, then the rehearsal.
   assert.deepEqual(order("11:30"), ["allday", "radio", "a-tie", "b-tie", "reh"]);
   assert.deepEqual(order("14:30"), ["allday", "radio", "a-tie", "b-tie", "reh", "evening"]);
@@ -145,7 +146,7 @@ test("stacked rows: by when each first appears, then its first time, shows befor
 // ---------- what a row says ----------
 
 test("the text follows the day: the next time still ahead, then On now", () => {
-  const s = showItem(show("s", { loadIn: "17:00", soundcheck: "18:00", doors: "19:00", showStart: "20:00", set: "21:00" }));
+  const s = showItem(show("s", { loadIn: "17:00", soundcheck: "18:00", doors: "19:00", showStart: "20:00", set: "21:00" }), undefined, DEN);
   const say = (time: string) => dayOfText(s, at("2026-11-10", time));
   assert.equal(say("14:00"), "Load-in 5:00 pm");
   assert.equal(say("16:59"), "Load-in 5:00 pm");
@@ -155,41 +156,63 @@ test("the text follows the day: the next time still ahead, then On now", () => {
   assert.equal(say("20:15"), "Set starts 9:00 pm");
   assert.equal(say("21:00"), "On now");
   assert.equal(say("23:30"), "On now");
-  assert.equal(dayOfText(showItem(show("s", { set: "21:00" })), at("2026-11-10", "18:00")), "Set starts 9:00 pm");
+  assert.equal(dayOfText(showItem(show("s", { set: "21:00" }), undefined, DEN), at("2026-11-10", "18:00")), "Set starts 9:00 pm");
 
-  const r = rehearsalItem(reh("r", { startTime: "19:00", endTime: "21:00" }));
+  const r = rehearsalItem(reh("r", { startTime: "19:00", endTime: "21:00" }), DEN);
   assert.equal(dayOfText(r, at("2026-11-10", "16:00")), "Starts 7:00 pm");
   assert.equal(dayOfText(r, at("2026-11-10", "19:00")), "On now, until 9:00 pm");
-  assert.equal(dayOfText(rehearsalItem(reh("r", { startTime: "19:00" })), at("2026-11-10", "19:30")), "On now");
+  assert.equal(dayOfText(rehearsalItem(reh("r", { startTime: "19:00" }), DEN), at("2026-11-10", "19:30")), "On now");
+});
+
+test("two artists, Denver and New York: the same rows read on each one's own clock; a Chicago venue keeps Chicago's", () => {
+  // 7 pm in New York is 5 pm in Denver: a New York rehearsal at 19:00 opens at 16:00 New York time (14:00 Denver).
+  const ny = rehearsalItem(reh("r", { startTime: "19:00" }), NYC);
+  assert.equal(ny.start, Date.parse("2026-11-10T21:00:00Z"));
+  assert.equal(rehearsalItem(reh("r", { startTime: "19:00" }), DEN).start, Date.parse("2026-11-10T23:00:00Z"));
+  assert.equal(dayOfText(ny, ny.start), "Starts 7:00 pm", "the artist's own clock needs no zone name");
+  // A show at a venue with no zone is on its artist's clock.
+  const s = show("s", { loadIn: "17:00", set: "21:00" }, { venue: { id: "v-none", name: "No Zone Hall", city: "Provo" } });
+  assert.equal(showItem(s, undefined, NYC).zone, NYC);
+  assert.equal(showItem(s, undefined, NYC).points[0].at, Date.parse("2026-11-10T22:00:00Z"));
+  // The Chicago venue: Chicago's clock for both artists, and both say so.
+  const c = show("c", { loadIn: "17:00" }, { venue: { id: "v-chi", name: "Chicago Room", city: "Chicago" } });
+  const zones = new Map([["v-chi", CHI]]);
+  const forNy = dayOfItems({ shows: [c], rehearsals: [], now: Date.parse("2026-11-10T23:00:00Z"), zones, zone: NYC });
+  const forDen = dayOfItems({ shows: [c], rehearsals: [], now: Date.parse("2026-11-10T23:00:00Z"), zones, zone: DEN });
+  assert.equal(forNy[0].points[0].at, forDen[0].points[0].at);
+  assert.equal(dayOfText(forNy[0], forNy[0].start), "Load-in 5:00 pm CST");
+  assert.equal(dayOfText(forDen[0], forDen[0].start), "Load-in 5:00 pm CST");
+  // A Chicago artist at that venue is home: no zone name.
+  assert.equal(dayOfText(showItem(c, CHI, CHI), Date.parse("2026-11-10T20:00:00Z")), "Load-in 5:00 pm");
 });
 
 test("a venue in another time zone shows its own clock with the zone; names for the row and its dismiss button", () => {
-  const s = showItem(show("s", { loadIn: "17:00" }), "America/Chicago");
+  const s = showItem(show("s", { loadIn: "17:00" }), "America/Chicago", DEN);
   assert.equal(dayOfText(s, s.start), "Load-in 5:00 pm CST");
-  assert.equal(dayOfText(showItem({ ...show("s", { loadIn: "17:00" }), date: "2026-07-10" }, "America/Chicago"), Date.parse("2026-07-10T20:00:00Z")), "Load-in 5:00 pm CDT");
-  assert.equal(dayOfDismissLabel(showItem(show("s1", {}))), "Hide the banner for Venue s1");
-  const house = showItem({ id: "h", date: "2026-11-10", status: "confirmed", kind: "house", hostName: "Wren and Lee", place: { city: "Provo" }, times: {} });
+  assert.equal(dayOfText(showItem({ ...show("s", { loadIn: "17:00" }), date: "2026-07-10" }, "America/Chicago", DEN), Date.parse("2026-07-10T20:00:00Z")), "Load-in 5:00 pm CDT");
+  assert.equal(dayOfDismissLabel(showItem(show("s1", {}), undefined, DEN)), "Hide the banner for Venue s1");
+  const house = showItem({ id: "h", date: "2026-11-10", status: "confirmed", kind: "house", hostName: "Wren and Lee", place: { city: "Provo" }, times: {} }, undefined, DEN);
   assert.equal(house.title, "House concert · Wren and Lee");
   assert.equal(house.city, "Provo");
-  assert.equal(dayOfDismissLabel(rehearsalItem(reh("r", { location: { name: "Woodshed" } }))), "Hide the banner for the rehearsal at Woodshed");
-  assert.equal(dayOfDismissLabel(rehearsalItem(reh("r"))), "Hide the banner for the rehearsal");
+  assert.equal(dayOfDismissLabel(rehearsalItem(reh("r", { location: { name: "Woodshed" } }), DEN)), "Hide the banner for the rehearsal at Woodshed");
+  assert.equal(dayOfDismissLabel(rehearsalItem(reh("r"), DEN)), "Hide the banner for the rehearsal");
 });
 
 test("after the show: an hour after its last time the row congratulates and asks Roadie about that show", () => {
-  const s = showItem(show("s", { loadIn: "17:00", doors: "19:00", set: "21:00" }));
+  const s = showItem(show("s", { loadIn: "17:00", doors: "19:00", set: "21:00" }), undefined, DEN);
   assert.equal(dayOfAfter(s, at("2026-11-10", "21:00")), false);
   assert.equal(dayOfAfter(s, at("2026-11-10", "21:59")), false);
   assert.equal(dayOfAfter(s, at("2026-11-10", "22:00")), true);
   assert.equal(dayOfAfter(s, at("2026-11-10", "23:59")), true); // the row itself leaves at 00:00 (3 hours after the set)
-  assert.equal(dayOfItems({ shows: [show("s", { set: "21:00" })], rehearsals: [], now: at("2026-11-11", "00:00") }).length, 0);
+  assert.equal(dayOfItems({ shows: [show("s", { set: "21:00" })], rehearsals: [], now: at("2026-11-11", "00:00"), zone: DEN }).length, 0);
   // No times: "Today" all day, never the invite. A rehearsal never is.
-  assert.equal(dayOfAfter(showItem(show("s", {})), at("2026-11-10", "23:00")), false);
-  assert.equal(dayOfAfter(rehearsalItem(reh("r", { startTime: "19:00" })), at("2026-11-10", "21:30")), false);
+  assert.equal(dayOfAfter(showItem(show("s", {}), undefined, DEN), at("2026-11-10", "23:00")), false);
+  assert.equal(dayOfAfter(rehearsalItem(reh("r", { startTime: "19:00" }), DEN), at("2026-11-10", "21:30")), false);
 
-  assert.equal(dayOfCongrats(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "Deep End" } }))), "Congrats on the Deep End show!");
-  assert.equal(dayOfAsk(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "Deep End" } }))), "Ask me about the Deep End show");
-  assert.equal(dayOfAsk(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "The Red Barn" } }))), "Ask me about the Red Barn show");
-  const house = showItem({ id: "h", date: "2026-11-10", status: "confirmed", kind: "house", hostName: "Wren and Lee", times: { set: "20:00" } });
+  assert.equal(dayOfCongrats(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "Deep End" } }), undefined, DEN)), "Congrats on the Deep End show!");
+  assert.equal(dayOfAsk(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "Deep End" } }), undefined, DEN)), "Ask me about the Deep End show");
+  assert.equal(dayOfAsk(showItem(show("s", { set: "21:00" }, { venue: { id: "v", name: "The Red Barn" } }), undefined, DEN)), "Ask me about the Red Barn show");
+  const house = showItem({ id: "h", date: "2026-11-10", status: "confirmed", kind: "house", hostName: "Wren and Lee", times: { set: "20:00" } }, undefined, DEN);
   assert.equal(dayOfCongrats(house), "Congrats on the house concert!");
 });
 
@@ -205,18 +228,18 @@ test("Roadie is not offered dayOf.dismiss: its tool list is unchanged by the ban
 // ---------- the links ----------
 
 test("Directions: a venue by name and address (else city), a house concert by address, a rehearsal by address, coordinates or name", () => {
-  assert.equal(showItem(show("s", {}, { venue: { id: "v", name: "Deep End", address: "12 Main St, Provo, UT", city: "Provo" } })).mapsQuery, "Deep End, 12 Main St, Provo, UT");
-  assert.equal(showItem(show("s", {})).mapsQuery, "Venue s, Provo");
-  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "house", hostName: "Ann", place: { city: "Orem", address: "9 Elm St" } })).mapsQuery, "9 Elm St");
-  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "other" })).mapsQuery, undefined);
-  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", address: "5 Oak Ave" } })).mapsQuery, "5 Oak Ave");
-  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", lat: 40.2, lng: -111.6 } })).mapsQuery, "40.2,-111.6");
-  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic" } })).mapsQuery, "The Attic");
-  assert.equal(rehearsalItem(reh("r")).mapsQuery, undefined);
+  assert.equal(showItem(show("s", {}, { venue: { id: "v", name: "Deep End", address: "12 Main St, Provo, UT", city: "Provo" } }), undefined, DEN).mapsQuery, "Deep End, 12 Main St, Provo, UT");
+  assert.equal(showItem(show("s", {}), undefined, DEN).mapsQuery, "Venue s, Provo");
+  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "house", hostName: "Ann", place: { city: "Orem", address: "9 Elm St" } }), undefined, DEN).mapsQuery, "9 Elm St");
+  assert.equal(showItem(show("s", {}, { venue: undefined, kind: "other" }), undefined, DEN).mapsQuery, undefined);
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", address: "5 Oak Ave" } }), DEN).mapsQuery, "5 Oak Ave");
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic", lat: 40.2, lng: -111.6 } }), DEN).mapsQuery, "40.2,-111.6");
+  assert.equal(rehearsalItem(reh("r", { location: { name: "The Attic" } }), DEN).mapsQuery, "The Attic");
+  assert.equal(rehearsalItem(reh("r"), DEN).mapsQuery, undefined);
   assert.equal(dayOfDirectionsHref("Deep End, Provo"), "https://www.google.com/maps/dir/?api=1&destination=Deep%20End%2C%20Provo");
 });
 
 test("Preview Fan Page only once the show's fan page line has an amount", () => {
-  assert.equal(showItem(show("s", {})).fanPreview, false);
-  assert.equal(showItem(show("s", {}, { fanPage: { amountCents: 2000 } })).fanPreview, true);
+  assert.equal(showItem(show("s", {}), undefined, DEN).fanPreview, false);
+  assert.equal(showItem(show("s", {}, { fanPage: { amountCents: 2000 } }), undefined, DEN).fanPreview, true);
 });

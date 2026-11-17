@@ -1,6 +1,6 @@
 "use client";
 import { BackLink } from "@/components/BackLink";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
@@ -56,7 +56,8 @@ function TourView({ tour }: { tour: TourRow }) {
   const projects = useCollection<Project>("projects").rows ?? [];
   // Members: + Add an expense, pinned to today's drive, else stay, else show.
   const entries = useCollection<TourEntry>(`tours/${tour.id}/entries`, { skip: admin, where: [["visibility", "==", "band"]] }).rows ?? [];
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const todays = (["drive", "stay", "show"] as const).map((k) => entries.find((e) => e.kind === k && e.date === today)).find(Boolean);
 
   const [form, setForm] = useState<TourForm>(() => formOf(tour));

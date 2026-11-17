@@ -6,12 +6,11 @@
  *   - a show is over 3 hours after its last time (usually Set starts);
  *   - a rehearsal is over at its end time, or 3 hours after its start when it has no end time;
  *   - with no times at all it is on all day on its date, midnight to midnight.
- * Clock times are the venue's (its time zone, else the band's); rehearsals use the band's.
+ * Clock times are the venue's (its time zone, else the artist's); rehearsals use the artist's.
  *
  * A show's row turns into the after-show invite an hour after its last time, until it leaves (dayOfAfter): "Congrats on the
  * Deep End show!", and for admins "Record the deets", which opens the show and starts Roadie's after-show interview.
  */
-import { BAND_TIME_ZONE } from "./timezone";
 import { addDays, fmtTime, showName, type ShowPlaceLike } from "./shows";
 
 export const DAY_OF_LEAD_MS = 3 * 60 * 60 * 1000;
@@ -39,7 +38,10 @@ export interface DayOfItem {
   mapsQuery?: string;
   /** A show whose fan page line has an amount, so its preview shows something. */
   fanPreview?: boolean;
+  /** The zone its times are read in: the venue's, else the artist's. */
   zone: string;
+  /** The artist's own zone: a time in another zone says which ("7:00 pm CST"). */
+  home: string;
   /** The banner shows while start <= now < end. */
   start: number; end: number;
   /** Its known times, earliest first; empty when it has none. */
@@ -72,9 +74,10 @@ export function zonedInstant(date: string, minutes: number, zone: string): numbe
 }
 
 const minutesOf = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-const safeZone = (zone?: string) => {
-  if (!zone) return BAND_TIME_ZONE;
-  try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return zone; } catch { return BAND_TIME_ZONE; }
+/** `zone` when it is a real zone, else `home` (the artist's). */
+const zoneOr = (zone: string | undefined, home: string) => {
+  if (!zone) return home;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return zone; } catch { return home; }
 };
 
 const SHOW_TIMES: [keyof DayOfTimes, string][] = [["loadIn", "Load-in"], ["soundcheck", "Soundcheck"], ["doors", "Doors"], ["showStart", "Show starts"], ["set", "Set starts"]];
@@ -83,8 +86,8 @@ const SHOW_TIMES: [keyof DayOfTimes, string][] = [["loadIn", "Load-in"], ["sound
  * A show's row. Its times are read in the order a night runs (load-in, soundcheck, doors, show, set); one that is more than
  * 12 hours earlier than the one before it (doors 22:00, set 00:30) is after midnight, the same night.
  */
-export function showItem(s: DayOfShow, zone?: string): DayOfItem {
-  const z = safeZone(zone);
+export function showItem(s: DayOfShow, venueZone: string | undefined, home: string): DayOfItem {
+  const z = zoneOr(venueZone, home);
   const points: DayOfPoint[] = [];
   let prev: number | null = null;
   for (const [field, label] of SHOW_TIMES) {
@@ -96,7 +99,7 @@ export function showItem(s: DayOfShow, zone?: string): DayOfItem {
     points.push({ label, time, at: zonedInstant(s.date, min, z) });
   }
   points.sort((a, b) => a.at - b.at);
-  const base = { key: dayOfKey("show", s.id, s.date), kind: "show" as const, id: s.id, date: s.date, href: `/shows/${s.id}`, title: showName(s), city: s.venue?.city ?? s.place?.city, mapsQuery: showMapsQuery(s), fanPreview: !!s.fanPage?.amountCents, zone: z, points };
+  const base = { key: dayOfKey("show", s.id, s.date), kind: "show" as const, id: s.id, date: s.date, href: `/shows/${s.id}`, title: showName(s), city: s.venue?.city ?? s.place?.city, mapsQuery: showMapsQuery(s), fanPreview: !!s.fanPage?.amountCents, zone: z, home, points };
   if (!points.length) return { ...base, start: zonedInstant(s.date, 0, z), end: zonedInstant(s.date, 1440, z) };
   return { ...base, start: points[0].at - DAY_OF_LEAD_MS, end: points[points.length - 1].at + DAY_OF_TAIL_MS };
 }
@@ -119,9 +122,9 @@ export function rehearsalMapsQuery(r: DayOfRehearsal): string | undefined {
 /** Google Maps directions to the place, from wherever the phone is. */
 export const dayOfDirectionsHref = (q: string) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(q)}`;
 
-/** A rehearsal's row, on the band's clock. An end time at or before the start is after midnight. */
-export function rehearsalItem(r: DayOfRehearsal, zone: string = BAND_TIME_ZONE): DayOfItem {
-  const base = { key: dayOfKey("rehearsal", r.id, r.date), kind: "rehearsal" as const, id: r.id, date: r.date, href: `/rehearsals/${r.id}`, title: r.location?.name?.trim() ?? "", mapsQuery: rehearsalMapsQuery(r), zone };
+/** A rehearsal's row, on the artist's clock (`zone`). An end time at or before the start is after midnight. */
+export function rehearsalItem(r: DayOfRehearsal, zone: string): DayOfItem {
+  const base = { key: dayOfKey("rehearsal", r.id, r.date), kind: "rehearsal" as const, id: r.id, date: r.date, href: `/rehearsals/${r.id}`, title: r.location?.name?.trim() ?? "", mapsQuery: rehearsalMapsQuery(r), zone, home: zone };
   const midnight = zonedInstant(r.date, 0, zone);
   if (!r.startTime) {
     const until = r.endTime ? { label: "Until", time: r.endTime, at: zonedInstant(r.date, minutesOf(r.endTime), zone) } : undefined;
@@ -145,16 +148,16 @@ export function dayOfDates(today: string): string[] {
 /**
  * The banner's rows at `now`: this artist's confirmed shows and the band's rehearsals that are on and not dismissed,
  * by when each first appears (earliest first), then by its first time, shows before rehearsals.
- * `zones` maps a venue id to its time zone; a venue without one is on the band's clock.
+ * `zones` maps a venue id to its time zone; a venue without one is on the artist's clock (`zone`).
  */
 export function dayOfItems(i: {
-  shows: DayOfShow[]; rehearsals: DayOfRehearsal[]; now: number; artistId?: string;
+  shows: DayOfShow[]; rehearsals: DayOfRehearsal[]; now: number; zone: string; artistId?: string;
   zones?: ReadonlyMap<string, string | undefined>; dismissed?: readonly string[];
 }): DayOfItem[] {
   const hidden = new Set(i.dismissed ?? []);
   const items = [
-    ...i.shows.filter((s) => s.status === "confirmed" && (!i.artistId || !s.artistId || s.artistId === i.artistId)).map((s) => showItem(s, s.venue ? i.zones?.get(s.venue.id) : undefined)),
-    ...i.rehearsals.map((r) => rehearsalItem(r)),
+    ...i.shows.filter((s) => s.status === "confirmed" && (!i.artistId || !s.artistId || s.artistId === i.artistId)).map((s) => showItem(s, s.venue ? i.zones?.get(s.venue.id) : undefined, i.zone)),
+    ...i.rehearsals.map((r) => rehearsalItem(r, i.zone)),
   ];
   const first = (x: DayOfItem) => x.points[0]?.at ?? x.start;
   return items
@@ -162,21 +165,21 @@ export function dayOfItems(i: {
     .sort((a, b) => a.start - b.start || first(a) - first(b) || (a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind === "show" ? -1 : 1));
 }
 
-/** "MST", "CDT": the zone's short name at that instant, for a venue that isn't on the band's clock. */
+/** "MST", "CDT": the zone's short name at that instant, for a venue that isn't on the artist's clock. */
 function zoneName(at: number, zone: string): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "short" }).formatToParts(new Date(at)).find((p) => p.type === "timeZoneName")?.value ?? "";
 }
-const clock = (p: DayOfPoint, zone: string) => `${fmtTime(p.time)}${zone === BAND_TIME_ZONE ? "" : ` ${zoneName(p.at, zone)}`}`;
+const clock = (p: DayOfPoint, item: DayOfItem) => `${fmtTime(p.time)}${item.zone === item.home ? "" : ` ${zoneName(p.at, item.zone)}`}`;
 
 /**
  * What the row says after the name: the next time still ahead ("Load-in 5:00 pm", then "Doors 7:00 pm"...), "On now" after
  * the last one, "Today" when it has no times. A rehearsal: "Starts 7:00 pm", then "On now, until 9:00 pm".
  */
 export function dayOfText(item: DayOfItem, now: number): string {
-  const until = item.until && item.until.at > now ? `, until ${clock(item.until, item.zone)}` : "";
+  const until = item.until && item.until.at > now ? `, until ${clock(item.until, item)}` : "";
   if (!item.points.length) return `Today${until}`;
   const next = item.points.find((p) => p.at > now);
-  if (next) return `${next.label} ${clock(next, item.zone)}`;
+  if (next) return `${next.label} ${clock(next, item)}`;
   return `On now${until}`;
 }
 

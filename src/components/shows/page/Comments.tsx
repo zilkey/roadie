@@ -4,17 +4,19 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { useProfile } from "@/lib/auth";
 import { useCommand, ErrorBox } from "@/components/ui";
 import { fmtLong } from "@/lib/shows";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import type { Comment } from "@/schema/pitches";
 import { useBand, type ShowRow } from "../common";
 import { AutoGrowTextarea, ShowCard, initials } from "./kit";
+import { useZone } from "@/lib/artist";
 
 type Stamp = { toDate(): Date; toMillis(): number };
 const ms = (t: unknown) => (t as Stamp | undefined)?.toMillis?.() ?? 0;
-const dayOf = (t: unknown) => { const d = (t as Stamp | undefined)?.toDate?.(); return d ? fmtLong(dateInBandZone(d)) : ""; };
+const dayOf = (t: unknown, zone: string) => { const d = (t as Stamp | undefined)?.toDate?.(); return d ? fmtLong(dateInZone(zone, d)) : ""; };
 
 /** Comments: always at the bottom of every tab. Admins read all; members read only the ones for the band. */
 export function Comments({ show, admin }: { show: ShowRow; admin: boolean }) {
+  const zone = useZone();
   const { uid } = useProfile();
   const { musicians } = useBand();
   const rows = useCollection<Comment>(`shows/${show.id}/comments`, { where: admin ? [] : [["audience", "==", "band"]] }).rows;
@@ -40,7 +42,7 @@ export function Comments({ show, admin }: { show: ShowRow; admin: boolean }) {
           <div key={c.id} className="flex gap-3" data-testid="comment" data-id={c.id}>
             <span className="avatar" aria-hidden>{initials(nameOf(c.authorId))}</span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="s"><b>{nameOf(c.authorId)}</b> · {dayOf(c.createdAt)}{!c.audience && <> · <span data-testid="comment-from-pitch">From the pitch</span></>}{admin && c.audience !== "band" && <> · <span data-testid="comment-private">Private</span></>}{c.edited && <> · <span data-testid="comment-edited">edited</span></>}</span>
+              <span className="s"><b>{nameOf(c.authorId)}</b> · {dayOf(c.createdAt, zone)}{!c.audience && <> · <span data-testid="comment-from-pitch">From the pitch</span></>}{admin && c.audience !== "band" && <> · <span data-testid="comment-private">Private</span></>}{c.edited && <> · <span data-testid="comment-edited">edited</span></>}</span>
               <span className="whitespace-pre-line break-words" data-testid="comment-body">{c.body}</span>
               {(c.authorId === uid || admin) && <div><button type="button" className="card-edit" style={{ padding: 0 }} onClick={() => setEditing(c.id)} data-testid="comment-edit">Edit</button></div>}
             </div>
@@ -72,6 +74,7 @@ function AudienceSeg({ name, value, onChange, testid }: { name: string; value: A
 }
 
 function EditRow({ showId, c, name, admin, onDone }: { showId: string; c: Comment & { id: string }; name: string; admin: boolean; onDone(): void }) {
+  const zone = useZone();
   const cmd = useCommand();
   const [body, setBody] = useState(c.body);
   // Carried over from the pitch (no audience) reads as Private.
@@ -89,7 +92,7 @@ function EditRow({ showId, c, name, admin, onDone }: { showId: string; c: Commen
     <div className="flex gap-3 rounded-xl p-3" style={{ background: "var(--accent-soft)" }} data-testid="comment-editing">
       <span className="avatar" aria-hidden>{initials(name)}</span>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <span className="s"><b>{name}</b> · {dayOf(c.createdAt)} · editing</span>
+        <span className="s"><b>{name}</b> · {dayOf(c.createdAt, zone)} · editing</span>
         <label htmlFor={`comment-edit-${c.id}`} className="sr-only">Edit comment</label>
         <AutoGrowTextarea id={`comment-edit-${c.id}`} value={body} onChange={setBody} data-testid="comment-edit-input" />
         {admin && <AudienceSeg name={`comment-edit-audience-${c.id}`} value={audience} onChange={setAudience} testid="comment-edit-audience" />}

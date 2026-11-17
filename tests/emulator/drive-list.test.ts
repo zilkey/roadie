@@ -38,7 +38,7 @@ beforeEach(async () => {
   await fetch(`${URL_}/__reset`, { method: "POST" });
   const rudy = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   ctx = { uid: rudy.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: "fake-band-folder", postsFolderId: SOCIALS_FOLDER_ID, links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: "fake-band-folder", postsFolderId: SOCIALS_FOLDER_ID, links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
 test("list: one parent or several, by kind, newest added first, paged; trashed files are left out", async () => {

@@ -39,7 +39,7 @@ beforeEach(async () => {
   await fetch(process.env.DRIVE_BASE_URL + "/__reset", { method: "POST" });
   const a = await makeUser("rudy@example.com", "admin", { name: "Rudy Pike" });
   ctx = { uid: a.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST, now: new Date("2026-11-06T18:00:00Z") };
-  await db.create(ctx, "artists", { slug: "band", name: "Band", driveFolderId: BAND_FOLDER_ID, links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "band", name: "Band", driveFolderId: BAND_FOLDER_ID, links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
 test("tours.sheet makes one Google Sheet in the band folder, the band version, then rewrites the same one", async () => {

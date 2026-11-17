@@ -28,7 +28,7 @@ beforeEach(async () => {
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
   sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
-  await db.create(sys, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(sys, "artists", { timeZone: "America/Denver", slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   venueId = ((await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Grey Eagle", "Asheville", { website: "https://thegreyeagle.com/" })))) as { id: string }).id;
 });
 

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import QRCode from "qrcode";
-import Link, { useArtist, useArtistRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter, useZone } from "@/lib/artist";
 import { ErrorBox, PageTitle } from "@/components/ui";
 import { Icons } from "@/components/people/shared";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -12,7 +12,7 @@ import { useCollection } from "@/lib/firestore-hooks";
 import { moved } from "@/components/shows/checklists/shared";
 import { money, parsePrice } from "@/lib/merch";
 import { fmtLong, publicShowName } from "@/lib/shows";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
 import { FanLink, MAX_LOGO_CHARS, paymentAppOf, type Artist, type FanPageStyle, type MerchItem } from "@/schema/artists";
 import { FAN_PAGE_BUTTONS } from "@/schema/shows";
 import { fanPreviewHref } from "@/components/shows/page/FanPageCard";
@@ -181,10 +181,11 @@ export function FanPage() {
 
   const shows = useCollection<Show>("shows", { where: [["artistId", "==", ctx.artistId]], skip: !admin });
   /** Upcoming shows with their fan page line on (the Fan Page card on each show), soonest first. */
+  const zone = useZone();
   const onPage = useMemo(() => {
-    const today = dateInBandZone();
+    const today = dateInZone(zone);
     return (shows.rows ?? []).filter((s) => s.fanPage?.on && s.date >= today && s.status !== "canceled" && s.status !== "dropped").sort((a, b) => a.date.localeCompare(b.date));
-  }, [shows.rows]);
+  }, [shows.rows, zone]);
 
   if (!artist) return null;
   const venmo = artist.paymentUrl ? paymentAppOf(artist.paymentUrl) : null;

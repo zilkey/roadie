@@ -12,7 +12,8 @@ import {
   artistShows, canSeeFans, citiesFor, countableShow, deleteFan, loadFans, requireFan, requireFanAdmin, showLabel, upsertFan,
 } from "../fans";
 import { geocodeCity, geocodeText } from "../geocode";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { NO_CITY, cityLabel, groupOf, haversineMiles, mergeCities, sameCity, type CityLike } from "@/lib/fans";
 import { dateStr } from "@/schema";
 
@@ -133,7 +134,7 @@ export const fansCounts = defineCommand({
     "byShow ([{showId, label, count}]), notInBandzoogle, and newSince (fans added on or after the optional since date, YYYY-MM-DD). Open to every role.",
   input: strict({ since: dateStr.optional() }),
   async run(ctx, i) {
-    const fans = await loadFans(ctx);
+    const fans = await loadFans(ctx), zone = await zoneOf(ctx);
     const byCity = new Map<string, number>(), byShow = new Map<string, number>();
     for (const f of fans) {
       const cs = (f.cities ?? []) as CityLike[];
@@ -147,7 +148,7 @@ export const fansCounts = defineCommand({
       byShow: [...byShow].map(([showId, count]) => ({ showId, label: shows.has(showId) ? `${showLabel(shows.get(showId)!)} · ${shows.get(showId)!.date}` : "Deleted show", count }))
         .sort((a, b) => b.count - a.count),
       notInBandzoogle: fans.filter((f) => !inBandzoogle(f)).length,
-      ...(i.since ? { since: i.since, newSince: fans.filter((f) => f.createdAt && dateInBandZone(f.createdAt.toDate()) >= i.since!).length } : {}),
+      ...(i.since ? { since: i.since, newSince: fans.filter((f) => f.createdAt && dateInZone(zone, f.createdAt.toDate()) >= i.since!).length } : {}),
     };
   },
 });

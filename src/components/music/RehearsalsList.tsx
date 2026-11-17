@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtistRouter } from "@/lib/artist";
+import Link, { useArtistRouter, useZone } from "@/lib/artist";
 import { fmtLongYear } from "@/lib/shows";
 import { todayStr } from "@/lib/booking";
 import { initials } from "@/components/shows/page/kit";
@@ -12,7 +12,8 @@ const TD = "px-3 py-3 align-middle";
  *  "Create Rehearsal" lives in the page header. */
 export function RehearsalsList() {
   const m = useMusic();
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const upcoming = m.rehearsals.filter((r) => r.date >= today).sort((a, b) => a.date.localeCompare(b.date));
   const past = m.rehearsals.filter((r) => r.date < today).sort((a, b) => b.date.localeCompare(a.date));
   if (!m.loading && m.rehearsals.length === 0) return <div className="empty" data-testid="rehearsals-list"><span>No rehearsals logged yet.</span></div>;

@@ -7,7 +7,7 @@ import { clientAuth } from "./firebase-client";
 /** Another artist asking you to join it (tenancy plan Q2-A): you join only when you accept. From /api/session. */
 export interface PendingInvite { id: string; artistId: string; artistName: string; role: "admin" | "member"; invitedBy: string }
 /** One artist you can open, and your role there (from /api/session). */
-export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
+export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member"; timeZone: string }
 export interface Profile {
   uid: string; userId: string; name: string; email: string; mcpAccess: boolean; artists: ArtistAccess[];
   /** The old single musician link; read your musician in an artist from `useArtist().musicianId` instead. Removed in phase 7. */

@@ -1,10 +1,9 @@
-import { BAND_TIME_ZONE } from "./timezone";
 
 /**
  * Which show the public fan pages (/f/, /m/) are about right now. Pure: no clock, no I/O.
  *
  * Only `confirmed` and `played` shows count (any kind); hold, canceled and dropped never do.
- * Every time is wall-clock in the show's own zone (`zoneOf`, default the band's), converted to a real instant.
+ * Every time is wall-clock in the show's own zone (`zoneOf`: the venue's, else the artist's), converted to a real instant.
  *
  * A show's window:
  *  - starts 3h before doors; no doors: before showStart; no showStart: before the set; no times at all: at the start of the show's day.
@@ -31,7 +30,7 @@ const HOUR = 3_600_000;
 const MORNING_AFTER_MS = 18 * HOUR;
 const COUNTS = new Set(["confirmed", "played"]);
 
-type Zoned<S> = { zoneOf?: (show: S) => string };
+type Zoned<S> = { zoneOf: (show: S) => string };
 
 /** Milliseconds the zone is ahead of UTC at this instant. */
 function offsetAt(ms: number, zone: string): number {
@@ -55,7 +54,7 @@ export const addDays = (date: string, n: number): string => new Date(Date.parse(
 const minutes = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 
 /** [start, end] instants of a show's window (see the file comment). */
-export function showWindow<S extends PickableShow>(show: S, zone: string = BAND_TIME_ZONE): { start: number; end: number } {
+export function showWindow<S extends PickableShow>(show: S, zone: string): { start: number; end: number } {
   const t = show.times ?? {};
   const dayStart = wallToInstant(show.date, "00:00", zone);
   const dayEnd = wallToInstant(addDays(show.date, 1), "00:00", zone) - 1;
@@ -77,13 +76,13 @@ export function showWindow<S extends PickableShow>(show: S, zone: string = BAND_
 }
 
 /** The show the fan pages are about at `now` (ms since epoch or Date), or null. See the file comment for the rules. */
-export function pickShow<S extends PickableShow>(shows: readonly S[], now: number | Date, opts: Zoned<S> = {}): { show: S; mode: PickMode } | null {
+export function pickShow<S extends PickableShow>(shows: readonly S[], now: number | Date, opts: Zoned<S>): { show: S; mode: PickMode } | null {
   const t = +now;
   let during: { show: S; start: number; end: number } | null = null;
   let after: { show: S; start: number; end: number } | null = null;
   for (const show of shows) {
     if (!COUNTS.has(show.status)) continue;
-    const w = showWindow(show, opts.zoneOf?.(show));
+    const w = showWindow(show, opts.zoneOf(show));
     const c = { show, ...w };
     if (t >= w.start && t <= w.end) {
       if (!during || w.start > during.start || (w.start === during.start && (w.end > during.end || (w.end === during.end && show.date > during.show.date)))) during = c;
@@ -100,12 +99,12 @@ export function pickShow<S extends PickableShow>(shows: readonly S[], now: numbe
  * For the "Change" picker: up to `n` confirmed or played shows from the last `days` to the next `days` (default 30 each way),
  * nearest first. Distance is 0 for a show whose window contains now, else the gap from now to the window; ties go to the earlier date.
  */
-export function recentAndUpcoming<S extends PickableShow>(shows: readonly S[], now: number | Date, n: number, opts: Zoned<S> & { days?: number } = {}): S[] {
+export function recentAndUpcoming<S extends PickableShow>(shows: readonly S[], now: number | Date, n: number, opts: Zoned<S> & { days?: number }): S[] {
   const t = +now, span = (opts.days ?? 30) * 24 * HOUR;
   return shows
     .filter((s) => COUNTS.has(s.status))
     .map((show) => {
-      const w = showWindow(show, opts.zoneOf?.(show));
+      const w = showWindow(show, opts.zoneOf(show));
       return { show, dist: t < w.start ? w.start - t : t > w.end ? t - w.end : 0 };
     })
     .filter((c) => c.dist <= span)
@@ -118,7 +117,7 @@ export function recentAndUpcoming<S extends PickableShow>(shows: readonly S[], n
 export const DEFAULT_SHOW_START = "19:00";
 
 /** The instant of a show's time: showStart, else the set, else doors, else DEFAULT_SHOW_START, wall-clock in `zone`. */
-export function showTimeAt(show: PickableShow, zone: string = BAND_TIME_ZONE): number {
+export function showTimeAt(show: PickableShow, zone: string): number {
   const time = show.times?.showStart ?? show.times?.set ?? show.times?.doors ?? DEFAULT_SHOW_START;
   return wallToInstant(show.date, time, zone);
 }
@@ -130,12 +129,12 @@ export const inFanWindow = (at: number, now: number | Date) => +now >= at - HOUR
  * The show time is showStart, else the set, else doors, else DEFAULT_SHOW_START, wall-clock in the show's zone. Only confirmed and
  * played shows count. When two windows contain now, the show whose time is nearest wins (a tie goes to the later one). Pure.
  */
-export function signupShow<S extends PickableShow>(shows: readonly S[], now: number | Date, opts: Zoned<S> = {}): S | null {
+export function signupShow<S extends PickableShow>(shows: readonly S[], now: number | Date, opts: Zoned<S>): S | null {
   const t = +now;
   let best: { show: S; at: number } | null = null;
   for (const show of shows) {
     if (!COUNTS.has(show.status)) continue;
-    const at = showTimeAt(show, opts.zoneOf?.(show));
+    const at = showTimeAt(show, opts.zoneOf(show));
     if (!inFanWindow(at, t)) continue;
     if (!best || Math.abs(t - at) < Math.abs(t - best.at) || (Math.abs(t - at) === Math.abs(t - best.at) && at > best.at)) best = { show, at };
   }

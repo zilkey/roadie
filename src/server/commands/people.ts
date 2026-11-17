@@ -364,6 +364,8 @@ export const artistsCreate = defineCommand({
   description: "Create an artist (who gets billed) with its configurations. slug (the URL name) defaults to one made from the name. The person creating it becomes its admin. It starts with the checklist templates Promo and Follow Up and a default money project, General.",
   input: ArtistIn.extend({
     slug: ArtistInput.shape.slug.optional(),
+    /** The artist's IANA time zone; missing = America/Denver (createArtistFor). */
+    timeZone: ArtistInput.shape.timeZone.optional(),
     links: ArtistInput.shape.links.default({}),
     driveFolderId: z.string().default(""),
   }),

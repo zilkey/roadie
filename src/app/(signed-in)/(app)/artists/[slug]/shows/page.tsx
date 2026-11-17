@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { useEffect, useRef, useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { PageTitle } from "@/components/ui";
@@ -37,7 +37,8 @@ export default function Shows() {
     window.history.replaceState(null, "", `#${f}`);
     setFilter(f);
   }
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const inTab = (s: (typeof b.shows)[number], f: ShowFilter) => showTabFor(s, today, member ? { musicianId } : null) === f;
   const count = (f: ShowFilter) => b.shows.filter((s) => inTab(s, f)).length;
   // Upcoming soonest first; the rest most recent first.

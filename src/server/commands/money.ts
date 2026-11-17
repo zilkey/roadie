@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
 import { defineCommand } from "./types";
@@ -17,7 +18,8 @@ import { requireTrackOnProject } from "./releases";
 import { requireEntryOnTour, requireTourFor } from "./tours";
 import type { Ctx } from "../ctx";
 
-const todayServer = () => dateInBandZone();
+/** Today in the artist's zone (the call's clock when it has one). */
+const todayOf = async (ctx: Ctx) => dateInZone(await zoneOf(ctx), ctx.now ?? new Date());
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const id1 = z.string().min(1);
 
@@ -217,7 +219,7 @@ export const expensesAdd = defineCommand({
     const tour = await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show });
     const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, carId, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;
     const r = await w.create("expenses", {
-      ...rest, ...tour, userId, date: i.date ?? todayServer(), ...(projectId ? { projectId } : {}),
+      ...rest, ...tour, userId, date: i.date ?? await todayOf(ctx), ...(projectId ? { projectId } : {}),
       ...(to ? { to: await resolveTo(w, to) } : {}),
       // An open bill has no payer yet, so there is nothing to pay anyone back for.
       ...(owed ? { owed: true, payBack: false } : {}),
@@ -372,7 +374,7 @@ export const expensesSetPaidBack = defineCommand({
   input: z.strictObject({ id: z.string().min(1), paid: z.boolean() }),
   run: (ctx, i) => run(ctx, async (w) => {
     await requireExpense(w, i.id);
-    return w.update("expenses", i.id, i.paid ? { paidBackAt: todayServer(), paidBackBy: ctx.uid } : { paidBackAt: null, paidBackBy: null });
+    return w.update("expenses", i.id, i.paid ? { paidBackAt: await todayOf(ctx), paidBackBy: ctx.uid } : { paidBackAt: null, paidBackBy: null });
   }),
 });
 
@@ -384,7 +386,7 @@ export const expensesMarkPaid = defineCommand({
     const x = await requireExpense(w, i.id);
     if (!isOwedBill(x as never)) throw new AppError("invalid_state", "That expense was already paid", 409);
     await requirePayer(w, i.userId);
-    const r = await w.update("expenses", i.id, { owed: null, userId: i.userId, date: i.paidAt ?? todayServer() });
+    const r = await w.update("expenses", i.id, { owed: null, userId: i.userId, date: i.paidAt ?? await todayOf(ctx) });
     await refresh(w, x.showId);
     return r;
   }),
@@ -404,7 +406,7 @@ export const expensesPayPerson = defineCommand({
     if (!pay.length) throw new AppError("not_found", "Nothing owed to them", 404);
     const u = await w.get("users", i.userId);
     if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
-    const paidAt = i.paidAt ?? todayServer(), total = pay.reduce((n, x) => n + (x.amount as number), 0);
+    const paidAt = i.paidAt ?? await todayOf(ctx), total = pay.reduce((n, x) => n + (x.amount as number), 0);
     const paidBy = i.paidBy ?? ctx.uid;
     if (i.paidBy) await requirePayer(w, i.paidBy);
     const first = pay[0];
@@ -447,7 +449,7 @@ function setExpensesFor(ctx: Ctx, target: ExpenseTarget, lines: z.infer<typeof E
         if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
         const projectId = await projectFor(w, { show: target.kind === "shows" ? rec : null });
         const { id: _i, receipt, ...rest } = l;
-        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: todayServer(), ...(projectId ? { projectId } : {}), ...(rec.tourId ? { tourId: rec.tourId } : {}), [key]: target.id })).id);
+        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: await todayOf(ctx), ...(projectId ? { projectId } : {}), ...(rec.tourId ? { tourId: rec.tourId } : {}), [key]: target.id })).id);
         continue;
       }
       const x = byId.get(l.id);
@@ -524,7 +526,7 @@ export const incomeAdd = defineCommand({
     const artistId = (await artistFor(w, show?.artistId as string | undefined)).id;
     // Received in the app by an admin: it landed in their account (the tax pages read receivedBy). Roadie's adds stay unassigned.
     const receivedBy = i.receivedAt && ctx.role === "admin" ? { receivedBy: ctx.uid } : {};
-    const r = await w.create("income", { ...i, ...receivedBy, ...(await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show })), artistId, projectId, date: i.date ?? (show?.date as string | undefined) ?? todayServer() });
+    const r = await w.create("income", { ...i, ...receivedBy, ...(await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show })), artistId, projectId, date: i.date ?? (show?.date as string | undefined) ?? await todayOf(ctx) });
     if (i.showId) await refreshDealTotals(w, i.showId, { income: [(await w.get("income", r.id))!] });
     return r;
   }),
@@ -578,7 +580,7 @@ export const incomeSetReceived = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     const x = await requireIncome(w, i.id);
     const r = await w.update("income", i.id, {
-      receivedAt: i.receivedAt ?? todayServer(), ...(i.method ? { method: i.method } : {}), ...(ctx.role === "admin" && !x.receivedBy ? { receivedBy: ctx.uid } : {}),
+      receivedAt: i.receivedAt ?? await todayOf(ctx), ...(i.method ? { method: i.method } : {}), ...(ctx.role === "admin" && !x.receivedBy ? { receivedBy: ctx.uid } : {}),
     });
     await refresh(w, x.showId);
     return r;
@@ -668,7 +670,7 @@ export const payoutsMarkPaid = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     const x = await requirePayout(w, i.id);
     if (i.paidBy) await requirePayer(w, i.paidBy);
-    const r = await w.update("payouts", i.id, { paidAt: i.paidAt ?? todayServer(), method: i.method, ...(i.paidBy ? { paidBy: i.paidBy } : {}) });
+    const r = await w.update("payouts", i.id, { paidAt: i.paidAt ?? await todayOf(ctx), method: i.method, ...(i.paidBy ? { paidBy: i.paidBy } : {}) });
     await refresh(w, x.showId);
     return r;
   }),

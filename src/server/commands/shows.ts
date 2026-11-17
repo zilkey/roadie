@@ -1,6 +1,7 @@
 import { ensureBandsintownItem } from "../bandsintown";
 import { randomUUID } from "node:crypto";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
@@ -18,7 +19,8 @@ import { refreshDealTotals } from "../dealTotals";
 import { checklistCommands } from "./checklists";
 
 const newId = () => randomUUID().slice(0, 8);
-const todayServer = () => dateInBandZone();
+/** Today in the artist's zone (the call's clock when it has one). */
+const todayOf = async (ctx: Ctx) => dateInZone(await zoneOf(ctx), ctx.now ?? new Date());
 
 const times = z.strictObject({
   loadIn: timeStr.optional(), soundcheck: timeStr.optional(), doors: timeStr.optional(), showStart: timeStr.optional(), set: timeStr.optional(),
@@ -88,7 +90,7 @@ export const showsList = defineCommand({
     limit: z.number().int().min(1).max(200).default(50),
   }),
   async run(ctx, i) {
-    const today = todayServer();
+    const today = await todayOf(ctx);
     const city = i.city?.toLowerCase();
     const shows = (await db.list(ctx, "shows"))
       .filter((s) => (!i.venueId || s.venue?.id === i.venueId) && (!i.from || s.date >= i.from) && (!i.to || s.date <= i.to)
@@ -460,7 +462,7 @@ export const showsAfter = defineCommand({
     await run(ctx, async (w) => {
       const s = await requireShow(w, i.id);
       if (isOff(s)) throw new AppError("invalid_state", `This show was ${s.status}`, 409);
-      if (s.date > addDays(todayServer(), 1)) throw new AppError("too_early", "This show hasn't happened yet", 409);
+      if (s.date > addDays(await todayOf(ctx), 1)) throw new AppError("too_early", "This show hasn't happened yet", 409);
       const deal = await w.get("showDeals", i.id);
       if (!deal) throw new AppError("not_found", "Show deal not found", 404);
       if (s.status !== "played") await w.update("shows", i.id, { status: "played" });

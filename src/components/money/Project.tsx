@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtistRouter } from "@/lib/artist";
+import Link, { useArtistRouter, useZone } from "@/lib/artist";
 import { Suspense, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { InlineValue } from "@/components/InlineValue";
@@ -116,7 +116,8 @@ function View({ project }: { project: ProjectDoc & { id: string } }) {
   const def = defaultProject(projects.rows ?? []);
   const mine = <T extends { projectId?: string }>(xs: readonly T[] | null) => (xs ?? []).filter((x) => projectOf(x, def?.id) === project.id);
   // A show that hasn't happened yet stays out of Money in and the tiles: its guarantee is dated on the show.
-  const inc = incomeSoFar(mine(income.rows), todayStr()), exp = mine(expenses.rows), pay = mine(payouts.rows);
+  const zone = useZone();
+  const inc = incomeSoFar(mine(income.rows), todayStr(zone)), exp = mine(expenses.rows), pay = mine(payouts.rows);
   const t = projectTotals({ projectId: project.id, defaultProjectId: def?.id, income: inc, expenses: exp, payouts: pay });
   const personName = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? musicians.rows?.find((m) => m.userId === uid)?.name ?? "Someone";
   const owe = weOwe({ payouts: pay, expenses: exp, musicianUserId: (mid) => musicians.rows?.find((m) => m.id === mid)?.userId, personName });

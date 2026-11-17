@@ -1,29 +1,35 @@
 /**
- * The one place the band's timezone lives. The band is in Colorado, so every "today", every wall-clock show time
- * and every payload sent to Calendar is interpreted in America/Denver, whatever the server or the
- * viewer's browser is set to.
+ * Wall-clock dates and times in a named IANA zone. Every artist has its own (`artists.timeZone`, General Settings): the server
+ * reads it with `zoneOf(ctx)` (src/server/zone.ts), the browser with `useZone()` (src/lib/artist.tsx). A show at a venue with
+ * its own `timeZone` uses the venue's. Nothing here reads the machine's or the browser's zone.
  */
-export const BAND_TIME_ZONE = "America/Denver";
+const fmts = new Map<string, Intl.DateTimeFormat>();
+function formatter(zone: string, withTime: boolean): Intl.DateTimeFormat {
+  const key = `${withTime ? "t" : "d"}|${zone}`;
+  let f = fmts.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", ...(withTime ? { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } : {}) });
+    fmts.set(key, f);
+  }
+  return f;
+}
+const partsOf = (f: Intl.DateTimeFormat, d: Date) => Object.fromEntries(f.formatToParts(d).map((x) => [x.type, x.value]));
 
-const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: BAND_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
-
-/** Calendar date (YYYY-MM-DD) of an instant as seen in the band's timezone. */
-export function dateInBandZone(d: Date = new Date()): string {
-  const p = Object.fromEntries(fmt.formatToParts(d).map((x) => [x.type, x.value]));
+/** Calendar date (YYYY-MM-DD) of an instant as seen in `zone`. */
+export function dateInZone(zone: string, d: Date = new Date()): string {
+  const p = partsOf(formatter(zone, false), d);
   return `${p.year}-${p.month}-${p.day}`;
 }
 
-const fmtTime = new Intl.DateTimeFormat("en-CA", { timeZone: BAND_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-
-/** Date and time (YYYY-MM-DD HH:MM, 24-hour) of an instant as seen in the band's timezone. */
-export function dateTimeInBandZone(d: Date = new Date()): string {
-  const p = Object.fromEntries(fmtTime.formatToParts(d).map((x) => [x.type, x.value]));
+/** Date and time (YYYY-MM-DD HH:MM, 24-hour) of an instant as seen in `zone`. */
+export function dateTimeInZone(zone: string, d: Date = new Date()): string {
+  const p = partsOf(formatter(zone, true), d);
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
-/** Format an instant (ISO string, ms or Date) for display in the band's timezone. */
-export function fmtInstant(t: string | number | Date, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }): string {
-  return new Date(t).toLocaleString("en-US", { ...opts, timeZone: BAND_TIME_ZONE });
+/** Format an instant (ISO string, ms or Date) for display in `zone`. */
+export function fmtInstant(t: string | number | Date, zone: string, opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }): string {
+  return new Date(t).toLocaleString("en-US", { ...opts, timeZone: zone });
 }
 
 /**

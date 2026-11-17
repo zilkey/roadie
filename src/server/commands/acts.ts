@@ -12,7 +12,8 @@ import type { Ctx } from "../ctx";
 import { bandNotesBy, createNoted, updateNoted, withBandNote } from "../bandNotes";
 import { ActInput, ACT_RELATIONSHIPS, RELATIONSHIP_LABEL, type ActRelationship } from "@/schema";
 import { actListed, actStats, type ActFilter, type EvLike, type VenueLike } from "@/lib/acts";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 import { lookUpAct, type LookupResult } from "../assistant/actLookup";
 import { findActTeam } from "../assistant/actTeam";
 
@@ -35,7 +36,7 @@ export async function findActs(ctx: Ctx, f: { q?: string; filter: ActFilter; cit
   const [acts, events, venues, notes, ours] = await Promise.all([
     db.list(ctx, "acts"), db.list(ctx, "venueEvents", undefined, { includeDeleted: true }), db.list(ctx, "venues"), bandNotesBy(ctx, "acts"), ourVenueIds(ctx),
   ]);
-  const stats = actStats(events as unknown as EvLike[], new Map(venues.map((v) => [v.id, v as unknown as VenueLike])), ours, dateInBandZone());
+  const stats = actStats(events as unknown as EvLike[], new Map(venues.map((v) => [v.id, v as unknown as VenueLike])), ours, dateInZone(await zoneOf(ctx), ctx.now ?? new Date()));
   const rows = acts.map((a) => {
     const take = withBandNote("acts", { id: a.id }, notes.get(a.id));
     const s = stats.get(a.id);

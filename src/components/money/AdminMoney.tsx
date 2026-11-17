@@ -1,5 +1,5 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useZone } from "@/lib/artist";
 import { Suspense, useMemo, useState } from "react";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { celebrateMoneyIn } from "@/components/Celebrate";
@@ -34,7 +34,8 @@ function Admin() {
   const personName = (userId: string) =>
     users.rows?.find((u) => u.id === userId)?.name ?? musicians.rows?.find((m) => m.userId === userId)?.name ?? "Someone";
   // A show that hasn't happened yet is nowhere in Money but the Expected box: its guarantee is dated on the show.
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const inc = useMemo(() => incomeSoFar(income.rows ?? [], today), [income.rows, today]), exp = expenses.rows ?? [], pay = payouts.rows ?? [];
   const expected = useMemo(() => incomeExpected(income.rows ?? [], today), [income.rows, today]);
   const rows = useMemo(() => moneyRows({ income: inc, expenses: exp, payouts: pay }), [inc, exp, pay]);

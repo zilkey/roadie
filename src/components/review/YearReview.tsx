@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useArtist, useArtistRouter } from "@/lib/artist";
+import { useArtist, useArtistRouter, useZone } from "@/lib/artist";
 import { fmtDate, todayStr } from "@/lib/booking";
 import { confetti } from "@/components/Celebrate";
 import { MONTHS, bucks, defaultReviewYear, hours, milesLine, num, stageLine, versus, type PreviousReview, type Ranked, type YearReview as Review } from "@/lib/yearReview";
@@ -311,7 +311,8 @@ export function YearReview() {
   const { name } = useArtist();
   const router = useArtistRouter();
   const q = useSearchParams().get("y") ?? "";
-  const today = todayStr();
+  const tz = useZone();
+  const today = todayStr(tz);
   const year = /^\d{4}$/.test(q) ? q : defaultReviewYear(today);
   const { review, previous, years, loading, error, feeds } = useReviewData(year);
   const slides = useMemo(() => (review ? slidesFor(review, name, previous) : []), [review, name, previous]);

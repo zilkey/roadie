@@ -3,7 +3,7 @@ import { Metronome } from "@/components/music/Metronome";
 import { BackLink } from "@/components/BackLink";
 import { fmtInstant } from "@/lib/timezone";
 import { useParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { Menu } from "@/components/Menu";
 import { useEffect, useRef, useState } from "react";
 import { SaveStatus } from "@/components/SaveStatus";
@@ -144,9 +144,10 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   const [checkMsg, setCheckMsg] = useState("");
   const files = m.files.filter((f) => f.songId === song.id);
   const last = lastRehearsed(m.rehearsals)[song.id];
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const checked = files.map((f) => f.checkedAt as unknown as { toMillis?(): number }).filter((c) => c?.toMillis).map((c) => c.toMillis!());
-  const lastCheck = checked.length ? fmtInstant(Math.min(...checked)) : null;
+  const lastCheck = checked.length ? fmtInstant(Math.min(...checked), zone) : null;
 
   async function attach() {
     const r = await call<{ ids: string[]; skipped: number }>("files.attach", { songId: song.id, files: picks });

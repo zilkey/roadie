@@ -8,7 +8,8 @@ import { randomUUID } from "node:crypto";
 import { run, type Doc, type Writer } from "./db";
 import type { Ctx } from "./ctx";
 import { kindOf, showCity, type ChecklistLike, type ChecklistItem, type ShowPlaceLike } from "@/lib/shows";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "./zone";
 import { BANDSINTOWN_ITEM_LABEL, bandsintownEligible } from "@/lib/bandsintown";
 
 const newId = () => randomUUID().slice(0, 8);
@@ -40,7 +41,7 @@ export async function ensureBandsintownItem(ctx: Ctx, showId: string): Promise<v
   try {
     await run(ctx, async (w) => {
       const show = await w.get("shows", showId);
-      if (!show || !bandsintownEligible(show as never, dateInBandZone(w.now.toDate()))) return;
+      if (!show || !bandsintownEligible(show as never, dateInZone(await zoneOf(ctx), w.now.toDate()))) return;
       const lists = (show.checklists ?? []) as ChecklistLike[];
       if (hasItem(lists)) return;
       const promos = (await w.query("checklistTemplates"))
@@ -55,7 +56,7 @@ export async function ensureBandsintownItem(ctx: Ctx, showId: string): Promise<v
 
 /** For checklists.add: true when a list made from this template should carry the show's Bandsintown item. */
 export async function templateTakesBandsintown(w: Writer, show: Doc, template: Doc): Promise<boolean> {
-  if (!bandsintownEligible(show as never, dateInBandZone(w.now.toDate()))) return false;
+  if (!bandsintownEligible(show as never, dateInZone(await zoneOf(w.ctx), w.now.toDate()))) return false;
   if (hasItem((show.checklists ?? []) as ChecklistLike[])) return false;
   return (await firstPromotionTemplate(w))?.id === template.id;
 }
@@ -102,7 +103,7 @@ export async function checkBandsintown(ctx: Ctx, showId?: string): Promise<{ tic
   const events = await fetchBandsintownEvents(bit.artistId, bit.appId);
   const ticked: string[] = [];
   await run(ctx, async (w) => {
-    const today = dateInBandZone(w.now.toDate());
+    const today = dateInZone(await zoneOf(ctx), w.now.toDate());
     const shows = showId ? [await w.get("shows", showId)].filter((s): s is Doc => !!s)
       : await w.query("shows", (q) => q.where("date", ">=", today));
     for (const s of shows) {

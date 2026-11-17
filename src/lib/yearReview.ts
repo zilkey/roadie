@@ -36,7 +36,7 @@ export interface ReviewPost extends Dated { artistId?: string; postedAt?: string
 export interface ReviewInput {
   /** "2026" */
   year: string;
-  /** Today in the band's zone (YYYY-MM-DD). */
+  /** Today in the artist's zone (YYYY-MM-DD). */
   today: string;
   artistId: string;
   /** Count nothing dated after this day (YYYY-MM-DD). Missing = today. Comparisons use it: "this point last year". */

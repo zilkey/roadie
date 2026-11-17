@@ -9,7 +9,7 @@
 import { Crumbs, sectionCrumb } from "@/components/booking/BookingNav";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { useCollection, useDoc } from "@/lib/firestore-hooks";
@@ -23,7 +23,7 @@ import { EventPoster } from "@/components/booking/VenueEventBits";
 import { WeKnowToggle } from "@/components/booking/WhoWeKnow";
 import { actSearchUrl, actStats, type EvLike, type TeamResult } from "@/lib/acts";
 import { fmtEventDay, fmtEventYear } from "@/lib/venueEvents";
-import { dateInBandZone, fmtInstant } from "@/lib/timezone";
+import { dateInZone, fmtInstant } from "@/lib/timezone";
 import { useCanEditShared } from "@/lib/sharedEdit";
 import { AskToEdit } from "@/components/booking/AskToEdit";
 import { ACT_RELATIONSHIPS, ARTIST_LINKS, RELATIONSHIP_HINT, RELATIONSHIP_LABEL, type ActDoc, type ActNote, type ActRelationship, type ArtistLinkKey, type Show, type VenueEvent } from "@/schema";
@@ -35,7 +35,7 @@ const shortDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("e
 
 function ActPage() {
   const { id } = useParams<{ id: string }>();
-  const { artistId } = useArtist();
+  const { artistId, timeZone: zone } = useArtist();
   const { doc: act, loading } = useDoc<ActDoc>("acts", id);
   const notes = useCollection<ActNote>("actNotes", { where: [["artistId", "==", artistId], ["actId", "==", id]] });
   const events = useCollection<VenueEvent>("venueEvents", { where: [["actIds", "array-contains", id]], includeDeleted: true });
@@ -57,7 +57,7 @@ function ActPage() {
     for (const x of shows.rows ?? []) if (x.venue) s.add(x.venue.id);
     return s;
   }, [b.venueNotes, b.pitches, shows.rows]);
-  const today = dateInBandZone();
+  const today = dateInZone(zone);
   const played = useMemo(() => (events.rows ?? []).filter((e) => e.status !== "gone").sort((x, y) => y.date.localeCompare(x.date)), [events.rows]);
   const stats = useMemo(() => actStats((events.rows ?? []) as unknown as EvLike[], venues, ours, today).get(id), [events.rows, venues, ours, today, id]);
 
@@ -180,6 +180,7 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
   rooms: string[]; cities: string[]; posters: Poster[];
 }) {
   const lookup = useCommand();
+  const zone = useZone();
   // Shared facts: approved editors (and the act's creator, until adopted) click to fix them; Look up is a fill, not an edit, so it stays.
   const can = useCanEditShared(act);
   const run = (spotifyId?: string | null) => void lookup.call("acts.lookup", { id, ...(spotifyId !== undefined ? { spotifyId } : {}) });
@@ -267,7 +268,7 @@ function About({ id, act, error, update, onLookup, rooms, cities, posters }: {
         )],
       ]} />
       {picker}
-      <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}{can ? "Click anything to fix it." : ""}</span>
+      <span className="s">{act.lookedUpAt ? `Looked up ${fmtInstant(Date.parse(act.lookedUpAt), zone, { month: "short", day: "numeric" })}${act.sources?.length ? ` from ${act.sources.length} web source${act.sources.length === 1 ? "" : "s"}` : ""}. ` : ""}{can ? "Click anything to fix it." : ""}</span>
     </DetailCard>
   );
 }

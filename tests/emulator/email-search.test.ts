@@ -29,7 +29,7 @@ beforeEach(async () => {
   await fetch(`${gmailUrl}/__reset`, { method: "POST" });
   const uid = (await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" })).uid;
   ctx = { uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
-  await db.create(ctx, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  await db.create(ctx, "artists", { timeZone: "America/Denver", slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
 const cmd = async (name: string, input: unknown) => {

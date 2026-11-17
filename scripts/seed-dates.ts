@@ -1,17 +1,17 @@
 /**
- * The seed's dates that have to stay ahead of today, as offsets from today in the band's timezone. A fixed date here
+ * The seed's dates that have to stay ahead of today, as offsets from today in the seeded artist's timezone (Denver). A fixed date here
  * rots: the day it passes, its show leaves the Upcoming tab (confirmed -> played, hold -> dropped), its pitch date is no
  * longer offered to ask about, and every e2e spec that looks for it fails. Dates that are meant to be in the past
  * (the played show, the rehearsals, money) stay fixed in scripts/seed.ts: they never change sides.
  *
  * tests/e2e/dates.ts re-exports these with the labels the app shows for them. No spec writes one of these dates out.
  */
-import { dateInBandZone } from "../src/lib/timezone";
+import { dateInZone } from "../src/lib/timezone";
 import { addDays } from "../src/lib/shows";
 
-/** Today in the band's timezone, read once: the seed and a spec that start either side of midnight still agree on the offsets' base only if they ran the same day, which a shard's run does (seed, then specs, minutes apart). */
-export const SEED_TODAY = dateInBandZone();
-/** n days from today (band timezone), as YYYY-MM-DD. */
+/** Today in the seeded artist's timezone (Denver), read once: the seed and a spec that start either side of midnight still agree on the offsets' base only if they ran the same day, which a shard's run does (seed, then specs, minutes apart). */
+export const SEED_TODAY = dateInZone("America/Denver"); // the seeded Nora Quill Band's zone
+/** n days from today (the seeded artist's timezone), as YYYY-MM-DD. */
 export const day = (n: number) => addDays(SEED_TODAY, n);
 
 export const SEED_DATES = {

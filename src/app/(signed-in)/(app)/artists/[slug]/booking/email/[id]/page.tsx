@@ -2,7 +2,7 @@
 import { Crumbs, campaignCrumb, placeTrail } from "@/components/booking/BookingNav";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
@@ -11,7 +11,6 @@ import { RichTextEditor } from "@/components/email/RichTextEditor";
 import { SignatureBlock, useSignature } from "@/components/email/SignatureBlock";
 import { useProfile } from "@/lib/auth";
 import { useDoc, type Row } from "@/lib/firestore-hooks";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { linkify } from "@/lib/linkify";
 import { htmlToText } from "@/lib/email-html";
 import { initialsOf, paragraphsOf, previewOf, replyRecipients, splitQuoted } from "@/lib/email-text";
@@ -22,8 +21,8 @@ import { isActive } from "@/lib/booking";
 
 type Message = { id: string; threadId: string; direction: "sent" | "received"; from: string; fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string };
 
-const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BAND_TIME_ZONE });
-const longDate = (iso: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: BAND_TIME_ZONE });
+const shortDate = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone });
+const longDate = (iso: string, zone: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: zone });
 const EMAIL_RE = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/;
 
 export default function Page() {
@@ -98,6 +97,7 @@ function ThreadPage() {
 
 function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Message; n: number; last: boolean; isNew: boolean; account: string; sentBy?: string; nameOf(a: string, fromName?: string): string }) {
   const [open, setOpen] = useState(last);
+  const zone = useZone();
   const [quoteOpen, setQuoteOpen] = useState(false);
   const sent = m.direction === "sent";
   const who = nameOf(m.from, m.fromName);
@@ -114,7 +114,7 @@ function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Messag
             ? <span className="s truncate">{who} &lt;{m.from}&gt; · to {toText}{m.cc.length > 0 && <> · cc {m.cc.map((a) => nameOf(a)).join(", ")}</>}</span>
             : <span className="s truncate" data-testid={`msg-preview-${n}`}>{previewOf(m.body)}</span>}
         </span>
-        <span className="s shrink-0">{open ? longDate(m.date) : shortDate(m.date)}</span>
+        <span className="s shrink-0">{open ? longDate(m.date, zone) : shortDate(m.date, zone)}</span>
       </button>
       {open && (
         <div className="msg-body" data-testid={`msg-body-${n}`}>

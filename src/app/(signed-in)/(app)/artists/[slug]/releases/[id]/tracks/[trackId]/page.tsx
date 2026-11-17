@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { BackLink } from "@/components/BackLink";
 import { AdminOnly } from "@/components/Guard";
 import { InlineValue } from "@/components/InlineValue";
@@ -23,10 +23,10 @@ const STEPS: TrackStatus[] = ["tracking", "overdubs", "mixed", "mastered"];
 const localPart = (email?: string) => (email ? email.split("@")[0] : "");
 const byVersion = (a: FileRow, b: FileRow) => (b.version ?? 0) - (a.version ?? 0) || a.title.localeCompare(b.title);
 /** "Oct 20": when the file was attached / last checked in Drive. */
-function fileDate(f: FileRow) {
+function fileDate(f: FileRow, zone: string) {
   const c = f.checkedAt as unknown as { toMillis?(): number } | Date | undefined;
   const ms = c instanceof Date ? c.getTime() : c?.toMillis?.();
-  return ms ? fmtInstant(ms, { month: "short", day: "numeric" }) : null;
+  return ms ? fmtInstant(ms, zone, { month: "short", day: "numeric" }) : null;
 }
 
 export default function TrackPage() { return <AdminOnly><Track /></AdminOnly>; }
@@ -209,11 +209,12 @@ function AddFiles({ releaseId, trackId, name, kind, label, exclude, upload }: {
 /** A mix or master: play it, open it, approve it; a mix also carries the band's notes. */
 function VersionRow({ file, what, admin, notes }: { file: FileRow; what: string; admin: boolean; notes?: boolean }) {
   const { call, error, busy } = useCommand();
+  const zone = useZone();
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState("");
   const audio = playsInline(file);
   const label = [file.version ? `${what} ${fmtVersion(file.version)}` : what, file.title].join(" · ");
-  const when = fileDate(file);
+  const when = fileDate(file, zone);
   async function note() {
     if (!body.trim()) return;
     if (await call("releases.files.note", { id: file.id, body: body.trim() })) setBody("");

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { photoDay, dayLabels, groupByDay, dayTitle } from "@/lib/photoDays";
-import { dateTimeInBandZone } from "@/lib/timezone";
+import { dateTimeInZone } from "@/lib/timezone";
 
 test("photoDay: before 04:00 counts toward the day before, across a month and a year", () => {
   assert.equal(photoDay("2026-10-11 01:30"), "2026-10-10");
@@ -29,8 +29,8 @@ test("dayLabels and groupByDay: hold, confirmed and played shows and rehearsals 
   assert.equal(dayTitle(null), "No date");
 });
 
-test("dateTimeInBandZone: 24-hour, in Denver whatever the server's zone", () => {
-  assert.equal(dateTimeInBandZone(new Date("2026-10-11T07:30:00Z")), "2026-10-11 01:30");
-  assert.equal(dateTimeInBandZone(new Date("2026-11-01T18:05:00Z")), "2026-11-01 11:05");
-  assert.equal(dateTimeInBandZone(new Date("2026-07-01T06:00:00Z")), "2026-07-01 00:00");
+test("dateTimeInZone: 24-hour, in the zone asked for whatever the server's zone", () => {
+  assert.equal(dateTimeInZone("America/Denver", new Date("2026-10-11T07:30:00Z")), "2026-10-11 01:30");
+  assert.equal(dateTimeInZone("America/Denver", new Date("2026-11-01T18:05:00Z")), "2026-11-01 11:05");
+  assert.equal(dateTimeInZone("America/Denver", new Date("2026-07-01T06:00:00Z")), "2026-07-01 00:00");
 });

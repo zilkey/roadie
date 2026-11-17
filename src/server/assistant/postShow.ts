@@ -8,7 +8,8 @@
 import type { Ctx } from "../ctx";
 import { INCOME_LABEL, METHOD_LABEL } from "@/lib/money";
 import { db } from "../db";
-import { dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "../zone";
 
 /** A confirm card made this message: its command and input, the payee's name, and for a record named by id its amount and who it is from. */
 export interface MoneyCard { command: string; input: unknown; person?: string; amount?: number; from?: string }
@@ -58,7 +59,7 @@ export async function stillMissing(ctx: Ctx, cards: MoneyCard[], reply: string, 
   if (!showId || reply.includes("?")) return undefined;
   if (!cards.some((c) => { const i = (c.input ?? {}) as Row; return i.receivedAt || i.paidAt; })) return undefined;
   const show = await db.get(ctx, "shows", showId);
-  if (!show || (show.date as string) > dateInBandZone()) return undefined;
+  if (!show || (show.date as string) > dateInZone(await zoneOf(ctx), ctx.now ?? new Date())) return undefined;
   const before = history.filter((h) => h.role === "assistant").map((h) => h.text).join("\n");
   const deal = ((await db.get(ctx, "showDeals", showId)) ?? {}) as Row;
   const ask = [

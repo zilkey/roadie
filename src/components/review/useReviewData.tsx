@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useArtist } from "@/lib/artist";
+import { useArtist, useZone } from "@/lib/artist";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
 import { todayStr } from "@/lib/booking";
 import { previousReview, reviewYears, yearReview, type ReviewInput } from "@/lib/yearReview";
@@ -51,7 +51,8 @@ export function useReviewData(year: string) {
   const error = need.find((c) => c.error)?.error ?? null;
   const loading = !artist || need.some((c) => c.rows === null) || extra.some((c) => c.rows === null && !c.error) || tourIds.some((id) => !entries[id]);
 
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const input = useMemo<Omit<ReviewInput, "year"> | null>(() => {
     if (loading || !artist) return null;
     return {

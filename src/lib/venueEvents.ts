@@ -1,6 +1,5 @@
 /** Venue calendars on the client (issue #60): labels, the opener-chance guess and the room's record, shared with the server's post-step. */
 import { ARTIST_LINKS, type Act, type ArtistLinkKey, type CalendarType, type VenueCalendar, type VenueEvent } from "@/schema";
-import { dateInBandZone } from "@/lib/timezone";
 
 export const CALENDAR_LABEL: Record<CalendarType, string> = {
   squarespace: "Squarespace events", tribe: "The Events Calendar (WordPress)", ics: "iCal feed", jsonld: "Event data on the page (JSON-LD)",
@@ -44,7 +43,7 @@ const THEMED: [RegExp, string][] = [
 ];
 const RUN = /\bnight [1-9]\b|\b(?:two|three|four|2|3|4)[- ](?:night|day)\b|\b(?:two|three|2|3) nights\b/i;
 
-/** What a signal sees: the show, the room's record and the day it is (the band's zone). Later signals add to this. */
+/** What a signal sees: the show, the room's record and the day it is (the artist's zone). Later signals add to this. */
 export interface OpenerCtx {
   stats?: { supportShare?: number; billsSeen?: number } | null; today: string; daysOut: number;
   /** Genre fit (#79): our genres, and each act's looked-up genres by act id (acts/{id}.genres, lowercase). */
@@ -98,7 +97,7 @@ const STEP_UP: Record<OpenerChance, OpenerChance> = { unlikely: "maybe", maybe: 
  * A guess from the listing: likely, maybe or unlikely that the show still has room for an opener, and why. A headliner whose
  * genres fit ours moves the show up a step (unlikely to maybe, maybe to likely): an opener that fits the bill is an easier yes.
  */
-export function openerChance(e: OpenerEvent, stats?: OpenerCtx["stats"], today: string = dateInBandZone(), genres?: OpenerCtx["genres"]): { chance: OpenerChance; score: number; reasons: string[] } {
+export function openerChance(e: OpenerEvent, stats: OpenerCtx["stats"] | undefined, today: string, genres?: OpenerCtx["genres"]): { chance: OpenerChance; score: number; reasons: string[] } {
   const ctx: OpenerCtx = { stats, today, daysOut: days(today, e.date), genres };
   const got: OpenerSignal[] = [];
   for (const sig of OPENER_SIGNALS) {
@@ -177,7 +176,7 @@ export function titleSaysMore(e: { title: string; acts: Act[] }) {
 export const byWhen = (a: { date: string; start?: string }, b: { date: string; start?: string }) =>
   (a.date + (a.start ?? "")).localeCompare(b.date + (b.start ?? ""));
 
-/** Still to come and still listed: today or later (the band's zone) and not dropped off the venue's calendar. */
+/** Still to come and still listed: today or later (the artist's zone) and not dropped off the venue's calendar. */
 export const isUpcoming = (e: { date: string; status?: string }, today: string) => e.date >= today && e.status !== "gone";
 
 /**

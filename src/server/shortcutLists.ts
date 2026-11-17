@@ -3,7 +3,8 @@ import type { Ctx } from "./ctx";
 import { db, type Doc } from "./db";
 import { AppError } from "./errors";
 import { fmtLong } from "@/lib/shows";
-import { BAND_TIME_ZONE, dateInBandZone } from "@/lib/timezone";
+import { dateInZone } from "@/lib/timezone";
+import { zoneOf } from "./zone";
 
 export interface ChoiceList { labels: string[]; ids: Record<string, string> }
 /** Labels must be unique (they are the keys of `ids`): a repeat gets " (2)", " (3)"... so no row is lost. */
@@ -13,11 +14,11 @@ const choices = (rows: [label: string, id: string][]): ChoiceList => {
   return { labels: named.map(([l]) => l), ids: Object.fromEntries(named) };
 };
 
-/** Today's date (YYYY-MM-DD) in the band's time zone (an evening rehearsal is still today, whatever UTC says). */
-const today = (now: Date) => dateInBandZone(now);
-/** Minutes since midnight in the band's time zone. */
-const minutesNow = (now: Date) => {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: BAND_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).map((x) => [x.type, x.value]));
+/** Today's date (YYYY-MM-DD) in the artist's time zone (an evening rehearsal is still today, whatever UTC says). */
+const today = (now: Date, zone: string) => dateInZone(zone, now);
+/** Minutes since midnight in the artist's time zone. */
+const minutesNow = (now: Date, zone: string) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).map((x) => [x.type, x.value]));
   return Number(p.hour) * 60 + Number(p.minute);
 };
 const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -27,7 +28,7 @@ export const DAYS_BACK = 30, DAYS_AHEAD = 7;
 
 /** Rehearsals from a month back to a week ahead, nearest to today first; today's own is first of all. */
 export async function recentRehearsals(ctx: Ctx, now = ctx.now ?? new Date()): Promise<{ rehearsals: ChoiceList }> {
-  const t = new Date(today(now) + "T00:00:00Z").getTime();
+  const t = new Date(today(now, await zoneOf(ctx)) + "T00:00:00Z").getTime();
   const day = 86_400_000;
   const all = (await db.list(ctx, "rehearsals")).filter((r: Doc) => !r.deletedAt);
   const near = all
@@ -39,7 +40,7 @@ export async function recentRehearsals(ctx: Ctx, now = ctx.now ?? new Date()): P
 
 /** The rehearsal happening right now: today, between its start and end time (end defaults to four hours after the start). Needs a start time. */
 export async function rehearsalNow(ctx: Ctx, now = ctx.now ?? new Date()): Promise<Doc | null> {
-  const day = today(now), m = minutesNow(now);
+  const zone = await zoneOf(ctx), day = today(now, zone), m = minutesNow(now, zone);
   const all = (await db.list(ctx, "rehearsals")).filter((r: Doc) => !r.deletedAt && r.date === day && r.startTime);
   const on = all.filter((r) => {
     const start = minutesOf(r.startTime as string);

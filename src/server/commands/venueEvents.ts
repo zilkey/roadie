@@ -12,7 +12,7 @@ import { artistIdOf } from "../venues";
 import { pathOf } from "@/schema/owners";
 import type { Ctx } from "../ctx";
 import { lookAtCalendars } from "../prefs";
-import { BAND_TIME_ZONE } from "@/lib/timezone";
+import { venueZoneOr, zoneOf } from "../zone";
 import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act } from "@/schema";
 import { sortedDates } from "@/lib/booking";
 import { fmtEventDay } from "@/lib/venueEvents";
@@ -25,10 +25,10 @@ import { suggestSelectors } from "../events/suggest";
 const PREVIEW_ROWS = 40;
 
 async function venueTz(ctx: Ctx, venueId: string | undefined) {
-  if (!venueId) return BAND_TIME_ZONE;
+  if (!venueId) return zoneOf(ctx);
   const v = await db.get(ctx, "venues", venueId);
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
-  return (v.timeZone as string | undefined) || BAND_TIME_ZONE;
+  return venueZoneOr(v, await zoneOf(ctx));
 }
 
 export const venuesSetCalendar = defineCommand({

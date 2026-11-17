@@ -73,7 +73,7 @@ test("users.add creates invite + claims + musician link; session picks it up; re
 
   await makeArtist("Test Band", "test-band");
   const s = await readySession(bearer(await idToken(uid)));
-  assert.deepEqual(s.artists, [{ artistId: TEST_ARTIST, slug: "test-band", name: "Test Band", role: "member" }]);
+  assert.deepEqual(s.artists, [{ artistId: TEST_ARTIST, slug: "test-band", name: "Test Band", role: "member", timeZone: "America/Denver" }]);
   assert.equal(s.musicianId, mid);
 
   const rm = await dispatch("users.remove", bearer(admin.token), { id: uid });

@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { useArtist } from "@/lib/artist";
+import { useArtist, useZone } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useBooking } from "@/components/booking/common";
 import { personalTouches } from "@/lib/personalTouches";
@@ -19,10 +19,11 @@ export function PersonalTouches({ venueId, venueName, pitchId, onInsert }: { ven
   const events = useCollection<VenueEvent>("venueEvents", { where: [["venueId", "==", venueId]] }).rows ?? [];
   const notes = useCollection<VenueEventNote>("venueEventNotes", { where: [...mine, ["pitchId", "==", pitchId]] }).rows ?? [];
   const actNotes = useCollection<ActNote>("actNotes", { where: mine }).rows ?? [];
+  const zone = useZone();
   const touches = useMemo(() => {
     const onPitch = new Set(notes.map((n) => n.eventId));
     return personalTouches({
-      placeName: venueName, today: todayStr(),
+      placeName: venueName, today: todayStr(zone),
       shows: shows.filter((s) => s.venue?.id === venueId).map((s) => ({ id: (s as { id?: string }).id ?? s.date, date: s.date, status: s.status })),
       pitched: events.filter((e) => onPitch.has(e.id)),
       actNotes: new Map(actNotes.map((n) => [n.actId, { relationship: n.relationship, note: n.note }])),

@@ -1,6 +1,6 @@
 /** Pure helpers shared by the booking UI and server commands (no server or browser imports). */
 
-import { dateInBandZone } from "./timezone";
+import { dateInZone } from "./timezone";
 
 export const STATUSES = ["idea", "toPitch", "pitched", "talking", "booked", "declined", "dropped"] as const;
 export type Status = (typeof STATUSES)[number];
@@ -104,13 +104,14 @@ export const cityState = (a?: { city?: string; state?: string }) => [a?.city, a?
 
 // ---------- dates ----------
 
-export const todayStr = (d = new Date()) => dateInBandZone(d);
+/** Today (YYYY-MM-DD) in `zone`: the artist's own (useZone() / zoneOf(ctx)). */
+export const todayStr = (zone: string, d = new Date()) => dateInZone(zone, d);
 
 interface EditionDates {
   appOpens?: { date: string }; appDeadline?: { date: string };
 }
 /** Applications that open this calendar month, or are open now (opened and not past deadline). */
-export function appsOpenThisMonth<T extends EditionDates>(editions: T[], today = todayStr()): T[] {
+export function appsOpenThisMonth<T extends EditionDates>(editions: T[], today: string): T[] {
   const month = today.slice(0, 7);
   return editions.filter((e) => {
     const o = e.appOpens?.date, dl = e.appDeadline?.date;
@@ -119,7 +120,7 @@ export function appsOpenThisMonth<T extends EditionDates>(editions: T[], today =
   });
 }
 /** Deadlines from today through `days` ahead, soonest first. */
-export function upcomingDeadlines<T extends EditionDates>(editions: T[], today = todayStr(), days = 90): T[] {
+export function upcomingDeadlines<T extends EditionDates>(editions: T[], today: string, days = 90): T[] {
   const [y, m, d] = today.split("-").map(Number);
   const last = new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
   return editions.filter((e) => { const d = e.appDeadline?.date; return !!d && d >= today && d <= last; })
@@ -131,15 +132,15 @@ export const fmtDate = (s?: string) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-/** Whole calendar days (band timezone) from the day of instant `ms` to `today`. */
-export function daysSince(ms: number, today = todayStr()): number {
-  return Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(dateInBandZone(new Date(ms)) + "T00:00:00Z")) / 86_400_000);
+/** Whole calendar days (in `zone`, the artist's) from the day of instant `ms` to `today`. */
+export function daysSince(ms: number, today: string, zone: string): number {
+  return Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(dateInZone(zone, new Date(ms)) + "T00:00:00Z")) / 86_400_000);
 }
 /** A Pitched or Talking pitch goes quiet (yellow row, assistant nudge) this many days after its last contact. */
 export const QUIET_DAYS = 14;
 /** Days a pitch has been quiet, when its status is one that can go quiet (Pitched, Talking); else undefined. `lastMs` is the last contact, or creation when there was none. */
-export function quietDays(status: string, lastMs: number | undefined, today = todayStr()): number | undefined {
-  return (status === "pitched" || status === "talking") && lastMs !== undefined ? daysSince(lastMs, today) : undefined;
+export function quietDays(status: string, lastMs: number | undefined, today: string, zone: string): number | undefined {
+  return (status === "pitched" || status === "talking") && lastMs !== undefined ? daysSince(lastMs, today, zone) : undefined;
 }
 
 /** What the follow-up rule reads off a pitch (a Firestore Timestamp on either side has toMillis). */
@@ -163,14 +164,14 @@ export interface FollowUp {
  * Whether an active pitch needs a nudge (pitches.needingFollowUp and the To Dos Booking column): a next step due on or before
  * `today`, or Pitched/Talking with no contact for `quietLimit` days. Null when it needs none (or isn't active).
  */
-export function followUpFor(p: FollowUpPitchLike, today = todayStr(), quietLimit = QUIET_DAYS): FollowUp | null {
+export function followUpFor(p: FollowUpPitchLike, today: string, zone: string, quietLimit = QUIET_DAYS): FollowUp | null {
   if (!isActive(p.status)) return null;
   const reasons: string[] = [];
   const due = !!(p.nextStep?.due && p.nextStep.due <= today);
   if (due) reasons.push(`Next step "${p.nextStep!.text}" was due ${p.nextStep!.due}`);
   const last = (p.lastContactAt ?? p.createdAt)?.toMillis?.();
-  const days = last ? daysSince(last, today) : undefined;
-  const quiet = (quietDays(p.status, last, today) ?? 0) >= quietLimit;
+  const days = last ? daysSince(last, today, zone) : undefined;
+  const quiet = (quietDays(p.status, last, today, zone) ?? 0) >= quietLimit;
   if (quiet) reasons.push(`No contact for ${days} days`);
   return reasons.length ? { reasons, due, quiet, daysSinceContact: days } : null;
 }

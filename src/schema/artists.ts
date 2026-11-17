@@ -163,7 +163,7 @@ export const Artist = entity({
    * The artist's own IANA time zone ("America/Denver", General Settings): every "today", day-of view, reminder, printed time and
    * calendar event uses it, except a show at a venue with its own `timeZone`, which uses the venue's.
    */
-  timeZone: timeZoneName.optional(),
+  timeZone: timeZoneName,
   links: ArtistLinks,
   /** What the band plays, lowercase ("americana", "indie folk"), set on General Settings. Booking's opener guess (#79) moves a show up when the headliner's genres fit these. Missing = none. */
   genres: z.array(z.string().min(1)).optional(),

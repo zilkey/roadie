@@ -8,6 +8,7 @@ import { db, type Doc } from "../db";
 import { AppError } from "../errors";
 import { undoRun, runsOf } from "../undo";
 import { buildSearchItems, searchItems, isActive, todayStr, followUpFor, QUIET_DAYS, type FollowUpPitchLike } from "@/lib/booking";
+import { zoneOf } from "../zone";
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { DEFAULT_TRANSITION_SEC, setlistTotal, transitionOf } from "@/lib/music";
 import { bandFolderId, bandmates } from "../music";
@@ -173,13 +174,13 @@ export const pitchesNeedingFollowUp = defineCommand({
     "Returns the pitch, why, days since last contact, and the people on the venue/promoter/festival with emails, ready for pitches.draftEmail.",
   input: strict({ quietDays: z.number().int().min(1).default(QUIET_DAYS), today: dateStr.optional() }),
   async run(ctx, i) {
-    const today = i.today ?? todayStr();
+    const zone = await zoneOf(ctx), today = i.today ?? todayStr(zone, ctx.now);
     const pitches = (await db.list(ctx, "pitches")).filter((p) => isActive(p.status));
     const contacts = new Map((await db.list(ctx, "contacts")).map((c) => [c.id, c]));
     const artistId = ctx.artistId;
     const out = [];
     for (const p of pitches) {
-      const f = followUpFor(p as unknown as FollowUpPitchLike, today, i.quietDays);
+      const f = followUpFor(p as unknown as FollowUpPitchLike, today, zone, i.quietDays);
       if (!f) continue;
       const { reasons, daysSinceContact: quiet } = f;
       const kind = p.target.kind as string;
@@ -273,7 +274,7 @@ export const statsMovementCmd = defineCommand({
     includeShows: z.boolean().default(true), today: dateStr.optional(),
   }),
   async run(ctx, i) {
-    const today = i.today ?? todayStr();
+    const today = i.today ?? todayStr(await zoneOf(ctx), ctx.now);
     const [snaps, shows] = await Promise.all([db.list(ctx, "statSnapshots"), db.list(ctx, "shows")]);
     const s = snaps as unknown as StatLike[];
     const events = [

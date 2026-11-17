@@ -17,6 +17,7 @@
  * history is what production would send.
  */
 import { importCtx } from "../src/server/ctx";
+import { zoneOf } from "../src/server/zone";
 import { db } from "../src/server/db";
 import { registry } from "../src/server/commands/registry";
 import { addDays } from "../src/lib/shows";
@@ -180,7 +181,7 @@ export async function seedWorld(kind: WorldKind, artistId: string, member: { uid
   // A guarantee on the deal becomes an income record that is owed until income.setReceived (shows.create does this).
   const show = (venueId: string, date: string, set: string, guarantee?: number) =>
     call("shows.create", { date, venueId, status: "confirmed", times: { loadIn: addHour(set, -2), set }, ...(guarantee ? { deal: { deal: "guarantee", guarantee } } : {}) });
-  const tonight = tonightDate(new Date());
+  const tonight = tonightDate(new Date(), await zoneOf(sys));
   const blue = await venue("The Red Barn", "Fort Collins");
   const shows: Partial<Record<ShowKey, string>> = { tonight: (await show(blue.id, tonight, "21:00", kind === "owedGuarantee" ? 30000 : undefined)).id };
   if (kind === "two") shows.afternoon = (await show((await venue("Odell Brewing", "Fort Collins")).id, tonight, "14:00")).id;

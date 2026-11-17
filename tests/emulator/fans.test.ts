@@ -48,7 +48,7 @@ beforeEach(async () => {
   // An AI-only login (not an admin): MCP carries role "mcp" whoever the person is.
   const ai = await makeUser("bot@example.com", "member", { name: "Bot" });
   aictx = { uid: ai.uid, role: "mcp", artistId: TEST_ARTIST, via: "mcp", runId: newRunId() };
-  await db.create(ctx, "artists", {
+  await db.create(ctx, "artists", { timeZone: "America/Denver",
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: { instagram: "noraquill" }, configurations: [],
     features: { fans: true },
   }, { id: TEST_ARTIST });

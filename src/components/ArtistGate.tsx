@@ -46,6 +46,7 @@ export function ArtistGate({ slug, children }: { slug: string; children: React.R
   const value = useMemo<CurrentArtist | null>(() => access
     ? {
       artistId: access.artistId, musicianId: musicianOf(access.artistId), slug: access.slug, name: (live.doc?.name as string | undefined) ?? access.name, role: preview ? "member" : access.role, doc: live.doc,
+      timeZone: (live.doc?.timeZone as string | undefined) || access.timeZone,
       realRole: access.role, previewAsMember: preview, setPreviewAsMember: (on: boolean) => setPreviewSlug(on ? slug : null),
     }
     : null, [access, live.doc, preview, slug, musicianOf]);

@@ -1,5 +1,5 @@
 "use client";
-import Link, { useArtist } from "@/lib/artist";
+import Link, { useArtist, useZone } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
@@ -34,7 +34,8 @@ function DaySheet({ tour, date }: { tour: Tour & { id: string }; date: string })
   const sheet = daySheet(tour, all, date);
   const showIds = [...sheet.shows, ...(sheet.tomorrow?.show ? [sheet.tomorrow.show] : [])].map((e) => e.showId).filter((x): x is string => !!x);
   const shows = useDocs<Show>("shows", showIds).byId;
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const first = profile.name.split(" ")[0];
   const town = dayTown(sheet, (sid) => { const s = shows.get(sid); return s ? showCity(s) : undefined; });
   const van = (tour.personnel ?? []).filter((m) => m !== musicianId).map((m) => musicians.find((x) => x.id === m)?.name.split(" ")[0]).filter(Boolean) as string[];

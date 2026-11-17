@@ -8,6 +8,7 @@ import { todayStr } from "@/lib/booking";
 import { dayLabel, tourByDay, tourDays, tourTotals, type TourTotals } from "@/lib/tours";
 import type { Expense, Income, Payout, Show, TourEntry } from "@/schema";
 import { townOf, type TourRow } from "./common";
+import { useZone } from "@/lib/artist";
 
 const ZERO = { inReceived: 0, inOwed: 0, outPaid: 0, outOwed: 0 };
 const inOf = (t: Pick<TourTotals, "inReceived" | "inOwed">) => t.inReceived + t.inOwed;
@@ -28,7 +29,8 @@ export function TourMoney({ tour }: { tour: TourRow }) {
   const [day, setDay] = useState<string | null | undefined>(undefined);
   const context = { kind: "tour" as const, tourId: tour.id, projectId: tour.projectId };
 
-  const today = todayStr();
+  const zone = useZone();
+  const today = todayStr(zone);
   const records = { income, expenses, payouts };
   const t = tourTotals(records, today);
   const spent = outOf(t);

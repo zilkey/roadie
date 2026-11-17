@@ -7,6 +7,7 @@ import { fmtInstant } from "@/lib/timezone";
 import { useBand, type ShowRow } from "../common";
 import { askState, showName, type AskState } from "@/lib/shows";
 import { ShowCard, UnfinishedPlaceholder, initials } from "./kit";
+import { useZone } from "@/lib/artist";
 
 const ms = (t?: unknown) => (t as { toMillis?(): number } | undefined)?.toMillis?.() ?? 0;
 const names = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
@@ -23,6 +24,7 @@ const SAID: Record<"yes" | "maybe" | "no" | "waiting", (who: string[]) => string
  */
 export function WhosPlayingCard({ show, admin }: { show: ShowRow; admin: boolean }) {
   const b = useBand();
+  const zone = useZone();
   const players = useCommand();
   const billed = useCommand();
   // Optimistic chips: the list we sent, until the show's own list changes (or the call fails).
@@ -63,7 +65,7 @@ export function WhosPlayingCard({ show, admin }: { show: ShowRow; admin: boolean
     if (st !== "notAsked") groups.set(st, [...(groups.get(st) ?? []), m.name]);
   }
   const answers = asks.length > 0 && groups.size > 0
-    ? [`Asked ${fmtInstant(ms(asks[0].createdAt), { month: "short", day: "numeric" })}`,
+    ? [`Asked ${fmtInstant(ms(asks[0].createdAt), zone, { month: "short", day: "numeric" })}`,
       ...(["yes", "maybe", "no", "waiting"] as const).filter((s) => groups.has(s)).map((s) => SAID[s](groups.get(s)!))].join(" · ")
     : null;
 

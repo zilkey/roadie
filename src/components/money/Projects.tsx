@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Link, { useArtistRouter } from "@/lib/artist";
+import Link, { useArtistRouter, useZone } from "@/lib/artist";
 import { ErrorBox, Select, useCommand } from "@/components/ui";
 import { useCollection } from "@/lib/firestore-hooks";
 import { PROJECT_KIND_LABEL, defaultProject, formatCents, incomeSoFar, projectTotals } from "@/lib/money";
@@ -29,7 +29,8 @@ export function Projects({ admin, adding, onDoneAdding }: { admin: boolean; addi
   const open = sorted.filter((p) => p.status !== "closed");
   const closed = sorted.filter((p) => p.status === "closed");
   // A show that hasn't happened yet stays out: its guarantee is dated on the show.
-  const inc = incomeSoFar(income.rows ?? [], todayStr());
+  const zone = useZone();
+  const inc = incomeSoFar(income.rows ?? [], todayStr(zone));
 
   const table = (rows: typeof all, testid?: string) => (
     <div className="book-tw" data-testid={testid}>

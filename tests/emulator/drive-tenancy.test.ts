@@ -29,7 +29,7 @@ beforeEach(async () => {
   await resetEmulators();
   await fetch(process.env.DRIVE_BASE_URL + "/__reset", { method: "POST" });
   for (const [id, folder] of [["A", "fake-band-folder"], ["B", "fake-other-band"]]) {
-    await db.create(importCtx(id), "artists", { name: `Band ${id}`, slug: `band-${id.toLowerCase()}`, driveFolderId: folder, chartsFolderId: id === "A" ? "fake-folder-charts" : "", links: {}, configurations: [] }, { id });
+    await db.create(importCtx(id), "artists", { timeZone: "America/Denver", name: `Band ${id}`, slug: `band-${id.toLowerCase()}`, driveFolderId: folder, chartsFolderId: id === "A" ? "fake-folder-charts" : "", links: {}, configurations: [] }, { id });
   }
   const ua = await makeUser("rudy@example.com", "admin", { artistId: "A" });
   const ub = await makeUser("zed@b.example", "admin", { artistId: "B" });

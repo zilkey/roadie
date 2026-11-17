@@ -7,6 +7,7 @@ import { roleIn } from "@/schema";
 import { calendarTours, setCalendarTours, setlistTransitions, setSetlistTransitions, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
 import type { Ctx } from "../ctx";
 import { defineCommand } from "./types";
+import { zoneOf } from "../zone";
 import { dayOfKey } from "@/lib/dayOf";
 
 export const sectionsSetHidden = defineCommand({
@@ -91,7 +92,7 @@ export const dayOfDismiss = defineCommand({
     const doc = await db.get(ctx, i.kind === "show" ? "shows" : "rehearsals", i.id);
     if (!doc || doc.deletedAt) throw new AppError("not_found", i.kind === "show" ? "Show not found" : "Rehearsal not found", 404);
     const key = dayOfKey(i.kind, i.id, doc.date as string);
-    await dismissDayOf(ctx.uid, artistId, key);
+    await dismissDayOf(ctx.uid, artistId, key, await zoneOf(ctx));
     return { dismissed: key };
   },
 });
