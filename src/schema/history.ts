@@ -24,6 +24,12 @@ export const History = entity({
    * firestore.rules read it: only that artist's admins read the entry.
    */
   artistId: z.string().nullable().optional(),
+  /** A person's own record (users, users/{uid}/private): whose it is. Such entries have `artistId: null` (tenancy plan D4). */
+  ownerUid: z.string().optional(),
+  /** A shared directory record (venues, acts…): every artist's. Such entries have `artistId: null`. */
+  shared: z.literal(true).optional(),
+  /** Written by a denormalization hook (a copy of a change made elsewhere, e.g. a venue rename onto shows): Undo skips it. */
+  derived: z.literal(true).optional(),
   /** Only the changed fields: field -> {before, after}, or {byId, order?} for id-keyed lists. (Blueprint says [before, after]; Firestore forbids nested arrays.) */
   diff: z.record(z.string(), FieldDiff),
   /** Order of this change inside one transaction (undo replays a run newest-first). */

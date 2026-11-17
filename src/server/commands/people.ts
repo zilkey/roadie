@@ -6,7 +6,7 @@ import { db, run, type Doc, type Writer } from "../db";
 import { adminAuth } from "../admin";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { syncClaims } from "../session";
+import { assertClaimsFit, syncClaims } from "../session";
 import { seedDefaultTemplates } from "../checklistTemplates";
 import { ensureDefaultProject } from "./projects";
 import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
@@ -108,10 +108,11 @@ export const usersAdd = defineCommand({
       const live = existing && !existing.deletedAt ? existing : null;
       if (live && roleIn(live, artistId)) throw new AppError("duplicate", "That email is already a user", 409);
       if (live?.musicianId && ((input.musicianId && input.musicianId !== live.musicianId) || input.musician)) throw new AppError("conflict", "That person is already linked to a musician", 409);
+      const mcpAccess = input.role === "admin" && input.mcpAccess;
+      assertClaimsFit({ ...(live ?? {}), artists: withRole(memberships(live), artistId, input.role, mcpAccess) });
       const musicianId = input.musician
         ? (await w.create("musicians", { name: input.name, email: input.email, instruments: input.musician.instruments, active: true, userId: uid })).id
         : input.musicianId;
-      const mcpAccess = input.role === "admin" && input.mcpAccess;
       if (live) {
         // Already a login in another artist: join this one too, keeping their name and other memberships.
         await w.update("users", uid, {
@@ -214,7 +215,7 @@ export const usersAddToBand = defineCommand({
   },
 });
 
-const musicianFields = MusicianInput.omit({ userId: true, archivedAt: true }).extend({
+const musicianFields = MusicianInput.omit({ artistId: true, userId: true, archivedAt: true }).extend({
   name: personName,
   instruments: InstrumentList,
   email: OptionalEmail.optional(),
@@ -321,12 +322,14 @@ export async function freeSlugFor(w: Writer, name: string) {
  * artists.create and the sign-up route (src/server/signUp.ts).
  */
 export async function createArtistFor(w: Writer, uid: string, input: Record<string, unknown> & { name: string; slug?: string }) {
+  const me = await w.get("users", uid);
+  // Their claims must still fit with one more artist (an auto-id is 20 characters), checked before anything is written.
+  if (me && !me.deletedAt) assertClaimsFit({ ...me, artists: withRole(memberships(me), "x".repeat(20), "admin") });
   if (input.slug) await requireFreeSlug(w, input.slug);
   const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
   const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null }));
   await seedDefaultTemplates(w, r.id);
   await ensureDefaultProject(w, r.id); // the "General" project, so Money in / Money out can save before any other project exists
-  const me = await w.get("users", uid);
   if (me && !me.deletedAt) await w.update("users", uid, { artists: withRole(memberships(me), r.id, "admin") });
   return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };
 }

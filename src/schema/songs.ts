@@ -3,6 +3,8 @@ import { entity, serverMask, driveRef, id } from "./common";
 import { checklist } from "./shows";
 
 export const Song = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   title: z.string().min(1),
   /** What a printed setlist shows when "Short titles" is on (a long title that would wrap). */
   shortTitle: z.string().optional(),
@@ -28,5 +30,5 @@ export const Song = entity({
 /** What db.ts validates for `songs` (the merge markers are written by songs.merge only). */
 export const SongRecord = Song.omit(serverMask);
 /** What the songs commands accept. */
-export const SongInput = SongRecord.omit({ mergedInto: true, mergedFrom: true, checklists: true });
+export const SongInput = SongRecord.omit({ artistId: true, mergedInto: true, mergedFrom: true, checklists: true });
 export type Song = z.infer<typeof Song>;

@@ -13,9 +13,10 @@ import { firestore } from "./admin";
 import { AppError } from "./errors";
 import type { Ctx } from "./ctx";
 import type { Membership } from "@/schema/users";
+import { OWNERS } from "@/schema/owners";
 
-/** The shared directory: one record every artist sees. Phase 2 folds this into the owner table (OWNERS). */
-export const SHARED_KINDS = new Set(["venues", "venueTypes", "acts", "promoters", "festivals", "editions"]);
+/** The shared directory: one record every artist sees (the `shared` kinds of the owner table, src/schema/owners.ts). */
+export const SHARED_KINDS = new Set(Object.entries(OWNERS).flatMap(([k, o]) => (o === "shared" ? [k] : [])));
 
 export const PLATFORM_ADMINS_DOC = "platform/admins";
 export const PLATFORM_USERS = "platformUsers";

@@ -1,9 +1,11 @@
 import { z } from "zod";
-import { entity, serverMask, dateStr, driveRef } from "./common";
+import { entity, serverMask, id, dateStr, driveRef } from "./common";
 
 export const statSource = z.enum(["spotifyApi", "spotifyForArtists", "instagram", "bandsintown"]);
 /** Doc id is `${source}_${date}`. Never edited. */
 export const StatSnapshot = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   source: statSource,
   date: dateStr,
   followers: z.number().int().optional(),

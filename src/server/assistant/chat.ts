@@ -32,7 +32,7 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     const userAt = new Date();
     const enc = new TextEncoder();
     const user = await db.get("users", ctx.uid);
-    await ensureThread({ uid: ctx.uid, threadId, pageContext: req.pageContext, at: userAt });
+    await ensureThread({ uid: ctx.uid, threadId, pageContext: req.pageContext, at: userAt, artistId: ctx.artistId, via: ctx.via });
     // A new conversation is the one the panel opens from now on. Recorded here, by the request that started it, so a
     // reload straight after sending (or a Stop) still finds it, whatever became of the browser's own save.
     if (!history) await setOpenThread(ctx, threadId, req.sentAt ?? userAt.getTime()).catch((e) => console.error(e));

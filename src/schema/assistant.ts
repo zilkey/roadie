@@ -44,12 +44,21 @@ export const AssistantAction = z.strictObject({
 });
 export type AssistantAction = z.infer<typeof AssistantAction>;
 
-/** Chat transcripts are not business data: written by src/server/assistant/threads.ts, outside db.ts and history/undo. */
+/** What Roadie changed in a thread (src/server/assistant/threads.ts ThreadRun): the only runs it may undo. */
+export const ThreadRun = z.strictObject({
+  runId: z.string(), messageId: z.string(), at: z.number(), label: z.string(), undone: z.boolean().optional(), kind: z.enum(["write", "undo"]).optional(),
+});
+/**
+ * Chat transcripts are not business data: written by src/server/assistant/threads.ts, outside history/undo. Registered in
+ * `collections` (tenancy phase 2) so the thread's artist is part of its schema; `artistId` is optional until the prod backfill.
+ */
 export const AssistantThread = z.strictObject({
+  artistId: id.optional(),
   ownerUid: id,
   startedAt: ts,
   lastActiveAt: ts,
   startedOnRoute: z.string(),
+  runs: z.array(ThreadRun).optional(),
 });
 export type AssistantThread = z.infer<typeof AssistantThread>;
 

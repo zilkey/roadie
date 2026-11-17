@@ -15,6 +15,8 @@ export const Membership = z.strictObject({
   role: ArtistRole,
   /** AI (MCP) access in THIS artist; only admins can have it. */
   mcpAccess: z.boolean().optional(),
+  /** This person's musician record in THIS artist (tenancy phase 2; the Writer fills it from `musicianId` when a musician is linked). */
+  musicianId: id.optional(),
 });
 export type Membership = z.infer<typeof Membership>;
 
@@ -24,11 +26,13 @@ export const User = entity({
   /** The artists this login belongs to (at most one entry per artist). Set by users.add / users.update / users.remove. */
   artists: z.array(Membership).refine((ms) => new Set(ms.map((m) => m.artistId)).size === ms.length, "One entry per artist"),
   musicianId: id.optional(),
+  /** Computed from `artists` (src/schema/index.ts): the artist ids of every membership, so a server query can ask "who is in this artist". */
+  artistIds: z.array(id).optional(),
   prefs: z.strictObject({ assistant: AssistantPrefs.optional() }).optional(),
   /** Home address and cars, for gas estimates (people.updateDriving / me.updateDriving). */
   driving: DrivingSettings.optional(),
 });
-export const UserInput = User.omit(serverMask);
+export const UserInput = User.omit({ ...serverMask, artistIds: true });
 export type User = z.infer<typeof User>;
 
 /** A user's role in one artist ("" when they don't belong to it). Tolerates docs from before memberships. */
@@ -55,5 +59,23 @@ export function artistClaims(user: object): Record<string, "admin" | "member"> {
   const out: Record<string, "admin" | "member"> = {};
   const ms = (user as { artists?: unknown }).artists;
   for (const m of (Array.isArray(ms) ? ms : []) as Membership[]) if (m.role === "admin" || m.role === "member") out[m.artistId] = m.role;
+  return out;
+}
+
+/** The artist ids a users doc belongs to (`users.artistIds`, computed on every write). */
+export function artistIdsOf(user: object): string[] {
+  const ms = (user as { artists?: unknown }).artists;
+  return [...new Set(((Array.isArray(ms) ? ms : []) as Membership[]).map((m) => m.artistId).filter((x) => typeof x === "string" && x))];
+}
+/** The artists a person is admin of (the `adminOf` claim). */
+export function adminOfClaims(user: object): string[] {
+  const ms = (user as { artists?: unknown }).artists;
+  return ((Array.isArray(ms) ? ms : []) as Membership[]).filter((m) => m.role === "admin").map((m) => m.artistId);
+}
+/** This person's musician in each artist (the `musicians` claim): {artistId: musicianId}, app roles only. */
+export function musicianClaims(user: object): Record<string, string> {
+  const out: Record<string, string> = {};
+  const ms = (user as { artists?: unknown }).artists;
+  for (const m of (Array.isArray(ms) ? ms : []) as Membership[]) if ((m.role === "admin" || m.role === "member") && m.musicianId) out[m.artistId] = m.musicianId;
   return out;
 }

@@ -64,8 +64,11 @@ test("users.add creates invite + claims + musician link; session picks it up; re
   const uid = (add.json as { result: { id: string } }).result.id;
   assert.equal((await db.get("users", uid))!.email, "hugo@example.com");
   assert.equal((await db.get("musicians", mid))!.userId, uid);
-  assert.deepEqual((await db.get("users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member" }]);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, musicianId: mid });
+  // The membership carries the linked musician, and users.artistIds lists the artists (tenancy phase 2).
+  assert.deepEqual((await db.get("users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member", musicianId: mid }]);
+  assert.deepEqual((await db.get("users", uid))!.artistIds, [TEST_ARTIST]);
+  assert.equal((await db.get("musicians", mid))!.artistId, TEST_ARTIST);
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: mid }, musicianId: mid });
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "hugo@example.com", name: "D", role: "member" })).status, 409);
 
   await makeArtist("Test Band", "test-band");
@@ -92,7 +95,7 @@ test("users.add with musician: one call makes the band member and the login, lin
   const m = (await db.get("musicians", musicianId))!;
   assert.deepEqual([m.name, m.email, m.instruments, m.active, m.userId], ["Iris", "iris@example.com", ["fiddle", "vocals"], true, uid]);
   assert.equal((await db.get("users", uid))!.musicianId, musicianId);
-  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, musicianId });
+  assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: musicianId }, musicianId });
   // musicianId and musician together is refused
   const both = await dispatch("users.add", bearer(admin.token), { email: "x@example.com", name: "X", role: "member", musicianId: musicianId, musician: { instruments: [] } });
   assert.equal(both.status, 400);
@@ -102,7 +105,7 @@ test("legacy ai role: can't be created or set any more, but an existing ai login
   const admin = await makeUser("a@example.com", "admin");
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "bot@example.com", name: "Bot", role: "ai" })).status, 400);
   const bot = await makeUser("bot@example.com", "ai");
-  assert.deepEqual((await adminAuth().getUser(bot.uid)).customClaims, { artists: {} }); // ai is never a Firestore-reading role
+  assert.deepEqual((await adminAuth().getUser(bot.uid)).customClaims, { artists: {}, adminOf: [], musicians: {} }); // ai is never a Firestore-reading role
   await assert.rejects(startSession(bearer(bot.token)), (e: AppError) => e.code === "ai_only" && e.status === 403);
   assert.equal((await dispatch("musicians.create", bearer(bot.token), { name: "x", instruments: ["a"] })).status, 403);
   const member = await makeUser("m@example.com", "member");

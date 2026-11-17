@@ -73,7 +73,7 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   assert.deepEqual((await db.list("checklistTemplates", (q) => q.where("artistId", "==", artist.id))).map((t) => t.name).sort(), ["Follow Up", "Promo"]);
   // and the General project, so Money in / Money out can save before any other project exists
   assert.deepEqual((await db.list("projects", (q) => q.where("artistId", "==", artist.id))).map((t) => [t.name, t.kind, t.isDefault, t.status]), [["General", "band", true, "open"]]);
-  assert.deepEqual((await adminAuth().getUser(p.uid)).customClaims, { artists: { [artist.id]: "admin" } });
+  assert.deepEqual((await adminAuth().getUser(p.uid)).customClaims, { artists: { [artist.id]: "admin" }, adminOf: [artist.id], musicians: {} });
   // History records it like any other write
   assert.equal((await db.history("artists", artist.id)).length, 1);
   assert.equal((await db.history("users", p.uid))[0].via, "app");
@@ -89,6 +89,10 @@ test("artists.signUp: instruments make the creator a Band Member linked to their
   const m = (await db.get("musicians", user.musicianId))!;
   assert.deepEqual([m.name, m.email, m.instruments, m.active, m.userId], ["Pat Stranger", "pat@example.com", ["guitar", "vocals"], true, p.uid]);
   assert.equal((await adminAuth().getUser(p.uid)).customClaims!.musicianId, user.musicianId);
+  // The artist first, then the musician in it (tenancy phase 2); the membership carries the link.
+  assert.equal(m.artistId, user.artists[0].artistId);
+  assert.deepEqual(user.artists, [{ artistId: m.artistId, role: "admin", mcpAccess: false, musicianId: m.id }]);
+  assert.deepEqual((await adminAuth().getUser(p.uid)).customClaims!.musicians, { [m.artistId]: m.id });
 });
 
 test("artists.signUp: refuses someone who already belongs to a band", async () => {

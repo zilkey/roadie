@@ -14,6 +14,8 @@ export const rehearsalLocation = z.strictObject({
 export type RehearsalLocation = z.infer<typeof rehearsalLocation>;
 
 export const Rehearsal = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   date: dateStr,
   location: rehearsalLocation.optional(),
   venueId: id.optional(),

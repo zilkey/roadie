@@ -11,6 +11,8 @@ export const fileNote = z.strictObject({ id: z.string().min(1), authorId: z.stri
 export type FileNote = z.infer<typeof fileNote>;
 
 export const FileDoc = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   kind: fileKind,
   title: z.string().min(1),
   songId: id.optional(),

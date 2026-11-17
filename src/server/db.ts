@@ -12,6 +12,9 @@ import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
 import { SHARED_KINDS, accessOf, refusedMessage } from "./platform";
+import { PARENTS, ownerOf } from "@/schema/owners";
+import type { Membership } from "@/schema/users";
+import { tenancyLog } from "./tenancy";
 
 export type Doc = DocumentData & { id: string };
 
@@ -189,6 +192,8 @@ export class Writer {
   coalescedRunId?: string;
   /** Above zero while denormalization hooks (or asSystem) run: their writes follow a change already allowed, so the shared-record check is skipped. */
   private hookDepth = 0;
+  /** Above zero while denormalization hooks run: their history entries are `derived` (a copy of a change made elsewhere). */
+  private deriving = 0;
   /** Shared records ("path/id") an approved editor is changing for the first time since someone else created them: stamped adoptedAt. */
   private adopting = new Set<string>();
   constructor(private tx: Transaction, readonly ctx: Ctx) {
@@ -279,26 +284,92 @@ export class Writer {
   }
 
   /**
-   * The artist a record belongs to, stamped on its history entries (firestore.rules let only that artist's admins read them):
-   * its own `artistId`; a show's deal and sub-collection docs (comments, activity) take their parent's; an artist is its own.
-   * Records of no one artist (songs, shared venues...) get null. Contacts carry their own artistId.
+   * The artist a record belongs to: its own `artistId`; a sub-collection doc (comments, activity, entries, tracks) and an id-keyed
+   * one (showDeals, setlists: keyed by the show's id) take their parent's; an artist is its own. Null when none is known
+   * (records written before tenancy phase 2, until the backfill).
    */
   private async artistIdFor(path: string, id: string, doc: DocumentData): Promise<string | null> {
-    if (typeof doc.artistId === "string") return doc.artistId;
+    if (typeof doc.artistId === "string" && doc.artistId) return doc.artistId;
+    return this.parentArtistId(path, id);
+  }
+  private async parentArtistId(path: string, id: string): Promise<string | null> {
     const kind = kindOf(path);
     if (kind === "artists") return id;
-    if (kind === "showDeals") return ((await this.get("shows", id))?.artistId as string | undefined) ?? null;
     const seg = path.split("/");
     if (seg.length >= 3) {
       const parentPath = seg.slice(0, -2).join("/"), parentId = seg[seg.length - 2];
       const parent = await this.get(parentPath, parentId);
       return parent ? this.artistIdFor(parentPath, parentId, parent) : null;
     }
+    const p = PARENTS[kind];
+    if (p?.keyedById) {
+      for (const k of p.kinds) {
+        const parent = await this.get(k, id);
+        if (parent) return this.artistIdFor(k, id, parent);
+      }
+    }
     return null;
   }
 
-  private async commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
+  /**
+   * The one scope of a history entry (tenancy plan D4): artist records get `artistId`; a person's records (users, their private
+   * sub-collection, prefs) get `ownerUid`; shared directory records get `shared: true`. Shared and person entries carry an explicit
+   * `artistId: null`, so a query can name it. An artist record written before phase 2 (no artistId of its own or its parent's)
+   * takes the caller's artist.
+   */
+  private async scopeFor(path: string, id: string, doc: DocumentData): Promise<{ artistId: string | null; ownerUid?: string; shared?: true }> {
+    const kind = kindOf(path);
+    const owner = ownerOf(kind);
+    if (owner === "user") {
+      const seg = path.split("/");
+      const ownerUid = seg.length >= 3 ? seg[seg.length - 2] : kind === "users" || kind === "userPrefs" ? id : ((doc.uid ?? doc.createdBy) as string);
+      return { artistId: null, ownerUid };
+    }
+    if (owner === "shared") return { artistId: null, shared: true };
     const artistId = await this.artistIdFor(path, id, doc);
+    return { artistId: artistId ?? (owner === "artist" ? this.ctx.artistId ?? null : null) };
+  }
+
+  /**
+   * Stamp a new artist record with its artist before it is validated (tenancy phase 2). In order: the artistId the input names,
+   * the parent's (sub-collections and show-keyed kinds), the caller's. Never refuses in this phase: with no artist found the write
+   * goes ahead and `tenancy.unstamped` is logged.
+   */
+  private async stampArtist(path: string, id: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const kind = kindOf(path);
+    if (ownerOf(kind) !== "artist") return input;
+    if (typeof input.artistId === "string" && input.artistId) return input;
+    const artistId = (await this.parentArtistId(path, id)) ?? this.ctx.artistId ?? null;
+    if (artistId) return { ...input, artistId };
+    tenancyLog.unstamped({ kind, id, via: this.ctx.via, uid: this.ctx.uid });
+    return input;
+  }
+
+  /**
+   * A users doc that links a musician (`musicianId`) carries it on that musician's membership too (`Membership.musicianId`):
+   * the membership in the musician's artist, else the caller's, else the person's only one. Other memberships lose a stale link.
+   */
+  private async linkMemberships(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const ms = doc.artists;
+    if (!Array.isArray(ms)) return doc;
+    const mid = typeof doc.musicianId === "string" && doc.musicianId ? doc.musicianId : undefined;
+    let target: string | undefined;
+    if (mid) {
+      const m = await this.get("musicians", mid);
+      const own = typeof m?.artistId === "string" ? m.artistId : undefined;
+      const has = (a?: string) => !!a && (ms as Membership[]).some((x) => x.artistId === a);
+      target = has(own) ? own : has(this.ctx.artistId) ? this.ctx.artistId : ms.length === 1 ? (ms[0] as Membership).artistId : undefined;
+    }
+    const next = (ms as Membership[]).map((m) => {
+      if (m.artistId === target) return { ...m, musicianId: mid };
+      if (m.musicianId && (!mid || m.musicianId === mid)) { const { musicianId: _drop, ...rest } = m; void _drop; return rest; }
+      return m;
+    });
+    return { ...doc, artists: next };
+  }
+
+  private async commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
+    const scope = await this.scopeFor(path, id, doc);
     const ref = this.fs.collection(path).doc(id);
     const hist = ref.collection("history").doc(revId(doc.rev as number));
     const seq = this.seq++;
@@ -309,8 +380,8 @@ export class Writer {
       tx.set(hist, {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
-        entity: { kind: path, id }, op, artistId, diff, seq, actor: this.actor(), docRev: doc.rev,
-        ...(autosave ? { autosave: true } : {}),
+        entity: { kind: path, id }, op, ...scope, diff, seq, actor: this.actor(), docRev: doc.rev,
+        ...(autosave ? { autosave: true } : {}), ...(this.deriving > 0 ? { derived: true } : {}),
       });
     });
   }
@@ -382,12 +453,14 @@ export class Writer {
   async create(path: string, input: Record<string, unknown>, opts: { id?: string; keep?: { createdAt: Timestamp; createdBy: string } } = {}): Promise<{ id: string; merged: boolean }> {
     const kind = kindOf(path);
     const d = def(kind);
-    const { data, computed } = prepare(kind, input);
+    const id = opts.id ?? this.fs.collection(path).doc().id;
+    let stamped = await this.stampArtist(path, id, input);
+    if (kind === "users") stamped = await this.linkMemberships(stamped);
+    const { data, computed } = prepare(kind, stamped);
     if (d.dedupe && computed.matchKey) {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits[0]) return this.mergeInto(path, hits[0], data);
     }
-    const id = opts.id ?? this.fs.collection(path).doc().id;
     if (opts.id && (await this.get(path, id))) throw new AppError("already_exists", `${path}/${id} already exists`, 409);
     const doc = clean(this.stampNew(id, { ...data, ...computed }));
     // A copy of an older record (comments carried from a pitch to its show) keeps the original's creation time and creator.
@@ -403,7 +476,7 @@ export class Writer {
     const base = writable(existing);
     const filled: Record<string, unknown> = { ...base };
     for (const [k, v] of Object.entries(incoming)) filled[k] = mergeFill(base[k], v);
-    const { data, computed } = prepare(kind, filled);
+    const { data, computed } = prepare(kind, kind === "users" ? await this.linkMemberships(filled) : filled);
     const next = clean(this.stampUpdate(path, existing, { ...data, ...computed }, existing.deletedAt ?? null));
     const diff = diffDocs(existing, next);
     if (Object.keys(diff).length) {
@@ -437,7 +510,8 @@ export class Writer {
     for (const [k, v] of Object.entries(patch)) {
       if (v === null) delete merged[k]; else merged[k] = v;
     }
-    const { data, computed } = prepare(kind, merged);
+    const linked = kind === "users" && ("musicianId" in patch || "artists" in patch) ? await this.linkMemberships(merged) : merged;
+    const { data, computed } = prepare(kind, linked);
     if (d.dedupe && computed.matchKey && computed.matchKey !== existing.matchKey) {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits.some((h) => h.id !== id)) throw new AppError("duplicate", `Another ${kind} already matches that name`, 409);
@@ -539,7 +613,8 @@ export class Writer {
     for (const h of denormalizers) {
       if (h.source !== kind) continue;
       if (h.watch.every((f) => same(before[f], after[f]))) continue;
-      await this.asSystem(() => h.refresh(this, before.id, after, before));
+      this.deriving++;
+      try { await this.asSystem(() => h.refresh(this, before.id, after, before)); } finally { this.deriving--; }
     }
   }
 }

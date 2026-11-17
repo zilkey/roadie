@@ -63,13 +63,15 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
       if (existing && ((await artistsFor(existing)).length || memberships(existing).some((x) => x.role !== "admin" && x.role !== "member"))) throw new AppError("already_member", "You already belong to a band", 409);
       const others = (await w.query("users", (q) => q.where("email", "==", email))).filter((u) => u.id !== uid);
       if (others.length) throw new AppError("duplicate", "That email is already a user", 409);
-      const musicianId = instruments?.success
-        ? (await w.create("musicians", { name: existing?.name ?? displayName, email, instruments: instruments.data, active: true, userId: uid })).id
-        : undefined;
-      if (existing) await w.update("users", uid, { ...(musicianId ? { musicianId } : {}) });
-      else await w.create("users", { email, name: displayName, artists: [], ...(musicianId ? { musicianId } : {}) }, { id: uid });
+      if (!existing) await w.create("users", { email, name: displayName, artists: [] }, { id: uid });
       // The artist, its starting templates and this person's admin membership: the same steps as artists.create.
-      return createArtistFor(w, uid, { name: input.name, slug: input.slug, configurations: [], links: {}, driveFolderId: "" });
+      const made = await createArtistFor(w, uid, { name: input.name, slug: input.slug, configurations: [], links: {}, driveFolderId: "" });
+      // Then their musician record, in the new artist (tenancy phase 2: the artist first, then the musician).
+      if (instruments?.success) {
+        const m = await w.create("musicians", { artistId: made.id, name: existing?.name ?? displayName, email, instruments: instruments.data, active: true, userId: uid });
+        await w.update("users", uid, { musicianId: m.id });
+      }
+      return made;
     });
     await syncClaims(uid);
     console.info(JSON.stringify({ event: "artists.signUp", ok: true, uid, artistId: out.id, slug: out.slug, runId: ctx.runId }));

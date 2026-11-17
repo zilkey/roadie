@@ -469,12 +469,12 @@ export const pitchesRemove = defineCommand({
 // ---------- email ----------
 
 export const templatesCreate = defineCommand({
-  name: "emailTemplates.create", roles: ["admin", "mcp"], input: EmailTemplateInput.extend({ targetKinds: arr(EmailTemplateInput.shape.targetKinds) }),
+  name: "emailTemplates.create", roles: ["admin", "mcp"], input: EmailTemplateInput.omit({ artistId: true }).extend({ targetKinds: arr(EmailTemplateInput.shape.targetKinds) }),
   description: "Add an email template. Use {{venue.name}}, {{contact.firstName}}, {{user.name}}, {{artist.name}} etc.",
   run: (ctx, input) => db.create(ctx, "emailTemplates", input),
 });
 export const templatesUpdate = defineCommand({
-  name: "emailTemplates.update", roles: ["admin", "mcp"], input: patchInput(EmailTemplateInput), description: "Edit an email template.",
+  name: "emailTemplates.update", roles: ["admin", "mcp"], input: patchInput(EmailTemplateInput.omit({ artistId: true })), description: "Edit an email template.",
   run: (ctx, { id, patch }) => db.update(ctx, "emailTemplates", id, patch as Record<string, unknown>),
 });
 export const templatesRemove = defineCommand({

@@ -21,6 +21,8 @@ export const SetlistItem = z.strictObject({
 });
 /** Reusable list: setlistTemplates/{autoId}. Song items are references; no show link. */
 export const SetlistTemplate = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   name: z.string().min(1),
   items: z.array(SetlistItem),
   totalSec: z.number().int(),
@@ -33,6 +35,8 @@ export const SetlistSource = z.strictObject({
 });
 /** A show's actual setlist: setlists/{showId}, the document id IS the show id. Items carry copies. */
 export const Setlist = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   items: z.array(SetlistItem),
   totalSec: z.number().int(),
   source: SetlistSource.optional(),

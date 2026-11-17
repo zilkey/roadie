@@ -2,6 +2,8 @@ import { z } from "zod";
 import { entity, serverMask, email, id, ts } from "./common";
 
 export const Musician = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   name: z.string().min(1),
   instruments: z.array(z.string()),
   userId: id.optional(),

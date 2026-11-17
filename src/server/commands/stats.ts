@@ -6,13 +6,17 @@ import { spotifyClient } from "../integrations";
 import { parseSpotifyCsv, statsCurrent, type StatLike } from "@/lib/stats";
 import type { Ctx } from "../ctx";
 
-/** Writes a snapshot with id `{source}_{date}`; snapshots are never edited, so an existing day is skipped. */
+/** A snapshot's id: `{artistId}_{source}_{date}` (tenancy phase 2). Written before that, and without an artist: `{source}_{date}`. */
+export const snapshotId = (artistId: string | undefined, source: unknown, date: unknown) => (artistId ? `${artistId}_${source}_${date}` : `${source}_${date}`);
+
+/** Writes one snapshot per day and source; snapshots are never edited, so a day already saved (under its old or new id) is skipped. */
 async function writeSnapshots(ctx: Ctx, snaps: Record<string, unknown>[]) {
   return run(ctx, async (w) => {
     const written: string[] = [], skipped: string[] = [];
     for (const s of snaps) {
-      const id = `${s.source}_${s.date}`;
+      const id = snapshotId(ctx.artistId, s.source, s.date), old = snapshotId(undefined, s.source, s.date);
       if (await w.get("statSnapshots", id)) { skipped.push(id); continue; }
+      if (id !== old && (await w.get("statSnapshots", old))) { skipped.push(old); continue; }
       await w.create("statSnapshots", s, { id });
       written.push(id);
     }
@@ -34,13 +38,13 @@ export async function currentStats() {
 
 export const statsPull = defineCommand({
   name: "stats.pull", roles: ["admin", "mcp"], input: z.strictObject({}),
-  description: "Pull today's followers and popularity from Spotify and store a statSnapshot (id spotifyApi_{date}). A day already pulled is skipped.",
+  description: "Pull today's followers and popularity from Spotify and store a statSnapshot (one per day). A day already pulled is skipped.",
   run: (ctx) => pullSpotify(ctx),
 });
 
 export const statsImportCsv = defineCommand({
   name: "stats.importCsv", roles: ["admin", "mcp"],
-  description: "Import a Spotify for Artists CSV (columns: date or month, listeners, streams, optional followers). Each row becomes a spotifyForArtists_{date} snapshot; dates already imported are skipped. Nothing is written if any line is bad.",
+  description: "Import a Spotify for Artists CSV (columns: date or month, listeners, streams, optional followers). Each row becomes a spotifyForArtists snapshot for its date; dates already imported are skipped. Nothing is written if any line is bad.",
   input: z.strictObject({ csv: z.string().min(1), fileName: z.string().optional() }),
   async run(ctx, { csv }) {
     const { rows, errors } = parseSpotifyCsv(csv);

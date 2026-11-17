@@ -38,6 +38,9 @@ import { StatSnapshotInput } from "./statSnapshots";
 import { HistoryInput } from "./history";
 import { McpTokenInput } from "./mcpTokens";
 import { ShortcutTokenInput } from "./shortcutTokens";
+import { InviteInput } from "./invites";
+import { AssistantThread } from "./assistant";
+import { artistIdsOf } from "./users";
 import { e164, lowerEmail, matchKeyFor } from "./normalize";
 
 export * from "./common";
@@ -85,6 +88,8 @@ export * from "./statSnapshots";
 export * from "./history";
 export * from "./mcpTokens";
 export * from "./shortcutTokens";
+export * from "./invites";
+export * from "./owners";
 
 export interface CollectionDef {
   /** Validates the writable fields (no server-stamped ones). */
@@ -148,6 +153,9 @@ export const collections: Record<string, CollectionDef> = {
   history: { input: HistoryInput, immutable: true },
   mcpTokens: { input: McpTokenInput },
   shortcutTokens: { input: ShortcutTokenInput },
+  invites: { input: InviteInput },
+  /** Roadie's conversations: written raw by src/server/assistant/threads.ts (not history), registered for their schema and owner. */
+  assistantThreads: { input: AssistantThread },
 };
 
 /** "pitches/abc/comments" -> "comments"; "venues" -> "venues". */
@@ -173,6 +181,7 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
   if ((kind === "setlists" || kind === "setlistTemplates") && Array.isArray(out.items)) {
     out.totalSec = (out.items as { lengthSec?: number }[]).reduce((n, i) => n + (i.lengthSec ?? 0), 0);
   }
+  if (kind === "users") out.artistIds = artistIdsOf(out);
   const mk = matchKeyFor(kind, out);
   if (mk !== undefined) out.matchKey = mk;
   return out;
@@ -181,4 +190,5 @@ export function normalizeDoc(kind: string, d: Doc): Doc {
 /** Fields the server computes in normalizeDoc; stripped from validation and re-added. */
 export const computedFields: Record<string, string[]> = {
   contacts: ["matchKey"], venues: ["matchKey"], promoters: ["matchKey"], acts: ["matchKey"], festivals: ["matchKey"], venueTypes: ["matchKey"], setlists: ["totalSec"], setlistTemplates: ["totalSec"],
+  users: ["artistIds"],
 };

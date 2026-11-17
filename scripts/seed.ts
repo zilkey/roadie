@@ -14,6 +14,7 @@ import { slugForArtist } from "../src/schema/artists";
 import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
 import { addPlatformAdmins, approveArtist } from "../src/server/platform";
 import { execute } from "../src/server/commands/dispatch";
+import { snapshotId } from "../src/server/commands/stats";
 import { seedDefaultTemplates } from "../src/server/checklistTemplates";
 import { updateDriving } from "@/server/driving";
 import { areaFor, productFor } from "@/server/gas/price";
@@ -37,7 +38,9 @@ async function reset() {
 async function main() {
   if (process.argv.includes("--reset")) await reset();
   if ((await db.list("artists")).length) { console.log("Already seeded (use --reset to start over)."); return; }
-  const ctx = importCtx("seed");
+  // The artist's id is picked first, so every record (its musicians too) is stamped with it (tenancy phase 2).
+  const artistId = firestore().collection("artists").doc().id;
+  const ctx = importCtx("seed", undefined, artistId);
   const create = async (path: string, doc: Record<string, unknown>, id?: string) => (await db.create(ctx, path, doc, id ? { id } : undefined)).id;
   const src = (url: string) => [{ url, checkedAt: "2026-10-20", note: "Venue website" }];
 
@@ -68,7 +71,7 @@ async function main() {
     songwritingFolderId: "fake-folder-songwriting",
     calendar: { id: "fake-band-calendar", name: "Nora Quill Band" },
     features: { fans: true },
-  });
+  }, artistId);
 
   // Every seeded person belongs to the artist, with their role there.
   const uid: Record<string, string> = {};
@@ -329,8 +332,8 @@ async function main() {
     showId: hiShow, dueDate: "2026-11-15" });
   await create("payouts", { artistId: artist, projectId: bandProject, to: { musicianId: mid.felix, name: person("felix") }, kind: "pay", amount: 6000, what: "Deep End show",
     showId: hiShow, dueDate: "2026-11-15" });
-  await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, "spotifyApi_2026-10-21");
-  await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, "spotifyApi_2026-10-22");
+  await create("statSnapshots", { source: "spotifyApi", date: "2026-10-21", followers: 1840, popularity: 31 }, snapshotId(artist, "spotifyApi", "2026-10-21"));
+  await create("statSnapshots", { source: "spotifyApi", date: "2026-10-22", followers: 1852, popularity: 31 }, snapshotId(artist, "spotifyApi", "2026-10-22"));
 
   console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 1 release with 10 tracks, 6 expenses, 4 income, 3 payouts.");
 }
@@ -338,11 +341,12 @@ async function main() {
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */
 async function seedOtherBand(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>) {
   const p = DEV_OTHER_BAND.person;
-  const mid = await create("musicians", { name: p.name, instruments: p.instruments, active: true }); // no email: the first band's Drive sharing checks list musicians with an email
+  const otherId = firestore().collection("artists").doc().id;
+  const mid = await create("musicians", { artistId: otherId, name: p.name, instruments: p.instruments, active: true }); // no email: the first band's Drive sharing checks list musicians with an email
   const artist = await create("artists", {
     name: DEV_OTHER_BAND.artistName, slug: slugForArtist(DEV_OTHER_BAND.artistName),
     configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [mid] }], links: {}, driveFolderId: "",
-  });
+  }, otherId);
   const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
   await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: false }], musicianId: mid }, u.uid);
   await db.update(ctx, "musicians", mid, { userId: u.uid });

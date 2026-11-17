@@ -109,7 +109,7 @@ test("session: lists your app artists (slug, name, role), sets {artists} claims;
     { artistId: "a", slug: "band-a", name: "Band A", role: "admin" },
     { artistId: "b", slug: "band-b", name: "Band B", role: "member" },
   ]);
-  assert.deepEqual((await adminAuth().getUser(mia.uid)).customClaims, { artists: { b: "member", a: "admin" } });
+  assert.deepEqual((await adminAuth().getUser(mia.uid)).customClaims, { artists: { b: "member", a: "admin" }, adminOf: ["a"], musicians: {} });
 });
 
 test("users.*: per artist. Adding someone from another artist joins them; removing takes them out of this artist only", async () => {

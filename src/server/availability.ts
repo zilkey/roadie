@@ -48,8 +48,9 @@ export async function viewByToken(availabilityId: string, musicianId: string, to
 }
 
 export async function answerByToken(availabilityId: string, musicianId: string, token: string, answer: "yes" | "no" | "maybe", note?: string) {
-  await verified(availabilityId, musicianId, token);
-  const ctx: Ctx = { uid: `link:${musicianId}`, role: "member", musicianId, via: "app", runId: newRunId() };
+  const ask = await verified(availabilityId, musicianId, token);
+  // The artist is the ask's, after the token check (tenancy plan D3, routes table).
+  const ctx: Ctx = { uid: `link:${musicianId}`, role: "member", ...(typeof ask.artistId === "string" ? { artistId: ask.artistId } : {}), musicianId, via: "app", runId: newRunId() };
   return run(ctx, async (w) => {
     const av = await w.get("availability", availabilityId);
     if (!av || av.deletedAt) throw new AppError("not_found", "Not found", 404);

@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { firestore } from "../admin";
 import { AppError } from "../errors";
+import { tenancyLog } from "../tenancy";
 import type { AssistantAction, CardField, PageContext, ToolTrace } from "@/schema/assistant";
 
 // Chat transcripts are not business data: written with firebase-admin directly, so they never reach history/undo (like touchLastUsed in db.ts).
@@ -82,11 +83,15 @@ export async function stopRequested(uid: string, replyId: string): Promise<boole
 }
 export async function clearStop(replyId: string) { await stops().doc(replyId).delete().catch(() => undefined); }
 
-/** Make sure the thread doc exists before the flow runs, so runs and pending actions have somewhere to live. */
-export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date }) {
+/**
+ * Make sure the thread doc exists before the flow runs, so runs and pending actions have somewhere to live. A new thread carries
+ * the artist it was started in (tenancy phase 2; written here, not through the Writer, so a conversation never shows in Activity or Undo).
+ */
+export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date; artistId?: string; via?: string }) {
   const ref = threads().doc(a.threadId);
   if ((await ref.get()).exists) return;
-  await ref.set({ ownerUid: a.uid, startedAt: Timestamp.fromDate(a.at), lastActiveAt: Timestamp.now(), startedOnRoute: a.pageContext.route, runs: [] });
+  if (!a.artistId) tenancyLog.unstamped({ kind: "assistantThreads", id: a.threadId, via: a.via ?? "assistant", uid: a.uid });
+  await ref.set({ ...(a.artistId ? { artistId: a.artistId } : {}), ownerUid: a.uid, startedAt: Timestamp.fromDate(a.at), lastActiveAt: Timestamp.now(), startedOnRoute: a.pageContext.route, runs: [] });
 }
 
 /** Persist one exchange (user message + Roadie's reply) and bump the thread. */

@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { entity, serverMask } from "./common";
+import { entity, serverMask, id } from "./common";
 
 export const EmailTemplate = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   name: z.string().min(1),
   subject: z.string(),
   body: z.string(),

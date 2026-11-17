@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { hashToken } from "./availability";
 import { newRunId, type Ctx } from "./ctx";
 import { db, touchLastUsed } from "./db";
+import { resolveToken } from "./tokens";
 import { AppError } from "./errors";
 import type { Membership } from "@/schema/users";
 
@@ -56,13 +57,14 @@ export async function authenticateShortcut(raw: string | null | undefined): Prom
   const token = raw?.trim();
   if (!token) throw new AppError("unauthenticated", "Missing bearer token", 401);
   const hash = hashToken(token);
-  const t = await db.get("shortcutTokens", hash);
-  if (!t || t.deletedAt) throw new AppError("unauthenticated", "Unknown token. Make a new one on Settings > Google and update the Shortcut.", 401);
+  const found = await resolveToken("shortcutTokens", hash);
+  if (!found?.artistId) throw new AppError("unauthenticated", "Unknown token. Make a new one on Settings > Google and update the Shortcut.", 401);
+  const t = found.token;
   if (t.revokedAt) throw new AppError("unauthenticated", "This token was replaced or revoked. Make a new one on Settings > Google and update the Shortcut.", 401);
   const u = await db.get("users", t.userId);
   if (!u || u.deletedAt) throw new AppError("forbidden", "Account is not active", 403);
-  const m = ((u.artists ?? []) as Membership[]).find((x) => x.artistId === t.artistId);
+  const m = ((u.artists ?? []) as Membership[]).find((x) => x.artistId === found.artistId);
   if (!m || m.role !== "admin") throw new AppError("forbidden", "Only admins can add recordings", 403);
   await touchLastUsed(hash, new Date(), "shortcutTokens");
-  return { uid: u.id, role: "admin", artistId: t.artistId as string, musicianId: u.musicianId as string | undefined, via: "shortcut", runId: newRunId() };
+  return { uid: u.id, role: "admin", artistId: found.artistId, musicianId: m.musicianId ?? (u.musicianId as string | undefined), via: "shortcut", runId: newRunId() };
 }

@@ -50,7 +50,7 @@ export async function authenticate(authHeader: string | null, artistHeader?: str
     if (wanted) throw new AppError("not_a_member", "You're not a member of this artist", 403);
     throw new AppError("artist_required", "Say which artist this is for", 400);
   }
-  return { uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, musicianId: user.musicianId as string | undefined, via: "app", runId: newRunId() };
+  return { uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, musicianId: mine.musicianId ?? (user.musicianId as string | undefined), via: "app", runId: newRunId() };
 }
 
 export interface Executed { result: unknown; runId: string; revs: Record<string, number>; repeated?: boolean }

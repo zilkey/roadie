@@ -48,6 +48,8 @@ export type Release = z.infer<typeof Release>;
  * the release; `side` is set by side breaks (vinyl) and is blank until there is one. position is 1-based and dense.
  */
 export const ReleaseTrack = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   releaseId: id,
   position: z.number().int().positive(),
   /** "A", "B"... once the release has side breaks. */

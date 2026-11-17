@@ -31,12 +31,16 @@ export type Pitch = z.infer<typeof Pitch>;
  * and comments written on the show by shows.comment: audience "band" (the whole band reads it) or "admins" (Private: admins only, an admin's
  * default). Missing audience = carried over from the pitch, admins only. edited: the body was changed after posting (shows.editComment).
  */
-export const Comment = entity({ authorId: id, body: z.string().min(1), audience: z.enum(["band", "admins"]).optional(), edited: z.boolean().optional() });
+export const Comment = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(), authorId: id, body: z.string().min(1), audience: z.enum(["band", "admins"]).optional(), edited: z.boolean().optional() });
 export const CommentInput = Comment.omit(serverMask);
 export type Comment = z.infer<typeof Comment>;
 
 /** pitches/{id}/activity/{id}. Append only. */
 export const Activity = entity({
+  /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
+  artistId: id.optional(),
   type: z.enum(["status", "emailSent", "emailReply", "call", "email", "visit", "note"]),
   fromStatus: pitchStatus.optional(),
   toStatus: pitchStatus.optional(),
