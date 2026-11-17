@@ -141,7 +141,7 @@ export function PitchDates({ pitchId, dates, onDatesChange, onBlur, personnel, p
 
 /** The signed-in admin's own answer for each of the pitch's dates, asked or not. */
 function MyDates({ pitchId, dates }: { pitchId: string; dates: string[] }) {
-  const { musicianId } = useProfile();
+  const { musicianId } = useArtist();
   const { asks } = usePitchAsks(pitchId);
   const { call, busy, error } = useCommand();
   if (!musicianId || !dates.length) return null;
@@ -276,7 +276,7 @@ function AskAboutDates({ pitchId, cols, defaultIds, place: placeName, musicians 
 
 /** A member opening the pitch from the band's Signal post: each date they're asked about, to answer signed in. */
 export function MemberDates({ pitchId, empty }: { pitchId: string; empty: React.ReactNode }) {
-  const { musicianId } = useProfile();
+  const { musicianId } = useArtist();
   const { call, busy, error } = useCommand();
   // Rules only let a member read asks they are on, so the query must say so.
   const { rows, loading } = useCollection<Availability>("availability", { where: [["askedMusicianIds", "array-contains", musicianId ?? "none"]] });

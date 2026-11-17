@@ -1,5 +1,5 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useArtist } from "@/lib/artist";
 import { useState } from "react";
 import { useProfile } from "@/lib/auth";
 import { useCollection, type Row } from "@/lib/firestore-hooks";
@@ -14,12 +14,13 @@ const shortDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("e
 /** Members: what the band owes them, their own expenses and what they've been paid. Rules allow only their own rows. */
 export function MyMoney() {
   const p = useProfile();
+  const { musicianId } = useArtist();
   const expenses = useCollection<Expense>("expenses", { where: [["userId", "==", p.uid]] });
   const shows = useCollection<Show>("shows");
   const projects = useCollection<Project>("projects");
   // A member may list payouts only with a where on `to`: one query for payouts to their user, one for payouts to their musician.
   const toUser = useCollection<Payout>("payouts", { where: [["to.userId", "==", p.uid]] });
-  const toMusician = useCollection<Payout>("payouts", { where: [["to.musicianId", "==", p.musicianId ?? ""]], skip: !p.musicianId });
+  const toMusician = useCollection<Payout>("payouts", { where: [["to.musicianId", "==", musicianId ?? ""]], skip: !musicianId });
   const mine = [...(expenses.rows ?? [])].sort((a, b) => (a.date < b.date ? 1 : -1));
   const owed = mine.filter(owesBack);
   // Only PAID payouts show here. An unpaid payout to you is the band's bookkeeping until it is paid.

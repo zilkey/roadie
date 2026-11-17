@@ -6,6 +6,7 @@ import { clientAuth, clientDb } from "@/lib/firebase-client";
 import { useProfile } from "@/lib/auth";
 import { useArtist } from "@/lib/artist";
 import { useDoc } from "@/lib/firestore-hooks";
+import { pathOf } from "@/schema/owners";
 import { artistHeaders, runCommand } from "@/lib/commands";
 import { resolveRoute, routeForPath } from "@/lib/routes";
 import type { AssistantAction, AssistantEvent, PageContext } from "@/schema/assistant";
@@ -30,7 +31,7 @@ export function pageContextFor(path: string, search = "", hash = ""): PageContex
 /** All of Roadie's client state. Lives in Shell, so it survives navigation. */
 export function useRoadie(onNavigated?: () => void) {
   const profile = useProfile();
-  const { slug } = useArtist();
+  const { slug, artistId } = useArtist();
   const router = useRouter();
   const path = usePathname();
   const prefs = useDoc<{ prefs?: { assistant?: { width?: "full" | Width; threadId?: string } } }>("users", profile.userId);
@@ -78,7 +79,7 @@ export function useRoadie(onNavigated?: () => void) {
     if (!threadId) { setMessages([]); return; }
     let retry: ReturnType<typeof setTimeout> | undefined;
     const unsub = onSnapshot(
-      query(collection(clientDb(), "assistantThreads", threadId, "messages"), orderBy("at")),
+      query(collection(clientDb(), pathOf("messages", { parent: { kind: "assistantThreads", id: threadId } })), orderBy("at")),
       (s) => setMessages(s.docs.map((d) => {
         const x = d.data() as { role: "user" | "assistant"; text: string; actions?: AssistantAction[]; at?: Timestamp; stopped?: boolean };
         return { id: d.id, role: x.role, text: x.text, actions: x.actions ?? [], ...(x.stopped ? { stopped: true } : {}) };
@@ -163,10 +164,10 @@ export function useRoadie(onNavigated?: () => void) {
     if (!message || (pending && !pending.doneId && !pending.error && !pending.stopped)) return null;
     // A new conversation gets its id here, not from the server's first event: a Stop tapped before that event
     // arrives still knows which conversation the stopped turn is saved in (the server takes the id if it is free).
-    const thread = (opts?.fresh ? undefined : threadId) ?? doc(collection(clientDb(), "assistantThreads")).id;
+    const thread = (opts?.fresh ? undefined : threadId) ?? doc(collection(clientDb(), pathOf("assistantThreads", { artistId }))).id;
     if (opts?.fresh) setThreadId(undefined);
     // The reply's id, picked here too: a Stop names the turn even before the server has answered.
-    const replyId = doc(collection(clientDb(), "assistantThreads", thread, "messages")).id;
+    const replyId = doc(collection(clientDb(), pathOf("messages", { parent: { kind: "assistantThreads", id: thread } }))).id;
     const sentAt = Date.now();
     let started = false;
     setNotice(null);
@@ -219,7 +220,7 @@ export function useRoadie(onNavigated?: () => void) {
       if (inFlight.current === cur) inFlight.current = null;
     }
     return { reply: acc.reply, actions: acc.actions, ...(acc.error ? { error: acc.error } : {}), ...(acc.stopped ? { stopped: true } : {}) };
-  }, [pending, threadId, path, apply, saveThread]);
+  }, [pending, threadId, path, apply, saveThread, artistId]);
 
   /**
    * Stop the reply being written. Whatever Roadie already did stands (and can be undone); nothing more runs. The server

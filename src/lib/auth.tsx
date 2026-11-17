@@ -9,7 +9,11 @@ export interface PendingInvite { id: string; artistId: string; artistName: strin
 /** One artist you can open, and your role there (from /api/session). */
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
 export interface Profile {
-  uid: string; userId: string; name: string; email: string; musicianId?: string; mcpAccess: boolean; artists: ArtistAccess[];
+  uid: string; userId: string; name: string; email: string; mcpAccess: boolean; artists: ArtistAccess[];
+  /** The old single musician link; read your musician in an artist from `useArtist().musicianId` instead. Removed in phase 7. */
+  musicianId?: string;
+  /** Your musician in each artist you belong to (artistId -> musicianId). `useArtist().musicianId` reads this artist's. */
+  musicians?: Record<string, string>;
   /** Approved to change shared directory records (venues, acts, promoters, festivals) by a platform admin. */
   sharedEditor?: boolean;
   /** Runs Roadie itself (platform/admins): merges and removes shared entries, sees Admin › Platform. */
@@ -146,7 +150,7 @@ export function useAuth() {
   return c;
 }
 /** Only inside an artist (/artists/[slug]): you, with your `role` in that artist. */
-export function useProfile(): Profile & { role: "admin" | "member" } {
+export function useProfile(): Omit<Profile, "musicianId"> & { role: "admin" | "member" } {
   const { state } = useAuth();
   const artist = useContext(ArtistContext);
   if (state.status !== "ready") throw new Error("useProfile before sign-in");

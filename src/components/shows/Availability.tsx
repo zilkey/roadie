@@ -191,7 +191,7 @@ export function ChannelPicker({ value, onChange, name, testid }: { value: Channe
 
 /** "Can you play?" for the signed-in musician on an open ask they're on: how people asked by Signal answer. */
 function YourAnswer({ av }: { av: Row<Availability> }) {
-  const { musicianId } = useProfile();
+  const { musicianId } = useArtist();
   const { call, error, busy } = useCommand();
   const mine = musicianId ? av.responses[musicianId] : undefined;
   const [note, setNote] = useState(mine?.note ?? "");
@@ -218,9 +218,10 @@ function YourAnswer({ av }: { av: Row<Availability> }) {
  */
 export function WhosFree({ pitchId, showId, musicians, extraIds = [], empty = null }: { pitchId?: string; showId?: string; musicians: Row<Musician>[]; extraIds?: string[]; empty?: React.ReactNode }) {
   const p = useProfile();
+  const { musicianId } = useArtist();
   // Rules only let a member read asks they are on, so a member's query must say so.
   const { rows, loading } = useCollection<Availability>("availability", {
-    where: p.role === "member" ? [["askedMusicianIds", "array-contains", p.musicianId ?? "none"]] : [],
+    where: p.role === "member" ? [["askedMusicianIds", "array-contains", musicianId ?? "none"]] : [],
   });
   const mine = (rows ?? []).filter((a) => (pitchId && a.pitchId === pitchId) || (showId && a.showId === showId)).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
   if (!mine.length) return loading ? null : <>{empty}</>;

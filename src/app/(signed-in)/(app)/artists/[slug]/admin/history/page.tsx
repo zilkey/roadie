@@ -66,11 +66,12 @@ function HistoryView() {
     }
     return w;
   }, [runId, via, kind]);
-  // Each entry carries the artist of its record: this artist's own, and the ones that belong to no one artist (null). The rules only
-  // let a query through that names one of the two, so it is two listeners, merged by time.
+  // Each entry has one scope (tenancy plan D4): this artist's (artistId), a shared directory record's (artistId null, shared true) or
+  // one person's (ownerUid; not shown here). The rules only let a query through that names one scope, so it is two listeners, merged
+  // by time. The shared one names both `artistId == null` (today's rules) and `shared == true` (phase 6's).
   const opts = { group: true, includeDeleted: true, order: ["createdAt", "desc"] as ["createdAt", "desc"], limit: runId.trim() ? RUN_LIMIT : shown };
   const own = useCollection<History>("history", { ...opts, where: [["artistId", "==", artistId], ...where] });
-  const shared = useCollection<History>("history", { ...opts, where: [["artistId", "==", null], ...where] });
+  const shared = useCollection<History>("history", { ...opts, where: [["artistId", "==", null], ["shared", "==", true], ...where] });
   const hist = { loading: own.loading || shared.loading, error: own.error ?? shared.error };
   const users = useCollection<User>("users");
   const who = (uid: string) => users.rows?.find((u) => u.id === uid)?.name ?? uid;

@@ -1,5 +1,5 @@
 "use client";
-import Link from "@/lib/artist";
+import Link, { useArtist } from "@/lib/artist";
 import { useParams } from "next/navigation";
 import { useProfile } from "@/lib/auth";
 import { useCollection, useDoc, useDocs } from "@/lib/firestore-hooks";
@@ -25,6 +25,7 @@ const LABEL = "text-[0.6875rem] font-bold uppercase tracking-wider text-muted";
  */
 function DaySheet({ tour, date }: { tour: Tour & { id: string }; date: string }) {
   const profile = useProfile();
+  const { musicianId } = useArtist();
   const admin = profile.role === "admin";
   const entries = useCollection<TourEntry>(`tours/${tour.id}/entries`, { skip: admin, where: [["visibility", "==", "band"]] }).rows;
   const adminEntries = useCollection<TourEntry>(`tours/${tour.id}/entries`, { skip: !admin }).rows;
@@ -36,7 +37,7 @@ function DaySheet({ tour, date }: { tour: Tour & { id: string }; date: string })
   const today = todayStr();
   const first = profile.name.split(" ")[0];
   const town = dayTown(sheet, (sid) => { const s = shows.get(sid); return s ? showCity(s) : undefined; });
-  const van = (tour.personnel ?? []).filter((m) => m !== profile.musicianId).map((m) => musicians.find((x) => x.id === m)?.name.split(" ")[0]).filter(Boolean) as string[];
+  const van = (tour.personnel ?? []).filter((m) => m !== musicianId).map((m) => musicians.find((x) => x.id === m)?.name.split(" ")[0]).filter(Boolean) as string[];
   const withText = van.length ? `in the van with ${van.length > 1 ? `${van.slice(0, -1).join(", ")} and ${van[van.length - 1]}` : van[0]}` : "";
   const empty = !sheet.drives.length && !sheet.shows.length && !sheet.stays.length && !sheet.notes.length;
   // + Add an expense, pinned to this day's drive, else stay, else show (as on the tour page).

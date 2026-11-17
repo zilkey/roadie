@@ -4,6 +4,8 @@ import { collection, collectionGroup, doc, documentId, limit as limitTo, onSnaps
 import { clientDb } from "./firebase-client";
 import { useAuth } from "./auth";
 import { useBusyWhile } from "./busy";
+import { useMaybeArtist } from "./artist";
+import { scopeQuery, scopedDocPath } from "./client-scope";
 
 export type Row<T> = T & { id: string };
 type Where = [field: string, op: WhereFilterOp, value: unknown];
@@ -15,48 +17,59 @@ type Where = [field: string, op: WhereFilterOp, value: unknown];
  * `fromCache` is true while `rows` are the SDK's local answer, not yet the server's: a new query (a bigger `limit`, say) can first get
  * only the docs an earlier listener left in the cache, then the server's full answer. Pass `waitForServer` to rely on it: it also
  * fires when the server confirms the cache's answer unchanged (an empty one, say), which the SDK otherwise doesn't report.
+ * Tenancy (src/lib/client-scope.ts): an artist kind is asked for only in the open artist (`artistId ==`), a users list only for its
+ * people (`artistIds array-contains`); with no artist open they aren't asked for and `rows` is empty.
  */
 export function useCollection<T = Record<string, unknown>>(path: string, opts: { where?: Where[]; skip?: boolean; group?: boolean; order?: [field: string, dir: "asc" | "desc"]; limit?: number; includeDeleted?: boolean; waitForServer?: boolean } = {}) {
   const { state } = useAuth();
-  const ready = state.status === "ready" && !opts.skip;
+  const artistId = useMaybeArtist()?.artistId;
+  const scoped = scopeQuery(path, opts, artistId);
+  const skip = !!opts.skip || !scoped;
+  const ready = state.status === "ready" && !skip;
   const [rows, setRows] = useState<Row<T>[] | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const key = JSON.stringify([path, opts]);
+  const key = JSON.stringify([path, opts, artistId]);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !scoped) return;
     const cs = [
-      ...(opts.includeDeleted ? [] : [where("deletedAt", "==", null)]), ...(opts.where ?? []).map(([f, o, v]) => where(f, o, v)),
+      ...scoped.where.map(([f, o, v]) => where(f, o as WhereFilterOp, v)), ...(opts.includeDeleted ? [] : [where("deletedAt", "==", null)]),
       ...(opts.order ? [orderBy(opts.order[0], opts.order[1])] : []), ...(opts.limit ? [limitTo(opts.limit)] : []),
     ];
     return onSnapshot(
-      query(opts.group ? collectionGroup(clientDb(), path) : collection(clientDb(), path), ...cs),
+      query(opts.group ? collectionGroup(clientDb(), scoped.path) : collection(clientDb(), scoped.path), ...cs),
       { includeMetadataChanges: !!opts.waitForServer },
       (s) => { setRows(s.docs.map((d) => ({ ...(d.data() as T), id: d.id }))); setFromCache(s.metadata.fromCache); setError(null); },
       (e) => setError(e.message),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, key]);
-  const loading = rows === null && !error && !opts.skip;
+  const loading = rows === null && !error && !skip;
   useBusyWhile(loading);
-  return { rows, error, loading, fromCache };
+  // An artist kind with no artist open: nothing to ask for, so nothing (not "loading").
+  return { rows: !scoped && !opts.skip ? ([] as Row<T>[]) : rows, error, loading, fromCache };
 }
 
-/** Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc, with its `deletedAt`). `skip` (or a blank id) reads nothing: doc null, not loading. */
+/**
+ * Live read-only listener on one doc. `doc` is null when it does not exist or is soft-deleted (`includeDeleted` returns the archived doc,
+ * with its `deletedAt`). `skip` (or a blank id) reads nothing: doc null, not loading. A get by id needs no artist filter (the rules check
+ * the doc itself), but an artist kind is still read only inside an artist, at the path `pathOf` gives.
+ */
 export function useDoc<T = Record<string, unknown>>(path: string, id: string, opts: { includeDeleted?: boolean; skip?: boolean } = {}) {
   const { state } = useAuth();
-  const skip = !!opts.skip || !id;
+  const at = scopedDocPath(path, useMaybeArtist()?.artistId);
+  const skip = !!opts.skip || !id || !at;
   const ready = state.status === "ready" && !skip;
   const [value, setValue] = useState<{ doc: Row<T> | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !at) return;
     return onSnapshot(
-      doc(clientDb(), path, id),
+      doc(clientDb(), at, id),
       (s) => { const d = s.data(); setValue({ doc: s.exists() && (opts.includeDeleted || !d?.deletedAt) ? ({ ...(d as T), id: s.id }) : null }); setError(null); },
       (e) => setError(e.message),
     );
-  }, [ready, path, id, opts.includeDeleted]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, at, id, opts.includeDeleted]); // eslint-disable-line react-hooks/exhaustive-deps
   const loading = !skip && value === null && !error;
   useBusyWhile(loading);
   return { doc: skip ? null : value?.doc ?? null, loading, error };
@@ -68,25 +81,28 @@ export function useDoc<T = Record<string, unknown>>(path: string, id: string, op
  */
 export function useDocs<T = Record<string, unknown>>(path: string, ids: readonly string[], opts: { skip?: boolean } = {}) {
   const { state } = useAuth();
-  const ready = state.status === "ready" && !opts.skip;
+  const artistId = useMaybeArtist()?.artistId;
+  const scoped = scopeQuery(path, {}, artistId);
+  const ready = state.status === "ready" && !opts.skip && !!scoped;
   const [byChunk, setByChunk] = useState<Record<number, Row<T>[]>>({});
   const [error, setError] = useState<string | null>(null);
   const key = [...new Set(ids)].sort().join(",");
+  const scope = JSON.stringify(scoped);
   useEffect(() => {
     setByChunk({});
-    if (!ready || !key) return;
+    if (!ready || !key || !scoped) return;
     const all = key.split(",");
     const offs: (() => void)[] = [];
     for (let i = 0; i < all.length; i += 30) {
       const n = i;
       offs.push(onSnapshot(
-        query(collection(clientDb(), path), where(documentId(), "in", all.slice(i, i + 30))),
+        query(collection(clientDb(), scoped.path), ...scoped.where.map(([f, o, v]) => where(f, o as WhereFilterOp, v)), where(documentId(), "in", all.slice(i, i + 30))),
         (s) => { setByChunk((m) => ({ ...m, [n]: s.docs.filter((d) => !d.data().deletedAt).map((d) => ({ ...(d.data() as T), id: d.id })) })); setError(null); },
         (e) => setError(e.message),
       ));
     }
     return () => offs.forEach((f) => f());
-  }, [ready, path, key]);
+  }, [ready, scope, key]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = Object.values(byChunk).flat();
   const loading = ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error;
   useBusyWhile(loading);
@@ -99,25 +115,28 @@ export function useDocs<T = Record<string, unknown>>(path: string, ids: readonly
  */
 export function useArrayContainsAny<T = Record<string, unknown>>(path: string, field: string, values: readonly string[], opts: { skip?: boolean } = {}) {
   const { state } = useAuth();
-  const ready = state.status === "ready" && !opts.skip;
+  const artistId = useMaybeArtist()?.artistId;
+  const scoped = scopeQuery(path, {}, artistId);
+  const ready = state.status === "ready" && !opts.skip && !!scoped;
   const [byChunk, setByChunk] = useState<Record<number, Row<T>[]>>({});
   const [error, setError] = useState<string | null>(null);
   const key = [...new Set(values)].sort().join(",");
+  const scope = JSON.stringify(scoped);
   useEffect(() => {
     setByChunk({});
-    if (!ready || !key) return;
+    if (!ready || !key || !scoped) return;
     const all = key.split(",");
     const offs: (() => void)[] = [];
     for (let i = 0; i < all.length; i += 30) {
       const n = i;
       offs.push(onSnapshot(
-        query(collection(clientDb(), path), where(field, "array-contains-any", all.slice(i, i + 30))),
+        query(collection(clientDb(), scoped.path), ...scoped.where.map(([f, o, v]) => where(f, o as WhereFilterOp, v)), where(field, "array-contains-any", all.slice(i, i + 30))),
         (s) => { setByChunk((m) => ({ ...m, [n]: s.docs.map((d) => ({ ...(d.data() as T), id: d.id })) })); setError(null); },
         (e) => setError(e.message),
       ));
     }
     return () => offs.forEach((f) => f());
-  }, [ready, path, field, key]);
+  }, [ready, scope, field, key]); // eslint-disable-line react-hooks/exhaustive-deps
   // A doc can match two chunks (two of its acts in different chunks): keep one.
   const rows = [...new Map(Object.values(byChunk).flat().map((r) => [r.id, r])).values()];
   const loading = ready && !!key && Object.keys(byChunk).length < Math.ceil(key.split(",").length / 30) && !error;

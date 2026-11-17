@@ -27,7 +27,14 @@
     { "collectionGroup": "contacts", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "emails", "arrayConfig": "CONTAINS" }] },
     { "collectionGroup": "festivalNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "contactIds", "arrayConfig": "CONTAINS" }] },
     { "collectionGroup": "promoterNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "contactIds", "arrayConfig": "CONTAINS" }] },
-    { "collectionGroup": "actNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "contactIds", "arrayConfig": "CONTAINS" }] }
+    { "collectionGroup": "actNotes", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "contactIds", "arrayConfig": "CONTAINS" }] },
+    { "collectionGroup": "users", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "artistIds", "arrayConfig": "CONTAINS" }] },
+    { "collectionGroup": "showDeals", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "contactIds", "arrayConfig": "CONTAINS" }] },
+    { "collectionGroup": "shows", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "hostContactIds", "arrayConfig": "CONTAINS" }] },
+    { "collectionGroup": "shows", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "date", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }] },
+    { "collectionGroup": "rehearsals", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "date", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }] },
+    { "collectionGroup": "comments", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "createdAt", "order": "DESCENDING" }] },
+    { "collectionGroup": "availability", "queryScope": "COLLECTION", "fields": [{ "fieldPath": "artistId", "order": "ASCENDING" }, { "fieldPath": "deletedAt", "order": "ASCENDING" }, { "fieldPath": "askedMusicianIds", "arrayConfig": "CONTAINS" }] }
   ],
   "fieldOverrides": [
     { "collectionGroup": "tracks", "fieldPath": "deletedAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },

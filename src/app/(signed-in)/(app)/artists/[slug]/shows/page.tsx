@@ -20,6 +20,7 @@ export default function Shows() {
   const b = useBand();
   const showFields = useArtist().doc?.showFields;
   const member = p.role === "member";
+  const { musicianId } = useArtist();
   const filters = member ? MEMBER_SHOW_FILTERS : SHOW_FILTERS;
   // The tab lives in the URL hash (#played...) so it survives a reload; each tab keeps its own scroll position.
   const [filter, setFilter] = useState<ShowFilter>("upcoming");
@@ -37,7 +38,7 @@ export default function Shows() {
     setFilter(f);
   }
   const today = todayStr();
-  const inTab = (s: (typeof b.shows)[number], f: ShowFilter) => showTabFor(s, today, member ? p : null) === f;
+  const inTab = (s: (typeof b.shows)[number], f: ShowFilter) => showTabFor(s, today, member ? { musicianId } : null) === f;
   const count = (f: ShowFilter) => b.shows.filter((s) => inTab(s, f)).length;
   // Upcoming soonest first; the rest most recent first.
   const shown = b.shows.filter((s) => inTab(s, filter))

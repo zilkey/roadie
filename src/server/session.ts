@@ -109,7 +109,7 @@ export async function startSession(authHeader: string | null) {
   return {
     status: "ready" as const,
     uid: decoded.uid, userId: user.id, name: user.name as string, email,
-    // Until the browser reads its musician per artist (phase 5): the old link, else the musician of the person's only membership.
+    // The old single link (the browser reads its musician per artist from `musicians` since phase 5); removed in phase 7.
     ...(legacyMusicianId(user) ? { musicianId: legacyMusicianId(user) } : {}),
     musicians: musicianClaims(user), invites,
     mcpAccess: ((user.artists ?? []) as Membership[]).some((x) => mcpIn(user, x.artistId)), artists: await artistsFor(user),

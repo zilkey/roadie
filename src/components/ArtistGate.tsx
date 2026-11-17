@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import NextLink from "next/link";
 import { useAuth } from "@/lib/auth";
 import { ArtistContext, type CurrentArtist } from "@/lib/artist";
@@ -39,14 +39,16 @@ export function ArtistGate({ slug, children }: { slug: string; children: React.R
     return () => setCommandArtist(null, id);
   }, [access?.artistId]);
   // "Preview as band member": an admin sees every screen as a member would until Exit (or leaving the band). Not remembered across reloads.
+  const musicians = state.status === "ready" ? state.profile.musicians : undefined;
+  const musicianOf = useCallback((artistId: string) => musicians?.[artistId], [musicians]);
   const [previewSlug, setPreviewSlug] = useState<string | null>(null);
   const preview = previewSlug === slug && access?.role === "admin";
   const value = useMemo<CurrentArtist | null>(() => access
     ? {
-      artistId: access.artistId, slug: access.slug, name: (live.doc?.name as string | undefined) ?? access.name, role: preview ? "member" : access.role, doc: live.doc,
+      artistId: access.artistId, musicianId: musicianOf(access.artistId), slug: access.slug, name: (live.doc?.name as string | undefined) ?? access.name, role: preview ? "member" : access.role, doc: live.doc,
       realRole: access.role, previewAsMember: preview, setPreviewAsMember: (on: boolean) => setPreviewSlug(on ? slug : null),
     }
-    : null, [access, live.doc, preview, slug]);
+    : null, [access, live.doc, preview, slug, musicianOf]);
 
   if (state.status !== "ready") return null;
   if (!value) return rechecked === slug ? <NotAMember slug={slug} /> : null;

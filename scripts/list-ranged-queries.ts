@@ -8,6 +8,7 @@
  *
  * It reads the source: `w.query("kind", (q) => …)`, `db.list(ctx, "kind", (q) => …)`, `db.listGroup(ctx, "kind", (q) => …)`,
  * with the kind as a string literal or `pathOf("kind", …)`. A query on a kind held in a variable is listed as unread.
+ * `clientQueries` does the same for the browser's hooks (tenancy phase 5): every `useCollection` on an artist kind or `users`.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -90,6 +91,61 @@ export function rangedQueries(root = process.cwd()): { needed: NeededIndex[]; un
   return { needed, unread };
 }
 
+/** One query a browser hook sends (src/lib/firestore-hooks.ts), as src/lib/client-scope.ts scopes it. */
+export interface ClientQuery {
+  kind: string; group: boolean; at: string;
+  /** Every filter the hook sends, the tenancy one included (`artistId ==`, or `artistIds array-contains` for users). */
+  where: { field: string; op: string }[];
+  order: { field: string; dir: "ASCENDING" | "DESCENDING" }[];
+  /** Orders, ranges, `in` or an array filter: needs a composite index (equality-only queries merge single-field ones). */
+  ranged: boolean;
+  /** The composite index it needs, when ranged. */
+  index?: NeededIndex;
+}
+
+/**
+ * The browser's list queries: `useCollection("kind" | \`parent/${id}/kind\`, { where, order, group, includeDeleted })` outside the
+ * server. Filters given as a variable can't be read; they are listed in `unread` as `file:line`.
+ */
+export function clientQueries(root = process.cwd()): { queries: ClientQuery[]; unread: string[] } {
+  const queries: ClientQuery[] = [], unread: string[] = [];
+  for (const abs of files(path.join(root, "src"))) {
+    const rel = path.relative(root, abs);
+    if (serverFile(rel) || rel === "src/lib/firestore-hooks.ts") continue;
+    const src = fs.readFileSync(abs, "utf8");
+    const re = /\buseCollection(?:<[^()]*?>)?\(/g;
+    for (let m; (m = re.exec(src)); ) {
+      const [first, opts = ""] = topArgs(argsAt(src, m.index + m[0].length - 1));
+      const at = `${rel}:${src.slice(0, m.index).split("\n").length}`;
+      const lit = /^"(\w+)"$/.exec(first) ?? /^`[^`/]*\/\$\{[^}]*\}\/(\w+)`$/.exec(first);
+      if (!lit) { unread.push(at); continue; }
+      const group = /\bgroup:\s*true\b/.test(opts);
+      const kind = lit[1];
+      const owner = ownerOf(kind);
+      if (owner !== "artist" && kind !== "users") continue; // shared and personal kinds aren't scoped; history has its own (D4)
+      const order = [...opts.matchAll(/\border:\s*\[\s*"([\w.]+)"\s*,\s*"(asc|desc)"/g)].map((x) => ({ field: x[1], dir: x[2] === "desc" ? "DESCENDING" as const : "ASCENDING" as const }));
+      const filtersOf = opts.replace(/\border:\s*\[[^\]]*\]/g, "");
+      const tuples = [...filtersOf.matchAll(/\[\s*"([\w.]+)"\s*,\s*"([^"]+)"/g)].map((x) => ({ field: x[1], op: x[2] }));
+      if (!tuples.length && /\bwhere\b/.test(filtersOf) && !/\bwhere:\s*(\[\s*\]|undefined)/.test(filtersOf)) unread.push(at);
+      const scope = owner === "artist" ? { field: "artistId", op: "==" } : { field: "artistIds", op: "array-contains" };
+      const where = [scope, ...tuples.filter((t) => !(t.field === "artistId" && t.op === "==")), ...(/\bincludeDeleted\b/.test(opts) ? [] : [{ field: "deletedAt", op: "==" }])];
+      const ranged = order.length > 0 || where.some((x) => RANGE.has(x.op) || x.op === "in" || x.op.startsWith("array-contains"));
+      const q: ClientQuery = { kind, group, at, where, order, ranged };
+      if (ranged) {
+        const fields: Field[] = [];
+        for (const x of where) if (x.op === "==" || x.op === "in") fields.push({ fieldPath: x.field, order: "ASCENDING" });
+        for (const x of where) if (x.op.startsWith("array-contains")) fields.push({ fieldPath: x.field, arrayConfig: "CONTAINS" });
+        const range = where.find((x) => RANGE.has(x.op));
+        if (range && order[0]?.field !== range.field) fields.push({ fieldPath: range.field, order: "ASCENDING" });
+        for (const o of order) if (!fields.some((f) => f.fieldPath === o.field)) fields.push({ fieldPath: o.field, order: o.dir });
+        q.index = { collectionGroup: kind, queryScope: group ? "COLLECTION_GROUP" : "COLLECTION", fields, at };
+      }
+      queries.push(q);
+    }
+  }
+  return { queries, unread };
+}
+
 const eq = (f: Field) => f.order === "ASCENDING" && !f.arrayConfig;
 /** Does `ix` serve `need`? Equality fields may come in any order; the rest must match in order. */
 export function serves(ix: { collectionGroup: string; queryScope: string; fields: Field[] }, need: NeededIndex): boolean {
@@ -103,6 +159,11 @@ export function serves(ix: { collectionGroup: string; queryScope: string; fields
 
 if (process.argv[1]?.endsWith("list-ranged-queries.ts")) {
   const { needed, unread } = rangedQueries();
-  for (const n of needed) console.log(`${n.collectionGroup} ${n.queryScope} ${n.fields.map((f) => `${f.fieldPath} ${f.order ?? f.arrayConfig}`).join(", ")}  (${n.at})`);
+  const line = (n: NeededIndex) => `${n.collectionGroup} ${n.queryScope} ${n.fields.map((f) => `${f.fieldPath} ${f.order ?? f.arrayConfig}`).join(", ")}  (${n.at})`;
+  for (const n of needed) console.log(line(n));
   if (unread.length) console.log(`\nUnread (kind in a variable):\n${unread.join("\n")}`);
+  const client = clientQueries();
+  console.log("\nBrowser:");
+  for (const q of client.queries) if (q.index) console.log(line(q.index));
+  if (client.unread.length) console.log(`\nBrowser, unread (filters in a variable):\n${client.unread.join("\n")}`);
 }

@@ -18,6 +18,8 @@ export interface CurrentArtist {
   /** An admin is looking at the app as a band member sees it (screens only; the server still knows you as an admin). */
   previewAsMember: boolean;
   setPreviewAsMember(on: boolean): void;
+  /** Your musician in this artist (your own row in its lineup), if you have one: from your membership, via /api/session. */
+  musicianId?: string;
   /** The live artists/{id} document (null while loading). */
   doc: Row<Artist> | null;
 }

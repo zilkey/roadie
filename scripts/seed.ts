@@ -343,7 +343,7 @@ async function main() {
   console.log("Seeded: 7 musicians, 6 users in 2 artists (Fern Valley Trio shares the venue directory), artist with 4 configurations, 9 venues, 3 festivals, 10 pitches, 4 shows, 12 songs, 1 show setlist, 5 projects, 1 release with 10 tracks, 6 expenses, 4 income, 3 payouts.");
 }
 
-/** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */
+/** The second artist: Fern Valley Trio, with one admin (Olga), one song and one expense. Returns a context for her band. */
 async function seedOtherBand() {
   const p = DEV_OTHER_BAND.person;
   const otherId = firestore().collection("artists").doc().id;
@@ -358,6 +358,10 @@ async function seedOtherBand() {
   await db.create(ctx, "users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: false, musicianId: mid }] }, { id: u.uid });
   await db.update(ctx, "musicians", mid, { userId: u.uid });
   await syncClaims(u.uid);
+  // A little of its own, so tests/e2e/second-artist.spec.ts can see Fern Valley's names and none of Nora Quill Band's.
+  await db.create(ctx, "songs", { title: "Low Meadow", status: "active", writers: p.name });
+  const general = (await db.create(ctx, "projects", { artistId: artist, status: "open", kind: "band", name: "General", isDefault: true })).id;
+  await db.create(ctx, "expenses", { userId: u.uid, date: "2026-10-12", amount: 4200, category: "travel", what: "Fern Valley van rental", payBack: false, projectId: general });
   return { artist, ctx };
 }
 

@@ -25,7 +25,7 @@ export function usePrintSheets(setlistId: string, options: PrintOptions) {
   const items = template ? template.items : show ? m.setlists.find((s) => s.id === show.id)?.items ?? [] : undefined;
   const kind: "template" | "show" | null = template ? "template" : show ? "show" : null;
 
-  const me = profile.musicianId ? m.musicians.find((x) => x.id === profile.musicianId) : undefined;
+  const me = artist.musicianId ? m.musicians.find((x) => x.id === artist.musicianId) : undefined;
   const canMine = !!me;
   const mineName = me?.name.split(/\s+/)[0];
   const copy = options.copy === "mine" && canMine ? "mine" : "band";
