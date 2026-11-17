@@ -27,9 +27,10 @@ Jeff asks for something and walks away. When he comes back it should be done and
    SUCCEEDED. If it failed, fix it and push again. Never
    stop at a feature branch or a pull request unless Jeff asks for one. A cloud session is allowed to push to `main`.
 4. **Clean up, then mark it done.** Remove the worktree, delete the local branch and delete the remote branch,
-   including a cloud session's own `claude/*` branch (`git push origin --delete <branch>`). In a cloud session, finish
-   by renaming the session to `√ <title>` (the `set_session_title` tool). Local sessions have no such tool: say "√ Live"
-   on the first line of the final message instead.
+   including a cloud session's own `claude/*` branch (`git push origin --delete <branch>`). Then, in every session,
+   local or cloud, rename the session to `√ <title>` with the `set_session_title` tool (the desktop app's is
+   `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"`, a deferred tool: load it with ToolSearch).
+   In a local session, also say "√ Live" on the first line of the final message.
 5. **Real AI models need a yes, except the quick checks.** Jeff cares more about time than cost. `npm run
    check:roadie:vertex` and `npm run check:roadie` each make one call that takes seconds, so they're pre-approved. Run
    one before pushing whenever a change touches what Roadie or MCP offers the model (commands, tool schemas or

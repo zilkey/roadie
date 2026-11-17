@@ -170,9 +170,10 @@ git branch -D <slug>
 git push origin --delete <slug> 2>/dev/null   # if it was ever pushed
 ```
 
-In a cloud session, also delete the session's own `claude/*` branch from origin, once its work is on main. Then rename
-the session to `√ <title>` with `set_session_title`. Locally there's no tool for that: start the final message with
-"√ Live".
+In a cloud session, also delete the session's own `claude/*` branch from origin, once its work is on main. Then, local
+or cloud, rename the session to `√ <title>` with `set_session_title` (in the desktop app:
+`mcp__ccd_session_mgmt__set_session_title`, `session_id: "self"`, loaded with ToolSearch). Locally, also start the
+final message with "√ Live".
 
 The final message says: what is live and the commit on main, what to try in the app, which specs were added or
 changed, and anything skipped or still failing, with the output.
