@@ -33,8 +33,9 @@ import { moneySheetCommands } from "./moneySheet";
 import { bandsintownCommands } from "./bandsintown";
 import { sharedEditorCommands } from "./sharedEditors";
 import { inviteCommands } from "./invites";
+import { platformCommands } from "./platform";
 
 /** Every command. Slices append their arrays here. */
-const all = [...peopleCommands, ...bookingCommands, ...emailCommands, ...showCommands, ...availabilityCommands, ...fanCommands, ...musicCommands, songsMerge, ...moneyCommands, ...projectCommands, ...releaseCommands, ...tourCommands, ...statsCommands, ...aiCommands, ...assistantCommands, ...draftCommands, ...prefsCommands, ...printCommands, ...stagePlotCommands, ...meCommands, ...helpCommands, ...googleCommands, ...emailCommands, ...recordingCommands, ...showPosterCommands, ...metaCommands, ...postCommands, ...venueEventCommands, ...actCommands, ...todoCommands, ...campaignCommands, ...moneySheetCommands, ...bandsintownCommands, ...sharedEditorCommands, ...inviteCommands] as Command[];
+const all = [...peopleCommands, ...bookingCommands, ...emailCommands, ...showCommands, ...availabilityCommands, ...fanCommands, ...musicCommands, songsMerge, ...moneyCommands, ...projectCommands, ...releaseCommands, ...tourCommands, ...statsCommands, ...aiCommands, ...assistantCommands, ...draftCommands, ...prefsCommands, ...printCommands, ...stagePlotCommands, ...meCommands, ...helpCommands, ...googleCommands, ...emailCommands, ...recordingCommands, ...showPosterCommands, ...metaCommands, ...postCommands, ...venueEventCommands, ...actCommands, ...todoCommands, ...campaignCommands, ...moneySheetCommands, ...bandsintownCommands, ...sharedEditorCommands, ...inviteCommands, ...platformCommands] as Command[];
 
 export const registry: Record<string, Command> = Object.fromEntries(all.map((c) => [c.name, c]));

@@ -43,6 +43,11 @@ test("someone not approved sees Ask to edit on a shared venue, keeps their notes
   await rudy.goto(A("/admin/platform"));
   await expect(rudy.getByTestId("platform-requests")).toContainText("Olga Park");
   await expect(rudy.getByTestId("platform-editors")).toContainText("Rudy");
+  // Every artist is listed, with Suspend (not for the artist he's working in). Not pressed here: other specs use Fern Valley Trio.
+  const artists = rudy.getByTestId("platform-artists");
+  await expect(artists).toContainText("Fern Valley Trio");
+  await expect(artists).toContainText("Nora Quill Band");
+  await expect(artists.getByRole("button", { name: "Suspend" }).first()).toBeVisible();
   // Rudy can still change the room
   await rudy.goto(A(`/booking/venues/${id}`));
   await expect(rudy.getByTestId("room-card").getByTestId("room-edit")).toBeVisible();

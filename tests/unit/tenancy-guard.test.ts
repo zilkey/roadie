@@ -52,6 +52,7 @@ const SYSTEM_ALLOWED: Record<string, string> = {
   "src/server/undo.ts": "historyOfRun and runsOf see (and refuse) entries in other artists",
   "src/server/signedUrl.ts": "resolveSigned: the record is found before its signature is checked",
   "src/app/api/dev-people/route.ts": "emulator only",
+  "src/server/newArtistNotice.ts": "the new-artist email to platform admins: reads the new artist and the platform admins, in no artist's ctx",
 };
 /** `w.forArtist(id)`: only these functions, which reach an artist the ctx isn't in yet through narrow steps. */
 const FOR_ARTIST_ALLOWED = new Set(["src/server/commands/people.ts:createArtistFor", "src/server/commands/invites.ts:acceptInvite", "src/server/commands/invites.ts:declineInvite", "src/server/signUp.ts:signUp"]);
@@ -86,6 +87,7 @@ const RAW_ALLOWED: Record<string, string> = {
   "src/server/google/band.ts": "artistDoc(id): the artist's own doc by the id from the caller's ctx",
   "src/server/backup.ts": "whole-database backup and restore",
   "src/server/fans.ts": "deleteFan's hard delete (recursiveDelete), after the scoped get found the fan in this artist",
+  "src/server/commands/platform.ts": "Admin › Platform's list of every artist and Suspend: platform admins only (requirePlatformAdmin)",
 };
 
 test("no raw Firestore on an artist kind outside db.ts and the allow-list", () => {

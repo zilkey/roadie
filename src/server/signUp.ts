@@ -20,6 +20,7 @@ export const SignUpInput = z.strictObject({
 
 import { signUpOpen, INVITE_ONLY } from "./signUpFlag";
 import { checkNewArtist } from "./usage";
+import { noticeNewArtist } from "./newArtistNotice";
 export { signUpOpen, INVITE_ONLY };
 
 /**
@@ -75,6 +76,8 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
       return made;
     });
     await syncClaims(uid);
+    // After the commit; never throws (it logs its own failures).
+    await noticeNewArtist({ artistId: out.id, creatorUid: uid, via: "signUp" });
     console.info(JSON.stringify({ event: "artists.signUp", ok: true, uid, artistId: out.id, slug: out.slug, runId: ctx.runId }));
     return { slug: out.slug, id: out.id, runId: ctx.runId };
   } catch (e) {

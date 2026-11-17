@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { checkNewArtist } from "../usage";
+import { noticeNewArtist } from "../newArtistNotice";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { patchInput, idInput } from "./util";
@@ -378,6 +379,8 @@ export const artistsCreate = defineCommand({
     await checkNewArtist(person);
     const out = await run(person, async (w) => createArtistFor(w, ctx.uid, input));
     if (out.joined) await syncClaims(ctx.uid);
+    // After the commit; never throws (it logs its own failures).
+    await noticeNewArtist({ artistId: out.id, creatorUid: ctx.uid, via: "artists.create" });
     return { id: out.id, merged: out.merged, slug: out.slug };
   },
 });
