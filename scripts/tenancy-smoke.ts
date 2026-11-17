@@ -12,9 +12,23 @@
  *    people.list, tours.list, stagePlots.list, checklistTemplates.list and invites.pending. Fails if any result holds another
  *    artist's record, or if records.list's count for an artist kind differs from the raw count of that artist's live records.
  *
- * Writes nothing. The browser-side check (`--rules`) comes with the phase-6 rules.
+ * 4. With --rules, the browser side (firestore.rules, plan D6): signs in through the client SDK as the dedicated `tenancy-smoke` uid,
+ *    with a custom token carrying --artist's claims (once as admin, once as member), and runs the query shapes the hooks send
+ *    (src/lib/client-scope.ts): one per artist kind with a rule, `users` by artistIds, the Activity page's two History listeners and
+ *    the members' own-records filters. Every one must be allowed; the same ones for a made-up artist id must be denied. Browser
+ *    permission errors never reach Cloud Logging, so this is the check. Reads at most a few documents per query; writes nothing
+ *    (signing in creates the `tenancy-smoke` Auth user the first time; it has no users doc, so the app never lets it in).
+ *
+ * Writes nothing to Firestore.
  */
 import fs from "node:fs";
+import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
+import { connectAuthEmulator, getAuth, signInWithCustomToken } from "firebase/auth";
+import {
+  collection, collectionGroup, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, limit, orderBy, query, terminate, where,
+  type Firestore as ClientDb, type QueryConstraint,
+} from "firebase/firestore";
+import { adminAuth } from "@/server/admin";
 import { firestore } from "@/server/admin";
 import { artistCtx, type Ctx } from "@/server/ctx";
 import { registry } from "@/server/commands/registry";
@@ -110,6 +124,8 @@ async function main() {
     console.log(`  ${name.padEnd(30)} ${ids.size} ids`);
   }
 
+  if (process.argv.includes("--rules")) await rulesCheck(artist, db, fails);
+
   if (fails.length) {
     console.error(`\nFAILED (${fails.length}):\n${fails.slice(0, 50).join("\n")}`);
     process.exit(1);
@@ -117,4 +133,114 @@ async function main() {
   console.log("\nOK: no record without an artist, no other artist's record in any result, counts match.");
 }
 
-main().catch((e) => { console.error(e instanceof Error ? e.stack : e); process.exit(1); });
+/** The web app's public Firebase config: NEXT_PUBLIC_* from the environment, else apphosting.yaml (the prod web app). */
+function webConfig() {
+  const yaml = fs.existsSync("apphosting.yaml") ? fs.readFileSync("apphosting.yaml", "utf8") : "";
+  const val = (name: string) => process.env[name] ?? new RegExp(`variable: ${name}\\s*\\n\\s*value: "?([^"\\n]+)"?`).exec(yaml)?.[1];
+  const emulator = !!process.env.FIRESTORE_EMULATOR_HOST;
+  return {
+    apiKey: emulator ? "demo-key" : val("NEXT_PUBLIC_FIREBASE_API_KEY"),
+    projectId: emulator ? (process.env.GCLOUD_PROJECT ?? "demo-band-tracker") : val("NEXT_PUBLIC_FIREBASE_PROJECT_ID"),
+    appId: emulator ? "demo-app" : val("NEXT_PUBLIC_FIREBASE_APP_ID"),
+  };
+}
+
+const SMOKE_UID = "tenancy-smoke";
+const NOBODY = "tenancy-smoke-no-such-artist";
+/** Artist kinds the browser never lists or gets with an artist filter: server-only, owner-only, or keyed by the artist id. */
+const NOT_LISTED = new Set(["invites", "shortcutTokens", "mcpTokens", "assistantThreads", "socialChecklists"]);
+/** Kinds every member reads (live). */
+const MEMBER_KINDS = ["shows", "tours", "projects", "songs", "files", "setlists", "setlistTemplates", "rehearsals", "stagePlots", "musicians"];
+
+/** A client Firestore signed in as the smoke uid with these claims (a custom token: the claims live only in its ID token). */
+async function signedIn(name: string, claims: Record<string, unknown>): Promise<{ app: FirebaseApp; c: ClientDb }> {
+  const app = initializeApp(webConfig(), `tenancy-smoke-${name}`);
+  const auth = getAuth(app);
+  const c = getFirestore(app);
+  if (process.env.FIREBASE_AUTH_EMULATOR_HOST) connectAuthEmulator(auth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true });
+  if (process.env.FIRESTORE_EMULATOR_HOST) { const [h, p] = process.env.FIRESTORE_EMULATOR_HOST.split(":"); connectFirestoreEmulator(c, h, Number(p)); }
+  await signInWithCustomToken(auth, await adminAuth().createCustomToken(SMOKE_UID, claims));
+  return { app, c };
+}
+
+/** Runs the browser's query shapes as --artist's admin and member, and the same shapes for an artist they aren't in. */
+async function rulesCheck(artist: string, adminDb: ReturnType<typeof firestore>, fails: string[]) {
+  console.log("\nbrowser reads through firestore.rules (client SDK, uid tenancy-smoke):");
+  const musician = `${SMOKE_UID}-musician`;
+  const admin = await signedIn("admin", { artists: { [artist]: "admin" }, adminOf: [artist], musicians: {} });
+  const member = await signedIn("member", { artists: { [artist]: "member" }, adminOf: [], musicians: { [artist]: musician } });
+  let allowed = 0, denied = 0;
+  const run = async (label: string, want: "allow" | "deny", read: () => Promise<unknown>) => {
+    const ok = await read().then(() => true, (e: { code?: string }) => {
+      if (e?.code !== "permission-denied") fails.push(`${label}: ${e?.code ?? e}`);
+      return false;
+    });
+    if (ok !== (want === "allow")) fails.push(`${label}: ${ok ? "allowed" : "denied"}, expected ${want === "allow" ? "allowed" : "denied"}`);
+    else if (ok) allowed++; else denied++;
+  };
+  /** The collection a kind is listed from: its own name, or one of --artist's parents for a sub-collection. */
+  const parentOf = async (kind: string): Promise<string | null> => {
+    const parentKind = ({ comments: "shows", entries: "tours", activity: "pitches", tracks: "releases" } as Record<string, string>)[kind];
+    if (!parentKind) return kind;
+    const p = (await adminDb.collection(parentKind).where("artistId", "==", artist).limit(1).get()).docs[0];
+    return p ? `${parentKind}/${p.id}/${kind}` : null;
+  };
+  const list = (c: ClientDb, path: string, artistId: string, ...w: QueryConstraint[]) =>
+    getDocs(query(collection(c, path), where("artistId", "==", artistId), ...w, where("deletedAt", "==", null), limit(3)));
+
+  for (const kind of Object.keys(OWNERS).filter((k) => ownerOf(k) === "artist" && !NOT_LISTED.has(k))) {
+    const path = await parentOf(kind);
+    if (!path) { console.log(`  ${kind.padEnd(18)} skipped: ${artist} has no parent record`); continue; }
+    const extra = kind === "entries" ? [where("visibility", "==", "band")] : kind === "comments" ? [where("audience", "==", "band")] : [];
+    await run(`admin lists ${path}`, "allow", () => list(admin.c, path, artist));
+    await run(`admin lists ${path} of another artist`, "deny", () => list(admin.c, path, NOBODY));
+    if (MEMBER_KINDS.includes(kind) || kind === "entries" || kind === "comments") {
+      await run(`member lists ${path}`, "allow", () => list(member.c, path, artist, ...extra));
+      await run(`member lists ${path} of another artist`, "deny", () => list(member.c, path, NOBODY, ...extra));
+    } else if (!["expenses", "availability", "payouts"].includes(kind)) {
+      await run(`member lists ${path} (admins only)`, "deny", () => list(member.c, path, artist, ...extra));
+    }
+  }
+  // Tracks across releases (the song page), as a collection group.
+  await run("admin lists tracks (group)", "allow", () => getDocs(query(collectionGroup(admin.c, "tracks"), where("artistId", "==", artist), where("deletedAt", "==", null), limit(3))));
+  await run("admin lists tracks (group) of another artist", "deny", () => getDocs(query(collectionGroup(admin.c, "tracks"), where("artistId", "==", NOBODY), where("deletedAt", "==", null), limit(3))));
+  // Members' own records.
+  for (const [label, kind, w] of [
+    ["expenses by userId", "expenses", where("userId", "==", SMOKE_UID)],
+    ["availability by musician", "availability", where("askedMusicianIds", "array-contains", musician)],
+    ["payouts by to.userId", "payouts", where("to.userId", "==", SMOKE_UID)],
+    ["payouts by to.musicianId", "payouts", where("to.musicianId", "==", musician)],
+  ] as const) {
+    await run(`member lists ${label}`, "allow", () => list(member.c, kind, artist, w));
+    await run(`member lists ${label} of another artist`, "deny", () => list(member.c, kind, NOBODY, w));
+    await run(`member lists all ${kind} (not only their own)`, "deny", () => list(member.c, kind, artist));
+  }
+  // People.
+  const people = (c: ClientDb, a: string) => getDocs(query(collection(c, "users"), where("artistIds", "array-contains", a), where("deletedAt", "==", null), limit(3)));
+  await run("admin lists users by artistIds", "allow", () => people(admin.c, artist));
+  await run("admin lists users of another artist", "deny", () => people(admin.c, NOBODY));
+  await run("member lists users", "deny", () => people(member.c, artist));
+  // The Activity page's two listeners (newest first).
+  const history = (c: ClientDb, ...w: QueryConstraint[]) => getDocs(query(collectionGroup(c, "history"), ...w, orderBy("createdAt", "desc"), limit(3)));
+  await run("admin lists the artist's History", "allow", () => history(admin.c, where("artistId", "==", artist)));
+  await run("admin lists the shared History", "allow", () => history(admin.c, where("artistId", "==", null), where("shared", "==", true)));
+  await run("admin lists another artist's History", "deny", () => history(admin.c, where("artistId", "==", NOBODY)));
+  await run("member lists the artist's History", "deny", () => history(member.c, where("artistId", "==", artist)));
+  await run("member lists the shared History", "deny", () => history(member.c, where("artistId", "==", null), where("shared", "==", true)));
+  // Gets by id.
+  await run("admin gets the artist", "allow", () => getDoc(doc(admin.c, "artists", artist)));
+  await run("member gets the artist", "allow", () => getDoc(doc(member.c, "artists", artist)));
+  await run("admin gets the social checklists", "allow", () => getDoc(doc(admin.c, "socialChecklists", artist)));
+  await run("admin gets a missing show", "allow", () => getDoc(doc(admin.c, "shows", "tenancy-smoke-none")));
+  await run("member gets a missing deal", "allow", () => getDoc(doc(member.c, "showDeals", "tenancy-smoke-none")));
+  const show = (await adminDb.collection("shows").where("artistId", "==", artist).limit(1).get()).docs[0];
+  if (show) {
+    await run("admin gets a show", "allow", () => getDoc(doc(admin.c, "shows", show.id)));
+    const other = (await adminDb.collection("shows").limit(50).get()).docs.find((d) => d.get("artistId") !== artist);
+    if (other) await run("admin gets another artist's show", "deny", () => getDoc(doc(admin.c, "shows", other.id)));
+  }
+  for (const x of [admin, member]) { await terminate(x.c); await deleteApp(x.app); }
+  console.log(`  ${allowed} allowed and ${denied} denied as expected${fails.length ? `; ${fails.length} problems` : ""}`);
+}
+
+main().then(() => process.exit(0), (e) => { console.error(e instanceof Error ? e.stack : e); process.exit(1); });

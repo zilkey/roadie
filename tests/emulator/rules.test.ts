@@ -4,6 +4,8 @@ import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestE
 import { collection, collectionGroup, doc, getDoc, getDocs, query, setDoc, updateDoc, deleteDoc, where } from "firebase/firestore";
 
 let env: RulesTestEnvironment;
+/** The shared directory: records with no artist. */
+const SHARED = ["venues", "promoters", "festivals", "editions"];
 const NOTE_COLLS = ["festivalNotes", "editionNotes", "promoterNotes", "contactNotes"];
 const [host, port] = (process.env.FIRESTORE_EMULATOR_HOST ?? "127.0.0.1:8280").split(":");
 
@@ -18,15 +20,17 @@ before(async () => {
     const live = { deletedAt: null };
     for (const c of ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", "venues", "contacts", "promoters",
       "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"]) {
-      await setDoc(doc(d, c, "x"), { ...live, n: 1, ...(c === "checklistTemplates" || c === "pitches" || c === "contacts" ? { artistId: "x" } : {}) });
+      // Every artist record carries its artistId (tenancy phase 3); a users doc the artists its person is in.
+      const scope = SHARED.includes(c) || c === "artists" ? {} : c === "users" ? { artistIds: ["x"] } : { artistId: "x" };
+      await setDoc(doc(d, c, "x"), { ...live, n: 1, ...scope, ...(c === "mcpTokens" ? { userId: "rudy" } : {}) });
     }
     await setDoc(doc(d, "checklistTemplates/y"), { ...live, artistId: "y", name: "Fern Valley's" });
     await setDoc(doc(d, "pitches/y"), { ...live, artistId: "y" });
     await setDoc(doc(d, "campaigns/cx"), { ...live, artistId: "x", name: "Spring 2027", status: "active" });
     await setDoc(doc(d, "campaigns/cy"), { ...live, artistId: "y", name: "Fern Valley's push", status: "active" });
     await setDoc(doc(d, "contacts/y"), { ...live, artistId: "y", name: "Fern Valley's booker" });
-    await setDoc(doc(d, "pitches/y/comments/c1"), { ...live });
-    await setDoc(doc(d, "pitches/y/activity/a1"), { ...live });
+    await setDoc(doc(d, "pitches/y/comments/c1"), { ...live, artistId: "y" });
+    await setDoc(doc(d, "pitches/y/activity/a1"), { ...live, artistId: "y" });
     await setDoc(doc(d, "venues/gone"), { deletedAt: new Date() });
     // Private venue notes: id = {artistId}__{venueId}, one per band.
     await setDoc(doc(d, "venueNotes/x__x"), { ...live, artistId: "x", venueId: "x", loadInNotes: "x's" });
@@ -45,23 +49,23 @@ before(async () => {
     await setDoc(doc(d, "acts/ax"), { ...live, name: "Denson", matchKey: "denson" });
     await setDoc(doc(d, "actNotes/x__ax"), { ...live, artistId: "x", actId: "ax", note: "x's" });
     await setDoc(doc(d, "actNotes/y__ax"), { ...live, artistId: "y", actId: "ax", note: "y's" });
-    await setDoc(doc(d, "pitches/x/comments/c1"), { ...live });
-    await setDoc(doc(d, "pitches/x/activity/a1"), { ...live });
-    await setDoc(doc(d, "shows/x/comments/c1"), { ...live });
+    await setDoc(doc(d, "pitches/x/comments/c1"), { ...live, artistId: "x" });
+    await setDoc(doc(d, "pitches/x/activity/a1"), { ...live, artistId: "x" });
+    await setDoc(doc(d, "shows/x/comments/c1"), { ...live, artistId: "x" });
     // History entries carry the artist of the record they describe (null: the record belongs to no one artist).
-    await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1", artistId: null });
+    await setDoc(doc(d, "venues/x/history/000002"), { ...live, runId: "r1", artistId: null, shared: true });
     await setDoc(doc(d, "pitches/x/activity/a1/history/000001"), { ...live, runId: "r1", artistId: "x" });
     await setDoc(doc(d, "venueNotes/x__v/history/000001"), { ...live, runId: "r1", artistId: "x" });
     await setDoc(doc(d, "venueNotes/y__v/history/000001"), { ...live, runId: "r1", artistId: "y" });
-    await setDoc(doc(d, "venues/v/history/000001"), { ...live, runId: "r1", artistId: null });
-    await setDoc(doc(d, "songs/gone"), { deletedAt: new Date() });
-    await setDoc(doc(d, "availability/asked"), { ...live, askedMusicianIds: ["m-hugo"] });
-    await setDoc(doc(d, "availability/other"), { ...live, askedMusicianIds: ["m-felix"] });
-    await setDoc(doc(d, "shows/x/comments/band"), { ...live, audience: "band" });
-    await setDoc(doc(d, "shows/x/comments/bandGone"), { deletedAt: new Date(), audience: "band" });
+    await setDoc(doc(d, "venues/v/history/000001"), { ...live, runId: "r1", artistId: null, shared: true });
+    await setDoc(doc(d, "songs/gone"), { deletedAt: new Date(), artistId: "x" });
+    await setDoc(doc(d, "availability/asked"), { ...live, artistId: "x", askedMusicianIds: ["m-hugo"] });
+    await setDoc(doc(d, "availability/other"), { ...live, artistId: "x", askedMusicianIds: ["m-felix"] });
+    await setDoc(doc(d, "shows/x/comments/band"), { ...live, artistId: "x", audience: "band" });
+    await setDoc(doc(d, "shows/x/comments/bandGone"), { deletedAt: new Date(), artistId: "x", audience: "band" });
     await setDoc(doc(d, "ledger/old"), { ...live, kind: "payout", payeeUserId: "hugo" });
-    await setDoc(doc(d, "expenses/mine"), { ...live, userId: "hugo" });
-    await setDoc(doc(d, "expenses/theirs"), { ...live, userId: "felix" });
+    await setDoc(doc(d, "expenses/mine"), { ...live, artistId: "x", userId: "hugo" });
+    await setDoc(doc(d, "expenses/theirs"), { ...live, artistId: "x", userId: "felix" });
     // Money (#39): projects are the band's; income is admin-only; a payout is read by its recipient (as the user or as the player).
     await setDoc(doc(d, "projects/band"), { ...live, artistId: "x", kind: "band", name: "Band", status: "open", isDefault: true });
     await setDoc(doc(d, "projects/gone"), { deletedAt: new Date(), artistId: "x", kind: "tour", name: "Old run", status: "closed" });
@@ -74,8 +78,8 @@ before(async () => {
     await setDoc(doc(d, "unsubmittedDrafts/rudy__expenses"), { uid: "rudy", path: "expenses", values: { a: 1 } });
     await setDoc(doc(d, "unsubmittedDrafts/hugo__shows~x"), { uid: "hugo", path: "shows/x", values: { a: 2 } });
     // Driving & gas: settings on each person's users doc, the shared weekly price cache, and the server-only route cache.
-    await setDoc(doc(d, "users/rudy"), { ...live, name: "Rudy", driving: { home: { address: "1 Main St", lat: 1, lng: 2 }, cars: [] } });
-    await setDoc(doc(d, "users/hugo"), { ...live, name: "Hugo", driving: { cars: [{ id: "c1", name: "Fit", mpg: 34, fuelGrade: "regular" }] } });
+    await setDoc(doc(d, "users/rudy"), { ...live, artistIds: ["x"], name: "Rudy", driving: { home: { address: "1 Main St", lat: 1, lng: 2 }, cars: [] } });
+    await setDoc(doc(d, "users/hugo"), { ...live, artistIds: ["x"], name: "Hugo", driving: { cars: [{ id: "c1", name: "Fit", mpg: 34, fuelGrade: "regular" }] } });
     await setDoc(doc(d, "fuelPrices/Y05DE_EPMR"), { area: "Denver", areaKind: "metro", grade: "regular", priceMilli: 3790, week: "2026-10-19" });
     await setDoc(doc(d, "routeCache/abc123"), { oneWayMiles: 18.4 });
     await setDoc(doc(d, "stagePlotTokens/plot1"), { token: "secret-token" });
@@ -83,17 +87,21 @@ before(async () => {
 });
 after(async () => { await env.cleanup(); });
 
-// Roles are per artist: the `artists` claim is {artistId: role} (the seeded artist doc is artists/x).
-const admin = () => env.authenticatedContext("rudy", { artists: { x: "admin" } }).firestore();
-const hugo = () => env.authenticatedContext("hugo", { artists: { x: "member" }, musicianId: "m-hugo" }).firestore();
+// Roles are per artist. A token carries what session.ts claimsFor sets: `artists` {artistId: role}, `adminOf` [artistId] and
+// `musicians` {artistId: musicianId} (the seeded artist doc is artists/x).
+const claims = (artists: Record<string, string>, musicians: Record<string, string> = {}) =>
+  ({ artists, adminOf: Object.keys(artists).filter((a) => artists[a] === "admin"), musicians });
+const as = (uid: string, artists: Record<string, string>, musicians: Record<string, string> = {}) => env.authenticatedContext(uid, claims(artists, musicians)).firestore();
+const admin = () => as("rudy", { x: "admin" });
+const hugo = () => as("hugo", { x: "member" }, { x: "m-hugo" });
 const anon = () => env.unauthenticatedContext().firestore();
-const noRole = () => env.authenticatedContext("nobody", { artists: {} }).firestore();
+const noRole = () => as("nobody", {});
 /** An "ai" login is never in the claim (session.ts keeps only admin/member there). */
-const aiLogin = () => env.authenticatedContext("bot", { artists: {} }).firestore();
-/** Before memberships, the claim was a single `role`: it no longer grants anything. */
-const legacyAdmin = () => env.authenticatedContext("old", { role: "admin" }).firestore();
+const aiLogin = () => as("bot", {});
+/** Before memberships, the claim was a single `role` (and later a single `musicianId`): neither grants anything. */
+const legacyAdmin = () => env.authenticatedContext("old", { role: "admin", musicianId: "m-hugo" }).firestore();
 /** An admin of a different artist. */
-const otherAdmin = () => env.authenticatedContext("olga", { artists: { y: "admin" } }).firestore();
+const otherAdmin = () => as("olga", { y: "admin" });
 
 const ALL = ["users", "musicians", "artists", "shows", "songs", "files", "setlists", "stagePlots", "rehearsals", "contacts", "promoters",
   "festivals", "editions", "pitches", "emailTemplates", "checklistTemplates", "showDeals", "statSnapshots", "mcpTokens"];
@@ -118,9 +126,11 @@ test("members read the band collections but not booking, deals, money, users", a
   await assertFails(getDoc(doc(hugo(), "shows/x/comments/c1"))); // carried-over booking talk is admin only
   await assertSucceeds(getDoc(doc(hugo(), "shows/x/comments/band"))); // the band's own comments
   await assertFails(getDoc(doc(hugo(), "shows/x/comments/bandGone")));
-  await assertSucceeds(getDocs(query(collection(hugo(), "shows/x/comments"), where("audience", "==", "band"), where("deletedAt", "==", null))));
+  await assertSucceeds(getDocs(query(collection(hugo(), "shows/x/comments"), where("artistId", "==", "x"), where("audience", "==", "band"), where("deletedAt", "==", null))));
+  await assertFails(getDocs(query(collection(hugo(), "shows/x/comments"), where("audience", "==", "band"), where("deletedAt", "==", null)))); // no artist
   await assertFails(getDocs(collection(hugo(), "shows/x/comments")));
-  await assertSucceeds(getDocs(query(collection(hugo(), "songs"), where("deletedAt", "==", null))));
+  await assertSucceeds(getDocs(query(collection(hugo(), "songs"), where("artistId", "==", "x"), where("deletedAt", "==", null))));
+  await assertFails(getDocs(query(collection(hugo(), "songs"), where("deletedAt", "==", null)))); // every list names its artist
 });
 
 test("members cannot read soft-deleted shared docs", async () => {
@@ -156,12 +166,12 @@ test("money: members read projects and payouts made to them, never income or any
   await assertFails(getDoc(doc(hugo(), "payouts/to-hugo-gone")));
   for (const id of ["to-hugo-user", "to-hugo-player", "to-felix", "to-band", "to-hugo-gone"]) await assertSucceeds(getDoc(doc(admin(), `payouts/${id}`)));
   // A member's list of their own payouts must filter on the recipient; a bare list is refused.
-  await assertSucceeds(getDocs(query(collection(hugo(), "payouts"), where("to.userId", "==", "hugo"))));
-  await assertSucceeds(getDocs(query(collection(hugo(), "payouts"), where("to.musicianId", "==", "m-hugo"))));
+  await assertSucceeds(getDocs(query(collection(hugo(), "payouts"), where("artistId", "==", "x"), where("to.userId", "==", "hugo"), where("deletedAt", "==", null))));
+  await assertSucceeds(getDocs(query(collection(hugo(), "payouts"), where("artistId", "==", "x"), where("to.musicianId", "==", "m-hugo"), where("deletedAt", "==", null))));
   await assertFails(getDocs(collection(hugo(), "payouts")));
   await assertFails(getDocs(collection(hugo(), "income")));
-  // A member whose login has no musicianId claim still can't see a player payout to someone else.
-  const noPlayer = env.authenticatedContext("sam", { artists: { x: "member" } }).firestore();
+  // A member whose login has no musician in this artist still can't see a player payout to someone else.
+  const noPlayer = as("sam", { x: "member" });
   await assertFails(getDoc(doc(noPlayer, "payouts/to-hugo-player")));
   for (const c of ["projects", "income", "payouts"]) { await assertFails(getDoc(doc(anon(), c, "band"))); await assertFails(getDoc(doc(noRole(), c, "band"))); }
 });
@@ -177,7 +187,7 @@ test("signed-out, role-less and ai (AI-tools-only) logins read nothing", async (
 
 // A Google account with no band yet (session.ts "noBand": signed in, claim {artists: {}}) reads nothing of any band until it starts one.
 test("noBand: signed in with empty claims reads no band data, lists nothing, and sees no one else's history", async () => {
-  const fresh = () => env.authenticatedContext("new-person", { artists: {} }).firestore();
+  const fresh = () => as("new-person", {});
   for (const c of [...ALL, ...SIGNED_IN_READS, "venueTypes", "setlistTemplates", "availability", "expenses", "venueNotes", "fans", "ledger"]) await assertFails(getDoc(doc(fresh(), c, "x")));
   for (const c of ["users", "musicians", "artists", "shows", "venues", "pitches", "checklistTemplates"]) await assertFails(getDocs(collection(fresh(), c)));
   await assertFails(getDocs(collectionGroup(fresh(), "history")));
@@ -191,17 +201,20 @@ test("artist docs: only that artist's members read them", async () => {
   await assertFails(getDoc(doc(otherAdmin(), "artists/x")));
   await assertFails(getDocs(collection(admin(), "artists"))); // no listing every artist
   await env.withSecurityRulesDisabled(async (ctx) => { await setDoc(doc(ctx.firestore(), "artists/gone"), { deletedAt: new Date() }); });
-  const goneAdmin = env.authenticatedContext("rudy", { artists: { gone: "admin" } }).firestore();
-  const goneMember = env.authenticatedContext("hugo", { artists: { gone: "member" } }).firestore();
+  const goneAdmin = as("rudy", { gone: "admin" });
+  const goneMember = as("hugo", { gone: "member" });
   await assertSucceeds(getDoc(doc(goneAdmin, "artists/gone")));
   await assertFails(getDoc(doc(goneMember, "artists/gone")));
 });
 
-test("several artists: your best role applies to records not yet partitioned by artist", async () => {
-  const both = () => env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
-  await assertSucceeds(getDoc(doc(both(), "venues/x")));
+test("several artists: your role in each record's own artist applies, never your best role", async () => {
+  const both = () => as("mia", { x: "member", y: "admin" });
+  await assertSucceeds(getDoc(doc(both(), "venues/x"))); // the shared directory: an admin anywhere reads it
   await assertSucceeds(getDoc(doc(both(), "artists/x")));
-  await assertFails(getDoc(doc(env.authenticatedContext("mia", { artists: { y: "member" } }).firestore(), "artists/x")));
+  await assertSucceeds(getDoc(doc(both(), "shows/x")));
+  await assertFails(getDoc(doc(both(), "showDeals/x"))); // admin of y, only a member of x
+  await assertFails(getDoc(doc(both(), "users/rudy"))); // x's people are for x's admins
+  await assertFails(getDoc(doc(as("mia", { y: "member" }), "artists/x")));
 });
 
 test("ALL client writes are denied, even for admins", async () => {
@@ -242,13 +255,17 @@ test("unsubmittedDrafts: only the owner reads their own; admins, members and ano
   await assertFails(getDoc(doc(admin(), "users/rudy/drafts/show__new"))); // the old location is gone
 });
 
-test("driving settings (users/{uid}.driving): admins read everyone's, a member only their own; no client writes", async () => {
+test("driving settings (users/{uid}.driving): the artist's admins read its people's, a member only their own; no client writes", async () => {
   await assertSucceeds(getDoc(doc(admin(), "users/rudy")));
   await assertSucceeds(getDoc(doc(admin(), "users/hugo"))); // admins see and edit bandmates' homes and cars (People)
   await assertSucceeds(getDoc(doc(hugo(), "users/hugo"))); // My settings
   await assertFails(getDoc(doc(hugo(), "users/rudy")));
   await assertFails(getDoc(doc(anon(), "users/rudy")));
   await assertFails(getDoc(doc(noRole(), "users/rudy")));
+  await assertFails(getDoc(doc(otherAdmin(), "users/hugo"))); // another artist's admin
+  await assertSucceeds(getDocs(query(collection(admin(), "users"), where("artistIds", "array-contains", "x"))));
+  await assertFails(getDocs(query(collection(admin(), "users"), where("artistIds", "array-contains", "y"))));
+  await assertFails(getDocs(collection(admin(), "users"))); // never everyone
   await assertFails(setDoc(doc(admin(), "users/rudy"), { driving: { cars: [] } }));
   await assertFails(updateDoc(doc(hugo(), "users/hugo"), { driving: { cars: [] } }));
 });
@@ -325,7 +342,7 @@ test("actNotes lists must filter by artistId; acts and actNotes cannot be writte
 });
 
 test("venueNotes: the per-artist role decides, not the best role", async () => {
-  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  const mia = as("mia", { x: "member", y: "admin" });
   await assertSucceeds(getDoc(doc(mia, "venues/x")));
   await assertFails(getDoc(doc(mia, "venueNotes/x__x"))); // admin of y does not make her an admin of x
   await assertSucceeds(getDoc(doc(mia, "venueNotes/y__x")));
@@ -372,7 +389,7 @@ test("pitches: only that artist's admins read a pitch, its comments and its acti
   }
   await assertFails(getDoc(doc(otherAdmin(), "pitches/x")));
   await assertFails(getDoc(doc(legacyAdmin(), "pitches/x")));
-  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  const mia = as("mia", { x: "member", y: "admin" });
   await assertFails(getDoc(doc(mia, "pitches/x"))); // the per-artist role decides, not the best role
 });
 
@@ -382,7 +399,7 @@ test("contacts: one band's own, read only by that artist's admins (per-artist ro
   await assertSucceeds(getDoc(doc(otherAdmin(), "contacts/y")));
   await assertFails(getDoc(doc(otherAdmin(), "contacts/x")));
   await assertFails(getDoc(doc(hugo(), "contacts/x")));
-  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  const mia = as("mia", { x: "member", y: "admin" });
   await assertFails(getDoc(doc(mia, "contacts/x"))); // admin of y does not make her an admin of x
   await assertFails(getDocs(collection(admin(), "contacts")));
   await assertSucceeds(getDocs(query(collection(admin(), "contacts"), where("artistId", "==", "x"))));
@@ -394,8 +411,9 @@ test("pitches: lists must filter by artistId", async () => {
   await assertFails(getDocs(collection(admin(), "pitches")));
   await assertSucceeds(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "x"))));
   await assertFails(getDocs(query(collection(admin(), "pitches"), where("artistId", "==", "y"))));
-  await assertSucceeds(getDocs(collection(admin(), "pitches/x/comments")));
-  await assertFails(getDocs(collection(otherAdmin(), "pitches/x/comments")));
+  await assertSucceeds(getDocs(query(collection(admin(), "pitches/x/comments"), where("artistId", "==", "x"))));
+  await assertFails(getDocs(collection(admin(), "pitches/x/comments"))); // a comment carries its own artistId
+  await assertFails(getDocs(query(collection(otherAdmin(), "pitches/x/comments"), where("artistId", "==", "x"))));
 });
 
 // ---------- booking campaigns (#82) ----------
@@ -407,7 +425,7 @@ test("campaigns: only that artist's admins read; lists filter by artistId; no cl
   await assertFails(getDoc(doc(otherAdmin(), "campaigns/cx")));
   await assertFails(getDoc(doc(hugo(), "campaigns/cx")));
   await assertFails(getDoc(doc(anon(), "campaigns/cx")));
-  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  const mia = as("mia", { x: "member", y: "admin" });
   await assertFails(getDoc(doc(mia, "campaigns/cx"))); // the per-artist role decides
   await assertFails(getDocs(collection(admin(), "campaigns")));
   await assertSucceeds(getDocs(query(collection(admin(), "campaigns"), where("artistId", "==", "x"))));
@@ -430,7 +448,7 @@ test("festival, edition, promoter and contact notes: only that artist's admins r
 });
 
 test("festival, edition, promoter and contact notes: the per-artist role decides, not the best role", async () => {
-  const mia = env.authenticatedContext("mia", { artists: { x: "member", y: "admin" } }).firestore();
+  const mia = as("mia", { x: "member", y: "admin" });
   for (const c of NOTE_COLLS) {
     await assertFails(getDoc(doc(mia, `${c}/x__x`)));
     await assertSucceeds(getDoc(doc(mia, `${c}/y__x`)));
@@ -473,7 +491,7 @@ test("history: venueNotes entries read only for that artist's admins", async () 
   await assertSucceeds(getDoc(doc(otherAdmin(), "venueNotes/y__v/history/000001")));
 });
 
-test("history: an entry with artistId null reads for any admin, never for a member", async () => {
+test("history: a shared directory entry (artistId null, shared true) reads for any admin, never for a member", async () => {
   await assertSucceeds(getDoc(doc(admin(), "venues/v/history/000001")));
   await assertSucceeds(getDoc(doc(otherAdmin(), "venues/v/history/000001")));
   await assertFails(getDoc(doc(hugo(), "venues/v/history/000001")));
@@ -489,11 +507,12 @@ test("history: a pitch's nested entries follow the pitch's artist", async () => 
 test("history: collection-group queries must filter by artist; the other artist's admin and unfiltered queries fail", async () => {
   const group = (who: ReturnType<typeof admin>, ...c: Parameters<typeof where>[]) => getDocs(query(collectionGroup(who, "history"), ...c.map((x) => where(...x))));
   await assertSucceeds(group(admin(), ["artistId", "==", "x"]));
-  await assertSucceeds(group(admin(), ["artistId", "==", null]));
+  await assertSucceeds(group(admin(), ["artistId", "==", null], ["shared", "==", true]));
+  await assertFails(group(admin(), ["artistId", "==", null])); // the shared scope must be named
   await assertFails(group(otherAdmin(), ["artistId", "==", "x"]));
   await assertSucceeds(group(otherAdmin(), ["artistId", "==", "y"]));
-  await assertSucceeds(group(otherAdmin(), ["artistId", "==", null]));
-  await assertFails(group(hugo(), ["artistId", "==", null]));
+  await assertSucceeds(group(otherAdmin(), ["artistId", "==", null], ["shared", "==", true]));
+  await assertFails(group(hugo(), ["artistId", "==", null], ["shared", "==", true]));
   await assertFails(group(hugo(), ["artistId", "==", "x"]));
   await assertFails(getDocs(collectionGroup(admin(), "history")));
   await assertFails(getDocs(collectionGroup(otherAdmin(), "history")));
@@ -522,19 +541,19 @@ test("tours: the band reads the tour; members read only band entries and must fi
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
     await setDoc(doc(d, "tours/t1"), { deletedAt: null, artistId: "x", name: "Mountain West", status: "planning", projectId: "band", personnel: [] });
-    await setDoc(doc(d, "tours/t1/entries/drive"), { deletedAt: null, tourId: "t1", kind: "drive", date: "2026-11-05", position: 1, visibility: "band", tz: "America/Denver" });
-    await setDoc(doc(d, "tours/t1/entries/option"), { deletedAt: null, tourId: "t1", kind: "option", date: "2026-11-09", position: 1, visibility: "admins", tz: "America/Denver", pitchId: "x" });
-    await setDoc(doc(d, "tours/t1/entries/gone"), { deletedAt: new Date(), tourId: "t1", kind: "note", date: "2026-11-05", position: 2, visibility: "band", tz: "America/Denver", text: "x" });
+    await setDoc(doc(d, "tours/t1/entries/drive"), { deletedAt: null, artistId: "x", tourId: "t1", kind: "drive", date: "2026-11-05", position: 1, visibility: "band", tz: "America/Denver" });
+    await setDoc(doc(d, "tours/t1/entries/option"), { deletedAt: null, artistId: "x", tourId: "t1", kind: "option", date: "2026-11-09", position: 1, visibility: "admins", tz: "America/Denver", pitchId: "x" });
+    await setDoc(doc(d, "tours/t1/entries/gone"), { deletedAt: new Date(), artistId: "x", tourId: "t1", kind: "note", date: "2026-11-05", position: 2, visibility: "band", tz: "America/Denver", text: "x" });
   });
   await assertSucceeds(getDoc(doc(admin(), "tours/t1")));
   await assertSucceeds(getDoc(doc(hugo(), "tours/t1")));
   await assertSucceeds(getDoc(doc(admin(), "tours/t1/entries/option")));
-  await assertSucceeds(getDocs(collection(admin(), "tours/t1/entries")));
+  await assertSucceeds(getDocs(query(collection(admin(), "tours/t1/entries"), where("artistId", "==", "x"))));
   await assertSucceeds(getDoc(doc(hugo(), "tours/t1/entries/drive")));
   await assertFails(getDoc(doc(hugo(), "tours/t1/entries/option")));
   await assertFails(getDoc(doc(hugo(), "tours/t1/entries/gone")));
   await assertFails(getDocs(collection(hugo(), "tours/t1/entries")));
-  await assertSucceeds(getDocs(query(collection(hugo(), "tours/t1/entries"), where("visibility", "==", "band"), where("deletedAt", "==", null))));
+  await assertSucceeds(getDocs(query(collection(hugo(), "tours/t1/entries"), where("artistId", "==", "x"), where("visibility", "==", "band"), where("deletedAt", "==", null))));
   for (const c of [anon(), noRole(), aiLogin()]) await assertFails(getDoc(doc(c, "tours/t1")));
   await assertFails(setDoc(doc(admin(), "tours/t2"), { name: "x" }));
   await assertFails(updateDoc(doc(admin(), "tours/t1/entries/drive"), { position: 2 }));

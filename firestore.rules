@@ -1,151 +1,150 @@
 rules_version = '2';
-// Reads follow the blueprint's access table. ALL client writes are denied: writes go through
-// the server (firebase-admin, which bypasses rules) in src/server/db.ts.
+// Per-artist reads (tenancy plan D6). ALL client writes are denied: writes go through the server (firebase-admin, which bypasses
+// rules) in src/server/db.ts.
+//
+// The server (src/server/session.ts claimsFor) keeps three custom claims in step with users/{uid}.artists:
+//   artists:   {artistId: 'admin' | 'member'}   your role in each artist ('ai' logins are never in it, so they read nothing here)
+//   adminOf:   [artistId]                       the artists you are an admin of
+//   musicians: {artistId: musicianId}           your musician record in each artist
+// Every artist record carries `artistId`, and the rule checks your role in THAT artist, never your best role anywhere. List queries
+// must therefore filter `artistId == <artist>` (the browser hooks add it, src/lib/client-scope.ts); an unfiltered list is refused.
+// A collection-group wildcard ({path=**}) is used only for tracks and history (tests/unit/rules-shape.test.ts): rules OR together, so
+// a wildcard `comments` match would widen pitch comments.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    // Roles are per artist. The server (src/server/session.ts) keeps the custom claim `artists` = {artistId: role} in step
-    // with users/{uid}.artists, holding only the app roles 'admin' and 'member'. The third role, 'ai' (a login for AI tools
-    // only, via MCP keys on the server), is never in the claim, so it reads nothing here.
-    function roles() { return signedIn() ? request.auth.token.get('artists', {}) : {}; }
-    function roleIn(artistId) { return roles().get(artistId, ''); }
-    // Band records aren't partitioned by artist yet (one band per project today; shows and pitches already carry artistId).
-    // Until they are, your best role in any of your artists applies to them. TODO: once every record has artistId, use
-    // roleIn(resource.data.artistId) and query with where('artistId', '==', ...).
-    function isAdmin() { return 'admin' in roles().values(); }
-    function isMember() { return !isAdmin() && 'member' in roles().values(); }
-    function live() { return resource.data.get('deletedAt', null) == null; }
-    // Whole band reads (admins and members); soft-deleted docs only show to admins.
-    function band() { return isAdmin() || (isMember() && live()); }
+    function signedIn()    { return request.auth != null; }
+    function roles()       { return signedIn() ? request.auth.token.get('artists', {}) : {}; }
+    function roleIn(a)     { return roles().get(a, ''); }
+    function admin(a)      { return roleIn(a) == 'admin'; }
+    function member(a)     { return roleIn(a) == 'member'; }
+    function live()        { return resource.data.get('deletedAt', null) == null; }
+    // The whole artist reads; soft-deleted records only its admins.
+    function inArtist(a)   { return admin(a) || (member(a) && live()); }
+    function anyRole()     { return roles().size() > 0; }
+    function anyAdmin()    { return signedIn() && request.auth.token.get('adminOf', []).size() > 0; }
+    // The shared directory: any admin reads it all; any member reads the live records.
+    function shared()      { return anyAdmin() || (anyRole() && live()); }
+    function me()          { return request.auth.uid; }
+    function myMusician(a) { return request.auth.token.get('musicians', {}).get(a, ''); }
+    function A()           { return resource.data.artistId; }
+    // A get of a doc that doesn't exist (a show with no deal yet, an id of "none") reads as "doesn't exist" instead of failing on
+    // resource.data, for anyone with a role in an artist. It only reveals that an id is unused, and ids are random.
+    function missing()     { return anyRole() && resource == null; }
 
-    // Admins read every login; a person reads their own (My settings shows their Driving & gas: users/{uid}.driving).
-    match /users/{id}            { allow read: if isAdmin() || (signedIn() && request.auth.uid == id); }
-    // Weekly EIA fuel prices, one doc per series, shared by every band: any signed-in user reads; server writes.
-    match /fuelPrices/{id}       { allow read: if signedIn(); }
-    // routeCache/{key} is server-only: no read rule on purpose.
-    // Unsubmitted forms and unsaved edits (id = uid__path): only their owner reads, never written from the client (server writes with firebase-admin).
-    match /unsubmittedDrafts/{id} { allow read: if signedIn() && resource.data.uid == request.auth.uid; }
-    // Per-user prefs (hidden nav sections and their order), id = uid: only their owner reads, server writes.
-    match /userPrefs/{uid}       { allow read: if signedIn() && request.auth.uid == uid; }
-    match /musicians/{id}        { allow read: if band(); }
-    // The shared venue directory: every signed-in band user (admin or member of any artist) reads it; soft-deleted rooms only admins.
-    // A band's own private notes about a room (load-in, contacts, promoters) are in venueNotes, below.
-    match /venues/{id}           { allow read: if band(); }
-    // The one list of venue types (Bar, Brewery, ...) every band picks from, like the venues themselves. Server writes.
-    match /venueTypes/{id}       { allow read: if band(); }
-    // One band's private venue notes, id = {artistId}__{venueId}. Needs that artist's admin role (roleIn, not the best role: an admin of
-    // another artist who is only a member of this one gets 'member' here and fails). Lists must filter where('artistId', '==', ...).
-    match /venueNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // A venue's shows as its own calendar lists them, and how that calendar did on its last refresh (issue #60): public facts,
-    // shared like the venues themselves. Server writes.
-    match /venueEvents/{id}      { allow read: if band(); }
-    match /venueEventSources/{id} { allow read: if band(); }
-    // One band's take on a venue's show, id = {artistId}__{eventId}: that artist's admins only, like venueNotes. Lists must filter by artistId.
-    match /venueEventNotes/{id}  { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // Acts (#77): the bands on venue calendars' bills, public facts shared with every band like venueEvents. Server writes.
-    match /acts/{id}             { allow read: if band(); }
-    // One band's take on an act (shortlist, relationship, note, contacts), id = {artistId}__{actId}: that artist's admins only. Lists must filter by artistId.
-    match /actNotes/{id}         { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // An artist's checklist templates: that artist's admins only. Lists must filter where('artistId', '==', ...).
-    match /checklistTemplates/{id} { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // An artist doc is readable by its own members only (the app reads it by id: /artists/[slug] resolves through your session).
-    match /artists/{id}          { allow get: if roleIn(id) == 'admin' || (roleIn(id) == 'member' && live()); }
+    // ---------- People ----------
+    // A person reads their own users doc (My settings); an admin reads the people of the artists they run (People, driving & gas).
+    // Lists must filter where('artistIds', 'array-contains', <artist>).
+    match /users/{id}             { allow read: if (signedIn() && me() == id) || resource.data.get('artistIds', []).hasAny(request.auth.token.get('adminOf', [])); }
+    // Unsubmitted forms and unsaved edits (id = uid__path): only their owner reads.
+    match /unsubmittedDrafts/{id} { allow read: if signedIn() && resource.data.uid == me(); }
+    // Per-user prefs (hidden nav sections and their order), id = uid: only their owner reads.
+    match /userPrefs/{uid}        { allow read: if signedIn() && me() == uid; }
+    // Server only, no rule on purpose: users/{uid}/private, googleGrants, invites, shortcutTokens, mutations, routeCache, geocodes,
+    // metaConnections, stagePlotTokens, assistantStops, ledger, platform, platformUsers, platformArtists, sharedEditRequests, usage.
+
+    // ---------- Shared directories ----------
+    match /venues/{id}            { allow read: if shared(); }
+    match /venueTypes/{id}        { allow read: if shared(); }
+    match /venueEvents/{id}       { allow read: if shared(); }
+    match /venueEventSources/{id} { allow read: if shared(); }
+    match /acts/{id}              { allow read: if shared(); }
+    match /promoters/{id}         { allow read: if anyAdmin(); }
+    match /festivals/{id}         { allow read: if anyAdmin(); }
+    match /editions/{id}          { allow read: if anyAdmin(); }
+    // Weekly EIA fuel prices: any signed-in user.
+    match /fuelPrices/{id}        { allow read: if signedIn(); }
+
+    // ---------- The artist itself (its id is the artistId) ----------
+    match /artists/{id}           { allow get: if admin(id) || (member(id) && live()); }
+    match /socialChecklists/{id}  { allow read: if admin(id); }
+
+    // ---------- Artist: the whole artist reads ----------
     match /shows/{id} {
-      allow read: if band();
-      // The band's own comments (audience "band", shows.comment) are read by the whole band. Comments carried over from the pitch
-      // ("Booked it!") have no audience: booking talk, so admins only like the pitch's own. Member queries must filter audience == "band".
-      match /comments/{cid}      { allow read: if isAdmin() || (isMember() && live() && resource.data.get('audience', '') == 'band'); }
+      allow get: if missing() || inArtist(A());
+      allow list: if inArtist(A());
+      // The band's own comments (audience "band") are read by members; ones carried over from the pitch have no audience: admins only.
+      match /comments/{cid} { allow read: if admin(A()) || (member(A()) && live() && resource.data.get('audience', '') == 'band'); }
     }
-    match /songs/{id}            { allow read: if band(); }
-    match /files/{id}            { allow read: if band(); }
-    // Releases and their tracks (releases/{id}/tracks): admins only for now, reads and writes. The release's money is its project's.
-    match /releases/{id}           { allow read: if isAdmin(); }
-    // Tracks are read under their release and across releases (the song page's "On releases" is a collection-group query on songId).
-    match /{path=**}/tracks/{tid} { allow read: if isAdmin(); }
-    match /setlistTemplates/{id} { allow read: if band(); }
-    match /setlists/{id}         { allow read: if band(); }
-    match /rehearsals/{id}       { allow read: if band(); }
-    // Tours: the whole band reads the tour; admins write (through the server). Its entries (tours/{id}/entries) are read by admins,
-    // and by members only when visibility == "band" (options, the pitches, are always "admins"). Member queries must filter on it.
     match /tours/{id} {
-      allow read: if band();
-      match /entries/{eid}       { allow read: if isAdmin() || (isMember() && live() && resource.data.get('visibility', '') == 'band'); }
+      allow get: if missing() || inArtist(A());
+      allow list: if inArtist(A());
+      // Members read only the entries with visibility "band" (options, the pitches, are "admins"); their queries filter on it.
+      match /entries/{eid} { allow read: if admin(A()) || (member(A()) && live() && resource.data.get('visibility', '') == 'band'); }
     }
-    // Posts (Instagram for now): that artist's admins only, like Booking. Lists must filter where('artistId', '==', ...).
-    // metaConnections/{artistId} (the band's Instagram token) is server-only: no read rule on purpose.
-    match /posts/{id}            { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /socialChecklists/{id} { allow read: if roleIn(id) == 'admin'; }
-    // To Dos › Our list: that artist's admins only, like posts. Lists must filter where('artistId', '==', ...).
-    match /todos/{id}            { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // Stage plots: the band reads; the server writes. The engineer link is a server route, not a rule.
-    match /stagePlots/{id}       { allow read: if band(); }
+    match /projects/{id}          { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /songs/{id}             { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /files/{id}             { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /setlists/{id}          { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /setlistTemplates/{id}  { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /rehearsals/{id}        { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /stagePlots/{id}        { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
+    match /musicians/{id}         { allow get: if missing() || inArtist(A()); allow list: if inArtist(A()); }
 
-    match /availability/{id} {
-      allow read: if isAdmin()
-        || (isMember() && live() && request.auth.token.get('musicianId', '') in resource.data.askedMusicianIds);
-    }
-    // Expenses: members see only their own; admins all. Income is its own admin-only collection (below), so income and net never reach members.
+    // ---------- Artist: members see only their own ----------
+    // Expenses a member logged; member lists filter userId == <me>.
     match /expenses/{id} {
-      allow read: if isAdmin() || (isMember() && live() && resource.data.userId == request.auth.uid);
+      allow get: if missing() || admin(A()) || (member(A()) && live() && resource.data.userId == me());
+      allow list: if admin(A()) || (member(A()) && live() && resource.data.userId == me());
     }
-    // Projects (Band, Duo, a release, a tour): the buckets money belongs to. The whole band reads them (names, kinds, dates); admins write.
-    match /projects/{id}         { allow read: if band(); }
-    // Income: admins only. Members never see what came in, so never a net either.
-    match /income/{id}           { allow read: if isAdmin(); }
-    // Payouts (money from the band to a person): admins read all; a member reads only the ones made to them, as the
-    // signed-in user (to.userId) or as the player (to.musicianId, from the musicianId claim). Member lists must filter on one of those.
+    // Availability asks naming the member's musician in that artist (the musicians claim); lists filter askedMusicianIds array-contains it.
+    match /availability/{id} {
+      allow get: if missing() || admin(A()) || (member(A()) && live() && myMusician(A()) != '' && myMusician(A()) in resource.data.get('askedMusicianIds', []));
+      allow list: if admin(A()) || (member(A()) && live() && myMusician(A()) != '' && myMusician(A()) in resource.data.get('askedMusicianIds', []));
+    }
+    // Payouts made to the member, as the signed-in user (to.userId) or as their musician in that artist (to.musicianId).
     match /payouts/{id} {
-      allow read: if isAdmin() || (isMember() && live()
-        && (resource.data.get('to', {}).get('userId', '') == request.auth.uid
-            || (request.auth.token.get('musicianId', '') != '' && resource.data.get('to', {}).get('musicianId', '') == request.auth.token.get('musicianId', ''))));
+      allow get: if missing() || admin(A()) || (member(A()) && live()
+        && (resource.data.get('to', {}).get('userId', '') == me()
+            || (myMusician(A()) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(A()))));
+      allow list: if admin(A()) || (member(A()) && live()
+        && (resource.data.get('to', {}).get('userId', '') == me()
+            || (myMusician(A()) != '' && resource.data.get('to', {}).get('musicianId', '') == myMusician(A()))));
     }
 
-    // A band's contacts: that artist's admins only (per-artist role, like venueNotes). Lists must filter where('artistId', '==', ...).
-    // What they are linked to is the band's too: venueNotes, festivalNotes, promoterNotes and actNotes contactIds, show deals, payouts, expenses.
-    match /contacts/{id}           { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-
-    // Admin only
-    match /promoters/{id}          { allow read: if isAdmin(); }
-    match /festivals/{id}          { allow read: if isAdmin(); }
-    match /editions/{id}           { allow read: if isAdmin(); }
-    // One band's private notes on a festival, festival year, promoter or contact, id = {artistId}__{entityId}: that artist's admins only,
-    // by the per-artist role like venueNotes (a festival's or promoter's contactIds live here too). The shared records above stay readable by every admin. Lists must filter where('artistId', '==', ...).
-    match /festivalNotes/{id}      { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /editionNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /promoterNotes/{id}      { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /contactNotes/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /emailTemplates/{id}     { allow read: if isAdmin(); }
-    // A band's Gmail thread summaries, id = {artistId}__{threadId}: that artist's admins only (no bodies are stored). Lists must filter where('artistId', '==', ...).
-    match /emailThreads/{id}       { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    match /showDeals/{id}          { allow read: if isAdmin(); }
-    match /statSnapshots/{id}      { allow read: if isAdmin(); }
-    match /mcpTokens/{id}          { allow read: if isAdmin(); }
-    // The fan email list: only that artist's admins read it (members get counts through the fans.* commands, never rows); no client writes.
-    // The public signup writes through the server. Lists must filter where('artistId', '==', ...). The history of a fan carries the same artistId.
-    // geocodes/{key} (city -> coordinates cache, like routeCache) is server-only: no read rule on purpose.
-    match /fans/{id}               { allow read: if roleIn(resource.data.artistId) == 'admin'; }
-    // Every record's change log lives at {docPath}/history/{rev}, at any depth; written by the server in the same transaction as the change.
-    // An entry carries the artistId of the record it describes (null when the record belongs to no one artist): only that artist's admins
-    // read it, and any admin reads the null ones. Collection-group queries must filter artistId == <artist> (or == null).
-    match /{path=**}/history/{rev} {
-      allow read: if (resource.data.artistId == null && isAdmin()) || (resource.data.artistId != null && roleIn(resource.data.artistId) == 'admin');
-    }
-    // Roadie chat: only the owner (and only admins) read; writes are server-only.
-    match /assistantThreads/{tid} {
-      allow read: if isAdmin() && resource.data.ownerUid == request.auth.uid;
-      match /messages/{mid} {
-        allow read: if isAdmin() && get(/databases/$(database)/documents/assistantThreads/$(tid)).data.ownerUid == request.auth.uid;
-      }
-    }
-    // A pitch is one band's: only that artist's admins read it and its comments and activity. Lists must filter where('artistId', '==', ...).
+    // ---------- Artist: admins only ----------
+    match /income/{id}             { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /releases/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    // Tracks are read under their release and across releases (the song page's "On releases" is a collection-group query).
+    match /{path=**}/tracks/{t}    { allow read: if admin(A()); }
+    match /showDeals/{id}          { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /emailTemplates/{id}     { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /statSnapshots/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /mcpTokens/{id}          { allow read: if admin(A()) && resource.data.userId == me(); }
+    match /contacts/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /venueNotes/{id}         { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /venueEventNotes/{id}    { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /actNotes/{id}           { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /festivalNotes/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /editionNotes/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /promoterNotes/{id}      { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /contactNotes/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /checklistTemplates/{id} { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /emailThreads/{id}       { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /posts/{id}              { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /todos/{id}              { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /fans/{id}               { allow get: if missing() || admin(A()); allow list: if admin(A()); }
+    match /campaigns/{id}          { allow get: if missing() || admin(A()); allow list: if admin(A()); }
     match /pitches/{id} {
-      function pitchAdmin() { return roleIn(get(/databases/$(database)/documents/pitches/$(id)).data.artistId) == 'admin'; }
-      allow read: if roleIn(resource.data.artistId) == 'admin';
-      match /comments/{cid}  { allow read: if pitchAdmin(); }
-      match /activity/{aid}  { allow read: if pitchAdmin(); }
+      allow get: if missing() || admin(A());
+      allow list: if admin(A());
+      // A pitch's comments and activity carry the pitch's artistId themselves.
+      match /comments/{cid}  { allow read: if admin(A()); }
+      match /activity/{aid}  { allow read: if admin(A()); }
     }
-    // Booking campaigns (#82): that artist's admins read; no client write (campaigns.* and pitches.setCampaign write through the server).
-    // Lists must filter where('artistId', '==', ...).
-    match /campaigns/{id} { allow read: if roleIn(resource.data.artistId) == 'admin'; }
+    // Roadie chat: only its owner, as an admin of the thread's artist.
+    match /assistantThreads/{tid} {
+      allow read: if admin(A()) && resource.data.ownerUid == me();
+      match /messages/{mid} { allow read: if admin(get(/databases/$(database)/documents/assistantThreads/$(tid)).data.artistId)
+                                          && get(/databases/$(database)/documents/assistantThreads/$(tid)).data.ownerUid == me(); }
+    }
+
+    // ---------- History: exactly one scope per entry (plan D4) ----------
+    // An artist's records (artistId), one person's (ownerUid), or the shared directory's (shared: true, read by any admin).
+    // Collection-group queries name one scope: artistId == <artist>, ownerUid == <me>, or artistId == null && shared == true.
+    match /{path=**}/history/{rev} {
+      allow read: if (resource.data.get('artistId', null) != null && admin(resource.data.artistId))
+                  || (signedIn() && resource.data.get('ownerUid', null) == me())
+                  || (resource.data.get('shared', false) == true && anyAdmin());
+    }
   }
 }

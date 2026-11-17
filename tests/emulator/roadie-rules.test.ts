@@ -11,15 +11,17 @@ before(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const d = ctx.firestore();
-    await setDoc(doc(d, "assistantThreads/t1"), { ownerUid: "rudy" });
+    await setDoc(doc(d, "assistantThreads/t1"), { artistId: "a", ownerUid: "rudy" }); // every thread carries its artist (tenancy phase 4)
     await setDoc(doc(d, "assistantThreads/t1/messages/m1"), { role: "user", text: "hi" });
-    await setDoc(doc(d, "assistantThreads/t2"), { ownerUid: "nora" });
+    await setDoc(doc(d, "assistantThreads/t2"), { artistId: "a", ownerUid: "nora" });
+    await setDoc(doc(d, "assistantThreads/t3"), { artistId: "b", ownerUid: "rudy" }); // rudy's, in an artist he isn't in
+    await setDoc(doc(d, "assistantThreads/t3/messages/m1"), { role: "user", text: "elsewhere" });
     await setDoc(doc(d, "assistantThreads/t2/messages/m1"), { role: "user", text: "secret" });
   });
 });
 after(async () => { await env.cleanup(); });
 
-const rudy = () => env.authenticatedContext("rudy", { artists: { a: "admin" } }).firestore();
+const rudy = () => env.authenticatedContext("rudy", { artists: { a: "admin" }, adminOf: ["a"] }).firestore();
 const hugo = () => env.authenticatedContext("hugo", { artists: { a: "member" } }).firestore();
 const demoted = () => env.authenticatedContext("rudy", { artists: { a: "member" } }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
@@ -37,6 +39,8 @@ test("assistant threads: other admins, members and signed-out users read nothing
   await assertFails(getDoc(doc(hugo(), "assistantThreads/t1")));
   await assertFails(getDoc(doc(demoted(), "assistantThreads/t1/messages/m1")));
   await assertFails(getDoc(doc(anon(), "assistantThreads/t1")));
+  await assertFails(getDoc(doc(rudy(), "assistantThreads/t3"))); // only as an admin of the thread's own artist
+  await assertFails(getDoc(doc(rudy(), "assistantThreads/t3/messages/m1")));
 });
 
 test("assistant threads: all client writes are denied, even for the owner", async () => {
