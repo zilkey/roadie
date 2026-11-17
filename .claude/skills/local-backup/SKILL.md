@@ -65,5 +65,5 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8280 GCLOUD_PROJECT=demo-band-tracker npm run 
 
 - Never run `npm run wipe` or `scripts/wipe.ts` with `GCLOUD_PROJECT=roadie-prod-iab`.
 - Never pass `--yes` to `npm run restore`.
-- Don't run the test suites after a restore (see the no-test-runs rule); a type check is fine.
+- Don't run the test suites after a restore; a type check is fine.
 - Prod data on the emulator is real band data: don't paste documents into chat beyond what the question needs.

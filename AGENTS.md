@@ -56,3 +56,8 @@ GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS="$TMPDIR/gcp.json"
 ```
 
 Dry-run first wherever the script has one, and never commit the key file.
+
+## Issues go in roadie-issues
+
+Never open issues in `zilkey/roadie`; issues are turned off there. File every issue for Roadie in `zilkey/roadie-issues`
+(`gh issue -R zilkey/roadie-issues ...`).
