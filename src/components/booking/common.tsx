@@ -16,6 +16,7 @@ import type { Campaign, Venue, VenueNote, Promoter, Festival, Edition, Contact, 
 import { VenueTypeSelect } from "@/components/booking/VenueTypeSelect";
 import { linkLabel, withScheme } from "@/lib/links";
 import { campaignArg, useFlagCampaign } from "@/components/booking/FlagCampaign";
+import { US_ZONES } from "@/lib/timezone";
 
 export type PitchRow = Row<Omit<Pitch, "createdAt" | "updatedAt" | "deletedAt" | "lastContactAt">> & { lastContactAt?: { toMillis(): number }; createdAt?: { toMillis(): number } };
 
@@ -455,7 +456,6 @@ const opt = (s: string) => (s.trim() ? s.trim() : undefined);
 const num = (s: string) => (s.trim() ? Number(s) : undefined);
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 const o = (...pairs: [string, string][]) => pairs;
-const US_ZONES = o(["America/New_York", "Eastern"], ["America/Chicago", "Central"], ["America/Denver", "Mountain"], ["America/Phoenix", "Arizona (no DST)"], ["America/Los_Angeles", "Pacific"], ["America/Anchorage", "Alaska"], ["Pacific/Honolulu", "Hawaii"]);
 const REGIONS = o(...Object.entries(REGION_LABEL));
 
 /** The shared room: name, address and facts every band sees. Edited with an explicit Save (and a confirmation), because it changes the room for every band. */
@@ -471,7 +471,7 @@ export const roomForm = {
     { key: "soundProvider", label: "Sound", type: "select", half: true, options: o(["", "Not sure"], ["venueProvided", "Venue provides"], ["bandProvided", "Band brings"]) },
     { key: "soundNotes", label: "Sound notes", half: true },
     { key: "website", label: "Website", half: true }, { key: "instagram", label: "Instagram", half: true },
-    { key: "timeZone", label: "Time zone", type: "select", half: true, options: o(["", "Band time zone"], ...US_ZONES) },
+    { key: "timeZone", label: "Time zone", type: "select", half: true, options: o(["", "Artist time zone"], ...US_ZONES) },
   ] as Field[],
   initial: (d: Pick<Venue, "name" | "type" | "region" | "address" | "capacity" | "ages" | "sound" | "website" | "instagram" | "timeZone">): Values => ({
     name: d.name, type: d.type, region: d.region, city: d.address.city, state: d.address.state, street: d.address.street ?? "", zip: d.address.zip ?? "",

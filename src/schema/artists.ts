@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { entity, serverMask, id } from "./common";
+import { entity, serverMask, id, timeZoneName } from "./common";
 import { slug } from "./normalize";
 
 /** URL name of an artist: /artists/{slug}/... Lowercase words joined by single hyphens ("nora-quill"). Unique (artists.create/update check). */
@@ -159,6 +159,11 @@ export const Artist = entity({
   /** The URL name. The public fan pages (/f/{slug}, /m/{slug}) use it too, so changing it changes those links. */
   slug: artistSlug,
   configurations: z.array(Configuration),
+  /**
+   * The artist's own IANA time zone ("America/Denver", General Settings): every "today", day-of view, reminder, printed time and
+   * calendar event uses it, except a show at a venue with its own `timeZone`, which uses the venue's.
+   */
+  timeZone: timeZoneName.optional(),
   links: ArtistLinks,
   /** What the band plays, lowercase ("americana", "indie folk"), set on General Settings. Booking's opener guess (#79) moves a show up when the headliner's genres fit these. Missing = none. */
   genres: z.array(z.string().min(1)).optional(),

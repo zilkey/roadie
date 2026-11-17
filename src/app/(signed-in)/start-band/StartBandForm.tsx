@@ -1,18 +1,19 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { CommandError } from "@/lib/commands";
 import { signUpBand } from "@/lib/sign-up";
 import { artistPath } from "@/lib/routes";
-import { ErrorBox } from "@/components/ui";
 import { useNoBand } from "@/components/welcome/useNoBand";
 import { AuthLoading } from "@/components/Guard";
+import { ErrorBox, Select } from "@/components/ui";
+import { DEFAULT_TIME_ZONE, browserTimeZone, zoneOptions } from "@/lib/timezone";
 import { artistSlug, parseInstruments, slugForArtist } from "@/schema";
 
 /**
- * Name your band: one required answer (the name), one optional (what you play). Nothing exists until Start a band is
+ * Name your band: one required answer (the name), the time zone (this browser's by default) and one optional (what you play). Nothing exists until Start a band is
  * pressed; Back throws the form away (nothing is saved as a draft).
  */
 export function StartBandForm({ termsUrl }: { termsUrl: string }) {
@@ -22,6 +23,8 @@ export function StartBandForm({ termsUrl }: { termsUrl: string }) {
   const me = useNoBand(staying);
   const [name, setName] = useState("");
   const [play, setPlay] = useState("");
+  const [zone, setZone] = useState(DEFAULT_TIME_ZONE);
+  useEffect(() => setZone(browserTimeZone()), []); // the browser's own zone, once mounted (the server render doesn't know it)
   const [custom, setCustom] = useState<string | null>(null); // the slug once they pick their own
   const [changing, setChanging] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
@@ -46,7 +49,7 @@ export function StartBandForm({ termsUrl }: { termsUrl: string }) {
     setBusy(true);
     try {
       const instruments = parseInstruments(play);
-      const r = await signUpBand({ name: name.trim(), ...(custom !== null ? { slug: custom } : {}), ...(instruments.length ? { instruments } : {}) });
+      const r = await signUpBand({ name: name.trim(), ...(custom !== null ? { slug: custom } : {}), ...(instruments.length ? { instruments } : {}), timeZone: zone });
       staying.current = true;
       await refresh();
       router.replace(artistPath(r.slug, "/welcome"));
@@ -84,6 +87,11 @@ export function StartBandForm({ termsUrl }: { termsUrl: string }) {
               {errs.slug && <p className="err" role="alert" data-testid="band-slug-error">{errs.slug}</p>}
             </div>
           )}
+        </div>
+        <div className="grid gap-1">
+          <span className="lbl">Time zone</span>
+          <Select<string> value={zone} options={zoneOptions(zone)} onChange={setZone} label="Time zone" testid="band-time-zone" />
+          <p className="s">Where the band is. Today and show times use it; you can change it in Settings.</p>
         </div>
         <div className="grid gap-1">
           <label className="lbl" htmlFor="band-play">What do you play? <span className="font-normal">(optional)</span></label>

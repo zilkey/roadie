@@ -9,6 +9,7 @@ import { systemCtx, type Ctx, type PersonCtx } from "../ctx";
 import { assertClaimsFit, syncClaims } from "../session";
 import { seedDefaultTemplates } from "../checklistTemplates";
 import { ensureDefaultProject } from "./projects";
+import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
@@ -342,14 +343,14 @@ export async function freeSlugFor(w: Writer<Ctx | PersonCtx>, name: string) {
  * users doc. Inside the caller's write unit; the caller runs `syncClaims(uid)` afterwards when `joined`. Shared by
  * artists.create and the sign-up route (src/server/signUp.ts).
  */
-export async function createArtistFor(w: Writer<Ctx | PersonCtx>, uid: string, input: Record<string, unknown> & { name: string; slug?: string }) {
+export async function createArtistFor(w: Writer<Ctx | PersonCtx>, uid: string, input: Record<string, unknown> & { name: string; slug?: string; timeZone?: string }) {
   const me = await w.get("users", uid);
   // Their claims must still fit with one more artist (an auto-id is 20 characters), checked before anything is written.
   if (me && !me.deletedAt) assertClaimsFit({ ...me, artists: withRole(memberships(me), "x".repeat(20), "admin") });
   if (input.slug) await requireFreeSlug(w, input.slug);
   const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
   // The artist doc through the system view (no ctx has it yet), then its starting records through a Writer bound to it.
-  const r = await w.system(() => w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null })));
+  const r = await w.system(() => w.create("artists", withConfigIds({ ...input, slug: slugValue, timeZone: input.timeZone ?? DEFAULT_TIME_ZONE } as { configurations?: z.infer<typeof ConfigIn>[] | null })));
   const there = w.forArtist(r.id);
   await seedDefaultTemplates(there, r.id);
   await ensureDefaultProject(there, r.id); // the "General" project, so Money in / Money out can save before any other project exists

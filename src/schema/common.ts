@@ -6,6 +6,10 @@ export const id = z.string().min(1);
 /** Calendar date, YYYY-MM-DD */
 export const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 /** Clock time, 24h HH:MM */
+/** True for an IANA time zone name this runtime knows ("America/Denver"). */
+export const isTimeZone = (tz: string) => { try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; } };
+/** An IANA time zone name ("America/Denver"). */
+export const timeZoneName = z.string().refine(isTimeZone, "Not a time zone");
 export const timeStr = z.string().regex(/^\d{1,2}:\d{2}$/, "Use HH:MM (24h)");
 /** Integer cents */
 export const cents = z.number().int();

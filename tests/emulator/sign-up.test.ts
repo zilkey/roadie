@@ -67,6 +67,7 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   const [artist] = await db.list(SYS, "artists", (q) => q.where("slug", "==", "the-night-owls"));
   assert.equal(artist.name, "The Night Owls");
   assert.equal(artist.createdBy, p.uid);
+  assert.equal(artist.timeZone, "America/Denver", "no zone sent: the default");
   assert.deepEqual(user.artists, [{ artistId: artist.id, role: "admin", mcpAccess: false }]);
   assert.equal(user.musicianId, undefined);
   assert.equal((await db.list(SYS, "musicians")).length, 0);
@@ -140,4 +141,15 @@ test("artists.signUp: an AI-tools-only login and a removed person can't use it",
   await db.softDelete(importCtx(TEST_ARTIST), "users", gone.uid);
   assert.equal((await call(gone.token, { name: "Gone Band" })).status, 403);
   await assert.rejects(startSession(bearer(gone.token)), (e: { code: string }) => e.code === "not_invited");
+});
+
+test("artists.signUp: the artist gets the time zone the form sends; one that isn't a zone is refused on the field", async () => {
+  const p = await stranger();
+  const bad = await call(p.token, { name: "The Night Owls", timeZone: "Mars/Olympus" });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(bad.json.error.issues?.map((i) => i.path), ["timeZone"]);
+  const r = await call(p.token, { name: "The Night Owls", timeZone: "America/New_York" });
+  assert.equal(r.status, 200);
+  const [artist] = await db.list(SYS, "artists", (q) => q.where("slug", "==", "the-night-owls"));
+  assert.equal(artist.timeZone, "America/New_York");
 });

@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useArtist } from "@/lib/artist";
 import { artistPath } from "@/lib/routes";
 import { withScheme } from "@/lib/links";
+import { zoneOptions } from "@/lib/timezone";
 import { ARTIST_LINKS, DEFAULT_LIST_WORDING, SIGNAL_GROUP_PREFIX, artistSlug, normalizePaymentUrl, normalizeSignalGroupUrl, type Artist, type ArtistLinkKey } from "@/schema";
 
 type Links = Artist["links"];
@@ -192,6 +193,17 @@ function FansMerchCard({ features, payment, wording, onFeature, onPayment, onWor
   );
 }
 
+/** The artist's own time zone: every "today", day-of time, reminder and calendar event uses it (a venue with its own zone wins for its shows). Autosaved. */
+function TimeZoneCard({ zone, onChange }: { zone: string; onChange: (next: string) => void }) {
+  return (
+    <section className="card" data-testid="time-zone-card" aria-labelledby="time-zone-title">
+      <div><h2 id="time-zone-title" className="text-lg font-bold">Time zone</h2>
+        <p className="s">Where the band is. Today, show times and calendar events use it, unless a venue has its own time zone.</p></div>
+      <Select<string> value={zone} options={zoneOptions(zone)} onChange={onChange} label="Time zone" testid="artist-time-zone" {...(zone ? {} : { placeholder: "Pick a time zone" })} />
+    </section>
+  );
+}
+
 type Bit = NonNullable<Artist["bandsintown"]>;
 /**
  * Bandsintown: the artist ID (the number in your Bandsintown for Artists links) makes "Open Bandsintown" go straight to adding an
@@ -231,11 +243,12 @@ function ArtistEditor() {
   const [wording, setWording] = useState("");
   const [genres, setGenres] = useState<string[]>([]);
   const [bit, setBit] = useState<Bit>({});
-  const resetFrom = (a: Artist) => { setBit(a.bandsintown ?? {}); setLinks(a.links ?? {}); setGenres(a.genres ?? []); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
+  const [zone, setZone] = useState("");
+  const resetFrom = (a: Artist) => { setZone(a.timeZone ?? ""); setBit(a.bandsintown ?? {}); setLinks(a.links ?? {}); setGenres(a.genres ?? []); setSignal(a.signalGroupUrl ?? ""); setFeatures(a.features ?? {}); setPayment(a.paymentUrl ?? ""); setWording(a.listWording ?? ""); };
   const as = useAutosave({ command: "artists.update", id: artist?.id ?? "", rev: artist?.rev, scope: "general", title: artist?.name, onUseTheirs: () => artist && resetFrom(artist) });
 
   // Follow the live document (someone else's edit, an Undo, the ids the server gave) whenever nothing of ours is waiting to be saved.
-  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features, artist.genres, artist.bandsintown] : null);
+  const liveKey = JSON.stringify(artist ? [artist.links, artist.signalGroupUrl, artist.paymentUrl, artist.listWording, artist.features, artist.genres, artist.bandsintown, artist.timeZone] : null);
   useEffect(() => { if (artist && !as.isBusy()) resetFrom(artist); }, [liveKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!artist) return null;
@@ -264,15 +277,17 @@ function ArtistEditor() {
     if (artistId && !/^\d+$/.test(artistId)) return as.hold("the Bandsintown artist ID is a number");
     as.patch({ bandsintown: artistId || appId ? { ...(artistId ? { artistId } : {}), ...(appId ? { appId } : {}) } : null });
   }
+  function editZone(next: string) { setZone(next); if (next) as.patch({ timeZone: next }); }
   function editGenres(next: string[]) { setGenres(next); as.patch({ genres: next.length ? next : null }); }
   function editWording(next: string) { setWording(next); as.patch({ listWording: next.trim() || null }); }
   function editFeature(k: "fans" | "merch", on: boolean) { const next = { ...features, [k]: on }; setFeatures(next); as.patch({ features: next }); }
   return (
     <div className="grid gap-5" onBlur={() => void as.flush()}>
-      <PageTitle title="General Settings" sub="The band's name, web address, links and genres." actions={<SaveStatus {...as.statusProps} />} />
+      <PageTitle title="General Settings" sub="The band's name, web address, time zone, links and genres." actions={<SaveStatus {...as.statusProps} />} />
       <ErrorBox error={error} />
       <ArtistCard artist={artist} />
       <LinksCard links={links} onChange={editLinks} />
+      <TimeZoneCard zone={zone} onChange={editZone} />
       <GenresCard genres={genres} onChange={editGenres} />
       <BandChatCard url={signal} onChange={editSignal} />
       <BandsintownCard bit={bit} onChange={editBit} />

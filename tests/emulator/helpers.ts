@@ -30,8 +30,8 @@ export async function makeUser(email: string, role: "admin" | "member" | "ai", o
 }
 
 /** An artists doc (default id TEST_ARTIST) with a slug. */
-export async function makeArtist(name: string, slug: string, id = TEST_ARTIST) {
-  await db.create(importCtx(id), "artists", { name, slug, configurations: [], links: {}, driveFolderId: "" }, { id });
+export async function makeArtist(name: string, slug: string, id = TEST_ARTIST, timeZone = "America/Denver") {
+  await db.create(importCtx(id), "artists", { name, slug, timeZone, configurations: [], links: {}, driveFolderId: "" }, { id });
   return id;
 }
 

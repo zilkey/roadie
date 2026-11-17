@@ -37,6 +37,7 @@
     "migrate:posts-49": "tsx scripts/migrate-posts-49.ts",
     "migrate:driving": "tsx scripts/migrate-driving.ts",
     "migrate:tenancy": "tsx scripts/migrate-tenancy.ts",
+    "migrate:time-zones": "tsx scripts/migrate-time-zones.ts",
     "sync:claims": "tsx scripts/sync-claims.ts",
     "test:all": "tsx scripts/test-all.ts"
   },

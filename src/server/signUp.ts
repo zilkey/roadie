@@ -5,7 +5,7 @@ import { run } from "./db";
 import { AppError, invalid } from "./errors";
 import { createArtistFor, memberships, withRole } from "./commands/people";
 import { artistsFor, syncClaims } from "./session";
-import { InstrumentList, artistSlug } from "@/schema";
+import { InstrumentList, artistSlug, timeZoneName } from "@/schema";
 
 /** `artists.signUp`: what a brand-new person sends to start their first band. */
 export const SignUpInput = z.strictObject({
@@ -14,6 +14,8 @@ export const SignUpInput = z.strictObject({
   slug: artistSlug.optional(),
   /** What the creator plays. Non-empty makes them a Band Member too. */
   instruments: z.array(z.string()).optional(),
+  /** The artist's IANA time zone (the form sends the browser's). Missing = DEFAULT_TIME_ZONE. */
+  timeZone: timeZoneName.optional(),
 });
 
 /**
@@ -66,7 +68,7 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
       if (others.length) throw new AppError("duplicate", "That email is already a user", 409);
       if (!existing) await w.create("users", { email, name: displayName, artists: [] }, { id: uid });
       // The artist, its starting templates and this person's admin membership: the same steps as artists.create.
-      const made = await createArtistFor(w, uid, { name: input.name, slug: input.slug, configurations: [], links: {}, driveFolderId: "" });
+      const made = await createArtistFor(w, uid, { name: input.name, slug: input.slug, timeZone: input.timeZone, configurations: [], links: {}, driveFolderId: "" });
       // Then their musician record, in the new artist (tenancy phase 2: the artist first, then the musician).
       if (instruments?.success) {
         const m = await w.forArtist(made.id).create("musicians", { name: existing?.name ?? displayName, email, instruments: instruments.data, active: true, userId: uid });

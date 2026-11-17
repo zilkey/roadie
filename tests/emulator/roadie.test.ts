@@ -239,6 +239,23 @@ test("api: a new conversation becomes the one the panel opens, set by the chat r
   assert.equal((await dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null, at: -1 })).status, 400);
 });
 
+test("api: New chat and the first message's request landing at the same moment: the newer choice wins every time", async () => {
+  const admin = await makeUser("race@example.com", "admin", { name: "Rudy" });
+  const prefs = async () => ((await firestore().collection("users").doc(admin.uid).get()).data()!.prefs?.assistant ?? {}) as { threadId?: string; threadAt?: number };
+  for (let i = 0; i < 20; i++) {
+    const t = firestore().collection("assistantThreads").doc().id;
+    const base = 10_000 * (i + 1);
+    // New chat (older) and the new conversation's chat request (newer) at once, plus a width save: none may undo the newer choice.
+    await Promise.all([
+      dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { threadId: null, at: base }),
+      post(admin.token, { threadId: t, sentAt: base + 1, message: "hi", pageContext: ctx }).then(readSse),
+      dispatch("assistant.setPrefs", `Bearer ${admin.token}`, { width: 420 }),
+    ]);
+    assert.equal((await prefs()).threadId, t, `round ${i}`);
+    assert.equal((await prefs()).threadAt, base + 1);
+  }
+});
+
 test("command: assistant.setPrefs stores width (rail or pixels) and thread, members refused", async () => {
   const admin = await makeUser("a@example.com", "admin");
   const member = await makeUser("m@example.com", "member");

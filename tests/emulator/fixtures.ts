@@ -115,10 +115,10 @@ export interface SeededArtist {
  * their own). Shared directory records are made on first use (`seedShared`). Ids of keyed records include the artist id, so two
  * artists can be seeded side by side.
  */
-export async function seedArtist(artistId: string, shared?: Awaited<ReturnType<typeof seedShared>>): Promise<SeededArtist> {
+export async function seedArtist(artistId: string, shared?: Awaited<ReturnType<typeof seedShared>>, timeZone = "America/Denver"): Promise<SeededArtist> {
   const sh = shared ?? (await db.get(SYS, "venues", "fx-venue") ? { venueId: "fx-venue", actId: "fx-act", festivalId: "fx-festival", editionId: "fx-edition", promoterId: "fx-promoter", eventId: "fx-event" } : await seedShared());
   const boot: Ctx = { uid: "bootstrap", role: "admin", via: "import", runId: randomUUID(), artistId };
-  await db.create(boot, "artists", { name: `Artist ${artistId}`, slug: `artist-${artistId.toLowerCase()}`, configurations: [], links: {}, driveFolderId: "" }, { id: artistId });
+  await db.create(boot, "artists", { name: `Artist ${artistId}`, slug: `artist-${artistId.toLowerCase()}`, timeZone, configurations: [], links: {}, driveFolderId: "" }, { id: artistId });
   const admin = await makeUser(mail("admin", artistId), "admin", { artistId, name: `Admin ${artistId}` });
   const member = await makeUser(mail("member", artistId), "member", { artistId, name: `Member ${artistId}` });
   const ctx: Ctx = { uid: admin.uid, role: "admin", via: "app", runId: randomUUID(), artistId };

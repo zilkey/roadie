@@ -12,6 +12,7 @@ import { z } from "zod";
 import { collections, commonShape, computedFields, kindOf } from "@/schema";
 import { PARENTS, ownerOf } from "@/schema/owners";
 import { artistIdsOf, type Membership } from "@/schema/users";
+import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 
 export interface BackupRow { path: string; data: Record<string, unknown> }
 export type Dump = Record<string, BackupRow[]>;
@@ -200,6 +201,21 @@ export function stampDump(dump: Dump, artistId: string): number {
     }
     if (ownerOf(kind) !== "artist" || str(d.artistId)) continue;
     r.data = { ...d, artistId: resolve(r.path) ?? artistId };
+    changed++;
+  }
+  return changed;
+}
+
+/**
+ * Give an older backup's artists the time zone they had in practice (tenancy phase 8 made `artists.timeZone` required): one
+ * without a zone gets DEFAULT_TIME_ZONE (America/Denver). Returns how many changed. Run before validateDump, like stampDump.
+ */
+export function zoneDump(dump: Dump): number {
+  let changed = 0;
+  for (const r of dump.artists ?? []) {
+    const d = r.data as Record<string, unknown>;
+    if (!/^artists\/[^/]+$/.test(r.path) || (typeof d.timeZone === "string" && d.timeZone)) continue;
+    r.data = { ...d, timeZone: DEFAULT_TIME_ZONE };
     changed++;
   }
   return changed;

@@ -51,6 +51,7 @@ async function main() {
   const artist = await create("artists", {
     name: "Nora Quill Band",
     slug: slugForArtist("Nora Quill Band"),
+    timeZone: "America/Denver",
     configurations: [
       { id: "full-band", name: "Full band", billingName: "Nora Quill Band", musicianIds: [] },
       { id: "trio", name: "Trio", billingName: "Nora Quill Trio", musicianIds: [] },
@@ -349,7 +350,7 @@ async function seedOtherBand() {
   const otherId = firestore().collection("artists").doc().id;
   const ctx = importCtx(otherId, "seed");
   const artist = (await db.create(ctx, "artists", {
-    name: DEV_OTHER_BAND.artistName, slug: slugForArtist(DEV_OTHER_BAND.artistName),
+    name: DEV_OTHER_BAND.artistName, slug: slugForArtist(DEV_OTHER_BAND.artistName), timeZone: "America/New_York",
     configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [] }], links: {}, driveFolderId: "",
   }, { id: otherId })).id;
   const mid = (await db.create(ctx, "musicians", { name: p.name, instruments: p.instruments, active: true })).id; // no email: the first band's Drive sharing checks list musicians with an email

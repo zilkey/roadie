@@ -6,7 +6,7 @@ import { CommandError } from "./commands";
  * its own rather than a command (see src/server/signUp.ts). Returns the new band's slug; callers then `refresh()` the auth
  * context so the session knows about it. Throws CommandError (a taken slug is a 409 with issues [{path: "slug"}]).
  */
-export async function signUpBand(input: { name: string; slug?: string; instruments?: string[] }): Promise<{ slug: string }> {
+export async function signUpBand(input: { name: string; slug?: string; instruments?: string[]; timeZone?: string }): Promise<{ slug: string }> {
   const user = clientAuth().currentUser;
   if (!user) throw new CommandError("unauthenticated", "Not signed in", 401);
   let res: Response;

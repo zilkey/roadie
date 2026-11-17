@@ -9,6 +9,9 @@ async function setSignUp(api: APIRequestContext, open: boolean) {
   expect(res.ok()).toBe(true);
 }
 
+// The browser says New York: the form's time zone starts there, whatever machine runs this.
+test.use({ timezoneId: "America/New_York" });
+
 // The dev "stranger" (stranger@example.com) is a Google account on no band's list. This is the only spec that signs in as
 // them: starting a band changes who they are, so it all happens in one test.
 test("a stranger signs in, starts a band, and ends up its admin", async ({ page, request }) => {
@@ -45,6 +48,9 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page,
   await expect(page.getByTestId("band-slug-error")).toHaveText("Already taken");
   await page.getByTestId("band-slug").fill("the-night-owls");
   await page.getByTestId("band-play").fill("guitar, vocals");
+  // the time zone starts as the browser's; they pick Central
+  await expect(page.getByTestId("band-time-zone")).toHaveValue("America/New_York");
+  await page.getByTestId("band-time-zone").selectOption("America/Chicago");
   await page.getByTestId("create-band").click();
 
   // Ready, then the app
@@ -72,5 +78,8 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page,
   const row = page.getByTestId("person-row-stranger@example.com");
   await expect(row).toBeVisible();
   await expect(row.locator(".chip").first()).toHaveText("Admin");
+  // and the band's time zone is the one they picked
+  await page.goto("/artists/the-night-owls/admin/artist");
+  await expect(page.getByTestId("artist-time-zone")).toHaveValue("America/Chicago");
   await setSignUp(request, false);
 });

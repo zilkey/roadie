@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stampDump, validateRow, type Dump } from "@/server/backup";
+import { stampDump, validateRow, zoneDump, type Dump } from "@/server/backup";
 
 // Tenancy phase 4: `restore --artist` gives an older backup's rows their artist in memory (the phase-3 rules), so it validates
 // and restores into a working state.
@@ -32,4 +32,17 @@ test("records, sub-collections, history and memberships get their artist", () =>
   assert.deepEqual(at("users/u1").artists, [{ artistId: "A", role: "admin", musicianId: "m1" }]);
   assert.deepEqual(at("users/u1").artistIds, ["A"]);
   assert.deepEqual(validateRow({ path: "songs/g1", data: at("songs/g1") }), []);
+});
+
+test("an older backup's artist with no time zone restores as America/Denver; one with a zone keeps it", () => {
+  const dump: Dump = {
+    artists: [
+      { path: "artists/A", data: common("A", { name: "A", slug: "a", configurations: [], links: {}, driveFolderId: "" }) },
+      { path: "artists/B", data: common("B", { name: "B", slug: "b", configurations: [], links: {}, driveFolderId: "", timeZone: "America/New_York" }) },
+    ],
+  };
+  assert.equal(zoneDump(dump), 1);
+  assert.equal((dump.artists[0].data as { timeZone: string }).timeZone, "America/Denver");
+  assert.equal((dump.artists[1].data as { timeZone: string }).timeZone, "America/New_York");
+  assert.equal(zoneDump(dump), 0, "a second pass changes nothing");
 });

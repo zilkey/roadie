@@ -185,6 +185,26 @@ test("Genres on General Settings: added in lowercase, no duplicates, autosaved, 
   await expect(card.getByTestId("genres-empty")).toBeVisible();
 });
 
+test("Time zone on General Settings: Denver for the seeded band, a change is autosaved and survives a reload", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await expect(page).toHaveURL(/\/calendar$/);
+  await openArtist(page);
+  const zone = page.getByTestId("artist-time-zone");
+  try {
+    await expect(zone).toHaveValue("America/Denver");
+    await zone.selectOption("America/Chicago");
+    await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+    await page.reload();
+    await expect(zone).toHaveValue("America/Chicago");
+  } finally {
+    // Other specs in this shard read the band's clock as Denver.
+    await zone.selectOption("America/Denver");
+    await expect(page.getByTestId("save-status").first()).toHaveText("Saved");
+  }
+  await page.reload();
+  await expect(zone).toHaveValue("America/Denver");
+});
+
 test("Lineups: a remove made while the last edit is still saving survives a reload at once (the draft replays that save first)", async ({ page }) => {
   const stamp = String(Date.now() % 100000);
   const NAME = `Gone E2E ${stamp}`, ID = `gone-e2e-${stamp}`;

@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { firestore } from "@/server/admin";
-import { restoreDump, stampDump, validateDump, type Dump } from "@/server/backup";
+import { restoreDump, stampDump, validateDump, zoneDump, type Dump } from "@/server/backup";
 
 export function loadBackup(dir: string): Dump {
   const dump: Dump = {};
@@ -33,6 +33,8 @@ async function main() {
     if (!artist || artist.startsWith("--")) throw new Error("--artist needs an artist id");
     console.log(`Stamped ${stampDump(dump, artist)} rows with their artist (default ${artist}).`);
   }
+  const zoned = zoneDump(dump);
+  if (zoned) console.log(`Gave ${zoned} artist(s) with no time zone America/Denver.`);
   const errors = validateDump(dump);
   if (errors.length) {
     console.error(`${errors.length} document(s) failed validation, nothing written:\n` + errors.slice(0, 50).join("\n"));
