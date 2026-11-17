@@ -3,7 +3,6 @@ import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
-import { callerArtistId } from "../venues";
 import type { Ctx } from "../ctx";
 import { plotLink, newToken, saveToken, readToken, deleteToken } from "../stagePlotShare";
 import { hashToken } from "../availability";
@@ -30,8 +29,7 @@ const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringif
 
 async function loadPlot(w: Writer, ctx: Ctx, plotId: string): Promise<Doc> {
   const p = await w.get("stagePlots", plotId);
-  const artistId = ctx.artistId;
-  if (!p || p.deletedAt || (artistId && p.artistId && p.artistId !== artistId)) throw new AppError("not_found", `Stage plot ${plotId} not found`, 404);
+  if (!p || p.deletedAt) throw new AppError("not_found", `Stage plot ${plotId} not found`, 404);
   return p;
 }
 /** Save changed fields. `bump` raises version (inputs, mixes, bring/need, stage size only); nothing is written if nothing changed. */
@@ -60,8 +58,7 @@ function patchRow<T extends Record<string, unknown>>(row: T, patch: Record<strin
 }
 async function checkLineup(ctx: Ctx, configurationId: string | undefined) {
   if (!configurationId) return;
-  const artistId = await callerArtistId(ctx);
-  const artist = artistId ? await db.get("artists", artistId) : null;
+  const artist = await db.get(ctx, "artists", ctx.artistId);
   if (artist && !(artist.configurations ?? []).some((c: { id: string }) => c.id === configurationId))
     throw new AppError("invalid_input", `No lineup "${configurationId}" (see context.now artist.configurations)`, 400);
 }
@@ -98,12 +95,11 @@ export const stagePlotsCreate = defineCommand({
   input: z.strictObject({ name: z.string().min(1), configurationId: id.optional(), inputs: z.number().int().min(0).max(MAX_INPUTS).optional(), copyFrom: id.optional() }),
   async run(ctx, { name, configurationId, inputs, copyFrom }) {
     await checkLineup(ctx, configurationId);
-    const artistId = await callerArtistId(ctx);
     return run(ctx, async (w) => {
       const base = copyFrom
         ? cloneContent(await loadPlot(w, ctx, copyFrom))
         : { stage: { ...DEFAULT_STAGE }, ...setInputCount({ inputs: [] }, inputs ?? 8), items: [], monitors: [] };
-      const r = await w.create("stagePlots", { ...(artistId ? { artistId } : {}), name, ...(configurationId ? { configurationId } : {}), ...base, version: 1 });
+      const r = await w.create("stagePlots", { name, ...(configurationId ? { configurationId } : {}), ...base, version: 1 });
       return { id: r.id, version: 1, summary: summary(base as PlotShape).text };
     });
   },
@@ -124,7 +120,7 @@ export const stagePlotsCopy = defineCommand({
       const body = cloneContent(src, dropMusicianIds);
       const cfg = configurationId ?? src.configurationId;
       const r = await w.create("stagePlots", {
-        ...(src.artistId ? { artistId: src.artistId } : {}), name: name ?? `${src.name} copy`, ...(cfg ? { configurationId: cfg } : {}), ...body, version: 1,
+        name: name ?? `${src.name} copy`, ...(cfg ? { configurationId: cfg } : {}), ...body, version: 1,
       });
       return { id: r.id, version: 1, summary: summary(body as PlotShape).text };
     });
@@ -358,7 +354,7 @@ export const showsSetStagePlot = defineCommand({
   input: z.strictObject({ showId: id, stagePlotId: id.nullable() }),
   run: (ctx, { showId, stagePlotId }) => run(ctx, async (w) => {
     const show = await w.get("shows", showId);
-    if (!show || show.deletedAt || (ctx.artistId && show.artistId && show.artistId !== ctx.artistId)) throw new AppError("not_found", `Show ${showId} not found`, 404);
+    if (!show || show.deletedAt) throw new AppError("not_found", `Show ${showId} not found`, 404);
     if (stagePlotId) await loadPlot(w, ctx, stagePlotId);
     return w.update("shows", showId, { stagePlotId });
   }),
@@ -372,8 +368,7 @@ export const stagePlotsList = defineCommand({
   description: "List the band's stage plots: id, name, lineup (configurationId), version, stage size, whether the engineer link is on, and `summary` (counts plus text like \"11 inputs, 3 mixes, 3 power drops\"). Optionally only one lineup. Use it to find a plot by name or lineup (\"the duo\", \"the trio\"). \"How many inputs is the trio?\": list that lineup and answer from summary.inputs.",
   input: z.strictObject({ configurationId: id.optional() }),
   async run(ctx, { configurationId }) {
-    const artistId = await callerArtistId(ctx);
-    const all = await db.list("stagePlots", artistId ? (q) => q.where("artistId", "==", artistId) : undefined);
+    const all = await db.list(ctx, "stagePlots");
     const rows = all.filter((p) => !configurationId || p.configurationId === configurationId).sort((a, b) => String(a.name).localeCompare(String(b.name)));
     return {
       count: rows.length,
@@ -392,8 +387,8 @@ export const stagePlotsGet = defineCommand({
     "x/y are feet from the stage-right edge and the upstage edge. Use it to answer \"how many inputs is the trio?\" and to find a person's rows (musicianId) before editing.",
   input: idInput,
   async run(ctx, { id: pid }) {
-    const p = await db.get("stagePlots", pid);
-    if (!p || p.deletedAt || (ctx.artistId && p.artistId && p.artistId !== ctx.artistId)) throw new AppError("not_found", `Stage plot ${pid} not found`, 404);
+    const p = await db.get(ctx, "stagePlots", pid);
+    if (!p || p.deletedAt) throw new AppError("not_found", `Stage plot ${pid} not found`, 404);
     return { ...present(p), ...withText(p) };
   },
 });
@@ -407,10 +402,9 @@ export const stagePlotsStaleShows = defineCommand({
     "missingPlot = the picked plot was archived. Each row gives the show, why, and the plot to pick (suggestPlotId) with its current version.",
   input: z.strictObject({}),
   async run(ctx) {
-    const artistId = await callerArtistId(ctx);
     const [plots, shows] = await Promise.all([
-      db.list("stagePlots", artistId ? (q) => q.where("artistId", "==", artistId) : undefined),
-      db.list("shows", artistId ? (q) => q.where("artistId", "==", artistId) : undefined),
+      db.list(ctx, "stagePlots"),
+      db.list(ctx, "shows"),
     ]);
     const today = todayStr(ctx.now);
     const byId = new Map(plots.map((p) => [p.id, p]));
@@ -450,7 +444,7 @@ export const stagePlotsShareLink = defineCommand({
       if (kept) return { id: pid, on: true, alreadyOn: true, url: plotLink(pid, kept) };
     }
     const token = newToken();
-    await saveToken(pid, token);
+    await saveToken(ctx, pid, token);
     await w.update("stagePlots", pid, { share: { on: true, tokenHash: hashToken(token), at: (ctx.now ?? new Date()).toISOString() } });
     return { id: pid, on: true, alreadyOn: false, url: plotLink(pid, token) };
   }),
@@ -476,8 +470,8 @@ export const stagePlotsEngineerLink = defineCommand({
   description: "The engineer link for a plot, to copy: {on, url}. url is null when the link is off. Read only; admins turn it on and off with stagePlots.shareLink / shareOff.",
   input: idInput,
   async run(ctx, { id: pid }) {
-    const p = await db.get("stagePlots", pid);
-    if (!p || p.deletedAt || (ctx.artistId && p.artistId && p.artistId !== ctx.artistId)) throw new AppError("not_found", `Stage plot ${pid} not found`, 404);
+    const p = await db.get(ctx, "stagePlots", pid);
+    if (!p || p.deletedAt) throw new AppError("not_found", `Stage plot ${pid} not found`, 404);
     const token = p.share?.on ? await readToken(pid) : null;
     return { id: pid, on: !!token, url: token ? plotLink(pid, token) : null };
   },

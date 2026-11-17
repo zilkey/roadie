@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
-import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -15,14 +15,14 @@ async function world() {
   await makeArtist("Nora Quill Band", "nora-quill-band");
   const admin = await makeUser("a@example.com", "admin");
   const member = await makeUser("m@example.com", "member");
-  const v = await db.create(importCtx(), "venues", venue("The Bluebird"));
+  const v = await db.create(importCtx(TEST_ARTIST), "venues", venue("The Bluebird"));
   const call = (who: { token: string }, name: string, input: unknown) => dispatch(name, bearer(who.token), input, TEST_ARTIST);
   const show = async (date: string) => result(await call(admin, "shows.create", { venueId: v.id, date })).id;
   const field = async (kind: "Show" | "Song", label: string) => result<{ fieldId: string }>(await call(admin, `artists.add${kind}Field`, { id: TEST_ARTIST, label })).fieldId;
-  const artist = async () => (await db.get("artists", TEST_ARTIST))!;
+  const artist = async () => (await db.get(SYS, "artists", TEST_ARTIST))!;
   return { admin, member, call, show, field, artist };
 }
-const values = async (id: string) => (await db.get("shows", id))!.fields as { fieldId: string; value: string }[];
+const values = async (id: string) => (await db.get(SYS, "shows", id))!.fields as { fieldId: string; value: string }[];
 
 test("show fields: add, rename and reorder are admin-only and kept apart from song fields", async () => {
   const { admin, member, call, field, artist } = await world();
@@ -74,7 +74,7 @@ test("artists.removeShowField strips the field from every show, keeps the others
   await call(admin, "shows.setFields", { id: a, fields: [{ fieldId: parking, value: "Lot B" }, { fieldId: hotel, value: "Marriott" }] });
   await call(admin, "shows.setFields", { id: b, fields: [{ fieldId: parking, value: "Street" }] });
   await call(admin, "shows.setFields", { id: c, fields: [{ fieldId: hotel, value: "Motel 6" }] });
-  const song = await db.create(importCtx(), "songs", { title: "Angel", status: "active", fields: [{ fieldId: capo, value: "3" }] });
+  const song = await db.create(importCtx(TEST_ARTIST), "songs", { title: "Angel", status: "active", fields: [{ fieldId: capo, value: "3" }] });
 
   const r = await call(admin, "artists.removeShowField", { id: TEST_ARTIST, fieldId: parking });
   assert.equal(r.status, 200);
@@ -83,7 +83,7 @@ test("artists.removeShowField strips the field from every show, keeps the others
   assert.deepEqual(await values(b), []);
   assert.deepEqual(await values(c), [{ fieldId: hotel, value: "Motel 6" }]);
   assert.deepEqual(((await artist()).showFields as { id: string }[]).map((f) => f.id), [hotel]);
-  assert.deepEqual((await db.get("songs", song.id))!.fields, [{ fieldId: capo, value: "3" }]);
+  assert.deepEqual((await db.get(SYS, "songs", song.id))!.fields, [{ fieldId: capo, value: "3" }]);
   // the removed field can no longer be set
   assert.equal((await call(admin, "shows.setFields", { id: a, fields: [{ fieldId: parking, value: "x" }] })).status, 400);
   assert.equal((await call(admin, "artists.removeShowField", { id: TEST_ARTIST, fieldId: parking })).status, 404);

@@ -83,22 +83,16 @@ export async function archiveNote(w: Writer, venue: Doc, artistId: string) {
   await w.softDelete("venueNotes", id);
 }
 
-/** The artist whose notes this write unit is for: ctx.artistId, else the one artist there is. No artists doc is needed when ctx names one. */
-export async function tryArtistId(w: Writer): Promise<string | undefined> {
-  if (w.ctx.artistId) return w.ctx.artistId;
-  const all = await w.query("artists", (q) => q.limit(2));
-  return all.length === 1 ? all[0].id : undefined;
+/** The artist whose notes this write unit is for: always ctx.artistId. Async so existing `await`s keep working. */
+export async function tryArtistId(w: Writer): Promise<string> {
+  return w.ctx.artistId;
 }
-export async function artistIdOf(w: Writer): Promise<string> {
-  const id = await tryArtistId(w);
-  if (!id) throw new AppError("not_found", "Say which artist this is for", 404);
-  return id;
-}
+export const artistIdOf = tryArtistId;
 
 /** One of this band's contacts (contacts belong to one artist); another band's is "not found". */
 export async function requireContact(w: Writer, id: string, label = "Contact") {
   const c = await w.get("contacts", id);
-  if (!c || c.deletedAt || c.artistId !== (await artistIdOf(w))) throw new AppError("not_found", `${label} not found`, 404);
+  if (!c || c.deletedAt) throw new AppError("not_found", `${label} not found`, 404);
   return c;
 }
 
@@ -112,16 +106,13 @@ export function refusePrivate(ctx: Ctx, keys: string[]) {
 
 // ---------- outside a write unit (reads) ----------
 
-/** The artist a call is for: ctx.artistId, else the one artist there is (scripts). */
-export async function callerArtistId(ctx: Ctx): Promise<string | undefined> {
-  if (ctx.artistId) return ctx.artistId;
-  const all = await db.list("artists");
-  return all.length === 1 ? all[0].id : undefined;
+/** The artist a call is for: ctx.artistId. Async so existing `await`s keep working. */
+export async function callerArtistId(ctx: Ctx): Promise<string> {
+  return ctx.artistId;
 }
 
 /** The caller's band notes by venue id, archived ones included (`deletedAt` set = the band hid that room). */
-export async function notesByVenue(artistId: string | undefined): Promise<Map<string, Doc>> {
-  if (!artistId) return new Map();
-  const rows = await db.list("venueNotes", (q) => q.where("artistId", "==", artistId), { includeDeleted: true });
+export async function notesByVenue(ctx: Ctx): Promise<Map<string, Doc>> {
+  const rows = await db.list(ctx, "venueNotes", undefined, { includeDeleted: true });
   return new Map(rows.map((n) => [n.venueId as string, n]));
 }

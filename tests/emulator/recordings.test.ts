@@ -6,12 +6,12 @@ import path from "node:path";
 import { startAll } from "../../fakes/run-all";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
-import { newRunId, type Ctx } from "@/server/ctx";
+import { newRunId, importCtx, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { adoptRecording, ensureRehearsalFolder, newRecordings, recordingName, uploadRecording } from "@/server/recordings";
 import { authenticateShortcut, createShortcutToken } from "@/server/shortcut";
 import { recentRehearsals, rehearsalSongs, shortcutNow } from "@/server/shortcutLists";
-import { resetEmulators, makeUser } from "./helpers";
+import { resetEmulators, makeUser, SYS, TEST_ARTIST } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -38,15 +38,16 @@ beforeEach(async () => {
   await resetEmulators();
   await fetch(process.env.DRIVE_BASE_URL + "/__reset", { method: "POST" });
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  for (const k of ["nora", "rudy", "hugo"]) await db.create({ uid: u.uid, role: "admin", via: "app", runId: newRunId() }, "musicians", { name: k, instruments: [], active: true, email: `${k}@example.com` });
-  artistId = (await db.create({ uid: u.uid, role: "admin", via: "app", runId: newRunId() }, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", rehearsalFolderId: RECORDINGS, links: {}, configurations: [] })).id;
+  const boot = importCtx(TEST_ARTIST, u.uid);
+  artistId = (await db.create(boot, "artists", { name: "Band", slug: "band", driveFolderId: "fake-band-folder", rehearsalFolderId: RECORDINGS, links: {}, configurations: [] }, { id: TEST_ARTIST })).id;
   // The test user belongs to TEST_ARTIST; the shortcut tests need the membership to be the artist the token names.
-  await db.update({ uid: u.uid, role: "admin", via: "app", runId: newRunId() }, "users", u.uid, { artists: [{ artistId, role: "admin" }] });
+  await db.update(boot, "users", u.uid, { artists: [{ artistId, role: "admin" }] });
+  for (const k of ["nora", "rudy", "hugo"]) await db.create(importCtx(artistId, u.uid), "musicians", { name: k, instruments: [], active: true, email: `${k}@example.com` });
   ctx = { uid: u.uid, role: "admin", artistId, via: "app", runId: newRunId() };
 });
 
 test("Drive rename keeps the id and place; recordingName follows the upload convention", async () => {
-  const drive = driveClient();
+  const drive = driveClient({ artistId });
   const f = await drive.rename("fake-reh-1", "Glass Coast - 2026-10-18 Rehearsal.wav");
   assert.deepEqual([f.id, f.name, f.parents], ["fake-reh-1", "Glass Coast - 2026-10-18 Rehearsal.wav", [RECORDINGS]]);
   assert.equal(recordingName("Big River", "2026-10-27", "New Recording 12.m4a"), "Big River - 2026-10-27 Rehearsal.m4a");
@@ -57,7 +58,7 @@ test("rehearsals.folder makes the rehearsal's folder once, shared with the band;
   const reh = await cmd("rehearsals.create", { date: "2026-10-27" });
   const f = await cmd("rehearsals.folder", { id: reh.id });
   assert.equal(f.name, "2026-10-27 Rehearsal");
-  const made = await driveClient().get(f.id);
+  const made = await driveClient({ artistId }).get(f.id);
   assert.deepEqual(made.parents, [RECORDINGS]);
   for (const e of ["nora", "rudy", "hugo"]) assert.ok(made.permissions.some((p) => p.email === `${e}@example.com`) || made.ownerEmail === `${e}@example.com`, e);
   assert.equal((await ensureRehearsalFolder(ctx, reh.id)).id, f.id, "made once, then reused");
@@ -70,15 +71,15 @@ test("with no recordings folder chosen, the first one needed is made in the band
   const reh = await cmd("rehearsals.create", { date: "2026-10-27", songs: [{ songId: song.id }] });
   assert.deepEqual(await newRecordings(ctx, reh.id), { folder: null, files: [] }, "looking doesn't make one");
   const r = await uploadRecording(ctx, reh.id, song.id, new File(["x"], "New Recording 3.m4a", { type: "audio/mp4" }));
-  const made = (await db.get("artists", artistId))?.rehearsalFolderId as string;
-  const folder = await driveClient().get(made);
+  const made = (await db.get(SYS, "artists", artistId))?.rehearsalFolderId as string;
+  const folder = await driveClient({ artistId }).get(made);
   assert.deepEqual([folder.name, folder.parents], ["Rehearsal Recordings", ["fake-band-folder"]]);
   for (const e of ["nora", "hugo"]) assert.ok(folder.permissions.some((p) => p.email === `${e}@example.com`), `shared with ${e}`);
-  assert.deepEqual((await driveClient().get(r.folder.id)).parents, [made], "the rehearsal's folder is inside it");
+  assert.deepEqual((await driveClient({ artistId }).get(r.folder.id)).parents, [made], "the rehearsal's folder is inside it");
   // chosen folder cleared again: the one already in the band folder is found, not a second one made
   await db.update(ctx, "artists", artistId, { rehearsalFolderId: null });
   await cmd("rehearsals.folder", { id: reh.id });
-  assert.equal((await db.get("artists", artistId))?.rehearsalFolderId, made);
+  assert.equal((await db.get(SYS, "artists", artistId))?.rehearsalFolderId, made);
   await assert.rejects(cmd("rehearsals.folder", { id: "nope" }), { code: "not_found" });
 });
 
@@ -101,11 +102,11 @@ test("rehearsals.newRecordings lists audio and video dropped into the folder tha
 
   const a = await cmd("rehearsals.adoptRecording", { id: reh.id, songId: song.id, driveFileId: memo.id });
   assert.equal(a.name, "Big River - 2026-10-27 Rehearsal.m4a");
-  const inDrive = await driveClient().get(memo.id);
+  const inDrive = await driveClient({ artistId }).get(memo.id);
   assert.equal(inDrive.name, "Big River - 2026-10-27 Rehearsal.m4a");
   assert.deepEqual(inDrive.parents, [folder.id]);
   for (const e of ["nora", "rudy"]) assert.ok(inDrive.permissions.some((p) => p.email === `${e}@example.com`), `shared with ${e}`);
-  const [doc] = await db.list("files", (q) => q.where("driveFileId", "==", memo.id));
+  const [doc] = await db.list(SYS, "files", (q) => q.where("driveFileId", "==", memo.id));
   assert.deepEqual([doc.songId, doc.rehearsalId, doc.kind, doc.title], [song.id, reh.id, "rehearsal", "Big River - 2026-10-27 Rehearsal.m4a"]);
   assert.deepEqual((await cmd("rehearsals.newRecordings", { id: reh.id })).files.map((f: any) => f.name), ["IMG_0421.mov"], "adopted ones drop off the list");
 
@@ -121,7 +122,7 @@ test("uploadRecording puts the file in the rehearsal's folder under the song's n
   const r = await uploadRecording(ctx, reh.id, song.id, new File(["x"], "New Recording 3.m4a", { type: "audio/mp4" }));
   assert.equal(r.folder.name, "2026-10-27 Rehearsal");
   assert.equal(r.name, "Big River - 2026-10-27 Rehearsal.m4a");
-  const [doc] = await db.list("files", (q) => q.where("driveFileId", "==", r.driveFileId));
+  const [doc] = await db.list(SYS, "files", (q) => q.where("driveFileId", "==", r.driveFileId));
   assert.deepEqual([doc.songId, doc.rehearsalId], [song.id, reh.id]);
   assert.deepEqual((await newRecordings(ctx, reh.id)).files, [], "an upload isn't 'new'");
 });
@@ -134,7 +135,7 @@ test("uploadRecording of several songs (a run in one memo) names the file for th
   assert.equal(r.name, "Low Light, Big River - 2026-10-27 Rehearsal.m4a");
   assert.deepEqual([r.ok, r.message], [true, "Uploaded Low Light, Big River - 2026-10-27 Rehearsal.m4a to 2026-10-27 Rehearsal"], "what the Shortcut's notification shows");
   assert.equal(r.ids.length, 2, "one files doc per song, duplicates dropped");
-  const docs = await db.list("files", (q) => q.where("driveFileId", "==", r.driveFileId));
+  const docs = await db.list(SYS, "files", (q) => q.where("driveFileId", "==", r.driveFileId));
   assert.deepEqual(docs.map((d) => d.songId).sort(), [a.id, b.id].sort());
   assert.ok(docs.every((d) => d.rehearsalId === reh.id && d.title === r.name));
   await assert.rejects(uploadRecording(ctx, reh.id, [], new File(["x"], "m.m4a")), { code: "invalid_input" });
@@ -150,7 +151,7 @@ test("shortcut tokens: made once per admin per artist, hashed, replaced by the n
   const first = await cmd("shortcut.createToken", {});
   assert.match(first.newToken, /^rsk_[A-Za-z0-9_-]{40,}$/);
   assert.ok(first.token.createdAt, "the status comes back with it");
-  assert.equal(JSON.stringify(await db.list("shortcutTokens")).includes(first.newToken), false, "the raw token is never stored");
+  assert.equal(JSON.stringify(await db.list(SYS, "shortcutTokens")).includes(first.newToken), false, "the raw token is never stored");
   const who = await authenticateShortcut(first.newToken);
   assert.deepEqual([who.uid, who.role, who.artistId, who.via], [ctx.uid, "admin", artistId, "shortcut"]);
   s = await cmd("shortcut.status", {});
@@ -161,7 +162,7 @@ test("shortcut tokens: made once per admin per artist, hashed, replaced by the n
   assert.notEqual(second.newToken, first.newToken);
   await assert.rejects(authenticateShortcut(first.newToken), (e: any) => e.status === 401 && /replaced or revoked/.test(e.message));
   await authenticateShortcut(second.newToken);
-  assert.equal((await db.list("shortcutTokens")).filter((t) => !t.revokedAt).length, 1, "one live token");
+  assert.equal((await db.list(SYS, "shortcutTokens")).filter((t) => !t.revokedAt).length, 1, "one live token");
 
   assert.equal((await cmd("shortcut.revokeToken", {})).revoked, 1);
   await assert.rejects(authenticateShortcut(second.newToken), (e: any) => e.status === 401);

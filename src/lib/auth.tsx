@@ -4,6 +4,8 @@ import { ArtistContext } from "./artist";
 import { GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signInWithPopup, signOut as fbSignOut, type User } from "firebase/auth";
 import { clientAuth } from "./firebase-client";
 
+/** Another artist asking you to join it (tenancy plan Q2-A): you join only when you accept. From /api/session. */
+export interface PendingInvite { id: string; artistId: string; artistName: string; role: "admin" | "member"; invitedBy: string }
 /** One artist you can open, and your role there (from /api/session). */
 export interface ArtistAccess { artistId: string; slug: string; name: string; role: "admin" | "member" }
 export interface Profile {
@@ -14,12 +16,14 @@ export interface Profile {
   platformAdmin?: boolean;
   /** Asked to edit shared records and still waiting. */
   sharedEditRequested?: boolean;
+  /** Other artists asking you to join (the artist picker shows Join and Decline). */
+  invites?: PendingInvite[];
 }
 type State =
   | { status: "loading" }
   | { status: "signedOut"; error?: string }
   /** Signed in with a verified Google account that is on no band's list yet: they can start a band. Stays signed in to Firebase. */
-  | { status: "noBand"; user: User; email: string; name: string }
+  | { status: "noBand"; user: User; email: string; name: string; invites?: PendingInvite[] }
   /** Turned away (an AI-tools-only login, or a removed person): signed out of Firebase. */
   | { status: "notInvited"; email?: string }
   | { status: "ready"; user: User; profile: Profile }
@@ -55,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (refused(res.status)) throw new Error(json.error?.message ?? "Sign-in failed");
     if (!res.ok) throw new Unreachable();
     try { await user.getIdToken(true); } catch { throw new Unreachable(); } // pick up the new custom claims
-    if (json.status === "noBand") return { status: "noBand", user, email: json.email ?? user.email ?? "", name: json.name ?? "" };
+    if (json.status === "noBand") return { status: "noBand", user, email: json.email ?? user.email ?? "", name: json.name ?? "", invites: json.invites ?? [] };
     return { status: "ready", user, profile: json as Profile };
   }, []);
 

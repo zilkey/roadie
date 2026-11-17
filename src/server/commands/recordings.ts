@@ -11,10 +11,7 @@ import { adoptRecording, ensureRehearsalFolder, newRecordings } from "../recordi
 import { createShortcutToken, liveShortcutToken, revokeShortcutTokens } from "../shortcut";
 import { appUrl } from "@/lib/app-url";
 
-const artistOf = (ctx: Ctx) => {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 
 export const rehearsalsFolder = defineCommand({
   name: "rehearsals.folder", roles: ["admin", "mcp"],
@@ -39,7 +36,7 @@ export const rehearsalsAdoptRecording = defineCommand({
 
 async function shortcutStatus(ctx: Ctx) {
   const artistId = artistOf(ctx);
-  const [artist, token] = await Promise.all([db.get("artists", artistId), liveShortcutToken(ctx)]);
+  const [artist, token] = await Promise.all([db.get(ctx, "artists", artistId), liveShortcutToken(ctx)]);
   return {
     installUrl: (artist?.shortcutUrl as string | undefined) ?? null,
     token: token ? { createdAt: token.createdAt.toDate().toISOString(), lastUsedAt: token.lastUsedAt ? token.lastUsedAt.toDate().toISOString() : null } : null,

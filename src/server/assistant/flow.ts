@@ -18,7 +18,7 @@ export const ChatFlowInput = z.object({
   pageContext: z.object({ route: z.string(), recordKind: z.string().optional(), recordId: z.string().optional(), tab: z.string().optional() }),
   /** Who is talking and which conversation and message this is. Built by the server (chat.ts), never by the browser. */
   session: z.object({
-    uid: z.string(), role: z.enum(["admin", "member", "mcp"]), artistId: z.string().optional(), musicianId: z.string().optional(), name: z.string(),
+    uid: z.string(), role: z.enum(["admin", "member", "mcp"]), artistId: z.string(), musicianId: z.string().optional(), name: z.string(),
     threadId: z.string(), runId: z.string(), replyId: z.string(), voice: z.boolean().optional(),
   }),
 });
@@ -256,7 +256,7 @@ export function getChatFlow() {
           sendChunk({ type: "text", delta: text });
         }
         // Money went on a show that has no crowd or stars yet: ask, once per conversation (not after a spoken yes / no question).
-        try { const ask = cards.length && !spoken.length ? await stillMissing(cards, text, input.history) : undefined; if (ask) add(ask); } catch (e) { console.error(e); }
+        try { const ask = cards.length && !spoken.length ? await stillMissing(makeCtx(s), cards, text, input.history) : undefined; if (ask) add(ask); } catch (e) { console.error(e); }
         return { text: text.trim(), actions, trace };
       },
     );

@@ -19,8 +19,8 @@ export interface FolderInfo { id: string; name: string; url: string }
 const info = (f: DriveFile): FolderInfo => ({ id: f.id, name: f.name, url: f.webViewLink });
 const id1 = z.string().min(1);
 
-async function liveShow(id: string): Promise<Doc> {
-  const show = await db.get("shows", id);
+async function liveShow(ctx: Ctx, id: string): Promise<Doc> {
+  const show = await db.get(ctx, "shows", id);
   if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
   return show;
 }
@@ -39,14 +39,14 @@ export const showFolderName = (show: { date: string; venue?: { name: string }; k
  * remembered on the show: where posters land. Needs the Shows folder (Settings > Google).
  */
 export async function ensureShowFolder(ctx: Ctx, showId: string): Promise<FolderInfo> {
-  const show = await liveShow(showId);
+  const show = await liveShow(ctx, showId);
   const drive = driveClient({ artistId: ctx.artistId });
   if (show.driveFolderId) {
     try { return info(await drive.get(show.driveFolderId as string)); } catch { /* gone from Drive: make it again */ }
   }
   const parent = await showsFolderId(ctx.artistId);
   if (!parent) throw new AppError("no_shows_folder", NO_SHOWS_FOLDER, 400);
-  const { folder } = await findOrMakeFolder(drive, parent, showFolderName(show as never), { emails: (await bandmates()).map((m) => m.email) });
+  const { folder } = await findOrMakeFolder(drive, parent, showFolderName(show as never), { emails: (await bandmates(ctx)).map((m) => m.email) });
   await db.update(ctx, "shows", showId, { driveFolderId: folder.id, driveFolderName: folder.name });
   return info(folder);
 }
@@ -59,7 +59,7 @@ export const showsFolder = defineCommand({
 });
 
 /** The folders a poster counts as "in the band folder" under: the band's, the Shows folder and the show's own. */
-async function showFolders(artistId: string | undefined, show: Doc) {
+async function showFolders(artistId: string, show: Doc) {
   const [{ all }, shows] = await Promise.all([bandFolders(artistId), showsFolderId(artistId)]);
   return [...all, ...(shows ? [shows] : []), ...(show.driveFolderId ? [show.driveFolderId as string] : [])];
 }
@@ -69,8 +69,8 @@ export const showsPostersAttach = defineCommand({
   description: "Attach Drive files (driveFileId, see drive.search) to a show as its posters. A poster already on the show is skipped. Returns { ids, skipped }.",
   input: z.strictObject({ showId: id1, files: z.array(z.strictObject({ driveFileId: id1, title: z.string().optional() })).min(1) }),
   async run(ctx, i) {
-    const show = await liveShow(i.showId);
-    const [mates, folders] = await Promise.all([bandmates(), showFolders(ctx.artistId, show)]);
+    const show = await liveShow(ctx, i.showId);
+    const [mates, folders] = await Promise.all([bandmates(ctx), showFolders(ctx.artistId, show)]);
     const drive = driveClient({ artistId: ctx.artistId });
     const docs: Record<string, unknown>[] = [];
     for (const a of i.files) {

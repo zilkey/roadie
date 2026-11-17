@@ -22,6 +22,7 @@ type Row = Record<string, unknown>;
  * to spell a word that sounds like one of them as listed. A failed read only costs the bias, never the transcript.
  */
 async function namesFor(artistId: string | undefined, uid: string): Promise<string[]> {
+  if (!artistId) return [];
   const s: Session = { uid, role: "admin", name: "Roadie", artistId, threadId: "voice", runId: newRunId(), replyId: "voice", model: modelLabel() };
   const ctx = makeCtx(s);
   const read = async (kind: string, key: string): Promise<string[]> => {

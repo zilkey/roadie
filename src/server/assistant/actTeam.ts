@@ -14,6 +14,7 @@
  * - Last, dedupeTeam: each address on one person only, an inbox folded into the person it belongs to, and name variants merged.
  * Nothing is saved: the card lists what was found and each person has an Add button (the band's own contacts, linked to the act).
  */
+import type { Ctx } from "../ctx";
 import { z as gz } from "genkit";
 import { db } from "../db";
 import { AppError } from "../errors";
@@ -373,8 +374,8 @@ export const FAKE_TEAM = {
 };
 
 /** Look for the act's team. Throws not_found for a missing act; a web that can't be reached comes back as nothing found. */
-export async function findActTeam(id: string): Promise<TeamResult> {
-  const act = await db.get("acts", id) as (Record<string, unknown> & { name: string; links?: Partial<Record<ArtistLinkKey, string>> }) | null;
+export async function findActTeam(ctx: Ctx, id: string): Promise<TeamResult> {
+  const act = await db.get(ctx, "acts", id) as (Record<string, unknown> & { name: string; links?: Partial<Record<ArtistLinkKey, string>> }) | null;
   if (!act || act.deletedAt) throw new AppError("not_found", "No act with that id", 404);
   if (modelMode() === "fake") {
     if (!/fountain/i.test(act.name)) return { id, name: act.name, people: [], read: [], searched: true };

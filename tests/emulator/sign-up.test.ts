@@ -7,7 +7,7 @@ import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { startSession } from "@/server/session";
-import { resetEmulators, makeUser, makeArtist, idToken, readySession } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, idToken, readySession, SYS, TEST_ARTIST } from "./helpers";
 
 /** Sign-up is closed unless platform/config says otherwise (scripts/platform-config.ts). Most tests here open it. */
 const setSignUp = (open: boolean) => firestore().doc("platform/config").set({ signUpOpen: open });
@@ -33,8 +33,8 @@ test("artists.signUp: closed by default (no platform/config) and when signUpOpen
   }
   // checked before the token, so even an anonymous caller learns only that
   assert.equal((await call(null, { name: "X" })).json.error.code, "invite_only");
-  assert.equal(await db.get("users", p.uid), null);
-  assert.equal((await db.list("artists")).length, 0);
+  assert.equal(await db.get(SYS, "users", p.uid), null);
+  assert.equal((await db.list(SYS, "artists")).length, 0);
   // opening it again needs no deploy
   await setSignUp(true);
   assert.equal((await call(p.token, { name: "The Night Owls" })).status, 200);
@@ -61,22 +61,22 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   const r = await call(p.token, { name: "The Night Owls" });
   assert.equal(r.status, 200);
   assert.deepEqual(r.json, { slug: "the-night-owls" });
-  const user = (await db.get("users", p.uid))!;
+  const user = (await db.get(SYS, "users", p.uid))!;
   assert.equal(user.email, "pat@example.com");
   assert.equal(user.name, "Pat Stranger");
-  const [artist] = await db.list("artists", (q) => q.where("slug", "==", "the-night-owls"));
+  const [artist] = await db.list(SYS, "artists", (q) => q.where("slug", "==", "the-night-owls"));
   assert.equal(artist.name, "The Night Owls");
   assert.equal(artist.createdBy, p.uid);
   assert.deepEqual(user.artists, [{ artistId: artist.id, role: "admin", mcpAccess: false }]);
   assert.equal(user.musicianId, undefined);
-  assert.equal((await db.list("musicians")).length, 0);
-  assert.deepEqual((await db.list("checklistTemplates", (q) => q.where("artistId", "==", artist.id))).map((t) => t.name).sort(), ["Follow Up", "Promo"]);
+  assert.equal((await db.list(SYS, "musicians")).length, 0);
+  assert.deepEqual((await db.list(SYS, "checklistTemplates", (q) => q.where("artistId", "==", artist.id))).map((t) => t.name).sort(), ["Follow Up", "Promo"]);
   // and the General project, so Money in / Money out can save before any other project exists
-  assert.deepEqual((await db.list("projects", (q) => q.where("artistId", "==", artist.id))).map((t) => [t.name, t.kind, t.isDefault, t.status]), [["General", "band", true, "open"]]);
+  assert.deepEqual((await db.list(SYS, "projects", (q) => q.where("artistId", "==", artist.id))).map((t) => [t.name, t.kind, t.isDefault, t.status]), [["General", "band", true, "open"]]);
   assert.deepEqual((await adminAuth().getUser(p.uid)).customClaims, { artists: { [artist.id]: "admin" }, adminOf: [artist.id], musicians: {} });
   // History records it like any other write
-  assert.equal((await db.history("artists", artist.id)).length, 1);
-  assert.equal((await db.history("users", p.uid))[0].via, "app");
+  assert.equal((await db.history(SYS, "artists", artist.id)).length, 1);
+  assert.equal((await db.history(SYS, "users", p.uid))[0].via, "app");
   // and the next sign-in opens the band
   const s = await readySession(bearer(await idToken(p.uid)));
   assert.deepEqual(s.artists, [{ artistId: artist.id, slug: "the-night-owls", name: "The Night Owls", role: "admin" }]);
@@ -85,10 +85,10 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
 test("artists.signUp: instruments make the creator a Band Member linked to their login", async () => {
   const p = await stranger();
   assert.equal((await call(p.token, { name: "The Night Owls", instruments: [" guitar ", "", "vocals"] })).status, 200);
-  const user = (await db.get("users", p.uid))!;
-  const m = (await db.get("musicians", user.musicianId))!;
+  const user = (await db.get(SYS, "users", p.uid))!;
+  const m = (await db.get(SYS, "musicians", user.artists[0].musicianId))!;
   assert.deepEqual([m.name, m.email, m.instruments, m.active, m.userId], ["Pat Stranger", "pat@example.com", ["guitar", "vocals"], true, p.uid]);
-  assert.equal((await adminAuth().getUser(p.uid)).customClaims!.musicianId, user.musicianId);
+  assert.equal(user.musicianId, undefined); // the link is on the membership
   // The artist first, then the musician in it (tenancy phase 2); the membership carries the link.
   assert.equal(m.artistId, user.artists[0].artistId);
   assert.deepEqual(user.artists, [{ artistId: m.artistId, role: "admin", mcpAccess: false, musicianId: m.id }]);
@@ -101,12 +101,12 @@ test("artists.signUp: refuses someone who already belongs to a band", async () =
   const r = await call(member.token, { name: "Another Band" });
   assert.equal(r.status, 409);
   assert.equal(r.json.error.code, "already_member");
-  assert.equal((await db.list("artists")).length, 1);
+  assert.equal((await db.list(SYS, "artists")).length, 1);
   // not even after a first sign-up
   const p = await stranger();
   assert.equal((await call(p.token, { name: "One" })).status, 200);
   assert.equal((await call(p.token, { name: "Two" })).status, 409);
-  assert.equal((await db.list("artists")).length, 2);
+  assert.equal((await db.list(SYS, "artists")).length, 2);
 });
 
 test("artists.signUp: a taken name gets -2; a chosen slug that is taken is a 409 on the slug", async () => {
@@ -119,7 +119,7 @@ test("artists.signUp: a taken name gets -2; a chosen slug that is taken is a 409
   assert.equal(taken.status, 409);
   assert.equal(taken.json.error.code, "slug_taken");
   assert.deepEqual(taken.json.error.issues, [{ path: "slug", message: "Already taken" }]);
-  assert.equal((await db.get("users", c.uid)), null); // the failed attempt wrote nothing
+  assert.equal((await db.get(SYS, "users", c.uid)), null); // the failed attempt wrote nothing
   assert.equal((await call(c.token, { name: "Other", slug: "Not Valid" })).status, 400);
   assert.equal((await call(c.token, { name: "  " })).status, 400);
   assert.equal((await call(c.token, { name: "Other", slug: "my-own" })).json.slug, "my-own");
@@ -137,7 +137,7 @@ test("artists.signUp: an AI-tools-only login and a removed person can't use it",
   const bot = await makeUser("bot@example.com", "ai");
   assert.equal((await call(bot.token, { name: "Bot Band" })).status, 409);
   const gone = await makeUser("gone@example.com", "member");
-  await db.softDelete(importCtx(), "users", gone.uid);
+  await db.softDelete(importCtx(TEST_ARTIST), "users", gone.uid);
   assert.equal((await call(gone.token, { name: "Gone Band" })).status, 403);
   await assert.rejects(startSession(bearer(gone.token)), (e: { code: string }) => e.code === "not_invited");
 });

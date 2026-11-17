@@ -11,7 +11,7 @@ import {
   allowUrls, FAKE_SOURCE, isAllowedUrl, MAX_QUERY_CHARS, newWebTurn, WEB_NOTICE,
 } from "@/server/assistant/web";
 import type { AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 // ---------- pure guards ----------
 
@@ -26,15 +26,15 @@ const noop: Emit = () => {};
 beforeEach(async () => {
   await resetEmulators();
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   await db.create(sys, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   venueId = ((await registry["venues.create"].run(sys, registry["venues.create"].input.parse(venue("Grey Eagle", "Asheville", { website: "https://thegreyeagle.com/" })))) as { id: string }).id;
 });
 
 async function sess() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return sessionFor(who, threadId);
 }
 const content = (o: unknown) => (o as { untrustedContent: any }).untrustedContent; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -90,8 +90,8 @@ test("after web content comes back, every write in the message asks first; reads
   const card = events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>;
   assert.equal(card.summary, "Add the contact Planted Booker (from the web)");
   assert.deepEqual(card.fields, [{ label: "Name", value: "Planted Booker" }, { label: "Email", value: "booker@evil.example" }]); // the card shows what would be written, row by row
-  assert.equal((await db.list("contacts")).length, 0);
-  assert.equal((await db.list("expenses")).length, 1);
+  assert.equal((await db.list(SYS, "contacts")).length, 0);
+  assert.equal((await db.list(SYS, "expenses")).length, 1);
   const get = await execTool(s, "records.get", { kind: "venues", id: venueId }, noop, new Set(), w);
   assert.equal(content(get.output).id, venueId);
 });
@@ -128,7 +128,7 @@ test("a venue from the web with a type that isn't on the list: the card asks for
   await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "music venue" } }), /isn't one of the choices/);
   await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "club", name: "Evil" } }), /no such choice/);
   assert.equal((await answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: "club" } })).status, "done");
-  const made = (await db.list("venues")).find((v) => v.name === "The Solarium")!;
+  const made = (await db.list(SYS, "venues")).find((v) => v.name === "The Solarium")!;
   assert.equal(made.type, "club");
 });
 
@@ -151,7 +151,7 @@ test("pitching offers a See the pitch button, whether it runs straight away or a
   const s = await sess();
   const direct = await execTool(s, "pitches.flag", { kind: "venue", id: venueId }, noop, new Set(), newWebTurn());
   assert.equal(direct.action?.kind, "readback");
-  const pitchId = (await db.list("pitches"))[0].id;
+  const pitchId = (await db.list(SYS, "pitches"))[0].id;
   assert.deepEqual(direct.also, { kind: "link", label: "See the pitch", route: "pitch", params: { id: pitchId } });
   const again = await execTool(s, "pitches.flag", { kind: "venue", id: venueId }, noop, new Set(), newWebTurn());
   assert.equal(again.also?.params?.id, pitchId); // already on the list: still offered

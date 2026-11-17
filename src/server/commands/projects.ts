@@ -5,9 +5,9 @@ import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { projectKind, cents } from "@/schema";
 
-/** The artist a call is for: the one given, else the one this call is for (ctx.artistId), else the one artist there is. */
+/** The artist a call is for: the one given, else the one this call is for (ctx.artistId). */
 export async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
-  const a = artistId ? await w.get("artists", artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
+  const a = await w.get("artists", artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
 }
@@ -17,7 +17,7 @@ export const DEFAULT_PROJECT_NAME = "General";
 
 /** The artist's default project (General), if it has one. */
 export async function defaultProjectOf(w: Writer, artistId: string): Promise<Doc | undefined> {
-  return (await w.query("projects", (q) => q.where("artistId", "==", artistId), { pending: true })).find((p) => p.isDefault && !p.deletedAt);
+  return (await w.query("projects", undefined, { pending: true })).find((p) => p.isDefault && !p.deletedAt);
 }
 /**
  * The artist's default project. artists.create / artists.signUp make "General" with the artist, so Money in and
@@ -52,12 +52,11 @@ export async function requireOpenProject(w: Writer, projectId: string): Promise<
 async function requireProject(w: Writer, id: string) {
   const p = await w.get("projects", id);
   if (!p || p.deletedAt) throw new AppError("not_found", "Project not found", 404);
-  if (w.ctx.artistId && p.artistId !== w.ctx.artistId) throw new AppError("not_found", "Project not found", 404);
   return p;
 }
 /** Exactly one default per artist: clear the flag on every other project that has it. */
 async function clearOtherDefaults(w: Writer, artistId: string, keepId?: string) {
-  for (const p of await w.query("projects", (q) => q.where("artistId", "==", artistId))) {
+  for (const p of await w.query("projects")) {
     if (p.isDefault && p.id !== keepId && !p.deletedAt) await w.update("projects", p.id, { isDefault: null });
   }
 }

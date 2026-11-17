@@ -5,7 +5,7 @@ export const statSource = z.enum(["spotifyApi", "spotifyForArtists", "instagram"
 /** Doc id is `${source}_${date}`. Never edited. */
 export const StatSnapshot = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   source: statSource,
   date: dateStr,
   followers: z.number().int().optional(),

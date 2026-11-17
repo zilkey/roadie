@@ -87,12 +87,12 @@ export interface DriveService {
 }
 
 /**
- * The real Drive API when Google is configured and DRIVE_BASE_URL isn't set (as the band account of `artistId`, or of the
- * one artist there is); otherwise the fake. A string is the fake's base URL (tests).
+ * The real Drive API when Google is configured and DRIVE_BASE_URL isn't set (as the band account of `artistId`); otherwise the
+ * fake. A string is the fake's base URL (tests).
  */
-export function driveClient(opts: string | { artistId?: string } = {}): DriveService {
+export function driveClient(opts: string | { artistId: string }): DriveService {
   const baseUrl = typeof opts === "string" ? opts : undefined;
-  if (useRealGoogle(process.env.DRIVE_BASE_URL, baseUrl)) return googleDrive((force) => bandToken((opts as { artistId?: string }).artistId, "drive", force));
+  if (useRealGoogle(process.env.DRIVE_BASE_URL, baseUrl)) return googleDrive((force) => bandToken((opts as { artistId: string }).artistId, "drive", force));
   return fakeDriveClient(baseUrl ?? process.env.DRIVE_BASE_URL ?? "http://127.0.0.1:3202");
 }
 

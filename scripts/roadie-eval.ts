@@ -20,7 +20,7 @@
 import { getChatFlow } from "../src/server/assistant/flow";
 import { ensureThread, newMessageId, newThreadId } from "../src/server/assistant/threads";
 import { modelLabel, modelMode } from "../src/server/assistant/ai";
-import { newRunId, importCtx } from "../src/server/ctx";
+import { importCtx, newRunId, systemCtx } from "../src/server/ctx";
 import { db } from "../src/server/db";
 import { registry } from "../src/server/commands/registry";
 import { dateInBandZone } from "../src/lib/timezone";
@@ -110,7 +110,7 @@ const SCENARIOS: Scenario[] = [
 
 /** What the money scenarios talk about: Felix (a bandmate with a sign-in), the Band and Lighthouse video projects, Friday's show at Pine Hollow. */
 async function seedMoney(artistId: string, slug: string) {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const email = `felix-${slug}@example.com`;
   const e = await adminAuth().createUser({ email, emailVerified: true, displayName: "Felix Brandt" });
   await db.create(sys, "users", { email, name: "Felix Brandt", artists: [{ artistId, role: "member" }] }, { id: e.uid });
@@ -125,10 +125,10 @@ async function seedMoney(artistId: string, slug: string) {
 
 /** What the tour scenarios talk about: the Mountain West tour next month, Velour (a venue, no pitch) and a Kilby Court show on the 7th not yet on the tour. */
 async function seedTour(artistId: string) {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
   const month = addDays(dateInBandZone().slice(0, 8) + "01", 40).slice(0, 8);
-  const band = (await db.list("projects", (q) => q.where("artistId", "==", artistId))).find((p) => p.isDefault)!;
+  const band = (await db.list(sys, "projects")).find((p) => p.isDefault)!;
   await call("venues.create", { name: "Velour", type: "listening", address: { city: "Provo", state: "UT" }, region: "out" });
   const kilby = await call("venues.create", { name: "Kilby Court", type: "bar", address: { city: "Salt Lake City", state: "UT" }, region: "out" });
   await call("shows.create", { date: `${month}07`, venueId: kilby.id, status: "confirmed", times: { loadIn: "18:00", set: "20:30" } });
@@ -137,7 +137,7 @@ async function seedTour(artistId: string) {
 
 /** Duplicates (#50): The Bliss twice (Playing and Learning, the learning copy with a link and a setlist spot), and a different song. */
 async function seedSongs(artistId: string) {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
   await call("songs.create", { title: "The Bliss", status: "active", key: "Em", lengthSec: 214 });
   const learning = await call("songs.create", { title: "The Bliss", status: "learning", files: [{ url: "https://open.spotify.com/track/bliss", title: "Bliss demo" }] });
@@ -147,7 +147,7 @@ async function seedSongs(artistId: string) {
 
 /** Voice (#67): The Trident Bookstore as a venue, and one stage plot for the engineer-link ask. */
 async function seedVoice(artistId: string) {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
   await call("venues.create", { name: "The Trident Bookstore", type: "listening", address: { city: "Boulder", state: "CO" }, region: "denver" });
   await call("stagePlots.create", { name: "Full band" });
@@ -155,7 +155,7 @@ async function seedVoice(artistId: string) {
 
 /** Acts (#77): two Colorado rooms whose calendars list linked acts (upsertEvents links them and makes the acts, as a refresh does). */
 async function seedActs(artistId: string) {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const call = async (name: string, input: unknown) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
   const aggie = await call("venues.create", { name: "Aggie Theatre", type: "bar", address: { city: "Fort Collins", state: "CO" }, region: "north" });
   const bluebird = await call("venues.create", { name: "Bluebird Theater", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" });
@@ -169,8 +169,8 @@ async function seedActs(artistId: string) {
 
 async function band() {
   const slug = `eval-${Date.now().toString(36)}`;
-  const sys = importCtx();
-  const artist = await db.create(sys, "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [] }, { id: slug });
+  const artist = await db.create(systemCtx("roadie-eval"), "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [] }, { id: slug });
+  const sys = importCtx(artist.id);
   const email = `${slug}@example.com`;
   const u = await adminAuth().createUser({ email, emailVerified: true, displayName: "Eval admin" });
   await db.create(sys, "users", { email, name: "Eval admin", artists: [{ artistId: artist.id, role: "admin" }] }, { id: u.uid });
@@ -187,8 +187,8 @@ async function band() {
 let worlds = 0;
 async function world(p: PostShowScenario) {
   const slug = `eval-${Date.now().toString(36)}-${++worlds}`;
-  const sys = importCtx();
-  const artist = await db.create(sys, "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [] }, { id: slug });
+  const artist = await db.create(systemCtx("roadie-eval"), "artists", { slug, name: `Eval band ${slug}`, driveFolderId: "", links: {}, configurations: [] }, { id: slug });
+  const sys = importCtx(artist.id);
   const user = async (email: string, name: string, role: "admin" | "member") => {
     const u = await adminAuth().createUser({ email, emailVerified: true, displayName: name });
     await db.create(sys, "users", { email, name, artists: [{ artistId: artist.id, role, mcpAccess: false }] }, { id: u.uid });
@@ -211,7 +211,7 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
   const pageContext = !post ? { route: sc.route ?? "bookingVenues" }
     : post.page === "home" ? { route: "calendar" }
     : { route: post.page === "after" ? "showAfter" : "show", recordKind: post.page === "after" ? "showAfter" : "show", recordId: w!.shows[here]! };
-  await ensureThread({ uid: who.uid, threadId, pageContext, at: new Date() });
+  await ensureThread({ uid: who.uid, artistId: who.artistId, threadId, pageContext, at: new Date() });
   let history: { role: "user" | "assistant"; text: string }[] = [];
   const failures: string[] = [];
   for (const [n, t] of sc.turns.entries()) {

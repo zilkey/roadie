@@ -8,7 +8,7 @@ import { startAll } from "../../fakes/run-all";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -30,7 +30,7 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
   return (await x.run(c, x.input.parse(input))) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 const code = (p: Promise<unknown>, c: string) => assert.rejects(p, (e: any) => e.code === c); // eslint-disable-line @typescript-eslint/no-explicit-any
-const entriesOf = async (tourId: string) => (await db.list(`tours/${tourId}/entries`)).sort((a, b) => (a.date ?? "") < (b.date ?? "") ? -1 : (a.date ?? "") > (b.date ?? "") ? 1 : a.position - b.position);
+const entriesOf = async (tourId: string) => (await db.list(SYS, `tours/${tourId}/entries`)).sort((a, b) => (a.date ?? "") < (b.date ?? "") ? -1 : (a.date ?? "") > (b.date ?? "") ? 1 : a.position - b.position);
 
 beforeEach(async () => {
   await resetEmulators();
@@ -60,7 +60,7 @@ test("tours.book with per-pitch choices: one dropped, one kept, one told; the sh
   const opt = (await entriesOf(t)).find((e) => e.pitchId === p && e.date === "2026-11-06")!;
   const r = await cmd("tours.book", { tourId: t, entryId: opt.id, date: "2026-11-06", addStay: true, others: { [ids[0]]: "drop", [ids[2]]: "tellBooked" } });
   assert.deepEqual([...r.dropped].sort(), [ids[0], ids[2]].sort());
-  const show = (await db.get("shows", r.showId))!;
+  const show = (await db.get(SYS, "shows", r.showId))!;
   assert.equal(show.tourId, t);
   assert.equal(show.projectId, band);
   const live = await entriesOf(t);
@@ -69,13 +69,13 @@ test("tours.book with per-pitch choices: one dropped, one kept, one told; the sh
   const options = live.filter((e) => e.kind === "option");
   assert.deepEqual(options.filter((e) => e.date).map((e) => e.pitchId), [ids[1]], "the kept one stays an option; the 7th went");
   assert.deepEqual(options.filter((e) => !e.date).map((e) => e.pitchId), [ids[0]], "the dropped one waits in No date yet");
-  const dropped = (await db.get("pitches", ids[0]))!;
+  const dropped = (await db.get(SYS, "pitches", ids[0]))!;
   assert.deepEqual(dropped.dates, []);
   assert.equal(dropped.tourId, t);
-  assert.ok((await db.get("pitches", ids[2]))!.tourId == null, "told we're booked, with no dates left, it leaves the tour");
+  assert.ok((await db.get(SYS, "pitches", ids[2]))!.tourId == null, "told we're booked, with no dates left, it leaves the tour");
   assert.equal(dropped.nextStep, undefined);
-  assert.match((await db.get("pitches", ids[2]))!.nextStep.text, /booked on Fri Nov 6/);
-  assert.deepEqual((await db.get("pitches", ids[1]))!.dates, ["2026-11-06"]);
+  assert.match((await db.get(SYS, "pitches", ids[2]))!.nextStep.text, /booked on Fri Nov 6/);
+  assert.deepEqual((await db.get(SYS, "pitches", ids[1]))!.dates, ["2026-11-06"]);
   const stay = live.find((e) => e.kind === "stay")!;
   assert.deepEqual([stay.date, stay.nights], ["2026-11-06", 1]);
   assert.ok(stay.position > booked.position);

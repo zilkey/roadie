@@ -1,7 +1,6 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { firestore } from "../admin";
 import { AppError } from "../errors";
-import { tenancyLog } from "../tenancy";
 import type { AssistantAction, CardField, PageContext, ToolTrace } from "@/schema/assistant";
 
 // Chat transcripts are not business data: written with firebase-admin directly, so they never reach history/undo (like touchLastUsed in db.ts).
@@ -53,8 +52,11 @@ export const AUTO_ID = /^[A-Za-z0-9]{20}$/;
  * The conversation a message goes to: the one asked for when it is the caller's; a new one under the id the browser
  * picked when nobody has it yet (so a Stop before the first event still knows where the turn was saved); else a fresh one.
  */
-export async function threadFor(uid: string, asked?: string): Promise<{ threadId: string; history: Turn[] | null }> {
+export async function threadFor(uid: string, asked: string | undefined, artistId: string): Promise<{ threadId: string; history: Turn[] | null }> {
   if (!asked) return { threadId: newThreadId(), history: null };
+  // A conversation stays in the artist it was started in (tenancy plan D3): another artist's is a fresh one.
+  const t = await threadOf(asked);
+  if (t && t.artistId !== artistId) return { threadId: newThreadId(), history: null };
   const history = await loadHistory(uid, asked);
   if (history) return { threadId: asked, history };
   if (AUTO_ID.test(asked) && !(await threads().doc(asked).get()).exists) return { threadId: asked, history: null };
@@ -87,11 +89,10 @@ export async function clearStop(replyId: string) { await stops().doc(replyId).de
  * Make sure the thread doc exists before the flow runs, so runs and pending actions have somewhere to live. A new thread carries
  * the artist it was started in (tenancy phase 2; written here, not through the Writer, so a conversation never shows in Activity or Undo).
  */
-export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date; artistId?: string; via?: string }) {
+export async function ensureThread(a: { uid: string; threadId: string; pageContext: PageContext; at: Date; artistId: string; via?: string }) {
   const ref = threads().doc(a.threadId);
   if ((await ref.get()).exists) return;
-  if (!a.artistId) tenancyLog.unstamped({ kind: "assistantThreads", id: a.threadId, via: a.via ?? "assistant", uid: a.uid });
-  await ref.set({ ...(a.artistId ? { artistId: a.artistId } : {}), ownerUid: a.uid, startedAt: Timestamp.fromDate(a.at), lastActiveAt: Timestamp.now(), startedOnRoute: a.pageContext.route, runs: [] });
+  await ref.set({ artistId: a.artistId, ownerUid: a.uid, startedAt: Timestamp.fromDate(a.at), lastActiveAt: Timestamp.now(), startedOnRoute: a.pageContext.route, runs: [] });
 }
 
 /** Persist one exchange (user message + Roadie's reply) and bump the thread. */
@@ -211,9 +212,12 @@ export async function addAssistantMessage(a: { threadId: string; text: string; a
   await threads().doc(a.threadId).update({ lastActiveAt: Timestamp.now() });
   return ref.id;
 }
-export async function ownerOf(threadId: string): Promise<string | null> {
+/** Whose conversation this is, and the artist it is in (null when there is no such thread). */
+export async function threadOf(threadId: string): Promise<{ ownerUid: string; artistId: string | null } | null> {
   const snap = await threads().doc(threadId).get();
-  return snap.exists ? (snap.data()!.ownerUid as string) : null;
+  if (!snap.exists) return null;
+  const d = snap.data()!;
+  return { ownerUid: d.ownerUid as string, artistId: typeof d.artistId === "string" ? d.artistId : null };
 }
 
 /** Claim a pending action for running: only the first caller gets it, and only while it is live. Throws AppError otherwise. */

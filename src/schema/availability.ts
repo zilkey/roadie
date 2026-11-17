@@ -3,7 +3,7 @@ import { entity, serverMask, id, dateStr, ts } from "./common";
 
 export const Availability = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   date: dateStr,
   label: z.string(),
   pitchId: id.optional(),

@@ -8,7 +8,9 @@ import { defineCommand } from "./types";
 import { SHARED_EDIT_NOTE } from "../platform";
 import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
-import { artistIdOf, callerArtistId } from "../venues";
+import { artistIdOf } from "../venues";
+import { pathOf } from "@/schema/owners";
+import type { Ctx } from "../ctx";
 import { lookAtCalendars } from "../prefs";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { SHOW_TAKES, VenueCalendar, selectorFields, venueEventNoteId, type Act } from "@/schema";
@@ -22,9 +24,9 @@ import { suggestSelectors } from "../events/suggest";
 
 const PREVIEW_ROWS = 40;
 
-async function venueTz(venueId: string | undefined) {
+async function venueTz(ctx: Ctx, venueId: string | undefined) {
   if (!venueId) return BAND_TIME_ZONE;
-  const v = await db.get("venues", venueId);
+  const v = await db.get(ctx, "venues", venueId);
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
   return (v.timeZone as string | undefined) || BAND_TIME_ZONE;
 }
@@ -51,8 +53,8 @@ export const venueEventsPreview = defineCommand({
   name: "venueEvents.preview", roles: ["admin"],
   description: "Read a calendar setting without saving anything: the shows it would find.",
   input: z.strictObject({ venueId: z.string().min(1).optional(), calendar: VenueCalendar }),
-  run: async (_ctx, { venueId, calendar }) => {
-    const out = await readCalendar(calendar, { net: new Net(), tz: await venueTz(venueId), now: new Date() });
+  run: async (ctx, { venueId, calendar }) => {
+    const out = await readCalendar(calendar, { net: new Net(), tz: await venueTz(ctx, venueId), now: new Date() });
     return { count: out.events.length, unparsed: out.unparsed, dropped: out.dropped, raw: out.raw, events: out.events.slice(0, PREVIEW_ROWS) };
   },
 });
@@ -64,11 +66,11 @@ export const venueEventsSuggest = defineCommand({
     venueId: z.string().min(1).optional(), url: z.string().url(), hint: z.string().max(500).optional(), problems: z.string().max(1000).optional(),
     previous: z.strictObject({ item: z.string(), fields: selectorFields, dateFormat: z.string().optional() }).optional(),
   }),
-  run: async (_ctx, { venueId, url, hint, problems, previous }) => {
+  run: async (ctx, { venueId, url, hint, problems, previous }) => {
     const net = new Net();
     const s = await suggestSelectors(url, { net, hint, problems, previous });
     const calendar: VenueCalendar = { type: "selectors", url, item: s.config.item, fields: s.config.fields, ...(s.config.dateFormat ? { dateFormat: s.config.dateFormat } : {}) };
-    const out = await readCalendar(calendar, { net, tz: await venueTz(venueId), now: new Date() });
+    const out = await readCalendar(calendar, { net, tz: await venueTz(ctx, venueId), now: new Date() });
     return { calendar, notes: s.notes, model: s.model, count: out.events.length, unparsed: out.unparsed, dropped: out.dropped, raw: out.raw, events: out.events.slice(0, PREVIEW_ROWS) };
   },
 });
@@ -80,13 +82,13 @@ async function setEventNote(w: Writer, ev: Doc, patch: Record<string, unknown>) 
   const existing = await w.get("venueEventNotes", id);
   if (!existing) {
     const fields = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null));
-    return w.create("venueEventNotes", { artistId, venueId: ev.venueId, eventId: ev.id, ...fields }, { id });
+    return w.create("venueEventNotes", { venueId: ev.venueId, eventId: ev.id, ...fields }, { id });
   }
   if (existing.deletedAt) await w.restore("venueEventNotes", id);
   return w.update("venueEventNotes", id, patch);
 }
-async function requireEvent(eventId: string) {
-  const ev = await db.get("venueEvents", eventId);
+async function requireEvent(ctx: Ctx, eventId: string) {
+  const ev = await db.get(ctx, "venueEvents", eventId);
   if (!ev) throw new AppError("not_found", "Show not found", 404);
   return ev;
 }
@@ -96,7 +98,7 @@ export const venueEventsSetTake = defineCommand({
   description: "This band's take on one of a venue's shows: notFit (null clears it), and a note. Private to the band. We pitch the venue, not the show: venueEvents.pitch adds the show to the venue's pitch.",
   input: z.strictObject({ eventId: z.string().min(1), take: z.enum(SHOW_TAKES).nullable().optional(), note: z.string().nullable().optional(), pitchId: z.string().nullable().optional() }),
   run: (ctx, { eventId, take, note, pitchId }) => run(ctx, async (w) => {
-    const ev = await requireEvent(eventId);
+    const ev = await requireEvent(ctx, eventId);
     return setEventNote(w, ev, { ...(take !== undefined ? { take } : {}), ...(note !== undefined ? { note: note?.trim() || null } : {}), ...(pitchId !== undefined ? { pitchId } : {}) });
   }),
 });
@@ -111,7 +113,7 @@ export const venueEventsPitch = defineCommand({
     "campaignId: the booking campaign a new pitch goes in (never moves the venue's existing pitch; pitches.setCampaign does). Returns { pitchId, existing, campaignId } (the pitch's campaign).",
   input: z.strictObject({ eventId: z.string().min(1), campaignId: z.string().min(1).optional() }),
   run: (ctx, { eventId, campaignId }) => run(ctx, async (w) => {
-    const ev = await requireEvent(eventId);
+    const ev = await requireEvent(ctx, eventId);
     const date = String(ev.date);
     const r = await flagPitch(w, ctx, { kind: "venue", id: String(ev.venueId), dates: [date], ...(campaignId ? { campaignId } : {}) });
     if (r.existing) {
@@ -119,7 +121,7 @@ export const venueEventsPitch = defineCommand({
       const dates = (p?.dates as string[] | undefined) ?? [];
       if (!dates.includes(date)) await w.update("pitches", r.id, { dates: sortedDates([...dates, date]) });
     }
-    await w.create(`pitches/${r.id}/activity`, { type: "note", text: `Added ${showName(ev)} on ${fmtEventDay(date)} (from the venue's calendar)` });
+    await w.create(pathOf("activity", { artistId: w.ctx.artistId, parent: { kind: "pitches", id: r.id } }), { type: "note", text: `Added ${showName(ev)} on ${fmtEventDay(date)} (from the venue's calendar)` });
     const note = await w.get("venueEventNotes", venueEventNoteId(await artistIdOf(w), eventId));
     await setEventNote(w, ev, { pitchId: r.id, ...(note?.take ? { take: null } : {}) });
     return { pitchId: r.id, existing: r.existing, campaignId: r.campaignId };
@@ -131,7 +133,7 @@ export const venueEventsUnpitch = defineCommand({
   description: "Take one of a venue's shows off the venue's pitch: unlinks it, takes its date off the pitch's dates (unless another show on the pitch is that day) and logs it. The pitch stays on the Pitch List (pitches.remove takes it off).",
   input: z.strictObject({ eventId: z.string().min(1) }),
   run: (ctx, { eventId }) => run(ctx, async (w) => {
-    const ev = await requireEvent(eventId);
+    const ev = await requireEvent(ctx, eventId);
     const artistId = await artistIdOf(w);
     const note = await w.get("venueEventNotes", venueEventNoteId(artistId, eventId));
     const pitchId = note?.pitchId as string | undefined;
@@ -140,11 +142,11 @@ export const venueEventsUnpitch = defineCommand({
     if (p && !p.deletedAt) {
       const date = String(ev.date);
       const others = (await w.query("venueEventNotes", (q) => q.where("pitchId", "==", pitchId)))
-        .filter((n) => n.artistId === artistId && n.eventId !== eventId && !n.deletedAt);
+        .filter((n) => n.eventId !== eventId && !n.deletedAt);
       const othersOnDay = (await Promise.all(others.map((n) => w.get("venueEvents", String(n.eventId))))).some((o) => o?.date === date);
       const dates = (p.dates as string[] | undefined) ?? [];
       if (!othersOnDay && dates.includes(date)) await w.update("pitches", pitchId, { dates: dates.filter((d) => d !== date) });
-      await w.create(`pitches/${pitchId}/activity`, { type: "note", text: `Took ${showName(ev)} on ${fmtEventDay(date)} off the pitch` });
+      await w.create(pathOf("activity", { artistId: w.ctx.artistId, parent: { kind: "pitches", id: pitchId } }), { type: "note", text: `Took ${showName(ev)} on ${fmtEventDay(date)} off the pitch` });
     }
     await setEventNote(w, ev, { pitchId: null });
     return { pitchId };
@@ -155,9 +157,7 @@ export const venueEventsLooked = defineCommand({
   name: "venueEvents.looked", roles: ["admin", "member"], input: z.strictObject({}),
   description: "Remember that the caller just opened Booking's Venue calendars; returns when they last looked before (null the first time), for its New chips. Personal: nobody else's chips change.",
   async run(ctx) {
-    const artistId = await callerArtistId(ctx);
-    if (!artistId) throw new AppError("invalid_input", "Which artist? Open one first", 400);
-    return { previous: await lookAtCalendars(ctx.uid, artistId, new Date().toISOString()) };
+    return { previous: await lookAtCalendars(ctx.uid, ctx.artistId, new Date().toISOString()) };
   },
 });
 

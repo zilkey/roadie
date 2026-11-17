@@ -10,7 +10,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { isEligible } from "@/server/assistant/policy";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 // ---------- tours.sheet ----------
 
@@ -51,7 +51,7 @@ test("tours.sheet makes one Google Sheet in the band folder, the band version, t
 
   const first = await cmd("tours.sheet", { id: t });
   assert.equal(first.made, true);
-  const linked = (await db.get("tours", t))!.sheet;
+  const linked = (await db.get(SYS, "tours", t))!.sheet;
   assert.equal(linked.updatedBy, "Rudy");
   assert.equal(linked.updatedAt, "2026-11-06T18:00:00.000Z");
   const file = await (await fetch(`${process.env.DRIVE_BASE_URL}/files/${linked.driveFileId}`)).json();
@@ -64,7 +64,7 @@ test("tours.sheet makes one Google Sheet in the band folder, the band version, t
   await cmd("tours.entries.add", { tourId: t, kind: "note", date: "2026-11-06", text: "Laundry" });
   const second = await cmd("tours.sheet", { id: t });
   assert.equal(second.made, false);
-  assert.equal((await db.get("tours", t))!.sheet.driveFileId, linked.driveFileId, "the same sheet");
+  assert.equal((await db.get(SYS, "tours", t))!.sheet.driveFileId, linked.driveFileId, "the same sheet");
   assert.ok((await contentOf(linked.driveFileId)).includes("Laundry"));
   const sheets = await (await fetch(`${process.env.DRIVE_BASE_URL}/files?mimeType=application/vnd.google-apps.spreadsheet&parent=${BAND_FOLDER_ID}`)).json();
   assert.equal(sheets.length, 1, "a second copy never makes a second file");

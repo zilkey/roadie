@@ -12,7 +12,7 @@ import { BAND_SETTINGS, isEligible, needsConfirm, pastDate, refusal } from "@/se
 import { execTool, readback } from "@/server/assistant/tools";
 import { contextNow, searchAll } from "@/server/assistant/context";
 import { ensureThread, newThreadId } from "@/server/assistant/threads";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -35,8 +35,8 @@ const noop = () => {};
 beforeEach(async () => {
   await resetEmulators();
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Nora", instruments: ["vocals"], active: true })).id;
   await db.create(sys, "artists", {
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: { website: "https://a.example", spotify: "https://s.example" },
@@ -52,10 +52,10 @@ beforeEach(async () => {
 
 async function sess() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return { ...sessionFor(who, threadId), artistId: TEST_ARTIST };
 }
-const show = async () => (await db.get("shows", showId))!;
+const show = async () => (await db.get(SYS, "shows", showId))!;
 
 test("refusal: artists.update never touches the name, URL or Drive folder, even mixed with links", async () => {
   assert.equal(refusal("artists.update", { id: "a", patch: { name: "X" } }), BAND_SETTINGS);
@@ -67,7 +67,7 @@ test("refusal: artists.update never touches the name, URL or Drive folder, even 
   const s = await sess();
   const out = await execTool(s, "artists.update", { id: TEST_ARTIST, patch: { name: "New Name", links: { website: "https://new.example" } } }, noop);
   assert.equal((out.output as { error: { code: string } }).error.code, "not_allowed");
-  const a = (await db.get("artists", TEST_ARTIST))!;
+  const a = (await db.get(SYS, "artists", TEST_ARTIST))!;
   assert.equal(a.name, "Nora Quill Band");
   assert.equal(a.links.website, "https://a.example"); // the whole call was refused
 });
@@ -75,7 +75,7 @@ test("refusal: artists.update never touches the name, URL or Drive folder, even 
 test("a partial links patch keeps the other links", async () => {
   const s = await sess();
   await execTool(s, "artists.update", { id: TEST_ARTIST, patch: { links: { website: "https://new.example" } } }, noop);
-  const a = (await db.get("artists", TEST_ARTIST))!;
+  const a = (await db.get(SYS, "artists", TEST_ARTIST))!;
   assert.deepEqual(a.links, { website: "https://new.example", spotify: "https://s.example" });
 });
 
@@ -94,7 +94,7 @@ test("a partial venue address asks first and shows old -> new; nothing changes u
   const out = await execTool(s, "venues.update", { id: venueId, patch: { address: { street: "9 S Broadway" } } }, noop);
   assert.equal((out.output as { needsConfirmation?: boolean }).needsConfirmation, true);
   assert.match(out.action!.label, /address: 7 S Broadway, Denver, CO → 9 S Broadway, Denver, CO/);
-  assert.equal(((await db.get("venues", venueId))!.address as { street: string }).street, "7 S Broadway");
+  assert.equal(((await db.get(SYS, "venues", venueId))!.address as { street: string }).street, "7 S Broadway");
 });
 
 test("shows.calendar asks, and names the show on the card; shows.create never sends invites", async () => {

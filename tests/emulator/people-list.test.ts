@@ -10,13 +10,13 @@ const bearer = (t: string) => `Bearer ${t}`;
 type Person = { userId: string | null; musicianId: string | null; name: string; email: string; role: "admin" | "member" | null; mcpAccess: boolean; inBand: boolean; archived: boolean };
 
 test("people.list: team users, linked musician, musician-only sub, archived musician", async () => {
-  const mus = await db.create(importCtx(), "musicians", { name: "Linda", instruments: ["bass"], active: true });
+  const mus = await db.create(importCtx(TEST_ARTIST), "musicians", { name: "Linda", instruments: ["bass"], active: true });
   const admin = await makeUser("a@example.com", "admin", { name: "Ann", musicianId: mus.id });
-  await db.update(importCtx(), "musicians", mus.id, { userId: admin.uid });
+  await db.update(importCtx(TEST_ARTIST), "musicians", mus.id, { userId: admin.uid });
   const member = await makeUser("m@example.com", "member", { name: "Mo" });
   await dispatch("musicians.create", bearer(admin.token), { name: "Sub Sam", instruments: ["drums"] });
-  const arch = await db.create(importCtx(), "musicians", { name: "Old Ollie", instruments: ["keys"], active: true });
-  await db.update(importCtx(), "musicians", arch.id, { archivedAt: new Date(), active: false });
+  const arch = await db.create(importCtx(TEST_ARTIST), "musicians", { name: "Old Ollie", instruments: ["keys"], active: true });
+  await db.update(importCtx(TEST_ARTIST), "musicians", arch.id, { archivedAt: new Date(), active: false });
 
   const r = await dispatch("people.list", bearer(admin.token), {});
   assert.equal(r.status, 200, JSON.stringify(r.json));
@@ -32,7 +32,7 @@ test("people.list: team users, linked musician, musician-only sub, archived musi
 
 test("people.list: AI access shows for an admin who has it", async () => {
   const admin = await makeUser("a@example.com", "admin", { name: "Ann" });
-  await db.update(importCtx(), "users", admin.uid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
+  await db.update(importCtx(TEST_ARTIST), "users", admin.uid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
   const r = await dispatch("people.list", bearer(admin.token), {});
   const { people } = (r.json as { result: { people: Person[] } }).result;
   assert.equal(people[0].mcpAccess, true);

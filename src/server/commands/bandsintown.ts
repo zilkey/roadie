@@ -12,8 +12,7 @@ export const bandsintownCheck = defineCommand({
     "Returns {ticked: showIds, skipped: 'no_key' when General Settings has no Bandsintown artist ID and API key}.",
   input: z.strictObject({ showId: z.string().min(1).optional() }),
   async run(ctx, i) {
-    if (!ctx.artistId) throw new AppError("invalid_input", "Which artist? Open one first", 400);
-    try { return await checkBandsintown(ctx, ctx.artistId, i.showId); }
+    try { return await checkBandsintown(ctx, i.showId); }
     catch (e) { throw new AppError("integration", e instanceof Error ? e.message : String(e), 502); }
   },
 });

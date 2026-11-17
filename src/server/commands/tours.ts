@@ -12,6 +12,7 @@ import type { ExpenseLike, IncomeLike, PayoutLike } from "@/lib/money";
 import { byPosition, dayLabel, slotIn, tourByDay, tourDays, tourTotals, tourWarnings, type EntryLike, type ShowFacts, type TourLike } from "@/lib/tours";
 import { dateStr, timeStr, geoPoint, tourStatus, entryVisibility } from "@/schema";
 import { artistFor, requireOpenProject } from "./projects";
+import { pathOf } from "@/schema/owners";
 import { createShow, ShowCreateIn } from "./shows";
 import { flagPitch } from "./booking";
 import { driveClient, type DriveFile } from "../integrations/drive";
@@ -30,7 +31,7 @@ const id1 = z.string().min(1);
 const BAND = ["admin", "member", "mcp"] as const;
 const ADMIN = ["admin", "mcp"] as const;
 const MONEY = ["income", "expenses", "payouts"] as const;
-export const entriesPath = (tourId: string) => `tours/${tourId}/entries`;
+export const entriesPath = (artistId: string, tourId: string) => pathOf("entries", { artistId, parent: { kind: "tours", id: tourId } });
 const todayOf = (ctx: Ctx) => dateInBandZone(ctx.now ?? new Date());
 const seesAll = (ctx: Ctx) => ctx.role !== "member";
 
@@ -38,13 +39,13 @@ const seesAll = (ctx: Ctx) => ctx.role !== "member";
 
 async function requireTour(w: Writer, id: string): Promise<Doc> {
   const t = await w.get("tours", id);
-  if (!t || t.deletedAt || (w.ctx.artistId && t.artistId !== w.ctx.artistId)) throw new AppError("not_found", "Tour not found", 404);
+  if (!t || t.deletedAt) throw new AppError("not_found", "Tour not found", 404);
   return t;
 }
 /** The tour's live entries. `pending` also sees entries this run has just written (they come unfiltered, so the tour's own path is all there is). */
-export const liveEntries = (w: Writer, tourId: string, pending = true) => w.query(entriesPath(tourId), undefined, { pending });
+export const liveEntries = (w: Writer, tourId: string, pending = true) => w.query(entriesPath(w.ctx.artistId, tourId), undefined, { pending });
 async function requireEntry(w: Writer, tourId: string, id: string): Promise<Doc> {
-  const e = await w.get(entriesPath(tourId), id);
+  const e = await w.get(entriesPath(w.ctx.artistId, tourId), id);
   if (!e || e.deletedAt) throw new AppError("not_found", "That isn't on the tour", 404);
   return e;
 }
@@ -59,12 +60,12 @@ export async function requireTourFor(w: Writer, tourId: string): Promise<Doc> { 
 
 async function liveShow(w: Writer, id: string) {
   const s = await w.get("shows", id);
-  if (!s || s.deletedAt || (w.ctx.artistId && s.artistId && s.artistId !== w.ctx.artistId)) throw new AppError("not_found", "Show not found", 404);
+  if (!s || s.deletedAt) throw new AppError("not_found", "Show not found", 404);
   return s;
 }
 async function livePitch(w: Writer, id: string) {
   const p = await w.get("pitches", id);
-  if (!p || p.deletedAt || (w.ctx.artistId && p.artistId !== w.ctx.artistId)) throw new AppError("not_found", "Pitch not found", 404);
+  if (!p || p.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
   return p;
 }
 /** The show's room's time zone when it has one, else the band's. */
@@ -99,7 +100,7 @@ export async function addShowTo(w: Writer, tour: Doc, show: Doc): Promise<{ entr
   for (const coll of MONEY) {
     for (const d of await moneyOfShow(w, coll, show.id)) if (d.tourId !== tour.id) await w.update(coll, d.id, { tourId: tour.id, tourEntryId: null });
   }
-  const r = await w.create(entriesPath(tour.id), {
+  const r = await w.create(entriesPath(w.ctx.artistId, tour.id), {
     tourId: tour.id, kind: "show", date: show.date, position: await positionOn(w, tour.id, show.date as string), visibility: "band", tz: await tzOfShow(w, show), showId: show.id,
   });
   return { entryId: r.id, existing: false };
@@ -108,7 +109,7 @@ export async function addShowTo(w: Writer, tour: Doc, show: Doc): Promise<{ entr
 /** Take a show off the tour: its entries go, tourId comes off the show and its money (only money tagged with this tour), and money pinned to those entries becomes the whole tour's. */
 async function removeShowFrom(w: Writer, tourId: string, show: Doc) {
   const gone = (await liveEntries(w, tourId)).filter((e) => e.kind === "show" && e.showId === show.id);
-  for (const e of gone) await w.softDelete(entriesPath(tourId), e.id);
+  for (const e of gone) await w.softDelete(entriesPath(w.ctx.artistId, tourId), e.id);
   if (show.tourId === tourId) await w.update("shows", show.id, { tourId: null });
   for (const coll of MONEY) {
     for (const d of await moneyOfShow(w, coll, show.id)) if (d.tourId === tourId) await w.update(coll, d.id, { tourId: null, tourEntryId: null });
@@ -134,7 +135,7 @@ async function addPitchTo(w: Writer, tour: Doc, pitch: Doc, more: string[] = [])
   // A pitch on another tour leaves it: one pitch, one tour.
   if (pitch.tourId && pitch.tourId !== tour.id) {
     const old = (await liveEntries(w, pitch.tourId as string)).filter((e) => e.kind === "option" && e.pitchId === pitch.id);
-    for (const e of old) await w.softDelete(entriesPath(pitch.tourId as string), e.id);
+    for (const e of old) await w.softDelete(entriesPath(w.ctx.artistId, pitch.tourId as string), e.id);
   }
   const mine = (await liveEntries(w, tour.id)).filter((e) => e.kind === "option" && e.pitchId === pitch.id);
   const ids: string[] = [];
@@ -144,12 +145,12 @@ async function addPitchTo(w: Writer, tour: Doc, pitch: Doc, more: string[] = [])
     const have = mine.find((e) => e.date === date);
     if (have) { ids.push(have.id); continue; }
     const position = await positionOn(w, tour.id, date);
-    if (bucket) { await w.update(entriesPath(tour.id), bucket.id, { date, position }); ids.push(bucket.id); bucket = undefined; continue; }
-    ids.push((await w.create(entriesPath(tour.id), { tourId: tour.id, kind: "option", date, position, visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
+    if (bucket) { await w.update(entriesPath(w.ctx.artistId, tour.id), bucket.id, { date, position }); ids.push(bucket.id); bucket = undefined; continue; }
+    ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", date, position, visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
   }
   if (!dates.length) {
     if (bucket) ids.push(bucket.id);
-    else ids.push((await w.create(entriesPath(tour.id), { tourId: tour.id, kind: "option", position: await positionOn(w, tour.id, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
+    else ids.push((await w.create(entriesPath(w.ctx.artistId, tour.id), { tourId: tour.id, kind: "option", position: await positionOn(w, tour.id, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id })).id);
   }
   return { entryIds: ids };
 }
@@ -157,20 +158,20 @@ async function addPitchTo(w: Writer, tour: Doc, pitch: Doc, more: string[] = [])
 /** Take a pitch off the tour: its option entries go and tourId comes off. Its dates stay on the pitch. */
 async function removePitchFrom(w: Writer, tourId: string, pitch: Doc) {
   const gone = (await liveEntries(w, tourId)).filter((e) => e.kind === "option" && e.pitchId === pitch.id);
-  for (const e of gone) await w.softDelete(entriesPath(tourId), e.id);
+  for (const e of gone) await w.softDelete(entriesPath(w.ctx.artistId, tourId), e.id);
   if (pitch.tourId === tourId) await w.update("pitches", pitch.id, { tourId: null });
 }
 
 /** One option goes: its date comes off the pitch, and a pitch with no options left leaves the tour (`bucket`: waits in No date yet instead). `nextStep` asks someone to tell them. */
 async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?: { text: string; due: string }; bucket?: boolean } = {}) {
-  await w.softDelete(entriesPath(tourId), entry.id);
+  await w.softDelete(entriesPath(w.ctx.artistId, tourId), entry.id);
   const pitch = await w.get("pitches", entry.pitchId as string);
   if (!pitch || pitch.deletedAt) return;
   const patch: Record<string, unknown> = {};
   if (entry.date && ((pitch.dates as string[] | undefined) ?? []).includes(entry.date as string)) patch.dates = (pitch.dates as string[]).filter((d) => d !== entry.date);
   const left = (await liveEntries(w, tourId)).filter((e) => e.kind === "option" && e.pitchId === pitch.id && e.id !== entry.id);
   if (!left.length && pitch.tourId === tourId) {
-    if (o.bucket) await w.create(entriesPath(tourId), { tourId, kind: "option", position: await positionOn(w, tourId, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id });
+    if (o.bucket) await w.create(entriesPath(w.ctx.artistId, tourId), { tourId, kind: "option", position: await positionOn(w, tourId, undefined), visibility: "admins", tz: BAND_TIME_ZONE, pitchId: pitch.id });
     else patch.tourId = null;
   }
   if (o.nextStep) patch.nextStep = o.nextStep;
@@ -188,25 +189,22 @@ export async function driveFacts(from?: { lat: number; lng: number } | null, to?
 
 // ---------- reads ----------
 
-async function artistIdFor(ctx: Ctx): Promise<string | undefined> {
-  return ctx.artistId ?? (await db.list("artists", (q) => q.limit(1)))[0]?.id;
-}
 async function readTour(ctx: Ctx, id: string): Promise<Doc> {
-  const t = await db.get("tours", id);
-  if (!t || t.deletedAt || (ctx.artistId && t.artistId !== ctx.artistId)) throw new AppError("not_found", "Tour not found", 404);
+  const t = await db.get(ctx, "tours", id);
+  if (!t || t.deletedAt) throw new AppError("not_found", "Tour not found", 404);
   return t;
 }
 /** The entries the caller may read: everything for admins, the band's entries for members (the same filter the rules ask of them). */
 async function readEntries(ctx: Ctx, tourId: string): Promise<Doc[]> {
-  return db.list(entriesPath(tourId), seesAll(ctx) ? undefined : (q) => q.where("visibility", "==", "band"));
+  return db.list(ctx, entriesPath(ctx.artistId, tourId), seesAll(ctx) ? undefined : (q) => q.where("visibility", "==", "band"));
 }
-async function tourMoney(tourId: string) {
-  const [income, expenses, payouts] = await Promise.all(MONEY.map((c) => db.list(c, (q) => q.where("tourId", "==", tourId))));
+async function tourMoney(ctx: Ctx, tourId: string) {
+  const [income, expenses, payouts] = await Promise.all(MONEY.map((c) => db.list(ctx, c, (q) => q.where("tourId", "==", tourId))));
   return { income: income as unknown as IncomeLike[], expenses: expenses as unknown as ExpenseLike[], payouts: payouts as unknown as PayoutLike[] };
 }
-async function showsOf(entries: Doc[]): Promise<Map<string, Doc>> {
+async function showsOf(ctx: Ctx, entries: Doc[]): Promise<Map<string, Doc>> {
   const ids = [...new Set(entries.filter((e) => e.showId).map((e) => e.showId as string))];
-  const docs = await Promise.all(ids.map((x) => db.get("shows", x)));
+  const docs = await Promise.all(ids.map((x) => db.get(ctx, "shows", x)));
   return new Map(docs.filter((d): d is Doc => !!d && !d.deletedAt).map((d) => [d.id, d]));
 }
 const factsOf = (shows: Map<string, Doc>) => new Map<string, ShowFacts>([...shows].map(([k, s]) => [k, { date: s.date, name: showName(s as never), loadIn: s.times?.loadIn }]));
@@ -226,19 +224,18 @@ export const toursList = defineCommand({
     "Admins also get totals (cents, records tagged with the tour whatever their project: inReceived, inOwed, outPaid, outOwed, net, netIfSettled, expected for shows not played yet). Members get no options and no money.",
   input: z.strictObject({ status: tourStatus.optional() }),
   async run(ctx, i) {
-    const artistId = await artistIdFor(ctx);
     const today = todayOf(ctx);
-    const tours = (await db.list("tours", artistId ? (q) => q.where("artistId", "==", artistId) : undefined)).filter((t) => !i.status || t.status === i.status);
+    const tours = (await db.list(ctx, "tours")).filter((t) => !i.status || t.status === i.status);
     const rows = await Promise.all(tours.map(async (t) => {
       const entries = await readEntries(ctx, t.id);
-      const shows = await showsOf(entries);
+      const shows = await showsOf(ctx, entries);
       const { days } = tourDays(t as TourLike, entries as unknown as EntryLike[]);
       const n = (k: string) => entries.filter((e) => e.kind === k).length;
       const warnings = tourWarnings(t as TourLike, entries as unknown as EntryLike[], factsOf(shows)).filter((x) => seesAll(ctx) || x.kind !== "openDate");
       return {
         id: t.id, name: t.name, status: t.status, startDate: t.startDate ?? null, endDate: t.endDate ?? null, projectId: t.projectId,
         counts: { days: days.length, shows: n("show"), ...(seesAll(ctx) ? { options: n("option") } : {}), drives: n("drive"), stays: n("stay"), warnings: warnings.length },
-        ...(seesAll(ctx) ? { totals: tourTotals(await tourMoney(t.id), today) } : {}),
+        ...(seesAll(ctx) ? { totals: tourTotals(await tourMoney(ctx, t.id), today) } : {}),
       };
     }));
     return { tours: rows.sort((a, b) => (a.startDate ?? "9999") < (b.startDate ?? "9999") ? -1 : 1) };
@@ -253,8 +250,8 @@ export const toursGet = defineCommand({
   async run(ctx, { id }) {
     const tour = await readTour(ctx, id);
     const entries = await readEntries(ctx, id);
-    const shows = await showsOf(entries);
-    const pitches = new Map(seesAll(ctx) ? (await Promise.all([...new Set(entries.filter((e) => e.pitchId).map((e) => e.pitchId as string))].map((p) => db.get("pitches", p)))).filter((p): p is Doc => !!p).map((p) => [p.id, p]) : []);
+    const shows = await showsOf(ctx, entries);
+    const pitches = new Map(seesAll(ctx) ? (await Promise.all([...new Set(entries.filter((e) => e.pitchId).map((e) => e.pitchId as string))].map((p) => db.get(ctx, "pitches", p)))).filter((p): p is Doc => !!p).map((p) => [p.id, p]) : []);
     const sorted = [...entries].sort((a, b) => ((a.date ?? "") < (b.date ?? "") ? -1 : (a.date ?? "") > (b.date ?? "") ? 1 : a.position - b.position));
     return { tour, entries: sorted.map((e) => ({ ...e, label: labelOf(e, shows, pitches) })) };
   },
@@ -269,8 +266,8 @@ export const toursSummary = defineCommand({
   async run(ctx, { id }) {
     const tour = await readTour(ctx, id);
     const entries = await readEntries(ctx, id);
-    const shows = await showsOf(entries);
-    const pitches = new Map(seesAll(ctx) ? (await Promise.all([...new Set(entries.filter((e) => e.pitchId).map((e) => e.pitchId as string))].map((p) => db.get("pitches", p)))).filter((p): p is Doc => !!p).map((p) => [p.id, p]) : []);
+    const shows = await showsOf(ctx, entries);
+    const pitches = new Map(seesAll(ctx) ? (await Promise.all([...new Set(entries.filter((e) => e.pitchId).map((e) => e.pitchId as string))].map((p) => db.get(ctx, "pitches", p)))).filter((p): p is Doc => !!p).map((p) => [p.id, p]) : []);
     const { days, bucket } = tourDays(tour as TourLike, entries as unknown as (EntryLike & Doc)[]);
     const line = (e: Doc) => ({ id: e.id, kind: e.kind, label: labelOf(e, shows, pitches), ...(e.showId ? { showId: e.showId } : {}), ...(e.pitchId ? { pitchId: e.pitchId } : {}), ...(e.leaveBy ? { leaveBy: e.leaveBy } : {}), ...(e.minutes !== undefined ? { minutes: e.minutes, miles: e.miles } : {}) });
     const warnings = tourWarnings(tour as TourLike, entries as unknown as EntryLike[], factsOf(shows)).filter((x) => seesAll(ctx) || x.kind !== "openDate");
@@ -282,7 +279,7 @@ export const toursSummary = defineCommand({
     };
     if (!seesAll(ctx)) return out;
     const today = todayOf(ctx);
-    const money = await tourMoney(id);
+    const money = await tourMoney(ctx, id);
     const entryDate = new Map(entries.map((e) => [e.id, e.date as string | undefined]));
     return {
       ...out,
@@ -314,9 +311,8 @@ export const toursCreate = defineCommand({
   run: (ctx, { pitchIds, showIds, ...i }) => run(ctx, async (w) => {
     const artist = await artistFor(w);
     const project = await requireOpenProject(w, i.projectId);
-    if (project.artistId && project.artistId !== artist.id) throw new AppError("not_found", "Project not found", 404);
     const cfg = configOf(artist, i.billedAs);
-    const r = await w.create("tours", { ...i, artistId: artist.id, status: i.status ?? "planning", personnel: i.personnel ?? cfg?.musicianIds ?? [] });
+    const r = await w.create("tours", { ...i, status: i.status ?? "planning", personnel: i.personnel ?? cfg?.musicianIds ?? [] });
     const tour = (await w.get("tours", r.id))!;
     const entryIds: string[] = [];
     for (const s of showIds) entryIds.push((await addShowTo(w, tour, await liveShow(w, s))).entryId);
@@ -346,7 +342,7 @@ export const toursRemove = defineCommand({
   input: z.strictObject({ id: id1 }),
   run: (ctx, { id }) => run(ctx, async (w) => {
     await requireTour(w, id);
-    for (const e of await liveEntries(w, id, false)) await w.softDelete(entriesPath(id), e.id);
+    for (const e of await liveEntries(w, id, false)) await w.softDelete(entriesPath(w.ctx.artistId, id), e.id);
     for (const coll of ["shows", "pitches", ...MONEY]) {
       for (const d of await w.query(coll, (q) => q.where("tourId", "==", id))) {
         await w.update(coll, d.id, { tourId: null, ...(MONEY.includes(coll as never) ? { tourEntryId: null } : {}) });
@@ -374,7 +370,7 @@ export const toursAddPitch = defineCommand({
     const tour = await requireTour(w, i.tourId);
     const pitchId = i.pitchId ?? (await flagPitch(w, ctx, { kind: "venue", id: i.venueId!, ...(i.campaignId ? { campaignId: i.campaignId } : {}) })).id;
     const pitch = await w.get("pitches", pitchId);
-    if (!pitch || pitch.deletedAt || (ctx.artistId && pitch.artistId !== ctx.artistId)) throw new AppError("not_found", "Pitch not found", 404);
+    if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
     return { pitchId, ...(await addPitchTo(w, tour, pitch, i.dates)) };
   }),
 });
@@ -417,7 +413,7 @@ export const toursEntriesAdd = defineCommand({
     const facts = kind === "drive" ? await driveFacts(fields.from, fields.to) : { miles: null, minutes: null };
     return run(ctx, async (w) => {
       await requireTour(w, tourId);
-      const r = await w.create(entriesPath(tourId), {
+      const r = await w.create(entriesPath(w.ctx.artistId, tourId), {
         ...fields, tourId, kind, date, position: await positionOn(w, tourId, date, { after, before }), visibility: visibility ?? "band", tz: tz ?? BAND_TIME_ZONE,
         ...(facts.miles !== null ? { miles: facts.miles } : {}), ...(facts.minutes !== null ? { minutes: facts.minutes } : {}),
       });
@@ -437,7 +433,7 @@ export const toursEntriesUpdate = defineCommand({
     text: z.string().trim().min(1).nullable().optional(),
   }) }),
   async run(ctx, { tourId, id, patch }) {
-    const before = await db.get(entriesPath(tourId), id);
+    const before = await db.get(ctx, entriesPath(ctx.artistId, tourId), id);
     if (!before || before.deletedAt) throw new AppError("not_found", "That isn't on the tour", 404);
     const kind = before.kind as string;
     const { date, visibility, tz, ...fields } = patch;
@@ -455,7 +451,7 @@ export const toursEntriesUpdate = defineCommand({
       if (visibility) p.visibility = visibility;
       if (date !== undefined && date !== cur.date) { p.date = date; p.position = await positionOn(w, tourId, date, { skip: id }); }
       if (facts) Object.assign(p, facts);
-      return w.update(entriesPath(tourId), id, p);
+      return w.update(entriesPath(w.ctx.artistId, tourId), id, p);
     });
   },
 });
@@ -482,7 +478,7 @@ export const toursEntriesMove = defineCommand({
         await w.update("pitches", pitch.id, { dates: sortedDates(to ? [...dates, to] : dates) });
       }
     }
-    return w.update(entriesPath(i.tourId), e.id, patch);
+    return w.update(entriesPath(w.ctx.artistId, i.tourId), e.id, patch);
   }),
 });
 
@@ -495,7 +491,7 @@ export const toursEntriesRemove = defineCommand({
     const e = await requireEntry(w, i.tourId, i.id);
     if (e.kind === "show") { await removeShowFrom(w, i.tourId, await liveShow(w, e.showId as string)); return { id: e.id, changed: true }; }
     if (e.kind === "option") await dropOption(w, i.tourId, e);
-    else await w.softDelete(entriesPath(i.tourId), e.id);
+    else await w.softDelete(entriesPath(w.ctx.artistId, i.tourId), e.id);
     await unpin(w, [e.id]);
     return { id: e.id, changed: true };
   }),
@@ -527,11 +523,11 @@ export const toursBook = defineCommand({
       const show = (await w.get("shows", showId))!;
       await w.update("shows", showId, { tourId: tour.id });
       for (const coll of MONEY) for (const d of await moneyOfShow(w, coll, showId)) await w.update(coll, d.id, { tourId: tour.id });
-      await w.update(entriesPath(i.tourId), e.id, {
+      await w.update(entriesPath(w.ctx.artistId, i.tourId), e.id, {
         kind: "show", showId, pitchId: null, date: i.date, visibility: "band", tz: await tzOfShow(w, show),
         ...(i.date !== e.date ? { position: await positionOn(w, i.tourId, i.date, { skip: e.id }) } : {}),
       });
-      for (const x of all.filter((x) => x.kind === "option" && x.pitchId === pitch.id && x.id !== e.id)) await w.softDelete(entriesPath(i.tourId), x.id);
+      for (const x of all.filter((x) => x.kind === "option" && x.pitchId === pitch.id && x.id !== e.id)) await w.softDelete(entriesPath(w.ctx.artistId, i.tourId), x.id);
       await w.update("pitches", pitch.id, { dates: [i.date] });
       const dropped: string[] = [];
       for (const x of all.filter((x) => x.kind === "option" && x.date === i.date && x.pitchId !== pitch.id)) {
@@ -543,7 +539,7 @@ export const toursBook = defineCommand({
       if (i.addStay) {
         const day = byPosition(all.filter((x) => x.date === i.date && x.id !== e.id) as (Doc & { position: number })[]);
         const after = Math.max(e.position as number, ...day.map((x) => x.position));
-        await w.create(entriesPath(i.tourId), { tourId: tour.id, kind: "stay", date: i.date, position: after + 1, visibility: "band", tz: await tzOfShow(w, show), nights: 1 });
+        await w.create(entriesPath(w.ctx.artistId, i.tourId), { tourId: tour.id, kind: "stay", date: i.date, position: after + 1, visibility: "band", tz: await tzOfShow(w, show), nights: 1 });
       }
       return { showId, entryId: e.id, dropped };
     });
@@ -563,9 +559,9 @@ export const toursSheet = defineCommand({
   input: z.strictObject({ id: id1 }),
   async run(ctx, { id }) {
     const tour = await readTour(ctx, id);
-    const artistId = await artistIdFor(ctx);
+    const artistId = ctx.artistId;
     const entries = (await readEntries(ctx, id)).filter((e) => e.visibility === "band");
-    const shows = await showsOf(entries);
+    const shows = await showsOf(ctx, entries);
     const csv = sheetCsv(tourSheet(tour as TourLike, entries as unknown as SheetEntry[], shows as unknown as Map<string, SheetShow>, new Map(), { band: true }));
     const data = new Blob([csv], { type: CSV });
     const drive = driveClient({ artistId });
@@ -580,7 +576,7 @@ export const toursSheet = defineCommand({
       file = await drive.upload({ name: tour.name as string, mimeType: CSV, as: SHEET_MIME, parentId: band, data });
       made = true;
     }
-    const me = await db.get("users", ctx.uid);
+    const me = await db.get(ctx, "users", ctx.uid);
     const sheet = { driveFileId: file.id, url: file.webViewLink, updatedAt: (ctx.now ?? new Date()).toISOString(), updatedBy: String(me?.name ?? "an admin").split(" ")[0] };
     await run(ctx, (w) => w.update("tours", id, { sheet }));
     return { url: sheet.url, made };

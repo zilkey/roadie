@@ -2,7 +2,7 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { run, type Doc, type Writer } from "../db";
 import { AppError } from "../errors";
-import { artistFor } from "./projects";
+import type { Ctx } from "../ctx";
 
 // Booking campaigns (#82): a campaign is a tag on pitches, like a tour (pitches.campaignId). Every pitch is in one campaign;
 // "Ongoing" is the virtual default, computed in memory: active pitches with no campaignId or whose campaign is closed.
@@ -13,14 +13,12 @@ const ROLES = ["admin"] as const;
 const id1 = z.string().min(1);
 const name = z.string().trim().min(1);
 
-/** The caller's artist id: the ctx's, else the one artist (artistFor). */
-async function artistIdOf(w: Writer): Promise<string> {
-  return w.ctx.artistId ?? ((await artistFor(w)).id as string);
-}
+/** The caller's artist id. */
+const artistIdOf = async (w: Writer): Promise<string> => w.ctx.artistId;
 
 async function requireCampaign(w: Writer, id: string, artistId: string): Promise<Doc> {
   const c = await w.get("campaigns", id);
-  if (!c || c.deletedAt || c.artistId !== artistId) throw new AppError("not_found", "Campaign not found", 404);
+  if (!c || c.deletedAt) throw new AppError("not_found", "Campaign not found", 404);
   return c;
 }
 
@@ -33,7 +31,7 @@ export async function requireActiveCampaign(w: Writer, id: string, artistId: str
 
 /** Names are unique per artist (any status, ignoring case), so "Spring 2027" means one thing on the page and to Roadie later. */
 async function refuseDuplicateName(w: Writer, artistId: string, n: string, except?: string) {
-  const all = await w.query("campaigns", (q) => q.where("artistId", "==", artistId), { pending: true });
+  const all = await w.query("campaigns", undefined, { pending: true });
   const clash = all.find((c) => !c.deletedAt && c.id !== except && String(c.name).toLowerCase() === n.toLowerCase());
   if (clash) throw new AppError("conflict", `There is already a campaign called ${clash.name}`, 409);
 }
@@ -62,7 +60,7 @@ export const campaignsRename = defineCommand({
 });
 
 /** close / reopen: status only. Pitches keep their campaignId either way. */
-const setStatus = (status: "active" | "closed") => (ctx: Parameters<typeof run>[0], i: { id: string }) => run(ctx, async (w) => {
+const setStatus = (status: "active" | "closed") => (ctx: Ctx, i: { id: string }) => run(ctx, async (w) => {
   const c = await requireCampaign(w, i.id, await artistIdOf(w));
   if (c.status === status) return { id: i.id, changed: false };
   await w.update("campaigns", i.id, { status });
@@ -92,7 +90,7 @@ export const pitchesSetCampaign = defineCommand({
     const changed: string[] = [];
     for (const id of [...new Set(i.ids)]) {
       const p = await w.get("pitches", id);
-      if (!p || p.deletedAt || p.artistId !== artistId) throw new AppError("not_found", "Pitch not found", 404);
+      if (!p || p.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
       if ((p.campaignId ?? null) === i.campaignId) continue;
       await w.update("pitches", id, { campaignId: i.campaignId });
       changed.push(id);

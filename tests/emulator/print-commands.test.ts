@@ -5,7 +5,7 @@ import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { printQuery } from "@/lib/print";
 import type { PrintOptions } from "@/schema/print";
-import { resetEmulators, makeUser, makeArtist, TEST_ARTIST, venue } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, TEST_ARTIST, venue, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -54,8 +54,8 @@ test("setlists.setPrintPrefs then setlists.printPrefs round-trips per person and
 
 test("setlists.printLink for a template: the path mirrors the options, missing ones come from saved prefs, nothing is written", async () => {
   const { rudy, hugo, templateId } = await setup();
-  const hist = async () => (await db.listGroup("history", (q) => q)).length;
-  const before = { all: await hist(), tpl: (await db.history("setlistTemplates", templateId)).length };
+  const hist = async () => (await db.listGroup(SYS, "history", (q) => q)).length;
+  const before = { all: await hist(), tpl: (await db.history(SYS, "setlistTemplates", templateId)).length };
 
   // No options and no saved prefs: the defaults (two sets, so sheets stays "one"; breaks shown).
   const d = await call(rudy.token, "setlists.printLink", { setlistId: templateId });
@@ -89,7 +89,7 @@ test("setlists.printLink for a template: the path mirrors the options, missing o
 
   // Read-only: no history anywhere, the template untouched.
   assert.equal(await hist(), before.all);
-  assert.equal((await db.history("setlistTemplates", templateId)).length, before.tpl);
+  assert.equal((await db.history(SYS, "setlistTemplates", templateId)).length, before.tpl);
 });
 
 test("print prefs survive a stale stored option and drop song fields that no longer print", async () => {
@@ -99,7 +99,7 @@ test("print prefs survive a stale stored option and drop song fields that no lon
   await call(rudy.token, "artists.setSongFieldInSetlists", { id: TEST_ARTIST, fieldId: capo, inSetlists: true });
   await call(rudy.token, "setlists.setPrintPrefs", { options: { ...SAVED, fields: ["key", `field:${capo}`, `field:${midi}`, "field:deleted"] } });
   // An option that stops validating (here: written by hand) falls back alone.
-  const uid = (await db.list("users")).find((u) => u.email === "rudy@example.com")!.id;
+  const uid = (await db.list(SYS, "users")).find((u) => u.email === "rudy@example.com")!.id;
   const { firestore } = await import("@/server/admin");
   await firestore().collection("userPrefs").doc(uid).set({ print: { [TEST_ARTIST]: { paper: "legal" } } }, { merge: true });
   const got = (await call(rudy.token, "setlists.printPrefs", {})).json.result.options;
@@ -111,12 +111,12 @@ test("print prefs survive a stale stored option and drop song fields that no lon
 
 test("setlists.printLink for a show points at the show's setlist id", async () => {
   const { rudy } = await setup();
-  const v = await db.create(importCtx(), "venues", venue("Deep End"));
-  const show = await db.create(importCtx(), "shows", {
+  const v = await db.create(importCtx(TEST_ARTIST), "venues", venue("Deep End"));
+  const show = await db.create(importCtx(TEST_ARTIST), "shows", {
     artistId: TEST_ARTIST, date: "2026-11-14", status: "confirmed", venue: { id: v.id, name: "Deep End", city: "Denver" }, times: {}, personnel: [],
     sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, checklists: [], docs: [],
   });
-  await db.create(importCtx(), "setlists", { items }, { id: show.id });
+  await db.create(importCtx(TEST_ARTIST), "setlists", { items }, { id: show.id });
   const r = await call(rudy.token, "setlists.printLink", { showId: show.id, paper: "a4" });
   assert.equal(r.status, 200);
   assert.equal(r.json.result.path.split("?")[0], `/artists/nora-quill-band/setlists/${show.id}/print`);

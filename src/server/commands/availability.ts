@@ -6,7 +6,8 @@ import { AppError } from "../errors";
 import { gmailClient, IntegrationError } from "../integrations";
 import { setAskChannel } from "../prefs";
 import { answerLink, hashToken, newToken } from "../availability";
-import { dateStr } from "@/schema";
+import { dateStr, type Membership } from "@/schema";
+import type { Ctx } from "../ctx";
 import { fmtLong, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const answer = z.enum(["yes", "no", "maybe"]);
@@ -14,8 +15,8 @@ const answer = z.enum(["yes", "no", "maybe"]);
 const channel = z.enum(["email", "signal"]).default("email");
 const ROLES = ["admin", "mcp"] as const;
 
-async function requireAv(id: string): Promise<Doc> {
-  const av = await db.get("availability", id);
+async function requireAv(ctx: Ctx, id: string): Promise<Doc> {
+  const av = await db.get(ctx, "availability", id);
   if (!av || av.deletedAt) throw new AppError("not_found", "Availability question not found", 404);
   return av;
 }
@@ -39,10 +40,10 @@ export interface AskResult {
  * channel "signal": nothing is sent from here (no one can post to a Signal group but a person). Signed-in people answer on the
  * pitch or show page; anyone with no login (a sub) still needs their own link, returned for the admin to copy.
  */
-async function signalResult(id: string, targets: string[], tokens: Record<string, string>): Promise<AskResult> {
+async function signalResult(ctx: Ctx, id: string, targets: string[], tokens: Record<string, string>): Promise<AskResult> {
   const out: AskResult = { id, links: {}, emailed: [], notEmailed: [], viaSignal: [] };
   for (const musicianId of targets) {
-    const m = await db.get("musicians", musicianId);
+    const m = await db.get(ctx, "musicians", musicianId);
     const name = (m?.name as string | undefined) ?? "Someone";
     out.viaSignal!.push(name);
     if (tokens[musicianId]) {
@@ -53,11 +54,12 @@ async function signalResult(id: string, targets: string[], tokens: Record<string
   return out;
 }
 
-/** Of these musicians, the ones no user account is linked to: they can't sign in to answer. */
-async function withoutLogin(ids: string[]): Promise<string[]> {
+/** Of these musicians, the ones no login in this artist is linked to (by the membership's musician): they can't sign in to answer. */
+async function withoutLogin(ctx: Ctx, ids: string[]): Promise<string[]> {
   const linked = new Set<string>();
-  for (let i = 0; i < ids.length; i += 30) {
-    for (const u of await db.list("users", (q) => q.where("musicianId", "in", ids.slice(i, i + 30)))) linked.add(u.musicianId as string);
+  for (const u of await db.list(ctx, "users", (q) => q.where("artistIds", "array-contains", ctx.artistId))) {
+    const m = ((u.artists ?? []) as Membership[]).find((x) => x.artistId === ctx.artistId);
+    if (m?.musicianId && (m.role === "admin" || m.role === "member")) linked.add(m.musicianId);
   }
   return ids.filter((m) => !linked.has(m));
 }
@@ -69,12 +71,12 @@ function signalFromApp(ctx: { via?: string }, ch: "email" | "signal") {
 }
 
 /** Email each musician their personal link. A failure for one person never blocks the rest. */
-async function sendLinks(ctx: { uid: string; via?: string }, av: { id: string; label: string }, tokens: Record<string, string>, message: string, reminder: boolean): Promise<AskResult> {
-  const user = await db.get("users", ctx.uid);
+async function sendLinks(ctx: Ctx, av: { id: string; label: string }, tokens: Record<string, string>, message: string, reminder: boolean): Promise<AskResult> {
+  const user = await db.get(ctx, "users", ctx.uid);
   if (!user) throw new AppError("forbidden", "No user for this account", 403);
   const out: AskResult = { id: av.id, links: {}, emailed: [], notEmailed: [] };
   for (const [musicianId, token] of Object.entries(tokens)) {
-    const m = await db.get("musicians", musicianId);
+    const m = await db.get(ctx, "musicians", musicianId);
     const url = answerLink(av.id, musicianId, token);
     out.links[musicianId] = url;
     const name = (m?.name as string | undefined) ?? "Someone";
@@ -107,21 +109,21 @@ export const availabilityAsk = defineCommand({
     signalFromApp(ctx, i.channel);
     const days = [...new Set(i.dates ?? (i.date ? [i.date] : []))].sort();
     if (!days.length) throw new AppError("invalid_input", "Pick a date to ask about", 400);
-    const [pitch, show] = await Promise.all([i.pitchId ? db.get("pitches", i.pitchId) : null, i.showId ? db.get("shows", i.showId) : null]);
+    const [pitch, show] = await Promise.all([i.pitchId ? db.get(ctx, "pitches", i.pitchId) : null, i.showId ? db.get(ctx, "shows", i.showId) : null]);
     if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
     if (i.showId && (!show || show.deletedAt)) throw new AppError("not_found", "Show not found", 404);
     const place = ((show ? showName(show as ShowPlaceLike) : undefined) ?? pitch?.target?.name) as string | undefined;
     const labelFor = (when: string) => i.label ?? `${place ? `${place} · ` : ""}${when}`;
     const ids = [...new Set(i.musicianIds)];
-    for (const m of ids) { const d = await db.get("musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); if (d.archivedAt) throw new AppError("invalid_input", `${d.name} is archived`, 400); }
+    for (const m of ids) { const d = await db.get(ctx, "musicians", m); if (!d || d.deletedAt) throw new AppError("not_found", `Musician ${m} not found`, 404); if (d.archivedAt) throw new AppError("invalid_input", `${d.name} is archived`, 400); }
     // One link per person for the whole ask: the same token's hash goes on every date's doc. Signal: only people with no login need one.
-    const noLogin = i.channel === "signal" ? new Set(await withoutLogin(ids)) : null;
+    const noLogin = i.channel === "signal" ? new Set(await withoutLogin(ctx, ids)) : null;
     const tokens = Object.fromEntries(ids.filter((m) => !noLogin || noLogin.has(m)).map((m) => [m, newToken()]));
     const hashed = Object.fromEntries(Object.entries(tokens).map(([m, t]) => [m, hashToken(t)]));
     const scope = i.pitchId ? (["pitchId", i.pitchId] as const) : i.showId ? (["showId", i.showId] as const) : null;
     const avIds: string[] = [];
     for (const date of days) {
-      const open = scope ? (await db.list("availability", (q) => q.where(scope[0], "==", scope[1]).where("date", "==", date))).find((a) => !a.closedAt) : undefined;
+      const open = scope ? (await db.list(ctx, "availability", (q) => q.where(scope[0], "==", scope[1]).where("date", "==", date))).find((a) => !a.closedAt) : undefined;
       if (open) {
         await run(ctx, async (w) => {
           const cur = (await w.get("availability", open.id))!;
@@ -140,7 +142,7 @@ export const availabilityAsk = defineCommand({
     if (ctx.via !== "mcp" && ctx.artistId) await setAskChannel(ctx.uid, ctx.artistId, i.channel);
     const when = days.map(fmtLong).join(" or ");
     const out = i.channel === "signal"
-      ? await signalResult(avIds[0], ids, tokens)
+      ? await signalResult(ctx, avIds[0], ids, tokens)
       : await sendLinks(ctx, { id: avIds[0], label: labelFor(when) }, tokens, i.message ?? `We have an option for a show${place ? ` at ${place}` : ""} on ${when}. Tap here to say if you're available.`, false);
     return { ...out, ids: avIds };
   },
@@ -153,13 +155,13 @@ export const availabilityRemind = defineCommand({
   input: z.strictObject({ id: z.string().min(1), musicianIds: z.array(z.string().min(1)).optional(), message: z.string().min(1).optional(), channel }),
   async run(ctx, i) {
     signalFromApp(ctx, i.channel);
-    const av = await requireAv(i.id);
+    const av = await requireAv(ctx, i.id);
     if (av.closedAt) throw new AppError("closed", "This question is closed. Reopen it first.", 409);
     const asked = av.askedMusicianIds as string[];
     const targets = i.musicianIds ?? asked.filter((m) => !av.responses?.[m]);
     if (!targets.length) return { id: i.id, links: {}, emailed: [], notEmailed: [] } satisfies AskResult;
     // Signal: people who sign in answer on the page, so their links stay as they are. Only those with no login get a fresh one.
-    const fresh = i.channel === "signal" ? await withoutLogin(targets) : targets;
+    const fresh = i.channel === "signal" ? await withoutLogin(ctx, targets) : targets;
     const tokens = Object.fromEntries(fresh.map((m) => [m, newToken()]));
     await run(ctx, async (w) => {
       const cur = (await w.get("availability", i.id))!;
@@ -170,7 +172,7 @@ export const availabilityRemind = defineCommand({
       });
     });
     if (ctx.via !== "mcp" && ctx.artistId) await setAskChannel(ctx.uid, ctx.artistId, i.channel);
-    if (i.channel === "signal") return signalResult(i.id, targets, tokens);
+    if (i.channel === "signal") return signalResult(ctx, i.id, targets, tokens);
     const message = i.message ?? `Checking in on ${av.label}. Can you tell us if you're available?`;
     return sendLinks(ctx, { id: i.id, label: av.label }, tokens, message, true);
   },
@@ -213,9 +215,9 @@ export const availabilityAnswerPitchDate = defineCommand({
   async run(ctx, i) {
     const me = ctx.musicianId;
     if (!me) throw new AppError("forbidden", "Your login isn't linked to anyone in the band", 403);
-    const pitch = await db.get("pitches", i.pitchId);
+    const pitch = await db.get(ctx, "pitches", i.pitchId);
     if (!pitch || pitch.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
-    const asks = await db.list("availability", (q) => q.where("pitchId", "==", i.pitchId).where("date", "==", i.date));
+    const asks = await db.list(ctx, "availability", (q) => q.where("pitchId", "==", i.pitchId).where("date", "==", i.date));
     if (!(pitch.dates as string[]).includes(i.date) && !asks.length) throw new AppError("invalid_input", "That date isn't on this pitch", 400);
     const response = { answer: i.answer, ...(i.note?.trim() ? { note: i.note.trim() } : {}), by: "self" as const };
     const open = asks.filter((a) => !a.closedAt && !a.deletedAt).sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0))[0];

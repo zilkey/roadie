@@ -12,7 +12,7 @@ import { draftVenue, FAKE_ATRIUM, MAX_DRAFTS } from "@/server/assistant/lookup";
 import { newTypeValue } from "@/server/assistant/card";
 import { newWebTurn } from "@/server/assistant/web";
 import type { AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 // ---------- pure pieces ----------
 
@@ -27,13 +27,13 @@ const noop: Emit = () => {};
 beforeEach(async () => {
   await resetEmulators();
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   await db.create(sys, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 async function sess() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return sessionFor(who, threadId);
 }
 const content = (o: unknown) => (o as { untrustedContent: any }).untrustedContent; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -116,7 +116,7 @@ test("a type said as its label runs without a card; one not on the list offers t
   const s = await sess();
   const ran = await execTool(s, "venues.create", venue("Swallow Hill", "Denver", { type: "Listening Room" }), noop);
   assert.equal(ran.action?.kind, "readback");
-  assert.equal((await db.list("venues")).find((v) => v.name === "Swallow Hill")!.type, "listening");
+  assert.equal((await db.list(SYS, "venues")).find((v) => v.name === "Swallow Hill")!.type, "listening");
   const events: AssistantEvent[] = [];
   const asked = await execTool(s, "venues.create", venue("Pelo's Deli", "Longmont", { type: "supper club" }), (e) => events.push(e));
   const card = events.find((e) => e.type === "confirm") as Extract<AssistantEvent, { type: "confirm" }>;
@@ -126,8 +126,8 @@ test("a type said as its label runs without a card; one not on the list offers t
   assert.deepEqual(type.options![type.options!.length - 1], { value: newTypeValue("supper club"), label: 'Add "supper club" as a new type' });
   const pendingId = (asked.output as { pendingId: string }).pendingId;
   assert.equal((await answerPending(who, { threadId: s.threadId, pendingId, decision: "yes", picks: { type: newTypeValue("supper club") } })).status, "done");
-  const made = (await db.list("venues")).find((v) => v.name === "Pelo's Deli")!;
-  const types = await db.list("venueTypes");
+  const made = (await db.list(SYS, "venues")).find((v) => v.name === "Pelo's Deli")!;
+  const types = await db.list(SYS, "venueTypes");
   const added = types.find((t) => t.label === "supper club")!;
   assert.ok(added, "the type was added");
   assert.equal(made.type, added.id);
@@ -144,7 +144,7 @@ test("end to end with the canned model: the SoFar message makes one card per ven
   assert.match(text, /couldn't find a street address or the capacity for SoFar Fort Collins/);
   assert.match(text, /couldn't find a street address or the capacity for SoFar Denver/);
   assert.ok(events.some((e) => e.type === "action" && e.label === 'Looked up "SoFar Fort Collins"'));
-  assert.equal((await db.list("venues")).length, 0); // nothing written before Yes
+  assert.equal((await db.list(SYS, "venues")).length, 0); // nothing written before Yes
   const done = events.find((e) => e.type === "done") as Extract<AssistantEvent, { type: "done" }>;
   const saved = (await firestore().collection("assistantThreads").doc(done.threadId).collection("messages").doc(done.messageId!).get()).data()!;
   assert.deepEqual(saved.trace.map((t: { name: string; ok: boolean }) => [t.name, t.ok]), [["venues.draft", true], ["venues.draft", true], ["venues.create", true], ["venues.create", true]]);
@@ -155,5 +155,5 @@ test("end to end with the canned model: the SoFar message makes one card per ven
   const res2 = await handleChat(`Bearer ${admin.token}`, { threadId: done.threadId, message: 'add a new venue type option called "supper club" . literally just do that', pageContext: { route: "bookingVenues" } });
   const events2 = (await res2.text()).split("\n\n").filter(Boolean).map((l) => JSON.parse(l.replace(/^data: /, "")) as AssistantEvent);
   assert.ok(events2.some((e) => e.type === "readback" && e.label === "Added the venue type supper club"));
-  assert.ok((await db.list("venueTypes")).some((t) => t.label === "supper club"));
+  assert.ok((await db.list(SYS, "venueTypes")).some((t) => t.label === "supper club"));
 });

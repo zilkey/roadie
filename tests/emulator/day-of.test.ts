@@ -20,7 +20,7 @@ test("dayOf.dismiss: stored in the caller's prefs per artist, per show or rehear
   await fs.doc("shows/s1").set({ date: "2026-11-10", status: "confirmed", artistId: TEST_ARTIST, times: { loadIn: "17:00" }, deletedAt: null });
   await fs.doc("shows/other").set({ date: "2026-11-10", status: "confirmed", artistId: "another-artist", times: {}, deletedAt: null });
   await fs.doc("shows/gone").set({ date: "2026-11-10", status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: new Date() });
-  await fs.doc("rehearsals/r1").set({ date: "2026-11-10", startTime: "19:00", personnel: [], songs: [], deletedAt: null });
+  await fs.doc("rehearsals/r1").set({ artistId: TEST_ARTIST, date: "2026-11-10", startTime: "19:00", personnel: [], songs: [], deletedAt: null });
   const call = (tok: string, body: unknown) => dispatch("dayOf.dismiss", `Bearer ${tok}`, body, TEST_ARTIST);
 
   const res = await call(rudy.token, { kind: "show", id: "s1" });

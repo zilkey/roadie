@@ -115,9 +115,8 @@ export async function setVenuePromoters(w: Writer, artistId: string, venueId: st
 // ---------- outside a write unit (reads) ----------
 
 /** The caller's band notes of one kind, by the record's id. */
-export async function bandNotesBy(kind: NotedKind, artistId: string | undefined): Promise<Map<string, Doc>> {
-  if (!artistId) return new Map();
+export async function bandNotesBy(ctx: Ctx, kind: NotedKind): Promise<Map<string, Doc>> {
   const { coll, key } = BAND_NOTES[kind];
-  const rows = await db.list(coll, (q) => q.where("artistId", "==", artistId));
+  const rows = await db.list(ctx, coll);
   return new Map(rows.map((n) => [n[key] as string, n]));
 }

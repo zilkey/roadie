@@ -278,9 +278,14 @@ export const expensesEstimateGas = defineCommand({
   }> {
     const target = i.forId ?? ctx.uid;
     if (target !== ctx.uid && ctx.role === "member") throw new AppError("forbidden", "You can only estimate your own gas", 403);
-    const reh = i.rehearsalId ? await db.get("rehearsals", i.rehearsalId) : null;
+    // Someone else's home address and cars only for a person in this artist (tenancy plan D3).
+    if (target !== ctx.uid) {
+      const u = await db.get(ctx, "users", target);
+      if (!u || u.deletedAt || !roleIn(u, ctx.artistId)) throw new AppError("not_found", "Not a member of this band", 404);
+    }
+    const reh = i.rehearsalId ? await db.get(ctx, "rehearsals", i.rehearsalId) : null;
     if (i.rehearsalId && (!reh || reh.deletedAt)) throw new AppError("not_found", "Rehearsal not found", 404);
-    const settings = await getDriving(target);
+    const settings = await getDriving(ctx, target);
     const fromKind = i.from ? "typed" as const : "home" as const;
     const from = i.from ?? settings.home ?? undefined;
     const loc = reh?.location as { lat?: number; lng?: number } | undefined;

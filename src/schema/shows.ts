@@ -114,7 +114,7 @@ export type IncomeLine = z.infer<typeof incomeLine>;
 /** showDeals/{showId}: same id as the show. */
 export const ShowDeal = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   pitchId: id.optional(),
   promoterId: id.optional(),
   editionId: id.optional(),

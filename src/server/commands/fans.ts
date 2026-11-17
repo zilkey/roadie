@@ -6,9 +6,10 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { db, run, type Doc } from "../db";
+import type { Ctx } from "../ctx";
 import { AppError } from "../errors";
 import {
-  artistShows, canSeeFans, citiesFor, countableShow, deleteFan, fanArtistId, loadFans, requireFan, requireFanAdmin, showLabel, upsertFan,
+  artistShows, canSeeFans, citiesFor, countableShow, deleteFan, loadFans, requireFan, requireFanAdmin, showLabel, upsertFan,
 } from "../fans";
 import { geocodeCity, geocodeText } from "../geocode";
 import { dateInBandZone } from "@/lib/timezone";
@@ -42,9 +43,9 @@ export const fansAdd = defineCommand({
   input: strict({ email, firstName: z.string().trim().max(60).optional(), city: cityInput.city.optional(), state: cityInput.state, showId: z.string().min(1).optional() }),
   async run(ctx, i) {
     const artistId = await requireFanAdmin(ctx);
-    const show = i.showId ? await countableShow(artistId, i.showId) : undefined;
-    const typed = i.city ? await citiesFor(undefined, { city: i.city, state: i.state }) : [];
-    const fromShow = show && !typed.length ? await citiesFor(show) : [];
+    const show = i.showId ? await countableShow(ctx, i.showId) : undefined;
+    const typed = i.city ? await citiesFor(ctx, undefined, { city: i.city, state: i.state }) : [];
+    const fromShow = show && !typed.length ? await citiesFor(ctx, show) : [];
     return upsertFan(ctx, {
       artistId, email: i.email, ...(i.firstName ? { firstName: i.firstName } : {}),
       cities: [...fromShow, ...typed], showIds: show ? [show.id] : [], source: "paper",
@@ -65,9 +66,9 @@ export const fansUpdate = defineCommand({
     }),
   }),
   async run(ctx, { id, patch }) {
-    const artistId = await requireFanAdmin(ctx);
-    const before = await db.get("fans", id);
-    if (!before || before.deletedAt || before.artistId !== artistId) throw new AppError("not_found", "Fan not found", 404);
+    await requireFanAdmin(ctx);
+    const before = await db.get(ctx, "fans", id);
+    if (!before || before.deletedAt) throw new AppError("not_found", "Fan not found", 404);
     let cities: CityLike[] | undefined;
     if (patch.cities) {
       const old = (before.cities ?? []) as CityLike[];
@@ -78,9 +79,9 @@ export const fansUpdate = defineCommand({
         cities = mergeCities(cities, [{ city: c.city, ...(c.state ? { state: c.state.toUpperCase() } : {}), ...(hit ?? {}) }]);
       }
     }
-    if (patch.showIds) for (const s of patch.showIds) if (!before.showIds?.includes(s)) await countableShow(artistId, s);
+    if (patch.showIds) for (const s of patch.showIds) if (!before.showIds?.includes(s)) await countableShow(ctx, s);
     return run(ctx, async (w) => {
-      await requireFan(w, id, artistId);
+      await requireFan(w, id);
       return w.update("fans", id, {
         ...(patch.firstName !== undefined ? { firstName: patch.firstName || null } : {}),
         ...(cities ? { cities } : {}),
@@ -94,8 +95,8 @@ export const fansRemove = defineCommand({
   name: "fans.remove", roles: [...ADMIN_ONLY], input: idInput,
   description: "Delete a fan for good (admins only; hard delete, with their change history, e.g. when someone asks to be taken off). It can't be undone.",
   async run(ctx, { id }) {
-    const artistId = await requireFanAdmin(ctx);
-    await deleteFan(artistId, id);
+    await requireFanAdmin(ctx);
+    await deleteFan(ctx, id);
     return { id, removed: true };
   },
 });
@@ -112,9 +113,9 @@ export const fansList = defineCommand({
     limit: z.number().int().min(1).max(1000).default(200),
   }),
   async run(ctx, i) {
-    const artistId = await requireFanAdmin(ctx);
-    const want = i.city ? (await citiesFor(undefined, { city: i.city }))[0] : undefined;
-    const rows = (await loadFans(artistId))
+    await requireFanAdmin(ctx);
+    const want = i.city ? (await citiesFor(ctx, undefined, { city: i.city }))[0] : undefined;
+    const rows = (await loadFans(ctx))
       .filter((f) => !i.showId || (f.showIds ?? []).includes(i.showId))
       .filter((f) => !want || ((f.cities ?? []) as CityLike[]).some((c) => sameCity(c, want)))
       .filter((f) => !i.notInBandzoogle || !inBandzoogle(f))
@@ -132,15 +133,14 @@ export const fansCounts = defineCommand({
     "byShow ([{showId, label, count}]), notInBandzoogle, and newSince (fans added on or after the optional since date, YYYY-MM-DD). Open to every role.",
   input: strict({ since: dateStr.optional() }),
   async run(ctx, i) {
-    const artistId = await fanArtistId(ctx);
-    const fans = await loadFans(artistId);
+    const fans = await loadFans(ctx);
     const byCity = new Map<string, number>(), byShow = new Map<string, number>();
     for (const f of fans) {
       const cs = (f.cities ?? []) as CityLike[];
       for (const k of new Set(cs.length ? cs.map(cityLabel) : [NO_CITY])) byCity.set(k, (byCity.get(k) ?? 0) + 1);
       for (const s of new Set((f.showIds ?? []) as string[])) byShow.set(s, (byShow.get(s) ?? 0) + 1);
     }
-    const shows = new Map((await artistShows(artistId)).map((s) => [s.id, s]));
+    const shows = new Map((await artistShows(ctx)).map((s) => [s.id, s]));
     return {
       total: fans.length,
       byCity: tally(byCity),
@@ -162,13 +162,12 @@ export const fansNear = defineCommand({
     .refine((i) => [!!i.place, !!i.venueId, i.lat !== undefined || i.lng !== undefined].filter(Boolean).length === 1, "Give exactly one of place, venueId, or lat and lng")
     .refine((i) => (i.lat === undefined) === (i.lng === undefined), "Give both lat and lng"),
   async run(ctx, i) {
-    const artistId = await fanArtistId(ctx);
     let center: { lat: number; lng: number }, label: string;
     if (i.lat !== undefined && i.lng !== undefined) { center = { lat: i.lat, lng: i.lng }; label = `${i.lat}, ${i.lng}`; }
     else {
       let text = i.place!;
       if (i.venueId) {
-        const v = await db.get("venues", i.venueId);
+        const v = await db.get(ctx, "venues", i.venueId);
         if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
         text = cityLabel({ city: v.address.city, state: v.address.state });
       }
@@ -178,7 +177,7 @@ export const fansNear = defineCommand({
     }
     const near: { f: Doc; city: CityLike; distance: number }[] = [];
     let notLocated = 0;
-    for (const f of await loadFans(artistId)) {
+    for (const f of await loadFans(ctx)) {
       const cs = ((f.cities ?? []) as CityLike[]).filter((c) => c.lat !== undefined && c.lng !== undefined);
       if (!cs.length) { if ((f.cities ?? []).length) notLocated++; continue; }
       const best = cs.map((c) => ({ c, d: haversineMiles(center, { lat: c.lat!, lng: c.lng! }) })).sort((a, b) => a.d - b.d)[0];
@@ -199,12 +198,11 @@ export const fansNewSince = defineCommand({
     "Without showId, just the list-wide notInBandzoogle. Always returns total notInBandzoogle too (the Fans nav badge).",
   input: strict({ showId: z.string().min(1).optional() }),
   async run(ctx, i) {
-    const artistId = await fanArtistId(ctx);
-    const fans = await loadFans(artistId);
+    const fans = await loadFans(ctx);
     const total = fans.filter((f) => !inBandzoogle(f)).length;
     if (!i.showId) return { notInBandzoogle: total };
-    const show = await db.get("shows", i.showId);
-    if (!show || show.deletedAt || show.artistId !== artistId) throw new AppError("not_found", "Show not found", 404);
+    const show = await db.get(ctx, "shows", i.showId);
+    if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
     const here = fans.filter((f) => (f.showIds ?? []).includes(i.showId));
     return { showId: i.showId, label: showLabel(show), date: show.date, added: here.length, notInBandzoogle: here.filter((f) => !inBandzoogle(f)).length, totalNotInBandzoogle: total, };
   },
@@ -214,9 +212,9 @@ export const fansNewSince = defineCommand({
 
 interface Group { group: string; fans: Doc[] }
 /** Fans not yet in Bandzoogle, grouped by their most recent city ("City, ST", else "No city"); biggest groups first. */
-async function unsynced(artistId: string): Promise<Group[]> {
+async function unsynced(ctx: Ctx): Promise<Group[]> {
   const by = new Map<string, Doc[]>();
-  for (const f of await loadFans(artistId)) {
+  for (const f of await loadFans(ctx)) {
     if (inBandzoogle(f)) continue;
     const g = groupOf((f.cities ?? []) as CityLike[]);
     by.set(g, [...(by.get(g) ?? []), f]);
@@ -231,8 +229,8 @@ export const fansForBandzoogle = defineCommand({
     "Nothing is marked: after the admin has pasted a group, confirm and call fans.markSynced.",
   input: strict({}),
   async run(ctx) {
-    const artistId = await requireFanAdmin(ctx);
-    const groups = (await unsynced(artistId)).map(({ group, fans }) => {
+    await requireFanAdmin(ctx);
+    const groups = (await unsynced(ctx)).map(({ group, fans }) => {
       const emails = fans.map((f) => f.email as string).sort();
       return { group, count: fans.length, ids: fans.map((f) => f.id), emails, csv: emails.join(", ") };
     });
@@ -248,9 +246,9 @@ export const fansMarkSynced = defineCommand({
   input: strict({ ids: z.array(z.string().min(1)).min(1).max(1000).optional(), group: z.string().trim().min(1).optional() })
     .refine((i) => !!i.ids !== !!i.group, "Give exactly one of ids or group"),
   async run(ctx, i) {
-    const artistId = await requireFanAdmin(ctx);
+    await requireFanAdmin(ctx);
     const targets = i.group
-      ? (await unsynced(artistId)).filter((g) => g.group.toLowerCase() === i.group!.toLowerCase()).flatMap((g) => g.fans.map((f) => f.id))
+      ? (await unsynced(ctx)).filter((g) => g.group.toLowerCase() === i.group!.toLowerCase()).flatMap((g) => g.fans.map((f) => f.id))
       : [...new Set(i.ids!)];
     const marked: Record<string, number> = {};
     let skipped = 0;
@@ -258,7 +256,7 @@ export const fansMarkSynced = defineCommand({
     for (let at = 0; at < targets.length; at += 200) {
       await run(ctx, async (w) => {
         for (const id of targets.slice(at, at + 200)) {
-          const f = await requireFan(w, id, artistId);
+          const f = await requireFan(w, id);
           if (f.bandzoogle?.addedAt) { skipped++; continue; }
           const group = groupOf((f.cities ?? []) as CityLike[]);
           await w.update("fans", id, { bandzoogle: { addedAt: w.now, group } });

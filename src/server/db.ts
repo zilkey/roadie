@@ -7,7 +7,7 @@
 import { Timestamp, type DocumentData, type Query, type Transaction } from "firebase-admin/firestore";
 import { firestore } from "./admin";
 import { AppError, invalid } from "./errors";
-import type { Ctx } from "./ctx";
+import type { AnyCtx, ArtistCtx, Ctx } from "./ctx";
 import type { FieldDiff } from "@/schema/history";
 import { SCHEMA_VERSION, commonKeys, collections, computedFields, kindOf, normalizeDoc } from "@/schema";
 import { denormalizers } from "./denorm";
@@ -15,6 +15,29 @@ import { SHARED_KINDS, accessOf, refusedMessage } from "./platform";
 import { PARENTS, ownerOf } from "@/schema/owners";
 import type { Membership } from "@/schema/users";
 import { tenancyLog } from "./tenancy";
+
+/**
+ * Tenancy (plan D3): may `ctx` see this doc? With a SystemCtx (or inside `w.system()`) everything is visible. Otherwise an artist
+ * kind is visible only when its `artistId` is the ctx's (a doc with none fails closed), the artist's own doc only when its id is the
+ * ctx's artist, and a History entry only when it names no other artist. A PersonCtx sees no artist's records.
+ */
+export function visibleTo(ctx: AnyCtx, path: string, id: string, doc: DocumentData, system = false): boolean {
+  if (system || ctx.system) return true;
+  const owner = ownerOf(kindOf(path));
+  if (owner === "artist") return !!ctx.artistId && doc.artistId === ctx.artistId;
+  if (owner === "artist-self") return !!ctx.artistId && id === ctx.artistId;
+  if (owner === "history") return doc.artistId === null || doc.artistId === undefined || doc.artistId === ctx.artistId;
+  return true;
+}
+/** The scoped form of a query on `path` (a kind, a sub-collection path or a collection group): null when the ctx sees none of it. */
+function scoped(ctx: AnyCtx, path: string, q: Query, system = false): Query | null {
+  if (system || ctx.system) return q;
+  const owner = ownerOf(kindOf(path));
+  if (owner === "artist" || (owner === "history" && !path.includes("/"))) return ctx.artistId ? q.where("artistId", "==", ctx.artistId) : null;
+  if (owner === "artist-self") return ctx.artistId ? q : null;
+  return q;
+}
+const notFound = (path: string, id: string) => new AppError("not_found", `${path}/${id} not found`, 404);
 
 export type Doc = DocumentData & { id: string };
 
@@ -182,30 +205,45 @@ function writable(doc: DocumentData): Record<string, unknown> {
   return o;
 }
 
-export class Writer {
-  private pending: ((tx: Transaction) => void)[] = [];
+/** One write unit's state, shared by the Writer and the artist-bound Writers it hands out (`forArtist`). */
+interface Unit {
+  pending: ((tx: Transaction) => void)[];
   /** What this unit has written so far, by document path (null = deleted): its reads see its own writes. */
-  private overlay = new Map<string, DocumentData | null>();
-  readonly now: Timestamp;
-  private seq = 0;
+  overlay: Map<string, DocumentData | null>;
+  seq: number;
+  /** Shared records ("path/id") an approved editor is changing for the first time since someone else created them: stamped adoptedAt. */
+  adopting: Set<string>;
   /** Set when an autosave update folded into an earlier history entry: the rest of this unit uses that entry's runId. */
   coalescedRunId?: string;
-  /** Above zero while denormalization hooks (or asSystem) run: their writes follow a change already allowed, so the shared-record check is skipped. */
-  private hookDepth = 0;
+}
+
+export class Writer<C extends AnyCtx = Ctx> {
+  private unit: Unit;
+  readonly now: Timestamp;
+  /**
+   * Above zero inside `system()` (denormalization hooks, act lookups): reads are unscoped and the shared-record check is skipped,
+   * since these writes follow a change already allowed or fill in looked-up facts. Allow-listed (tests/unit/tenancy-guard.test.ts).
+   */
+  private sysDepth = 0;
   /** Above zero while denormalization hooks run: their history entries are `derived` (a copy of a change made elsewhere). */
   private deriving = 0;
-  /** Shared records ("path/id") an approved editor is changing for the first time since someone else created them: stamped adoptedAt. */
-  private adopting = new Set<string>();
-  constructor(private tx: Transaction, readonly ctx: Ctx) {
+  constructor(private tx: Transaction, readonly ctx: C, unit?: Unit) {
     this.now = ctx.now ? Timestamp.fromDate(ctx.now) : Timestamp.now();
+    this.unit = unit ?? { pending: [], overlay: new Map(), seq: 0, adopting: new Set() };
   }
-  get runId() { return this.coalescedRunId ?? this.ctx.runId; }
+  get coalescedRunId() { return this.unit.coalescedRunId; }
+  get runId() { return this.unit.coalescedRunId ?? this.ctx.runId; }
+  private get overlay() { return this.unit.overlay; }
+  private get pending() { return this.unit.pending; }
+  private get adopting() { return this.unit.adopting; }
+  /** Reads are unscoped: a SystemCtx, or inside `system()`. */
+  private get sys() { return this.ctx.system === true || this.sysDepth > 0; }
 
   private fs = firestore();
   flush() { for (const p of this.pending) p(this.tx); }
 
-  /** Read one doc (including soft-deleted). Sees this unit's own pending writes. */
-  async get(path: string, id: string): Promise<Doc | null> {
+  /** Read one doc with no artist check (including soft-deleted). Sees this unit's own pending writes. Private: parent and stamping lookups. */
+  private async rawGet(path: string, id: string): Promise<Doc | null> {
     const key = `${path}/${id}`;
     if (this.overlay.has(key)) {
       const v = this.overlay.get(key);
@@ -213,6 +251,34 @@ export class Writer {
     }
     const snap = await this.tx.get(this.fs.collection(path).doc(id));
     return snap.exists ? ({ ...snap.data()!, id } as Doc) : null;
+  }
+
+  /** Read one doc (including soft-deleted), scoped to the ctx's artist: another artist's record reads as null. Sees this unit's own pending writes. */
+  async get(path: string, id: string): Promise<Doc | null> {
+    const d = await this.rawGet(path, id);
+    return d && visibleTo(this.ctx, path, id, d, this.sys) ? d : null;
+  }
+
+  /**
+   * Run `fn` as the system (tenancy plan D3): unscoped reads, no shared-record check. For denormalization hooks (renames update
+   * every artist's shows) and looked-up facts (act lookups). `derived: true` marks the entries written inside as `derived` (copies of a
+   * change made elsewhere, like a platform admin's merge rewriting other artists' records), so undoing the run from the caller's artist
+   * skips them instead of refusing. Allow-listed by file (tests/unit/tenancy-guard.test.ts).
+   */
+  async system<T>(fn: () => Promise<T>, opts: { derived?: boolean } = {}): Promise<T> {
+    this.sysDepth++;
+    if (opts.derived) this.deriving++;
+    try { return await fn(); } finally { this.sysDepth--; if (opts.derived) this.deriving--; }
+  }
+
+  /**
+   * A Writer in this same unit, bound to `artistId` as its admin: `createArtistFor` seeds a new artist's templates and project,
+   * `invites.accept` makes the musician in the inviting artist. Allow-listed by file (tests/unit/tenancy-guard.test.ts).
+   */
+  forArtist(artistId: string): Writer<ArtistCtx> {
+    const { uid, via, now, sessionId, client, touched } = this.ctx;
+    const ctx: ArtistCtx = { uid, via, runId: this.runId, now, sessionId, client, touched, role: "admin", artistId };
+    return new Writer(this.tx, ctx, this.unit);
   }
 
   /**
@@ -223,7 +289,9 @@ export class Writer {
    * asked for.
    */
   async query(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean; pending?: boolean } = {}): Promise<Doc[]> {
-    const q = build ? build(this.fs.collection(path)) : this.fs.collection(path);
+    const base = scoped(this.ctx, path, this.fs.collection(path), this.sys);
+    if (!base) return [];
+    const q = build ? build(base) : base;
     const snap = await this.tx.get(q);
     const out = new Map<string, Doc>();
     for (const d of snap.docs) out.set(d.id, { ...d.data(), id: d.id } as Doc);
@@ -233,7 +301,7 @@ export class Writer {
         if (v) out.set(id, { ...v, id } as Doc); else out.delete(id);
       }
     }
-    return [...out.values()].filter((d) => opts.includeDeleted || !d.deletedAt);
+    return [...out.values()].filter((d) => (opts.includeDeleted || !d.deletedAt) && visibleTo(this.ctx, path, d.id, d, this.sys));
   }
 
   private stampNew(id: string, body: Record<string, unknown>): DocumentData {
@@ -251,23 +319,15 @@ export class Writer {
   }
 
   /**
-   * Run writes as the system, not the person: looked-up facts (act lookups) and other fills that aren't someone's edit.
-   * The shared-record check is skipped inside (phase 4 turns this into a SystemCtx).
-   */
-  async asSystem<T>(fn: () => Promise<T>): Promise<T> {
-    this.hookDepth++;
-    try { return await fn(); } finally { this.hookDepth--; }
-  }
-
-  /**
    * May this call change the existing shared record `existing` (phase 1 of the tenancy plan)? Yes for anything that isn't a
-   * top-level shared kind, inside hooks and asSystem, for imports, for approved shared editors and platform admins, and for the
+   * top-level shared kind, inside `system()` (hooks, act lookups) and with a SystemCtx, for approved shared editors and platform admins, and for the
    * record's creator until someone approved adopts it. An approved person's first change to someone else's record adopts it.
    */
   private async mayChangeShared(path: string, existing: DocumentData): Promise<boolean> {
     if (path.includes("/") || !SHARED_KINDS.has(path)) return true;
-    if (this.hookDepth > 0 || this.ctx.via === "import") return true;
-    const a = await accessOf(this.ctx);
+    if (this.sys) return true;
+    if (this.ctx.person) return false;
+    const a = await accessOf(this.ctx as Ctx);
     if (a.sharedEditor || a.platformAdmin) {
       if (existing.createdBy !== this.ctx.uid && !existing.adoptedAt) this.adopting.add(`${path}/${existing.id}`);
       return true;
@@ -298,13 +358,13 @@ export class Writer {
     const seg = path.split("/");
     if (seg.length >= 3) {
       const parentPath = seg.slice(0, -2).join("/"), parentId = seg[seg.length - 2];
-      const parent = await this.get(parentPath, parentId);
+      const parent = await this.rawGet(parentPath, parentId);
       return parent ? this.artistIdFor(parentPath, parentId, parent) : null;
     }
     const p = PARENTS[kind];
     if (p?.keyedById) {
       for (const k of p.kinds) {
-        const parent = await this.get(k, id);
+        const parent = await this.rawGet(k, id);
         if (parent) return this.artistIdFor(k, id, parent);
       }
     }
@@ -314,8 +374,7 @@ export class Writer {
   /**
    * The one scope of a history entry (tenancy plan D4): artist records get `artistId`; a person's records (users, their private
    * sub-collection, prefs) get `ownerUid`; shared directory records get `shared: true`. Shared and person entries carry an explicit
-   * `artistId: null`, so a query can name it. An artist record written before phase 2 (no artistId of its own or its parent's)
-   * takes the caller's artist.
+   * `artistId: null`, so a query can name it.
    */
   private async scopeFor(path: string, id: string, doc: DocumentData): Promise<{ artistId: string | null; ownerUid?: string; shared?: true }> {
     const kind = kindOf(path);
@@ -326,53 +385,70 @@ export class Writer {
       return { artistId: null, ownerUid };
     }
     if (owner === "shared") return { artistId: null, shared: true };
-    const artistId = await this.artistIdFor(path, id, doc);
-    return { artistId: artistId ?? (owner === "artist" ? this.ctx.artistId ?? null : null) };
+    return { artistId: await this.artistIdFor(path, id, doc) };
   }
 
   /**
-   * Stamp a new artist record with its artist before it is validated (tenancy phase 2). In order: the artistId the input names,
-   * the parent's (sub-collections and show-keyed kinds), the caller's. Never refuses in this phase: with no artist found the write
-   * goes ahead and `tenancy.unstamped` is logged.
+   * The artist a new artist record goes into, stamped before it is validated (tenancy plan D3): a sub-collection doc (comments,
+   * activity, entries, tracks) and a show-keyed one (showDeals, setlists) take their parent's; others the ctx's. Refused (not_found)
+   * when the parent is another artist's, when the input names another artist, or with no artist at all. Inside `system()` or with a
+   * SystemCtx, the input's or the parent's artist is used (they must agree).
    */
   private async stampArtist(path: string, id: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
     const kind = kindOf(path);
-    if (ownerOf(kind) !== "artist") return input;
-    if (typeof input.artistId === "string" && input.artistId) return input;
-    const artistId = (await this.parentArtistId(path, id)) ?? this.ctx.artistId ?? null;
-    if (artistId) return { ...input, artistId };
-    tenancyLog.unstamped({ kind, id, via: this.ctx.via, uid: this.ctx.uid });
-    return input;
+    const owner = ownerOf(kind);
+    if (owner === "artist-self") {
+      if (!this.sys && id !== this.ctx.artistId) throw notFound(path, id);
+      return input;
+    }
+    if (owner !== "artist") return input;
+    const named = typeof input.artistId === "string" && input.artistId ? input.artistId : undefined;
+    const p = PARENTS[kind];
+    const isSub = path.split("/").length >= 3;
+    const parent = isSub || p?.keyedById ? await this.parentArtistId(path, id) : null;
+    if (isSub && !parent) throw notFound(path, id);
+    let artistId: string | undefined;
+    if (this.sys) {
+      if (named && parent && named !== parent) throw notFound(path, id);
+      artistId = parent ?? named ?? this.ctx.artistId;
+    } else {
+      const mine = this.ctx.artistId;
+      if (!mine || (named && named !== mine) || (parent && parent !== mine)) throw notFound(path, id);
+      artistId = mine;
+    }
+    if (!artistId) {
+      tenancyLog.unstamped({ kind, id, via: this.ctx.via, uid: this.ctx.uid });
+      throw new AppError("artist_required", `A new ${kind} record needs its artist`, 400);
+    }
+    return { ...input, artistId };
   }
 
   /**
-   * A users doc that links a musician (`musicianId`) carries it on that musician's membership too (`Membership.musicianId`):
-   * the membership in the musician's artist, else the caller's, else the person's only one. Other memberships lose a stale link.
+   * Memberships carry the person's musician in each artist (`Membership.musicianId`, plan D2). Refuses a link to a musician
+   * outside that membership's artist, or to one already linked to someone else. `users.musicianId` is read-only from tenancy
+   * phase 4 (system writes, such as restore, may still carry it).
    */
-  private async linkMemberships(doc: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const ms = doc.artists;
-    if (!Array.isArray(ms)) return doc;
-    const mid = typeof doc.musicianId === "string" && doc.musicianId ? doc.musicianId : undefined;
-    let target: string | undefined;
-    if (mid) {
-      const m = await this.get("musicians", mid);
-      const own = typeof m?.artistId === "string" ? m.artistId : undefined;
-      const has = (a?: string) => !!a && (ms as Membership[]).some((x) => x.artistId === a);
-      target = has(own) ? own : has(this.ctx.artistId) ? this.ctx.artistId : ms.length === 1 ? (ms[0] as Membership).artistId : undefined;
+  private async checkMemberships(uid: string, before: DocumentData | null, doc: Record<string, unknown>) {
+    if (this.sys) return;
+    if ((doc.musicianId ?? null) !== (before?.musicianId ?? null)) {
+      throw new AppError("invalid_input", "users.musicianId is read-only: link the musician on the person's membership", 400);
     }
-    const next = (ms as Membership[]).map((m) => {
-      if (m.artistId === target) return { ...m, musicianId: mid };
-      if (m.musicianId && (!mid || m.musicianId === mid)) { const { musicianId: _drop, ...rest } = m; void _drop; return rest; }
-      return m;
-    });
-    return { ...doc, artists: next };
+    const prev = new Map(((before?.artists ?? []) as Membership[]).map((m) => [m.artistId, m.musicianId]));
+    for (const m of (Array.isArray(doc.artists) ? doc.artists : []) as Membership[]) {
+      if (!m.musicianId || prev.get(m.artistId) === m.musicianId) continue;
+      const mus = await this.rawGet("musicians", m.musicianId);
+      if (!mus || mus.deletedAt || mus.artistId !== m.artistId) throw new AppError("not_found", "Musician not found", 404);
+      if (mus.userId && mus.userId !== uid) throw new AppError("conflict", "That musician already has a login", 409);
+    }
   }
 
   private async commit(path: string, id: string, doc: DocumentData, op: "create" | "update" | "delete" | "merge" | "restore", diff: Diff, autosave = false) {
     const scope = await this.scopeFor(path, id, doc);
     const ref = this.fs.collection(path).doc(id);
     const hist = ref.collection("history").doc(revId(doc.rev as number));
-    const seq = this.seq++;
+    const seq = this.unit.seq++;
+    // Read now, not at flush: by then the hook that made this write has returned.
+    const derived = this.deriving > 0;
     this.overlay.set(`${path}/${id}`, doc);
     (this.ctx.touched ??= {})[id] = doc.rev as number;
     this.pending.push((tx) => {
@@ -381,7 +457,7 @@ export class Writer {
         id: hist.id, schemaVersion: SCHEMA_VERSION, createdAt: this.now, updatedAt: this.now,
         createdBy: this.ctx.uid, updatedBy: this.ctx.uid, via: this.ctx.via, runId: this.runId, deletedAt: null, rev: 1,
         entity: { kind: path, id }, op, ...scope, diff, seq, actor: this.actor(), docRev: doc.rev,
-        ...(autosave ? { autosave: true } : {}), ...(this.deriving > 0 ? { derived: true } : {}),
+        ...(autosave ? { autosave: true } : {}), ...(derived ? { derived: true } : {}),
       });
     });
   }
@@ -454,14 +530,17 @@ export class Writer {
     const kind = kindOf(path);
     const d = def(kind);
     const id = opts.id ?? this.fs.collection(path).doc().id;
-    let stamped = await this.stampArtist(path, id, input);
-    if (kind === "users") stamped = await this.linkMemberships(stamped);
+    if (this.ctx.person && !this.sys && (ownerOf(kind) === "artist" || ownerOf(kind) === "artist-self")) throw notFound(path, id);
+    const stamped = await this.stampArtist(path, id, input);
+    if (kind === "users") await this.checkMemberships(id, null, stamped);
     const { data, computed } = prepare(kind, stamped);
     if (d.dedupe && computed.matchKey) {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits[0]) return this.mergeInto(path, hits[0], data);
     }
-    if (opts.id && (await this.get(path, id))) throw new AppError("already_exists", `${path}/${id} already exists`, 409);
+    // An id-keyed create (showDeals, setlists, *Notes, mcpTokens…) never replaces a record; another artist's reads as not found.
+    const there = opts.id ? await this.rawGet(path, id) : null;
+    if (there) throw visibleTo(this.ctx, path, id, there, this.sys) ? new AppError("already_exists", `${path}/${id} already exists`, 409) : notFound(path, id);
     const doc = clean(this.stampNew(id, { ...data, ...computed }));
     // A copy of an older record (comments carried from a pitch to its show) keeps the original's creation time and creator.
     if (opts.keep) Object.assign(doc, opts.keep);
@@ -476,7 +555,8 @@ export class Writer {
     const base = writable(existing);
     const filled: Record<string, unknown> = { ...base };
     for (const [k, v] of Object.entries(incoming)) filled[k] = mergeFill(base[k], v);
-    const { data, computed } = prepare(kind, kind === "users" ? await this.linkMemberships(filled) : filled);
+    if (kind === "users") await this.checkMemberships(existing.id, existing, filled);
+    const { data, computed } = prepare(kind, filled);
     const next = clean(this.stampUpdate(path, existing, { ...data, ...computed }, existing.deletedAt ?? null));
     const diff = diffDocs(existing, next);
     if (Object.keys(diff).length) {
@@ -492,8 +572,16 @@ export class Writer {
     if (dm.immutable || dm.appendOnly) throw new AppError("immutable", `${kindOf(path)} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing || existing.deletedAt) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    this.refuseMove(path, existing, input);
     await this.requireMayChange(path, existing);
     return this.mergeInto(path, existing, input);
+  }
+
+  /** No write moves a record to another artist. */
+  private refuseMove(path: string, existing: DocumentData, patch: Record<string, unknown>) {
+    if (ownerOf(kindOf(path)) === "artist" && "artistId" in patch && patch.artistId !== existing.artistId) {
+      throw new AppError("invalid_input", "A record can't move to another artist", 400);
+    }
   }
 
   /** Patch top-level fields. null removes an optional field. */
@@ -503,6 +591,7 @@ export class Writer {
     if (d.immutable || d.appendOnly) throw new AppError("immutable", `${kind} documents are never edited`, 409);
     const existing = await this.get(path, id);
     if (!existing || existing.deletedAt) throw new AppError("not_found", `${path}/${id} not found`, 404);
+    this.refuseMove(path, existing, patch);
     const allowed = await this.mayChangeShared(path, existing);
     const bad = Object.keys(patch).filter((k) => COMMON.has(k) || (computedFields[kind] ?? []).includes(k));
     if (bad.length) throw new AppError("invalid_input", `Cannot set server fields: ${bad.join(", ")}`, 400);
@@ -510,8 +599,8 @@ export class Writer {
     for (const [k, v] of Object.entries(patch)) {
       if (v === null) delete merged[k]; else merged[k] = v;
     }
-    const linked = kind === "users" && ("musicianId" in patch || "artists" in patch) ? await this.linkMemberships(merged) : merged;
-    const { data, computed } = prepare(kind, linked);
+    if (kind === "users") await this.checkMemberships(id, existing, merged);
+    const { data, computed } = prepare(kind, merged);
     if (d.dedupe && computed.matchKey && computed.matchKey !== existing.matchKey) {
       const hits = await this.query(path, (q) => q.where("matchKey", "==", computed.matchKey).limit(5));
       if (hits.some((h) => h.id !== id)) throw new AppError("duplicate", `Another ${kind} already matches that name`, 409);
@@ -524,8 +613,8 @@ export class Writer {
     if (br?.id === id) await this.checkConflict(path, id, br.rev, Object.keys(diff));
     const fold = await this.foldTarget(path, existing, diff);
     if (fold) {
-      this.coalescedRunId = fold.last.runId as string;
-      next = { ...next, runId: this.coalescedRunId };
+      this.unit.coalescedRunId = fold.last.runId as string;
+      next = { ...next, runId: this.unit.coalescedRunId };
       this.commitFolded(path, id, next, fold);
     } else await this.commit(path, id, next, "update", diff, !!this.ctx.autosave && this.ctx.via === "app");
     await this.afterChange(path, existing, next);
@@ -586,7 +675,7 @@ export class Writer {
     const merged: Record<string, unknown> = { ...writable(existing) };
     const skipped: string[] = [];
     for (const [k, v] of Object.entries(diff)) {
-      if (COMMON.has(k) || computed.has(k)) continue;
+      if (COMMON.has(k) || computed.has(k) || k === "artistId") continue; // no undo moves a record to another artist
       if (isListDiff(v)) {
         const r = revertList(k, existing[k], v);
         if (!r) { skipped.push(k); continue; } // no longer a list of id-keyed items: leave it alone
@@ -614,16 +703,16 @@ export class Writer {
       if (h.source !== kind) continue;
       if (h.watch.every((f) => same(before[f], after[f]))) continue;
       this.deriving++;
-      try { await this.asSystem(() => h.refresh(this, before.id, after, before)); } finally { this.deriving--; }
+      try { await this.system(() => h.refresh(this as unknown as Writer, before.id, after, before)); } finally { this.deriving--; }
     }
   }
 }
 
 /** One transaction. Retries re-run fn, so keep it free of side effects other than writer calls. */
-export async function run<T>(ctx: Ctx, fn: (w: Writer) => Promise<T>): Promise<T> {
-  let last: Writer | undefined;
+export async function run<T, C extends AnyCtx = Ctx>(ctx: C, fn: (w: Writer<C>) => Promise<T>): Promise<T> {
+  let last: Writer<C> | undefined;
   const out = await firestore().runTransaction(async (tx) => {
-    const w = (last = new Writer(tx, ctx));
+    const w = (last = new Writer<C>(tx, ctx));
     const out = await fn(w);
     w.flush();
     return out;
@@ -644,30 +733,41 @@ export async function touchLastUsed(hash: string, now = new Date(), collection: 
   await ref.update({ lastUsedAt: Timestamp.fromDate(now) });
 }
 
+/**
+ * Plain reads (not part of a write unit) and one-call writes. Every call takes the ctx first (tenancy plan D3): with an ArtistCtx
+ * reads of artist kinds are scoped to its artist; with a SystemCtx they are unscoped (allow-listed, tests/unit/tenancy-guard.test.ts).
+ */
 export const db = {
   run,
-  create: (ctx: Ctx, path: string, input: Record<string, unknown>, opts?: { id?: string }) => run(ctx, (w) => w.create(path, input, opts)),
-  update: (ctx: Ctx, path: string, id: string, patch: Record<string, unknown>) => run(ctx, (w) => w.update(path, id, patch)),
-  merge: (ctx: Ctx, path: string, id: string, input: Record<string, unknown>) => run(ctx, (w) => w.merge(path, id, input)),
-  softDelete: (ctx: Ctx, path: string, id: string) => run(ctx, (w) => w.softDelete(path, id)),
-  restore: (ctx: Ctx, path: string, id: string) => run(ctx, (w) => w.restore(path, id)),
-  /** Plain read (not part of a write unit). */
-  async get(path: string, id: string): Promise<Doc | null> {
+  create: (ctx: AnyCtx, path: string, input: Record<string, unknown>, opts?: { id?: string }) => run(ctx, (w) => w.create(path, input, opts)),
+  update: (ctx: AnyCtx, path: string, id: string, patch: Record<string, unknown>) => run(ctx, (w) => w.update(path, id, patch)),
+  merge: (ctx: AnyCtx, path: string, id: string, input: Record<string, unknown>) => run(ctx, (w) => w.merge(path, id, input)),
+  softDelete: (ctx: AnyCtx, path: string, id: string) => run(ctx, (w) => w.softDelete(path, id)),
+  restore: (ctx: AnyCtx, path: string, id: string) => run(ctx, (w) => w.restore(path, id)),
+  /** One doc (including soft-deleted); another artist's record is null. */
+  async get(ctx: AnyCtx, path: string, id: string): Promise<Doc | null> {
     const s = await firestore().collection(path).doc(id).get();
-    return s.exists ? ({ ...s.data()!, id } as Doc) : null;
+    if (!s.exists) return null;
+    const d = { ...s.data()!, id } as Doc;
+    return visibleTo(ctx, path, id, d) ? d : null;
   },
-  async list(path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean } = {}): Promise<Doc[]> {
-    const s = await (build ? build(firestore().collection(path)) : firestore().collection(path)).get();
-    return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => opts.includeDeleted || !d.deletedAt);
+  async list(ctx: AnyCtx, path: string, build?: (q: Query) => Query, opts: { includeDeleted?: boolean } = {}): Promise<Doc[]> {
+    const base = scoped(ctx, path, firestore().collection(path));
+    if (!base) return [];
+    const s = await (build ? build(base) : base).get();
+    return s.docs.map((d) => ({ ...d.data(), id: d.id }) as Doc).filter((d) => (opts.includeDeleted || !d.deletedAt) && visibleTo(ctx, path, d.id, d));
   },
   /** Collection-group query (every collection with this name, at any depth). Rows carry their full `path`. */
-  async listGroup(group: string, build?: (q: Query) => Query): Promise<(Doc & { path: string })[]> {
-    const g = firestore().collectionGroup(group);
-    const s = await (build ? build(g) : g).get();
-    return s.docs.map((d) => ({ ...d.data(), id: d.id, path: d.ref.path }) as Doc & { path: string }).filter((d) => !d.deletedAt);
+  async listGroup(ctx: AnyCtx, group: string, build?: (q: Query) => Query): Promise<(Doc & { path: string })[]> {
+    const base = scoped(ctx, group, firestore().collectionGroup(group));
+    if (!base) return [];
+    const s = await (build ? build(base) : base).get();
+    return s.docs.map((d) => ({ ...d.data(), id: d.id, path: d.ref.path }) as Doc & { path: string })
+      .filter((d) => !d.deletedAt && visibleTo(ctx, d.path.split("/").slice(0, -1).join("/"), d.id, d));
   },
-  /** History entries of one record, newest first (a direct read of its subcollection). */
-  async history(path: string, id: string, limit = 50): Promise<Doc[]> {
-    return db.list(historyPath(path, id), (q) => q.orderBy("docRev", "desc").limit(limit));
+  /** History entries of one record the ctx can see, newest first (a direct read of its subcollection). */
+  async history(ctx: AnyCtx, path: string, id: string, limit = 50): Promise<Doc[]> {
+    if (!(await db.get(ctx, path, id))) return [];
+    return db.list(ctx, historyPath(path, id), (q) => q.orderBy("docRev", "desc").limit(limit));
   },
 };

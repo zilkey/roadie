@@ -1,5 +1,5 @@
 import { adminAuth } from "@/server/admin";
-import { importCtx } from "@/server/ctx";
+import { importCtx, systemCtx } from "@/server/ctx";
 import { db } from "@/server/db";
 import { startSession, syncClaims } from "@/server/session";
 import { addPlatformAdmins, approveEditor } from "@/server/platform";
@@ -16,19 +16,22 @@ export async function resetEmulators() {
 
 /** The artist test users belong to unless they say otherwise (no artists doc is needed for commands to accept it). */
 export const TEST_ARTIST = "test-artist";
+/** Unscoped reads and writes for test setup and assertions (tests see every artist's records). */
+export const SYS = systemCtx("test");
 
 /** Create an auth user + users doc (a member of `artistId`, default TEST_ARTIST) + claims, return an ID token. */
-export async function makeUser(email: string, role: "admin" | "member" | "ai", opts: { musicianId?: string; name?: string; artistId?: string; artists?: { artistId: string; role: "admin" | "member" | "ai" }[] } = {}) {
+export async function makeUser(email: string, role: "admin" | "member" | "ai", opts: { musicianId?: string; name?: string; artistId?: string; artists?: { artistId: string; role: "admin" | "member" | "ai"; musicianId?: string }[] } = {}) {
   const u = await adminAuth().createUser({ email, emailVerified: true, displayName: opts.name ?? email });
-  const artists = opts.artists ?? [{ artistId: opts.artistId ?? TEST_ARTIST, role }];
-  await db.create(importCtx(), "users", { email, name: opts.name ?? email, artists, musicianId: opts.musicianId }, { id: u.uid });
+  // The musician is linked on the membership (Membership.musicianId), as users.add does since tenancy phase 4.
+  const artists = opts.artists ?? [{ artistId: opts.artistId ?? TEST_ARTIST, role, ...(opts.musicianId ? { musicianId: opts.musicianId } : {}) }];
+  await db.create(SYS, "users", { email, name: opts.name ?? email, artists }, { id: u.uid });
   await syncClaims(u.uid);
   return { uid: u.uid, token: await idToken(u.uid) };
 }
 
 /** An artists doc (default id TEST_ARTIST) with a slug. */
 export async function makeArtist(name: string, slug: string, id = TEST_ARTIST) {
-  await db.create(importCtx(), "artists", { name, slug, configurations: [], links: {}, driveFolderId: "" }, { id });
+  await db.create(importCtx(id), "artists", { name, slug, configurations: [], links: {}, driveFolderId: "" }, { id });
   return id;
 }
 

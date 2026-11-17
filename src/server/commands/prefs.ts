@@ -5,7 +5,7 @@ import { AppError } from "../errors";
 import { db } from "../db";
 import { roleIn } from "@/schema";
 import { calendarTours, setCalendarTours, setlistTransitions, setSetlistTransitions, dismissDayOf, dismissSetup, hiddenSections, printPrefs, setupDismissed, sectionOrder, setSectionHidden, setSectionOrder, setPrintPrefs } from "../prefs";
-import { callerArtistId } from "../venues";
+import type { Ctx } from "../ctx";
 import { defineCommand } from "./types";
 import { dayOfKey } from "@/lib/dayOf";
 
@@ -31,20 +31,16 @@ export const sectionsOrder = defineCommand({
   async run(ctx) { return { order: await sectionOrder(ctx.uid) }; },
 });
 
-const artistOf = async (ctx: Parameters<typeof callerArtistId>[0]) => {
-  const id = await callerArtistId(ctx);
-  if (!id) throw new AppError("invalid_input", "Which artist? Open one first", 400);
-  return id;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 export const setlistsPrintPrefs = defineCommand({
   name: "setlists.printPrefs", roles: ["admin", "member"], input: z.strictObject({}),
   description: "How the caller last printed a setlist for this artist (copy, sheets, fields, titles, header, paper); options is null if they never did.",
-  async run(ctx) { return { options: await printPrefs(ctx.uid, await artistOf(ctx)) }; },
+  async run(ctx) { return { options: await printPrefs(ctx.uid, artistOf(ctx)) }; },
 });
 export const setlistsSetPrintPrefs = defineCommand({
   name: "setlists.setPrintPrefs", roles: ["admin", "member"], input: z.strictObject({ options: PrintOptions }),
   description: "Remember how the caller prints setlists for this artist; the Print dialog and setlists.printLink start from it. Personal: nobody else's prints change.",
-  async run(ctx, i) { await setPrintPrefs(ctx.uid, await artistOf(ctx), i.options); return { options: i.options }; },
+  async run(ctx, i) { await setPrintPrefs(ctx.uid, artistOf(ctx), i.options); return { options: i.options }; },
 });
 
 export const setlistsSetShowTransitions = defineCommand({
@@ -62,8 +58,8 @@ export const artistsSetupStatus = defineCommand({
   name: "artists.setupStatus", roles: ["admin"], input: z.strictObject({}),
   description: "What is still to do after starting this band, for Home's \"Finish setting up\" card: people (anyone besides the creator is in the band), links (any link set), google (Google connected), and dismissed (the caller hid the card).",
   async run(ctx) {
-    const artistId = await artistOf(ctx);
-    const [artist, users, dismissed] = await Promise.all([db.get("artists", artistId), db.list("users"), setupDismissed(ctx.uid, artistId)]);
+    const artistId = artistOf(ctx);
+    const [artist, users, dismissed] = await Promise.all([db.get(ctx, "artists", artistId), db.list(ctx, "users", (q) => q.where("artistIds", "array-contains", ctx.artistId)), setupDismissed(ctx.uid, artistId)]);
     const members = users.filter((u) => !u.deletedAt && ["admin", "member"].includes(roleIn(u, artistId) ?? "")).length;
     const links = Object.values((artist?.links ?? {}) as Record<string, unknown>).some((v) => typeof v === "string" && v.trim() !== "")
       || (typeof artist?.signalGroupUrl === "string" && artist.signalGroupUrl.trim() !== "");
@@ -73,7 +69,7 @@ export const artistsSetupStatus = defineCommand({
 export const artistsDismissSetup = defineCommand({
   name: "artists.dismissSetup", roles: ["admin"], input: z.strictObject({}),
   description: "Hide Home's \"Finish setting up\" card for the caller in this artist. Personal: nobody else's Home changes.",
-  async run(ctx) { await dismissSetup(ctx.uid, await artistOf(ctx)); return { dismissed: true }; },
+  async run(ctx) { await dismissSetup(ctx.uid, artistOf(ctx)); return { dismissed: true }; },
 });
 
 export const calendarSetTours = defineCommand({
@@ -91,9 +87,9 @@ export const dayOfDismiss = defineCommand({
   name: "dayOf.dismiss", roles: ["admin", "member"], input: z.strictObject({ kind: z.enum(["show", "rehearsal"]), id: z.string().min(1) }),
   description: "Hide the day-of banner (the bar above the nav on a show or rehearsal day) for one show or rehearsal, for the caller only. Personal: everyone else still sees it, and the next show or rehearsal still appears. Nothing about the show or rehearsal changes.",
   async run(ctx, i) {
-    const artistId = await artistOf(ctx);
-    const doc = await db.get(i.kind === "show" ? "shows" : "rehearsals", i.id);
-    if (!doc || doc.deletedAt || (i.kind === "show" && doc.artistId !== artistId)) throw new AppError("not_found", i.kind === "show" ? "Show not found" : "Rehearsal not found", 404);
+    const artistId = artistOf(ctx);
+    const doc = await db.get(ctx, i.kind === "show" ? "shows" : "rehearsals", i.id);
+    if (!doc || doc.deletedAt) throw new AppError("not_found", i.kind === "show" ? "Show not found" : "Rehearsal not found", 404);
     const key = dayOfKey(i.kind, i.id, doc.date as string);
     await dismissDayOf(ctx.uid, artistId, key);
     return { dismissed: key };

@@ -5,6 +5,7 @@ import { Tabs } from "@/components/booking/common";
 import { Menu, type MenuItem } from "@/components/Menu";
 import { Dialog, ErrorBox, PageTitle } from "@/components/ui";
 import { AddPerson } from "@/components/people/AddPerson";
+import { PendingInvites } from "@/components/people/PendingInvites";
 import { PersonSheet, type Removal } from "@/components/people/PersonSheet";
 import { FieldError, Icons, TextField, derivePeople, firstName, guards, invalid, useAct, type Person } from "@/components/people/shared";
 import { useCollection } from "@/lib/firestore-hooks";
@@ -24,6 +25,7 @@ function People() {
   const musicians = useCollection<Musician>("musicians");
   const [tab, setTab] = useState<Tab>("all");
   const [adding, setAdding] = useState(false);
+  const [invitesKey, setInvitesKey] = useState(0);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [modal, setModal] = useState<Modal | null>(null);
   const act = useAct();
@@ -59,7 +61,8 @@ function People() {
       <PageTitle title="People" sub={<><b>Band Members</b> play in the band. The <b>Team</b> can sign in to Roadie.</>}
         actions={<button type="button" className="btn acc" onClick={() => setAdding(true)} data-testid="people-add-open">+ New person</button>} />
 
-      {adding && <AddPerson onClose={() => setAdding(false)} />}
+      {adding && <AddPerson onClose={() => { setAdding(false); setInvitesKey((n) => n + 1); }} />}
+      <PendingInvites refreshKey={invitesKey} />
       <ErrorBox error={act.error} />
 
       <Tabs<Tab> testid="people-tab" value={tab} onChange={setTab} options={[
@@ -102,7 +105,7 @@ function People() {
 
       {editing && <PersonSheet key={editing.id} person={editing} all={all} onClose={() => setEditKey(null)} onRemoval={(kind) => setModal({ kind, p: editing, from: "sheet" })} />}
 
-      {modal && <PersonDialog modal={modal} onClose={() => setModal(null)} onDone={() => { if (modal.from === "sheet" || modal.kind === "archive" || modal.kind === "removeTeam") setEditKey(null); setModal(null); }} />}
+      {modal && <PersonDialog modal={modal} onClose={() => setModal(null)} onDone={() => { if (modal.from === "sheet" || modal.kind === "archive" || modal.kind === "removeTeam") setEditKey(null); setModal(null); setInvitesKey((n) => n + 1); }} />}
     </div>
   );
 }

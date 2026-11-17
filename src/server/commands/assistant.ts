@@ -13,7 +13,7 @@ const prefsOf = (u: Record<string, unknown>): Prefs => ((u.prefs as { assistant?
  * clock). Both the browser and the chat request set it, and either can land late: an older choice never undoes a newer.
  */
 export async function setOpenThread(ctx: Ctx, threadId: string | null, at?: number): Promise<boolean> {
-  const u = await db.get("users", ctx.uid);
+  const u = await db.get(ctx, "users", ctx.uid);
   if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
   const cur = prefsOf(u);
   if (at !== undefined && cur.threadAt !== undefined && cur.threadAt > at) return false;
@@ -30,7 +30,7 @@ export const assistantSetPrefs = defineCommand({
   async run(ctx, input) {
     let changed = false;
     if (input.width !== undefined) {
-      const u = await db.get("users", ctx.uid);
+      const u = await db.get(ctx, "users", ctx.uid);
       if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
       changed = (await db.update(ctx, "users", ctx.uid, { prefs: { assistant: { ...prefsOf(u), width: input.width } } })).changed;
     }

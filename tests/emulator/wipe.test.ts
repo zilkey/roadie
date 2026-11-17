@@ -8,16 +8,16 @@ import { adminAuth, firestore } from "@/server/admin";
 import { importCtx } from "@/server/ctx";
 import { dumpAll } from "@/server/backup";
 import { localStamp, wipe } from "../../scripts/wipe";
-import { makeUser, resetEmulators, venue } from "./helpers";
+import { makeUser, resetEmulators, venue, SYS, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 
 /** A venue with history, a pitch with sub-collections, a draft, and two Auth users with their users docs. */
 async function seedSomething() {
-  const ctx = importCtx("tester", "wipe-run");
+  const ctx = importCtx(TEST_ARTIST, "tester", "wipe-run");
   const v = await db.create(ctx, "venues", venue("Bluebird", "Denver", { capacity: 500 }));
   await db.update(ctx, "venues", v.id, { website: "https://bluebird.example" });
-  const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
+  const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: TEST_ARTIST, personnel: [], showIds: [] });
   await firestore().doc(`pitches/${p.id}/activity/one`).set({ id: "one", type: "note", text: "called" });
   await firestore().doc("unsubmittedDrafts/u__venues").set({ uid: "u", path: "venues", data: {} });
   await makeUser("owner@example.com", "admin");
@@ -48,7 +48,7 @@ test("a dry run deletes nothing, writes no backup, and reports the seeded counts
     // Nothing moved.
     assert.deepEqual(await dumpAll(firestore()), before);
     assert.equal((await adminAuth().listUsers(10)).users.length, 2);
-    assert.ok(await db.get("venues", (await db.list("venues"))[0].id));
+    assert.ok(await db.get(SYS, "venues", (await db.list(SYS, "venues"))[0].id));
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 });
 

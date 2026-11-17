@@ -55,7 +55,9 @@ export function calendarInvitees(
   const team = users.filter((u) => { const r = roleIn(u, artistId); return r === "admin" || r === "member"; });
   return configMusicianIds.filter((mid) => {
     const m = musicians.find((x) => x.id === mid);
-    return !!m?.email && team.some((u) => u.id === m.userId || u.musicianId === m.id);
+    // Linked by the musician's userId, or by the person's membership in this artist (older docs: their musicianId).
+    const mine = (u: (typeof team)[number]) => (u.artists as { artistId?: string; musicianId?: string }[] | undefined)?.find((x) => x.artistId === artistId)?.musicianId ?? u.musicianId;
+    return !!m?.email && team.some((u) => u.id === m.userId || mine(u) === m.id);
   });
 }
 

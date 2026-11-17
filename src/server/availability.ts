@@ -2,7 +2,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { run, db, type Doc } from "./db";
 import { AppError } from "./errors";
-import { newRunId, type Ctx } from "./ctx";
+import { artistCtx, systemCtx, type Ctx } from "./ctx";
 import { appUrl } from "@/lib/app-url";
 export { appUrl };
 
@@ -18,11 +18,15 @@ function matches(av: Doc, musicianId: string, token: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function verified(availabilityId: string, musicianId: string, token: string): Promise<Doc> {
-  const av = await db.get("availability", availabilityId);
+/**
+ * The ask behind a link, and a ctx for its artist (tenancy plan D3: the ask's artistId, after the token hash check). The lookup
+ * is through the system view because no ctx exists before the token is checked.
+ */
+async function verified(availabilityId: string, musicianId: string, token: string): Promise<{ av: Doc; ctx: Ctx }> {
+  const av = await db.get(systemCtx("availability link"), "availability", availabilityId);
   // Same error for "no such ask" and "wrong token" so links cannot be probed.
-  if (!av || av.deletedAt || !matches(av, musicianId, token)) throw new AppError("invalid_link", "This link is not valid any more. Ask the band for a new one.", 403);
-  return av;
+  if (!av || av.deletedAt || typeof av.artistId !== "string" || !matches(av, musicianId, token)) throw new AppError("invalid_link", "This link is not valid any more. Ask the band for a new one.", 403);
+  return { av, ctx: artistCtx({ uid: `link:${musicianId}`, role: "member", artistId: av.artistId, musicianId, via: "app" }) };
 }
 
 export interface LinkAsk { availabilityId: string; date: string; label: string; closed: boolean; answer?: "yes" | "no" | "maybe"; note?: string }
@@ -39,18 +43,16 @@ const linkAsk = (av: Doc, musicianId: string): LinkAsk => {
 
 /** What the public answer page shows. Reveals nothing about other people's answers. */
 export async function viewByToken(availabilityId: string, musicianId: string, token: string): Promise<LinkView> {
-  const av = await verified(availabilityId, musicianId, token);
-  const [m, u] = await Promise.all([db.get("musicians", musicianId), db.get("users", av.createdBy)]);
+  const { av, ctx } = await verified(availabilityId, musicianId, token);
+  const [m, u] = await Promise.all([db.get(ctx, "musicians", musicianId), db.get(ctx, "users", av.createdBy)]);
   const scope = av.pitchId ? "pitchId" : av.showId ? "showId" : null;
-  const same = scope ? await db.list("availability", (q) => q.where(scope, "==", av[scope])) : [av];
+  const same = scope ? await db.list(ctx, "availability", (q) => q.where(scope, "==", av[scope])) : [av];
   const asks = same.filter((x) => matches(x, musicianId, token)).sort((a, b) => a.date.localeCompare(b.date)).map((x) => linkAsk(x, musicianId));
   return { ...linkAsk(av, musicianId), musicianId, musicianName: m?.name ?? "", askedBy: u?.name ?? "the band", asks };
 }
 
 export async function answerByToken(availabilityId: string, musicianId: string, token: string, answer: "yes" | "no" | "maybe", note?: string) {
-  const ask = await verified(availabilityId, musicianId, token);
-  // The artist is the ask's, after the token check (tenancy plan D3, routes table).
-  const ctx: Ctx = { uid: `link:${musicianId}`, role: "member", ...(typeof ask.artistId === "string" ? { artistId: ask.artistId } : {}), musicianId, via: "app", runId: newRunId() };
+  const { ctx } = await verified(availabilityId, musicianId, token);
   return run(ctx, async (w) => {
     const av = await w.get("availability", availabilityId);
     if (!av || av.deletedAt) throw new AppError("not_found", "Not found", 404);

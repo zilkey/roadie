@@ -2,11 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DocumentReference, type DocumentData, type Transaction } from "firebase-admin/firestore";
 import { Writer } from "@/server/db";
-import { importCtx, type Ctx } from "@/server/ctx";
+import { importCtx, systemCtx, type AnyCtx, type Ctx } from "@/server/ctx";
 import { tenancyLog, type Unstamped } from "@/server/tenancy";
 
-// Tenancy phase 2: the Writer stamps every new artist record with its artist (before validation), and every history entry
-// with one scope. Runs on a fake transaction: no emulator needed.
+// Tenancy phases 2 and 4: the Writer stamps every new artist record with its artist (before validation), refuses one that names
+// another artist, and gives every history entry one scope. Runs on a fake transaction: no emulator needed.
 
 function fakeTx(seed: Record<string, DocumentData> = {}) {
   const store = new Map<string, DocumentData>(Object.entries(seed));
@@ -24,10 +24,10 @@ function fakeTx(seed: Record<string, DocumentData> = {}) {
   };
   return { tx: tx as unknown as Transaction, writes };
 }
-const ctxFor = (artistId?: string): Ctx => ({ ...importCtx("u1", "run-1", artistId), via: "app", role: "admin" });
-async function write(ctx: Ctx, seed: Record<string, DocumentData>, fn: (w: Writer) => Promise<unknown>) {
+const ctxFor = (artistId: string): Ctx => ({ ...importCtx(artistId, "u1", "run-1"), via: "app", role: "admin" });
+async function write(ctx: AnyCtx, seed: Record<string, DocumentData>, fn: (w: Writer<AnyCtx>) => Promise<unknown>) {
   const { tx, writes } = fakeTx(seed);
-  const w = new Writer(tx, ctx);
+  const w = new Writer<AnyCtx>(tx, ctx);
   await fn(w);
   w.flush();
   return writes;
@@ -47,15 +47,19 @@ test("a new artist record takes the caller's artist; its history entry is scoped
   assert.equal(history(writes, `songs/${id}`)?.artistId, "A");
 });
 
-test("the artist named in the input wins (a new artist's templates are seeded from inside another one)", async () => {
+test("input that names another artist is refused (not_found)", async () => {
+  await assert.rejects(write(ctxFor("A"), {}, (w) => w.create("songs", { artistId: "B", title: "Lighthouse", status: "active" })), { code: "not_found" });
+});
+
+test("forArtist: a new artist's records go into it, in the same write unit", async () => {
   let id = "";
-  const writes = await write(ctxFor("A"), {}, async (w) => { id = (await w.create("songs", { artistId: "B", title: "Lighthouse", status: "active" })).id; });
+  const writes = await write(ctxFor("A"), {}, async (w) => { id = (await w.forArtist("B").create("songs", { title: "Lighthouse", status: "active" })).id; });
   assert.equal(writes.get(`songs/${id}`)?.artistId, "B");
 });
 
 test("a sub-collection doc takes its parent's artist", async () => {
   let id = "";
-  const writes = await write(ctxFor(), { "shows/s1": { id: "s1", artistId: "B" } }, async (w) => {
+  const writes = await write(ctxFor("B"), { "shows/s1": { id: "s1", artistId: "B" } }, async (w) => {
     id = (await w.create("shows/s1/comments", { authorId: "u1", body: "Load in at 6" })).id;
   });
   assert.equal(writes.get(`shows/s1/comments/${id}`)?.artistId, "B");
@@ -63,8 +67,15 @@ test("a sub-collection doc takes its parent's artist", async () => {
 });
 
 test("a show-keyed kind (showDeals) takes its show's artist", async () => {
-  const writes = await write(ctxFor(), { "shows/s1": { id: "s1", artistId: "B" } }, async (w) => { await w.create("showDeals", { deal: "flat", contactIds: [] }, { id: "s1" }); });
+  const writes = await write(ctxFor("B"), { "shows/s1": { id: "s1", artistId: "B" } }, async (w) => { await w.create("showDeals", { deal: "flat", contactIds: [] }, { id: "s1" }); });
   assert.equal(writes.get("showDeals/s1")?.artistId, "B");
+});
+
+test("a foreign or missing parent is refused (not_found)", async () => {
+  const seed = { "shows/s1": { id: "s1", artistId: "B" } };
+  await assert.rejects(write(ctxFor("A"), seed, (w) => w.create("shows/s1/comments", { authorId: "u1", body: "hi" })), { code: "not_found" });
+  await assert.rejects(write(ctxFor("A"), seed, (w) => w.create("showDeals", { deal: "flat", contactIds: [] }, { id: "s1" })), { code: "not_found" });
+  await assert.rejects(write(ctxFor("A"), {}, (w) => w.create("shows/nope/comments", { authorId: "u1", body: "hi" })), { code: "not_found" });
 });
 
 test("stamped before validation: a contact needs its artistId and builds its dedupe key from it", async () => {
@@ -78,14 +89,14 @@ test("stamped before validation: a contact needs its artistId and builds its ded
   assert.equal(b.matchKey, "B:rosa@example.com");
 });
 
-test("no artist anywhere: the write still goes ahead, and tenancy.unstamped is logged", async () => {
+test("no artist anywhere (a system write naming none): refused, and tenancy.unstamped is logged", async () => {
   const log = captureUnstamped();
   try {
-    let id = "";
-    const writes = await write(ctxFor(), {}, async (w) => { id = (await w.create("songs", { title: "Lighthouse", status: "active" })).id; });
-    assert.ok(writes.get(`songs/${id}`));
-    assert.equal(writes.get(`songs/${id}`)?.artistId, undefined);
-    assert.deepEqual(log.seen, [{ kind: "songs", id, via: "app", uid: "u1" }]);
+    let writes: Map<string, DocumentData> | undefined;
+    await assert.rejects(async () => { writes = await write(systemCtx("test"), {}, (w) => w.create("songs", { title: "Lighthouse", status: "active" })); }, { code: "artist_required" });
+    assert.equal(writes, undefined);
+    assert.equal(log.seen.length, 1);
+    assert.equal(log.seen[0].kind, "songs");
   } finally { log.restore(); }
 });
 
@@ -109,11 +120,19 @@ test("shared and person records aren't stamped; their history entries say shared
   } finally { log.restore(); }
 });
 
-test("users: artistIds is computed from the memberships, and the linked musician lands on its artist's membership", async () => {
-  const writes = await write(ctxFor("A"), { "musicians/m1": { id: "m1", artistId: "B", name: "Ann", instruments: [], active: true } }, async (w) => {
-    await w.create("users", { email: "ann@example.com", name: "Ann", artists: [{ artistId: "A", role: "admin" }, { artistId: "B", role: "member" }], musicianId: "m1" }, { id: "ann" });
+test("users: artistIds is computed from the memberships; a membership's musician must be in its artist and free", async () => {
+  const seed = { "musicians/m1": { id: "m1", artistId: "B", name: "Ann", instruments: [], active: true }, "musicians/m2": { id: "m2", artistId: "B", name: "Bo", instruments: [], active: true, userId: "bo" } };
+  const writes = await write(ctxFor("A"), seed, async (w) => {
+    await w.create("users", { email: "ann@example.com", name: "Ann", artists: [{ artistId: "A", role: "admin" }, { artistId: "B", role: "member", musicianId: "m1" }] }, { id: "ann" });
   });
   const u = writes.get("users/ann")!;
   assert.deepEqual(u.artistIds, ["A", "B"]);
   assert.deepEqual(u.artists, [{ artistId: "A", role: "admin" }, { artistId: "B", role: "member", musicianId: "m1" }]);
+  // m1 is B's, not A's; m2 is someone else's.
+  await assert.rejects(write(ctxFor("A"), seed, (w) => w.create("users", { email: "c@example.com", name: "C", artists: [{ artistId: "A", role: "member", musicianId: "m1" }] }, { id: "c" })), { code: "not_found" });
+  await assert.rejects(write(ctxFor("A"), seed, (w) => w.create("users", { email: "c@example.com", name: "C", artists: [{ artistId: "B", role: "member", musicianId: "m2" }] }, { id: "c" })), { code: "conflict" });
+});
+
+test("users.musicianId is read-only from phase 4", async () => {
+  await assert.rejects(write(ctxFor("A"), {}, (w) => w.create("users", { email: "ann@example.com", name: "Ann", artists: [{ artistId: "A", role: "admin" }], musicianId: "m1" }, { id: "ann" })), { code: "invalid_input" });
 });

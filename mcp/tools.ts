@@ -53,12 +53,15 @@ export async function callTool(name: string, args: unknown, authorize: () => Pro
   }
 }
 
-/** One MCP server per session. `authorize` re-checks the token on every call, so a revoked key stops working at once. */
-export function createMcpServer(authorize: () => Promise<Ctx>) {
+/**
+ * One MCP server per session. `authorize` re-checks the token on every call, so a revoked key stops working at once. Every
+ * tenancy check lives in the Writer or the command (callTool runs `cmd.run` directly). `artistName` is the key's artist.
+ */
+export function createMcpServer(authorize: () => Promise<Ctx>, artistName: string) {
   const server = new Server({ name: "roadie", version: "0.1.0" }, {
     capabilities: { tools: {} },
     instructions:
-      "Roadie for the Nora Quill Band. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). " +
+      `Roadie for ${artistName}. Search before you create (venues, promoters, festivals and contacts dedupe by name and merge). ` +
       "A venue's name, address and house facts are one shared record that every band using Roadie sees: editing them changes the room for all of them. " +
       "A venue's loadInNotes, notes, contacts and promoters are this band's private notes. " +
       "Changing an existing shared record (venue, act, promoter, festival) needs a person a Roadie platform admin approved; anyone else gets 403 not_approved: say so, don't retry. " +

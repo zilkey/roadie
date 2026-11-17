@@ -5,7 +5,7 @@ import { db, run } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { firestore } from "@/server/admin";
 import { seedDefaultTemplates } from "@/server/checklistTemplates";
-import { resetEmulators, makeArtist, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeArtist, makeUser, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -19,14 +19,14 @@ const base = {
   docs: [], place: { city: "Denver" }, times: {},
 };
 const show = async (extra: Record<string, unknown> = {}, artistId = TEST_ARTIST) =>
-  (await db.create(importCtx(), "shows", { ...base, date: "2027-01-16", artistId, checklists: [], ...extra })).id;
-const lists = async (id: string) => (await db.get("shows", id))!.checklists as any[];
+  (await db.create(importCtx(artistId), "shows", { ...base, date: "2027-01-16", artistId, checklists: [], ...extra })).id;
+const lists = async (id: string) => (await db.get(SYS, "shows", id))!.checklists as any[];
 const templates = async (artistId = TEST_ARTIST) =>
-  (await db.list("checklistTemplates", (q) => q.where("artistId", "==", artistId))).sort((a, b) => a.order - b.order);
+  (await db.list(SYS, "checklistTemplates", (q) => q.where("artistId", "==", artistId))).sort((a, b) => a.order - b.order);
 
 async function world() {
   await makeArtist("Nora Quill Band", "nora-quill-band");
-  const musician = (await db.create(importCtx(), "musicians", { name: "Hugo", instruments: [], active: true })).id;
+  const musician = (await db.create(importCtx(TEST_ARTIST), "musicians", { name: "Hugo", instruments: [], active: true })).id;
   const admin: Ctx = { uid: "u-admin", role: "admin", artistId: TEST_ARTIST, via: "app", runId: newRunId() };
   const member: Ctx = { uid: "u-member", role: "member", artistId: TEST_ARTIST, musicianId: musician, via: "app", runId: newRunId() };
   return { admin, member, musician };
@@ -34,7 +34,7 @@ async function world() {
 
 test("artists.create starts the artist with Promo and Follow Up; the seed helper appends after what is there", async () => {
   const u = await makeUser("rudy@example.com", "admin");
-  const ctx: Ctx = { uid: u.uid, role: "admin", via: "app", runId: newRunId() };
+  const ctx: Ctx = { uid: u.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const r = await cmd("artists.create", { name: "Fern Valley Trio", configurations: [] }, ctx);
   const ts = await templates(r.id);
   assert.deepEqual(ts.map((t) => [t.name, t.order, t.items.map((i: any) => i.label)]), [
@@ -42,19 +42,19 @@ test("artists.create starts the artist with Promo and Follow Up; the seed helper
     ["Follow Up", 1, ["Post on social media"]],
   ]);
   assert.ok(ts.every((t) => t.items.every((i: any) => i.id)));
-  await run(importCtx(), (w) => seedDefaultTemplates(w, r.id));
+  await run(importCtx(r.id), (w) => seedDefaultTemplates(w, r.id));
   assert.deepEqual((await templates(r.id)).map((t) => t.order), [0, 1, 2, 3]);
 });
 
 test("templates: create goes last, update replaces name and items, reorder needs every id, remove is a soft delete; admins of that artist only", async () => {
   const { admin } = await world();
-  await run(importCtx(), (w) => seedDefaultTemplates(w, TEST_ARTIST));
+  await run(importCtx(TEST_ARTIST), (w) => seedDefaultTemplates(w, TEST_ARTIST));
   const { id } = await cmd("checklistTemplates.create", { name: "Load-out", items: [{ label: "Get paid" }] }, admin);
   let ts = await templates();
   assert.deepEqual(ts.map((t) => t.name), ["Promo", "Follow Up", "Load-out"]);
   assert.equal(ts[2].order, 2);
   await cmd("checklistTemplates.update", { id, patch: { name: "Load out", items: [{ id: ts[2].items[0].id, label: "Get paid before leaving" }, { label: "Sweep the stage" }] } }, admin);
-  const t = (await db.get("checklistTemplates", id))!;
+  const t = (await db.get(SYS, "checklistTemplates", id))!;
   assert.equal(t.name, "Load out");
   assert.deepEqual(t.items.map((i: any) => i.label), ["Get paid before leaving", "Sweep the stage"]);
   assert.equal(t.items[0].id, ts[2].items[0].id, "items keep their ids");
@@ -67,7 +67,7 @@ test("templates: create goes last, update replaces name and items, reorder needs
   assert.deepEqual(listed.templates.map((x: any) => x.name), ["Load out", "Promo", "Follow Up"]);
 
   await cmd("checklistTemplates.remove", { id }, admin);
-  assert.ok((await db.get("checklistTemplates", id))!.deletedAt, "soft-deleted");
+  assert.ok((await db.get(SYS, "checklistTemplates", id))!.deletedAt, "soft-deleted");
   assert.deepEqual((await templates()).map((x) => x.name), ["Promo", "Follow Up"]);
 
   const other: Ctx = { ...admin, artistId: "other-artist" };
@@ -78,7 +78,7 @@ test("templates: create goes last, update replaces name and items, reorder needs
 
 test("show lists: add from a template (twice) or blank, rename, reorder, delete; admins only", async () => {
   const { admin, member } = await world();
-  const [promo] = await run(importCtx(), (w) => seedDefaultTemplates(w, TEST_ARTIST));
+  const [promo] = await run(importCtx(TEST_ARTIST), (w) => seedDefaultTemplates(w, TEST_ARTIST));
   const id = await show();
   const a = await cmd("shows.addChecklist", { id, templateId: promo }, admin);
   const b = await cmd("shows.addChecklist", { id, templateId: promo }, admin);
@@ -86,7 +86,7 @@ test("show lists: add from a template (twice) or blank, rename, reorder, delete;
   let ls = await lists(id);
   assert.deepEqual(ls.map((l) => [l.id, l.name, l.templateId]), [[a.listId, "Promo", promo], [b.listId, "Promo", promo], [c.listId, "Load-out", null]]);
   assert.deepEqual(ls[0].items.map((i: any) => [i.label, i.done, i.ownerId ?? null]), [["Make show poster", false, null], ["Post on social media", false, null], ["Send email to email list", false, null]]);
-  const tpl = (await db.get("checklistTemplates", promo))!;
+  const tpl = (await db.get(SYS, "checklistTemplates", promo))!;
   assert.ok(ls[0].items.every((i: any) => !tpl.items.some((x: any) => x.id === i.id)), "new item ids");
   assert.notEqual(ls[0].items[0].id, ls[1].items[0].id);
 
@@ -139,12 +139,12 @@ test("to-dos: members add, edit, remove and tick any item; ticking records who a
 
 test("Save as template links the list; Update template overwrites name and labels only; shows keep their lists", async () => {
   const { admin, musician } = await world();
-  const [promo] = await run(importCtx(), (w) => seedDefaultTemplates(w, TEST_ARTIST));
+  const [promo] = await run(importCtx(TEST_ARTIST), (w) => seedDefaultTemplates(w, TEST_ARTIST));
   const id = await show();
   const { listId } = await cmd("shows.addChecklist", { id, name: "Load-out" }, admin);
   await cmd("shows.addChecklistItem", { id, listId, label: "Get paid", ownerId: musician }, admin);
   const saved = await cmd("shows.saveChecklistAsTemplate", { id, listId }, admin);
-  const t = (await db.get("checklistTemplates", saved.templateId))!;
+  const t = (await db.get(SYS, "checklistTemplates", saved.templateId))!;
   assert.deepEqual([t.name, t.order, t.artistId, t.items.map((i: any) => Object.keys(i).sort())], ["Load-out", 2, TEST_ARTIST, [["id", "label"]]]);
   assert.equal((await lists(id))[0].templateId, saved.templateId);
 
@@ -156,7 +156,7 @@ test("Save as template links the list; Update template overwrites name and label
   await cmd("shows.renameChecklist", { id, listId: p.listId, name: "Promo 2027" }, admin);
   await cmd("shows.addChecklistItem", { id, listId: p.listId, label: "Call the radio station", ownerId: musician }, admin);
   await cmd("shows.updateTemplateFromChecklist", { id, listId: p.listId }, admin);
-  const u = (await db.get("checklistTemplates", promo))!;
+  const u = (await db.get(SYS, "checklistTemplates", promo))!;
   assert.equal(u.name, "Promo 2027");
   assert.deepEqual(u.items.map((i: any) => i.label), ["Make show poster", "Post on social media", "Send email to email list", "Call the radio station"]);
   assert.ok(u.items.every((i: any) => Object.keys(i).sort().join() === "id,label"), "no assignees or done state");

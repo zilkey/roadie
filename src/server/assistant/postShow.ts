@@ -5,6 +5,7 @@
  * ("always show what it understood before saving"), and one question about the crowd and the stars when the show has
  * neither yet. Both are plain arithmetic on the cards' own inputs, never the model's.
  */
+import type { Ctx } from "../ctx";
 import { INCOME_LABEL, METHOD_LABEL } from "@/lib/money";
 import { db } from "../db";
 import { dateInBandZone } from "@/lib/timezone";
@@ -52,14 +53,14 @@ export function showOf(cards: MoneyCard[]): string | undefined {
  * this conversation yet (she may have said "that's it"). Nothing when the reply already asks something, when no money
  * actually changed hands (a guarantee still owed), or when the show hasn't happened yet.
  */
-export async function stillMissing(cards: MoneyCard[], reply: string, history: { role: string; text: string }[]): Promise<string | undefined> {
+export async function stillMissing(ctx: Ctx, cards: MoneyCard[], reply: string, history: { role: string; text: string }[]): Promise<string | undefined> {
   const showId = showOf(cards);
   if (!showId || reply.includes("?")) return undefined;
   if (!cards.some((c) => { const i = (c.input ?? {}) as Row; return i.receivedAt || i.paidAt; })) return undefined;
-  const show = await db.get("shows", showId);
+  const show = await db.get(ctx, "shows", showId);
   if (!show || (show.date as string) > dateInBandZone()) return undefined;
   const before = history.filter((h) => h.role === "assistant").map((h) => h.text).join("\n");
-  const deal = ((await db.get("showDeals", showId)) ?? {}) as Row;
+  const deal = ((await db.get(ctx, "showDeals", showId)) ?? {}) as Row;
   const ask = [
     deal.crowd === undefined && !before.includes(ASK_CROWD) ? ASK_CROWD : "",
     deal.rating?.show === undefined && deal.rating?.venue === undefined && !before.includes(ASK_STARS) ? ASK_STARS : "",

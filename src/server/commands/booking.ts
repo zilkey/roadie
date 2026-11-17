@@ -5,8 +5,9 @@ import { db, run, type Writer, type Doc } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { checkPitchReplies, draftMail, placeOfPitch, requirePitchDoc, sendMail } from "./email";
+import { pathOf } from "@/schema/owners";
 import { isActive, sortedDates } from "@/lib/booking";
-import { archiveNote, artistIdOf, callerArtistId, requireContact, ensureNote, tryArtistId, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
+import { archiveNote, artistIdOf, requireContact, ensureNote, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
 import { CONTACT_ROLES } from "@/lib/venues";
 import { bandNoteOf, bandNotesBy, createNoted, setVenuePromoters, updateNoted, withBandNote, writeBandNote } from "../bandNotes";
 import { ensureVenueTypes, requireVenueType } from "../venueTypes";
@@ -56,21 +57,19 @@ export const venuesCreate = defineCommand({
     const r = await w.create("venues", shared);
     if (ctx.role !== "member") {
       const wants = hasPrivate(privateOf(priv));
-      const artistId = wants ? await artistIdOf(w) : await tryArtistId(w);
-      if (artistId) {
-        const venue = (await w.get("venues", r.id))!;
-        const { doc, fields } = await noteOf(w, venue, artistId);
-        if (wants) {
-          // Adding a room that is already in the directory fills what the band has not said yet and links more; it never replaces.
-          const next = await writeNote(w, venue, artistId, {
-            ...(priv.loadInNotes && !fields.loadInNotes ? { loadInNotes: priv.loadInNotes } : {}), ...(priv.notes && !fields.notes ? { notes: priv.notes } : {}),
-            contactIds: [...new Set([...fields.contactIds, ...((priv.contactIds as string[] | undefined) ?? [])])],
-            promoterIds: [...new Set([...fields.promoterIds, ...((priv.promoterIds as string[] | undefined) ?? [])])],
-            ...Object.fromEntries(VENUE_ROLE_FIELDS.map((k) => [k, [...new Set([...fields[k], ...((priv[k] as string[] | undefined) ?? [])])]])),
-          });
-          if (priv.promoterIds) await setVenuePromoters(w, artistId, r.id, next.promoterIds);
-        } else if (doc?.deletedAt) await ensureNote(w, venue, artistId); // adding a room this band had archived brings it back
-      }
+      const artistId = w.ctx.artistId;
+      const venue = (await w.get("venues", r.id))!;
+      const { doc, fields } = await noteOf(w, venue, artistId);
+      if (wants) {
+        // Adding a room that is already in the directory fills what the band has not said yet and links more; it never replaces.
+        const next = await writeNote(w, venue, artistId, {
+          ...(priv.loadInNotes && !fields.loadInNotes ? { loadInNotes: priv.loadInNotes } : {}), ...(priv.notes && !fields.notes ? { notes: priv.notes } : {}),
+          contactIds: [...new Set([...fields.contactIds, ...((priv.contactIds as string[] | undefined) ?? [])])],
+          promoterIds: [...new Set([...fields.promoterIds, ...((priv.promoterIds as string[] | undefined) ?? [])])],
+          ...Object.fromEntries(VENUE_ROLE_FIELDS.map((k) => [k, [...new Set([...fields[k], ...((priv[k] as string[] | undefined) ?? [])])]])),
+        });
+        if (priv.promoterIds) await setVenuePromoters(w, artistId, r.id, next.promoterIds);
+      } else if (doc?.deletedAt) await ensureNote(w, venue, artistId); // adding a room this band had archived brings it back
     }
     return r;
   }),
@@ -123,38 +122,46 @@ export const venuesMergeInto = defineCommand({
     const copy = { id: dst.id, name: dst.name as string, address: [dst.address?.street, dst.address?.city].filter(Boolean).join(", "), city: dst.address?.city as string | undefined };
     const moved = { shows: 0, pitches: 0, promoters: 0, editions: 0, notes: 0 };
 
-    for (const s of await w.query("shows", (q) => q.where("venue.id", "==", from))) { await w.update("shows", s.id, { venue: copy }); moved.shows++; }
-    for (const p of await w.query("pitches", (q) => q.where("target.id", "==", from))) {
-      if (p.target?.kind === "venue") { await w.update("pitches", p.id, { target: { ...p.target, id: into, name: dst.name } }); moved.pitches++; }
-    }
-    // promoterNotes: each band's promoter links.
-    for (const [coll, key] of [["promoterNotes", "promoters"], ["editions", "editions"]] as const) {
-      for (const d of await w.query(coll, (q) => q.where("venueIds", "array-contains", from))) {
-        const ids = [...new Set((d.venueIds as string[]).map((x) => (x === from ? into : x)))];
-        await w.update(coll, d.id, { venueIds: ids });
-        moved[key]++;
+    // Every band's shows, pitches and notes pointing at `from` move to `into`: past the platform-admin check, so system view.
+    // Writes to ANOTHER band's records are `derived` (copies of the merge, which the caller's band couldn't undo); the caller's own
+    // band's records are ordinary entries, so one Undo from this band puts them back.
+    const foreign = <T,>(artistId: unknown, fn: () => Promise<T>) => (artistId && artistId !== ctx.artistId ? w.system(fn, { derived: true }) : fn());
+    await w.system(async () => {
+      for (const s of await w.query("shows", (q) => q.where("venue.id", "==", from))) { await foreign(s.artistId, () => w.update("shows", s.id, { venue: copy })); moved.shows++; }
+      for (const p of await w.query("pitches", (q) => q.where("target.id", "==", from))) {
+        if (p.target?.kind === "venue") { await foreign(p.artistId, () => w.update("pitches", p.id, { target: { ...p.target, id: into, name: dst.name } })); moved.pitches++; }
       }
-    }
+      // promoterNotes: each band's promoter links.
+      for (const [coll, key] of [["promoterNotes", "promoters"], ["editions", "editions"]] as const) {
+        for (const d of await w.query(coll, (q) => q.where("venueIds", "array-contains", from))) {
+          const ids = [...new Set((d.venueIds as string[]).map((x) => (x === from ? into : x)))];
+          await foreign(d.artistId, () => w.update(coll, d.id, { venueIds: ids }));
+          moved[key]++;
+        }
+      }
 
-    // Each band's notes move across; where a band already has notes on `into` they are joined. Another band's content is written, never returned.
-    const notes = await w.query("venueNotes", (q) => q.where("venueId", "==", from), { includeDeleted: true });
-    const artists = new Set(notes.map((n) => n.artistId as string));
-    for (const artistId of artists) {
-      const mine = await noteOf(w, src, artistId), theirs = await noteOf(w, dst, artistId);
-      if (!mine.doc && !hasPrivate(mine.fields)) continue;
-      const a = theirs.fields, b = mine.fields;
-      const joined = {
-        loadInNotes: joinText(a.loadInNotes, b.loadInNotes) ?? null, notes: joinText(a.notes, b.notes) ?? null,
-        contactIds: [...new Set([...a.contactIds, ...b.contactIds])], promoterIds: [...new Set([...a.promoterIds, ...b.promoterIds])],
-        bookingContactIds: [...new Set([...a.bookingContactIds, ...b.bookingContactIds])], dayOfContactIds: [...new Set([...a.dayOfContactIds, ...b.dayOfContactIds])],
-      };
-      const archived = !!mine.doc?.deletedAt && !!theirs.doc?.deletedAt; // the room stays hidden for a band only if it hid both
-      if (mine.doc?.deletedAt && !hasPrivate(mine.fields) && !theirs.doc) continue; // nothing to carry over
-      await writeNote(w, dst, artistId, joined);
-      if (archived) await w.softDelete("venueNotes", venueNoteId(artistId, into));
-      if (mine.doc && !mine.doc.deletedAt) await w.softDelete("venueNotes", venueNoteId(artistId, from));
-      moved.notes++;
-    }
+      // Each band's notes move across; where a band already has notes on `into` they are joined. Another band's content is written, never returned.
+      const notes = await w.query("venueNotes", (q) => q.where("venueId", "==", from), { includeDeleted: true });
+      const artists = new Set(notes.map((n) => n.artistId as string));
+      for (const artistId of artists) {
+        const mine = await noteOf(w, src, artistId), theirs = await noteOf(w, dst, artistId);
+        if (!mine.doc && !hasPrivate(mine.fields)) continue;
+        const a = theirs.fields, b = mine.fields;
+        const joined = {
+          loadInNotes: joinText(a.loadInNotes, b.loadInNotes) ?? null, notes: joinText(a.notes, b.notes) ?? null,
+          contactIds: [...new Set([...a.contactIds, ...b.contactIds])], promoterIds: [...new Set([...a.promoterIds, ...b.promoterIds])],
+          bookingContactIds: [...new Set([...a.bookingContactIds, ...b.bookingContactIds])], dayOfContactIds: [...new Set([...a.dayOfContactIds, ...b.dayOfContactIds])],
+        };
+        const archived = !!mine.doc?.deletedAt && !!theirs.doc?.deletedAt; // the room stays hidden for a band only if it hid both
+        if (mine.doc?.deletedAt && !hasPrivate(mine.fields) && !theirs.doc) continue; // nothing to carry over
+        await foreign(artistId, async () => {
+          await writeNote(w, dst, artistId, joined);
+          if (archived) await w.softDelete("venueNotes", venueNoteId(artistId, into));
+          if (mine.doc && !mine.doc.deletedAt) await w.softDelete("venueNotes", venueNoteId(artistId, from));
+        });
+        moved.notes++;
+      }
+    });
 
     const fill = sharedOf(src);
     if (Object.keys(fill).length) await w.merge("venues", into, fill);
@@ -243,8 +250,7 @@ export const festivalsPage = defineCommand({
     offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(500).default(FESTIVAL_PAGE_SIZE),
   }),
   async run(ctx, i) {
-    const artistId = await callerArtistId(ctx);
-    const [festivals, editions, contacts, notes] = await Promise.all([db.list("festivals"), db.list("editions"), db.list("contacts", (q) => q.where("artistId", "==", artistId ?? "")), bandNotesBy("festivals", artistId)]);
+    const [festivals, editions, contacts, notes] = await Promise.all([db.list(ctx, "festivals"), db.list(ctx, "editions"), db.list(ctx, "contacts"), bandNotesBy(ctx, "festivals")]);
     // A festival's contacts are this band's notes on it.
     const fests = festivals.map((f) => withBandNote("festivals", f, notes.get(f.id)));
     const all = festivalRows({ festivals: fests, editions, contacts } as unknown as Parameters<typeof festivalRows>[0], i.q, i.sort);
@@ -286,7 +292,7 @@ export const contactsCreate = defineCommand({
   name: "contacts.create", roles: [...ROLES], input: ContactIn.extend({ attachTo: z.strictObject({ kind: parentKind, id: z.string().min(1) }).optional() }),
   description: "Add a person to this band's contacts. Same email (or name when no email) merges into the band's existing contact. attachTo links them to a venue, promoter or festival. Contacts and their notes are this band's own (other bands never see them).",
   run: (ctx, { attachTo, ...input }) => run(ctx, async (w) => {
-    const r = await createNoted(w, "contacts", { ...input, artistId: await artistIdOf(w) });
+    const r = await createNoted(w, "contacts", input);
     if (attachTo) await attachContact(w, attachTo.kind, attachTo.id, r.id);
     return r;
   }),
@@ -355,9 +361,9 @@ async function targetName(w: Writer, kind: keyof typeof COLL, id: string) {
   if (!t || t.deletedAt) throw new AppError("not_found", `${kind} not found`, 404);
   return kind === "edition" ? `${t.festivalName} ${t.label}` : (t.name as string);
 }
-/** The artist this call is for (ctx.artistId), or the one artist there is when the caller didn't say. */
+/** The artist this call is for (ctx.artistId). */
 async function artistOf(w: Writer) {
-  const a = w.ctx.artistId ? await w.get("artists", w.ctx.artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
+  const a = await w.get("artists", w.ctx.artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
 }
@@ -367,6 +373,7 @@ function personnelFor(artist: Doc, configId: string | null | undefined): string[
   if (!c) throw new AppError("invalid_input", `No configuration "${configId}"`, 400);
   return c.musicianIds;
 }
+const activityOf = (w: Writer, pitchId: string) => pathOf("activity", { artistId: w.ctx.artistId, parent: { kind: "pitches", id: pitchId } });
 async function requirePitch(w: Writer, id: string) {
   const p = await w.get("pitches", id);
   if (!p || p.deletedAt) throw new AppError("not_found", "Pitch not found", 404);
@@ -394,18 +401,18 @@ export const pitchesFlag = defineCommand({
 export async function flagPitch(w: Writer, ctx: Ctx, i: z.input<typeof FlagIn>): Promise<{ id: string; existing: boolean; campaignId: string | null }> {
   const artist = await artistOf(w);
   // Another band's pitch on the same target is theirs: only this band's own active pitch counts as "already there".
-  const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.artistId === artist.id && p.target.kind === i.kind && isActive(p.status));
+  const open = (await w.query("pitches", (q) => q.where("target.id", "==", i.id))).find((p) => p.target.kind === i.kind && isActive(p.status));
   if (open) return { id: open.id, existing: true, campaignId: (open.campaignId as string | undefined) ?? null };
   if (i.campaignId) await requireActiveCampaign(w, i.campaignId, artist.id);
   const name = await targetName(w, i.kind, i.id);
   const assigneeId = i.assigneeId ?? ctx.uid;
   await requireUser(w, assigneeId);
   const r = await w.create("pitches", {
-    target: { kind: i.kind, id: i.id, name }, status: "toPitch", artistId: artist.id,
+    target: { kind: i.kind, id: i.id, name }, status: "toPitch",
     pitchedAs: i.pitchedAs, personnel: i.personnel ?? personnelFor(artist, i.pitchedAs) ?? [], assigneeId,
     nextStep: i.nextStep, notes: i.notes, dates: sortedDates(i.dates), showIds: [], ...(i.campaignId ? { campaignId: i.campaignId } : {}),
   });
-  await w.create(`pitches/${r.id}/activity`, { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
+  await w.create(activityOf(w, r.id), { type: "status", toStatus: "toPitch", text: "Added to Pitch List" });
   if (i.kind === "venue") await ensureNote(w, (await w.get("venues", i.id))!, artist.id); // the band now cares about this room
   return { id: r.id, existing: false, campaignId: i.campaignId ?? null };
 }
@@ -437,11 +444,11 @@ export const pitchesMove = defineCommand({
     // One active pitch per place per band (as flagPitch keeps it): reopening a closed pitch can't make a second one.
     if (isActive(i.status) && !isActive(p.status)) {
       const other = (await w.query("pitches", (q) => q.where("target.id", "==", p.target.id)))
-        .find((o) => o.id !== p.id && !o.deletedAt && o.artistId === p.artistId && o.target.kind === p.target.kind && isActive(o.status));
+        .find((o) => o.id !== p.id && !o.deletedAt && o.target.kind === p.target.kind && isActive(o.status));
       if (other) throw new AppError("conflict", `${p.target.name} already has an open pitch. Work on that one instead.`, 409);
     }
     await w.update("pitches", i.id, { status: i.status, ...(["pitched", "talking"].includes(i.status) ? { lastContactAt: w.now } : {}) });
-    await w.create(`pitches/${i.id}/activity`, { type: "status", fromStatus: p.status, toStatus: i.status, text: i.text });
+    await w.create(activityOf(w, i.id), { type: "status", fromStatus: p.status, toStatus: i.status, text: i.text });
     return { id: i.id, changed: true };
   }),
 });
@@ -449,14 +456,14 @@ export const pitchesMove = defineCommand({
 export const pitchesComment = defineCommand({
   name: "pitches.comment", roles: ["admin", "mcp"], description: "Post to the discussion thread on a pitch (the team talking). For a call, email, visit or note on the timeline use pitches.log.",
   input: z.strictObject({ id: z.string().min(1), body: z.string().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => { await requirePitch(w, i.id); return w.create(`pitches/${i.id}/comments`, { authorId: ctx.uid, body: i.body }); }),
+  run: (ctx, i) => run(ctx, async (w) => { await requirePitch(w, i.id); return w.create(pathOf("comments", { artistId: w.ctx.artistId, parent: { kind: "pitches", id: i.id } }), { authorId: ctx.uid, body: i.body }); }),
 });
 export const pitchesLog = defineCommand({
   name: "pitches.log", roles: [...ROLES], description: "Timeline entry on a pitch: a call, email or visit (sets last contact) or a note. The discussion thread is pitches.comment.",
   input: z.strictObject({ id: z.string().min(1), type: z.enum(["call", "email", "visit", "note"]), text: z.string().min(1) }),
   run: (ctx, i) => run(ctx, async (w) => {
     await requirePitch(w, i.id);
-    const r = await w.create(`pitches/${i.id}/activity`, { type: i.type, text: i.text });
+    const r = await w.create(activityOf(w, i.id), { type: i.type, text: i.text });
     if (i.type !== "note") await w.update("pitches", i.id, { lastContactAt: w.now });
     return r;
   }),
@@ -491,7 +498,7 @@ export const pitchesSendEmail = defineCommand({
     pitchIds: z.array(z.string().min(1)).optional(),
   }),
   async run(ctx, { id, ...i }) {
-    const r = await sendMail(ctx, { ...i, pitchId: id, place: await placeOfPitch(await requirePitchDoc(id)) });
+    const r = await sendMail(ctx, { ...i, pitchId: id, place: await placeOfPitch(ctx, await requirePitchDoc(ctx, id)) });
     return { id: r.activityId, messageId: r.messageId, threadId: r.threadId };
   },
 });

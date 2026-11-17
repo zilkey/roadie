@@ -44,7 +44,7 @@ export const StagePlotShare = z.strictObject({ on: z.boolean(), tokenHash: z.str
 
 /** stagePlots/{autoId}: one plot, optionally for one lineup (configurationId, a label and filter). */
 export const StagePlot = entity({
-  artistId: id.optional(),
+  artistId: id,
   name: z.string().min(1),
   configurationId: id.optional(),
   stage: z.strictObject({ widthFt: z.number().positive(), depthFt: z.number().positive() }),

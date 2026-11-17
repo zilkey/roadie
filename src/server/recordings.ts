@@ -19,13 +19,13 @@ export const RECORDINGS_FOLDER_NAME = "Rehearsal Recordings";
 export interface FolderInfo { id: string; name: string; url: string }
 const info = (f: DriveFile): FolderInfo => ({ id: f.id, name: f.name, url: f.webViewLink });
 
-async function liveRehearsal(id: string): Promise<Doc> {
-  const reh = await db.get("rehearsals", id);
+async function liveRehearsal(ctx: Ctx, id: string): Promise<Doc> {
+  const reh = await db.get(ctx, "rehearsals", id);
   if (!reh || reh.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404);
   return reh;
 }
-async function liveSong(id: string): Promise<Doc> {
-  const song = await db.get("songs", id);
+async function liveSong(ctx: Ctx, id: string): Promise<Doc> {
+  const song = await db.get(ctx, "songs", id);
   if (!song || song.deletedAt) throw new AppError("not_found", "Song not found", 404);
   return song;
 }
@@ -36,12 +36,11 @@ async function liveSong(id: string): Promise<Doc> {
 async function recordingsFolder(ctx: Ctx): Promise<string> {
   const chosen = await rehearsalFolderId(ctx.artistId);
   if (chosen) return chosen;
-  if (!ctx.artistId) throw new AppError("no_rehearsal_folder", NO_REHEARSAL_FOLDER, 400);
   const drive = driveClient({ artistId: ctx.artistId });
-  const where = ((await db.get("artists", ctx.artistId))?.driveFolderId as string | undefined) || "root";
+  const where = ((await db.get(ctx, "artists", ctx.artistId))?.driveFolderId as string | undefined) || "root";
   const there = (await drive.search({ parent: where, mimeType: FOLDER_MIME })).find((f) => f.name === RECORDINGS_FOLDER_NAME);
   const folder = there ?? (await drive.createFolder(RECORDINGS_FOLDER_NAME, where));
-  if (!there) await drive.share(folder.id, (await bandmates()).map((m) => m.email));
+  if (!there) await drive.share(folder.id, (await bandmates(ctx)).map((m) => m.email));
   await db.update(ctx, "artists", ctx.artistId, { rehearsalFolderId: folder.id });
   return folder.id;
 }
@@ -54,11 +53,11 @@ export function recordingName(songTitle: string, date: string, fileName: string)
 
 /** The rehearsal's Drive folder, made (and shared with the band) if it isn't there yet: the place to drop recordings into. */
 export async function ensureRehearsalFolder(ctx: Ctx, rehearsalId: string): Promise<FolderInfo> {
-  const [reh, parent] = await Promise.all([liveRehearsal(rehearsalId), recordingsFolder(ctx)]);
+  const [reh, parent] = await Promise.all([liveRehearsal(ctx, rehearsalId), recordingsFolder(ctx)]);
   const drive = driveClient({ artistId: ctx.artistId });
   const before = await findRehearsalFolder(drive, parent, reh.date as string);
   const folder = before ?? (await folderForRehearsal(drive, parent, reh.date as string));
-  if (!before) await drive.share(folder.id, (await bandmates()).map((m) => m.email));
+  if (!before) await drive.share(folder.id, (await bandmates(ctx)).map((m) => m.email));
   return info(folder);
 }
 
@@ -66,11 +65,11 @@ export interface NewRecording { driveFileId: string; name: string; mimeType: str
 
 /** Files in the rehearsal's folder that aren't attached to the rehearsal yet (audio and video only), oldest first; the folder itself, or null when there is none. */
 export async function newRecordings(ctx: Ctx, rehearsalId: string): Promise<{ folder: FolderInfo | null; files: NewRecording[] }> {
-  const [reh, parent] = await Promise.all([liveRehearsal(rehearsalId), rehearsalFolderId(ctx.artistId)]);
+  const [reh, parent] = await Promise.all([liveRehearsal(ctx, rehearsalId), rehearsalFolderId(ctx.artistId)]);
   const drive = driveClient({ artistId: ctx.artistId });
   const folder = parent ? await findRehearsalFolder(drive, parent, reh.date as string) : null;
   if (!folder) return { folder: null, files: [] };
-  const [inFolder, attached] = await Promise.all([drive.search({ parent: folder.id }), db.list("files", (q) => q.where("rehearsalId", "==", rehearsalId))]);
+  const [inFolder, attached] = await Promise.all([drive.search({ parent: folder.id }), db.list(ctx, "files", (q) => q.where("rehearsalId", "==", rehearsalId))]);
   const have = new Set(attached.map((f) => f.driveFileId as string | undefined).filter(Boolean));
   const files = inFolder
     .filter((f) => !have.has(f.id) && (f.mimeType.startsWith("audio/") || f.mimeType.startsWith("video/")))
@@ -84,7 +83,7 @@ async function adopt(ctx: Ctx, drive: DriveService, reh: Doc, songs: Doc[], file
   const name = recordingName(songs.map((s) => s.title as string).join(", "), reh.date as string, file.name);
   if (file.name !== name) await drive.rename(file.id, name);
   // The folder is usually shared with the band already; share the file too so it holds without relying on inheritance.
-  await drive.share(file.id, (await bandmates()).map((m) => m.email));
+  await drive.share(file.id, (await bandmates(ctx)).map((m) => m.email));
   const ids: string[] = [];
   let skipped = 0;
   for (const song of songs) {
@@ -102,7 +101,7 @@ async function adopt(ctx: Ctx, drive: DriveService, reh: Doc, songs: Doc[], file
 export async function uploadRecording(ctx: Ctx, rehearsalId: string, songIds: string | string[], file: File) {
   const ids = [...new Set(typeof songIds === "string" ? [songIds] : songIds)];
   if (ids.length === 0) throw new AppError("invalid_input", "Which song is this a recording of?", 400);
-  const [reh, parent, ...songs] = await Promise.all([liveRehearsal(rehearsalId), recordingsFolder(ctx), ...ids.map(liveSong)]) as [Doc, string, ...Doc[]];
+  const [reh, parent, ...songs] = await Promise.all([liveRehearsal(ctx, rehearsalId), recordingsFolder(ctx), ...ids.map((id) => liveSong(ctx, id))]) as [Doc, string, ...Doc[]];
   const drive = driveClient({ artistId: ctx.artistId });
   const folder = await folderForRehearsal(drive, parent, reh.date as string);
   const name = recordingName(songs.map((s) => s.title as string).join(", "), reh.date as string, file.name);
@@ -114,7 +113,7 @@ export async function uploadRecording(ctx: Ctx, rehearsalId: string, songIds: st
 
 /** A file already in the rehearsal's folder (dropped there by hand) becomes the song's recording at that rehearsal. */
 export async function adoptRecording(ctx: Ctx, rehearsalId: string, songId: string, driveFileId: string) {
-  const [reh, song, parent] = await Promise.all([liveRehearsal(rehearsalId), liveSong(songId), rehearsalFolderId(ctx.artistId)]);
+  const [reh, song, parent] = await Promise.all([liveRehearsal(ctx, rehearsalId), liveSong(ctx, songId), rehearsalFolderId(ctx.artistId)]);
   const drive = driveClient({ artistId: ctx.artistId });
   const folder = parent ? await findRehearsalFolder(drive, parent, reh.date as string) : null;
   if (!folder) throw new AppError("not_found", "This rehearsal has no Drive folder yet", 404);

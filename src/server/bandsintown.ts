@@ -14,8 +14,8 @@ import { BANDSINTOWN_ITEM_LABEL, bandsintownEligible } from "@/lib/bandsintown";
 const newId = () => randomUUID().slice(0, 8);
 
 /** The artist's show templates in order: the first one typed Promotion is where the Bandsintown item goes. */
-async function firstPromotionTemplate(w: Writer, artistId: string): Promise<Doc | undefined> {
-  const ts = (await w.query("checklistTemplates", (q) => q.where("artistId", "==", artistId)))
+async function firstPromotionTemplate(w: Writer): Promise<Doc | undefined> {
+  const ts = (await w.query("checklistTemplates"))
     .filter((t) => (t.appliesTo ?? "show") === "show" && t.type === "promotion")
     .sort((a, b) => (a.order as number) - (b.order as number));
   return ts[0];
@@ -43,7 +43,7 @@ export async function ensureBandsintownItem(ctx: Ctx, showId: string): Promise<v
       if (!show || !bandsintownEligible(show as never, dateInBandZone(w.now.toDate()))) return;
       const lists = (show.checklists ?? []) as ChecklistLike[];
       if (hasItem(lists)) return;
-      const promos = (await w.query("checklistTemplates", (q) => q.where("artistId", "==", show.artistId as string)))
+      const promos = (await w.query("checklistTemplates"))
         .filter((t) => (t.appliesTo ?? "show") === "show" && t.type === "promotion").sort((a, b) => (a.order as number) - (b.order as number));
       const next = withBandsintownItem(lists, promos.map((t) => t.id), promos[0]?.id);
       if (next) await w.update("shows", showId, { checklists: next });
@@ -57,7 +57,7 @@ export async function ensureBandsintownItem(ctx: Ctx, showId: string): Promise<v
 export async function templateTakesBandsintown(w: Writer, show: Doc, template: Doc): Promise<boolean> {
   if (!bandsintownEligible(show as never, dateInBandZone(w.now.toDate()))) return false;
   if (hasItem((show.checklists ?? []) as ChecklistLike[])) return false;
-  return (await firstPromotionTemplate(w, show.artistId as string))?.id === template.id;
+  return (await firstPromotionTemplate(w))?.id === template.id;
 }
 
 // ---------- reading Bandsintown ----------
@@ -95,8 +95,8 @@ const eventLink = (e: BitEvent) => `https://www.bandsintown.com/e/${e.id}`;
  * Tick the Bandsintown item on every eligible show (or just `showId`) that Bandsintown already lists. Returns the show ids it
  * ticked. Does nothing (skipped) without the band's Bandsintown artist ID and API key.
  */
-export async function checkBandsintown(ctx: Ctx, artistId: string, showId?: string): Promise<{ ticked: string[]; skipped?: "no_key" }> {
-  const artist = await run(ctx, (w) => w.get("artists", artistId));
+export async function checkBandsintown(ctx: Ctx, showId?: string): Promise<{ ticked: string[]; skipped?: "no_key" }> {
+  const artist = await run(ctx, (w) => w.get("artists", ctx.artistId));
   const bit = artist?.bandsintown as { artistId?: string; appId?: string } | undefined;
   if (!bit?.artistId || !bit.appId) return { ticked: [], skipped: "no_key" };
   const events = await fetchBandsintownEvents(bit.artistId, bit.appId);
@@ -104,9 +104,9 @@ export async function checkBandsintown(ctx: Ctx, artistId: string, showId?: stri
   await run(ctx, async (w) => {
     const today = dateInBandZone(w.now.toDate());
     const shows = showId ? [await w.get("shows", showId)].filter((s): s is Doc => !!s)
-      : await w.query("shows", (q) => q.where("artistId", "==", artistId).where("date", ">=", today));
+      : await w.query("shows", (q) => q.where("date", ">=", today));
     for (const s of shows) {
-      if (s.deletedAt || s.artistId !== artistId || kindOf(s as never) === "house") continue;
+      if (s.deletedAt || kindOf(s as never) === "house") continue;
       const lists = (s.checklists ?? []) as ChecklistLike[];
       const item = lists.flatMap((l) => l.items).find((i) => i.bandsintown && !i.done);
       if (!item) continue;

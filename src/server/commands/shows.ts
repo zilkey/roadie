@@ -5,6 +5,7 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
+import { pathOf } from "@/schema/owners";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
@@ -38,9 +39,9 @@ async function requireVenue(w: Writer, id: string) {
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
   return v;
 }
-/** A show's artist: the one given, else the one this call is for (ctx.artistId), else the one artist there is. */
-async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
-  const a = artistId ? await w.get("artists", artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
+/** The artist this call is for (ctx.artistId). */
+async function artistFor(w: Writer): Promise<Doc> {
+  const a = await w.get("artists", w.ctx.artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
 }
@@ -69,6 +70,7 @@ function configOf(artist: Doc, billedAs?: string | null) {
   if (!c) throw new AppError("invalid_input", `No configuration "${billedAs}"`, 400);
   return c;
 }
+const commentsOf = (w: Writer, kind: "shows" | "pitches", id: string) => pathOf("comments", { artistId: w.ctx.artistId, parent: { kind, id } });
 const done = (id: string) => ({ id, warnings: [] as string[] });
 
 // ---------- list ----------
@@ -85,10 +87,10 @@ export const showsList = defineCommand({
     filter: z.enum(SHOW_FILTERS).optional(), venueId: z.string().min(1).optional(), from: dateStr.optional(), to: dateStr.optional(), city: z.string().trim().min(1).optional(),
     limit: z.number().int().min(1).max(200).default(50),
   }),
-  async run(_ctx, i) {
+  async run(ctx, i) {
     const today = todayServer();
     const city = i.city?.toLowerCase();
-    const shows = (await db.list("shows"))
+    const shows = (await db.list(ctx, "shows"))
       .filter((s) => (!i.venueId || s.venue?.id === i.venueId) && (!i.from || s.date >= i.from) && (!i.to || s.date <= i.to)
         && (!city || showCity(s as never)?.toLowerCase() === city))
       .map((s) => ({ s, f: showFilter(s as never, today) }));
@@ -97,7 +99,7 @@ export const showsList = defineCommand({
       .sort((a, b) => (i.filter === "upcoming" ? a.s.date.localeCompare(b.s.date) : b.s.date.localeCompare(a.s.date)));
     const page = rows.slice(0, i.limit);
     // One list for every deal; a show's deal shares its id. Only the money totals leave here.
-    const totalsOf = new Map((page.length ? await db.list("showDeals") : []).flatMap((d) => {
+    const totalsOf = new Map((page.length ? await db.list(ctx, "showDeals") : []).flatMap((d) => {
       const t = d.totals as { income: number; paidOut?: number; expenses: number } | undefined;
       return t ? [[d.id, { income: t.income, paidOut: t.paidOut ?? 0, expenses: t.expenses, net: t.income - (t.paidOut ?? 0) - t.expenses }] as const] : [];
     }));
@@ -158,13 +160,12 @@ export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCrea
   const hosts = i.hostContactIds?.length ? await hostsOf(w, i.hostContactIds) : null;
   const pitch = i.pitchId ? await w.get("pitches", i.pitchId) : null;
   if (i.pitchId && (!pitch || pitch.deletedAt)) throw new AppError("not_found", "Pitch not found", 404);
-  if (pitch && ctx.artistId && pitch.artistId !== ctx.artistId) throw new AppError("not_found", "Pitch not found", 404);
-  const artist = await artistFor(w, pitch?.artistId);
+  const artist = await artistFor(w);
   const billedAs = i.billedAs === null ? undefined : i.billedAs ?? pitch?.pitchedAs ?? undefined;
   const cfg = configOf(artist, billedAs);
   const personnel = i.personnel ?? (i.billedAs !== undefined ? cfg?.musicianIds : pitch?.personnel?.length ? pitch.personnel : cfg?.musicianIds) ?? [];
   const calendarInviteeIds = i.sendInvites === undefined ? undefined
-    : i.sendInvites ? calendarInvitees(cfg?.musicianIds ?? [], await w.query("musicians"), await w.query("users"), artist.id) : [];
+    : i.sendInvites ? calendarInvitees(cfg?.musicianIds ?? [], await w.query("musicians"), await w.query("users", (q) => q.where("artistIds", "array-contains", artist.id)), artist.id) : [];
   const pitchEdition = (pitch?.target as { kind: string; id: string } | undefined)?.kind === "edition" ? (pitch!.target as { id: string }).id : undefined;
   const editionId = i.editionId ?? i.deal.editionId ?? pitchEdition;
   const edition = editionId ? await requireEdition(w, editionId) : null;
@@ -203,13 +204,13 @@ export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCrea
   if (i.copyPitchComments && !pitch) throw new AppError("invalid_input", "copyPitchComments needs a pitchId", 400);
   if (pitch && i.pitchId) {
     if (i.copyPitchComments) {
-      const found = await w.query(`pitches/${i.pitchId}/comments`, (q) => q);
+      const found = await w.query(commentsOf(w, "pitches", i.pitchId));
       for (const c of found.sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())) {
-        await w.create(`shows/${r.id}/comments`, { authorId: c.authorId, body: c.body }, { keep: { createdAt: c.createdAt, createdBy: c.createdBy } });
+        await w.create(commentsOf(w, "shows", r.id), { authorId: c.authorId, body: c.body }, { keep: { createdAt: c.createdAt, createdBy: c.createdBy } });
       }
     }
     await w.update("pitches", i.pitchId, { showIds: [...(pitch.showIds as string[]), r.id], ...(pitch.status === "booked" ? {} : { status: "booked" }) });
-    if (pitch.status !== "booked") await w.create(`pitches/${i.pitchId}/activity`, { type: "status", fromStatus: pitch.status, toStatus: "booked", text: "Booked it" });
+    if (pitch.status !== "booked") await w.create(pathOf("activity", { artistId: w.ctx.artistId, parent: { kind: "pitches", id: i.pitchId } }), { type: "status", fromStatus: pitch.status, toStatus: "booked", text: "Booked it" });
     for (const av of await w.query("availability", (q) => q.where("pitchId", "==", i.pitchId))) {
       if (!av.showId && av.date === i.date) await w.update("availability", av.id, { showId: r.id });
     }
@@ -221,14 +222,14 @@ export async function createShow(w: Writer, ctx: Ctx, i: z.infer<typeof ShowCrea
 async function venueDayOf(w: Writer, venue: Doc, artistId: string) {
   for (const id of (await noteOf(w, venue, artistId)).fields.dayOfContactIds) {
     const c = await w.get("contacts", id);
-    if (c && !c.deletedAt && c.artistId === artistId) return dayOfContactOf({ id: c.id, name: c.name as string, phones: (c.phones as string[] | undefined) ?? [] });
+    if (c && !c.deletedAt) return dayOfContactOf({ id: c.id, name: c.name as string, phones: (c.phones as string[] | undefined) ?? [] });
   }
   return undefined;
 }
 /** Whoever a show at the venue calls on the day is a day-of contact there: linked (privately) and ticked, other roles kept. */
 async function tickDayOf(w: Writer, venue: Doc, artistId: string, contactId: string) {
   const c = await w.get("contacts", contactId);
-  if (c && !c.deletedAt && c.artistId === artistId) await setContactRoles(w, venue, artistId, contactId, ["dayOf"], "add");
+  if (c && !c.deletedAt) await setContactRoles(w, venue, artistId, contactId, ["dayOf"], "add");
 }
 
 // ---------- update ----------
@@ -260,8 +261,7 @@ export const showsUpdate = defineCommand({
       const before = await requireShow(w, id);
       const { venueId, hostContactIds, editionId, ...rest } = patch;
       const p: Record<string, unknown> = { ...rest };
-      if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
-      const artist = await artistFor(w, before.artistId);
+      const artist = await artistFor(w);
       if (patch.projectId) await requireOpenProject(w, patch.projectId);
       if (venueId) p.venue = venueCopy(await requireVenue(w, venueId));
       if (venueId === null) p.venue = null;
@@ -284,7 +284,7 @@ export const showsUpdate = defineCommand({
       const after = (await w.get("shows", id))!;
       // A show on a tour keeps its entry on its date (at the end of the new day).
       if (patch.date && patch.date !== before.date && before.tourId) {
-        const path = `tours/${before.tourId as string}/entries`;
+        const path = pathOf("entries", { artistId: ctx.artistId, parent: { kind: "tours", id: before.tourId as string } });
         const all = await w.query(path);
         const last = Math.max(0, ...all.filter((e) => e.date === patch.date).map((e) => e.position as number));
         for (const e of all.filter((e) => e.kind === "show" && e.showId === id)) await w.update(path, e.id, { date: patch.date, position: last + 1 });
@@ -310,7 +310,6 @@ async function setStatus(ctx: Ctx, i: { id: string; reason?: string }, status: "
   const reason = i.reason?.trim() || undefined;
   await run(ctx, async (w) => {
     const before = await requireShow(w, i.id);
-    if (ctx.artistId && before.artistId && before.artistId !== ctx.artistId) throw new AppError("not_found", "Show not found", 404);
     return w.update("shows", i.id, { status, reason: reason ?? null, statusHistory: historyWith(w, before, status, reason) });
   });
   await ensureBandsintownItem(ctx, i.id);
@@ -344,7 +343,7 @@ export const showsRemove = defineCommand({
     "Takes it off the band calendar (history.undoRun puts the event back); if the calendar can't be reached, nothing is removed.",
   async run(ctx, { id }) {
     // The event first: a show gone from the app must not stay on everyone's calendar. The show keeps calendarEventId, so Undo can bring the event back.
-    const before = await db.get("shows", id);
+    const before = await db.get(ctx, "shows", id);
     if (before && !before.deletedAt) await deleteEvent(ctx, before);
     await run(ctx, async (w) => {
       await requireShow(w, id);
@@ -357,19 +356,15 @@ export const showsRemove = defineCommand({
 
 // ---------- checklists: see ./checklists.ts ----------
 
-/** A show of the artist this call is for (any show, for scripts and tests with no artist). */
-async function bandShow(w: Writer, id: string) {
-  const s = await requireShow(w, id);
-  if (w.ctx.artistId && s.artistId && s.artistId !== w.ctx.artistId) throw new AppError("not_found", "Show not found", 404);
-  return s;
-}
+/** A show of the artist this call is for (reads are scoped, so a foreign id is not found). */
+const bandShow = requireShow;
 
 // ---------- comments (the whole band) ----------
 
 /** The comment to change: the author's own, or any one for an admin. */
 const changeableComment = async (w: Writer, showId: string, commentId: string) => {
   await requireShow(w, showId);
-  const c = await w.get(`shows/${showId}/comments`, commentId);
+  const c = await w.get(commentsOf(w, "shows", showId), commentId);
   if (!c || c.deletedAt) throw new AppError("not_found", "Comment not found", 404);
   if (c.authorId !== w.ctx.uid && w.ctx.role !== "admin") throw new AppError("forbidden", "You can only change your own comments", 403);
   return c;
@@ -385,7 +380,7 @@ export const showsComment = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     noPrivateForMembers(ctx, i.audience);
     await requireShow(w, i.id);
-    return w.create(`shows/${i.id}/comments`, { authorId: ctx.uid, body: i.body, audience: i.audience ?? (ctx.role === "admin" ? "admins" : "band") });
+    return w.create(commentsOf(w, "shows", i.id), { authorId: ctx.uid, body: i.body, audience: i.audience ?? (ctx.role === "admin" ? "admins" : "band") });
   }),
 });
 export const showsEditComment = defineCommand({
@@ -399,13 +394,13 @@ export const showsEditComment = defineCommand({
     if (i.body !== undefined && i.body !== c.body) Object.assign(patch, { body: i.body, edited: true });
     if (i.audience && i.audience !== c.audience) patch.audience = i.audience;
     if (!Object.keys(patch).length) return { id: i.commentId };
-    return w.update(`shows/${i.id}/comments`, i.commentId, patch);
+    return w.update(commentsOf(w, "shows", i.id), i.commentId, patch);
   }),
 });
 export const showsRemoveComment = defineCommand({
   name: "shows.removeComment", roles: ["admin", "member", "mcp"], description: "Delete a comment on a show. Your own comments; admins can delete anyone's.",
   input: z.strictObject({ id: z.string().min(1), commentId: z.string().min(1) }),
-  run: (ctx, i) => run(ctx, async (w) => { await changeableComment(w, i.id, i.commentId); return w.softDelete(`shows/${i.id}/comments`, i.commentId); }),
+  run: (ctx, i) => run(ctx, async (w) => { await changeableComment(w, i.id, i.commentId); return w.softDelete(commentsOf(w, "shows", i.id), i.commentId); }),
 });
 
 export const showsCalendarPreview = defineCommand({
@@ -493,7 +488,7 @@ export const showsSetFields = defineCommand({
   input: z.strictObject({ id: z.string().min(1), fields: z.array(z.strictObject({ fieldId: z.string().min(1), value: z.string() })) }),
   run: (ctx, i) => run(ctx, async (w) => {
     const show = await bandShow(w, i.id);
-    const defs = ((await artistFor(w, show.artistId)).showFields ?? []) as { id: string }[];
+    const defs = ((await artistFor(w)).showFields ?? []) as { id: string }[];
     const seen = new Set<string>();
     const fields = i.fields.flatMap((f) => {
       if (!defs.some((d) => d.id === f.fieldId)) throw new AppError("invalid_input", `No such show field "${f.fieldId}"`, 400);

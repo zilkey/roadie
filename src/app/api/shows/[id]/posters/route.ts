@@ -25,13 +25,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const mime = file.type || "application/octet-stream";
     if (!mime.startsWith("image/") && mime !== "application/pdf") throw new AppError("invalid_input", "A poster is a picture or a PDF", 400);
 
-    const show = await db.get("shows", id);
+    const show = await db.get(ctx, "shows", id);
     if (!show || show.deletedAt) throw new AppError("not_found", "Show not found", 404);
     const folder = await ensureShowFolder(ctx, id);
     const drive = driveClient({ artistId: ctx.artistId });
     const up = await drive.upload({ name: file.name || "Poster", mimeType: mime, parentId: folder.id, data: file });
     // The folder is shared with the band already; share the file too so it holds without relying on inheritance.
-    await drive.share(up.id, (await bandmates()).map((m) => m.email));
+    await drive.share(up.id, (await bandmates(ctx)).map((m) => m.email));
     const out = await execute(ctx, "shows.posters.attach", { showId: id, files: [{ driveFileId: up.id }] });
     return Response.json({ ...out, driveFileId: up.id, url: up.webViewLink, folder });
   } catch (e) {

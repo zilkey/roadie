@@ -47,7 +47,7 @@ export type ExpenseGas = z.infer<typeof expenseGas>;
 
 export const Expense = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   /** Who paid, from their own account (the band has none). On an open bill (`owed`) it is whoever entered it. */
   userId: id,
   date: dateStr,

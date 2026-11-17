@@ -4,7 +4,7 @@ import { dispatch } from "@/server/commands/dispatch";
 import { hiddenSections, sectionOrder } from "@/server/prefs";
 import { DEFAULT_HIDDEN, MEMBER_DEFAULT_HIDDEN, hiddenFromPrefs } from "@/schema/sections";
 import { firestore } from "@/server/admin";
-import { resetEmulators, makeUser } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -72,9 +72,9 @@ test("artists.setupStatus: people, links and Google follow the artist; Dismiss i
   const status = async (tok: string) => (await dispatch("artists.setupStatus", bearer(tok), {}, "test-artist")).json as { result: { people: boolean; links: boolean; google: boolean; dismissed: boolean } };
   assert.equal((await dispatch("artists.setupStatus", bearer(hugo.token), {}, "test-artist")).status, 403, "admins only");
   assert.deepEqual((await status(rudy.token)).result, { people: true, links: false, google: false, dismissed: false });
-  await db.update(importCtx(), "artists", "test-artist", { links: { website: "https://owls.example" } });
+  await db.update(importCtx(TEST_ARTIST), "artists", "test-artist", { links: { website: "https://owls.example" } });
   assert.equal((await status(rudy.token)).result.links, true);
-  await db.update(importCtx(), "artists", "test-artist", { google: { uid: rudy.uid, email: "rudy@example.com" } });
+  await db.update(importCtx(TEST_ARTIST), "artists", "test-artist", { google: { uid: rudy.uid, email: "rudy@example.com" } });
   assert.equal((await status(rudy.token)).result.google, true);
   assert.equal((await dispatch("artists.dismissSetup", bearer(rudy.token), {}, "test-artist")).status, 200);
   assert.equal((await status(rudy.token)).result.dismissed, true);

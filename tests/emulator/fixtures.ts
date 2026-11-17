@@ -7,11 +7,11 @@
  * one). Every record is written through the Writer as the artist's admin (via "app"), so it is valid and has its history entry.
  */
 import { randomUUID } from "node:crypto";
-import type { Ctx } from "@/server/ctx";
+import { systemCtx, type Ctx } from "@/server/ctx";
 import { db } from "@/server/db";
 import { OWNERS, PARENTS } from "@/schema/owners";
 import { snapshotId } from "@/server/commands/stats";
-import { makeUser } from "./helpers";
+import { makeUser, SYS } from "./helpers";
 
 type ArtistKind = { [K in keyof typeof OWNERS]: (typeof OWNERS)[K] extends "artist" ? K : never }[keyof typeof OWNERS];
 export const ARTIST_KINDS = (Object.keys(OWNERS) as (keyof typeof OWNERS)[]).filter((k) => OWNERS[k] === "artist") as ArtistKind[];
@@ -91,7 +91,7 @@ export const SAMPLE_ORDER: ArtistKind[] = [...FIRST, ...ARTIST_KINDS.filter((k) 
 
 /** The shared directory records every artist's samples point at (one set, made once). */
 export async function seedShared(): Promise<Pick<SeedRefs, "venueId" | "actId" | "festivalId" | "editionId" | "promoterId" | "eventId">> {
-  const ctx: Ctx = { uid: "seed-shared", role: "admin", via: "import", runId: randomUUID() };
+  const ctx = systemCtx("seed-shared");
   const mk = async (path: string, data: Record<string, unknown>, id?: string) => (await db.create(ctx, path, data, id ? { id } : undefined)).id;
   const venueId = await mk("venues", { name: "Sample Room", type: "bar", address: { city: "Denver", state: "CO" }, region: "denver" }, "fx-venue");
   const actId = await mk("acts", { name: "The Openers" }, "fx-act");
@@ -116,7 +116,7 @@ export interface SeededArtist {
  * artists can be seeded side by side.
  */
 export async function seedArtist(artistId: string, shared?: Awaited<ReturnType<typeof seedShared>>): Promise<SeededArtist> {
-  const sh = shared ?? (await db.get("venues", "fx-venue") ? { venueId: "fx-venue", actId: "fx-act", festivalId: "fx-festival", editionId: "fx-edition", promoterId: "fx-promoter", eventId: "fx-event" } : await seedShared());
+  const sh = shared ?? (await db.get(SYS, "venues", "fx-venue") ? { venueId: "fx-venue", actId: "fx-act", festivalId: "fx-festival", editionId: "fx-edition", promoterId: "fx-promoter", eventId: "fx-event" } : await seedShared());
   const boot: Ctx = { uid: "bootstrap", role: "admin", via: "import", runId: randomUUID(), artistId };
   await db.create(boot, "artists", { name: `Artist ${artistId}`, slug: `artist-${artistId.toLowerCase()}`, configurations: [], links: {}, driveFolderId: "" }, { id: artistId });
   const admin = await makeUser(mail("admin", artistId), "admin", { artistId, name: `Admin ${artistId}` });
@@ -135,8 +135,8 @@ export async function seedArtist(artistId: string, shared?: Awaited<ReturnType<t
   }
   // The member's own musician; both users link theirs.
   refs.memberMusicianId = (await db.create(ctx, "musicians", { name: `Member ${artistId}`, instruments: ["bass"], active: true })).id;
-  await db.update(ctx, "users", admin.uid, { musicianId: refs.musicianId });
-  await db.update(ctx, "users", member.uid, { musicianId: refs.memberMusicianId });
+  await db.update(SYS, "users", admin.uid, { artists: [{ artistId, role: "admin", musicianId: refs.musicianId }] });
+  await db.update(SYS, "users", member.uid, { artists: [{ artistId, role: "member", musicianId: refs.memberMusicianId }] });
   return { artistId, admin, member, records, refs };
 }
 

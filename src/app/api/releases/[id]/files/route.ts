@@ -27,13 +27,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const kindIn = typeof form.get("kind") === "string" && form.get("kind") ? fileKind.safeParse(form.get("kind")) : undefined;
     if (kindIn && !kindIn.success) throw new AppError("invalid_input", "Unknown file kind", 400);
 
-    const release = await db.get("releases", id);
+    const release = await db.get(ctx, "releases", id);
     if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
     const folder = await ensureReleaseFolder(ctx, id);
     const drive = driveClient({ artistId: ctx.artistId });
     const up = await drive.upload({ name: file.name || `${release.title} file`, mimeType: file.type || "application/octet-stream", parentId: folder.id, data: file });
     // The folder is shared with the band already; share the file too so it holds without relying on inheritance.
-    await drive.share(up.id, (await bandmates()).map((m) => m.email));
+    await drive.share(up.id, (await bandmates(ctx)).map((m) => m.email));
     const out = await execute(ctx, "releases.files.attach", { releaseId: id, ...(trackId ? { trackId } : {}), files: [{ driveFileId: up.id, ...(kindIn?.success ? { kind: kindIn.data } : {}) }] });
     return Response.json({ ...out, driveFileId: up.id, url: up.webViewLink, folder });
   } catch (e) {

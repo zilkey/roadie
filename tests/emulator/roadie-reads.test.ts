@@ -10,7 +10,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { venueNoteId } from "@/schema";
 import { firestore } from "@/server/admin";
 import { contextNow } from "@/server/assistant/context";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -106,7 +106,8 @@ test("availability asks filter by showId and pitchId", async () => {
 
 test("search and needingFollowUp skip another artist's pitches", async () => {
   const mine = await pitch({ kind: "venue", id: venueA, name: "Deep End" }, "pitched", { artistId: TEST_ARTIST, nextStep: { text: "Email", due: "2020-01-01" } });
-  const theirs = await pitch({ kind: "venue", id: venueA, name: "Deep End" }, "pitched", { artistId: "other-artist", nextStep: { text: "Email", due: "2020-01-01" } });
+  // Another artist's pitch can only be made through the system view (a band's own ctx may not name another artist).
+  const theirs = (await db.create(SYS, "pitches", { target: { kind: "venue", id: venueA, name: "Deep End" }, status: "pitched", showIds: [], personnel: [], artistId: "other-artist", nextStep: { text: "Email", due: "2020-01-01" } })).id;
 
   const found = (await registry.search.run(sys, registry.search.input.parse({ q: "Deep End", kinds: ["pitch"] }))) as { results: { id: string }[] };
   assert.deepEqual(found.results.map((r) => r.id).sort(), [mine]);
@@ -128,7 +129,7 @@ test("records.get on a venue says archived when the band hid it", async () => {
 
 test("context.now carries the open projects, what we owe by person and what is owed to us, with ids", async () => {
   // the shows made in setup already needed a home for their money, so the Band default exists (made on first need); seed one only if not
-  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? { ...await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true }), name: "Band" };
+  const band = (await db.list(SYS, "projects")).find((p) => p.isDefault && !p.deletedAt) ?? { ...await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true }), name: "Band" };
   const video = await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "video", name: "Lighthouse video", status: "open" });
   await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "release", name: "Old release", status: "closed" });
   const owed = await db.create(sys, "income", { artistId: TEST_ARTIST, date: "2026-11-14", amount: 40000, category: "guarantee", from: "Pine Hollow", projectId: band.id, showId: showA });

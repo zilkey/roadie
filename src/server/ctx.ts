@@ -2,16 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { Via } from "@/schema/common";
 
 export type Role = "admin" | "member" | "mcp";
-export interface Ctx {
+
+/** What every context carries: who is calling, how, and the run their writes belong to. */
+interface CtxBase {
   uid: string;
-  /** The caller's role in `artistId`. MCP sessions use "mcp". */
-  role: Role;
-  /**
-   * The artist this call is for (the app sends it with every request; see `authenticate`). Absent for imports, scripts and
-   * tests that build a Ctx by hand: commands then fall back to the one artist there is.
-   */
-  artistId?: string;
-  musicianId?: string;
   via: Via;
   runId: string;
   /** Injectable clock (tests). Defaults to the real time. */
@@ -27,5 +21,61 @@ export interface Ctx {
   /** Filled by Writer: doc id -> rev after this call's writes. Dispatch returns it so clients can track revs. */
   touched?: Record<string, number>;
 }
+
+/**
+ * A call for one artist (tenancy plan D3): every read and write of an artist kind is scoped to `artistId` by the Writer and `db`
+ * (src/server/db.ts). Built by `artistCtx` (authenticate, the MCP and Shortcut token checks, public link verifiers) and `importCtx`.
+ */
+export interface ArtistCtx extends CtxBase {
+  /** The caller's role in `artistId`. MCP sessions use "mcp". */
+  role: Role;
+  artistId: string;
+  /** The caller's musician in `artistId` (their membership's), when they have one. */
+  musicianId?: string;
+  system?: undefined;
+  person?: undefined;
+}
+
+/**
+ * A verified person with no artist (yet): invites.list / accept / decline and the new-artist path. Reads of artist kinds see
+ * nothing; the invite commands reach the invited artist through narrow, allow-listed steps (`w.forArtist`).
+ */
+export interface PersonCtx extends CtxBase {
+  person: true;
+  email: string;
+  role?: undefined;
+  artistId?: undefined;
+  musicianId?: undefined;
+  system?: undefined;
+}
+
+/**
+ * Whole-database server code: migrations, backup, restore, wipe, cron, the venue-calendar refresh, denormalization across artists.
+ * Reads are unscoped. Only the allow-listed files may build one (tests/unit/tenancy-guard.test.ts).
+ */
+export interface SystemCtx extends CtxBase {
+  system: true;
+  reason: string;
+  role?: undefined;
+  artistId?: undefined;
+  musicianId?: undefined;
+  person?: undefined;
+}
+
+/** What commands run with: always one artist. */
+export type Ctx = ArtistCtx;
+export type AnyCtx = ArtistCtx | PersonCtx | SystemCtx;
+
 export const newRunId = () => randomUUID();
-export const importCtx = (uid = "import", runId: string = newRunId(), artistId?: string): Ctx => ({ uid, role: "admin", via: "import", runId, ...(artistId ? { artistId } : {}) });
+
+export const artistCtx = (c: Omit<ArtistCtx, "runId" | "system" | "person"> & { runId?: string }): ArtistCtx => ({ ...c, runId: c.runId ?? newRunId() });
+export const personCtx = (uid: string, email: string, via: Via = "app"): PersonCtx => ({ person: true, uid, email, via, runId: newRunId() });
+/** `uid` names who the writes are by in History (default: the reason, e.g. "venue-calendars"). */
+export const systemCtx = (reason: string, opts: { uid?: string; runId?: string; via?: Via } = {}): SystemCtx => ({
+  system: true, reason, uid: opts.uid ?? reason, via: opts.via ?? "import", runId: opts.runId ?? newRunId(),
+});
+/** An import or script writing one artist's records as that artist's admin. */
+export const importCtx = (artistId: string, uid = "import", runId: string = newRunId()): ArtistCtx => ({ uid, role: "admin", via: "import", runId, artistId });
+
+export const isSystem = (c: AnyCtx): c is SystemCtx => c.system === true;
+export const isPerson = (c: AnyCtx): c is PersonCtx => c.person === true;

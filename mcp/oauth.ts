@@ -15,6 +15,7 @@
  * Codes expire after five minutes and are bound to the client, the redirect URI and the PKCE challenge; the person
  * gets fifteen minutes on /connect.
  */
+import { systemCtx } from "@/server/ctx";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { appUrl } from "@/lib/app-url";
 import { AppError } from "@/server/errors";
@@ -213,7 +214,7 @@ export async function googleCallback(q: URLSearchParams): Promise<Response> {
   }
   const email = claims.email?.trim().toLowerCase();
   if (!email || claims.email_verified === false) return html(400, errorPage("Google didn't share a verified email address."));
-  const user = (await db.list("users", (x) => x.where("email", "==", email).limit(5))).find((u) => !u.deletedAt);
+  const user = (await db.list(systemCtx("mcp sign-in"), "users", (x) => x.where("email", "==", email).limit(5))).find((u) => !u.deletedAt);
   const who = seal({ t: "who", ...(user ? { u: user.id } : {}), m: email, h: reqHash(st.q), e: Date.now() + REQ_TTL_MS });
   return redirect(`${issuer()}/connect?${new URLSearchParams({ req: st.q, who })}`);
 }
@@ -223,7 +224,7 @@ async function personFrom(authHeader: string | null, whoSealed: string | undefin
   if (whoSealed) {
     const w = unseal(whoSealed, "who");
     if (!w || w.e < Date.now() || w.h !== reqHash(sealedReq)) throw new AppError("unauthenticated", "Your sign-in has expired. Sign in again.", 401);
-    const u = w.u ? await db.get("users", w.u) : null;
+    const u = w.u ? await db.get(systemCtx("mcp sign-in"), "users", w.u) : null;
     if (!u || u.deletedAt) throw new AppError("not_invited", `${w.m} isn't on any band in Roadie. Sign in with the Google account Roadie invited.`, 403);
     return u;
   }
@@ -232,10 +233,10 @@ async function personFrom(authHeader: string | null, whoSealed: string | undefin
   let decoded;
   try { decoded = await adminAuth().verifyIdToken(m[1]); }
   catch { throw new AppError("unauthenticated", "Your sign-in has expired. Sign in again.", 401); }
-  let user = await db.get("users", decoded.uid);
+  let user = await db.get(systemCtx("mcp sign-in"), "users", decoded.uid);
   const email = decoded.email?.trim().toLowerCase();
   if ((!user || user.deletedAt) && email && decoded.email_verified !== false) {
-    user = (await db.list("users", (q) => q.where("email", "==", email).limit(5))).find((u) => !u.deletedAt) ?? null;
+    user = (await db.list(systemCtx("mcp sign-in"), "users", (q) => q.where("email", "==", email).limit(5))).find((u) => !u.deletedAt) ?? null;
   }
   if (!user || user.deletedAt) throw new AppError("not_invited", `${decoded.email ?? "This account"} isn't on any band in Roadie.`, 403);
   return user;
@@ -260,7 +261,7 @@ export async function approve(req: Request): Promise<Response> {
     const user = await personFrom(req.headers.get("authorization"), body.who, body.req!);
     const ms = (user.artists ?? []) as Membership[];
     if (!body.artistId) {
-      const docs = await Promise.all(ms.map((m) => db.get("artists", m.artistId)));
+      const docs = await Promise.all(ms.map((m) => db.get(systemCtx("mcp sign-in"), "artists", m.artistId)));
       const artists = ms.flatMap((m, i) => {
         const a = docs[i];
         return a && !a.deletedAt ? [{ artistId: m.artistId, name: a.name as string, ai: mcpIn(user, m.artistId) }] : [];

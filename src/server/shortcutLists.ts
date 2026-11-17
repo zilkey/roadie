@@ -29,7 +29,7 @@ export const DAYS_BACK = 30, DAYS_AHEAD = 7;
 export async function recentRehearsals(ctx: Ctx, now = ctx.now ?? new Date()): Promise<{ rehearsals: ChoiceList }> {
   const t = new Date(today(now) + "T00:00:00Z").getTime();
   const day = 86_400_000;
-  const all = (await db.list("rehearsals")).filter((r: Doc) => !r.deletedAt && (!r.artistId || r.artistId === ctx.artistId));
+  const all = (await db.list(ctx, "rehearsals")).filter((r: Doc) => !r.deletedAt);
   const near = all
     .map((r) => ({ r, d: (new Date(`${r.date}T00:00:00Z`).getTime() - t) / day }))
     .filter(({ d }) => d >= -DAYS_BACK && d <= DAYS_AHEAD)
@@ -40,7 +40,7 @@ export async function recentRehearsals(ctx: Ctx, now = ctx.now ?? new Date()): P
 /** The rehearsal happening right now: today, between its start and end time (end defaults to four hours after the start). Needs a start time. */
 export async function rehearsalNow(ctx: Ctx, now = ctx.now ?? new Date()): Promise<Doc | null> {
   const day = today(now), m = minutesNow(now);
-  const all = (await db.list("rehearsals")).filter((r: Doc) => !r.deletedAt && r.date === day && r.startTime && (!r.artistId || r.artistId === ctx.artistId));
+  const all = (await db.list(ctx, "rehearsals")).filter((r: Doc) => !r.deletedAt && r.date === day && r.startTime);
   const on = all.filter((r) => {
     const start = minutesOf(r.startTime as string);
     const end = r.endTime ? minutesOf(r.endTime as string) : start + DEFAULT_REHEARSAL_MINUTES;
@@ -62,9 +62,9 @@ export async function shortcutNow(ctx: Ctx, now = ctx.now ?? new Date()) {
 
 /** The songs on one rehearsal, in its order, titled as the songs are now. */
 export async function rehearsalSongs(ctx: Ctx, rehearsalId: string): Promise<{ rehearsal: { id: string; date: string }; songs: ChoiceList }> {
-  const reh = await db.get("rehearsals", rehearsalId);
-  if (!reh || reh.deletedAt || (reh.artistId && reh.artistId !== ctx.artistId)) throw new AppError("not_found", "Rehearsal not found", 404);
-  const songs = await db.list("songs");
+  const reh = await db.get(ctx, "rehearsals", rehearsalId);
+  if (!reh || reh.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404);
+  const songs = await db.list(ctx, "songs");
   const titles = new Map(songs.filter((s) => !s.deletedAt).map((s) => [s.id, s.title as string]));
   const rows: [string, string][] = [];
   for (const s of (reh.songs ?? []) as { songId: string; title?: string }[]) {

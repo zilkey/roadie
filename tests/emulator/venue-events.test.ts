@@ -11,7 +11,7 @@ import { Net, setFetcher, type RawPage } from "@/server/events/fetch";
 import { roomStats } from "@/lib/venueEvents";
 import { refreshAll, refreshVenue, eventId } from "@/server/events/refresh";
 import { venueEventNoteId } from "@/schema";
-import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let ctx: Ctx;
 const NOW = new Date("2026-11-10T18:00:00Z"); // 2026-11-10 at the venue (Denver)
@@ -43,17 +43,17 @@ afterEach(() => setFetcher(null));
 
 const makeVenue = async (extra: Record<string, unknown> = {}) => (await db.create(ctx, "venues", venue("Pine Hollow Lounge", "Denver", extra))).id;
 const refresh = (venueId: string, now = NOW) => refreshVenue(venueId, { net: new Net(), now });
-const events = (venueId: string) => db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
+const events = (venueId: string) => db.list(SYS, "venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
 const byTitle = async (venueId: string, title: string) => (await events(venueId)).find((e) => e.title === title)!;
 
 describe("venues.setCalendar", () => {
   test("writes the calendar and a history entry", async () => {
     const v = await makeVenue();
     await cmd("venues.setCalendar", { id: v, calendar: CAL });
-    const got = await db.get("venues", v);
+    const got = await db.get(SYS, "venues", v);
     assert.equal((got!.calendar as any).type, "selectors");
     assert.equal((got!.calendar as any).url, URL0);
-    const hist = await db.history("venues", v);
+    const hist = await db.history(SYS, "venues", v);
     assert.ok(hist.length >= 2, "create plus the calendar change");
     assert.ok(hist.some((h) => JSON.stringify(h).includes("calendar")));
   });
@@ -61,7 +61,7 @@ describe("venues.setCalendar", () => {
     const v = await makeVenue();
     await cmd("venues.setCalendar", { id: v, calendar: CAL });
     await cmd("venues.setCalendar", { id: v, calendar: null });
-    assert.ok(!(await db.get("venues", v))!.calendar);
+    assert.ok(!(await db.get(SYS, "venues", v))!.calendar);
   });
   test("an invalid calendar is rejected and nothing changes", async () => {
     const v = await makeVenue();
@@ -69,7 +69,7 @@ describe("venues.setCalendar", () => {
     for (const bad of [{ type: "nonsense" }, { type: "ics" }, { type: "ics", url: "" }, { type: "manual" }, { type: "ics", url: "https://a.example/x.ics", extra: 1 }]) {
       assert.throws(() => x.input.parse({ id: v, calendar: bad }), Error, JSON.stringify(bad));
     }
-    assert.ok(!(await db.get("venues", v))!.calendar);
+    assert.ok(!(await db.get(SYS, "venues", v))!.calendar);
   });
   test("an unknown venue is not found", async () => {
     await assert.rejects(cmd("venues.setCalendar", { id: "nope", calendar: CAL }), /not found/i);
@@ -228,26 +228,26 @@ describe("venueEvents.setTake", () => {
     const id = venueEventNoteId(TEST_ARTIST, e.id);
     assert.equal(id, `${TEST_ARTIST}__${e.id}`);
     await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit", note: "  good room for us  " });
-    let n = (await db.get("venueEventNotes", id))!;
+    let n = (await db.get(SYS, "venueEventNotes", id))!;
     assert.equal(n.take, "notFit");
     assert.equal(n.note, "good room for us");
     assert.equal(n.artistId, TEST_ARTIST);
     assert.equal(n.venueId, v);
     assert.equal(n.eventId, e.id);
     await cmd("venueEvents.setTake", { eventId: e.id, pitchId: "p1" });
-    n = (await db.get("venueEventNotes", id))!;
+    n = (await db.get(SYS, "venueEventNotes", id))!;
     assert.equal(n.take, "notFit");
     assert.equal(n.note, "good room for us", "a field left out is untouched");
     assert.equal(n.pitchId, "p1");
     await cmd("venueEvents.setTake", { eventId: e.id, take: null });
-    n = (await db.get("venueEventNotes", id))!;
+    n = (await db.get(SYS, "venueEventNotes", id))!;
     assert.ok(n && !n.take, "take cleared");
     assert.equal(n.note, "good room for us");
   });
   test("a first call with null leaves the field off", async () => {
     const { e } = await seedEvent();
     await cmd("venueEvents.setTake", { eventId: e.id, take: null, note: "just a note" });
-    const n = (await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
+    const n = (await db.get(SYS, "venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
     assert.ok(!n.take);
     assert.equal(n.note, "just a note");
   });
@@ -255,7 +255,7 @@ describe("venueEvents.setTake", () => {
     const { e } = await seedEvent();
     await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit", note: "x" });
     await cmd("venueEvents.setTake", { eventId: e.id, note: "   " });
-    const n = (await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
+    const n = (await db.get(SYS, "venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
     assert.ok(!n.note);
     assert.equal(n.take, "notFit");
   });
@@ -263,8 +263,8 @@ describe("venueEvents.setTake", () => {
     const { e } = await seedEvent();
     await cmd("venueEvents.setTake", { eventId: e.id, take: "notFit" });
     await cmd("venueEvents.setTake", { eventId: e.id, take: null, note: "theirs" }, { ...ctx, artistId: "other-artist" });
-    assert.equal((await db.get("venueEventNotes", `${TEST_ARTIST}__${e.id}`))!.take, "notFit");
-    assert.ok(!(await db.get("venueEventNotes", `other-artist__${e.id}`))!.take);
+    assert.equal((await db.get(SYS, "venueEventNotes", `${TEST_ARTIST}__${e.id}`))!.take, "notFit");
+    assert.ok(!(await db.get(SYS, "venueEventNotes", `other-artist__${e.id}`))!.take);
     await assert.rejects(cmd("venueEvents.setTake", { eventId: "nope", take: "notFit" }), /not found/i);
     assert.throws(() => registry["venueEvents.setTake"].input.parse({ eventId: e.id, take: "maybe" }));
     // a show isn't shortlisted or pitched by hand: Pitch this pitches the venue
@@ -285,8 +285,8 @@ describe("venueEvents.pitch (#79)", () => {
     await refresh(v);
     return { v, e: await byTitle(v, "Tin Cup Jane") };
   };
-  const pitchesOf = async (v: string) => (await db.list("pitches", (q) => q.where("target.id", "==", v))).filter((p) => !p.deletedAt);
-  const notesOf = async (id: string) => (await db.list(`pitches/${id}/activity`)).filter((a) => a.type === "note").map((a) => a.text);
+  const pitchesOf = async (v: string) => (await db.list(SYS, "pitches", (q) => q.where("target.id", "==", v))).filter((p) => !p.deletedAt);
+  const notesOf = async (id: string) => (await db.list(SYS, `pitches/${id}/activity`)).filter((a) => a.type === "note").map((a) => a.text);
 
   test("no pitch yet: puts the venue on the Pitch List with the show's date and a timeline note, and links the show", async () => {
     const { v, e } = await seed();
@@ -297,7 +297,7 @@ describe("venueEvents.pitch (#79)", () => {
     assert.equal(p.id, r.pitchId);
     assert.deepEqual([p.target.kind, p.status, p.dates], ["venue", "toPitch", ["2026-12-18"]]);
     assert.deepEqual(await notesOf(p.id), ["Added Tin Cup Jane on Fri, Dec 18 (from the venue's calendar)"]);
-    const n = (await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
+    const n = (await db.get(SYS, "venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!;
     assert.deepEqual([n.take, n.pitchId, n.venueId], [undefined, p.id, v], "pitching it clears Not a fit");
   });
   test("an open pitch on the venue is reused and gets the date", async () => {
@@ -305,7 +305,7 @@ describe("venueEvents.pitch (#79)", () => {
     const first = await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });
     const r = await cmd("venueEvents.pitch", { eventId: e.id });
     assert.deepEqual([r.pitchId, r.existing], [first.id, true]);
-    assert.deepEqual((await db.get("pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
+    assert.deepEqual((await db.get(SYS, "pitches", first.id))!.dates, ["2026-12-18", "2027-02-01"]);
     assert.equal((await pitchesOf(v)).length, 1);
   });
   test("campaignId (#82): a new pitch goes in that campaign; an existing pitch keeps its own and says which", async () => {
@@ -313,21 +313,21 @@ describe("venueEvents.pitch (#79)", () => {
     const spring = (await cmd("campaigns.create", { name: "Spring" })).id;
     const r = await cmd("venueEvents.pitch", { eventId: e.id, campaignId: spring });
     assert.deepEqual([r.existing, r.campaignId], [false, spring]);
-    assert.equal((await db.get("pitches", r.pitchId))!.campaignId, spring);
+    assert.equal((await db.get(SYS, "pitches", r.pitchId))!.campaignId, spring);
     const fall = (await cmd("campaigns.create", { name: "Fall" })).id;
     const again = await cmd("venueEvents.pitch", { eventId: e.id, campaignId: fall });
     assert.deepEqual([again.pitchId, again.existing, again.campaignId], [r.pitchId, true, spring], "never moved: the page asks first (Q2)");
-    assert.equal((await db.get("pitches", r.pitchId))!.campaignId, spring);
+    assert.equal((await db.get(SYS, "pitches", r.pitchId))!.campaignId, spring);
   });
   test("unpitch takes the show and its date off the pitch, logs it, and leaves the pitch on the Pitch List", async () => {
     const { v, e } = await seed();
     await cmd("pitches.flag", { kind: "venue", id: v, dates: ["2027-02-01"] });
     const { pitchId } = await cmd("venueEvents.pitch", { eventId: e.id });
     await cmd("venueEvents.unpitch", { eventId: e.id });
-    const p = (await db.get("pitches", pitchId))!;
+    const p = (await db.get(SYS, "pitches", pitchId))!;
     assert.deepEqual([p.status, p.dates, !!p.deletedAt], ["toPitch", ["2027-02-01"], false]);
     assert.match((await notesOf(pitchId)).join("\n"), /Took Tin Cup Jane on Fri, Dec 18 off the pitch/);
-    assert.ok(!(await db.get("venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!.pitchId);
+    assert.ok(!(await db.get(SYS, "venueEventNotes", venueEventNoteId(TEST_ARTIST, e.id)))!.pitchId);
     // again, or a show never pitched: nothing to do
     assert.deepEqual(await cmd("venueEvents.unpitch", { eventId: e.id }), { pitchId: null });
   });

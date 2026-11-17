@@ -7,7 +7,7 @@ import { z } from "zod";
 import { firestore } from "./admin";
 import { db, run, type Doc, type Writer } from "./db";
 import { AppError } from "./errors";
-import { newRunId, type Ctx } from "./ctx";
+import { newRunId, systemCtx, type Ctx } from "./ctx";
 import { geocodeCity, zipPlace } from "./geocode";
 import { roleIn } from "@/schema/users";
 import { inFanWindow, showTimeAt, signupShow, type PickableShow } from "@/lib/pickShow";
@@ -28,20 +28,13 @@ export const fanId = (artistId: string, email: string) =>
 /** Admins see fan emails. Members, and AI callers who are not admins of the artist, get counts only. */
 export async function canSeeFans(ctx: Ctx): Promise<boolean> {
   if (ctx.role === "admin") return true;
-  if (ctx.role !== "mcp" || !ctx.artistId) return false;
-  const user = await db.get("users", ctx.uid);
+  if (ctx.role !== "mcp") return false;
+  const user = await db.get(ctx, "users", ctx.uid);
   return !!user && !user.deletedAt && roleIn(user, ctx.artistId) === "admin";
 }
 export async function requireFanAdmin(ctx: Ctx): Promise<string> {
   if (!(await canSeeFans(ctx))) throw new AppError("forbidden", "Only this band's admins can see or change the fan list. Counts are open to everyone.", 403);
-  return fanArtistId(ctx);
-}
-/** The artist a call is for: ctx.artistId, else the one artist there is. */
-export async function fanArtistId(ctx: Ctx): Promise<string> {
-  if (ctx.artistId) return ctx.artistId;
-  const all = await db.list("artists");
-  if (all.length === 1) return all[0].id;
-  throw new AppError("artist_required", "Say which artist this is for", 400);
+  return ctx.artistId;
 }
 
 // ---------- shows ----------
@@ -49,8 +42,8 @@ export async function fanArtistId(ctx: Ctx): Promise<string> {
 /** Confirmed and played shows, of any kind (answer 4). Never hold, canceled or dropped. */
 export const countable = (s: Doc) => !s.deletedAt && (s.status === "confirmed" || s.status === "played");
 
-export async function artistShows(artistId: string): Promise<Doc[]> {
-  return db.list("shows", (q) => q.where("artistId", "==", artistId));
+export async function artistShows(ctx: Ctx): Promise<Doc[]> {
+  return db.list(ctx, "shows");
 }
 
 /** What a fan sees of a show, and what fans.counts shows admins: the venue (or "House concert") and its town. Never an address, host or deal. */
@@ -60,18 +53,18 @@ export function showLabel(s: Doc): string {
 }
 
 /** Venue time zones by venue id (hand-picked on the venue; missing = the band's zone). */
-async function venueZones(shows: Doc[]): Promise<Map<string, string>> {
+async function venueZones(ctx: Ctx, shows: Doc[]): Promise<Map<string, string>> {
   const ids = [...new Set(shows.map((s) => s.venue?.id as string | undefined).filter((x): x is string => !!x))];
-  const docs = await Promise.all(ids.map((v) => db.get("venues", v)));
+  const docs = await Promise.all(ids.map((v) => db.get(ctx, "venues", v)));
   const out = new Map<string, string>();
   for (const v of docs) if (v && typeof v.timeZone === "string" && v.timeZone) out.set(v.id, v.timeZone);
   return out;
 }
 
 /** The town a show puts a fan in: the venue doc's city and state; a house show has only its place.city (no state). */
-async function showPlace(s: Doc): Promise<CityLike | undefined> {
+async function showPlace(ctx: Ctx, s: Doc): Promise<CityLike | undefined> {
   if (s.venue?.id) {
-    const v = await db.get("venues", s.venue.id);
+    const v = await db.get(ctx, "venues", s.venue.id);
     const city = (v?.address?.city as string | undefined) ?? (s.venue.city as string | undefined);
     return city ? { city, ...(v?.address?.state ? { state: v.address.state as string } : {}) } : undefined;
   }
@@ -108,7 +101,7 @@ export interface ListView {
 
 /** Artist by URL slug, with the fan list switched on. Same 404 for "no such band" and "list is off", so nothing is revealed. */
 export async function listArtist(slug: string): Promise<Doc> {
-  const [a] = await db.list("artists", (q) => q.where("slug", "==", slug).limit(1));
+  const [a] = await db.list(systemCtx("fan page slug"), "artists", (q) => q.where("slug", "==", slug).limit(1));
   const features = a?.features as { fans?: boolean } | undefined;
   if (!a || features?.fans !== true) throw new AppError("not_found", "Not found", 404);
   return a;
@@ -118,9 +111,9 @@ const wordingOf = (a: Doc) => (typeof a.listWording === "string" && a.listWordin
 export const publicNameOf = (a: Doc): string => (typeof a.publicName === "string" && a.publicName.trim() ? a.publicName.trim() : a.name);
 
 /** The show a signup at `now` belongs to (signupShow over the artist's confirmed and played shows, each in its venue's zone). */
-async function currentShow(artistId: string, now: Date): Promise<ShowDoc | null> {
-  const shows = (await artistShows(artistId)).filter(countable) as ShowDoc[];
-  const zones = await venueZones(shows);
+async function currentShow(ctx: Ctx, now: Date): Promise<ShowDoc | null> {
+  const shows = (await artistShows(ctx)).filter(countable) as ShowDoc[];
+  const zones = await venueZones(ctx, shows);
   return signupShow(shows, now, { zoneOf: (s) => zones.get(s.venue?.id) ?? BAND_TIME_ZONE });
 }
 
@@ -129,10 +122,10 @@ async function currentShow(artistId: string, now: Date): Promise<ShowDoc | null>
  * the show time to 3 hours after (in the venue's zone). `previewId` (the Preview link on a show) adds that show's line whatever the
  * time or checkbox, as long as it is this artist's and has an amount.
  */
-async function showsOnPage(artistId: string, now: Date, previewId?: string): Promise<FanShowLine[]> {
+async function showsOnPage(ctx: Ctx, now: Date, previewId?: string): Promise<FanShowLine[]> {
   const live = (s: Doc) => !s.deletedAt && s.status !== "canceled" && s.status !== "dropped" && !!(s.fanPage as ShowFanPage | undefined)?.amountCents;
-  const all = (await artistShows(artistId)).filter(live) as ShowDoc[];
-  const zones = await venueZones(all);
+  const all = (await artistShows(ctx)).filter(live) as ShowDoc[];
+  const zones = await venueZones(ctx, all);
   const picked = all
     .filter((s) => s.id === previewId || ((s.fanPage as ShowFanPage).on && inFanWindow(showTimeAt(s, zones.get(s.venue?.id) ?? BAND_TIME_ZONE), now)))
     .sort((a, b) => a.date.localeCompare(b.date) || showTimeAt(a) - showTimeAt(b));
@@ -144,7 +137,8 @@ async function showsOnPage(artistId: string, now: Date, previewId?: string): Pro
 
 export async function listView(slug: string, now: Date = new Date(), previewShowId?: string): Promise<ListView> {
   const artist = await listArtist(slug);
-  const hit = await currentShow(artist.id, now);
+  const ctx = publicCtx(artist.id, now);
+  const hit = await currentShow(ctx, now);
   const pay = typeof artist.paymentUrl === "string" ? paymentAppOf(artist.paymentUrl) : null;
   const merchOn = (artist.features as { merch?: boolean } | undefined)?.merch === true && pay?.app === "venmo";
   const style = (artist.fanPageStyle ?? {}) as { theme?: "auto" | "light" | "dark"; accent?: string };
@@ -162,7 +156,7 @@ export async function listView(slug: string, now: Date = new Date(), previewShow
     wording: wordingOf(artist),
     current: hit ? { showId: hit.id, label: showLabel(hit), date: hit.date as string } : null,
     merch: merchOn && items.length ? { venmo: pay!.handle, items } : null,
-    shows: pay?.app === "venmo" ? await showsOnPage(artist.id, now, previewShowId).then((items) => (items.length ? { venmo: pay.handle, items } : null)) : null,
+    shows: pay?.app === "venmo" ? await showsOnPage(ctx, now, previewShowId).then((items) => (items.length ? { venmo: pay.handle, items } : null)) : null,
     tip: pay?.app === "venmo" && artist.hideTips !== true ? { venmo: pay.handle } : null,
     links,
     socials,
@@ -206,7 +200,7 @@ async function located(existing: CityLike[], incoming: CityLike[]): Promise<City
 export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; created: boolean }> {
   const email = a.email.trim().toLowerCase();
   const id = fanId(a.artistId, email);
-  const before = await db.get("fans", id);
+  const before = await db.get(ctx, "fans", id);
   const cities = await located((before?.cities ?? []) as CityLike[], a.cities);
   return run(ctx, async (w) => {
     const cur = await w.get("fans", id);
@@ -217,7 +211,6 @@ export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; cr
       }, { id });
       return { id, created: true };
     }
-    if (cur.artistId !== a.artistId) throw new AppError("not_found", "Fan not found", 404);
     if (cur.deletedAt) await w.restore("fans", id);
     await w.update("fans", id, {
       cities: mergeCities((cur.cities ?? []) as CityLike[], cities),
@@ -232,15 +225,15 @@ export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; cr
 }
 
 /** A show the artist played or will play, or a 400. Used by signup and fans.add. */
-export async function countableShow(artistId: string, showId: string): Promise<Doc> {
-  const s = await db.get("shows", showId);
-  if (!s || s.artistId !== artistId || !countable(s)) throw new AppError("invalid_input", "That show isn't one fans can sign up at", 400);
+export async function countableShow(ctx: Ctx, showId: string): Promise<Doc> {
+  const s = await db.get(ctx, "shows", showId);
+  if (!s || !countable(s)) throw new AppError("invalid_input", "That show isn't one fans can sign up at", 400);
   return s;
 }
 
 /** Cities for a signup: the show's town, else the typed one. */
-export async function citiesFor(show: Doc | undefined, typed?: { city?: string; state?: string }): Promise<CityLike[]> {
-  if (show) { const p = await showPlace(show); return p ? [p] : []; }
+export async function citiesFor(ctx: Ctx, show: Doc | undefined, typed?: { city?: string; state?: string }): Promise<CityLike[]> {
+  if (show) { const p = await showPlace(ctx, show); return p ? [p] : []; }
   const t = typed?.city?.trim();
   if (!t) return [];
   const p = parseCity(t);
@@ -264,13 +257,14 @@ export type SignupBody = z.infer<typeof SignupBody>;
  */
 export async function signup(slug: string, body: SignupBody, now: Date = new Date()): Promise<{ ok: true }> {
   const artist = await listArtist(slug);
-  const show = (await currentShow(artist.id, now)) ?? undefined;
-  const cities = await citiesFor(show);
+  const ctx = publicCtx(artist.id, now);
+  const show = (await currentShow(ctx, now)) ?? undefined;
+  const cities = await citiesFor(ctx, show);
   if (body.zip) {
     const z = await zipPlace(body.zip);
     if (z && !cities.some((c) => sameCity(c, z))) cities.push(z);
   }
-  await upsertFan(publicCtx(artist.id, now), {
+  await upsertFan(ctx, {
     artistId: artist.id, email: body.email, ...(body.name ? { firstName: body.name } : {}), ...(body.zip ? { zip: body.zip } : {}),
     cities, showIds: show ? [show.id] : [], source: "list",
     consent: { text: wordingOf(artist), at: now.toISOString(), page: body.page },
@@ -280,19 +274,19 @@ export async function signup(slug: string, body: SignupBody, now: Date = new Dat
 
 // ---------- reading and deleting (commands) ----------
 
-export async function loadFans(artistId: string): Promise<Doc[]> {
-  return db.list("fans", (q) => q.where("artistId", "==", artistId));
+export async function loadFans(ctx: Ctx): Promise<Doc[]> {
+  return db.list(ctx, "fans");
 }
 
-export async function requireFan(w: Writer, id: string, artistId: string): Promise<Doc> {
+export async function requireFan(w: Writer, id: string): Promise<Doc> {
   const f = await w.get("fans", id);
-  if (!f || f.deletedAt || f.artistId !== artistId) throw new AppError("not_found", "Fan not found", 404);
+  if (!f || f.deletedAt) throw new AppError("not_found", "Fan not found", 404);
   return f;
 }
 
 /** Hard delete (answer 12): the fan and their history are gone for good, so the address cannot be read back from a change log. */
-export async function deleteFan(artistId: string, id: string): Promise<void> {
-  const f = await db.get("fans", id);
-  if (!f || f.artistId !== artistId) throw new AppError("not_found", "Fan not found", 404);
+export async function deleteFan(ctx: Ctx, id: string): Promise<void> {
+  const f = await db.get(ctx, "fans", id);
+  if (!f) throw new AppError("not_found", "Fan not found", 404);
   await firestore().recursiveDelete(firestore().doc(`fans/${id}`));
 }

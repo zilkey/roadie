@@ -10,7 +10,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { isExcluded, needsConfirm } from "@/server/assistant/policy";
 import { groupOf } from "@/server/assistant/toolset";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 const OTHER = "other-band";
 let ctx: Ctx, octx: Ctx;
@@ -48,39 +48,39 @@ test("roles and Roadie: admin only, not MCP; Roadie has them, and closing asks f
 
 test("create, rename, close, reopen: names unique per band; close only sets status", async () => {
   const c = await cmd("campaigns.create", { name: " Spring 2027 " });
-  let doc = (await db.get("campaigns", c.id))!;
+  let doc = (await db.get(SYS, "campaigns", c.id))!;
   assert.deepEqual([doc.name, doc.status, doc.artistId], ["Spring 2027", "active", TEST_ARTIST]);
   await fails(cmd("campaigns.create", { name: "spring 2027" }), 409);
   await cmd("campaigns.create", { name: "Spring 2027" }, octx); // another band may use the same name
 
   assert.equal((await cmd("campaigns.rename", { id: c.id, name: "Spring Run" })).changed, true);
-  assert.equal((await db.get("campaigns", c.id))!.name, "Spring Run");
+  assert.equal((await db.get(SYS, "campaigns", c.id))!.name, "Spring Run");
   const other = await cmd("campaigns.create", { name: "Fall" });
   await fails(cmd("campaigns.rename", { id: other.id, name: "spring run" }), 409);
 
   const p = await cmd("pitches.flag", { kind: "venue", id: v1 });
   await cmd("pitches.setCampaign", { ids: [p.id], campaignId: c.id });
   assert.equal((await cmd("campaigns.close", { id: c.id })).changed, true);
-  doc = (await db.get("campaigns", c.id))!;
+  doc = (await db.get(SYS, "campaigns", c.id))!;
   assert.equal(doc.status, "closed");
-  assert.equal((await db.get("pitches", p.id))!.campaignId, c.id, "closing never clears the pitch's campaign");
+  assert.equal((await db.get(SYS, "pitches", p.id))!.campaignId, c.id, "closing never clears the pitch's campaign");
   assert.equal((await cmd("campaigns.close", { id: c.id })).changed, false);
   assert.equal((await cmd("campaigns.reopen", { id: c.id })).changed, true);
-  assert.equal((await db.get("campaigns", c.id))!.status, "active");
+  assert.equal((await db.get(SYS, "campaigns", c.id))!.status, "active");
 });
 
 test("pitches.setCampaign: into a campaign, back to Ongoing with null; refuses a closed campaign and other bands'", async () => {
   const c = (await cmd("campaigns.create", { name: "Spring" })).id;
   const p1 = (await cmd("pitches.flag", { kind: "venue", id: v1 })).id, p2 = (await cmd("pitches.flag", { kind: "venue", id: v2 })).id;
   assert.deepEqual((await cmd("pitches.setCampaign", { ids: [p1, p2], campaignId: c })).ids, [p1, p2]);
-  assert.equal((await db.get("pitches", p2))!.campaignId, c);
+  assert.equal((await db.get(SYS, "pitches", p2))!.campaignId, c);
   assert.deepEqual((await cmd("pitches.setCampaign", { ids: [p1], campaignId: c })).ids, [], "already there: no write");
   await cmd("pitches.setCampaign", { ids: [p1], campaignId: null });
-  assert.equal((await db.get("pitches", p1))!.campaignId, undefined, "null takes it out (Ongoing)");
+  assert.equal((await db.get(SYS, "pitches", p1))!.campaignId, undefined, "null takes it out (Ongoing)");
 
   await cmd("campaigns.close", { id: c });
   await fails(cmd("pitches.setCampaign", { ids: [p1], campaignId: c }), 409);
-  assert.equal((await db.get("pitches", p1))!.campaignId, undefined);
+  assert.equal((await db.get(SYS, "pitches", p1))!.campaignId, undefined);
 
   // Another band's campaign is not found; another band can't touch this band's pitches or campaigns.
   const theirs = (await cmd("campaigns.create", { name: "Theirs" }, octx)).id;
@@ -88,7 +88,7 @@ test("pitches.setCampaign: into a campaign, back to Ongoing with null; refuses a
   await fails(cmd("pitches.setCampaign", { ids: [p1], campaignId: null }, octx), 404);
   await fails(cmd("campaigns.rename", { id: c, name: "Mine now" }, octx), 404);
   await fails(cmd("campaigns.reopen", { id: c }, octx), 404);
-  assert.equal((await db.get("pitches", p2))!.campaignId, c);
+  assert.equal((await db.get(SYS, "pitches", p2))!.campaignId, c);
 });
 
 test("pitches.move: no second active pitch for the same place", async () => {
@@ -97,7 +97,7 @@ test("pitches.move: no second active pitch for the same place", async () => {
   const now = await cmd("pitches.flag", { kind: "venue", id: v1 });
   assert.equal(now.existing, false);
   await fails(cmd("pitches.move", { id: old, status: "talking" }), 409);
-  assert.equal((await db.get("pitches", old))!.status, "declined");
+  assert.equal((await db.get(SYS, "pitches", old))!.status, "declined");
   await cmd("pitches.move", { id: now.id, status: "pitched" }); // active to active is fine
   await cmd("pitches.move", { id: old, status: "dropped" });    // inactive to inactive is fine
   // Another band's active pitch on the same room doesn't count.
@@ -109,18 +109,18 @@ test("pitches.move: no second active pitch for the same place", async () => {
   // Once the other one closes, the old one can come back.
   await cmd("pitches.move", { id: now.id, status: "declined" });
   await cmd("pitches.move", { id: old, status: "talking" });
-  assert.equal((await db.get("pitches", old))!.status, "talking");
+  assert.equal((await db.get(SYS, "pitches", old))!.status, "talking");
 });
 
 test("pitches.flag and tours.addPitch take campaignId: only a new pitch goes in; never a closed or another band's campaign", async () => {
   const c = (await cmd("campaigns.create", { name: "Breweries" })).id;
   const p = await cmd("pitches.flag", { kind: "venue", id: v1, campaignId: c });
   assert.deepEqual([p.existing, p.campaignId], [false, c]);
-  assert.equal((await db.get("pitches", p.id))!.campaignId, c);
+  assert.equal((await db.get(SYS, "pitches", p.id))!.campaignId, c);
   const again = await cmd("pitches.flag", { kind: "venue", id: v1 });
   assert.deepEqual([again.id, again.existing, again.campaignId], [p.id, true, c]);
   const plain = await cmd("pitches.flag", { kind: "venue", id: v2 });
-  assert.equal((await db.get("pitches", plain.id))!.campaignId, undefined, "no campaign: Ongoing");
+  assert.equal((await db.get(SYS, "pitches", plain.id))!.campaignId, undefined, "no campaign: Ongoing");
   await cmd("pitches.move", { id: plain.id, status: "dropped" });
   await cmd("campaigns.close", { id: c });
   await fails(cmd("pitches.flag", { kind: "venue", id: v2, campaignId: c }), 409);
@@ -130,7 +130,7 @@ test("pitches.flag and tours.addPitch take campaignId: only a new pitch goes in;
   const proj = (await cmd("projects.create", { kind: "band", name: "Band", isDefault: true })).id;
   const tour = (await cmd("tours.create", { name: "West", projectId: proj, startDate: "2026-11-05", endDate: "2026-11-08" })).id;
   const t = await cmd("tours.addPitch", { tourId: tour, venueId: v2, campaignId: c });
-  assert.equal((await db.get("pitches", t.pitchId))!.campaignId, c);
+  assert.equal((await db.get(SYS, "pitches", t.pitchId))!.campaignId, c);
 });
 
 test("history.undoRun puts back what a campaign command changed", async () => {
@@ -140,20 +140,20 @@ test("history.undoRun puts back what a campaign command changed", async () => {
   const set = fresh();
   await cmd("pitches.setCampaign", { ids: [p], campaignId: c }, set);
   await cmd("history.undoRun", { runId: set.runId });
-  assert.equal((await db.get("pitches", p))!.campaignId, undefined);
+  assert.equal((await db.get(SYS, "pitches", p))!.campaignId, undefined);
 
   const close = fresh();
   await cmd("campaigns.close", { id: c }, close);
   await cmd("history.undoRun", { runId: close.runId });
-  assert.equal((await db.get("campaigns", c))!.status, "active");
+  assert.equal((await db.get(SYS, "campaigns", c))!.status, "active");
 
   const rename = fresh();
   await cmd("campaigns.rename", { id: c, name: "Spring Run" }, rename);
   await cmd("history.undoRun", { runId: rename.runId });
-  assert.equal((await db.get("campaigns", c))!.name, "Spring");
+  assert.equal((await db.get(SYS, "campaigns", c))!.name, "Spring");
 
   const make = fresh();
   const c2 = (await cmd("campaigns.create", { name: "Fall" }, make)).id;
   await cmd("history.undoRun", { runId: make.runId });
-  assert.ok((await db.get("campaigns", c2))!.deletedAt, "an undone create is archived");
+  assert.ok((await db.get(SYS, "campaigns", c2))!.deletedAt, "an undone create is archived");
 });

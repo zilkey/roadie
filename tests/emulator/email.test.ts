@@ -11,7 +11,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { gmailClient } from "@/server/integrations";
 import { isExcluded, needsConfirm } from "@/server/assistant/policy";
 import { hasNewReply, emailThreadId, venueNoteId } from "@/schema";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -32,7 +32,7 @@ beforeEach(async () => {
   await resetEmulators();
   await fetch(`${gmailUrl}/__reset`, { method: "POST" });
   uid = (await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" })).uid;
-  ctx = { uid, role: "admin", via: "app", runId: newRunId() };
+  ctx = { uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   await db.create(ctx, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
@@ -41,7 +41,7 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
   return (await x.run(c, x.input.parse(input))) as Record<string, any>;
 };
 const receive = async (body: Record<string, unknown>) => (await (await fetch(`${gmailUrl}/messages/receive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json()) as Record<string, any>;
-const thread = async (threadId: string) => (await db.get("emailThreads", emailThreadId(TEST_ARTIST, threadId)))!;
+const thread = async (threadId: string) => (await db.get(SYS, "emailThreads", emailThreadId(TEST_ARTIST, threadId)))!;
 
 async function pineHollow() {
   const v = await cmd("venues.create", venue("Pine Hollow"));
@@ -53,7 +53,7 @@ test("send creates the thread on the venue; a reply arrives on sync once; the wr
   const { venueId, pitchId } = await pineHollow();
   const sent = await cmd("pitches.sendEmail", { id: pitchId, to: ["rosa@pinehollow.example"], subject: "Support slot", body: "Hi Rosa", markPitched: true });
   assert.deepEqual(Object.keys(sent).sort(), ["id", "messageId", "threadId"]);
-  const act = (await db.list(`pitches/${pitchId}/activity`)).find((a) => a.type === "emailSent")!;
+  const act = (await db.list(SYS, `pitches/${pitchId}/activity`)).find((a) => a.type === "emailSent")!;
   assert.equal(sent.id, act.id, "pitches.sendEmail still answers with the timeline entry");
 
   const t = await thread(sent.threadId);
@@ -65,7 +65,7 @@ test("send creates the thread on the venue; a reply arrives on sync once; the wr
   assert.equal(t.messageCount, 1);
   assert.deepEqual(t.participants, ["rosa@pinehollow.example"]);
   assert.equal(t.snippet, "Hi Rosa");
-  assert.equal((await db.get("pitches", pitchId))!.status, "pitched");
+  assert.equal((await db.get(SYS, "pitches", pitchId))!.status, "pitched");
   assert.equal(hasNewReply(t as any), false);
 
   assert.deepEqual(await cmd("email.sync", { target: { kind: "venue", id: venueId } }), { added: 0, threads: 1 });
@@ -77,11 +77,11 @@ test("send creates the thread on the venue; a reply arrives on sync once; the wr
   assert.equal(after1.messageCount, 2);
   assert.equal(after1.snippet, "Sounds great, send dates.", "the quoted part is not in the snippet");
   assert.equal(hasNewReply(after1 as any), true);
-  const replies = (await db.list(`pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply");
+  const replies = (await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply");
   assert.equal(replies.length, 1);
   assert.match(replies[0].text, /Sounds great/);
   assert.deepEqual(await cmd("email.sync", { target: { kind: "venue", id: venueId } }), { added: 0, threads: 1 });
-  assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1);
+  assert.equal((await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1);
   assert.ok(after1.syncedAt, "every sync stamps when the thread was read");
 });
 
@@ -108,16 +108,16 @@ test("link: a stranger's first email on a venue with no pitch; unlink; an editio
   assert.equal(t.lastFrom, "booking@pinehollow.example");
   assert.deepEqual(t.participants, ["booking@pinehollow.example"]);
   assert.equal((await cmd("email.link", { threadId: first.threadId, target: { kind: "venue", id: v.id } })).id, id, "idempotent");
-  assert.equal((await db.list("emailThreads")).length, 1);
+  assert.equal((await db.list(SYS, "emailThreads")).length, 1);
 
   const th = await cmd("email.thread", { id });
   assert.equal(th.messages[0].fromName, "Pine Hollow Booking");
   assert.equal(th.thread.messageCount, 1);
   await cmd("email.unlink", { id });
-  assert.equal((await db.list("emailThreads")).length, 0);
+  assert.equal((await db.list(SYS, "emailThreads")).length, 0);
   assert.deepEqual(await cmd("email.sync", { target: { kind: "venue", id: v.id } }), { added: 0, threads: 0 });
   await cmd("email.link", { threadId: first.threadId, target: { kind: "venue", id: v.id } });
-  assert.equal((await db.list("emailThreads")).length, 1, "linking again brings it back");
+  assert.equal((await db.list(SYS, "emailThreads")).length, 1, "linking again brings it back");
 
   const f = await cmd("festivals.create", { name: "Westword Music Showcase", type: "festival", address: { city: "Denver", state: "CO" } });
   const e = await cmd("editions.create", { festivalId: f.id, year: 2027, label: "2027", venueIds: [] });
@@ -132,7 +132,7 @@ test("link with a pitch adds the replies that are not on its timeline yet, once"
   const m = await receive({ from: "h@pinehollow.example", to: ["rudy@example.com"], subject: "Hello", body: "We saw you play" });
   await cmd("email.link", { threadId: m.threadId, target: { kind: "venue", id: venueId }, pitchId });
   await cmd("email.link", { threadId: m.threadId, target: { kind: "venue", id: venueId }, pitchId });
-  assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1);
+  assert.equal((await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1);
 });
 
 test("email.thread marks the thread seen, so the New reply mark goes away until the next reply", async () => {
@@ -162,11 +162,11 @@ test("email.send without a pitch only creates the thread; unfilled fields are re
   const t = await thread(a.threadId);
   assert.equal(t.messageCount, 2);
   assert.equal(t.pitchId, undefined);
-  assert.equal((await db.list("pitches")).length, 1);
+  assert.equal((await db.list(SYS, "pitches")).length, 1);
   const d = await cmd("email.draft", { target: { kind: "venue", id: venueId }, to: ["h@x.example"], subject: "Later", body: "soon" });
   assert.equal(d.sent, false);
   assert.equal((await gmailClient().listDrafts("rudy@example.com")).length, 1);
-  assert.equal((await db.list("emailThreads")).length, 1, "a draft is not a thread");
+  assert.equal((await db.list(SYS, "emailThreads")).length, 1, "a draft is not a thread");
   await assert.rejects(cmd("email.thread", { id: "nope" }), /not found/i);
 });
 
@@ -194,7 +194,7 @@ test("an act is a thread target: email.send lands the thread on the act, email.s
 test("booking mailbox: accountOf is the caller's own Gmail without it and the booking mailbox with it; sends say who wrote them; old threads keep their account", async () => {
   const { accountOf } = await import("@/server/commands/email");
   const nora = (await makeUser("nora@example.com", "admin", { name: "Nora Quill" })).uid;
-  const noraCtx: Ctx = { uid: nora, role: "admin", via: "app", runId: newRunId() };
+  const noraCtx: Ctx = { uid: nora, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   assert.equal(await accountOf(ctx), "rudy@example.com", "no setting: each admin's own");
   assert.equal(await accountOf(noraCtx), "nora@example.com");
 
@@ -234,21 +234,21 @@ test("S8 (#82): one email covers several pitches: each logged once, replies reac
 
   // A bad id is refused before Gmail is called: nothing is sent.
   await assert.rejects(cmd("pitches.sendEmail", { id: p1, pitchIds: [p2, "nope"], to: ["kate@sun.example"], subject: "Spring", body: "Hi Kate" }), /not found/i);
-  assert.equal((await db.list("emailThreads")).length, 0);
+  assert.equal((await db.list(SYS, "emailThreads")).length, 0);
 
   const sent = await cmd("pitches.sendEmail", { id: p1, pitchIds: [p2], to: ["kate@sun.example"], subject: "Spring", body: "Hi Kate", markPitched: true });
   const t = await thread(sent.threadId);
   assert.deepEqual([t.pitchId, t.pitchIds], [p1, [p1, p2]]);
   for (const p of [p1, p2]) {
-    assert.equal((await db.list(`pitches/${p}/activity`)).filter((a) => a.type === "emailSent").length, 1, p);
-    const doc = (await db.get("pitches", p))!;
+    assert.equal((await db.list(SYS, `pitches/${p}/activity`)).filter((a) => a.type === "emailSent").length, 1, p);
+    const doc = (await db.get(SYS, "pitches", p))!;
     assert.equal(doc.status, "pitched");
     assert.ok(doc.lastContactAt);
   }
   // Sync reads the thread from its place and credits every pitch on it.
   await gmailClient().simulateReply!(sent.threadId, { from: "kate@sun.example", body: "Yes to both" });
   assert.deepEqual(await cmd("email.sync", { target: { kind: "venue", id: v1 } }), { added: 2, threads: 1 });
-  for (const p of [p1, p2]) assert.equal((await db.list(`pitches/${p}/activity`)).filter((a) => a.type === "emailReply").length, 1, p);
+  for (const p of [p1, p2]) assert.equal((await db.list(SYS, `pitches/${p}/activity`)).filter((a) => a.type === "emailReply").length, 1, p);
 
   // Linking the thread to a third pitch adds it; the first stays (it used to be overwritten).
   const v3 = (await cmd("venues.create", venue("Vine Street"))).id as string;
@@ -268,9 +268,9 @@ test("S8 (#82): one email covers several pitches: each logged once, replies reac
 test("ingest adds the people on a place's mail as the band's contacts, linked to the place: names from Gmail, no robots, no band, no repeats", async () => {
   const { venueId, pitchId } = await pineHollow();
   const linked = async () => {
-    const n = await db.get("venueNotes", venueNoteId(TEST_ARTIST, venueId));
+    const n = await db.get(SYS, "venueNotes", venueNoteId(TEST_ARTIST, venueId));
     const ids = (n?.contactIds ?? []) as string[];
-    return Promise.all(ids.map(async (id) => (await db.get("contacts", id))!));
+    return Promise.all(ids.map(async (id) => (await db.get(SYS, "contacts", id))!));
   };
   // We wrote to Rosa: she is a contact named from her address until she answers with a name.
   const sent = await cmd("pitches.sendEmail", { id: pitchId, to: ["rosa@pinehollow.example"], cc: ["rudy@example.com"], subject: "Support slot", body: "Hi Rosa" });
@@ -285,7 +285,7 @@ test("ingest adds the people on a place's mail as the band's contacts, linked to
   cs = await linked();
   assert.equal(cs.length, 1, "Rosa once, and no noreply");
   assert.equal(cs[0].name, "Rosa Diaz", "the name from Gmail replaces the one guessed from the address");
-  assert.equal((await db.list("contacts")).filter((c) => c.artistId === TEST_ARTIST).length, 1, "merged, not copied");
+  assert.equal((await db.list(SYS, "contacts")).filter((c) => c.artistId === TEST_ARTIST).length, 1, "merged, not copied");
 
   // A stranger's email linked to the venue: the sender becomes a contact there, with the title and phone from the signature.
   const first = await receive({ from: "Sam@PineHollow.example", fromName: "Sam Ortiz", to: ["rudy@example.com"], subject: "Your submission", body: "Thanks!\n\nSam Ortiz\nEvents Manager\n303-555-0199" });
@@ -299,14 +299,14 @@ test("ingest adds the people on a place's mail as the band's contacts, linked to
   await cmd("contacts.remove", { id: sam.id });
   await cmd("email.sync", { target: { kind: "venue", id: venueId } });
   assert.equal((await linked()).some((c) => c.id === sam.id), false);
-  assert.equal((await db.get("contacts", sam.id))!.deletedAt != null, true);
+  assert.equal((await db.get(SYS, "contacts", sam.id))!.deletedAt != null, true);
 
   // A promoter's mail links to the band's notes on the promoter.
   const p = await cmd("promoters.create", { name: "Mile High Shows", kind: "promoter" });
   const pm = await receive({ from: "jo@milehigh.example", fromName: "Jo Park", to: ["rudy@example.com"], subject: "Hello", body: "Hi" });
   await cmd("email.link", { threadId: pm.threadId, target: { kind: "promoter", id: p.id } });
-  const pn = (await db.list("promoterNotes")).find((n) => n.promoterId === p.id)!;
-  const jo = (await db.list("contacts")).find((c) => c.emails?.[0] === "jo@milehigh.example")!;
+  const pn = (await db.list(SYS, "promoterNotes")).find((n) => n.promoterId === p.id)!;
+  const jo = (await db.list(SYS, "contacts")).find((c) => c.emails?.[0] === "jo@milehigh.example")!;
   assert.deepEqual(pn.contactIds, [jo.id]);
   assert.equal(jo.name, "Jo Park");
 });

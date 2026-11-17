@@ -31,8 +31,8 @@ export async function pullSpotify(ctx: Ctx) {
   return { date: a.date, followers: a.followers, popularity: a.popularity, ...r };
 }
 
-export async function currentStats() {
-  const snaps = (await db.list("statSnapshots")) as unknown as StatLike[];
+export async function currentStats(ctx: Ctx) {
+  const snaps = (await db.list(ctx, "statSnapshots")) as unknown as StatLike[];
   return statsCurrent(snaps);
 }
 
@@ -58,7 +58,7 @@ export const statsImportCsv = defineCommand({
 export const statsCurrentCmd = defineCommand({
   name: "stats.current", roles: ["admin", "mcp"], input: z.strictObject({}),
   description: "The latest followers, monthly listeners, streams and popularity (with the date and source of each). Use for pitch emails.",
-  run: () => currentStats(),
+  run: (ctx) => currentStats(ctx),
 });
 
 export const statsCommands = [statsPull, statsImportCsv, statsCurrentCmd];

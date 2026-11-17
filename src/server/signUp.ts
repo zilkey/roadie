@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { adminAuth, firestore } from "./admin";
-import { newRunId, type Ctx } from "./ctx";
+import { personCtx } from "./ctx";
 import { run } from "./db";
 import { AppError, invalid } from "./errors";
-import { createArtistFor, memberships } from "./commands/people";
+import { createArtistFor, memberships, withRole } from "./commands/people";
 import { artistsFor, syncClaims } from "./session";
 import { InstrumentList, artistSlug } from "@/schema";
 
@@ -53,7 +53,8 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
   const instruments = input.instruments?.length ? InstrumentList.safeParse(input.instruments) : null;
   if (instruments && !instruments.success) throw invalid(instruments.error);
   const displayName = (typeof decoded.name === "string" && decoded.name.trim()) || email.split("@")[0];
-  const ctx: Ctx = { uid, role: "admin", via: "app", runId: newRunId() };
+  // A person with no artist yet: the new artist is reached only through createArtistFor's narrow steps (tenancy plan D3).
+  const ctx = personCtx(uid, email);
 
   try {
     const out = await run(ctx, async (w) => {
@@ -68,8 +69,9 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
       const made = await createArtistFor(w, uid, { name: input.name, slug: input.slug, configurations: [], links: {}, driveFolderId: "" });
       // Then their musician record, in the new artist (tenancy phase 2: the artist first, then the musician).
       if (instruments?.success) {
-        const m = await w.create("musicians", { artistId: made.id, name: existing?.name ?? displayName, email, instruments: instruments.data, active: true, userId: uid });
-        await w.update("users", uid, { musicianId: m.id });
+        const m = await w.forArtist(made.id).create("musicians", { name: existing?.name ?? displayName, email, instruments: instruments.data, active: true, userId: uid });
+        const me = await w.get("users", uid);
+        await w.update("users", uid, { artists: withRole(memberships(me), made.id, "admin", false, m.id) });
       }
       return made;
     });

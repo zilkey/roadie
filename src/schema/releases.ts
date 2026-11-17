@@ -49,7 +49,7 @@ export type Release = z.infer<typeof Release>;
  */
 export const ReleaseTrack = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   releaseId: id,
   position: z.number().int().positive(),
   /** "A", "B"... once the release has side breaks. */

@@ -10,6 +10,8 @@
 import { Timestamp, type Firestore } from "firebase-admin/firestore";
 import { z } from "zod";
 import { collections, commonShape, computedFields, kindOf } from "@/schema";
+import { PARENTS, ownerOf } from "@/schema/owners";
+import { artistIdsOf, type Membership } from "@/schema/users";
 
 export interface BackupRow { path: string; data: Record<string, unknown> }
 export type Dump = Record<string, BackupRow[]>;
@@ -133,6 +135,74 @@ export function validateRow(row: BackupRow): string[] {
 
 export function validateDump(dump: Dump): string[] {
   return Object.values(dump).flat().flatMap(validateRow);
+}
+
+/** Fields that name an artist record: the record they point at is a parent (as scripts/migrate-tenancy.ts). */
+const REF_FIELDS: Record<string, string> = { showId: "shows", pitchId: "pitches", tourId: "tours", releaseId: "releases", songId: "songs", projectId: "projects", rehearsalId: "rehearsals" };
+
+/**
+ * Give an older backup's rows their artist in memory (tenancy phase 4 made `artistId` required), with the phase-3 backfill's
+ * rules: a record keeps its own; else its parent's (sub-collection, show-keyed, or a record it points at); else the single artist
+ * of its ownerUid or creator; else `artistId` (the named artist, for records a script or import made). History entries take
+ * their record's scope; a membership takes the person's old `users.musicianId` when that musician is in its artist; users get
+ * `artistIds`. Returns how many rows changed. Run before validateDump, so older backups restore into a working state.
+ */
+export function stampDump(dump: Dump, artistId: string): number {
+  const rows = Object.values(dump).flat();
+  const byPath = new Map(rows.map((r) => [r.path, r]));
+  const dataOf = (r: BackupRow) => r.data as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+  const artistsOf = new Map<string, string[]>();
+  for (const r of rows) if (/^users\/[^/]+$/.test(r.path)) artistsOf.set(r.path.split("/")[1], artistIdsOf(dataOf(r)));
+  const single = (uid?: string) => { const as = uid ? artistsOf.get(uid) : undefined; return as?.length === 1 ? as[0] : undefined; };
+  const memo = new Map<string, string | null | "busy">();
+  const resolve = (path: string): string | null => {
+    const m = memo.get(path);
+    if (m === "busy") return null;
+    if (m !== undefined) return m;
+    const r = byPath.get(path);
+    const parts = path.split("/");
+    if (!r || ownerOf(kindOf(parts.slice(0, -1).join("/"))) !== "artist") return null;
+    memo.set(path, "busy");
+    const d = dataOf(r), kind = kindOf(parts.slice(0, -1).join("/")), id = parts[parts.length - 1];
+    const parents: string[] = [];
+    if (parts.length >= 4) parents.push(parts.slice(0, -2).join("/"));
+    if (PARENTS[kind]?.keyedById) for (const k of PARENTS[kind].kinds) parents.push(`${k}/${id}`);
+    for (const [f, k] of Object.entries(REF_FIELDS)) if (str(d[f]) && k !== kind) parents.push(`${k}/${d[f]}`);
+    const out = str(d.artistId) ?? parents.map(resolve).find((x): x is string => !!x) ?? single(str(d.ownerUid)) ?? single(str(d.createdBy)) ?? artistId;
+    memo.set(path, out);
+    return out;
+  };
+  let changed = 0;
+  for (const r of rows) {
+    const parts = r.path.split("/");
+    const d = dataOf(r);
+    const kind = kindOf(parts.slice(0, -1).join("/"));
+    if (kind === "history") {
+      if (d.artistId !== undefined || d.ownerUid || d.shared) continue;
+      const rec = parts.slice(0, -2).join("/"), recKind = kindOf(parts.slice(0, -3).join("/"));
+      const owner = ownerOf(recKind);
+      r.data = owner === "user" ? { ...d, artistId: null, ownerUid: parts[parts.length - 3] }
+        : owner === "shared" ? { ...d, artistId: null, shared: true }
+        : owner === "artist-self" ? { ...d, artistId: parts[parts.length - 3] }
+        : { ...d, artistId: resolve(rec) ?? artistId };
+      changed++;
+      continue;
+    }
+    if (kind === "users" && parts.length === 2) {
+      const mid = str(d.musicianId);
+      const ms = (Array.isArray(d.artists) ? d.artists : []) as Membership[];
+      const home = mid ? resolve(`musicians/${mid}`) : null;
+      const artists = ms.map((m) => (mid && !m.musicianId && m.artistId === home ? { ...m, musicianId: mid } : m));
+      const next = { ...d, artists, artistIds: artistIdsOf({ artists }) };
+      if (JSON.stringify(next) !== JSON.stringify(d)) { r.data = next; changed++; }
+      continue;
+    }
+    if (ownerOf(kind) !== "artist" || str(d.artistId)) continue;
+    r.data = { ...d, artistId: resolve(r.path) ?? artistId };
+    changed++;
+  }
+  return changed;
 }
 
 export async function restoreDump(fs: Firestore, dump: Dump): Promise<number> {

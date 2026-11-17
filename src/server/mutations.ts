@@ -16,8 +16,9 @@ const ref = (id: string) => firestore().collection("mutations").doc(id);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** `null` = you own it, go ahead and run. Otherwise the stored outcome of the first call. */
-export async function claimMutation(uid: string, id: string, command: string, now = new Date()): Promise<StoredMutation | null> {
-  const doc = { uid, command, status: "pending", createdAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + MUTATION_TTL_MS) };
+/** `artistId`: the artist the call is for; a repeat for another artist never gets this one's result (tenancy plan D3). */
+export async function claimMutation(uid: string, id: string, command: string, artistId: string, now = new Date()): Promise<StoredMutation | null> {
+  const doc = { uid, command, artistId, status: "pending", createdAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + MUTATION_TTL_MS) };
   for (let tries = 0; tries < 40; tries++) {
     try {
       await ref(id).create(doc);
@@ -28,7 +29,7 @@ export async function claimMutation(uid: string, id: string, command: string, no
     const snap = await ref(id).get();
     const d = snap.data();
     if (!d) continue; // released between our create and get
-    if (d.uid !== uid || d.command !== command) throw new AppError("mutation_id_in_use", "That clientMutationId was used for something else", 409);
+    if (d.uid !== uid || d.command !== command || (d.artistId ?? null) !== artistId) throw new AppError("mutation_id_in_use", "That clientMutationId was used for something else", 409);
     if ((d.expiresAt as Timestamp).toMillis() < now.getTime()) { await ref(id).delete(); continue; }
     if (d.status === "done") return { result: d.result, runId: d.runId, revs: d.revs ?? {} };
     await sleep(250); // the first call is still running

@@ -19,8 +19,8 @@ export interface DrivingPatch {
 const newCarId = () => randomUUID().slice(0, 8);
 
 /** The saved settings ({} when none). */
-export async function getDriving(uid: string): Promise<DrivingSettings> {
-  const u = await db.get("users", uid);
+export async function getDriving(ctx: Ctx, uid: string): Promise<DrivingSettings> {
+  const u = await db.get(ctx, "users", uid);
   return (u?.driving as DrivingSettings | undefined) ?? {};
 }
 

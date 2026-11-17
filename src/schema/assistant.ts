@@ -50,10 +50,10 @@ export const ThreadRun = z.strictObject({
 });
 /**
  * Chat transcripts are not business data: written by src/server/assistant/threads.ts, outside history/undo. Registered in
- * `collections` (tenancy phase 2) so the thread's artist is part of its schema; `artistId` is optional until the prod backfill.
+ * `collections` (tenancy phase 2) so the thread's artist is part of its schema; `artistId` is required (tenancy phase 4).
  */
 export const AssistantThread = z.strictObject({
-  artistId: id.optional(),
+  artistId: id,
   ownerUid: id,
   startedAt: ts,
   lastActiveAt: ts,

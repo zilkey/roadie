@@ -11,15 +11,21 @@ import type { GoogleFeature } from "./oauth";
 
 export interface BandGoogle { uid: string; email: string }
 
-/** The artist's band account. Without an id (scripts, tests, one band per project) the first live artist's. */
-export async function bandGoogle(artistId?: string): Promise<BandGoogle | null> {
-  if (artistId) return ((await firestore().doc(`artists/${artistId}`).get()).data()?.google as BandGoogle | undefined) ?? null;
-  const snap = await firestore().collection("artists").get();
-  const live = snap.docs.map((d) => d.data()).find((a) => !a.deletedAt);
-  return (live?.google as BandGoogle | undefined) ?? null;
+/**
+ * One artist's own doc by its id (folders, band account, booking mailbox). The id always comes from the caller's ctx or a
+ * verified link; this file is on the system-view allow-list (tests/unit/tenancy-guard.test.ts).
+ */
+export async function artistDoc(artistId: string): Promise<Record<string, unknown> | null> {
+  const snap = await firestore().doc(`artists/${artistId}`).get();
+  return snap.exists ? (snap.data() ?? null) : null;
 }
 
-export async function bandToken(artistId: string | undefined, feature: GoogleFeature, force?: boolean): Promise<string> {
+/** The artist's band account. */
+export async function bandGoogle(artistId: string): Promise<BandGoogle | null> {
+  return ((await artistDoc(artistId))?.google as BandGoogle | undefined) ?? null;
+}
+
+export async function bandToken(artistId: string, feature: GoogleFeature, force?: boolean): Promise<string> {
   const g = await bandGoogle(artistId);
   if (!g) throw new IntegrationError(feature, 401, "The band has no Google account for Drive yet. An admin connects one on Settings > Google.");
   return accessTokenFor(g.uid, feature, force);
@@ -31,5 +37,5 @@ export async function bandToken(artistId: string | undefined, feature: GoogleFea
  * admin uses their own Gmail.
  */
 export async function bookingMailOf(artistId: string): Promise<BandGoogle | null> {
-  return ((await firestore().doc(`artists/${artistId}`).get()).data()?.bookingMail as BandGoogle | undefined) ?? null;
+  return ((await artistDoc(artistId))?.bookingMail as BandGoogle | undefined) ?? null;
 }

@@ -28,11 +28,8 @@ const historyScope = new Map<string, Scope>();
 /** Records per kind per artist, as seeded. */
 const tally: Record<string, Record<string, number>> = {};
 
-/** Artist kinds whose schema has `artistId` optional: the ones written without it before phase 2. */
-const LEGACY_KINDS = ARTIST_KINDS.filter((k) => {
-  const shape = (collections[k].input as unknown as { shape?: Record<string, z.ZodType> }).shape;
-  return !!shape?.artistId && shape.artistId.safeParse(undefined).success;
-});
+/** The artist kinds that had no `artistId` before phase 2 (plan D2), so prod held them without one. */
+const LEGACY_KINDS: string[] = ["songs", "files", "setlists", "setlistTemplates", "rehearsals", "expenses", "availability", "showDeals", "emailTemplates", "statSnapshots", "musicians", "comments", "activity", "entries", "tracks", "assistantThreads", "stagePlots", "mcpTokens"].filter((k) => (ARTIST_KINDS as string[]).includes(k));
 
 const docsOf = async (kind: string) => {
   const sub = !!PARENTS[kind] && !PARENTS[kind].keyedById;
@@ -50,8 +47,11 @@ async function toLegacyShape() {
     await h.ref.update({ artistId: (rec.get("artistId") as string | undefined) ?? null, ownerUid: FieldValue.delete(), shared: FieldValue.delete() });
   }
   for (const u of (await fs.collection("users").get()).docs) {
-    const ms = (u.get("artists") as { musicianId?: string }[]).map(({ musicianId: _m, ...rest }) => (void _m, rest));
-    await u.ref.update({ artistIds: FieldValue.delete(), artists: ms });
+    // Before phase 2 the link was users.musicianId; memberships carried none.
+    const raw = u.get("artists") as { musicianId?: string }[];
+    const ms = raw.map(({ musicianId: _m, ...rest }) => (void _m, rest));
+    const linked = raw.find((m) => m.musicianId)?.musicianId;
+    await u.ref.update({ artistIds: FieldValue.delete(), artists: ms, ...(linked ? { musicianId: linked } : {}) });
   }
   // Old ids carry no artist, so only one artist can hold a given day under them: a's goes back to its old id, b's stays prefixed.
   for (const s of (await fs.collection("statSnapshots").get()).docs) {

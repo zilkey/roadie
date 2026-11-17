@@ -9,7 +9,6 @@ import { patchInput } from "./util";
 import { db, run } from "../db";
 import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
-import { callerArtistId } from "../venues";
 import { bandNotesBy, createNoted, updateNoted, withBandNote } from "../bandNotes";
 import { ActInput, ACT_RELATIONSHIPS, RELATIONSHIP_LABEL, type ActRelationship } from "@/schema";
 import { actListed, actStats, type ActFilter, type EvLike, type VenueLike } from "@/lib/acts";
@@ -21,12 +20,11 @@ const ROLES = ["admin", "mcp"] as const;
 const ActIn = ActInput.extend({ contactIds: z.array(z.string().min(1)).optional() });
 
 /** Venue ids on this band's list: rooms it has notes, a pitch or a show at (the Booking list's "ours"). */
-export async function ourVenueIds(artistId: string | undefined): Promise<Set<string>> {
+export async function ourVenueIds(ctx: Ctx): Promise<Set<string>> {
   const ids = new Set<string>();
-  if (!artistId) return ids;
-  for (const n of await db.list("venueNotes", (q) => q.where("artistId", "==", artistId))) if (!n.deletedAt) ids.add(n.venueId as string);
-  for (const p of await db.list("pitches", (q) => q.where("artistId", "==", artistId))) if (p.target?.kind === "venue") ids.add(p.target.id as string);
-  for (const s of await db.list("shows")) if ((!s.artistId || s.artistId === artistId) && s.venue?.id) ids.add(s.venue.id as string);
+  for (const n of await db.list(ctx, "venueNotes")) if (!n.deletedAt) ids.add(n.venueId as string);
+  for (const p of await db.list(ctx, "pitches")) if (p.target?.kind === "venue") ids.add(p.target.id as string);
+  for (const s of await db.list(ctx, "shows")) if (s.venue?.id) ids.add(s.venue.id as string);
   return ids;
 }
 
@@ -34,9 +32,8 @@ const FILTERS = ["shortlist", "opened", "tour", "all"] as const;
 
 /** Every act with what the calendars say about it and this band's take, in list order (next show soonest, then name). */
 export async function findActs(ctx: Ctx, f: { q?: string; filter: ActFilter; city?: string }) {
-  const artistId = await callerArtistId(ctx);
   const [acts, events, venues, notes, ours] = await Promise.all([
-    db.list("acts"), db.list("venueEvents", undefined, { includeDeleted: true }), db.list("venues"), bandNotesBy("acts", artistId), ourVenueIds(artistId),
+    db.list(ctx, "acts"), db.list(ctx, "venueEvents", undefined, { includeDeleted: true }), db.list(ctx, "venues"), bandNotesBy(ctx, "acts"), ourVenueIds(ctx),
   ]);
   const stats = actStats(events as unknown as EvLike[], new Map(venues.map((v) => [v.id, v as unknown as VenueLike])), ours, dateInBandZone());
   const rows = acts.map((a) => {
@@ -62,7 +59,7 @@ export const actsFind = defineCommand({
   }),
   async run(ctx, i) {
     const rows = await findActs(ctx, i);
-    const venueName = new Map((await db.list("venues")).map((v) => [v.id, String(v.name)]));
+    const venueName = new Map((await db.list(ctx, "venues")).map((v) => [v.id, String(v.name)]));
     return {
       count: rows.length,
       rows: rows.slice(0, i.limit).map(({ a, take, s }) => ({
@@ -161,7 +158,7 @@ export const actsFindTeam = defineCommand({
     "a page names them). Saves nothing: the act page's \"Find their team\" button lists people, each with an Add button that saves them " +
     "with a note on how they were found.",
   input: z.strictObject({ id: z.string().min(1) }),
-  run: (_ctx, { id }) => findActTeam(id),
+  run: (ctx, { id }) => findActTeam(ctx, id),
 });
 
 export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote, actsLookup, actsLookupShortlist, actsFindTeam];

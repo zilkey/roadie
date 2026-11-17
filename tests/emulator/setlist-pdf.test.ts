@@ -12,7 +12,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
 import { buildSetlistPdf, chartFor } from "@/server/setlistPdf";
 import { isExcluded } from "@/server/assistant/policy";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -117,9 +117,9 @@ test("setlists.pdf needs the Charts folder; then it saves \"{date} {venue}.pdf\"
 test("the PDF itself: one page each, the first page only of a two-page chart; when Google won't export a tab alone, the doc's first page", async () => {
   await cmd("google.setChartsFolder", { folder: "fake-folder-charts" });
   const t = await cmd("setlistTemplates.create", { name: "Club set", items: items.filter((i) => (i as { songId?: string }).songId || (i as { type: string }).type === "break") });
-  const tpl = (await db.get("setlistTemplates", t.id))!;
+  const tpl = (await db.get(SYS, "setlistTemplates", t.id))!;
   const drive = driveClient({ artistId: TEST_ARTIST });
-  const pdf = await buildSetlistPdf(drive, tpl.items as never, await db.list("files"), "Club set");
+  const pdf = await buildSetlistPdf(drive, tpl.items as never, await db.list(SYS, "files"), "Club set");
   assert.equal(pdf.pages.length, 5);
   assert.equal((await PDFDocument.load(pdf.bytes)).getPageCount(), 5); // the long chart and the PDF chart each have a second page that is dropped
 
@@ -127,7 +127,7 @@ test("the PDF itself: one page each, the first page only of a two-page chart; wh
   assert.equal(r.name, "Club set.pdf");
 
   await post("/__scenario", { noTabExport: true });
-  const flat = await buildSetlistPdf(drive, tpl.items as never, await db.list("files"), "Club set");
+  const flat = await buildSetlistPdf(drive, tpl.items as never, await db.list(SYS, "files"), "Club set");
   assert.deepEqual(flat.pages.slice(0, 2), [{ title: "Weathervane" }, { title: "Long One" }]);
   assert.equal((await PDFDocument.load(flat.bytes)).getPageCount(), 4);
 

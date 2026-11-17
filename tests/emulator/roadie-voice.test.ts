@@ -15,7 +15,7 @@ import { execTool, type Emit } from "@/server/assistant/tools";
 import { handleTranscribe } from "@/server/assistant/transcribe";
 import { ensureThread, newThreadId } from "@/server/assistant/threads";
 import { MAX_AUDIO_BYTES, type AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -37,8 +37,8 @@ const noop: Emit = () => {};
 beforeEach(async () => {
   await resetEmulators();
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Nora", instruments: [], active: true })).id;
   await db.create(sys, "artists", {
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {},
@@ -53,7 +53,7 @@ beforeEach(async () => {
 /** A session with a thread; `voice` marks the message as spoken. */
 async function sess(voice: boolean) {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return { ...sessionFor(who, threadId), artistId: TEST_ARTIST, ...(voice ? { voice: true } : {}) };
 }
 const INCOME = { amount: 1000, category: "tips", from: "The Trident Bookstore" };
@@ -94,7 +94,7 @@ test("a voice session's income.add card carries voice: true and tells the model 
   assert.match(o.message, /Want me to/);
   assert.match(o.message, /The Trident Bookstore owes us \$10\.00/);
   assert.equal(out.stop, false, "the model gets one more step to ask out loud");
-  assert.equal((await db.list("income")).length, 0, "nothing runs until the yes");
+  assert.equal((await db.list(SYS, "income")).length, 0, "nothing runs until the yes");
 });
 
 test("without voice the same card has no voice flag and the tap message", async () => {
@@ -124,7 +124,7 @@ test("a spoken yes runs an income.add card", async () => {
   const { o } = await card(s, "income.add", INCOME);
   const ans = await answerPending(who, { threadId: s.threadId, pendingId: o.pendingId, decision: "yes", by: "voice" });
   assert.equal(ans.status, "done");
-  const rows = (await db.list("income")).filter((r) => !r.deletedAt);
+  const rows = (await db.list(SYS, "income")).filter((r) => !r.deletedAt);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].amount, 1000);
   assert.equal(rows[0].from, "The Trident Bookstore");
@@ -136,10 +136,10 @@ test("a spoken yes on a tap-only card is refused with not_allowed and the card s
   const { o } = await card(s, name, input);
   await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId: o.pendingId, decision: "yes", by: "voice" }), (e: { code?: string; status?: number }) => e.code === "not_allowed" && e.status === 403);
   assert.equal(await pendingStatus(s.threadId, o.pendingId), "pending");
-  assert.notEqual((await db.get("venues", venueId))!.capacity, 300);
+  assert.notEqual((await db.get(SYS, "venues", venueId))!.capacity, 300);
   // the tap still works
   assert.equal((await answerPending(who, { threadId: s.threadId, pendingId: o.pendingId, decision: "yes" })).status, "done");
-  assert.equal((await db.get("venues", venueId))!.capacity, 300);
+  assert.equal((await db.get(SYS, "venues", venueId))!.capacity, 300);
 });
 
 test("a spoken cancel works on a tap-only card", async () => {
@@ -148,7 +148,7 @@ test("a spoken cancel works on a tap-only card", async () => {
   const { o } = await card(s, name, input);
   assert.equal((await answerPending(who, { threadId: s.threadId, pendingId: o.pendingId, decision: "cancel", by: "voice" })).status, "canceled");
   assert.equal(await pendingStatus(s.threadId, o.pendingId), "canceled");
-  assert.notEqual((await db.get("venues", venueId))!.capacity, 300);
+  assert.notEqual((await db.get(SYS, "venues", venueId))!.capacity, 300);
 });
 
 // ---------- transcribe (fake model mode: a text/plain clip is its own transcript) ----------

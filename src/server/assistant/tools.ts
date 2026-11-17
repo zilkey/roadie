@@ -6,7 +6,8 @@
  */
 import { z } from "zod";
 import { registry } from "../commands/registry";
-import type { Role } from "../ctx";
+import type { Ctx, Role } from "../ctx";
+import { pathOf } from "@/schema/owners";
 import { AppError } from "../errors";
 import { RECORD_ROUTES, resolveRoute, routeNames, ROUTES, type RouteName } from "@/lib/routes";
 import { printQuery } from "@/lib/print";
@@ -367,8 +368,8 @@ const POST_CARDS = /^posts\.(publish|deleteDraft|removeFromDraft)$/;
 async function fillPost(s: Session, input: unknown): Promise<{ input: unknown; before?: Row }> {
   const i = (input ?? {}) as Row;
   if (typeof i.id !== "string") return { input };
-  const p = await db.get("posts", i.id).catch(() => null);
-  if (!p || p.deletedAt || p.artistId !== s.artistId) return { input };
+  const p = await db.get(makeCtx(s), "posts", i.id).catch(() => null);
+  if (!p || p.deletedAt) return { input };
   const media = (p.media ?? []) as { driveFileId: string; name?: string; mimeType?: string }[];
   const photo = media.find((m) => m.driveFileId === i.driveFileId)?.name?.replace(/\.[^.]+$/, "");
   const videos = media.filter((m) => m.mimeType?.startsWith("video/")).length;
@@ -441,15 +442,15 @@ async function fillMoney(s: Session, name: string, input: unknown): Promise<{ in
  * Merging songs: the card names both songs and lists what moves (files, setlists, rehearsals, releases per duplicate), counted
  * now from the same references the Merge dialog counts, so the one Yes covers exactly what was shown.
  */
-async function fillSongMerge(input: unknown): Promise<{ input: unknown; before?: Row }> {
+async function fillSongMerge(ctx: Ctx, input: unknown): Promise<{ input: unknown; before?: Row }> {
   const i = (input ?? {}) as Row;
   if (typeof i.keepId !== "string" || !Array.isArray(i.mergeIds)) return { input };
   try {
-    const [files, setlists, templates, rehearsals, releases] = await Promise.all([db.list("files"), db.list("setlists"), db.list("setlistTemplates"), db.list("rehearsals"), db.list("releases")]);
-    const tracks = (await Promise.all(releases.map((r) => db.list(`releases/${r.id}/tracks`)))).flat() as never;
+    const [files, setlists, templates, rehearsals, releases] = await Promise.all([db.list(ctx, "files"), db.list(ctx, "setlists"), db.list(ctx, "setlistTemplates"), db.list(ctx, "rehearsals"), db.list(ctx, "releases")]);
+    const tracks = (await Promise.all(releases.map((r) => db.list(ctx, pathOf("tracks", { artistId: ctx.artistId, parent: { kind: "releases", id: r.id } }))))).flat() as never;
     const src = { files: files as never, lists: [...setlists, ...templates] as never, rehearsals: rehearsals as never, tracks };
     const one = async (id: string) => {
-      const d = await db.get("songs", id);
+      const d = await db.get(ctx, "songs", id);
       return d && !d.deletedAt ? { title: d.title as string, status: d.status as string, refs: songRefs(id, src) } : null;
     };
     const keep = await one(i.keepId);
@@ -613,7 +614,7 @@ async function execOne(s: Session, name: string, input: unknown, emit: Emit, rec
     const no = refusal(name, input);
     if (no) return { output: { error: { code: "not_allowed", message: `${no} (the page is ui.navigate route "artist")` } }, action: { kind: "action", label: no } };
     const cmd = registry[name];
-    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : name === "songs.merge" ? await fillSongMerge(input) : MONEY_CARDS.test(name) ? await fillMoney(s, name, input) : POST_CARDS.test(name) ? await fillPost(s, input) : await fillNested(s, name, input ?? {});
+    const filled = name === "help.explain" ? { input: hereIfNone(s, input) } : name === "expenses.payPerson" ? await fillPayPerson(s, input) : name === "songs.merge" ? await fillSongMerge(makeCtx(s), input) : MONEY_CARDS.test(name) ? await fillMoney(s, name, input) : POST_CARDS.test(name) ? await fillPost(s, input) : await fillNested(s, name, input ?? {});
     let parsed = cmd.input.safeParse(filled.input);
     // A value that isn't on its list (a venue type the band doesn't have, a region the schema doesn't know) becomes a dropdown on the card.
     const choice = isReadOnly(name) ? null : await picksFor(s, name, filled.input, parsed.success ? [] : parsed.error.issues, filled.before);

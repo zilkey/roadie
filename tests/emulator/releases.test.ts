@@ -11,7 +11,7 @@ import { needsConfirm, summarize } from "@/server/assistant/policy";
 import { groupsFor } from "@/server/assistant/toolset";
 import { searchAll } from "@/server/assistant/context";
 import { topicForPage, topicInWords } from "@/lib/help";
-import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -32,7 +32,7 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
   return (await x.run(c, x.input.parse(input))) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 const code = (p: Promise<unknown>, c: string) => assert.rejects(p, (e: any) => e.code === c); // eslint-disable-line @typescript-eslint/no-explicit-any
-const tracksOf = async (releaseId: string) => (await db.list(`releases/${releaseId}/tracks`)).sort((a, b) => a.position - b.position);
+const tracksOf = async (releaseId: string) => (await db.list(SYS, `releases/${releaseId}/tracks`)).sort((a, b) => a.position - b.position);
 
 beforeEach(async () => {
   await resetEmulators();
@@ -53,11 +53,11 @@ beforeEach(async () => {
 
 test("releases.create: its project, the tracklist from a setlist (breaks skipped) then songs, deduped; the release folder in Drive", async () => {
   const r = await cmd("releases.create", { title: "Wild Hearts LP", kind: "album", releaseDate: "2027-03-06", setlistId: templateId, songIds: [songs[0], songs[3]], makeFolder: true });
-  const release = (await db.get("releases", r.id))!;
+  const release = (await db.get(SYS, "releases", r.id))!;
   assert.equal(release.projectId, r.projectId);
   assert.equal(release.status, undefined, "a release has no status of its own");
   assert.equal(release.budget, undefined, "nor a budget");
-  const project = (await db.get("projects", r.projectId))!;
+  const project = (await db.get(SYS, "projects", r.projectId))!;
   assert.equal(project.kind, "release");
   assert.equal(project.name, "Wild Hearts LP");
   assert.equal(project.status, "open");
@@ -65,8 +65,8 @@ test("releases.create: its project, the tracklist from a setlist (breaks skipped
   assert.deepEqual(tracks.map((t) => [t.position, t.title, t.status, t.lengthSec]), [[1, "Weathervane", "tracking", 250], [2, "Glass Coast", "tracking", 232], [3, "Low Light", "tracking", 211], [4, "Ruby Hill", "tracking", 285]]);
   assert.equal(r.trackIds.length, 4);
   assert.equal(r.folder.name, "Wild Hearts LP");
-  assert.equal((await db.get("releases", r.id))!.driveFolderId, r.folder.id);
-  assert.equal((await db.get("releases", r.id))!.driveFolderName, "Wild Hearts LP");
+  assert.equal((await db.get(SYS, "releases", r.id))!.driveFolderId, r.folder.id);
+  assert.equal((await db.get(SYS, "releases", r.id))!.driveFolderName, "Wild Hearts LP");
   // Band folder / Releases / {title}: the Releases folder is found (or made) in the band folder; a second release goes beside the first
   const second = await cmd("releases.create", { title: "EP two", makeFolder: true });
   assert.notEqual(second.folder.id, r.folder.id);
@@ -75,7 +75,7 @@ test("releases.create: its project, the tracklist from a setlist (breaks skipped
 
   // renaming the release renames its project; members can't write
   await cmd("releases.update", { id: r.id, patch: { title: "Wild Hearts" } });
-  assert.equal((await db.get("projects", r.projectId))!.name, "Wild Hearts");
+  assert.equal((await db.get(SYS, "projects", r.projectId))!.name, "Wild Hearts");
   await assert.rejects(cmd("releases.update", { id: r.id, patch: { status: "mixing" } }), "status is not a release field any more");
   await assert.rejects(cmd("releases.update", { id: r.id, patch: { budget: 100 } }), "nor is budget");
   for (const n of ["releases.create", "releases.update", "releases.remove", "releases.tracks.add", "releases.tracks.update", "releases.files.attach", "releases.files.approve"]) assert.ok(!registry[n].roles.includes("member"), n);
@@ -87,7 +87,7 @@ test("releases.create: its project, the tracklist from a setlist (breaks skipped
   // a folder picked at creation can be anywhere in Drive (no band folder needed): by id or link; a file or an unknown folder is refused
   const picked = await cmd("releases.create", { title: "Picked", driveFolderId: "https://drive.google.com/drive/folders/fake-folder-rehearsals?usp=sharing" });
   assert.deepEqual([picked.folder.id, picked.folder.name], ["fake-folder-rehearsals", "Rehearsal recordings"]);
-  assert.equal((await db.get("releases", picked.id))!.driveFolderName, "Rehearsal recordings");
+  assert.equal((await db.get(SYS, "releases", picked.id))!.driveFolderName, "Rehearsal recordings");
   assert.equal((await cmd("releases.folder", { id: picked.id })).id, "fake-folder-rehearsals");
   await code(cmd("releases.create", { title: "Bad", driveFolderId: "fake-release-mix-1" }), "invalid_input");
   await code(cmd("releases.create", { title: "Bad", driveFolderId: "nope-not-a-folder" }), "not_found");
@@ -130,11 +130,11 @@ test("tracks: add (skipping songs already on), reorder keeps the side breaks by 
   assert.deepEqual(tracks.map((t) => [t.position, t.title]), [[1, "Ruby Hill"], [2, "Weathervane"], [3, "Low Light"]]);
   // update: title on the release only, credits, isrc
   await cmd("releases.tracks.update", { releaseId: id, id: tracks[0].id, patch: { title: "Ruby Hill (release version)", status: "overdubs", isrc: "USX9P2600001", credits: [{ who: "Nora", role: "Vocals" }] } });
-  const t = (await db.get(`releases/${id}/tracks`, tracks[0].id))!;
+  const t = (await db.get(SYS, `releases/${id}/tracks`, tracks[0].id))!;
   assert.equal(t.title, "Ruby Hill (release version)");
   assert.equal(t.status, "overdubs");
   assert.deepEqual(t.credits, [{ who: "Nora", role: "Vocals" }]);
-  assert.equal((await db.get("songs", songs[3]))!.title, "Ruby Hill");
+  assert.equal((await db.get(SYS, "songs", songs[3]))!.title, "Ruby Hill");
   await code(cmd("releases.tracks.update", { releaseId: id, id: "nope", patch: { title: "x" } }), "not_found");
 });
 
@@ -143,67 +143,67 @@ test("files: mixes by version on a track, approving one makes it mixed, a master
   const [track] = await tracksOf(id);
   const a = await cmd("releases.files.attach", { releaseId: id, trackId: track.id, files: [{ driveFileId: "fake-release-mix-1" }, { driveFileId: "fake-release-mix-2" }] });
   assert.equal(a.ids.length, 2);
-  const mixes = (await db.list("files")).filter((f) => f.releaseTrackId === track.id).sort((x, y) => x.version - y.version);
+  const mixes = (await db.list(SYS, "files")).filter((f) => f.releaseTrackId === track.id).sort((x, y) => x.version - y.version);
   assert.deepEqual(mixes.map((f) => [f.kind, f.version, f.releaseId, f.songId]), [["mix", 1, id, undefined], ["mix", 2, id, undefined]]);
   assert.equal(mixes[0].inBandFolder, true); // the Drive folder is the release's
   // the same file again is skipped; a mix with no version in its name is the next one
   const again = await cmd("releases.files.attach", { releaseId: id, trackId: track.id, files: [{ driveFileId: "fake-release-mix-1" }, { url: "https://example.com/mix-rough", kind: "mix", title: "Rough" }] });
   assert.equal(again.skipped, 1);
-  assert.equal((await db.get("files", again.ids[0]))!.version, 3);
-  assert.equal((await db.get(`releases/${id}/tracks`, track.id))!.status, "tracking");
+  assert.equal((await db.get(SYS, "files", again.ids[0]))!.version, 3);
+  assert.equal((await db.get(SYS, `releases/${id}/tracks`, track.id))!.status, "tracking");
   await cmd("releases.files.approve", { id: mixes[1].id, approved: true });
-  assert.equal((await db.get("files", mixes[1].id))!.approved, true);
-  assert.equal((await db.get(`releases/${id}/tracks`, track.id))!.status, "mixed");
+  assert.equal((await db.get(SYS, "files", mixes[1].id))!.approved, true);
+  assert.equal((await db.get(SYS, `releases/${id}/tracks`, track.id))!.status, "mixed");
   await cmd("releases.files.approve", { id: mixes[1].id, approved: false });
-  assert.equal((await db.get("files", mixes[1].id))!.approved, undefined);
-  assert.equal((await db.get(`releases/${id}/tracks`, track.id))!.status, "mixed"); // stays
+  assert.equal((await db.get(SYS, "files", mixes[1].id))!.approved, undefined);
+  assert.equal((await db.get(SYS, `releases/${id}/tracks`, track.id))!.status, "mixed"); // stays
   // a master, approved on attach
   const m = await cmd("releases.files.attach", { releaseId: id, trackId: track.id, files: [{ url: "https://example.com/master", kind: "master" }], approved: true });
-  assert.equal((await db.get("files", m.ids[0]))!.version, 1);
-  assert.equal((await db.get(`releases/${id}/tracks`, track.id))!.status, "mastered");
+  assert.equal((await db.get(SYS, "files", m.ids[0]))!.version, 1);
+  assert.equal((await db.get(SYS, `releases/${id}/tracks`, track.id))!.status, "mastered");
   // notes carry who said it
   const n = await cmd("releases.files.note", { id: mixes[0].id, body: "Guitar solo a touch quieter." });
-  const noted = (await db.get("files", mixes[0].id))!.notes as { id: string; name: string; body: string; authorId: string }[];
+  const noted = (await db.get(SYS, "files", mixes[0].id))!.notes as { id: string; name: string; body: string; authorId: string }[];
   assert.equal(noted.length, 1);
   assert.equal(noted[0].id, n.id);
   assert.equal(noted[0].name, "Rudy");
   assert.equal(noted[0].authorId, ctx.uid);
   // release-level artwork, kind guessed from the name, no track
   const art = await cmd("releases.files.attach", { releaseId: id, files: [{ driveFileId: "fake-release-cover" }] });
-  const cover = (await db.get("files", art.ids[0]))!;
+  const cover = (await db.get(SYS, "files", art.ids[0]))!;
   assert.equal(cover.kind, "artwork");
   assert.equal(cover.releaseTrackId, undefined);
   await code(cmd("releases.files.note", { id: "nope", body: "x" }), "not_found");
   await code(cmd("releases.files.attach", { releaseId: id, trackId: "nope", files: [{ url: "https://x.test/a" }] }), "not_found");
 
   // money on the track: the expense must be on the release's project
-  const release = (await db.get("releases", id))!;
+  const release = (await db.get(SYS, "releases", id))!;
   const e = await cmd("expenses.add", { amount: 30000, what: "Mix v2 revisions", category: "mixing", projectId: release.projectId, releaseTrackId: track.id, payBack: false });
-  assert.equal((await db.get("expenses", e.id))!.releaseTrackId, track.id);
+  assert.equal((await db.get(SYS, "expenses", e.id))!.releaseTrackId, track.id);
   await code(cmd("expenses.add", { amount: 100, what: "x", category: "mixing", releaseTrackId: track.id }), "invalid_input");
   await code(cmd("expenses.add", { amount: 100, what: "x", category: "mixing", projectId: release.projectId, releaseTrackId: "nope" }), "not_found");
   const inc = await cmd("income.add", { amount: 50000, category: "preorders", from: "Bandcamp", projectId: release.projectId });
-  assert.equal((await db.get("income", inc.id))!.category, "preorders");
+  assert.equal((await db.get(SYS, "income", inc.id))!.category, "preorders");
   // a payout pins to a track the same way (a session player's pay for one song), and can be moved off it
   const pay = await cmd("payouts.add", { to: { name: "Ava Strings" }, kind: "pay", amount: 20000, what: "cello on Low Light", projectId: release.projectId, releaseTrackId: track.id });
-  assert.equal((await db.get("payouts", pay.id))!.releaseTrackId, track.id);
+  assert.equal((await db.get(SYS, "payouts", pay.id))!.releaseTrackId, track.id);
   await code(cmd("payouts.add", { to: { name: "Ava Strings" }, kind: "pay", amount: 100, projectId: release.projectId, releaseTrackId: "nope" }), "not_found");
   await cmd("payouts.update", { id: pay.id, patch: { releaseTrackId: null } });
-  assert.equal((await db.get("payouts", pay.id))!.releaseTrackId, undefined);
+  assert.equal((await db.get(SYS, "payouts", pay.id))!.releaseTrackId, undefined);
 
   // the song's own files are untouched by the release; removing the release archives its tracks and files and closes the project
   await db.create(ctx, "files", { kind: "demo", title: "Low Light demo", songId: songs[2], url: "https://x.test/demo", provider: "web", checkedAt: new Date() });
   await cmd("releases.remove", { id });
-  assert.ok((await db.get("releases", id))!.deletedAt);
-  assert.equal((await db.list(`releases/${id}/tracks`)).length, 0);
-  assert.deepEqual((await db.list("files")).map((f) => f.title), ["Low Light demo"]);
-  assert.equal((await db.get("projects", release.projectId))!.status, "closed");
+  assert.ok((await db.get(SYS, "releases", id))!.deletedAt);
+  assert.equal((await db.list(SYS, `releases/${id}/tracks`)).length, 0);
+  assert.deepEqual((await db.list(SYS, "files")).map((f) => f.title), ["Low Light demo"]);
+  assert.equal((await db.get(SYS, "projects", release.projectId))!.status, "closed");
   await code(cmd("releases.tracks.add", { releaseId: id, songIds: [songs[0]] }), "not_found");
 });
 
 test("members read releases but can't change them; the member role gets no release commands", async () => {
   const { id } = await cmd("releases.create", { title: "LP", songIds: [songs[0]] });
-  assert.ok(await db.get("releases", id));
+  assert.ok(await db.get(SYS, "releases", id));
   for (const n of Object.keys(registry).filter((n) => n.startsWith("releases."))) assert.ok(!registry[n].roles.includes("member"), n);
   void mctx;
 });

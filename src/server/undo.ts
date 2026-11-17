@@ -10,7 +10,7 @@
  */
 import type { Timestamp } from "firebase-admin/firestore";
 import { collections, kindOf } from "@/schema";
-import { newRunId, type Ctx } from "./ctx";
+import { newRunId, systemCtx, type Ctx } from "./ctx";
 import { db, isListDiff, run, type Diff, type Doc } from "./db";
 import { AppError } from "./errors";
 import { calendarSend } from "./calendarSync";
@@ -61,9 +61,24 @@ const byTime = (a: Doc, b: Doc) => {
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
 };
 
-/** Every history entry of a run, oldest first: a collection-group query over all the `history` subcollections. */
+/**
+ * Every history entry of a run, oldest first: a collection-group query over all the `history` subcollections. Through the system
+ * view, so undo sees (and refuses) entries in other artists rather than silently leaving them out.
+ */
 export async function historyOfRun(runId: string): Promise<Doc[]> {
-  return (await db.listGroup("history", (q) => q.where("runId", "==", runId))).sort(byTime);
+  return (await db.listGroup(systemCtx("undo"), "history", (q) => q.where("runId", "==", runId))).sort(byTime);
+}
+
+/**
+ * Whether `ctx` may undo a run with these entries (tenancy plan D3): every artist entry that isn't `derived` (a copy a rename
+ * hook made in another artist's records) is this artist's, and a person's or shared entry was made by the caller.
+ */
+function assertMayUndo(ctx: Ctx, entries: Doc[]) {
+  for (const e of entries) {
+    if (e.derived) continue;
+    const foreign = typeof e.artistId === "string" ? e.artistId !== ctx.artistId : e.actor?.uid !== ctx.uid;
+    if (foreign) throw new AppError("not_found", "No changes recorded for that run", 404);
+  }
 }
 
 function place(report: UndoReport, item: UndoItem, changed: boolean, skipped?: string[]) {
@@ -75,6 +90,7 @@ function place(report: UndoReport, item: UndoItem, changed: boolean, skipped?: s
 export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string } = {}): Promise<UndoReport> {
   const entries = await historyOfRun(runId);
   if (!entries.length) throw new AppError("not_found", `No changes recorded for run ${runId}`, 404);
+  assertMayUndo(ctx, entries);
   if (opts.ownerUid && entries.some((e) => e.actor?.uid !== opts.ownerUid)) {
     throw new AppError("forbidden", "You can only undo your own runs", 403);
   }
@@ -85,6 +101,8 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
   const todo: Doc[] = [];
   for (const e of [...entries].reverse()) {
     const item = { kind: e.entity.kind as string, id: e.entity.id as string, op: e.op as string };
+    // A derived entry is a rename hook's copy: undoing the source change makes the hook derive it again.
+    if (e.derived) continue;
     if (collections[kindOf(item.kind)]?.immutable) {
       report.needsManualCorrection.push({ ...item, reason: "Immutable record: add a correction instead" });
     } else todo.push(e);
@@ -125,7 +143,7 @@ export async function undoRun(ctx: Ctx, runId: string, opts: { ownerUid?: string
 async function calendarBack(ctx: Ctx, report: UndoReport) {
   for (const item of report.reverted) {
     if ((item.kind !== "shows" && item.kind !== "rehearsals") || item.as !== "restore") continue;
-    const doc = await db.get(item.kind, item.id);
+    const doc = await db.get(ctx, item.kind, item.id);
     if (!doc?.calendarEventId || doc.deletedAt) continue;
     try {
       await calendarSend(ctx, item.kind, item.id, { restore: true });
@@ -139,9 +157,14 @@ async function calendarBack(ctx: Ctx, report: UndoReport) {
 /** How many of an actor's newest history entries runsOf looks at. */
 const RUNS_WINDOW = 500;
 
-/** Recent runs by one actor, newest first: {runId, via, at, changes, entities}. Looks at their newest RUNS_WINDOW changes. */
-export async function runsOf(uid: string, limit = 20) {
-  const rows = await db.listGroup("history", (q) => q.where("actor.uid", "==", uid).orderBy("createdAt", "desc").limit(RUNS_WINDOW));
+/**
+ * The caller's recent runs in this artist, newest first: {runId, via, at, changes, entities}. Looks at their newest RUNS_WINDOW
+ * changes to this artist's records, and to their own and shared records (History entries with no artist).
+ */
+export async function runsOf(ctx: Ctx, limit = 20) {
+  const sys = systemCtx("my runs");
+  const of = (artistId: string | null) => db.listGroup(sys, "history", (q) => q.where("artistId", "==", artistId).where("actor.uid", "==", ctx.uid).orderBy("createdAt", "desc").limit(RUNS_WINDOW));
+  const rows = (await Promise.all([of(ctx.artistId), of(null)])).flat();
   const runs = new Map<string, { runId: string; via: string; at: string; changes: number; entities: Set<string> }>();
   for (const r of rows.sort(byTime)) {
     const cur = runs.get(r.runId) ?? { runId: r.runId as string, via: r.actor.via as string, at: (r.createdAt as Timestamp).toDate().toISOString(), changes: 0, entities: new Set<string>() };

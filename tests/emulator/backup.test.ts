@@ -10,17 +10,17 @@ import { registry } from "@/server/commands/registry";
 import { dumpAll, restoreDump, validateDump, validateRow } from "@/server/backup";
 import { backup } from "../../scripts/backup";
 import { loadBackup } from "../../scripts/restore";
-import { resetEmulators, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, venue, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 
 test("backup then restore round-trips every collection, subcollections, history and timestamps", async () => {
-  const ctx = importCtx("tester", "seed-run");
+  const ctx = importCtx(TEST_ARTIST, "tester", "seed-run");
   const v = await db.create(ctx, "venues", venue("Bluebird", "Denver", { capacity: 500 }));
   const c = await db.create(ctx, "contacts", { artistId: TEST_ARTIST, name: "Pat", emails: ["pat@example.com"], phones: ["+13035551212"] });
   await db.update(ctx, "venues", v.id, { website: "https://bluebird.example" });
-  await db.create(ctx, "venueNotes", { artistId: "a", venueId: v.id, contactIds: [c.id], promoterIds: [], notes: "great room" }, { id: `a__${v.id}` });
-  const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
+  await db.create(ctx, "venueNotes", { artistId: TEST_ARTIST, venueId: v.id, contactIds: [c.id], promoterIds: [], notes: "great room" }, { id: `${TEST_ARTIST}__${v.id}` });
+  const p = await db.create(ctx, "pitches", { target: { kind: "venue", id: v.id, name: "Bluebird" }, status: "toPitch", artistId: TEST_ARTIST, personnel: [], showIds: [] });
   await run(ctx, async (w) => {
     await w.create(`pitches/${p.id}/activity`, { type: "note", text: "called" });
     await w.create(`pitches/${p.id}/comments`, { authorId: "u", body: "hi" });
@@ -52,14 +52,14 @@ test("backup then restore round-trips every collection, subcollections, history 
 
     assert.deepEqual(await dumpAll(firestore()), before, "identical after restore");
     assert.equal(histRows(await dumpAll(firestore())).length, histRows(before).length, "history subcollections are put back");
-    const doc = (await db.get("venues", v.id))!;
+    const doc = (await db.get(SYS, "venues", v.id))!;
     assert.equal(typeof doc.createdAt.toMillis, "function", "timestamps are real timestamps again");
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 });
 
 test("the walk reads the same documents at any concurrency: nested sub-collections, parents that exist only as paths, skipped collections", async () => {
   const fs_ = firestore();
-  const ctx = importCtx("tester", "seed-run");
+  const ctx = importCtx(TEST_ARTIST, "tester", "seed-run");
   for (let i = 0; i < 12; i++) await db.create(ctx, "venues", venue(`Room ${i}`, "Denver", { capacity: 100 + i }));
   // a sub-collection under a parent document that was never written: walked into, the parent itself not returned
   await fs_.doc("pitches/ghost/comments/c1").set({ body: "orphan" });
@@ -77,7 +77,7 @@ test("the walk reads the same documents at any concurrency: nested sub-collectio
 });
 
 test("restore validates every document with the Zod schemas", async () => {
-  const ctx = importCtx("tester", "r");
+  const ctx = importCtx(TEST_ARTIST, "tester", "r");
   await db.create(ctx, "venues", venue("Okay"));
   const dump = await dumpAll(firestore());
   const bad = structuredClone(dump);
@@ -95,11 +95,11 @@ test("restore validates every document with the Zod schemas", async () => {
 
 test("what the server keeps outside db.ts is backed up and restored as it is; a collection nobody listed is still refused", async () => {
   const fs_ = firestore();
-  const ctx = importCtx("tester", "kept");
+  const ctx = importCtx(TEST_ARTIST, "tester", "kept");
   const u = await db.create(ctx, "users", { email: "a@example.com", name: "Ann", artists: [] });
   const at = new Date("2026-11-10T12:00:00Z");
   const kept: Record<string, Record<string, unknown>> = {
-    "assistantThreads/t1": { uid: u.id, artistId: "a", lastActiveAt: at, runs: [{ runId: "r1", at }] },
+    "assistantThreads/t1": { uid: u.id, artistId: TEST_ARTIST, lastActiveAt: at, runs: [{ runId: "r1", at }] },
     "assistantThreads/t1/messages/m1": { role: "user", text: "hi", at },
     "assistantThreads/t1/pending/p1": { command: "shows.create", input: { date: "2026-12-01" }, status: "pending" },
     "userPrefs/u1": { uid: "u1", askChannel: "email" },
@@ -135,14 +135,14 @@ test("what the server keeps outside db.ts is backed up and restored as it is; a 
 });
 
 test("restore validator: venueNotes need their artist and venue, and a venue that carries a band's private fields is refused", async () => {
-  const ctx = importCtx("tester", "r2");
+  const ctx = importCtx(TEST_ARTIST, "tester", "r2");
   const v = await db.create(ctx, "venues", venue("Okay"));
-  await db.create(ctx, "venueNotes", { artistId: "a", venueId: v.id, contactIds: [], promoterIds: [], notes: "n" }, { id: `a__${v.id}` });
+  await db.create(ctx, "venueNotes", { artistId: TEST_ARTIST, venueId: v.id, contactIds: [], promoterIds: [], notes: "n" }, { id: `${TEST_ARTIST}__${v.id}` });
   const dump = await dumpAll(firestore());
   assert.deepEqual(validateDump(dump), []);
-  assert.ok(dump.venueNotes.some((r) => r.path === `venueNotes/a__${v.id}`), "the new collection is in the dump");
+  assert.ok(dump.venueNotes.some((r) => r.path === `venueNotes/${TEST_ARTIST}__${v.id}`), "the new collection is in the dump");
   const bad = structuredClone(dump);
-  delete bad.venueNotes.find((r) => r.path === `venueNotes/a__${v.id}`)!.data.artistId;
+  delete bad.venueNotes.find((r) => r.path === `venueNotes/${TEST_ARTIST}__${v.id}`)!.data.artistId;
   assert.ok(validateDump(bad).some((e) => /artistId/.test(e)));
   // the private fields live on venueNotes only: a venue doc that carries them does not restore
   const old = structuredClone(dump);

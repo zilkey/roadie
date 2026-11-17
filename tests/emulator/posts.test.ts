@@ -26,7 +26,7 @@ import { GET as callbackGET } from "@/app/api/meta/callback/route";
 import { SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
 import { dateInBandZone } from "@/lib/timezone";
 import { migratePosts49, titleFor, INTERRUPTED } from "../../scripts/migrate-posts-49";
-import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST, SYS } from "./helpers";
 import { undoRun } from "@/server/undo";
 import { eligibleCommands, isReadOnly, needsConfirm, summarize, voiceConfirmable } from "@/server/assistant/policy";
 
@@ -166,7 +166,7 @@ test("renewal: not before it's due, renewed once it is (on status and before a p
   assert.match(refused.check.reason, /at least 24 hours old/);
   const draft = await oneDraft();
   await rejects(cmd("posts.publish", { id: draft }), "meta_sign_in_again", /24 hours old.*Connect again in Settings › Integrations/);
-  assert.equal((await db.get("posts", draft))!.status, "draft", "nothing is posted with a dead sign-in, and the draft stays a draft");
+  assert.equal((await db.get(SYS, "posts", draft))!.status, "draft", "nothing is posted with a dead sign-in, and the draft stays a draft");
 
   // Connect again, and let a week pass on both sides: status renews it.
   await connect();
@@ -228,7 +228,7 @@ test("finishConnect refuses a state another admin started; members can't connect
 
 /** Set up Socials (once) and make a draft of these photos; its id. */
 async function oneDraft(photos: string[] = ["fake-social-loose-1"], title = "Thanks, Roots") {
-  if (!(await db.get("artists", TEST_ARTIST))!.postFoldersId) {
+  if (!(await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId) {
     await cmd("google.setPostsFolder", { folder: `https://drive.google.com/drive/folders/${SOCIALS_FOLDER_ID}` });
     await cmd("posts.setup", {});
   }
@@ -308,7 +308,7 @@ test("setup: refused before Socials is chosen; makes Posts in Socials and shares
   const posts = await drive.get(r.posts.id);
   assert.equal(posts.name, "Posts");
   assert.deepEqual(posts.parents, [SOCIALS_FOLDER_ID]);
-  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, r.posts.id);
+  assert.equal((await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId, r.posts.id);
   const socials = await drive.get(SOCIALS_FOLDER_ID);
   for (const e of ["rudy@example.com", "nora@example.com"]) {
     const p = socials.permissions.find((x) => x.email === e)!;
@@ -339,7 +339,7 @@ test("setup: refused, changing nothing, when the band account can't move files i
   await assert.rejects(cmd("posts.setup", {}), (e: any) => e.code === "drive_permission" && e.message === "Roadie's Google account needs Content manager on the band's Shared Drive to move photos"); // eslint-disable-line @typescript-eslint/no-explicit-any
   const drive = driveClient({ artistId: TEST_ARTIST });
   assert.equal((await drive.list({ parents: [SOCIALS_FOLDER_ID], kind: "folders" })).files.some((f) => f.name === "Posts"), false);
-  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, undefined);
+  assert.equal((await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId, undefined);
   assert.equal((await drive.get(SOCIALS_FOLDER_ID)).permissions.find((x) => x.email === "nora@example.com")!.role, "reader", "not shared as writer");
 });
 
@@ -347,9 +347,9 @@ test("setup: choosing a different Socials folder clears Posts, so Set up runs ag
   await chooseSocials();
   await cmd("posts.setup", {});
   await chooseSocials();
-  assert.ok((await db.get("artists", TEST_ARTIST))!.postFoldersId, "choosing the same folder keeps it");
+  assert.ok((await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId, "choosing the same folder keeps it");
   const s = await cmd("google.setPostsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-posts" });
-  assert.equal((await db.get("artists", TEST_ARTIST))!.postFoldersId, undefined);
+  assert.equal((await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId, undefined);
   assert.equal(s.posts.setUp, false);
   assert.throws(() => registry["artists.update"].input.parse({ id: TEST_ARTIST, patch: { postFoldersId: "x" } }));
 });
@@ -394,7 +394,7 @@ test("upload: refused until Set up has run, for anything but a photo, and for me
   const mov = await upload(rudy.token, jpeg("IMG_2290.MOV", "application/octet-stream"));
   assert.equal(mov.status, 200, JSON.stringify(mov.json));
   assert.equal(mov.json.mimeType, "video/quicktime");
-  assert.equal((await db.list("posts")).length, 0, "nothing is posted yet");
+  assert.equal((await db.list(SYS, "posts")).length, 0, "nothing is posted yet");
 });
 
 // ---------- migrating the #49 posts ----------
@@ -420,17 +420,17 @@ test("migration: a dry run changes nothing; --apply moves each #49 photo into it
   assert.match(early.skipped[0].reason, /run Set up/);
   const { posts: { id: postsId } } = await cmd("posts.setup", {});
 
-  const created = dateInBandZone((await db.get("posts", posted))!.createdAt.toDate());
-  const before = JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
+  const created = dateInBandZone((await db.get(SYS, "posts", posted))!.createdAt.toDate());
+  const before = JSON.stringify([await db.list(SYS, "posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
   const dry = await migratePosts49({ apply: false });
   assert.deepEqual(dry.migrated.map((m) => [m.postId, m.folder]).sort(), [[posted, `${created} - Roots Music Project, thank you!`], [stuck, `DRAFT - Photo ${created}`]].sort());
   assert.deepEqual(dry.skipped.map((s) => s.postId), [gone]);
-  assert.equal(JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), before, "the dry run changed nothing");
+  assert.equal(JSON.stringify([await db.list(SYS, "posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), before, "the dry run changed nothing");
 
   const r = await migratePosts49({ apply: true });
   assert.equal(r.migrated.length, 2);
   assert.deepEqual(r.skipped.map((s) => s.postId), [gone], "the post whose photo is gone is reported and skipped");
-  const p = (await db.get("posts", posted))!;
+  const p = (await db.get(SYS, "posts", posted))!;
   assert.equal(p.title, "Roots Music Project, thank you!");
   assert.equal(p.status, "posted");
   const folder = await drive.get(p.driveFolderId);
@@ -444,17 +444,17 @@ test("migration: a dry run changes nothing; --apply moves each #49 photo into it
   assert.equal(p.media[0].url, "u");
   assert.ok(p.media[0].modifiedTime);
 
-  const s = (await db.get("posts", stuck))!;
+  const s = (await db.get(SYS, "posts", stuck))!;
   assert.equal(s.status, "failed");
   assert.equal(s.error, INTERRUPTED);
   assert.equal((await drive.get(s.driveFolderId)).name, `DRAFT - Photo ${created}`);
   assert.deepEqual(s.media[0].from, { folderId: SOCIALS_FOLDER_ID });
-  assert.equal((await db.get("posts", gone))!.driveFolderId, undefined);
+  assert.equal((await db.get(SYS, "posts", gone))!.driveFolderId, undefined);
 
-  const after = JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
+  const after = JSON.stringify([await db.list(SYS, "posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]);
   const again = await migratePosts49({ apply: true });
   assert.equal(again.migrated.length, 0);
-  assert.equal(JSON.stringify([await db.list("posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), after, "a second run changed nothing");
+  assert.equal(JSON.stringify([await db.list(SYS, "posts"), await drive.list({ parents: [postsId, MONTH, SOCIALS_FOLDER_ID], kind: "all" })]), after, "a second run changed nothing");
 });
 
 // ---------- Photos: posts.photos, posts.list, the thumb route ----------
@@ -490,7 +490,7 @@ test("posts.photos: walks nested folders, skips Posts/, takes one folder and its
   await chooseSocials();
   await cmd("posts.setup", {});
   const drive = driveClient({ artistId: TEST_ARTIST });
-  const postsId = (await db.get("artists", TEST_ARTIST))!.postFoldersId as string;
+  const postsId = (await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId as string;
   const encore = (await findOrMakeFolder(drive, PHONE, "Encore")).folder;
   const deeper = (await findOrMakeFolder(drive, encore.id, "Crowd")).folder;
   const inPost = (await findOrMakeFolder(drive, postsId, "DRAFT - Hi-Dive announcement")).folder;
@@ -640,7 +640,7 @@ const refused = (p: Promise<unknown>, c: string, message: string) => assert.reje
 async function setUpPosts() {
   await chooseSocials();
   await cmd("posts.setup", {});
-  return (await db.get("artists", TEST_ARTIST))!.postFoldersId as string;
+  return (await db.get(SYS, "artists", TEST_ARTIST))!.postFoldersId as string;
 }
 const parentsOf = async (id: string) => (await driveClient({ artistId: TEST_ARTIST }).get(id)).parents;
 const folderNamed = async (parent: string, name: string) =>
@@ -655,7 +655,7 @@ test("createDraft: refused until Set up; moves the photos into Posts/DRAFT - <ti
   const folder = (await folderNamed(postsId, r.folderName))!;
   assert.deepEqual(await parentsOf("fake-social-rotated"), [folder.id]);
   assert.deepEqual(await parentsOf("fake-social-loose-1"), [folder.id]);
-  const p = (await db.get("posts", r.id))!;
+  const p = (await db.get(SYS, "posts", r.id))!;
   assert.equal(p.status, "draft");
   assert.equal(p.caption, "");
   assert.equal(p.aspect, "4:5");
@@ -681,7 +681,7 @@ test("createDraft: refuses, changing nothing, a photo outside Socials, one alrea
   await refused(cmd("posts.createDraft", { title: "Next", driveFileIds: ["fake-social-loose-3"] }), "invalid_input", "Poster draft is in Drive's trash");
   assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID], "nothing moved");
   assert.equal((await driveClient({ artistId: TEST_ARTIST }).list({ parents: [postsId], kind: "folders" })).files.length, before, "no folder made");
-  assert.equal((await db.list("posts")).length, 1);
+  assert.equal((await db.list(SYS, "posts")).length, 1);
   const second = await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-2"] });
   assert.equal(second.folderName, "DRAFT - Hi-Dive announcement (2)");
   assert.notEqual(second.id, first.id);
@@ -694,15 +694,15 @@ test("createDraft: a move failing partway puts the first photo back and trashes 
   assert.deepEqual(await parentsOf("fake-social-loose-1"), [SOCIALS_FOLDER_ID]);
   assert.deepEqual(await parentsOf("fake-social-heic-1"), [PHONE]);
   assert.equal(await folderNamed(postsId, "DRAFT - Broken"), undefined, "the folder is in the trash");
-  assert.equal((await db.list("posts")).length, 0);
+  assert.equal((await db.list(SYS, "posts")).length, 0);
 });
 
 test("addToDraft: appends the photos; at most 10 in all; a failed move puts back only this call's photos", async () => {
   await setUpPosts();
   const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1"] });
-  const folder = (await db.get("posts", id))!.driveFolderId as string;
+  const folder = (await db.get(SYS, "posts", id))!.driveFolderId as string;
   assert.deepEqual(await cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-heic-1", "fake-social-late"] }), { count: 3 });
-  assert.deepEqual((await db.get("posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual((await db.get(SYS, "posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"]); // eslint-disable-line @typescript-eslint/no-explicit-any
   assert.deepEqual(await parentsOf("fake-social-late"), [folder]);
   const many = SEEDED_PHOTOS.filter((x) => !["fake-social-loose-1", "fake-social-heic-1", "fake-social-late"].includes(x)); // 7 more makes 10, plus one
   const drive = driveClient({ artistId: TEST_ARTIST });
@@ -714,7 +714,7 @@ test("addToDraft: appends the photos; at most 10 in all; a failed move puts back
   assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID], "this call's move put back");
   assert.deepEqual(await parentsOf("fake-social-phone-5"), [PHONE]);
   assert.deepEqual(await parentsOf("fake-social-late"), [folder], "the draft's own photos stay");
-  assert.equal((await db.get("posts", id))!.media.length, 3);
+  assert.equal((await db.get(SYS, "posts", id))!.media.length, 3);
 });
 
 test("updateDraft: caption, aspect, order and the whole items map; refuses >30 hashtags, a wrong order, a baseRev conflict, and a posted post", async () => {
@@ -740,7 +740,7 @@ test("updateDraft: caption, aspect, order and the whole items map; refuses >30 h
   await code(cmd("posts.updateDraft", { id, patch: { order: ["fake-social-late"] } }), "invalid_input");
   await code(cmd("posts.updateDraft", { id, patch: { items: { "fake-social-heic-1": { alt: "x" } } } }), "invalid_input");
 
-  const rev = (await db.get("posts", id))!.rev as number;
+  const rev = (await db.get(SYS, "posts", id))!.rev as number;
   const send = (caption: string, baseRev: number) => dispatch("posts.updateDraft", `Bearer ${rudy.token}`, { id, patch: { caption }, _meta: { baseRev, autosave: true } }, TEST_ARTIST);
   assert.equal((await send("mine", rev)).status, 200);
   const clash = await send("theirs", rev);
@@ -757,10 +757,10 @@ test("rename: renames the draft's folder (a clash gives (2)) and its title", asy
   const postsId = await setUpPosts();
   await cmd("posts.createDraft", { title: "Hi-Dive announcement", driveFileIds: ["fake-social-loose-1"] });
   const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-2"] });
-  const folder = (await db.get("posts", id))!.driveFolderId as string;
+  const folder = (await db.get(SYS, "posts", id))!.driveFolderId as string;
   assert.deepEqual(await cmd("posts.rename", { id, title: "Hi-Dive announcement" }), { folderName: "DRAFT - Hi-Dive announcement (2)" });
   assert.equal((await folderNamed(postsId, "DRAFT - Hi-Dive announcement (2)"))!.id, folder);
-  assert.equal((await db.get("posts", id))!.title, "Hi-Dive announcement");
+  assert.equal((await db.get(SYS, "posts", id))!.title, "Hi-Dive announcement");
   assert.deepEqual(await cmd("posts.rename", { id, title: "Hi-Dive announcement" }), { folderName: "DRAFT - Hi-Dive announcement (2)" }, "its own name doesn't clash");
   assert.deepEqual(await cmd("posts.rename", { id, title: "Thanks, Denver" }), { folderName: "DRAFT - Thanks, Denver" });
 });
@@ -780,7 +780,7 @@ test("removeFromDraft: back to its own folder, or the Socials root when that fol
   await cmd("posts.addToDraft", { id, driveFileIds: ["fake-social-loose-2"] });
   await driveScenario({ failMove: 1 });
   await assert.rejects(cmd("posts.removeFromDraft", { id, driveFileId: "fake-social-loose-2" }));
-  assert.deepEqual((await db.get("posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-loose-2"]); // eslint-disable-line @typescript-eslint/no-explicit-any
+  assert.deepEqual((await db.get(SYS, "posts", id))!.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-loose-2"]); // eslint-disable-line @typescript-eslint/no-explicit-any
 });
 
 test("deleteDraft: every photo goes back and the empty folder is trashed; a folder with the PDF is left; a failed move keeps that photo in the draft", async () => {
@@ -791,11 +791,11 @@ test("deleteDraft: every photo goes back and the empty folder is trashed; a fold
   assert.deepEqual(await parentsOf("fake-social-heic-1"), [PHONE]);
   assert.deepEqual(await parentsOf("fake-social-loose-1"), [SOCIALS_FOLDER_ID]);
   assert.equal(await folderNamed(postsId, "DRAFT - A"), undefined, "trashed");
-  assert.ok((await db.get("posts", a.id))!.deletedAt, "soft-deleted");
+  assert.ok((await db.get(SYS, "posts", a.id))!.deletedAt, "soft-deleted");
   assert.equal((await cmd("posts.list", {})).drafts.length, 0);
 
   const b = await cmd("posts.createDraft", { title: "B", driveFileIds: ["fake-social-loose-1"] });
-  const bFolder = (await db.get("posts", b.id))!.driveFolderId as string;
+  const bFolder = (await db.get(SYS, "posts", b.id))!.driveFolderId as string;
   await drive.update("fake-social-pdf", { addParents: [bFolder], removeParents: [SOCIALS_FOLDER_ID] });
   const left = await cmd("posts.deleteDraft", { id: b.id });
   assert.deepEqual(left, { folderLeft: true, notMoved: [], message: "Left DRAFT - B in Drive: it has files Roadie didn't put there" });
@@ -808,7 +808,7 @@ test("deleteDraft: every photo goes back and the empty folder is trashed; a fold
   assert.equal(partly.folderLeft, true);
   assert.deepEqual(partly.notMoved, ["IMG_2210"]);
   assert.match(partly.message, /^Couldn't move IMG_2210 back: .+\. The draft keeps it$/);
-  const kept = (await db.get("posts", c.id))!;
+  const kept = (await db.get(SYS, "posts", c.id))!;
   assert.equal(kept.deletedAt, null);
   assert.deepEqual(kept.media.map((m: any) => m.driveFileId), ["fake-social-late"]); // eslint-disable-line @typescript-eslint/no-explicit-any
   assert.deepEqual(await parentsOf("fake-social-loose-2"), [SOCIALS_FOLDER_ID]);
@@ -818,7 +818,7 @@ test("posts.get: each photo's 1080 preview, a trashed or missing photo flagged, 
   await setUpPosts();
   const { id } = await cmd("posts.createDraft", { title: "Tour", driveFileIds: ["fake-social-loose-1", "fake-social-late"] });
   const drive = driveClient({ artistId: TEST_ARTIST });
-  const before = (await db.get("posts", id))!;
+  const before = (await db.get(SYS, "posts", id))!;
   await tick();
   await drive.trash("fake-social-late");
   const r = await cmd("posts.get", { id });
@@ -827,7 +827,7 @@ test("posts.get: each photo's 1080 preview, a trashed or missing photo flagged, 
   assert.equal(r.photos["fake-social-loose-1"].missing, false);
   assert.match(r.photos["fake-social-loose-1"].thumb1080, /&s=1080&/);
   assert.equal(r.photos["fake-social-late"].trashed, true, "flagged");
-  const after = (await db.get("posts", id))!;
+  const after = (await db.get(SYS, "posts", id))!;
   assert.notEqual(after.media[1].modifiedTime, before.media[1].modifiedTime, "trashing bumped it; saved back");
   assert.equal(after.rev, before.rev, "not an edit: no new rev or history");
   await code(cmd("posts.get", { id: "nope" }), "not_found");
@@ -846,12 +846,12 @@ test("undo: refuses createDraft, rename, removeFromDraft and deleteDraft runs; r
   }
   await undoRun(fresh(), reordered.runId);
   await undoRun(fresh(), edited.runId);
-  const p = (await db.get("posts", id))!;
+  const p = (await db.get(SYS, "posts", id))!;
   assert.equal(p.caption, "");
   assert.deepEqual(p.media.map((m: any) => m.driveFileId), ["fake-social-loose-1", "fake-social-loose-2"]); // eslint-disable-line @typescript-eslint/no-explicit-any
   const deleted = await run("posts.deleteDraft", { id });
   await refused(undoRun(fresh(), deleted.runId), "drive_changed", "This changed Drive, so it can't be undone. Take the photo out or delete the draft instead");
-  assert.ok((await db.get("posts", id))!.deletedAt);
+  assert.ok((await db.get(SYS, "posts", id))!.deletedAt);
 });
 
 test("policy: posts commands are offered to Roadie; setup and publish ask and need a tap; reads don't ask; a 7-photo order doesn't; 6 photos into a draft does", () => {
@@ -892,7 +892,7 @@ function recordGraph() {
   return { calls: () => calls.filter((c) => c !== "container"), restore: () => Object.assign(graph, orig) };
 }
 const published = async () => ((await (await fetch(`${META}/__media`)).json()) as { media: { caption: string; imageUrl: string; alt?: string; children?: { imageUrl: string; alt?: string }[] }[] }).media;
-const folderOf = async (id: string) => (await driveClient({ artistId: TEST_ARTIST }).get((await db.get("posts", id))!.driveFolderId)).name;
+const folderOf = async (id: string) => (await driveClient({ artistId: TEST_ARTIST }).get((await db.get(SYS, "posts", id))!.driveFolderId)).name;
 
 test("publish: one photo is one image container with its alt text, then published; the post keeps its link and the folder takes the date", async () => {
   const id = await oneDraft(["fake-social-loose-1"], "Thanks, Roots");
@@ -907,7 +907,7 @@ test("publish: one photo is one image container with its alt text, then publishe
     assert.equal(r.driveTidy, undefined);
     assert.deepEqual(g.calls(), ["createImage", "publish", "permalink"]);
   } finally { g.restore(); }
-  const p = (await db.get("posts", id))!;
+  const p = (await db.get(SYS, "posts", id))!;
   assert.equal(p.status, "posted");
   assert.ok(Math.abs(Date.parse(p.postedAt) - Date.now()) < 60_000);
   const [m] = await published();
@@ -939,12 +939,12 @@ test("publish: a carousel is an item container per photo in the editor's order (
 test("publish: a carousel item Instagram can't use leaves the post failed with the reason and the photo, Drive untouched; it can be posted again", async () => {
   await connect();
   const id = await oneDraft(["fake-social-loose-1", "fake-social-late"], "Tour");
-  const folder = (await db.get("posts", id))!.driveFolderId;
+  const folder = (await db.get(SYS, "posts", id))!.driveFolderId;
   await scenario({ failItem: 2 });
   const r = await cmd("posts.publish", { id });
   assert.equal(r.status, "failed");
   assert.equal(r.error, "IMG_2210: Instagram couldn't take the photo: Error: The aspect ratio is not supported.");
-  const p = (await db.get("posts", id))!;
+  const p = (await db.get(SYS, "posts", id))!;
   assert.equal(p.status, "failed");
   assert.equal(p.error, r.error);
   assert.equal(p.instagram, undefined);
@@ -953,7 +953,7 @@ test("publish: a carousel item Instagram can't use leaves the post failed with t
   assert.equal((await published()).length, 0);
   await scenario({ failItem: 0 });
   assert.equal((await cmd("posts.publish", { id })).status, "posted");
-  const after = (await db.get("posts", id))!;
+  const after = (await db.get(SYS, "posts", id))!;
   assert.equal(after.error, undefined, "the old reason is cleared");
   assert.equal(await folderOf(id), `${dateInBandZone()} - Tour`);
 });
@@ -990,13 +990,13 @@ test("publish: a failed folder rename leaves the post posted with driveTidy; tid
   const r = await cmd("posts.publish", { id });
   assert.equal(r.status, "posted");
   assert.match(r.driveTidy.error, /failRename/);
-  assert.deepEqual((await db.get("posts", id))!.driveTidy, r.driveTidy);
+  assert.deepEqual((await db.get(SYS, "posts", id))!.driveTidy, r.driveTidy);
   assert.equal(await folderOf(id), "DRAFT - Roots");
   assert.equal((await cmd("posts.list", {})).posts[0].driveTidy.error, r.driveTidy.error);
   await code(cmd("posts.tidy", { id }), "drive_tidy");
   await driveScenario({ failRename: false });
   assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
-  assert.equal((await db.get("posts", id))!.driveTidy, undefined);
+  assert.equal((await db.get(SYS, "posts", id))!.driveTidy, undefined);
   assert.equal(await folderOf(id), `${dateInBandZone()} - Roots`);
   assert.deepEqual(await cmd("posts.tidy", { id }), { ok: true });
 });
@@ -1038,7 +1038,7 @@ test("videos: Photos lists a video with its size and length; a draft keeps them;
   assert.equal(thumb.status, 200, "Drive's still of the video");
 
   const post = await oneDraft([id], "Encore");
-  const m = (await db.get("posts", post))!.media[0];
+  const m = (await db.get(SYS, "posts", post))!.media[0];
   assert.deepEqual({ ...m, modifiedTime: typeof m.modifiedTime, url: typeof m.url },
     { driveFileId: id, mimeType: "video/mp4", name: "Encore.mp4", width: 1080, height: 1920, durationMs: 15_000, bytes: 1234, modifiedTime: "string", url: "string", from: { folderId: SOCIALS_FOLDER_ID } });
   const res = await media(signMediaUrl(TEST_ARTIST, post, 0));
@@ -1048,7 +1048,7 @@ test("videos: Photos lists a video with its size and length; a draft keeps them;
   assert.match(Buffer.from(await res.arrayBuffer()).toString("latin1"), /ftypmp42/, "Drive's bytes, as they are");
   // A video has no alt text or crop: the editor's whole items map leaves it as it is.
   await cmd("posts.updateDraft", { id: post, patch: { items: { [id]: { alt: "Encore", focus: { x: 0, y: 0 } } } } });
-  const after = (await db.get("posts", post))!.media[0];
+  const after = (await db.get(SYS, "posts", post))!.media[0];
   assert.equal(after.alt, undefined);
   assert.equal(after.focus, undefined);
   assert.deepEqual((await cmd("posts.list", {})).drafts.map((d: any) => [d.count, d.videos]), [[1, 1]]); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1072,7 +1072,7 @@ test("publish: one video is a Reel (media_type REELS with its video URL and the 
   assert.equal(m.type, "REELS");
   assert.equal(m.caption, "One more! #encore");
   assert.equal(new URL(m.videoUrl!).pathname, `/api/posts/media/${id}/0`);
-  const p = (await db.get("posts", id))!;
+  const p = (await db.get(SYS, "posts", id))!;
   assert.equal(p.status, "posted");
   assert.equal(p.pending, undefined, "nothing left pending");
   assert.equal(await folderOf(id), `${dateInBandZone()} - Encore`);
@@ -1124,7 +1124,7 @@ test("publish: a video Instagram can't use fails with its reason and name; the c
   const r = await fast(() => cmd("posts.publish", { id }));
   assert.equal(r.status, "failed");
   assert.equal(r.error, "Encore: Instagram couldn't take the video: Error: The video's duration is not supported.");
-  assert.equal((await db.get("posts", id))!.pending, undefined);
+  assert.equal((await db.get(SYS, "posts", id))!.pending, undefined);
 });
 
 test("publish: a video still processing when time's up leaves the post failed, keeping the containers; posting again picks them up", async () => {
@@ -1140,7 +1140,7 @@ test("publish: a video still processing when time's up leaves the post failed, k
     const r = await cmd("posts.publish", { id });
     assert.deepEqual(r, { status: "failed", error: STILL_PROCESSING, processing: true });
     assert.deepEqual(g.calls(), ["createCarouselItem", "createCarouselVideo"]);
-    const p = (await db.get("posts", id))!;
+    const p = (await db.get(SYS, "posts", id))!;
     assert.equal(p.status, "failed");
     assert.equal(p.error, STILL_PROCESSING);
     assert.equal(p.pending.children.length, 2);
@@ -1153,7 +1153,7 @@ test("publish: a video still processing when time's up leaves the post failed, k
     assert.equal((await fast(() => cmd("posts.publish", { id }))).status, "posted");
     assert.deepEqual(g2.calls(), ["createCarousel", "publish", "permalink"], "the item containers were picked up");
   } finally { g2.restore(); }
-  assert.equal((await db.get("posts", id))!.pending, undefined);
+  assert.equal((await db.get(SYS, "posts", id))!.pending, undefined);
   assert.equal((await publishedAll()).length, 1);
 });
 

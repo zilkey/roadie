@@ -7,7 +7,7 @@ import { adminAuth } from "@/server/admin";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
-import { readySession, resetEmulators, makeUser, idToken, makeArtist, TEST_ARTIST } from "./helpers";
+import { readySession, resetEmulators, makeUser, idToken, makeArtist, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -29,8 +29,8 @@ test("roles: member cannot run admin commands; admin can", async () => {
   const ok = await dispatch("musicians.create", bearer(admin.token), input);
   assert.equal(ok.status, 200);
   const id = (ok.json as { result: { id: string } }).result.id;
-  assert.equal((await db.get("musicians", id))!.active, true);
-  assert.equal((await db.get("musicians", id))!.createdBy, admin.uid);
+  assert.equal((await db.get(SYS, "musicians", id))!.active, true);
+  assert.equal((await db.get(SYS, "musicians", id))!.createdBy, admin.uid);
 });
 
 test("validation errors come back as 400 with zod issues; unknown command 404", async () => {
@@ -62,12 +62,12 @@ test("users.add creates invite + claims + musician link; session picks it up; re
   const add = await dispatch("users.add", bearer(admin.token), { email: "Hugo@Example.com", name: "Hugo", role: "member", musicianId: mid });
   assert.equal(add.status, 200);
   const uid = (add.json as { result: { id: string } }).result.id;
-  assert.equal((await db.get("users", uid))!.email, "hugo@example.com");
-  assert.equal((await db.get("musicians", mid))!.userId, uid);
+  assert.equal((await db.get(SYS, "users", uid))!.email, "hugo@example.com");
+  assert.equal((await db.get(SYS, "musicians", mid))!.userId, uid);
   // The membership carries the linked musician, and users.artistIds lists the artists (tenancy phase 2).
-  assert.deepEqual((await db.get("users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member", musicianId: mid }]);
-  assert.deepEqual((await db.get("users", uid))!.artistIds, [TEST_ARTIST]);
-  assert.equal((await db.get("musicians", mid))!.artistId, TEST_ARTIST);
+  assert.deepEqual((await db.get(SYS, "users", uid))!.artists, [{ artistId: TEST_ARTIST, role: "member", musicianId: mid }]);
+  assert.deepEqual((await db.get(SYS, "users", uid))!.artistIds, [TEST_ARTIST]);
+  assert.equal((await db.get(SYS, "musicians", mid))!.artistId, TEST_ARTIST);
   assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: mid }, musicianId: mid });
   assert.equal((await dispatch("users.add", bearer(admin.token), { email: "hugo@example.com", name: "D", role: "member" })).status, 409);
 
@@ -78,7 +78,7 @@ test("users.add creates invite + claims + musician link; session picks it up; re
 
   const rm = await dispatch("users.remove", bearer(admin.token), { id: uid });
   assert.equal(rm.status, 200);
-  assert.equal((await db.get("musicians", mid))!.userId, undefined);
+  assert.equal((await db.get(SYS, "musicians", mid))!.userId, undefined);
   await assert.rejects(startSession(bearer(await idToken(uid))), (e: AppError) => e.code === "not_invited");
   // an old token no longer works
   assert.equal((await dispatch("musicians.create", bearer(await idToken(uid)), { name: "x", instruments: [] })).status, 403);
@@ -92,9 +92,12 @@ test("users.add with musician: one call makes the band member and the login, lin
   const add = await dispatch("users.add", bearer(admin.token), { email: "Iris@Example.com", name: "Iris", role: "member", musician: { instruments: ["fiddle", "vocals"] } });
   assert.equal(add.status, 200);
   const { id: uid, musicianId } = (add.json as { result: { id: string; musicianId: string } }).result;
-  const m = (await db.get("musicians", musicianId))!;
+  const m = (await db.get(SYS, "musicians", musicianId))!;
   assert.deepEqual([m.name, m.email, m.instruments, m.active, m.userId], ["Iris", "iris@example.com", ["fiddle", "vocals"], true, uid]);
-  assert.equal((await db.get("users", uid))!.musicianId, musicianId);
+  // The link lives on the membership (users.musicianId is read-only since tenancy phase 4).
+  const me = (await db.get(SYS, "users", uid))!;
+  assert.equal(me.musicianId, undefined);
+  assert.equal(me.artists[0].musicianId, musicianId);
   assert.deepEqual((await adminAuth().getUser(uid)).customClaims, { artists: { [TEST_ARTIST]: "member" }, adminOf: [], musicians: { [TEST_ARTIST]: musicianId }, musicianId });
   // musicianId and musician together is refused
   const both = await dispatch("users.add", bearer(admin.token), { email: "x@example.com", name: "X", role: "member", musicianId: musicianId, musician: { instruments: [] } });
@@ -115,13 +118,13 @@ test("legacy ai role: can't be created or set any more, but an existing ai login
 
 test("session: an email on no band's list is signed in as noBand with empty claims (not an error)", async () => {
   const u = await adminAuth().createUser({ email: "stranger@example.com", emailVerified: true, displayName: "Pat Stranger" });
-  assert.deepEqual(await startSession(bearer(await idToken(u.uid))), { status: "noBand", uid: u.uid, email: "stranger@example.com", name: "Pat Stranger" });
+  assert.deepEqual(await startSession(bearer(await idToken(u.uid))), { status: "noBand", uid: u.uid, email: "stranger@example.com", name: "Pat Stranger", invites: [] });
   assert.deepEqual((await adminAuth().getUser(u.uid)).customClaims, { artists: {} });
 });
 
 test("session: a removed (soft-deleted) person is still not_invited", async () => {
   const u = await makeUser("gone@example.com", "member");
-  await db.softDelete(importCtx(), "users", u.uid);
+  await db.softDelete(importCtx(TEST_ARTIST), "users", u.uid);
   await assert.rejects(startSession(bearer(await idToken(u.uid))), (e: AppError) => e.code === "not_invited" && e.status === 403);
 });
 
@@ -132,7 +135,7 @@ test("artists: configuration ids are assigned", async () => {
     configurations: [{ name: "Full band", billingName: "Nora Quill Band", musicianIds: [] }, { name: "Trio", billingName: "Nora Quill Trio", musicianIds: [] }],
   });
   assert.equal(r.status, 200);
-  const a = (await db.get("artists", (r.json as { result: { id: string } }).result.id))!;
+  const a = (await db.get(SYS, "artists", (r.json as { result: { id: string } }).result.id))!;
   assert.deepEqual(a.configurations.map((c: { id: string }) => c.id), ["full-band", "trio"]);
 });
 
@@ -145,8 +148,8 @@ test("_meta.runId puts several commands in one run, and one undo removes them al
   assert.equal((one.json as { runId: string }).runId, runId);
   assert.equal((two.json as { runId: string }).runId, runId);
   const { undoRun } = await import("@/server/undo");
-  await undoRun(importCtx(admin.uid, undefined, TEST_ARTIST), runId);
-  const left = await db.list("users", (q) => q.where("email", "in", ["one@example.com", "two@example.com"]));
+  await undoRun(importCtx(TEST_ARTIST, admin.uid), runId);
+  const left = await db.list(SYS, "users", (q) => q.where("email", "in", ["one@example.com", "two@example.com"]));
   assert.equal(left.filter((u) => !u.deletedAt).length, 0);
   const bad = await dispatch("users.add", bearer(admin.token), { email: "x@example.com", name: "X", role: "member", _meta: { runId: "no spaces!" } });
   assert.equal(bad.status, 400);

@@ -15,7 +15,7 @@
  * so running it again changes nothing.
  */
 import { db } from "@/server/db";
-import { importCtx, newRunId, type Ctx } from "@/server/ctx";
+import { importCtx, newRunId, systemCtx, type Ctx } from "@/server/ctx";
 import { driveClient, IntegrationError, type DriveFile, type DriveService } from "@/server/integrations";
 import { isEmpty, moveInto, uniqueName } from "@/server/postFolder";
 import { dateInBandZone } from "@/lib/timezone";
@@ -61,16 +61,16 @@ export async function migratePosts49(opts: { apply: boolean; log?: (s: string) =
   const log = opts.log ?? (() => undefined);
   const out: MigrateResult = { apply: opts.apply, migrated: [], skipped: [] };
   const runId = newRunId();
-  for (const artist of await db.list("artists")) {
+  for (const artist of await db.list(systemCtx("migrate-posts-49"), "artists")) {
     const artistId = artist.id;
-    const todo = (await db.list("posts", (q) => q.where("artistId", "==", artistId))).filter((p) => !p.driveFolderId);
+    const ctx: Ctx = importCtx(artistId, "migrate-posts-49", runId);
+    const todo = (await db.list(ctx, "posts")).filter((p) => !p.driveFolderId);
     if (!todo.length) continue;
     const postsId = artist.postFoldersId as string | undefined;
     if (!artist.postsFolderId || !postsId) {
       out.skipped.push({ artistId, reason: `${todo.length} post(s) left: run Set up in Settings › Google first` });
       continue;
     }
-    const ctx: Ctx = importCtx("migrate-posts-49", runId, artistId);
     const drive = driveClient({ artistId });
     for (const p of todo) {
       const created = dateInBandZone(dateOf(p.createdAt));

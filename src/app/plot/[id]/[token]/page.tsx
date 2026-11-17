@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { StagePlotSvg } from "@/components/stagePlots/StagePlotSvg";
 import { channelRows, mixRows } from "@/lib/stagePlots/sheet";
-import { plotByToken } from "@/server/stagePlotShare";
+import { publicPlot } from "@/server/stagePlotShare";
 import { sheetContext } from "@/server/stagePlotSheet";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Stage plot", robots: { index: false,
 export default async function EngineerPlotPage({ params }: { params: Promise<{ id: string; token: string }> }) {
   const { id, token } = await params;
   let ctx;
-  try { ctx = await sheetContext(await plotByToken(id, token)); } catch { ctx = null; }
+  try { const p = await publicPlot(id, token); ctx = await sheetContext(p.ctx, p.plot); } catch { ctx = null; }
   if (!ctx) {
     return (
       <main className="mx-auto grid min-h-dvh max-w-md content-start gap-4 p-4 pt-10" data-testid="plot-page">

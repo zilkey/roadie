@@ -53,14 +53,10 @@ export function rehearsalTimes(r: { date: string; startTime?: string; endTime?: 
   return { start: at(r.date, s), end: at(r.date, e > s ? e : e + 1440) };
 }
 
-async function artistOf(ctx: Ctx, doc: Doc) {
-  const id = (doc.artistId as string | undefined) ?? ctx.artistId;
-  if (id) return db.get("artists", id);
-  return (await db.list("artists")).find((a) => !a.deletedAt) ?? null;
-}
+const artistOf = (ctx: Ctx) => db.get(ctx, "artists", ctx.artistId);
 
-async function load(kind: CalendarKind, id: string) {
-  const doc = await db.get(kind, id);
+async function load(ctx: Ctx, kind: CalendarKind, id: string) {
+  const doc = await db.get(ctx, kind, id);
   if (!doc || doc.deletedAt) throw new AppError("not_found", kind === "shows" ? "Show not found" : "Rehearsal not found", 404);
   return doc;
 }
@@ -94,9 +90,9 @@ function rehearsalEvent(r: Doc, artist: Doc | null): Omit<CalEventInput, "attend
 }
 
 /** Who gets an invite: shows invite calendarInviteeIds when set, else everyone in personnel; rehearsals everyone coming. Musicians with no email can't be invited. */
-async function invitees(kind: CalendarKind, doc: Doc) {
+async function invitees(ctx: Ctx, kind: CalendarKind, doc: Doc) {
   const ids = (kind === "shows" ? (doc.calendarInviteeIds as string[] | undefined) ?? doc.personnel : doc.personnel) as string[];
-  const musicians = await db.list("musicians");
+  const musicians = await db.list(ctx, "musicians");
   const people = ids.map((id) => musicians.find((m) => m.id === id)).filter((m): m is Doc => !!m);
   return {
     invitees: people.filter((m) => m.email).map((m) => ({ name: m.name as string, email: m.email as string })),
@@ -105,13 +101,13 @@ async function invitees(kind: CalendarKind, doc: Doc) {
 }
 
 async function build(ctx: Ctx, kind: CalendarKind, id: string) {
-  const doc = await load(kind, id);
-  const artist = await artistOf(ctx, doc);
+  const doc = await load(ctx, kind, id);
+  const artist = await artistOf(ctx);
   const calendar = artist?.calendar as { id: string; name: string } | null | undefined;
   if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
   if (kind === "shows" && isOff(doc)) throw new AppError("invalid_input", `A ${doc.status} show doesn't go on the calendar. Remove its event instead.`, 400);
   const body = kind === "shows" ? showEvent(doc, artist) : rehearsalEvent(doc, artist);
-  const who = await invitees(kind, doc);
+  const who = await invitees(ctx, kind, doc);
   const input: CalEventInput = { ...body, attendees: who.invitees.map((p) => p.email) };
   const hash = createHash("sha256").update(JSON.stringify([calendar.id, input])).digest("base64url").slice(0, 16);
   return { doc, calendar, input, who, hash };
@@ -146,7 +142,7 @@ function looksLike(kind: CalendarKind, doc: Doc, title: string) {
 async function sameDay(ctx: Ctx, kind: CalendarKind, doc: Doc, calendarId: string): Promise<ExistingEvent[]> {
   const date = doc.date as string;
   const events = await client(ctx, calendarId).list({ from: addDays(date, -1), to: addDays(date, 2) }).catch(() => []);
-  const linked = new Set((await Promise.all((["shows", "rehearsals"] as const).map((k) => db.list(k))))
+  const linked = new Set((await Promise.all((["shows", "rehearsals"] as const).map((k) => db.list(ctx, k))))
     .flat().map((d) => d.calendarEventId as string | undefined).filter(Boolean));
   return events.filter((e) => e.start.slice(0, 10) === date && !linked.has(e.id) && looksLike(kind, doc, e.title)).map((e) => ({
     id: e.id, title: e.title, start: e.start, end: e.end, allDay: !e.start.includes("T"), location: e.location ?? "",
@@ -211,7 +207,7 @@ export async function calendarSend(ctx: Ctx, kind: CalendarKind, id: string, opt
 /** Delete a show's or rehearsal's linked event on the band calendar (everyone invited gets a cancellation). Already gone there is fine. */
 export async function deleteEvent(ctx: Ctx, doc: Doc): Promise<void> {
   if (!doc.calendarEventId) return;
-  const artist = await artistOf(ctx, doc);
+  const artist = await artistOf(ctx);
   const calendar = artist?.calendar as { id: string } | null | undefined;
   if (!calendar) throw new AppError("calendar_not_chosen", "No band calendar yet. An admin chooses it on Settings > Google.", 400);
   try { await client(ctx, calendar.id).delete(doc.calendarEventId as string); } catch (e) { if (!notFound(e)) googleError(e); }
@@ -219,7 +215,7 @@ export async function deleteEvent(ctx: Ctx, doc: Doc): Promise<void> {
 
 /** Take the event off the band calendar. Already gone there is fine. */
 export async function calendarRemove(ctx: Ctx, kind: CalendarKind, id: string): Promise<{ id: string; calendar: "removed" }> {
-  await deleteEvent(ctx, await load(kind, id));
+  await deleteEvent(ctx, await load(ctx, kind, id));
   await db.update(ctx, kind, id, { calendarEventId: null, calendarHash: null });
   return { id, calendar: "removed" };
 }

@@ -17,23 +17,22 @@ const newId = () => randomUUID().slice(0, 8);
 const COLLECTION: Record<ChecklistKind, string> = { show: "shows", release: "releases", social: "socialChecklists", song: "songs" };
 const NOUN: Record<ChecklistKind, string> = { show: "Show", release: "Release", social: "Social Media", song: "Song" };
 
-interface Host { kind: ChecklistKind; id: string; artistId: string | undefined; lists: ChecklistLike[]; exists: boolean }
+interface Host { kind: ChecklistKind; id: string; artistId: string; lists: ChecklistLike[]; exists: boolean }
 
 /** The show, release or Social Media sidebar a checklist call is for, checked against the caller's band. */
 async function bandHost(w: Writer, kind: ChecklistKind, id: string): Promise<Host> {
   if (kind !== "show" && kind !== "song" && w.ctx.role === "member") throw new AppError("forbidden", `Only admins can change ${NOUN[kind]} checklists`, 403);
   if (kind === "social") {
-    if (w.ctx.artistId && id !== w.ctx.artistId) throw new AppError("not_found", "Social Media checklists not found", 404);
+    if (id !== w.ctx.artistId) throw new AppError("not_found", "Social Media checklists not found", 404);
     const d = await w.get(COLLECTION.social, id);
     return { kind, id, artistId: id, lists: ((d?.checklists ?? []) as ChecklistLike[]), exists: !!d };
   }
   const d = await w.get(COLLECTION[kind], id);
-  if (!d || d.deletedAt || (w.ctx.artistId && d.artistId && d.artistId !== w.ctx.artistId)) throw new AppError("not_found", `${NOUN[kind]} not found`, 404);
-  // Songs carry no artistId yet (one band per project): theirs is the caller's.
-  return { kind, id, artistId: (d.artistId as string | undefined) ?? w.ctx.artistId, lists: ((d.checklists ?? []) as ChecklistLike[]), exists: true };
+  if (!d || d.deletedAt) throw new AppError("not_found", `${NOUN[kind]} not found`, 404);
+  return { kind, id, artistId: w.ctx.artistId, lists: ((d.checklists ?? []) as ChecklistLike[]), exists: true };
 }
 function writeLists(w: Writer, h: Host, lists: ChecklistLike[]) {
-  if (h.kind === "social" && !h.exists) return w.create(COLLECTION.social, { artistId: h.id, checklists: lists }, { id: h.id });
+  if (h.kind === "social" && !h.exists) return w.create(COLLECTION.social, { checklists: lists }, { id: h.id });
   return w.update(COLLECTION[h.kind], h.id, { checklists: lists });
 }
 function listOf(lists: ChecklistLike[], listId: string) {
@@ -57,19 +56,19 @@ async function requireMusician(w: Writer, id: string) {
   const m = await w.get("musicians", id);
   if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
 }
-async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
-  const a = artistId ? await w.get("artists", artistId) : (await w.query("artists", (q) => q.limit(1)))[0];
+async function artistFor(w: Writer): Promise<Doc> {
+  const a = await w.get("artists", w.ctx.artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Set up the artist first", 404);
   return a;
 }
-/** A live template of the artist this call (or this show) is for. */
-async function requireTemplate(w: Writer, id: string, artistId = w.ctx.artistId) {
+/** A live template of the artist this call is for. */
+async function requireTemplate(w: Writer, id: string) {
   const t = await w.get("checklistTemplates", id);
-  if (!t || t.deletedAt || (artistId && t.artistId !== artistId)) throw new AppError("not_found", "Checklist template not found", 404);
+  if (!t || t.deletedAt) throw new AppError("not_found", "Checklist template not found", 404);
   return t;
 }
-const liveTemplates = async (w: Writer, artistId: string) =>
-  (await w.query("checklistTemplates", (q) => q.where("artistId", "==", artistId))).sort((a, b) => (a.order as number) - (b.order as number));
+const liveTemplates = async (w: Writer) =>
+  (await w.query("checklistTemplates")).sort((a, b) => (a.order as number) - (b.order as number));
 const nextOrder = (ts: Doc[]) => Math.max(-1, ...ts.map((t) => t.order as number)) + 1;
 
 const kindIn = { kind: checklistKind, id: z.string().min(1) };
@@ -111,7 +110,7 @@ export const checklistsAdd = defineCommand({
     const listId = newId();
     let list: ChecklistLike = { id: listId, name: "", templateId: null, items: [] };
     if ("templateId" in i) {
-      const t = await requireTemplate(w, i.templateId, h.artistId);
+      const t = await requireTemplate(w, i.templateId);
       if (templateKind(t as { appliesTo?: ChecklistKind }) !== i.kind) throw new AppError("invalid_input", `That template isn't a ${NOUN[i.kind]} template`, 400);
       list = { ...list, name: t.name as string, templateId: t.id, items: (t.items as { label: string }[]).map((x) => ({ id: newId(), label: x.label, done: false })) };
       // The first Promotion template brings a confirmed venue show's "Add to Bandsintown" item when the show doesn't have one yet.
@@ -200,8 +199,8 @@ export const checklistsSaveAsTemplate = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     const h = await bandHost(w, i.kind, i.id);
     const list = listOf(h.lists, i.listId);
-    const artistId = (await artistFor(w, h.artistId)).id;
-    const t = await w.create("checklistTemplates", { artistId, name: list.name, appliesTo: i.kind, order: nextOrder(await liveTemplates(w, artistId)), items: list.items.filter((c) => !c.bandsintown).map((c) => ({ id: newId(), label: c.label })) });
+    await artistFor(w);
+    const t = await w.create("checklistTemplates", { name: list.name, appliesTo: i.kind, order: nextOrder(await liveTemplates(w)), items: list.items.filter((c) => !c.bandsintown).map((c) => ({ id: newId(), label: c.label })) });
     await editList(w, h, i.listId, (l) => ({ ...l, templateId: t.id }));
     return { id: i.id, listId: i.listId, templateId: t.id };
   }),
@@ -215,7 +214,7 @@ export const checklistsUpdateTemplate = defineCommand({
     const h = await bandHost(w, i.kind, i.id);
     const list = listOf(h.lists, i.listId);
     if (!list.templateId) throw new AppError("invalid_state", "This list isn't from a template: save it as one instead", 409);
-    const t = await requireTemplate(w, list.templateId, h.artistId);
+    const t = await requireTemplate(w, list.templateId);
     await w.update("checklistTemplates", t.id, { name: list.name, items: list.items.filter((c) => !c.bandsintown).map((c) => ({ id: newId(), label: c.label })) });
     return { id: i.id, listId: i.listId, templateId: t.id };
   }),
@@ -259,7 +258,7 @@ export const checklistTemplatesList = defineCommand({
   name: "checklistTemplates.list", roles: ["admin", "mcp"], input: z.strictObject({}),
   description: "This artist's checklist templates in order: [{id, name, appliesTo (show|release|social: where 'New list' offers it), when (show templates: preShow|dayOf|postShow, or none), type (show templates: promotion|logistics, or none), order, items: [{id, label}]}]. The first show template of type promotion also gets the \"Add to Bandsintown\" item on confirmed venue shows.",
   run: (ctx) => run(ctx, async (w) => {
-    const ts = await liveTemplates(w, (await artistFor(w)).id);
+    const ts = await liveTemplates(w);
     return { templates: ts.map((t) => ({ id: t.id, name: t.name, appliesTo: templateKind(t as { appliesTo?: ChecklistKind }), when: t.when ?? null, type: t.type ?? null, order: t.order, items: t.items })) };
   }),
 });
@@ -268,9 +267,9 @@ export const checklistTemplatesCreate = defineCommand({
   description: "Add a checklist template (last in order): name, appliesTo (show, release or social; default show), for show templates optionally when (preShow|dayOf|postShow) and type (promotion|logistics), and items [{label}]. Lists of that kind can then add it.",
   input: z.strictObject({ name: z.string().trim().min(1), appliesTo: checklistKind.default("show"), when: templateWhen.optional(), type: templateType.optional(), items: templateItems.default([]) }),
   run: (ctx, i) => run(ctx, async (w) => {
-    const artistId = (await artistFor(w)).id;
+    await artistFor(w);
     const show = i.appliesTo === "show";
-    return w.create("checklistTemplates", { artistId, name: i.name, appliesTo: i.appliesTo, ...(show && i.when ? { when: i.when } : {}), ...(show && i.type ? { type: i.type } : {}), order: nextOrder(await liveTemplates(w, artistId)), items: withItemIds(i.items) });
+    return w.create("checklistTemplates", { name: i.name, appliesTo: i.appliesTo, ...(show && i.when ? { when: i.when } : {}), ...(show && i.type ? { type: i.type } : {}), order: nextOrder(await liveTemplates(w)), items: withItemIds(i.items) });
   }),
 });
 export const checklistTemplatesUpdate = defineCommand({
@@ -291,7 +290,7 @@ export const checklistTemplatesReorder = defineCommand({
   name: "checklistTemplates.reorder", roles: ["admin", "mcp"], description: "Put this artist's checklist templates in this order: ids is every template's id, once.",
   input: z.strictObject({ ids: z.array(z.string().min(1)) }),
   run: (ctx, i) => run(ctx, async (w) => {
-    const ts = await liveTemplates(w, (await artistFor(w)).id);
+    const ts = await liveTemplates(w);
     const same = i.ids.length === ts.length && new Set(i.ids).size === ts.length && ts.every((t) => i.ids.includes(t.id));
     if (!same) throw new AppError("invalid_input", "Give every template once (someone may have just added or deleted one)", 409);
     for (const [n, tid] of i.ids.entries()) if (ts.find((t) => t.id === tid)!.order !== n) await w.update("checklistTemplates", tid, { order: n });

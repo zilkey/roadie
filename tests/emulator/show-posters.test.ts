@@ -8,7 +8,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { driveClient } from "@/server/integrations";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -48,7 +48,7 @@ test("Settings > Google: the Shows folder is chosen like the others and shows up
   assert.equal((await cmd("google.status", {})).showsFolder, null);
   const s = await cmd("google.setShowsFolder", { folder: "https://drive.google.com/drive/folders/fake-folder-shows" });
   assert.equal(s.showsFolder.name, "Shows");
-  assert.equal((await db.get("artists", TEST_ARTIST))!.showsFolderId, "fake-folder-shows");
+  assert.equal((await db.get(SYS, "artists", TEST_ARTIST))!.showsFolderId, "fake-folder-shows");
   await code(cmd("google.setShowsFolder", { folder: "fake-reh-1" }), "invalid_input"); // a file, not a folder
   await code(cmd("google.setShowsFolder", { folder: "nope-nope" }), "not_found");
 });
@@ -63,7 +63,7 @@ test("shows.folder needs the Shows folder, then makes \"{date} {venue}\" inside 
   const made = await drive.get(f.id);
   assert.deepEqual(made.parents, ["fake-folder-shows"]);
   assert.ok(made.permissions.some((p) => p.email === "nora@example.com"));
-  const show = (await db.get("shows", id))!;
+  const show = (await db.get(SYS, "shows", id))!;
   assert.equal(show.driveFolderId, f.id);
   assert.equal(show.driveFolderName, "2027-01-16 Deep End");
   assert.equal((await cmd("shows.folder", { id })).id, f.id); // the same one again
@@ -78,7 +78,7 @@ test("posters: attach by Drive id (members too), skipped when already on the sho
   const up = await drive.upload({ name: "Deep End poster.png", mimeType: "image/png", parentId: folder.id, data: new Blob(["png"]) });
   const a = await cmd("shows.posters.attach", { showId: id, files: [{ driveFileId: up.id }] }, mctx);
   assert.equal(a.ids.length, 1);
-  const poster = (await db.get("files", a.ids[0]))!;
+  const poster = (await db.get(SYS, "files", a.ids[0]))!;
   assert.equal(poster.kind, "poster");
   assert.equal(poster.showId, id);
   assert.equal(poster.songId, undefined);
@@ -90,7 +90,7 @@ test("posters: attach by Drive id (members too), skipped when already on the sho
   await code(cmd("shows.posters.attach", { showId: id, files: [{ driveFileId: "nope" }] }), "not_found");
   await code(cmd("shows.posters.attach", { showId: "nope", files: [{ driveFileId: up.id }] }), "not_found");
   await cmd("shows.posters.remove", { id: a.ids[0] }, mctx);
-  assert.ok((await db.get("files", a.ids[0]))!.deletedAt);
+  assert.ok((await db.get(SYS, "files", a.ids[0]))!.deletedAt);
   assert.equal((await drive.get(up.id)).name, "Deep End poster.png");
   await code(cmd("shows.posters.remove", { id: again.ids[0] + "x" }), "not_found");
   // a song's file isn't a poster

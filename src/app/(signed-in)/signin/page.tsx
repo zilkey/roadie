@@ -27,7 +27,7 @@ export default function SignIn() {
     // back to the page that sent you here (a shared link, a bookmark), else your artists
     if (state.status === "ready") router.replace(afterSignIn(new URLSearchParams(location.search).get("next")));
     if (state.status === "notInvited") router.replace("/not-invited");
-    if (state.status === "noBand") router.replace("/no-band");
+    if (state.status === "noBand") router.replace(state.invites?.length ? "/artists" : "/no-band");
   }, [state.status, router]);
 
   const go = (fn: () => Promise<void>) => fn().catch((e) => setErr(e instanceof Error ? e.message : "Sign-in failed"));

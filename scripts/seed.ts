@@ -8,7 +8,7 @@
  */
 import { adminAuth } from "../src/server/admin";
 import { db, run } from "../src/server/db";
-import { importCtx } from "../src/server/ctx";
+import { importCtx, systemCtx } from "../src/server/ctx";
 import { syncClaims } from "../src/server/session";
 import { slugForArtist } from "../src/schema/artists";
 import { DEV_OTHER_BAND, DEV_PEOPLE } from "../src/lib/dev-people";
@@ -22,6 +22,7 @@ import { firestore } from "@/server/admin";
 import { fanId } from "@/server/fans";
 import { Timestamp } from "firebase-admin/firestore";
 import { VenueEvent } from "@/schema";
+import { pathOf } from "@/schema/owners";
 import { eventId } from "@/server/events/refresh";
 import { SEED_DATES } from "./seed-dates";
 import { fmtPitchDate } from "@/lib/booking";
@@ -37,28 +38,24 @@ async function reset() {
 
 async function main() {
   if (process.argv.includes("--reset")) await reset();
-  if ((await db.list("artists")).length) { console.log("Already seeded (use --reset to start over)."); return; }
+  if ((await db.list(systemCtx("seed"), "artists")).length) { console.log("Already seeded (use --reset to start over)."); return; }
   // The artist's id is picked first, so every record (its musicians too) is stamped with it (tenancy phase 2).
   const artistId = firestore().collection("artists").doc().id;
-  const ctx = importCtx("seed", undefined, artistId);
+  const ctx = importCtx(artistId, "seed");
   const create = async (path: string, doc: Record<string, unknown>, id?: string) => (await db.create(ctx, path, doc, id ? { id } : undefined)).id;
   const src = (url: string) => [{ url, checkedAt: "2026-10-20", note: "Venue website" }];
 
   // --- people ---
+  // The artist first, then its musicians (their configurations name the musicians, so those are filled in just below).
   const mid: Record<string, string> = {};
-  for (const p of DEV_PEOPLE) {
-    mid[p.key] = await create("musicians", { name: p.name, instruments: p.instruments, email: p.email, active: true });
-  }
-  mid.sam = await create("musicians", { name: "Sam", instruments: ["drums"], phone: "+13035550142", payHandle: "@sam-drums", active: true });
-
   const artist = await create("artists", {
     name: "Nora Quill Band",
     slug: slugForArtist("Nora Quill Band"),
     configurations: [
-      { id: "full-band", name: "Full band", billingName: "Nora Quill Band", musicianIds: ["nora", "rudy", "hugo", "felix", "iris"].map((k) => mid[k]) },
-      { id: "trio", name: "Trio", billingName: "Nora Quill Trio", musicianIds: ["nora", "rudy", "hugo"].map((k) => mid[k]) },
-      { id: "duo", name: "Duo", billingName: "Nora Quill Duo", musicianIds: ["nora", "rudy"].map((k) => mid[k]) },
-      { id: "nora-solo", name: "Nora solo", billingName: "Nora Quill", musicianIds: [mid.nora] },
+      { id: "full-band", name: "Full band", billingName: "Nora Quill Band", musicianIds: [] },
+      { id: "trio", name: "Trio", billingName: "Nora Quill Trio", musicianIds: [] },
+      { id: "duo", name: "Duo", billingName: "Nora Quill Duo", musicianIds: [] },
+      { id: "nora-solo", name: "Nora solo", billingName: "Nora Quill", musicianIds: [] },
     ],
     links: { spotify: "https://open.spotify.com/artist/example", instagram: "https://instagram.com/noraquill", website: "https://noraquill.example" },
     // An artist ID only: "Open Bandsintown" links work; no API key, so nothing ever calls Bandsintown.
@@ -73,12 +70,20 @@ async function main() {
     features: { fans: true },
   }, artistId);
 
+  for (const p of DEV_PEOPLE) {
+    mid[p.key] = await create("musicians", { name: p.name, instruments: p.instruments, email: p.email, active: true });
+  }
+  mid.sam = await create("musicians", { name: "Sam", instruments: ["drums"], phone: "+13035550142", payHandle: "@sam-drums", active: true });
+  const lineup: Record<string, string[]> = { "full-band": ["nora", "rudy", "hugo", "felix", "iris"], trio: ["nora", "rudy", "hugo"], duo: ["nora", "rudy"], "nora-solo": ["nora"] };
+  const made = (await db.get(ctx, "artists", artist))!.configurations as { id: string }[];
+  await db.update(ctx, "artists", artist, { configurations: made.map((c) => ({ ...c, musicianIds: lineup[c.id].map((k) => mid[k]) })) });
+
   // Every seeded person belongs to the artist, with their role there.
   const uid: Record<string, string> = {};
   for (const p of DEV_PEOPLE) {
     const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
     uid[p.key] = u.uid;
-    await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: p.role === "admin" && p.key === "rudy" }], musicianId: mid[p.key] }, u.uid);
+    await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: p.role === "admin" && p.key === "rudy", musicianId: mid[p.key] }] }, u.uid);
     await db.update(ctx, "musicians", mid[p.key], { userId: u.uid });
     await syncClaims(u.uid);
   }
@@ -113,7 +118,7 @@ async function main() {
   const tourProject = await addProject({ kind: "tour", name: "Spring West Tour" });
   await addProject({ kind: "video", name: "Lighthouse video" });
   const defaults: Record<string, string> = { "full-band": bandProject, trio: bandProject, duo: duoProject, "nora-solo": bandProject };
-  const stored = (await db.get("artists", artist))!.configurations as { id: string }[];
+  const stored = (await db.get(ctx, "artists", artist))!.configurations as { id: string }[];
   await db.update(ctx, "artists", artist, { configurations: stored.map((c) => ({ ...c, defaultProjectId: defaults[c.id] })) });
 
   // --- booking data ---
@@ -122,7 +127,7 @@ async function main() {
   const wren = await create("contacts", { artistId: artist, name: "Wren Ortiz", title: "Programming director", emails: ["wren@creameryarts.example"], phones: ["+13035550177"] });
   const anika = await create("contacts", { artistId: artist, name: "Anika Shah", title: "Festival producer", emails: ["anika@rmffest.example"], phones: [] });
   // howToPitch is the band's private note (promoterNotes); the venues they book are linked from the venues below.
-  const bandCtx = importCtx("seed", undefined, artist);
+  const bandCtx = importCtx(artist, "seed");
   const promoter = async (input: Record<string, unknown>) => ((await execute(bandCtx, "promoters.create", input)).result as { id: string }).id;
   const promo1 = await promoter({ name: "Front Range Presents", kind: "promoter", website: "https://frontrangepresents.example", contactIds: [desmond], howToPitch: "Email Desmond with live video and two dates.", sources: src("https://frontrangepresents.example") });
   const promo2 = await promoter({ name: "Creamery Arts Center", kind: "nonprofit", contactIds: [wren], howToPitch: "Online submission form, twice a year." });
@@ -158,7 +163,7 @@ async function main() {
   await execute(bandCtx, "venueTypes.add", { label: "Winery" });
 
   // --- a second band on the same directory: its own notes on a shared room, and a duplicate room to merge ---
-  const other = await seedOtherBand(create, ctx);
+  const other = await seedOtherBand();
   await execute(bandCtx, "venues.update", { id: deepend, patch: { loadInNotes: "Alley door on Broadway; 20 minutes to load in.", notes: "Ask for Sam at the bar." } });
   await execute(other.ctx, "venues.update", { id: deepend, patch: { loadInNotes: "Fern Valley loads in the side door.", notes: "Ask for Rae. Fern Valley's own notes." } });
   // The same room entered twice ("The Deep End" does not dedupe against "Deep End"): venues.mergeInto fixes it.
@@ -188,11 +193,11 @@ async function main() {
   await pitch({ kind: "edition", id: levittEd, name: "Levitt Pavilion Summer Series Summer 2027" }, "idea");
   // Calendar e2e: a live pitch date on SEED_DATES.conflict, the same day as the confirmed show below (a show + pitch date conflict).
   await pitch({ kind: "venue", id: bluebird, name: "Bluebird Room" }, "pitched", { dates: [SEED_DATES.conflict], lastContactAt: new Date(Date.now() - 20 * 86_400_000) }); // quiet: a yellow row on the Pitch List
-  await create(`pitches/${pLost}/comments`, { authorId: uid.nora, body: "Mention the Roots show that drew 95." });
-  await create(`pitches/${pLost}/activity`, { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
-  await create(`pitches/${pLost}/activity`, { type: "note", text: "Rosa said to check back mid-November." });
+  await create(pathOf("comments", { artistId: artist, parent: { kind: "pitches", id: pLost } }), { authorId: uid.nora, body: "Mention the Roots show that drew 95." });
+  await create(pathOf("activity", { artistId: artist, parent: { kind: "pitches", id: pLost } }), { type: "status", fromStatus: "toPitch", toStatus: "pitched", text: "Sent first pitch" });
+  await create(pathOf("activity", { artistId: artist, parent: { kind: "pitches", id: pLost } }), { type: "note", text: "Rosa said to check back mid-November." });
   const [promoTemplate] = await seedTemplates(create, ctx, artist);
-  await run(ctx, (w) => seedDefaultTemplates(w, other.artist));
+  await run(other.ctx, (w) => seedDefaultTemplates(w, other.artist));
 
   // --- music ---
   const songSpecs: [string, string, number, number][] = [
@@ -229,7 +234,7 @@ async function main() {
   const trackStatus = ["mixed", "mixed", "mixed", "mixing", "mixed", "mixed", "mixed", "mixing", "overdubs", "overdubs"];
   const trackIds: string[] = [];
   for (let i = 0; i < 10; i++) {
-    trackIds.push(await create(`releases/${releaseId}/tracks`, {
+    trackIds.push(await create(pathOf("tracks", { artistId: artist, parent: { kind: "releases", id: releaseId } }), {
       releaseId, position: i + 1, side: i < 5 ? "A" : "B", songId: songIds[i], title: songSpecs[i][0], status: trackStatus[i], lengthSec: songSpecs[i][2],
       credits: i === 2 ? [{ who: "Nora Quill", role: "Lead vocals, acoustic guitar" }, { who: "Rudy Pike", role: "Electric guitar" }] : [],
     }));
@@ -262,7 +267,7 @@ async function main() {
     sound: { provider: "venueProvided", notes: "House engineer" }, dayOfContact: { name: "Deep End door manager", phone: "(303) 555-0142" },
     checklists: [...showBase.checklists, list("loadout", "Load-out", [["g1", "Get paid before leaving", "rudy", false], ["g2", "Sweep stage for cables", "felix", false], ["g3", "Bass rig", "hugo", false]])],
   });
-  await create(`shows/${hiShow}/comments`, { authorId: uid.nora, body: "Street parking on Broadway; dinner provided.", audience: "band" });
+  await create(pathOf("comments", { artistId: artist, parent: { kind: "shows", id: hiShow } }), { authorId: uid.nora, body: "Street parking on Broadway; dinner provided.", audience: "band" });
   // The show's setlist lives at setlists/{showId}: the document id is the show id, so it is written after the show.
   await create("setlists", {
     items: songIds.slice(0, 11).map((id, i) => ({ type: "song", songId: id, title: songSpecs[i][0], lengthSec: songSpecs[i][2], key: songSpecs[i][1] })),
@@ -339,19 +344,21 @@ async function main() {
 }
 
 /** The second artist: Fern Valley Trio, with one admin (Olga) and nothing else. Returns a context for her band. */
-async function seedOtherBand(create: (path: string, doc: Record<string, unknown>, id?: string) => Promise<string>, ctx: ReturnType<typeof importCtx>) {
+async function seedOtherBand() {
   const p = DEV_OTHER_BAND.person;
   const otherId = firestore().collection("artists").doc().id;
-  const mid = await create("musicians", { artistId: otherId, name: p.name, instruments: p.instruments, active: true }); // no email: the first band's Drive sharing checks list musicians with an email
-  const artist = await create("artists", {
+  const ctx = importCtx(otherId, "seed");
+  const artist = (await db.create(ctx, "artists", {
     name: DEV_OTHER_BAND.artistName, slug: slugForArtist(DEV_OTHER_BAND.artistName),
-    configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [mid] }], links: {}, driveFolderId: "",
-  }, otherId);
+    configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [] }], links: {}, driveFolderId: "",
+  }, { id: otherId })).id;
+  const mid = (await db.create(ctx, "musicians", { name: p.name, instruments: p.instruments, active: true })).id; // no email: the first band's Drive sharing checks list musicians with an email
+  await db.update(ctx, "artists", artist, { configurations: [{ id: "trio", name: "Trio", billingName: DEV_OTHER_BAND.artistName, musicianIds: [mid] }] });
   const u = await adminAuth().createUser({ email: p.email, displayName: p.name, emailVerified: true });
-  await create("users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: false }], musicianId: mid }, u.uid);
+  await db.create(ctx, "users", { email: p.email, name: p.name, artists: [{ artistId: artist, role: p.role, mcpAccess: false, musicianId: mid }] }, { id: u.uid });
   await db.update(ctx, "musicians", mid, { userId: u.uid });
   await syncClaims(u.uid);
-  return { artist, ctx: importCtx("seed", undefined, artist) };
+  return { artist, ctx };
 }
 
 /** The starting email templates. */

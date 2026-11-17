@@ -6,7 +6,7 @@ import { db } from "@/server/db";
 import { gmailClient } from "@/server/integrations/gmail";
 import { FEATURE_SCOPES, TOKEN_URL, REVOKE_URL } from "@/server/google/oauth";
 import { accessTokenForEmail, saveGrant } from "@/server/google/grants";
-import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, venue, TEST_ARTIST, SYS } from "./helpers";
 
 // ---------- a stub for Google's HTTP APIs; everything else (the emulators) passes through ----------
 
@@ -121,7 +121,7 @@ test("connect: consent URL, finish only for the admin who started it, band accou
     const st = (done.json as { result: { me: unknown; band: { email: string; isMe: boolean }; missing: string[] } }).result;
     assert.deepEqual(st.me, { googleEmail: "rudy.pike@example.com", features: ["gmail", "calendar"] });
     assert.deepEqual([st.band.email, st.band.isMe, st.missing], ["rudy.pike@example.com", true, []]);
-    assert.deepEqual((await db.get("artists", TEST_ARTIST))?.google, { uid: rudy.uid, email: "rudy.pike@example.com" });
+    assert.deepEqual((await db.get(SYS, "artists", TEST_ARTIST))?.google, { uid: rudy.uid, email: "rudy.pike@example.com" });
 
     // Gmail goes real once Google is configured and GMAIL_BASE_URL is unset, sending with Rudy's own grant.
     delete process.env.GMAIL_BASE_URL;
@@ -132,7 +132,7 @@ test("connect: consent URL, finish only for the admin who started it, band accou
     const off = await dispatch("google.disconnect", bearer(rudy.token), {});
     assert.equal(off.status, 200);
     assert.ok(seen.some((s) => s.url.href.startsWith(REVOKE_URL) && s.url.searchParams.get("token") === "1//rt"), "revoked at Google");
-    assert.ok(!(await db.get("artists", TEST_ARTIST))?.google, "the band has no Google account now");
+    assert.ok(!(await db.get(SYS, "artists", TEST_ARTIST))?.google, "the band has no Google account now");
     const after = (off.json as { result: { configured: boolean; me: unknown; band: unknown } }).result;
     assert.deepEqual([after.configured, after.me, after.band], [true, null, null]);
   } finally {
@@ -152,7 +152,7 @@ test("booking mailbox: only an admin with Gmail sets it, to themself; another ta
     const member = await makeUser("hugo@example.com", "member");
     const grant = (uid: string, email: string, features: (keyof typeof FEATURE_SCOPES)[], token: string) =>
       saveGrant(uid, email, email, { access_token: token, expires_in: 3600, refresh_token: `1//${token}`, scope: ["openid", ...features.flatMap((f) => FEATURE_SCOPES[f])].join(" ") });
-    const mailbox = async () => (await db.get("artists", TEST_ARTIST))?.bookingMail ?? null;
+    const mailbox = async () => (await db.get(SYS, "artists", TEST_ARTIST))?.bookingMail ?? null;
     type St = { bookingMail: { email: string; name: string; isMe: boolean; gmail: boolean } | null };
     const use = (t: string) => dispatch("google.useForBookingMail", bearer(t), {});
     const clear = (t: string) => dispatch("google.clearBookingMail", bearer(t), {});
@@ -184,7 +184,7 @@ test("booking mailbox: only an admin with Gmail sets it, to themself; another ta
     const sent = await dispatch("email.send", bearer(rudy.token), { target, to: ["rosa@pinehollow.example"], subject: "Hi", body: "Hello" });
     assert.equal(sent.status, 200, JSON.stringify(sent.json));
     assert.equal(seen.find((s) => s.url.pathname.endsWith("/messages/send"))?.auth, "Bearer at-ingrid");
-    const t = await db.get("emailThreads", `${TEST_ARTIST}__t1`);
+    const t = await db.get(SYS, "emailThreads", `${TEST_ARTIST}__t1`);
     assert.equal(t?.account, "ingrid@example.com");
     assert.deepEqual(t?.sentBy, { m1: rudy.uid }, "who wrote it");
     assert.equal((await dispatch("email.draft", bearer(rudy.token), { target, to: ["rosa@pinehollow.example"], subject: "Hi", body: "Hello" })).status, 200);

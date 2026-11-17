@@ -7,6 +7,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { defineCommand } from "./types";
 import { firestore } from "../admin";
 import { db } from "../db";
+import type { Ctx } from "../ctx";
 import { AppError } from "../errors";
 import { PLATFORM_USERS, SHARED_EDIT_REQUESTS, accessOf, approveEditor, requirePlatformAdmin, revokeEditor } from "../platform";
 
@@ -21,9 +22,9 @@ export const sharedEditorsRequest = defineCommand({
   async run(ctx, { note }) {
     const a = await accessOf(ctx);
     if (a.sharedEditor || a.platformAdmin) return { approved: true };
-    const [user, artist] = await Promise.all([db.get("users", ctx.uid), ctx.artistId ? db.get("artists", ctx.artistId) : null]);
+    const [user, artist] = await Promise.all([db.get(ctx, "users", ctx.uid), db.get(ctx, "artists", ctx.artistId)]);
     await firestore().collection(SHARED_EDIT_REQUESTS).doc(ctx.uid).set({
-      uid: ctx.uid, name: user?.name ?? "", email: user?.email ?? "", artistId: ctx.artistId ?? null, artistName: artist?.name ?? null,
+      uid: ctx.uid, name: user?.name ?? "", email: user?.email ?? "", artistId: ctx.artistId, artistName: artist?.name ?? null,
       ...(note ? { note } : {}), requestedAt: Timestamp.now(),
     });
     return { requested: true };
@@ -41,7 +42,7 @@ export const sharedEditorsList = defineCommand({
       fs.collection(SHARED_EDIT_REQUESTS).orderBy("requestedAt", "desc").get(),
       fs.collection(PLATFORM_USERS).where("sharedEditorAt", "!=", null).get(),
     ]);
-    const users = await Promise.all(approved.docs.map((d) => db.get("users", d.id)));
+    const users = await Promise.all(approved.docs.map((d) => db.get(ctx, "users", d.id)));
     return {
       requests: reqs.docs.map((d) => {
         const r = d.data();
@@ -53,8 +54,8 @@ export const sharedEditorsList = defineCommand({
   },
 });
 
-async function requireUser(uid: string) {
-  const u = await db.get("users", uid);
+async function requireUser(ctx: Ctx, uid: string) {
+  const u = await db.get(ctx, "users", uid);
   if (!u || u.deletedAt) throw new AppError("not_found", "No such person", 404);
 }
 
@@ -63,7 +64,7 @@ export const sharedEditorsApprove = defineCommand({
   description: "Roadie's platform admins only: approve a person to change shared records (closes their request).",
   async run(ctx, { uid }) {
     await requirePlatformAdmin(ctx);
-    await requireUser(uid);
+    await requireUser(ctx, uid);
     await approveEditor(uid, ctx.uid);
     return { uid, approved: true };
   },

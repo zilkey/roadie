@@ -13,9 +13,9 @@ import type { Session } from "./run";
 import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
 import { newTypeLabel, setPath } from "./card";
 import { makeCtx, runAs } from "./run";
-import { addAssistantMessage, claimPending, getPending, newMessageId, ownerOf, patchMessageAction, setPending, type Pending } from "./threads";
+import { addAssistantMessage, claimPending, getPending, newMessageId, threadOf, patchMessageAction, setPending, type Pending } from "./threads";
 
-export interface Who { uid: string; role: Role; artistId?: string; musicianId?: string; name: string }
+export interface Who { uid: string; role: Role; artistId: string; musicianId?: string; name: string }
 
 /** The session for a write outside the chat stream (a confirmed card, an Undo tap). */
 export function sessionFor(who: Who, threadId: string, replyId = newMessageId(), now?: Date): Session {
@@ -26,7 +26,9 @@ const HERE = { route: "calendar" };
 
 async function requireOwner(who: Who, threadId: string) {
   if (who.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
-  if ((await ownerOf(threadId)) !== who.uid) throw new AppError("not_found", "No such conversation", 404);
+  // The caller's own conversation, in the artist the request is for (tenancy plan D3: confirm, stop and undo refuse another's).
+  const t = await threadOf(threadId);
+  if (!t || t.ownerUid !== who.uid || t.artistId !== who.artistId) throw new AppError("not_found", "No such conversation", 404);
 }
 
 export type Answer = { status: "done"; runId?: string; label?: string } | { status: "canceled" } | { status: "failed"; message: string };
@@ -120,7 +122,7 @@ export async function undoRunOf(who: Who, req: UndoRequest): Promise<{ undone: n
 async function who(authHeader: string | null, artistHeader?: string | null): Promise<Who> {
   const ctx = await authenticate(authHeader, artistHeader);
   if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
-  const u = await db.get("users", ctx.uid);
+  const u = await db.get(ctx, "users", ctx.uid);
   return { uid: ctx.uid, role: ctx.role, artistId: ctx.artistId, musicianId: ctx.musicianId, name: (u?.name as string | undefined) ?? "Someone" };
 }
 

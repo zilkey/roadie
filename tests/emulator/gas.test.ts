@@ -17,7 +17,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
 import { areaFor, priceFor, productFor } from "@/server/gas/price";
 import { getDriving, updateDriving as saveDriving, type DrivingPatch } from "@/server/driving";
-import { resetEmulators, makeUser, makeArtist } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, SYS, TEST_ARTIST } from "./helpers";
 import { migrateDriving } from "../../scripts/migrate-driving";
 
 let stop: () => Promise<void>;
@@ -43,7 +43,7 @@ after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true 
 
 /** Save someone's driving settings as the admin, each in its own run. */
 const setDriving = (uid: string, patch: DrivingPatch) => saveDriving({ ...ctx, runId: newRunId() }, uid, patch);
-const mpgOf = async (uid: string) => (await getDriving(uid)).cars?.[0]?.mpg;
+const mpgOf = async (uid: string) => (await getDriving(ctx, uid)).cars?.[0]?.mpg;
 
 const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
   const x = registry[name];
@@ -54,10 +54,10 @@ beforeEach(async () => {
   await resetEmulators();
   await makeArtist("Test Band", "test-band"); // a gas expense lands on the artist's default project
   const a = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  ctx = { uid: a.uid, role: "admin", via: "app", runId: newRunId() };
+  ctx = { uid: a.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const m = await makeUser("hugo@example.com", "member", { name: "Hugo" });
   memberUid = m.uid;
-  mctx = { uid: m.uid, role: "member", via: "app", runId: newRunId() };
+  mctx = { uid: m.uid, artistId: TEST_ARTIST, role: "member", via: "app", runId: newRunId() };
   rehearsalId = (await db.create(ctx, "rehearsals", { date: "2026-10-29", location: LOFT, personnel: [], songs: [] })).id;
 });
 
@@ -141,7 +141,7 @@ test("a gas expense from a home trip keeps that day's home address, the rehearsa
   await setDriving(memberUid, { home: HOME, cars: [{ name: "Car", mpg: 28 }] });
   const est = await cmd("expenses.estimateGas", { rehearsalId }, mctx);
   const { id } = await cmd("expenses.add", { amount: est.estimateCents, what: "Gas", category: "travel", rehearsalId, gas: { ...gasFrom(est), to: { name: LOFT.name } } }, mctx);
-  const x = (await db.get("expenses", id)) as any;
+  const x = (await db.get(SYS, "expenses", id)) as any;
   assert.equal(x.rehearsalId, rehearsalId);
   assert.equal(x.gas.fromKind, "home");
   assert.equal(x.gas.fromText, HOME.address, "the home address that day is kept");
@@ -151,10 +151,10 @@ test("a gas expense from a home trip keeps that day's home address, the rehearsa
   assert.equal(x.gas.estimateCents, 498);
   // moving later doesn't rewrite it
   await setDriving(memberUid, { home: { address: "1 New Place, Boulder, CO", lat: 40, lng: -105 } });
-  assert.equal(((await db.get("expenses", id)) as any).gas.fromText, HOME.address);
+  assert.equal(((await db.get(SYS, "expenses", id)) as any).gas.fromText, HOME.address);
   // typing a different amount up front marks it overridden but keeps the estimate
   const { id: id2 } = await cmd("expenses.add", { amount: 600, what: "Gas", category: "travel", rehearsalId, gas: gasFrom(est) }, mctx);
-  const y = (await db.get("expenses", id2)) as any;
+  const y = (await db.get(SYS, "expenses", id2)) as any;
   assert.equal(y.gas.overridden, true);
   assert.equal(y.gas.estimateCents, 498);
   assert.equal(y.amount, 600);
@@ -166,7 +166,7 @@ test("the save flags write the payer's settings: the driver an admin logs for, e
   const est = await cmd("expenses.estimateGas", { forId: memberUid, rehearsalId, mpg: 31 }, ctx);
   await cmd("expenses.add", { amount: est.estimateCents, what: "Gas", category: "gas", userId: memberUid, rehearsalId, gas: gasFrom(est), saveMpg: true }, ctx);
   assert.equal(await mpgOf(ctx.uid), 22, "the admin's own MPG is untouched");
-  const d = await getDriving(memberUid);
+  const d = await getDriving(ctx, memberUid);
   assert.deepEqual(d.cars?.map((c) => [c.name, c.mpg]), [["Car", 31]], "with no car, the MPG makes one");
   assert.deepEqual(d?.home, HOME);
   // saveAsHome writes the member's own home when they typed their From
@@ -176,7 +176,7 @@ test("the save flags write the payer's settings: the driver an admin logs for, e
     amount: typed.estimateCents, what: "Gas", category: "travel", rehearsalId,
     gas: { ...gasFrom(typed), fromText: HOME.address }, saveAsHome: HOME,
   }, mctx);
-  assert.deepEqual((await getDriving(memberUid))?.home, HOME);
+  assert.deepEqual((await getDriving(ctx, memberUid))?.home, HOME);
 });
 
 test("setAsRehearsalLocation (admins): the typed To becomes the rehearsal's location", async () => {
@@ -188,7 +188,7 @@ test("setAsRehearsalLocation (admins): the typed To becomes the rehearsal's loca
     amount: est.estimateCents, what: "Gas", category: "travel", rehearsalId: bare,
     gas: gasFrom(est), setAsRehearsalLocation: { name: LOFT.name, address: LOFT.address, lat: LOFT.lat, lng: LOFT.lng },
   }, ctx);
-  const r = (await db.get("rehearsals", bare)) as any;
+  const r = (await db.get(SYS, "rehearsals", bare)) as any;
   assert.equal(r.location?.address, LOFT.address);
   assert.equal(r.location?.name, LOFT.name);
   assert.equal(r.location?.lat, LOFT.lat);
@@ -203,7 +203,7 @@ test("setAsRehearsalLocation: a member is refused and the rehearsal's location i
     }, mctx),
     (e: any) => e instanceof AppError && e.status === 403,
   );
-  const r = (await db.get("rehearsals", rehearsalId)) as any;
+  const r = (await db.get(SYS, "rehearsals", rehearsalId)) as any;
   assert.equal(r.location?.address, LOFT.address);
 });
 
@@ -215,15 +215,15 @@ test("migrate:driving moves users/{uid}/private/driving onto the users doc as on
   await old(ctx.uid).set({ mpg: 22, fuelGrade: "midgrade", updatedAt: Timestamp.now() }); // MPG but no car name
   const dry = await migrateDriving({ apply: false });
   assert.equal(dry.moved.length, 2);
-  assert.deepEqual(await getDriving(memberUid), {}, "a dry run changes nothing");
+  assert.deepEqual(await getDriving(ctx, memberUid), {}, "a dry run changes nothing");
   assert.ok((await old(memberUid).get()).exists);
 
   const r = await migrateDriving({ apply: true });
   assert.equal(r.moved.length, 2);
-  const m = await getDriving(memberUid);
+  const m = await getDriving(ctx, memberUid);
   assert.deepEqual(m.home, HOME);
   assert.deepEqual(m.cars?.map((c) => [c.name, c.mpg, c.fuelGrade]), [["2010 Honda Fit", 30, "regular"]]);
-  assert.deepEqual((await getDriving(ctx.uid)).cars?.map((c) => [c.name, c.mpg, c.fuelGrade]), [["Car", 22, "midgrade"]]);
+  assert.deepEqual((await getDriving(ctx, ctx.uid)).cars?.map((c) => [c.name, c.mpg, c.fuelGrade]), [["Car", 22, "midgrade"]]);
   assert.equal((await old(memberUid).get()).exists, false, "the old doc is gone");
   // the estimate reads the moved settings
   assert.equal((await cmd("expenses.estimateGas", { rehearsalId }, mctx)).estimateCents, 465);
@@ -262,14 +262,14 @@ test("me.updateDriving saves and clears the caller's own settings; cars keep the
   const saved = await cmd("me.updateDriving", { home: HOME, cars: [{ name: "Subaru", mpg: 28, fuelGrade: "midgrade" }] }, mctx);
   const id = saved.cars[0].id;
   assert.ok(id);
-  assert.deepEqual((await getDriving(memberUid)).home, HOME);
-  assert.equal((await getDriving(memberUid)).cars?.[0].fuelGrade, "midgrade");
+  assert.deepEqual((await getDriving(ctx, memberUid)).home, HOME);
+  assert.equal((await getDriving(ctx, memberUid)).cars?.[0].fuelGrade, "midgrade");
   // rename it and add a second; mpg is kept when it is not sent
   await cmd("me.updateDriving", { cars: [{ id, name: "Outback" }, { name: "Fit", mpg: 34 }] }, mctx);
-  const two = await getDriving(memberUid);
+  const two = await getDriving(ctx, memberUid);
   assert.deepEqual(two.cars?.map((c) => [c.id === id, c.name, c.mpg, c.fuelGrade]), [[true, "Outback", 28, "midgrade"], [false, "Fit", 34, "regular"]]);
   await cmd("me.updateDriving", { cars: [{ id, name: "Outback", mpg: null }] }, mctx);
-  const after = await getDriving(memberUid);
+  const after = await getDriving(ctx, memberUid);
   assert.deepEqual(after.cars?.map((c) => [c.name, c.mpg]), [["Outback", undefined]], "mpg null clears it; a car left out is removed");
   assert.deepEqual(after.home, HOME, "untouched fields stay");
   await assert.rejects(cmd("me.updateDriving", { cars: [{ id: "nope", name: "X" }] }, mctx), (e: AppError) => e.code === "invalid_input");
@@ -299,17 +299,17 @@ test("several cars: the estimate asks which (cars listed, missing car); carId pi
   const est = await cmd("expenses.estimateGas", { forId: memberUid, rehearsalId, carId: outback.id, mpg: 25 }, ctx);
   const { id } = await cmd("expenses.add", { amount: est.estimateCents, what: "Gas", category: "gas", userId: memberUid, rehearsalId,
     gas: { ...gasFrom(est), carName: est.carName }, saveMpg: true, carId: outback.id }, ctx);
-  assert.equal((await db.get("expenses", id))!.gas.carName, "Outback");
-  assert.deepEqual((await getDriving(memberUid)).cars?.map((c) => c.mpg), [25, 14]);
+  assert.equal((await db.get(SYS, "expenses", id))!.gas.carName, "Outback");
+  assert.deepEqual((await getDriving(ctx, memberUid)).cars?.map((c) => c.mpg), [25, 14]);
 });
 
 test("driving settings are an ordinary field: history.undoRun puts them back", async () => {
   await setDriving(memberUid, { home: HOME, cars: [{ name: "Subaru", mpg: 28 }] });
   const run1 = { ...ctx, runId: newRunId() };
   await cmd("people.updateDriving", { userId: memberUid, home: LOFT, cars: [] }, run1);
-  assert.equal((await getDriving(memberUid)).home?.address, LOFT.address);
+  assert.equal((await getDriving(ctx, memberUid)).home?.address, LOFT.address);
   await cmd("history.undoRun", { runId: run1.runId }, { ...ctx, runId: newRunId() });
-  const back = await getDriving(memberUid);
+  const back = await getDriving(ctx, memberUid);
   assert.deepEqual(back.home, HOME);
   assert.deepEqual(back.cars?.map((c) => [c.name, c.mpg]), [["Subaru", 28]]);
   // a gas expense that saved an MPG: undoing that run takes both back
@@ -319,7 +319,7 @@ test("driving settings are an ordinary field: history.undoRun puts them back", a
   assert.equal(await mpgOf(memberUid), 33);
   await cmd("history.undoRun", { runId: run2.runId }, { ...ctx, runId: newRunId() });
   assert.equal(await mpgOf(memberUid), 28);
-  assert.ok((await db.get("expenses", id))!.deletedAt, "the expense is undone too");
+  assert.ok((await db.get(SYS, "expenses", id))!.deletedAt, "the expense is undone too");
 });
 
 test("geo.autocomplete returns places with coordinates (and county/state for the price ladder)", async () => {
@@ -334,11 +334,11 @@ test("geo.autocomplete returns places with coordinates (and county/state for the
 
 test("MCP: estimate a bandmate's gas, save their car, and log the expense in their name", async () => {
   const { callTool } = await import("../../mcp/tools");
-  const tctx: Ctx = { uid: ctx.uid, role: "mcp", via: "mcp", runId: newRunId() };
+  const tctx: Ctx = { uid: ctx.uid, artistId: TEST_ARTIST, role: "mcp", via: "mcp", runId: newRunId() };
   const call = async (name: string, args: unknown) => JSON.parse((await callTool(name, args, async () => tctx)).content[0].text);
   const saved = await call("people.updateDriving", { userId: memberUid, cars: [{ name: "2010 Honda Fit", mpg: 30 }] });
   assert.equal(saved.result.cars[0].mpg, 30);
-  assert.equal((await getDriving(memberUid)).cars?.[0].name, "2010 Honda Fit");
+  assert.equal((await getDriving(ctx, memberUid)).cars?.[0].name, "2010 Honda Fit");
   const est = (await call("expenses.estimateGas", { forId: memberUid, from: HOME, to: LOFT })).result;
   assert.deepEqual(est.missing, []);
   assert.equal(est.mpg, 30, "the only car's MPG is used");
@@ -349,20 +349,20 @@ test("MCP: estimate a bandmate's gas, save their car, and log the expense in the
     gas: { ...nums, fromText: HOME.address, to: LOFT, estimateCents },
   });
   assert.ok(add.result?.id, JSON.stringify(add));
-  const x = (await db.get("expenses", add.result.id))!;
+  const x = (await db.get(SYS, "expenses", add.result.id))!;
   assert.equal(x.userId, memberUid);
   assert.equal(x.payBack, true);
   assert.equal(x.gas.overridden, false);
   assert.equal(x.gas.mpg, 30);
   const upd = await call("expenses.update", { id: add.result.id, patch: { amount: estimateCents + 100 } });
   assert.ok(!upd.error, JSON.stringify(upd));
-  assert.equal((await db.get("expenses", add.result.id))!.gas.overridden, true);
+  assert.equal((await db.get(SYS, "expenses", add.result.id))!.gas.overridden, true);
   // A driver who covers their own gas: no pay back, and the typed addresses stay on the expense.
   const own = await call("expenses.add", {
     amount: estimateCents, what: "Gas", category: "gas", userId: memberUid, payBack: false,
     gas: { ...nums, fromKind: "typed", fromText: HOME.address, to: LOFT, estimateCents },
   });
-  const o = (await db.get("expenses", own.result.id))!;
+  const o = (await db.get(SYS, "expenses", own.result.id))!;
   assert.equal(o.payBack, false);
   assert.equal(o.gas.fromText, HOME.address);
   assert.equal(o.gas.to.address, LOFT.address);

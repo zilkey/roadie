@@ -1,6 +1,8 @@
 /**
  * Restore a backup folder made by scripts/backup.ts.
- *   tsx scripts/restore.ts <backups/2026-10-23> [--overwrite] [--yes] [--dry-run]
+ *   tsx scripts/restore.ts <backups/2026-10-23> [--artist <id>] [--overwrite] [--yes] [--dry-run]
+ * `--artist <id>`: a backup from before tenancy phase 4 has records with no artistId; they are stamped in memory first, with the
+ * phase-3 backfill's rules (src/server/backup.ts stampDump), and the named artist takes records a script or import made.
  * Every document is validated with the Zod schemas first; if any fails, nothing is written. Collections the server keeps outside
  * db.ts (SERVER_KEPT in src/server/backup.ts: Roadie threads, prefs, Google and Meta connections, caches) are restored as they are.
  * Refuses to touch a database that already has data unless --overwrite. Against real Firestore (no emulator host) it also needs --yes.
@@ -9,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { firestore } from "@/server/admin";
-import { restoreDump, validateDump, type Dump } from "@/server/backup";
+import { restoreDump, stampDump, validateDump, type Dump } from "@/server/backup";
 
 export function loadBackup(dir: string): Dump {
   const dump: Dump = {};
@@ -23,8 +25,14 @@ export function loadBackup(dir: string): Dump {
 async function main() {
   const dir = process.argv[2];
   const flag = (n: string) => process.argv.includes(`--${n}`);
-  if (!dir || dir.startsWith("--")) throw new Error("Usage: tsx scripts/restore.ts <backup folder> [--overwrite] [--yes] [--dry-run]");
+  if (!dir || dir.startsWith("--")) throw new Error("Usage: tsx scripts/restore.ts <backup folder> [--artist <id>] [--overwrite] [--yes] [--dry-run]");
   const dump = loadBackup(dir);
+  const at = process.argv.indexOf("--artist");
+  if (at > 0) {
+    const artist = process.argv[at + 1];
+    if (!artist || artist.startsWith("--")) throw new Error("--artist needs an artist id");
+    console.log(`Stamped ${stampDump(dump, artist)} rows with their artist (default ${artist}).`);
+  }
   const errors = validateDump(dump);
   if (errors.length) {
     console.error(`${errors.length} document(s) failed validation, nothing written:\n` + errors.slice(0, 50).join("\n"));

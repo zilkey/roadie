@@ -12,7 +12,7 @@
  */
 import { db } from "@/server/db";
 import { firestore } from "@/server/admin";
-import { importCtx, newRunId } from "@/server/ctx";
+import { newRunId, systemCtx } from "@/server/ctx";
 import { applyDriving, type CarIn } from "@/server/driving";
 import type { FuelGrade, GeoPoint } from "@/schema";
 
@@ -23,13 +23,13 @@ export interface MigrateDrivingResult { apply: boolean; runId: string; moved: Mo
 export async function migrateDriving(opts: { apply: boolean; log?: (s: string) => void }): Promise<MigrateDrivingResult> {
   const log = opts.log ?? (() => undefined);
   const runId = newRunId();
-  const ctx = importCtx("migrate-driving", runId);
+  const ctx = systemCtx("migrate-driving", { runId });
   const out: MigrateDrivingResult = { apply: opts.apply, runId, moved: [], kept: [], skipped: [] };
   const docs = (await firestore().collectionGroup("private").get()).docs.filter((d) => d.id === "driving" && d.ref.parent.parent?.parent.id === "users");
   for (const d of docs) {
     const uid = d.ref.parent.parent!.id;
     const old = d.data() as Old;
-    const user = await db.get("users", uid);
+    const user = await db.get(ctx, "users", uid);
     if (!user || user.deletedAt) { out.skipped.push({ uid, reason: "no live user (old doc left as it is)" }); continue; }
     const name = (user.name as string) ?? uid;
     if (user.driving) {

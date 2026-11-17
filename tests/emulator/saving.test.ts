@@ -8,31 +8,31 @@ import { dispatch } from "@/server/commands/dispatch";
 import { firestore } from "@/server/admin";
 import { clearDraft, listDrafts, saveDraft } from "@/server/drafts";
 import { DRAFT_TTL_MS, DRAFT_PATH, draftDocId, draftPath, pathOfDocId, isEditPath } from "@/schema/drafts";
-import { resetEmulators, makeUser, venue, approveTestEditors } from "./helpers";
+import { resetEmulators, makeUser, venue, approveTestEditors, SYS, TEST_ARTIST } from "./helpers";
 
 // Venues stand in for any record here; the people editing them are approved shared editors, as on prod.
 beforeEach(async () => { await resetEmulators(); await approveTestEditors("rudy", "felix"); });
 const T0 = new Date("2026-10-01T12:00:00Z");
 const at = (ms: number) => new Date(T0.getTime() + ms);
 /** An app autosave caller with an injectable clock. */
-const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, role: "admin", via: "app", runId: newRunId(), autosave: true, now: at(ms), ...extra });
-const hist = (id: string) => db.listGroup("history", (q) => q.where("entity.id", "==", id));
-const mk = async (name = "Deep End") => (await db.create(importCtx("setup"), "venues", venue(name, "Denver", { website: "orig", capacity: 100 }))).id;
+const app = (uid: string, ms = 0, extra: Partial<Ctx> = {}): Ctx => ({ uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId(), autosave: true, now: at(ms), ...extra });
+const hist = (id: string) => db.listGroup(SYS, "history", (q) => q.where("entity.id", "==", id));
+const mk = async (name = "Deep End") => (await db.create(importCtx(TEST_ARTIST, "setup"), "venues", venue(name, "Denver", { website: "orig", capacity: 100 }))).id;
 const bearer = (t: string) => `Bearer ${t}`;
 
 test("rev: 1 on create, +1 per write, none-yet treated as 0, history carries docRev", async () => {
   const id = await mk();
-  assert.equal((await db.get("venues", id))!.rev, 1);
-  await db.update(importCtx("a"), "venues", id, { website: "b" });
-  await db.update(importCtx("a"), "venues", id, { website: "c" });
-  assert.equal((await db.get("venues", id))!.rev, 3);
+  assert.equal((await db.get(SYS, "venues", id))!.rev, 1);
+  await db.update(SYS, "venues", id, { website: "b" });
+  await db.update(SYS, "venues", id, { website: "c" });
+  assert.equal((await db.get(SYS, "venues", id))!.rev, 3);
   assert.deepEqual((await hist(id)).map((h) => h.docRev).sort(), [1, 2, 3]);
-  await db.update(importCtx("a"), "venues", id, { website: "c" }); // no change = no write
-  assert.equal((await db.get("venues", id))!.rev, 3);
+  await db.update(SYS, "venues", id, { website: "c" }); // no change = no write
+  assert.equal((await db.get(SYS, "venues", id))!.rev, 3);
   // a document from before rev existed counts as 0
   await firestore().collection("venues").doc(id).update({ rev: (await import("firebase-admin/firestore")).FieldValue.delete() });
-  await db.update(importCtx("a"), "venues", id, { website: "d" });
-  assert.equal((await db.get("venues", id))!.rev, 1);
+  await db.update(SYS, "venues", id, { website: "d" });
+  assert.equal((await db.get(SYS, "venues", id))!.rev, 1);
 });
 
 test("coalescing: autosave patches within 2 minutes fold into one history entry, and not after", async () => {
@@ -49,8 +49,8 @@ test("coalescing: autosave patches within 2 minutes fold into one history entry,
   assert.equal(h[0].docRev, 4);
   assert.equal(c2.runId, c1.runId, "folded saves report the entry's runId");
   assert.equal(c3.runId, c1.runId);
-  assert.equal((await db.get("venues", id))!.runId, c1.runId);
-  assert.equal((await db.get("venues", id))!.rev, 4, "rev still +1 per write");
+  assert.equal((await db.get(SYS, "venues", id))!.runId, c1.runId);
+  assert.equal((await db.get(SYS, "venues", id))!.rev, 4, "rev still +1 per write");
   // 2 minutes after the LAST fold: a new decision
   const c4 = app("rudy", 90_000 + COALESCE_MS + 1);
   await db.update(c4, "venues", id, { website: "later" });
@@ -79,7 +79,7 @@ test("undo of a coalesced entry puts the field back to the value before the whol
   await db.update(app("rudy", 1000, { runId: newRunId() }), "venues", id, { website: "hello" });
   const rep = await undoRun({ ...app("rudy", 5000), autosave: false }, c.runId);
   assert.equal(rep.reverted.length, 1);
-  assert.equal((await db.get("venues", id))!.website, "orig");
+  assert.equal((await db.get(SYS, "venues", id))!.website, "orig");
 });
 
 test("undo skips a field changed again since, and leaves the newer value", async () => {
@@ -88,7 +88,7 @@ test("undo skips a field changed again since, and leaves the newer value", async
   await db.update(c, "venues", id, { website: "mine", capacity: 150 });
   await db.update(app("felix", 5000), "venues", id, { website: "felix's" });
   const rep = await undoRun({ ...app("rudy", 9000), autosave: false }, c.runId);
-  const v = (await db.get("venues", id))!;
+  const v = (await db.get(SYS, "venues", id))!;
   assert.equal(v.website, "felix's", "not overwritten");
   assert.equal(v.capacity, 100, "the other field still reverts");
   assert.deepEqual(rep.reverted[0].skippedFields, ["website"]);
@@ -99,7 +99,7 @@ test("undo skips a field changed again since, and leaves the newer value", async
   const rep2 = await undoRun({ ...app("rudy", 20_002_000), autosave: false }, c2.runId);
   assert.equal(rep2.reverted.length, 0);
   assert.equal(rep2.changedSince.length, 1);
-  assert.equal((await db.get("venues", id))!.website, "felix again");
+  assert.equal((await db.get(SYS, "venues", id))!.website, "felix again");
 });
 
 test("baseRev: a field changed by someone else since is a conflict naming who and the value; other fields and own changes are fine", async () => {
@@ -107,8 +107,8 @@ test("baseRev: a field changed by someone else since is a conflict naming who an
   const felix = await makeUser("felix@example.com", "admin", { name: "Felix" });
   const rudy = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   await approveTestEditors(felix.uid, rudy.uid);
-  const base = (await db.get("venues", id))!.rev as number;
-  await db.update({ ...importCtx(felix.uid), via: "app" }, "venues", id, { website: "from Felix" });
+  const base = (await db.get(SYS, "venues", id))!.rev as number;
+  await db.update({ ...importCtx(TEST_ARTIST, felix.uid), via: "app" }, "venues", id, { website: "from Felix" });
   const send = (patch: Record<string, unknown>, baseRev: number) =>
     dispatch("venues.update", bearer(rudy.token), { id, patch, _meta: { baseRev, autosave: true } });
   const bad = await send({ website: "from Rudy" }, base);
@@ -117,15 +117,15 @@ test("baseRev: a field changed by someone else since is a conflict naming who an
   assert.equal(err.code, "conflict");
   assert.equal(err.message, 'Felix changed website to "from Felix"');
   assert.equal(err.data.conflicts[0].by, "Felix");
-  assert.equal((await db.get("venues", id))!.website, "from Felix", "nothing overwritten");
+  assert.equal((await db.get(SYS, "venues", id))!.website, "from Felix", "nothing overwritten");
   // a different field is not in conflict
   assert.equal((await send({ capacity: 90 }, base)).status, 200);
   // with the current rev it goes through
   assert.equal((await send({ website: "from Rudy" }, err.data.currentRev)).status, 200);
-  assert.equal((await db.get("venues", id))!.website, "from Rudy");
+  assert.equal((await db.get(SYS, "venues", id))!.website, "from Rudy");
   // the response tells the client the new rev
-  const ok = await send({ website: "from Rudy 2" }, (await db.get("venues", id))!.rev as number);
-  assert.equal((ok.json as { revs: Record<string, number> }).revs[id], (await db.get("venues", id))!.rev);
+  const ok = await send({ website: "from Rudy 2" }, (await db.get(SYS, "venues", id))!.rev as number);
+  assert.equal((ok.json as { revs: Record<string, number> }).revs[id], (await db.get(SYS, "venues", id))!.rev);
 });
 
 test("clientMutationId: a repeat returns the first result and does not write twice; failures can be retried; ids are per command and person", async () => {
@@ -139,7 +139,7 @@ test("clientMutationId: a repeat returns the first result and does not write twi
   assert.equal(B.result.id, A.result.id);
   assert.equal(B.runId, A.runId);
   assert.equal(B.repeated, true);
-  assert.equal((await db.list("venues")).filter((v) => v.name === "Double Tap").length, 1);
+  assert.equal((await db.list(SYS, "venues")).filter((v) => v.name === "Double Tap").length, 1);
   const m = (await firestore().collection("mutations").doc("abcdefgh-1234").get()).data()!;
   assert.equal(m.status, "done");
   assert.equal((m.expiresAt as Timestamp).toMillis() - (m.createdAt as Timestamp).toMillis(), 7 * 86_400_000);
@@ -147,7 +147,7 @@ test("clientMutationId: a repeat returns the first result and does not write twi
   const body2 = { ...venue("Race"), _meta: { clientMutationId: "race-race-1" } };
   const [r1, r2] = await Promise.all([dispatch("venues.create", bearer(rudy.token), body2), dispatch("venues.create", bearer(rudy.token), body2)]);
   assert.equal(r1.status, 200); assert.equal(r2.status, 200);
-  assert.equal((await db.list("venues")).filter((v) => v.name === "Race").length, 1);
+  assert.equal((await db.list(SYS, "venues")).filter((v) => v.name === "Race").length, 1);
   // someone else cannot reuse the id
   assert.equal((await dispatch("venues.create", bearer(felix.token), body)).status, 409);
   // a failed call releases the id so the retry runs
@@ -171,7 +171,7 @@ test("autosave through dispatch coalesces and returns the folded runId for Undo"
   assert.equal(r1, r2);
   const u = await dispatch("history.undoRun", bearer(rudy.token), { runId: r2 });
   assert.equal(u.status, 403 === u.status ? 403 : 200); // admins may undo
-  assert.equal((await db.get("venues", id))!.website, "orig");
+  assert.equal((await db.get(SYS, "venues", id))!.website, "orig");
 });
 
 const draftDoc = async (uid: string, path: string) => (await firestore().collection("unsubmittedDrafts").doc(draftDocId(uid, path)).get()).data();
@@ -198,7 +198,7 @@ test("drafts: keyed by uid + path, last write wins, list newest first and own on
   assert.equal((await listDrafts(felix.uid)).length, 0);
   const l = await call(rudy.token, "drafts.list", {});
   assert.deepEqual((l.json as { result: { drafts: { path: string }[] } }).result.drafts.map((d) => d.path).sort(), ["expenses", "venues/v1/contacts"]);
-  assert.equal((await db.listGroup("history")).filter((h) => h.entity.kind === "unsubmittedDrafts").length, 0, "drafts do not flood history");
+  assert.equal((await db.listGroup(SYS, "history")).filter((h) => h.entity.kind === "unsubmittedDrafts").length, 0, "drafts do not flood history");
   // edits to an existing record: doc path, with the rev they were made against
   await call(rudy.token, "drafts.save", { path: draftPath.edit("shows", "s1"), values: { bandNotes: "x" }, route: "/shows/s1", title: "Fox", rev: 3 });
   assert.equal((await draftDoc(rudy.uid, "shows/s1"))!.rev, 3);

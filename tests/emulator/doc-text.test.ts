@@ -9,7 +9,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { docContentFromText, type DocContent } from "@/schema/docContent";
-import { resetEmulators, makeUser } from "./helpers";
+import { resetEmulators, makeUser, SYS, TEST_ARTIST } from "./helpers";
 
 // #18: a Google Doc read through the Docs API (tabs, tables, bold and italic) into DocContent, cached on the file with the doc's
 // modifiedTime; Drive's text/plain export is the fallback when the Docs API refuses.
@@ -40,8 +40,8 @@ beforeEach(async () => {
   await fetch(process.env.DRIVE_BASE_URL + "/__reset", { method: "POST" });
   const a = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   const m = await makeUser("hugo@example.com", "member", { name: "Hugo" });
-  admin = { uid: a.uid, role: "admin", via: "app", runId: newRunId() };
-  member = { uid: m.uid, role: "member", via: "app", runId: newRunId() };
+  admin = { uid: a.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
+  member = { uid: m.uid, artistId: TEST_ARTIST, role: "member", via: "app", runId: newRunId() };
   songId = (await db.create(admin, "songs", { title: "Glass Coast", status: "active" })).id;
 });
 
@@ -56,7 +56,7 @@ test("files.docText: the first view exports the doc and caches text and modified
   assert.match(r.text, /F#m {10}D {12}A\nSalt on the window/);
   assert.equal(r.content.tabs.length, 1);
   assert.deepEqual(r.content.tabs[0].blocks[3], { type: "p", runs: [{ t: "F#m          D            A" }] }, "spaces kept");
-  const f = await db.get("files", id);
+  const f = await db.get(SYS, "files", id);
   assert.equal(f!.docText, GLASS_COAST_LYRICS.trimEnd());
   assert.deepEqual(f!.docContent, r.content);
   assert.equal(f!.docModifiedTime, "2026-09-01T12:00:00.000Z");
@@ -65,19 +65,19 @@ test("files.docText: the first view exports the doc and caches text and modified
 test("files.docText: an unchanged doc is not exported again and the file is not rewritten; an edited one is", async () => {
   const id = await lyricsFile();
   await cmd("files.docText", { id }, admin);
-  const rev = (await db.get("files", id))!.rev;
+  const rev = (await db.get(SYS, "files", id))!.rev;
   // the cache answers when modifiedTime is unchanged: a stale cached copy proves the doc wasn't read again
   await db.update(admin, "files", id, { docText: "cached", docContent: docContentFromText("cached") });
-  const rev2 = (await db.get("files", id))!.rev;
+  const rev2 = (await db.get(SYS, "files", id))!.rev;
   const again = await cmd("files.docText", { id }, admin);
   assert.equal(again.text, "cached");
   assert.deepEqual(again.content, docContentFromText("cached"));
-  assert.equal((await db.get("files", id))!.rev, rev2, "no write when nothing changed");
+  assert.equal((await db.get(SYS, "files", id))!.rev, rev2, "no write when nothing changed");
   assert.ok(rev2 > rev);
   // an edit in Docs bumps modifiedTime: the next view exports the new text
   await fake("/files/fake-lyrics-1/__doc", { text: "New words" });
   assert.equal((await cmd("files.docText", { id }, admin)).text, "New words");
-  const f = await db.get("files", id);
+  const f = await db.get(SYS, "files", id);
   assert.equal(f!.docText, "New words");
   assert.deepEqual(f!.docContent!.tabs[0].blocks, [{ type: "p", runs: [{ t: "New words" }] }]);
   assert.notEqual(f!.docModifiedTime, "2026-09-01T12:00:00.000Z");
@@ -88,7 +88,7 @@ test("files.docText: a doc the band account can't read is noAccess (not an error
   const id = await lyricsFile("fake-lyrics-1", { docText: "old", docModifiedTime: "2026-09-01T12:00:00.000Z" });
   await fake("/files/fake-lyrics-1/__doc", { noAccess: true });
   assert.deepEqual(await cmd("files.docText", { id }, member), { status: "noAccess" });
-  assert.equal((await db.get("files", id))!.docText, "old");
+  assert.equal((await db.get(SYS, "files", id))!.docText, "old");
   // gone from Drive (404) reads the same
   const gone = await lyricsFile("no-such-doc");
   assert.deepEqual(await cmd("files.docText", { id: gone }, member), { status: "noAccess" });
@@ -98,7 +98,7 @@ test("files.docText: a text-only cache from before (no docContent) is read again
   const id = await lyricsFile("fake-lyrics-1", { docText: "old", docModifiedTime: "2026-09-01T12:00:00.000Z" });
   const r = await cmd("files.docText", { id }, admin);
   assert.equal(r.text, GLASS_COAST_LYRICS.trimEnd());
-  assert.ok((await db.get("files", id))!.docContent);
+  assert.ok((await db.get(SYS, "files", id))!.docContent);
 });
 
 test("files.docText: a doc with tabs and tables comes back as tabs of tables with bold and italic", async () => {

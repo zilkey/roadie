@@ -14,16 +14,12 @@ const owner = z.string().min(1).nullable();
 
 async function requireTodo(w: Writer, id: string) {
   const t = await w.get("todos", id);
-  if (!t || t.deletedAt || (w.ctx.artistId && t.artistId !== w.ctx.artistId)) throw new AppError("not_found", "To do not found", 404);
+  if (!t || t.deletedAt) throw new AppError("not_found", "To do not found", 404);
   return t;
 }
 async function requireMusician(w: Writer, id: string) {
   const m = await w.get("musicians", id);
   if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
-}
-function artistOf(w: Writer) {
-  if (!w.ctx.artistId) throw new AppError("invalid_input", "Which artist? Open one first", 400);
-  return w.ctx.artistId;
 }
 
 export const todosAdd = defineCommand({
@@ -32,7 +28,7 @@ export const todosAdd = defineCommand({
   run: (ctx, i) => run(ctx, async (w) => {
     if (i.ownerId) await requireMusician(w, i.ownerId);
     const pin = i.pinned ? { pinnedAt: w.now.toDate().toISOString(), pinnedBy: ctx.uid } : {};
-    return w.create("todos", { artistId: artistOf(w), label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}), ...pin });
+    return w.create("todos", { label: i.label, done: false, ...(i.ownerId ? { ownerId: i.ownerId } : {}), ...pin });
   }),
 });
 

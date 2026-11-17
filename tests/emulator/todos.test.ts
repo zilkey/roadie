@@ -6,7 +6,7 @@ import { firestore } from "@/server/admin";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { todoPrefs } from "@/server/prefs";
 import { followUpFor } from "@/lib/booking";
-import { resetEmulators, makeArtist, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeArtist, makeUser, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -25,57 +25,57 @@ test("todos.* are admin-only and not Roadie's", () => {
 
 test("Our list: add, edit and pick who, tick (stamps who and when), untick, remove", async () => {
   await makeArtist("Nora Quill Band", "nora-quill-band");
-  const dean = (await db.create(importCtx(), "musicians", { name: "Dean", instruments: ["drums"], active: true })).id;
+  const dean = (await db.create(importCtx(TEST_ARTIST), "musicians", { name: "Dean", instruments: ["drums"], active: true })).id;
   const { id } = await cmd("todos.add", { label: "  Order more stickers " }, admin());
-  let t = (await db.get("todos", id))!;
+  let t = (await db.get(SYS, "todos", id))!;
   assert.equal(t.artistId, TEST_ARTIST);
   assert.equal(t.label, "Order more stickers");
   assert.equal(t.done, false);
   assert.equal(t.ownerId, undefined);
 
   await cmd("todos.edit", { id, label: "Order 500 stickers", ownerId: dean }, admin());
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.deepEqual([t.label, t.ownerId], ["Order 500 stickers", dean]);
   await assert.rejects(cmd("todos.edit", { id, label: "x", ownerId: "nobody" }, admin()), /Musician not found/);
   await cmd("todos.edit", { id, label: "Order 500 stickers", ownerId: null }, admin());
-  assert.equal((await db.get("todos", id))!.ownerId, undefined, "null unassigns");
+  assert.equal((await db.get(SYS, "todos", id))!.ownerId, undefined, "null unassigns");
   await assert.rejects(cmd("todos.edit", { id, label: "  ", ownerId: null }, admin()));
   // a field left out stays as it is: the page's text and who edits each send only their own
   await cmd("todos.edit", { id, ownerId: dean }, admin());
   await cmd("todos.edit", { id, label: "Order 600 stickers" }, admin());
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.deepEqual([t.label, t.ownerId], ["Order 600 stickers", dean]);
   await cmd("todos.edit", { id, label: "Order 500 stickers", ownerId: null }, admin());
 
   await cmd("todos.check", { id, done: true }, admin());
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.equal(t.done, true);
   assert.equal(t.doneBy, "u-admin");
   assert.ok(typeof t.doneAt === "string");
   await cmd("todos.check", { id, done: false }, admin());
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.deepEqual([t.done, t.doneAt, t.doneBy], [false, undefined, undefined]);
 
   await cmd("todos.remove", { id }, admin());
-  assert.ok((await db.get("todos", id))!.deletedAt);
+  assert.ok((await db.get(SYS, "todos", id))!.deletedAt);
   await assert.rejects(cmd("todos.check", { id, done: true }, admin()), /not found/);
 });
 
 test("Our list pins: add straight into Pinned, pin and unpin (shared, keeps the first pin)", async () => {
   await makeArtist("Nora Quill Band", "nora-quill-band");
   const { id } = await cmd("todos.add", { label: "Book the van", pinned: true }, admin());
-  let t = (await db.get("todos", id))!;
+  let t = (await db.get(SYS, "todos", id))!;
   assert.equal(t.pinnedBy, "u-admin");
   const first = t.pinnedAt;
   assert.ok(typeof first === "string");
   await cmd("todos.pin", { id, pinned: true }, admin("u-other"));
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.deepEqual([t.pinnedAt, t.pinnedBy], [first, "u-admin"]);
   await cmd("todos.pin", { id, pinned: false }, admin());
-  t = (await db.get("todos", id))!;
+  t = (await db.get(SYS, "todos", id))!;
   assert.deepEqual([t.pinnedAt, t.pinnedBy], [undefined, undefined]);
   const plain = (await cmd("todos.add", { label: "Renew ASCAP" }, admin())).id;
-  assert.equal((await db.get("todos", plain))!.pinnedAt, undefined);
+  assert.equal((await db.get(SYS, "todos", plain))!.pinnedAt, undefined);
 });
 
 test("another artist's to-do is not found", async () => {

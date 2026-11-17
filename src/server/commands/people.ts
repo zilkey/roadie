@@ -5,21 +5,23 @@ import { patchInput, idInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
 import { adminAuth } from "../admin";
 import { AppError } from "../errors";
-import type { Ctx } from "../ctx";
+import { systemCtx, type Ctx, type PersonCtx } from "../ctx";
 import { assertClaimsFit, syncClaims } from "../session";
 import { seedDefaultTemplates } from "../checklistTemplates";
 import { ensureDefaultProject } from "./projects";
 import { Configuration, MusicianInput, ArtistInput, UserInput, ArtistRole, TeamRole, TeamEmail, InstrumentList, OptionalEmail, PEOPLE_MESSAGES, slug, slugForArtist, roleIn, mcpIn, type Membership } from "@/schema";
 
 /** People commands act on the artist the caller is working in. */
-function artistOfCtx(ctx: Ctx): string {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-}
+const artistOfCtx = (ctx: Ctx): string => ctx.artistId;
 export const memberships = (u: Doc | null | undefined) => ((u?.artists ?? []) as Membership[]);
-/** Set this artist's membership (adding it if missing). AI access is stored on the membership, written for admins only (members and "ai" carry none). */
-export const withRole = (ms: Membership[], artistId: string, role: ArtistRole, mcp = false): Membership[] => {
-  const entry: Membership = { artistId, role, ...(role === "admin" ? { mcpAccess: mcp } : {}) };
+/**
+ * Set this artist's membership (adding it if missing), keeping its musician link. AI access is stored on the membership, written
+ * for admins only (members and "ai" carry none). `musicianId`: undefined keeps the link, null drops it, a string sets it.
+ */
+export const withRole = (ms: Membership[], artistId: string, role: ArtistRole, mcp = false, musicianId?: string | null): Membership[] => {
+  const prev = ms.find((m) => m.artistId === artistId)?.musicianId;
+  const mid = musicianId === undefined ? prev : musicianId ?? undefined;
+  const entry: Membership = { artistId, role, ...(role === "admin" ? { mcpAccess: mcp } : {}), ...(mid ? { musicianId: mid } : {}) };
   return ms.some((m) => m.artistId === artistId) ? ms.map((m) => (m.artistId === artistId ? entry : m)) : [...ms, entry];
 };
 
@@ -30,9 +32,15 @@ const MSG = {
   demoteSelf: "You can't demote yourself",
 } as const;
 
+/** The people in this artist (live users only): server `users` lists are scoped by `artistIds` (tenancy plan D3). */
+export async function usersOf(w: Writer, artistId: string): Promise<Doc[]> {
+  return (await w.query("users", (q) => q.where("artistIds", "array-contains", artistId))).filter((u) => !u.deletedAt && roleIn(u, artistId));
+}
+/** This person's musician in this artist (their membership's). */
+export const musicianIn = (u: Doc | null | undefined, artistId: string) => memberships(u).find((m) => m.artistId === artistId)?.musicianId;
 /** Admins of this artist (live users only). */
 async function adminsOf(w: Writer, artistId: string): Promise<Doc[]> {
-  return (await w.query("users")).filter((u) => !u.deletedAt && roleIn(u, artistId) === "admin");
+  return (await usersOf(w, artistId)).filter((u) => roleIn(u, artistId) === "admin");
 }
 /** Band Members who are still in the band: not archived and active. */
 async function bandOf(w: Writer): Promise<Doc[]> {
@@ -52,19 +60,21 @@ async function dropTeam(ctx: Ctx, w: Writer, user: Doc, artistId: string): Promi
   await w.softDelete("users", user.id);
   return true;
 }
-/** The live login linked to a musician (by either side of the link). */
+/** The live login in this artist linked to a musician (by either side of the link). */
 async function userOfMusician(w: Writer, m: Doc): Promise<Doc | null> {
-  if (m.userId) { const u = await w.get("users", m.userId as string); if (u && !u.deletedAt) return u; }
-  return (await w.query("users", (q) => q.where("musicianId", "==", m.id).limit(1)))[0] ?? null;
+  const artistId = w.ctx.artistId;
+  if (m.userId) { const u = await w.get("users", m.userId as string); if (u && !u.deletedAt && roleIn(u, artistId)) return u; }
+  return (await usersOf(w, artistId)).find((u) => musicianIn(u, artistId) === m.id) ?? null;
 }
 async function liveMusician(w: Writer, id: string): Promise<Doc> {
   const m = await w.get("musicians", id);
   if (!m || m.deletedAt) throw new AppError("not_found", "Musician not found", 404);
   return m;
 }
-async function afterTeamChange(uid: string) {
+/** New claims; sign-in is revoked only when their last membership went (a person in another artist stays signed in there). */
+async function afterTeamChange(uid: string, gone = true) {
   await syncClaims(uid);
-  await adminAuth().revokeRefreshTokens(uid);
+  if (gone) await adminAuth().revokeRefreshTokens(uid);
 }
 
 const personName = z.string().trim().min(1, PEOPLE_MESSAGES.name);
@@ -72,7 +82,7 @@ const personName = z.string().trim().min(1, PEOPLE_MESSAGES.name);
 export const usersAdd = defineCommand({
   name: "users.add",
   roles: ["admin"],
-  description: "Give a person Team access to this artist (role admin, or member shown as Standard; AI access only for admins). Someone already in another artist joins this one too. Link an existing Band Member with musicianId, or pass musician to make them a Band Member at the same time.",
+  description: "Give a person Team access to this artist (role admin, or member shown as Standard; AI access only for admins). Someone already in another artist gets an invite instead (returns {invited: true}); they join when they accept it. Link an existing Band Member with musicianId, or pass musician to make them a Band Member at the same time.",
   input: z.strictObject({
     email: TeamEmail,
     name: personName,
@@ -94,7 +104,7 @@ export const usersAdd = defineCommand({
     } catch {
       uid = (await auth.createUser({ email: input.email, displayName: input.name, emailVerified: true })).uid;
     }
-    const out = await run(ctx, async (w) => {
+    const out = await run(ctx, async (w): Promise<{ id: string; musicianId?: string; invited?: true }> => {
       const dupes = await w.query("users", (q) => q.where("email", "==", input.email));
       if (dupes.some((d) => d.id !== uid)) throw new AppError("duplicate", "That email is already a user", 409);
       let linked: Doc | null = null;
@@ -107,20 +117,25 @@ export const usersAdd = defineCommand({
       const existing = await w.get("users", uid);
       const live = existing && !existing.deletedAt ? existing : null;
       if (live && roleIn(live, artistId)) throw new AppError("duplicate", "That email is already a user", 409);
-      if (live?.musicianId && ((input.musicianId && input.musicianId !== live.musicianId) || input.musician)) throw new AppError("conflict", "That person is already linked to a musician", 409);
       const mcpAccess = input.role === "admin" && input.mcpAccess;
-      assertClaimsFit({ ...(live ?? {}), artists: withRole(memberships(live), artistId, input.role, mcpAccess) });
+      if (live && memberships(live).length) {
+        // Already in another artist: they join only when they accept (tenancy plan Q2-A). Until then this artist sees the invite only.
+        if ((await w.query("invites", (q) => q.where("email", "==", input.email).limit(1))).length) throw new AppError("duplicate", "That person is already invited", 409);
+        const inv = await w.create("invites", {
+          email: input.email, name: input.name, role: input.role, ...(mcpAccess ? { mcpAccess } : {}), invitedBy: ctx.uid,
+          ...(input.musician ? { musician: { instruments: input.musician.instruments } } : input.musicianId ? { musician: { musicianId: input.musicianId } } : {}),
+        });
+        return { id: inv.id, invited: true as const };
+      }
       const musicianId = input.musician
         ? (await w.create("musicians", { name: input.name, email: input.email, instruments: input.musician.instruments, active: true, userId: uid })).id
         : input.musicianId;
+      assertClaimsFit({ ...(live ?? {}), artists: withRole(memberships(live), artistId, input.role, mcpAccess, musicianId) });
+      if (input.musicianId) await w.update("musicians", input.musicianId, { userId: uid, ...(linked?.email ? {} : { email: input.email }) });
       if (live) {
-        // Already a login in another artist: join this one too, keeping their name and other memberships.
-        await w.update("users", uid, {
-          artists: withRole(memberships(live), artistId, input.role, mcpAccess),
-          ...(musicianId ? { musicianId } : {}),
-        });
+        await w.update("users", uid, { artists: withRole(memberships(live), artistId, input.role, mcpAccess, musicianId) });
       } else {
-        const doc = { email: input.email, name: input.name, artists: withRole([], artistId, input.role, mcpAccess), musicianId };
+        const doc = { email: input.email, name: input.name, artists: withRole([], artistId, input.role, mcpAccess, musicianId) };
         if (existing?.deletedAt) {
           await w.restore("users", uid);
           await w.update("users", uid, doc);
@@ -128,9 +143,9 @@ export const usersAdd = defineCommand({
           await w.create("users", doc, { id: uid });
         }
       }
-      if (input.musicianId) await w.update("musicians", input.musicianId, { userId: uid, ...(linked?.email ? {} : { email: input.email }) });
-      return { id: uid, musicianId };
+      return { id: uid, ...(musicianId ? { musicianId } : {}) };
     });
+    if (out.invited) return out;
     await syncClaims(uid);
     return out;
   },
@@ -154,18 +169,21 @@ export const usersUpdate = defineCommand({
       const current = roleIn(before, artistId);
       const effective = (role as ArtistRole | undefined) ?? current;
       if (current === "admin" && effective !== "admin" && (await adminsOf(w, artistId)).every((a) => a.id === id)) throw new AppError("forbidden", MSG.lastAdmin, 409);
-      const next: Record<string, unknown> = { ...rest };
+      const { musicianId: mid, name, ...others } = rest as { musicianId?: string | null; name?: string };
+      void others;
+      // A person in several artists: their name is theirs (me.*); this artist changes only its own membership.
+      const next: Record<string, unknown> = name !== undefined && memberships(before).length <= 1 ? { name } : {};
       if (effective === "member" && wantMcp === true) throw mcpIssue();
-      // AI access lives on this artist's membership only; other artists' memberships are left as they are.
-      if (effective !== "ai" && (role || wantMcp !== undefined)) {
-        next.artists = withRole(memberships(before), artistId, effective as ArtistRole, effective === "admin" && !!(wantMcp ?? mcpIn(before, artistId)));
-      }
-      const res = await w.update("users", id, next);
-      const mid = patch.musicianId as string | null | undefined;
-      if (mid !== undefined) {
-        if (before.musicianId && before.musicianId !== mid) await w.update("musicians", before.musicianId, { userId: null });
+      const was = musicianIn(before, artistId);
+      if (mid !== undefined && mid !== (was ?? null)) {
+        if (was) await w.update("musicians", was, { userId: null });
         if (mid) await w.update("musicians", mid, { userId: id });
       }
+      // AI access and the musician link live on this artist's membership only; other artists' memberships are left as they are.
+      if (effective !== "ai" && (role || wantMcp !== undefined || mid !== undefined)) {
+        next.artists = withRole(memberships(before), artistId, effective as ArtistRole, effective === "admin" && !!(wantMcp ?? mcpIn(before, artistId)), mid);
+      }
+      const res = await w.update("users", id, next);
       return { res };
     });
     await syncClaims(id);
@@ -181,13 +199,15 @@ export const usersRemove = defineCommand({
   input: idInput,
   async run(ctx, { id }) {
     const artistId = artistOfCtx(ctx);
-    await run(ctx, async (w) => {
+    const gone = await run(ctx, async (w) => {
       const u = await w.get("users", id);
       if (!u || u.deletedAt || !roleIn(u, artistId)) throw new AppError("not_found", "User not found", 404);
+      const mid = musicianIn(u, artistId);
       const deleted = await dropTeam(ctx, w, u, artistId);
-      if (deleted && u.musicianId) await w.update("musicians", u.musicianId, { userId: null });
+      if (deleted && mid) await w.update("musicians", mid, { userId: null });
+      return deleted;
     });
-    await afterTeamChange(id);
+    await afterTeamChange(id, gone);
     return { id };
   },
 });
@@ -202,14 +222,15 @@ export const usersAddToBand = defineCommand({
     return run(ctx, async (w) => {
       const u = await w.get("users", id);
       if (!u || u.deletedAt || !roleIn(u, artistId)) throw new AppError("not_found", "User not found", 404);
-      const m = u.musicianId ? await w.get("musicians", u.musicianId as string) : null;
+      const mid = musicianIn(u, artistId);
+      const m = mid ? await w.get("musicians", mid) : null;
       if (m && !m.deletedAt) {
         if (!m.archivedAt && m.active !== false) throw new AppError("conflict", `${m.name} is already in the band`, 409);
         await w.update("musicians", m.id, { archivedAt: null, active: true, instruments, userId: id });
         return { id, musicianId: m.id };
       }
       const created = await w.create("musicians", { name: u.name, email: u.email, instruments, active: true, userId: id });
-      await w.update("users", id, { musicianId: created.id });
+      await w.update("users", id, { artists: withRole(memberships(u), artistId, roleIn(u, artistId) as ArtistRole, mcpIn(u, artistId), created.id) });
       return { id, musicianId: created.id };
     });
   },
@@ -246,11 +267,11 @@ async function leaveBand(ctx: Ctx, id: string, dropTeamAccess: boolean) {
     const archiving = !m.archivedAt;
     if (archiving && !(await bandOf(w)).some((x) => x.id !== id)) throw new AppError("forbidden", MSG.lastBandMember, 409);
     const unlink = team ? await dropTeam(ctx, w, team, artistId) : false;
-    if (!archiving && !unlink) return { changed: false, uid: team?.id };
+    if (!archiving && !unlink) return { changed: false, uid: team?.id, gone: false };
     await w.update("musicians", id, { ...(archiving ? { archivedAt: new Date(), active: false } : {}), ...(unlink ? { userId: null } : {}) });
-    return { changed: true, uid: team?.id };
+    return { changed: true, uid: team?.id, gone: unlink };
   });
-  if (out.uid) await afterTeamChange(out.uid);
+  if (out.uid) await afterTeamChange(out.uid, out.gone);
   return { id, changed: out.changed };
 }
 
@@ -303,16 +324,16 @@ const withConfigIds = <T extends { configurations?: z.infer<typeof ConfigIn>[] |
 const ArtistIn = ArtistInput.omit({ songFields: true, showFields: true, google: true, bookingMail: true, driveFolderId: true, rehearsalFolderId: true, shortcutUrl: true, chartsFolderId: true, demosFolderId: true, songwritingFolderId: true, postFoldersId: true, calendar: true }).extend({ configurations: z.array(ConfigIn) });
 
 /** Slugs are unique across artists (they are the URL: /artists/{slug}). Checked inside the write. */
-export async function requireFreeSlug(w: Writer, value: string, self?: string) {
-  const taken = (await w.query("artists", (q) => q.where("slug", "==", value), { includeDeleted: true })).filter((a) => a.id !== self);
+export async function requireFreeSlug(w: Writer<Ctx | PersonCtx>, value: string, self?: string) {
+  const taken = (await w.system(() => w.query("artists", (q) => q.where("slug", "==", value), { includeDeleted: true }))).filter((a) => a.id !== self);
   if (taken.length) throw new AppError("slug_taken", `Another artist already uses "${value}"`, 409, [{ path: "slug", message: "Already taken" }]);
 }
 /** The first free slug for a name: "nora-quill", then "nora-quill-2"... */
-export async function freeSlugFor(w: Writer, name: string) {
+export async function freeSlugFor(w: Writer<Ctx | PersonCtx>, name: string) {
   const base = slugForArtist(name);
   for (let n = 1; ; n++) {
     const s = n === 1 ? base : `${base}-${n}`;
-    if (!(await w.query("artists", (q) => q.where("slug", "==", s), { includeDeleted: true })).length) return s;
+    if (!(await w.system(() => w.query("artists", (q) => q.where("slug", "==", s), { includeDeleted: true }))).length) return s;
   }
 }
 
@@ -321,15 +342,17 @@ export async function freeSlugFor(w: Writer, name: string) {
  * users doc. Inside the caller's write unit; the caller runs `syncClaims(uid)` afterwards when `joined`. Shared by
  * artists.create and the sign-up route (src/server/signUp.ts).
  */
-export async function createArtistFor(w: Writer, uid: string, input: Record<string, unknown> & { name: string; slug?: string }) {
+export async function createArtistFor(w: Writer<Ctx | PersonCtx>, uid: string, input: Record<string, unknown> & { name: string; slug?: string }) {
   const me = await w.get("users", uid);
   // Their claims must still fit with one more artist (an auto-id is 20 characters), checked before anything is written.
   if (me && !me.deletedAt) assertClaimsFit({ ...me, artists: withRole(memberships(me), "x".repeat(20), "admin") });
   if (input.slug) await requireFreeSlug(w, input.slug);
   const slugValue = input.slug ?? (await freeSlugFor(w, input.name));
-  const r = await w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null }));
-  await seedDefaultTemplates(w, r.id);
-  await ensureDefaultProject(w, r.id); // the "General" project, so Money in / Money out can save before any other project exists
+  // The artist doc through the system view (no ctx has it yet), then its starting records through a Writer bound to it.
+  const r = await w.system(() => w.create("artists", withConfigIds({ ...input, slug: slugValue } as { configurations?: z.infer<typeof ConfigIn>[] | null })));
+  const there = w.forArtist(r.id);
+  await seedDefaultTemplates(there, r.id);
+  await ensureDefaultProject(there, r.id); // the "General" project, so Money in / Money out can save before any other project exists
   if (me && !me.deletedAt) await w.update("users", uid, { artists: withRole(memberships(me), r.id, "admin") });
   return { ...r, slug: slugValue, joined: !!(me && !me.deletedAt) };
 }
@@ -344,7 +367,10 @@ export const artistsCreate = defineCommand({
     driveFolderId: z.string().default(""),
   }),
   async run(ctx, input) {
-    const out = await run(ctx, async (w) => createArtistFor(w, ctx.uid, input));
+    // From inside an artist, but the new artist is the person's own: the same steps sign-up takes, as a PersonCtx.
+    const me = await db.get(ctx, "users", ctx.uid);
+    const person: PersonCtx = { person: true, uid: ctx.uid, email: (me?.email as string | undefined) ?? "", via: ctx.via, runId: ctx.runId };
+    const out = await run(person, async (w) => createArtistFor(w, ctx.uid, input));
     if (out.joined) await syncClaims(ctx.uid);
     return { id: out.id, merged: out.merged, slug: out.slug };
   },
@@ -355,7 +381,7 @@ export const artistsUpdate = defineCommand({
   description: "Edit this artist: name, slug (its URL name, unique), configurations (name, billingName, musicianIds), links, genres (what the band plays, lowercase strings; null clears), signalGroupUrl, paymentUrl (Venmo link or @handle), features ({fans, merch} on/off), listWording (the fan list opt-in line), publicName (the name on the public fan page; null = the artist name), merchItems (the whole merch price list in order: [{id, name, priceCents}]; a new item needs a new short id), fanPageStyle ({theme: auto|light|dark, accent: \"#rrggbb\"}), fanLinks (the fan page's own links in order: [{id, name, url}]), logo ({dataUrl} image shown instead of the name on the fan page; null removes it), hideTips (true hides the fan page's Leave a tip button; null shows it), expenseProjects (each person's default project for their own expenses, the whole list: [{userId, projectId}]; a person left out gets the default project).",
   input: patchInput(ArtistIn),
   run: (ctx, { id, patch }) => run(ctx, async (w) => {
-    if (ctx.artistId && id !== ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);
+    if (id !== ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);
     if (typeof patch.slug === "string") await requireFreeSlug(w, patch.slug, id);
     return w.update("artists", id, withConfigIds(patch as { configurations?: z.infer<typeof ConfigIn>[] | null }) as Record<string, unknown>);
   }),
@@ -369,7 +395,7 @@ const SONG: Kind = { noun: "song", defs: "songFields", coll: "songs" };
 const SHOW: Kind = { noun: "show", defs: "showFields", coll: "shows" };
 /** The artist this call is for, with its field definitions of this kind. */
 async function fieldsOf(w: Writer, k: Kind, artistId: string) {
-  if (w.ctx.artistId && artistId !== w.ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);
+  if (artistId !== w.ctx.artistId) throw new AppError("forbidden", "You can only edit the artist you're working in", 403);
   const a = await w.get("artists", artistId);
   if (!a || a.deletedAt) throw new AppError("not_found", "Artist not found", 404);
   return (a[k.defs] ?? []) as FieldDef[];
@@ -419,10 +445,7 @@ function fieldCommands(k: Kind) {
       const fields = await fieldsOf(w, k, i.id);
       if (!fields.some((f) => f.id === i.fieldId)) throw new AppError("not_found", `No such ${n} field`, 404);
       // Same transaction as the definition going away, so no record keeps a value for a field that no longer exists.
-      // Songs aren't per-artist (no artistId): this project's songs are this artist's. Shows are, so only this artist's are touched.
-      const all = await w.query(k.coll);
-      const mine = k.coll === "shows" ? all.filter((s) => !s.artistId || s.artistId === i.id) : all;
-      const holders = mine.filter((s) => ((s.fields ?? []) as { fieldId: string }[]).some((v) => v.fieldId === i.fieldId));
+      const holders = (await w.query(k.coll)).filter((s) => ((s.fields ?? []) as { fieldId: string }[]).some((v) => v.fieldId === i.fieldId));
       for (const s of holders) await w.update(k.coll, s.id, { fields: (s.fields as { fieldId: string }[]).filter((v) => v.fieldId !== i.fieldId) });
       await w.update("artists", i.id, { [k.defs]: fields.filter((f) => f.id !== i.fieldId) });
       return { id: i.id, [`${n}sCleared`]: holders.length } as { id: string } & Record<string, number | string>;
@@ -475,13 +498,13 @@ export const peopleList = defineCommand({
   description: "Read-only: everyone for this artist, as [{userId, musicianId, name, email, role (admin, member or null), mcpAccess, inBand, archived}]. Shows who has a sign-in (Team: userId set), who's an admin, who has AI access, and who's in the band. Changing access is done by the person on the People page.",
   async run(ctx) {
     const artistId = artistOfCtx(ctx);
-    const [users, musicians] = (await Promise.all([db.list("users"), db.list("musicians")])).map((rows) => rows.filter((d) => !d.deletedAt));
+    const [users, musicians] = (await Promise.all([db.list(ctx, "users", (q) => q.where("artistIds", "array-contains", artistId)), db.list(ctx, "musicians")])).map((rows) => rows.filter((d) => !d.deletedAt));
     const team = users.filter((u) => { const r = roleIn(u, artistId); return r === "admin" || r === "member"; });
     const teamIds = new Set(team.map((u) => u.id));
     const used = new Set<string>();
     const people: { userId: string | null; musicianId: string | null; name: string; email: string; role: "admin" | "member" | null; mcpAccess: boolean; inBand: boolean; archived: boolean }[] = [];
     for (const u of team) {
-      const m = musicians.find((x) => x.id === u.musicianId) ?? musicians.find((x) => x.userId === u.id);
+      const m = musicians.find((x) => x.id === musicianIn(u, artistId)) ?? musicians.find((x) => x.userId === u.id);
       if (m) used.add(m.id);
       const role = roleIn(u, artistId) as "admin" | "member";
       people.push({ userId: u.id, musicianId: m?.id ?? null, name: (u.name as string) || (m?.name as string) || (u.email as string) || "", email: (u.email as string) ?? "", role, mcpAccess: role === "admin" && mcpIn(u, artistId), inBand: !!m && !m.archivedAt, archived: false });

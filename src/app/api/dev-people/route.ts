@@ -10,6 +10,7 @@
  * key and the e2e specs click `dev-${key}`.
  */
 import { db } from "@/server/db";
+import { systemCtx } from "@/server/ctx";
 import { roleIn, type Membership } from "@/schema";
 import { loadRoster } from "@/lib/band-roster";
 import { DEV_PEOPLE } from "@/lib/dev-people";
@@ -31,7 +32,8 @@ export async function GET() {
   // src/lib/band.ts is gitignored, so the real roster may simply not be there; the demo keys still apply.
   const roster = await loadRoster();
   const known = [...DEV_PEOPLE, ...(roster?.BAND_PEOPLE ?? [])];
-  const [users, artists] = await Promise.all([db.list("users"), db.list("artists")]);
+  const sys = systemCtx("dev people"); // emulator only (checked above)
+  const [users, artists] = await Promise.all([db.list(sys, "users"), db.list(sys, "artists")]);
   const nameOf = (id: string) => artists.find((a) => a.id === id)?.name as string | undefined;
   const people: DevSignInPerson[] = users.flatMap((u) => {
     const ms = (u.artists ?? []) as Membership[];

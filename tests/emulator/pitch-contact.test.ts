@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 import { todayStr } from "@/lib/booking";
 import { addDays } from "@/lib/pickShow";
 
@@ -14,14 +14,14 @@ before(() => { process.env.TZ = "UTC"; });
 beforeEach(async () => {
   await resetEmulators();
   const admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
-  await db.create(importCtx(), "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
+  await db.create(importCtx(TEST_ARTIST), "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
   const v = (await call("venues.create", venue("Deep End"))) as { id: string };
   pitchId = ((await call("pitches.flag", { kind: "venue", id: v.id })) as { id: string }).id;
 });
 
 const call = (name: string, input: unknown) => registry[name].run(sys, registry[name].input.parse(input));
-const lastContact = async () => (await db.get("pitches", pitchId))?.lastContactAt;
+const lastContact = async () => (await db.get(SYS, "pitches", pitchId))?.lastContactAt;
 
 test("moving to pitched sets lastContactAt", async () => {
   assert.equal(await lastContact(), undefined);

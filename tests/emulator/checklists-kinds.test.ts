@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeArtist, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeArtist, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -21,37 +21,37 @@ async function world() {
   await makeArtist("Nora Quill Band", "nora-quill-band");
   const admin: Ctx = { uid: "u-admin", role: "admin", artistId: TEST_ARTIST, via: "app", runId: newRunId() };
   const member: Ctx = { uid: "u-member", role: "member", artistId: TEST_ARTIST, via: "app", runId: newRunId() };
-  const show = (await db.create(importCtx(), "shows", { ...base, date: "2027-01-16", artistId: TEST_ARTIST, checklists: [] })).id;
-  const project = (await db.create(importCtx(), "projects", { artistId: TEST_ARTIST, name: "Spring EP", kind: "release", status: "open" })).id;
-  const release = (await db.create(importCtx(), "releases", { artistId: TEST_ARTIST, title: "Spring EP", kind: "ep", projectId: project })).id;
+  const show = (await db.create(importCtx(TEST_ARTIST), "shows", { ...base, date: "2027-01-16", artistId: TEST_ARTIST, checklists: [] })).id;
+  const project = (await db.create(importCtx(TEST_ARTIST), "projects", { artistId: TEST_ARTIST, name: "Spring EP", kind: "release", status: "open" })).id;
+  const release = (await db.create(importCtx(TEST_ARTIST), "releases", { artistId: TEST_ARTIST, title: "Spring EP", kind: "ep", projectId: project })).id;
   return { admin, member, show, release };
 }
 
 test("templates apply to show, release or social: missing means show; New list only takes a template of its own kind", async () => {
   const { admin, show, release } = await world();
-  const old = (await db.create(importCtx(), "checklistTemplates", { artistId: TEST_ARTIST, name: "Advance", order: 0, items: [{ id: "a1", label: "Load-in time" }] })).id;
+  const old = (await db.create(importCtx(TEST_ARTIST), "checklistTemplates", { artistId: TEST_ARTIST, name: "Advance", order: 0, items: [{ id: "a1", label: "Load-in time" }] })).id;
   const { id: rel } = await cmd("checklistTemplates.create", { name: "Manufacturing", appliesTo: "release", items: [{ label: "Approve the test pressing" }] }, admin);
   const listed = await cmd("checklistTemplates.list", {}, admin);
   assert.deepEqual(listed.templates.map((t: any) => [t.name, t.appliesTo]), [["Advance", "show"], ["Manufacturing", "release"]]);
 
   await cmd("checklists.add", { kind: "release", id: release, templateId: rel }, admin);
-  const lists = (await db.get("releases", release))!.checklists as any[];
+  const lists = (await db.get(SYS, "releases", release))!.checklists as any[];
   assert.deepEqual(lists.map((l) => [l.name, l.templateId, l.items.map((i: any) => i.label)]), [["Manufacturing", rel, ["Approve the test pressing"]]]);
   await assert.rejects(cmd("checklists.add", { kind: "release", id: release, templateId: old }, admin), /isn't a Release template/);
   await assert.rejects(cmd("shows.addChecklist", { id: show, templateId: rel }, admin), /isn't a Show template/);
 
   await cmd("checklistTemplates.update", { id: rel, patch: { appliesTo: "social" } }, admin);
-  assert.equal((await db.get("checklistTemplates", rel))!.appliesTo, "social");
+  assert.equal((await db.get(SYS, "checklistTemplates", rel))!.appliesTo, "social");
 });
 
 test("Social Media lists: one doc per artist, made by the first list; items tick and pin like a show's", async () => {
   const { admin } = await world();
-  assert.equal(await db.get("socialChecklists", TEST_ARTIST), null);
+  assert.equal(await db.get(SYS, "socialChecklists", TEST_ARTIST), null);
   const { listId } = await cmd("checklists.add", { kind: "social", id: TEST_ARTIST, name: "Hi-Dive promo" }, admin);
   const { itemId } = await cmd("checklists.addItem", { kind: "social", id: TEST_ARTIST, listId, label: "Share the poster to Stories" }, admin);
   await cmd("checklists.add", { kind: "social", id: TEST_ARTIST, name: "Every month" }, admin);
   await cmd("checklists.check", { kind: "social", id: TEST_ARTIST, listId, itemId, done: true }, admin);
-  const doc = (await db.get("socialChecklists", TEST_ARTIST))!;
+  const doc = (await db.get(SYS, "socialChecklists", TEST_ARTIST))!;
   assert.equal(doc.artistId, TEST_ARTIST);
   assert.deepEqual(doc.checklists.map((l: any) => l.name), ["Hi-Dive promo", "Every month"]);
   assert.equal(doc.checklists[0].items[0].doneBy, "u-admin");
@@ -62,7 +62,7 @@ test("pins: set on the item with who and when, kept by edits and setChecklists, 
   const { admin, member, show } = await world();
   const { listId } = await cmd("shows.addChecklist", { id: show, name: "Advance" }, admin);
   const { itemId } = await cmd("shows.addChecklistItem", { id: show, listId, label: "Send stage plot" }, member);
-  const item = async () => ((await db.get("shows", show))!.checklists as any[])[0].items[0];
+  const item = async () => ((await db.get(SYS, "shows", show))!.checklists as any[])[0].items[0];
 
   assert.ok(!registry["checklists.pin"].roles.includes("member"));
   await cmd("checklists.pin", { kind: "show", id: show, listId, itemId, pinned: true }, admin);
@@ -73,7 +73,7 @@ test("pins: set on the item with who and when, kept by edits and setChecklists, 
   await cmd("shows.editChecklistItem", { id: show, listId, itemId, label: "Send the stage plot", ownerId: null }, member);
   await cmd("shows.checkItem", { id: show, listId, itemId, done: true }, member);
   assert.equal((await item()).pinnedAt, pinned.pinnedAt, "edits and ticks keep the pin");
-  const lists = (await db.get("shows", show))!.checklists as any[];
+  const lists = (await db.get(SYS, "shows", show))!.checklists as any[];
   await cmd("shows.setChecklists", { id: show, checklists: lists.map((l) => ({ ...l, items: l.items.map(({ id, label, done }: any) => ({ id, label, done })) })) }, admin);
   assert.equal((await item()).pinnedAt, pinned.pinnedAt, "setChecklists keeps pins on items it keeps");
 
@@ -90,17 +90,17 @@ test("release and Social Media lists are admins' only; members keep show items",
   await assert.rejects(cmd("checklists.addItem", { kind: "social", id: TEST_ARTIST, listId, label: "Post" }, member), /Only admins/);
   const s = await cmd("shows.addChecklist", { id: show, name: "Promo" }, admin);
   await cmd("checklists.addItem", { kind: "show", id: show, listId: s.listId, label: "Posters" }, member);
-  assert.equal(((await db.get("shows", show))!.checklists as any[])[0].items.length, 1);
+  assert.equal(((await db.get(SYS, "shows", show))!.checklists as any[])[0].items.length, 1);
 });
 
 test("song to-dos: lists on the song from song templates; members tick and add items but not lists; songs.merge carries them over", async () => {
   const { admin, member, show } = await world();
-  const song = (await db.create(importCtx(), "songs", { title: "Bluebird", status: "active", fields: [] })).id;
-  const dup = (await db.create(importCtx(), "songs", { title: "Bluebird (2)", status: "learning", fields: [] })).id;
+  const song = (await db.create(importCtx(TEST_ARTIST), "songs", { title: "Bluebird", status: "active", fields: [] })).id;
+  const dup = (await db.create(importCtx(TEST_ARTIST), "songs", { title: "Bluebird (2)", status: "learning", fields: [] })).id;
   const { id: tpl } = await cmd("checklistTemplates.create", { name: "MIDI", appliesTo: "song", items: [{ label: "Configure Nord/MC6/H90/Iridium MIDI" }] }, admin);
   const { listId } = await cmd("checklists.add", { kind: "song", id: song, templateId: tpl }, admin);
   await assert.rejects(cmd("checklists.add", { kind: "show", id: show, templateId: tpl }, admin), /isn't a Show template/);
-  const lists = async (id: string) => (await db.get("songs", id))!.checklists as any[];
+  const lists = async (id: string) => (await db.get(SYS, "songs", id))!.checklists as any[];
   const [{ items: [first] }] = await lists(song);
   await cmd("checklists.check", { kind: "song", id: song, listId, itemId: first.id, done: true }, member);
   await cmd("checklists.addItem", { kind: "song", id: song, listId, label: "Patch the H90 preset" }, member);

@@ -2,11 +2,12 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput, patchInput } from "./util";
 import { db, run, type Doc, type Writer } from "../db";
+import type { Ctx } from "../ctx";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
 import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
-import { bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
+import { assertInBandFolder, bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { readDocText } from "../docText";
 import { guessKey, guessKind, isAttachable, isGoogleDoc, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
@@ -22,9 +23,9 @@ type Attach = z.infer<typeof AttachFile>;
 
 // ---------- files ----------
 
-async function buildFileDocs(artistId: string | undefined, files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
-  const [mates, { all: folder }] = await Promise.all([bandmates(), bandFolders(artistId)]);
-  const drive = driveClient({ artistId });
+async function buildFileDocs(ctx: Ctx, files: Attach[], parent: { songId?: string; rehearsalId?: string }, defaultKind?: z.infer<typeof kindEnum>) {
+  const [mates, { all: folder }] = await Promise.all([bandmates(ctx), bandFolders(ctx.artistId)]);
+  const drive = driveClient({ artistId: ctx.artistId });
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
     if (!("driveFileId" in a)) {
@@ -35,8 +36,7 @@ async function buildFileDocs(artistId: string | undefined, files: Attach[], pare
       out.push({ kind: a.kind ?? defaultKind ?? guessKind(title, undefined, p), title, ...parent, provider: p, url: a.url, checkedAt: new Date() });
       continue;
     }
-    let f: DriveFile;
-    try { f = await drive.get(a.driveFileId); } catch { throw new AppError("not_found", `Drive file ${a.driveFileId} not found`, 404); }
+    const f = await assertInBandFolder(ctx, a.driveFileId, drive);
     const ins = await inspect(f, mates, folder, drive);
     const kind = a.kind ?? defaultKind ?? guessKind(f.name, f.mimeType);
     const key = a.key ?? (kind === "chart" ? guessKey(f.name) : undefined);
@@ -71,7 +71,7 @@ export const driveSearch = defineCommand({
   input: z.strictObject({ q: z.string().min(1), all: z.boolean().optional() }),
   async run(ctx, { q, all }) {
     const drive = driveClient({ artistId: ctx.artistId });
-    const [hits, mates, { all: folder }] = await Promise.all([drive.search({ q }), bandmates(), bandFolders(ctx.artistId)]);
+    const [hits, mates, { all: folder }] = await Promise.all([drive.search({ q }), bandmates(ctx), bandFolders(ctx.artistId)]);
     const out = [];
     for (const f of hits.filter((h) => (all ? h.mimeType !== FOLDER_MIME : isAttachable(h.mimeType)))) {
       const ins = await inspect(f, mates, folder, drive);
@@ -93,7 +93,7 @@ export const filesAttach = defineCommand({
     .refine((v) => !!v.songId || !!v.rehearsalId, "Give a songId, a rehearsalId or both"),
   async run(ctx, input) {
     const parent = { ...(input.songId ? { songId: input.songId } : {}), ...(input.rehearsalId ? { rehearsalId: input.rehearsalId } : {}) };
-    const docs = await buildFileDocs(ctx.artistId, input.files, parent, input.rehearsalId ? "rehearsal" : undefined);
+    const docs = await buildFileDocs(ctx, input.files, parent, input.rehearsalId ? "rehearsal" : undefined);
     return run(ctx, async (w) => {
       if (input.songId) { const s = await w.get("songs", input.songId); if (!s || s.deletedAt) throw new AppError("not_found", "Song not found", 404); }
       if (input.rehearsalId) { const r = await w.get("rehearsals", input.rehearsalId); if (!r || r.deletedAt) throw new AppError("not_found", "Rehearsal not found", 404); }
@@ -117,9 +117,9 @@ export const filesRemove = defineCommand({
   run: (ctx, { id }) => db.softDelete(ctx, "files", id),
 });
 
-async function liveFiles(ids?: string[]): Promise<Doc[]> {
+async function liveFiles(ctx: Ctx, ids?: string[]): Promise<Doc[]> {
   // Only Drive files have anything to check or repair; links have no driveFileId, sharing or inBandFolder.
-  const all = (await db.list("files")).filter((f) => f.driveFileId);
+  const all = (await db.list(ctx, "files")).filter((f) => f.driveFileId);
   return ids ? all.filter((f) => ids.includes(f.id)) : all;
 }
 
@@ -129,10 +129,11 @@ type Fix = "check" | "share" | "copy";
 export const NO_CHARTS_FOLDER = "You need to tell me where the lyrics and charts should go: choose the Charts folder on Settings > Google";
 type Folders = Awaited<ReturnType<typeof bandFolders>>;
 
-async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, mates: Bandmate[], folders: Folders) {
+async function fixInDrive(ctx: Ctx, id: string, fix: Fix, mates: Bandmate[], folders: Folders) {
   const folder = folders.all;
-  const drive = driveClient({ artistId });
-  let file = await drive.get(id);
+  const drive = driveClient({ artistId: ctx.artistId });
+  // Sharing or copying needs the file to be this artist's (tenancy plan D3); a check only reads it.
+  let file = fix === "check" ? await drive.get(id) : await assertInBandFolder(ctx, id, drive);
   let ins = await inspect(file, mates, folder, drive);
   let fixed = false;
   if (fix === "copy" && !ins.inBandFolder) {
@@ -151,8 +152,8 @@ async function fixInDrive(artistId: string | undefined, id: string, fix: Fix, ma
 }
 
 /** Re-reads Drive for each file (after an optional fix) and writes mimeType, sharing, inBandFolder and checkedAt. */
-async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
-  const [mates, folders] = await Promise.all([bandmates(), bandFolders(ctx.artistId)]);
+async function refresh(ctx: Ctx, files: Doc[], fix: Fix) {
+  const [mates, folders] = await Promise.all([bandmates(ctx), bandFolders(ctx.artistId)]);
   if (fix === "copy" && !folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
   const folder = folders.band;
   const updates: { id: string; patch: Record<string, unknown> }[] = [];
@@ -160,7 +161,7 @@ async function refresh(ctx: Parameters<typeof run>[0], files: Doc[], fix: Fix) {
   let fixed = 0;
   for (const f of files) {
     try {
-      const r = await fixInDrive(ctx.artistId, f.driveFileId, fix, mates, folders);
+      const r = await fixInDrive(ctx, f.driveFileId, fix, mates, folders);
       if (r.fixed) fixed++;
       updates.push({ id: f.id, patch: {
         ...(r.moved ? { driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail } : {}),
@@ -183,11 +184,11 @@ export const driveFix = defineCommand({
   description: "Before attaching: copy Drive files into the band's Charts folder (lyrics, chord sheets...) or share them with the band. Returns each file's new id and state. Copy is refused until an admin chooses the Charts folder on Settings > Google.",
   input: z.strictObject({ driveFileIds: z.array(z.string().min(1)).min(1), fix: z.enum(["copy", "share"]) }),
   async run(ctx, { driveFileIds, fix }) {
-    const [mates, folders] = await Promise.all([bandmates(), bandFolders(ctx.artistId)]);
+    const [mates, folders] = await Promise.all([bandmates(ctx), bandFolders(ctx.artistId)]);
     if (fix === "copy" && !folders.charts) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
     const out = [];
     for (const id of driveFileIds) {
-      const r = await fixInDrive(ctx.artistId, id, fix, mates, folders).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
+      const r = await fixInDrive(ctx, id, fix, mates, folders).catch((e) => { throw new AppError("drive_error", `${id}: ${(e as Error).message}`, 502); });
       out.push({ oldId: id, driveFileId: r.file.id, url: r.file.webViewLink, ownerEmail: r.file.ownerEmail, inBandFolder: r.ins.inBandFolder, missing: r.ins.missing });
     }
     return { files: out };
@@ -202,7 +203,7 @@ export const filesDocText = defineCommand({
   description: "A Google Doc file's content (lyrics, a chord sheet: tabs, tables, bold and italic) for the song and rehearsal pages, and its plain text. Re-reads the doc only when it changed since the copy cached on the file; status noAccess when the band's Google account can't read it.",
   input: idInput,
   async run(ctx, { id }) {
-    const f = await db.get("files", id);
+    const f = await db.get(ctx, "files", id);
     if (!f || f.deletedAt) throw new AppError("not_found", "File not found", 404);
     if (!isGoogleDoc(f as { mimeType?: string; driveFileId?: string })) throw new AppError("invalid_input", "Only a Google Doc has text to show", 400);
     const r = await readDocText(driveClient({ artistId: ctx.artistId }), f as unknown as Parameters<typeof readDocText>[1]);
@@ -217,21 +218,21 @@ export const filesCheck = defineCommand({
   roles: ["admin", "mcp"],
   description: "Run the sharing check: re-read Drive for every song file (or the given ids) and update mimeType, sharing, inBandFolder and checkedAt. Files imported without a mimeType get one here.",
   input: z.strictObject({ ids: z.array(z.string().min(1)).optional() }),
-  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ids), "check"); },
+  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ctx, ids), "check"); },
 });
 export const filesShareWithBand = defineCommand({
   name: "files.shareWithBand",
   roles: ["admin", "mcp"],
   description: "Share files with every band member who can't open them yet.",
   input: fileIds,
-  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ids), "share"); },
+  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ctx, ids), "share"); },
 });
 export const filesCopyToBand = defineCommand({
   name: "files.copyToBand",
   roles: ["admin", "mcp"],
   description: "Copy files outside the band folder into the band's Charts folder (lyrics, chord sheets...), shared with the band, and point the file at the copy. Refused until an admin chooses the Charts folder on Settings > Google.",
   input: fileIds,
-  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ids), "copy"); },
+  async run(ctx, { ids }) { return refresh(ctx, await liveFiles(ctx, ids), "copy"); },
 });
 
 // ---------- songs ----------
@@ -242,7 +243,7 @@ export const songsCreate = defineCommand({
   description: "Add a song, optionally attaching Drive files (see drive.search) or links (url) in the same step.",
   input: SongInput.extend({ files: z.array(AttachFile).default([]) }),
   async run(ctx, { files, ...song }) {
-    const docs = await buildFileDocs(ctx.artistId, files, {});
+    const docs = await buildFileDocs(ctx, files, {});
     return run(ctx, async (w) => {
       const { id } = await w.create("songs", song);
       const r = await writeFiles(w, docs.map((d) => ({ ...d, songId: id })));
@@ -472,7 +473,7 @@ export const rehearsalsCreate = defineCommand({
   description: "Create a rehearsal: date, place, who's coming, the songs (with notes), projectId (the project its money goes on; an open one from context.now projects, default the default project). Recordings attach through files.attach with rehearsalId.",
   input: z.strictObject({ ...RehFields, projectId: z.string().min(1).optional(), files: z.array(AttachFile).default([]) }),
   async run(ctx, { songs, files, projectId: pid, ...r }) {
-    const docs = await buildFileDocs(ctx.artistId, files, {}, "rehearsal");
+    const docs = await buildFileDocs(ctx, files, {}, "rehearsal");
     return run(ctx, async (w) => {
       const projectId = pid ? (await requireOpenProject(w, pid)).id : await defaultProjectIdFor(w, (await artistFor(w)).id);
       const { id } = await w.create("rehearsals", { ...r, ...(projectId ? { projectId } : {}), songs: await resolveSongs(w, songs) });
@@ -544,7 +545,7 @@ export const rehearsalsRemove = defineCommand({
   input: idInput,
   async run(ctx, { id }) {
     // The event first; the rehearsal keeps calendarEventId so Undo can bring the event back.
-    const before = await db.get("rehearsals", id);
+    const before = await db.get(ctx, "rehearsals", id);
     if (before && !before.deletedAt) await deleteEvent(ctx, before);
     return run(ctx, async (w) => {
       for (const f of await w.query("files", (q) => q.where("rehearsalId", "==", id))) await w.softDelete("files", f.id);

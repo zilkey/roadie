@@ -33,14 +33,14 @@ export type Pitch = z.infer<typeof Pitch>;
  */
 export const Comment = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(), authorId: id, body: z.string().min(1), audience: z.enum(["band", "admins"]).optional(), edited: z.boolean().optional() });
+  artistId: id, authorId: id, body: z.string().min(1), audience: z.enum(["band", "admins"]).optional(), edited: z.boolean().optional() });
 export const CommentInput = Comment.omit(serverMask);
 export type Comment = z.infer<typeof Comment>;
 
 /** pitches/{id}/activity/{id}. Append only. */
 export const Activity = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   type: z.enum(["status", "emailSent", "emailReply", "call", "email", "visit", "note"]),
   fromStatus: pitchStatus.optional(),
   toStatus: pitchStatus.optional(),

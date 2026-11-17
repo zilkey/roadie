@@ -15,10 +15,7 @@ import type { Ctx } from "../ctx";
 import { graph, GraphError, kindOf, metaAuthUrl, metaConfigured, NEEDED_PERMISSIONS, signMetaState, verifyMetaState, type TokenKind } from "../meta/graph";
 import { freshToken, getConnection, removeConnection, saveConnection, type NewConnection } from "../meta/connection";
 
-const artistOf = (ctx: Ctx) => {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 const configured = () => {
   if (!metaConfigured()) throw new AppError("meta_not_configured", "Instagram & Facebook aren't set up on this server", 503);
 };
@@ -106,7 +103,7 @@ export const metaConnectUrl = defineCommand({
   async run(ctx) {
     const artistId = artistOf(ctx);
     configured();
-    const artist = await db.get("artists", artistId);
+    const artist = await db.get(ctx, "artists", artistId);
     if (!artist) throw new AppError("not_found", "Artist not found", 404);
     return { url: metaAuthUrl(signMetaState({ uid: ctx.uid, artistId, slug: artist.slug as string })) };
   },
@@ -122,7 +119,7 @@ export const metaFinishConnect = defineCommand({
     const s = verifyMetaState(state);
     if (!s || s.uid !== ctx.uid || s.artistId !== artistId) throw new AppError("invalid_state", "That Instagram sign-in link has expired or isn't yours. Press Connect Instagram again.", 400);
     const c = await connectionFor(code);
-    const user = await db.get("users", ctx.uid);
+    const user = await db.get(ctx, "users", ctx.uid);
     await saveConnection(artistId, c, { uid: ctx.uid, name: (user?.name as string | undefined) ?? (user?.email as string | undefined) ?? "An admin" });
     return status(ctx);
   },

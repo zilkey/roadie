@@ -16,7 +16,7 @@ import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { getDriving } from "@/server/driving";
-import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -66,37 +66,37 @@ test("a gas expense needs where the trip started and where it went: without them
 
 test("gas is its own category: category gas pays back by default, and payBack false (the driver covers it) sticks", async () => {
   const g = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", gas: GAS });
-  const x = await db.get("expenses", g.id) as any;
+  const x = await db.get(SYS, "expenses", g.id) as any;
   assert.deepEqual([x.category, x.payBack, x.gas.estimateCents], ["gas", true, 498]);
   const own = await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", payBack: false, gas: GAS });
-  assert.equal((await db.get("expenses", own.id) as any).payBack, false);
+  assert.equal((await db.get(SYS, "expenses", own.id) as any).payBack, false);
 });
 
 test("a gas estimate is refused on any category but gas (travel still takes one for older records)", async () => {
   await code(cmd("expenses.add", { amount: 498, what: "Gas", category: "gear", gas: GAS }), "invalid_input");
   const t = await cmd("expenses.add", { amount: 498, what: "Gas", category: "travel", gas: GAS });
-  assert.ok((await db.get("expenses", t.id) as any).gas);
+  assert.ok((await db.get(SYS, "expenses", t.id) as any).gas);
 });
 
 test("expenses.add with a rehearsalId and no projectId takes the rehearsal's project, and a named projectId still wins", async () => {
   const r = await cmd("rehearsals.create", { date: "2026-10-29", projectId: duo, location: { name: "Woodshed" }, personnel: [], songs: [] });
   const e = await cmd("expenses.add", { amount: 6000, what: "Room rental", category: "space", rehearsalId: r.id, payBack: false });
-  assert.equal(((await db.get("expenses", e.id)) as any).projectId, duo);
+  assert.equal(((await db.get(SYS, "expenses", e.id)) as any).projectId, duo);
   const named = await cmd("expenses.add", { amount: 300, what: "Strings", category: "gear", rehearsalId: r.id, projectId: band });
-  assert.equal(((await db.get("expenses", named.id)) as any).projectId, band);
+  assert.equal(((await db.get(SYS, "expenses", named.id)) as any).projectId, band);
 });
 
 test("an admin logging gas for a bandmate with saveAsHome writes the bandmate's home, not the admin's", async () => {
   const r = await cmd("rehearsals.create", { date: "2026-10-29", location: LOFT, personnel: [], songs: [] });
   await cmd("expenses.add", { amount: 498, what: "Gas", category: "gas", userId: memberUid, rehearsalId: r.id, gas: GAS, saveAsHome: HOME });
-  assert.equal((await getDriving(memberUid))?.home?.address, HOME.address);
-  assert.equal((await getDriving(ctx.uid))?.home, undefined);
+  assert.equal((await getDriving(ctx, memberUid))?.home?.address, HOME.address);
+  assert.equal((await getDriving(ctx, ctx.uid))?.home, undefined);
 });
 
 test("payouts.add accepts a rehearsalId: the rehearsal's project, stored on the payout", async () => {
   const r = await cmd("rehearsals.create", { date: "2026-10-29", projectId: duo, location: { name: "Woodshed" }, personnel: [], songs: [] });
   const p = await cmd("payouts.add", { to: { name: "Woodshed Studio" }, kind: "pay", amount: 6000, rehearsalId: r.id, what: "Room rental" });
-  const doc = await db.get("payouts", p.id) as any;
+  const doc = await db.get(SYS, "payouts", p.id) as any;
   assert.deepEqual([doc.rehearsalId, doc.projectId], [r.id, duo]);
   await code(cmd("payouts.add", { to: { name: "x" }, kind: "pay", amount: 100, rehearsalId: "ghost" }), "not_found");
 });
@@ -104,20 +104,20 @@ test("payouts.add accepts a rehearsalId: the rehearsal's project, stored on the 
 test("rehearsals.update projectId moves that rehearsal's expenses and payouts and leaves other rehearsals alone", async () => {
   const r = await cmd("rehearsals.create", { date: "2026-10-29", location: { name: "Woodshed" }, personnel: [], songs: [] });
   const other = await cmd("rehearsals.create", { date: "2026-10-30", location: { name: "Loft" }, personnel: [], songs: [] });
-  assert.equal(((await db.get("rehearsals", r.id)) as any).projectId, band);
+  assert.equal(((await db.get(SYS, "rehearsals", r.id)) as any).projectId, band);
   const e = await cmd("expenses.add", { amount: 6000, what: "Room rental", category: "space", rehearsalId: r.id, payBack: false });
   const p = await cmd("payouts.add", { to: { name: "Woodshed Studio" }, kind: "pay", amount: 6000, rehearsalId: r.id });
   const kept = await cmd("expenses.add", { amount: 900, what: "Snacks", category: "food", rehearsalId: other.id, payBack: false });
   await cmd("rehearsals.update", { id: r.id, patch: { projectId: duo } });
-  assert.equal(((await db.get("rehearsals", r.id)) as any).projectId, duo);
-  assert.equal(((await db.get("expenses", e.id)) as any).projectId, duo);
-  assert.equal(((await db.get("payouts", p.id)) as any).projectId, duo);
-  assert.equal(((await db.get("expenses", kept.id)) as any).projectId, band);
+  assert.equal(((await db.get(SYS, "rehearsals", r.id)) as any).projectId, duo);
+  assert.equal(((await db.get(SYS, "expenses", e.id)) as any).projectId, duo);
+  assert.equal(((await db.get(SYS, "payouts", p.id)) as any).projectId, duo);
+  assert.equal(((await db.get(SYS, "expenses", kept.id)) as any).projectId, band);
 });
 
 test("rehearsals.create without a projectId gets the default project", async () => {
   const r = await cmd("rehearsals.create", { date: "2026-10-29", location: { name: "Woodshed" }, personnel: [], songs: [] });
-  assert.equal(((await db.get("rehearsals", r.id)) as any).projectId, band);
+  assert.equal(((await db.get(SYS, "rehearsals", r.id)) as any).projectId, band);
 });
 
 test("projects.remove refuses a project a rehearsal points at", async () => {

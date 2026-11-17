@@ -1,6 +1,6 @@
 "use client";
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useArtistRouter, useMaybeArtist } from "@/lib/artist";
 import { ARTISTS_PATH } from "@/lib/routes";
@@ -10,15 +10,19 @@ import { useBusyWhile } from "@/lib/busy";
 export function SignedIn({ children }: { children: React.ReactNode }) {
   const { state } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const invited = state.status === "noBand" && !!state.invites?.length;
   useEffect(() => {
     if (state.status === "signedOut") {
       const here = location.pathname + location.search + location.hash;
       router.replace(location.pathname === ARTISTS_PATH ? "/signin" : `/signin?next=${encodeURIComponent(here)}`);
     }
     if (state.status === "notInvited") router.replace("/not-invited");
-    if (state.status === "noBand") router.replace("/no-band");
-  }, [state.status, router]);
+    // No band yet, but invited to one: the artist picker offers Join and Decline.
+    if (state.status === "noBand") { if (!invited) router.replace("/no-band"); else if (location.pathname !== ARTISTS_PATH) router.replace(ARTISTS_PATH); }
+  }, [state.status, invited, router]);
   if (state.status === "offline") return <Offline />;
+  if (state.status === "noBand" && invited && pathname === ARTISTS_PATH) return <>{children}</>;
   if (state.status !== "ready") return <AuthLoading />;
   return <>{children}</>;
 }

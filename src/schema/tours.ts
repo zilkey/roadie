@@ -36,7 +36,7 @@ export type EntryVisibility = z.infer<typeof entryVisibility>;
 /** tours/{tourId}/entries/{id}: one thing on one day (or, for an option, in the bucket). */
 export const TourEntry = entity({
   /** The artist this record belongs to (tenancy phase 2: optional until the prod backfill). */
-  artistId: id.optional(),
+  artistId: id,
   tourId: id,
   kind: tourEntryKind,
   /** No date = the "No date yet" bucket (options only). */

@@ -23,8 +23,7 @@ export async function POST(req: Request) {
     if (!(file instanceof File) || file.size === 0) throw new AppError("invalid_input", "Choose a photo or video to upload", 400);
     const mimeType = mediaType(file.name, file.type);
     if (!mimeType) throw new AppError("invalid_input", MEDIA_ONLY, 400);
-    if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-    const { socialsId } = await setUpSocials(ctx.artistId);
+    const { socialsId } = await setUpSocials(ctx);
     const drive = driveClient({ artistId: ctx.artistId });
     const folder = await drive.get(socialsId);
     const up = await drive.upload({ name: file.name || (mimeType.startsWith("video/") ? "Video.mp4" : "Photo.jpg"), mimeType, parentId: folder.id, data: file });

@@ -7,6 +7,7 @@
 import { createHash } from "node:crypto";
 import { firestore } from "../admin";
 import { db, type Doc } from "../db";
+import { systemCtx } from "../ctx";
 import { AppError } from "../errors";
 import { BAND_TIME_ZONE } from "@/lib/timezone";
 import { roomStats } from "@/lib/venueEvents";
@@ -98,6 +99,9 @@ export function markRuns(events: EventDraft[]) {
   }
 }
 
+/** The venue-calendar refresh reads and writes the shared directory (venues, venueEvents), not one artist's records. */
+const sys = () => systemCtx("venue-calendars");
+
 export const eventId = (venueId: string, sourceId: string) => `${venueId}__${createHash("sha1").update(sourceId).digest("hex").slice(0, 16)}`;
 
 export interface RefreshResult { venueId: string; name: string; type: VenueCalendar["type"] | "none"; count: number; upcoming: number; added: number; gone: number; unparsed: number; dropped: number; error?: string; skipped?: string }
@@ -115,7 +119,7 @@ async function writeAll(writes: [string, Record<string, unknown>][]) {
 export async function upsertEvents(venueId: string, type: VenueCalendar["type"], drafts: EventDraft[], now: Date, tz: string) {
   const nowIso = now.toISOString();
   const today = todayIn(tz, now);
-  const existing = new Map((await db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true })).map((d) => [d.id, d]));
+  const existing = new Map((await db.list(sys(), "venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true })).map((d) => [d.id, d]));
   await linkActs(drafts); // acts[].actId by matchKey, new acts for new names (#77)
   const writes: [string, Record<string, unknown>][] = [];
   const keep = new Set<string>();
@@ -142,7 +146,7 @@ const stripId = (d: Doc) => { const { id: _id, ...rest } = d; return rest; };
 
 /** Refresh one venue. Never throws for a source's failure: it is recorded on the venue's health and returned. */
 export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Date } = {}): Promise<RefreshResult> {
-  const v = await db.get("venues", venueId);
+  const v = await db.get(sys(), "venues", venueId);
   if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
   const now = opts.now ?? new Date();
   const tz = (v.timeZone as string | undefined) || BAND_TIME_ZONE;
@@ -152,16 +156,16 @@ export async function refreshVenue(venueId: string, opts: { net?: Net; now?: Dat
   const cal = parsed.data;
   if (cal.type === "manual") return { ...base, type: "manual", skipped: cal.note };
   const health: VenueEventSource = { venueId, type: cal.type, lastRunAt: now.toISOString() };
-  const prev = (await db.get("venueEventSources", venueId)) as Partial<VenueEventSource> | null;
+  const prev = (await db.get(sys(), "venueEventSources", venueId)) as Partial<VenueEventSource> | null;
   try {
     const out = await readCalendar(cal, { net: opts.net ?? new Net(), tz, now });
     const { added, gone } = await upsertEvents(venueId, cal.type, out.events, now, tz);
     const today = todayIn(tz, now);
     // The room's record, over every stored show (past ones too), now that this run's are written.
-    const stored = await db.list("venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
+    const stored = await db.list(sys(), "venueEvents", (q) => q.where("venueId", "==", venueId), { includeDeleted: true });
     const record = roomStats(stored as unknown as VenueEvent[], today);
     // On tour: this room's upcoming headliners (gone ones too, so a run that broke up is unmarked), across every room listing them.
-    await markTours((stored as unknown as VenueEvent[]).filter((e) => e.date >= today).flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)), today);
+    await markTours(sys(), (stored as unknown as VenueEvent[]).filter((e) => e.date >= today).flatMap((e) => e.acts.filter((a) => a.role === "headliner" && a.actId).map((a) => a.actId!)), today);
     Object.assign(health, { lastSuccessAt: health.lastRunAt, lastCount: out.events.length, lastUnparsed: out.unparsed, ...record });
     await firestore().doc(`venueEventSources/${venueId}`).set(health);
     return { ...base, type: cal.type, count: out.events.length, upcoming: out.events.filter((e) => e.date >= today).length, added, gone, unparsed: out.unparsed, dropped: out.dropped };
@@ -181,7 +185,7 @@ const pageOf = (c: VenueCalendar) => ("url" in c ? c.url : "baseUrl" in c ? c.ba
  * in one cache overran the 512 MB App Hosting instance, 2026-11-11).
  */
 export async function refreshAll(opts: { only?: string[]; concurrency?: number; now?: Date } = {}): Promise<RefreshResult[]> {
-  const venues = (await db.list("venues")).filter((v) => v.calendar && (v.calendar as VenueCalendar).type !== "manual" && !v.mergedInto && (!opts.only || opts.only.includes(v.id)));
+  const venues = (await db.list(sys(), "venues")).filter((v) => v.calendar && (v.calendar as VenueCalendar).type !== "manual" && !v.mergedInto && (!opts.only || opts.only.includes(v.id)));
   const groups = new Map<string, Doc[]>();
   for (const v of venues) {
     const k = VenueCalendar.safeParse(v.calendar).success ? pageOf(v.calendar as VenueCalendar) : v.id;

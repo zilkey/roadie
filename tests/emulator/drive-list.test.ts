@@ -6,7 +6,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { fakeDrive, SOCIALS_FOLDER_ID } from "../../fakes/fake-drive/server";
 import { db } from "@/server/db";
-import { newRunId, type Ctx } from "@/server/ctx";
+import { newRunId, importCtx, type Ctx } from "@/server/ctx";
 import { driveClient, IntegrationError, type DriveService } from "@/server/integrations";
 import { listQuery } from "@/server/integrations/drive";
 import { findOrMakeFolder } from "@/server/driveFolders";
@@ -167,7 +167,7 @@ test("inboxFolders: every folder under Socials, nested, except Posts/ (by name b
   const deeper = await drive.createFolder("B-roll", nested.id);
   const { folder: posts } = await findOrMakeFolder(drive, SOCIALS_FOLDER_ID, "Posts");
   const draft = await drive.createFolder("DRAFT - Hi-Dive", posts.id);
-  const got = await inboxFolders(drive, TEST_ARTIST);
+  const got = await inboxFolders(ctx, drive);
   assert.deepEqual(got.map((f) => f.id).sort(), [MONTH, PHONE, nested.id, deeper.id].sort());
   assert.deepEqual(got.find((f) => f.id === deeper.id), { id: deeper.id, name: "B-roll", parentId: nested.id });
   assert.equal(got.find((f) => f.id === PHONE)!.parentId, SOCIALS_FOLDER_ID);
@@ -177,12 +177,12 @@ test("inboxFolders: every folder under Socials, nested, except Posts/ (by name b
   await drive.rename(posts.id, "Posts (Roadie)");
   await db.update(ctx, "artists", TEST_ARTIST, { postFoldersId: posts.id });
   const deepPosts = await drive.createFolder("Posts", PHONE);
-  const again = (await inboxFolders(drive, TEST_ARTIST)).map((f) => f.id);
+  const again = (await inboxFolders(ctx, drive)).map((f) => f.id);
   assert.ok(!again.includes(posts.id) && !again.includes(draft.id));
   assert.ok(again.includes(deepPosts.id));
 
   await makeArtist("Other Band", "other-band", "no-socials");
-  await assert.rejects(inboxFolders(drive, "no-socials"), (e: { code?: string }) => e.code === "no_posts_folder", "no Socials folder chosen");
+  await assert.rejects(inboxFolders(importCtx("no-socials"), drive), (e: { code?: string }) => e.code === "no_posts_folder", "no Socials folder chosen");
 });
 
 test("moveInto and moveBack: back to the folder it came from, or the Socials root when that folder is gone or trashed", async () => {

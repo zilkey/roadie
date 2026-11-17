@@ -12,7 +12,7 @@ import { newRunId, type Ctx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
 import { SignupBody, fanCtx, fanId, listView, signup, upsertFan } from "@/server/fans";
 import { DEFAULT_LIST_WORDING } from "@/lib/fans";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -161,7 +161,7 @@ test("signup at a show: the show comes from the time, city from the venue doc, c
   const body = SignupBody.parse({ email: "Fan@Example.com", name: "Fran Lee", page: "/f/nora-quill-band" });
   assert.deepEqual(await signup("nora-quill-band", body, DURING), { ok: true });
   const id = fanId(TEST_ARTIST, "fan@example.com");
-  let fan = (await db.get("fans", id))!;
+  let fan = (await db.get(SYS, "fans", id))!;
   assert.equal(fan.email, "fan@example.com");
   assert.equal(fan.source, "list");
   assert.equal(fan.firstName, "Fran Lee", "the name is stored under firstName");
@@ -176,16 +176,16 @@ test("signup at a show: the show comes from the time, city from the venue doc, c
   await db.update(ctx, "artists", TEST_ARTIST, { listWording: "New wording" });
   const later = new Date(DURING.getTime() + 86_400_000);
   await signup("nora-quill-band", SignupBody.parse({ email: "fan@example.com", zip: "80302", page: "/f/other" }), later);
-  fan = (await db.get("fans", id))!;
+  fan = (await db.get(SYS, "fans", id))!;
   assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Denver", "CO"], ["Boulder", "CO"]], "the zip names a town");
   assert.equal(typeof fan.cities[1].lat, "number");
   assert.equal(fan.zip, "80302");
   assert.deepEqual(fan.showIds, [showId], "a day later is no show");
   assert.equal(fan.firstName, "Fran Lee");
   assert.equal(fan.consent.text, DEFAULT_LIST_WORDING, "consent is only set on the first join");
-  assert.equal((await db.list("fans")).length, 1);
+  assert.equal((await db.list(SYS, "fans")).length, 1);
   // The change log carries the artist, so rules keep it to that artist's admins.
-  const hist = await db.history("fans", id);
+  const hist = await db.history(SYS, "fans", id);
   assert.ok(hist.length >= 2 && hist.every((h) => h.artistId === TEST_ARTIST));
 });
 
@@ -197,12 +197,12 @@ test("signup: the page can't pick a show; bad zips are refused; a lookup outage 
   // A hold on tonight doesn't count.
   await cmd("shows.update", { id: showId, patch: { status: "hold" } });
   await signup("nora-quill-band", SignupBody.parse({ email: "hold@example.com", page: "/f/x" }), DURING);
-  assert.deepEqual((await db.get("fans", fanId(TEST_ARTIST, "hold@example.com")))!.showIds, []);
+  assert.deepEqual((await db.get(SYS, "fans", fanId(TEST_ARTIST, "hold@example.com")))!.showIds, []);
 
   const was = process.env.ORS_BASE_URL;
   process.env.ORS_BASE_URL = "http://127.0.0.1:1";
   try { await signup("nora-quill-band", SignupBody.parse({ email: "down@example.com", zip: "84532", page: "/f/x" })); } finally { process.env.ORS_BASE_URL = was; }
-  const fan = (await db.get("fans", fanId(TEST_ARTIST, "down@example.com")))!;
+  const fan = (await db.get(SYS, "fans", fanId(TEST_ARTIST, "down@example.com")))!;
   assert.deepEqual(fan.cities, []);
   assert.equal(fan.zip, "84532");
 });
@@ -217,7 +217,7 @@ test("signup at a house show with no times (assumed 19:00): city only, no state"
   assert.ok(!JSON.stringify(v).includes("Secret"));
   assert.equal((await listView("nora-quill-band", new Date("2026-12-12T20:00:00Z"))).current, null, "midday is not the show");
   await signup("nora-quill-band", SignupBody.parse({ email: "h@example.com", page: "/f/x" }), at);
-  const fan = (await db.get("fans", fanId(TEST_ARTIST, "h@example.com")))!;
+  const fan = (await db.get(SYS, "fans", fanId(TEST_ARTIST, "h@example.com")))!;
   assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Nederland", undefined]]);
 });
 
@@ -254,21 +254,21 @@ test("roles: members and AI non-admins get counts only; admins get everything", 
 test("fans.add / update / remove: paper source, merge, geocode, hard delete takes the history too", async () => {
   const a = await cmd("fans.add", { email: "Paper@Example.com", firstName: "Pat", showId });
   assert.equal(a.created, true);
-  const fan = (await db.get("fans", a.id))!;
+  const fan = (await db.get(SYS, "fans", a.id))!;
   assert.equal(fan.source, "paper"); assert.equal(fan.consent, undefined);
   assert.deepEqual(fan.cities.map((c: any) => [c.city, c.state]), [["Denver", "CO"]]);
   assert.equal(typeof fan.cities[0].lat, "number");
   assert.equal((await cmd("fans.add", { email: "paper@example.com", city: "Salt Lake City, UT" })).created, false);
-  assert.equal((await db.get("fans", a.id))!.cities.length, 2);
+  assert.equal((await db.get(SYS, "fans", a.id))!.cities.length, 2);
   await refused(cmd("fans.add", { email: "z@example.com", showId: "nope" }), "invalid_input");
 
   await cmd("fans.update", { id: a.id, patch: { firstName: null, cities: [{ city: "Moab", state: "ut" }] } });
-  const up = (await db.get("fans", a.id))!;
+  const up = (await db.get(SYS, "fans", a.id))!;
   assert.equal(up.firstName, undefined);
   assert.deepEqual(up.cities.map((c: any) => [c.city, c.state, typeof c.lat]), [["Moab", "UT", "number"]]);
 
   assert.deepEqual(await cmd("fans.remove", { id: a.id }), { id: a.id, removed: true });
-  assert.equal(await db.get("fans", a.id), null);
+  assert.equal(await db.get(SYS, "fans", a.id), null);
   assert.equal((await firestore().collection(`fans/${a.id}/history`).get()).size, 0);
   await refused(cmd("fans.remove", { id: a.id }), "not_found");
 });
@@ -349,7 +349,7 @@ test("fans.forBandzoogle groups by the most recent city; fans.markSynced stamps 
 
   const stamped = await cmd("fans.markSynced", { group: "boise, id" });
   assert.deepEqual(stamped, { marked: 2, skipped: 0, groups: { "Boise, ID": 2 } });
-  const fan = (await db.get("fans", fanId(TEST_ARTIST, "b1@example.com")))!;
+  const fan = (await db.get(SYS, "fans", fanId(TEST_ARTIST, "b1@example.com")))!;
   assert.equal(fan.bandzoogle.group, "Boise, ID");
   assert.ok(fan.bandzoogle.addedAt);
   assert.deepEqual((await cmd("fans.forBandzoogle", {})).groups.map((g: any) => g.group), ["Denver, CO", "No city"]);

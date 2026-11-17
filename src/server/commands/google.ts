@@ -8,17 +8,14 @@ import { z } from "zod";
 import { defineCommand } from "./types";
 import { db } from "../db";
 import { AppError } from "../errors";
-import type { Ctx } from "../ctx";
+import { systemCtx, type Ctx } from "../ctx";
 import { authUrl, emailFromIdToken, exchangeCode, featuresOf, googleConfigured, GOOGLE_FEATURES, GoogleAuthError, revoke, safeReturnTo, signState, verifyState } from "../google/oauth";
 import { getGrant, removeGrant, saveGrant, type Grant } from "../google/grants";
-import { bandGoogle, bookingMailOf } from "../google/band";
+import { artistDoc, bandGoogle, bookingMailOf } from "../google/band";
 import { calendarClient, canWrite, driveClient, IntegrationError, useRealGoogle, type CalInfo } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
 
-const artistOf = (ctx: Ctx) => {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 const usableForBand = (g: Grant | null) => !!g && (g.features.includes("calendar") || g.features.includes("drive"));
 
 
@@ -39,7 +36,7 @@ async function driveReady(artistId: string): Promise<boolean> {
 
 /** A chosen folder (band or rehearsal recordings) as Drive sees it now (its name can change there), or why Drive can't show it. */
 async function folderStatus(artistId: string, field: "driveFolderId" | "rehearsalFolderId" | "chartsFolderId" | "demosFolderId" | "songwritingFolderId" | "showsFolderId" | "releasesFolderId" | "postsFolderId") {
-  const id = (await db.get("artists", artistId))?.[field] as string | undefined;
+  const id = (await artistDoc(artistId))?.[field] as string | undefined;
   if (!id) return null;
   try {
     const f = await driveClient({ artistId }).get(id);
@@ -54,7 +51,7 @@ async function calendarReady(uid: string): Promise<boolean> {
   if (!useRealGoogle(process.env.CALENDAR_BASE_URL)) return !!process.env.CALENDAR_BASE_URL;
   return !!(await getGrant(uid))?.features.includes("calendar");
 }
-const bandCalendarOf = async (artistId: string) => ((await db.get("artists", artistId))?.calendar as { id: string; name: string } | null | undefined) ?? null;
+const bandCalendarOf = async (artistId: string) => ((await artistDoc(artistId))?.calendar as { id: string; name: string } | null | undefined) ?? null;
 
 /** The caller's own access to a calendar, as their Google account sees it. */
 async function accessTo(uid: string, calendarId: string): Promise<CalInfo | null> {
@@ -68,7 +65,7 @@ async function accessTo(uid: string, calendarId: string): Promise<CalInfo | null
 /** The Socials folder for Posts and whether Set up (posts.setup) has made its Posts/ folder. Null until Socials is chosen. */
 async function postsSetupOf(artistId: string, socials: Awaited<ReturnType<typeof folderStatus>>) {
   if (!socials) return null;
-  const postsId = (await db.get("artists", artistId))?.postFoldersId as string | undefined;
+  const postsId = (await artistDoc(artistId))?.postFoldersId as string | undefined;
   return { socialsId: socials.id, socialsName: socials.name, ...(postsId ? { postsId } : {}), setUp: !!postsId };
 }
 
@@ -84,8 +81,8 @@ async function status(ctx: Ctx) {
   // Set up, but a *_BASE_URL still points this service at its local fake (e.g. .env.development).
   const fakes = (["gmail", "calendar", "drive"] as const).filter((f) => !!process.env[`${f.toUpperCase()}_BASE_URL`]);
   const [me, band, mail] = await Promise.all([getGrant(ctx.uid), bandGoogle(artistId), bookingMailOf(artistId)]);
-  const [bandUser, bandGrant] = band ? await Promise.all([db.get("users", band.uid), getGrant(band.uid)]) : [null, null];
-  const [mailUser, mailGrant] = mail ? await Promise.all([db.get("users", mail.uid), getGrant(mail.uid)]) : [null, null];
+  const [bandUser, bandGrant] = band ? await Promise.all([db.get(ctx, "users", band.uid), getGrant(band.uid)]) : [null, null];
+  const [mailUser, mailGrant] = mail ? await Promise.all([db.get(ctx, "users", mail.uid), getGrant(mail.uid)]) : [null, null];
   return {
     configured: true, fakes, driveReady: ready, bandFolder: folder, rehearsalFolder, chartsFolder, demosFolder, songwritingFolder, showsFolder, releasesFolder, postsFolder, ...cal,
     me: me ? { googleEmail: me.googleEmail, features: me.features } : null,
@@ -107,7 +104,7 @@ export const googleConnectUrl = defineCommand({
   async run(ctx, { features, returnTo }) {
     const artistId = artistOf(ctx);
     if (!googleConfigured()) throw new AppError("google_not_configured", "Google isn't set up on this server", 503);
-    const [artist, user] = await Promise.all([db.get("artists", artistId), db.get("users", ctx.uid)]);
+    const [artist, user] = await Promise.all([db.get(ctx, "artists", artistId), db.get(ctx, "users", ctx.uid)]);
     if (!artist) throw new AppError("not_found", "Artist not found", 404);
     const state = signState({ uid: ctx.uid, artistId, slug: artist.slug as string, features: [...new Set(features)], returnTo: safeReturnTo(returnTo) });
     return { url: authUrl(state, [...new Set(features)], user?.email as string | undefined) };
@@ -123,7 +120,7 @@ export const googleFinishConnect = defineCommand({
     const artistId = artistOf(ctx);
     const s = verifyState(state);
     if (!s || s.uid !== ctx.uid || s.artistId !== artistId) throw new AppError("invalid_state", "That Google sign-in link has expired or isn't yours. Try Connect again.", 400);
-    const user = await db.get("users", ctx.uid);
+    const user = await db.get(ctx, "users", ctx.uid);
     if (!user) throw new AppError("forbidden", "No user for this account", 403);
     let t;
     try { t = await exchangeCode(code, state); } catch (e) {
@@ -182,12 +179,14 @@ export const googleDisconnect = defineCommand({
     const token = await removeGrant(ctx.uid);
     if (token) await revoke(token);
     // Every artist whose band account this was loses it, not only the one the caller is in.
-    for (const a of await db.list("artists")) {
+    // A grant is the person's, across artists: the system view (allow-listed for google.ts).
+    const sys = systemCtx("google disconnect", { uid: ctx.uid, via: ctx.via });
+    for (const a of await db.list(sys, "artists")) {
       const clear = {
         ...((a.google as { uid?: string } | null | undefined)?.uid === ctx.uid ? { google: null } : {}),
         ...((a.bookingMail as { uid?: string } | null | undefined)?.uid === ctx.uid ? { bookingMail: null } : {}),
       };
-      if (Object.keys(clear).length) await db.update({ ...ctx, artistId: a.id }, "artists", a.id, clear);
+      if (Object.keys(clear).length) await db.update(sys, "artists", a.id, clear);
     }
     return status(ctx);
   },
@@ -363,7 +362,7 @@ export const googleSetPostsFolder = defineCommand({
   async run(ctx, { folder }) {
     const artistId = artistOf(ctx);
     const f = await chosenFolder(artistId, folder);
-    const before = (await db.get("artists", artistId))?.postsFolderId;
+    const before = (await artistDoc(artistId))?.postsFolderId;
     await db.update(ctx, "artists", artistId, { postsFolderId: f.id, ...(before !== f.id ? { postFoldersId: null } : {}) });
     return status(ctx);
   },

@@ -10,9 +10,10 @@
  * admin role. Safe to run twice. Refuses to run without GCLOUD_PROJECT (so it can't silently hit the demo project).
  */
 import { registry } from "@/server/commands/registry";
-import { importCtx } from "@/server/ctx";
+import { importCtx, personCtx, systemCtx } from "@/server/ctx";
+import { createArtistFor } from "@/server/commands/people";
 import { adminAuth } from "@/server/admin";
-import { db } from "@/server/db";
+import { db, run } from "@/server/db";
 import { syncClaims } from "@/server/session";
 import { roleIn, type Membership } from "@/schema";
 
@@ -24,20 +25,22 @@ async function main() {
   if (!email || !email.includes("@")) throw new Error('Usage: tsx scripts/bootstrap-admin.ts <google-email> "<Name>" ["<Artist name>" | --artist=<slug>]');
   if (!process.env.GCLOUD_PROJECT) throw new Error("Set GCLOUD_PROJECT (e.g. roadie-prod-iab)");
 
-  const artists = await db.list("artists");
+  const sys = systemCtx("bootstrap-admin");
+  const artists = await db.list(sys, "artists");
   let artist = want ? artists.find((a) => a.slug === want) : artists.length === 1 ? artists[0] : undefined;
   if (want && !artist) throw new Error(`No artist with slug ${want}`);
   if (!artist && artists.length > 1) throw new Error(`There are ${artists.length} artists: say which with --artist=<slug> (${artists.map((a) => a.slug).join(", ")})`);
   if (!artist) {
     if (!artistName) throw new Error('No artist yet: pass its name as the third argument, e.g. "Nora Quill Band"');
-    const create = registry["artists.create"];
-    const r = (await create.run(importCtx("bootstrap"), create.input.parse({ name: artistName, configurations: [] }))) as { id: string; slug: string };
-    artist = (await db.get("artists", r.id))!;
+    // No artist yet to act as: the same steps sign-up takes (a person with no artist). The admin is added below.
+    const input = registry["artists.create"].input.parse({ name: artistName, configurations: [] });
+    const r = await run(personCtx("bootstrap", email, "import"), (w) => createArtistFor(w, "bootstrap", input as Record<string, unknown> & { name: string }));
+    artist = (await db.get(sys, "artists", r.id))!;
     console.log(`Created artist ${artistName} (/artists/${r.slug}).`);
   }
 
-  const ctx = importCtx("bootstrap", undefined, artist.id);
-  const [existing] = await db.list("users", (q) => q.where("email", "==", email.toLowerCase()).limit(1));
+  const ctx = importCtx(artist.id, "bootstrap");
+  const [existing] = await db.list(sys, "users", (q) => q.where("email", "==", email.toLowerCase()).limit(1));
   if (!existing || !roleIn(existing, artist.id)) {
     const add = registry["users.add"];
     await add.run(ctx, add.input.parse({ email, name, role: "admin" }));

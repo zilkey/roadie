@@ -10,7 +10,7 @@ import { assistantSetPrefs } from "@/server/commands/assistant";
 import { dispatch } from "@/server/commands/dispatch";
 import { firestore } from "@/server/admin";
 import type { AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
 
 beforeEach(resetEmulators);
 const ctx = { route: "calendar" };
@@ -19,8 +19,8 @@ let n = 0;
 async function session() {
   const admin = await makeUser(`s${++n}@example.com`, "admin", { name: "Rudy" });
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: ctx, at: new Date() });
-  return { uid: admin.uid, role: "admin" as const, name: "Rudy", threadId, runId: newRunId(), replyId: newMessageId() };
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: ctx, at: new Date() });
+  return { uid: admin.uid, artistId: TEST_ARTIST, role: "admin" as const, name: "Rudy", threadId, runId: newRunId(), replyId: newMessageId() };
 }
 async function run(message: string) {
   const flow = await getChatFlow();
@@ -188,8 +188,8 @@ test("api: Stop as its own request ends the turn with no dropped stream, even se
   const reader = res.body!.getReader();
   const first = JSON.parse(new TextDecoder().decode((await reader.read()).value).replace(/^data: /, "")) as Extract<AssistantEvent, { type: "start" }>;
   assert.deepEqual([first.threadId, first.messageId], [thread1, reply1], "the browser's ids");
-  // someone else's stop doesn't count
-  assert.equal((await handleStop(`Bearer ${other.token}`, { threadId: thread1, replyId: reply1 })).status, 200);
+  // someone else's stop doesn't count: once the thread exists, a stop from anyone but its owner is refused (not_found)
+  assert.equal((await handleStop(`Bearer ${other.token}`, { threadId: thread1, replyId: reply1 })).status, 404);
   await new Promise((r) => setTimeout(r, 1500));
   assert.equal((await msgs(thread1).get()).size, 0, "still running");
   const started = Date.now();

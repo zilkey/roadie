@@ -1,7 +1,6 @@
-import { db } from "@/server/db";
 import { AppError } from "@/server/errors";
 import { driveClient, IntegrationError } from "@/server/integrations";
-import { mediaSigOk } from "@/server/meta/media";
+import { resolveSigned } from "@/server/signedUrl";
 import { renderPostPhoto, NoPreviewError } from "@/server/postPhoto";
 import type { PostMedia } from "@/schema/posts";
 import { isVideo } from "@/lib/photos";
@@ -24,8 +23,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ postId: 
     const { postId, index } = await params;
     const q = new URL(req.url).searchParams;
     if (!/^\d+$/.test(index)) return no();
-    const post = await db.get("posts", postId);
-    if (!post || post.deletedAt || !mediaSigOk(post.artistId as string, postId, index, q.get("exp"), q.get("sig"))) return no();
+    const post = await resolveSigned("media", "posts", postId, index, q.get("exp"), q.get("sig"));
+    if (!post) return no();
     const m = (post.media as PostMedia[] | undefined)?.[Number(index)];
     if (!m) return no();
     if (isVideo(m.mimeType)) return await streamVideo(post.artistId as string, m, req.headers.get("range"));

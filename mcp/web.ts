@@ -71,7 +71,7 @@ export async function handleMcpRequest(req: Request): Promise<Response> {
     }
 
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-    const server = createMcpServer(async () => mcpCtx(await authenticateToken(raw), runId));
+    const server = createMcpServer(async () => mcpCtx(await authenticateToken(raw), runId), id.artistName);
     await server.connect(transport);
     const res = await transport.handleRequest(req, { parsedBody: body });
     if (!issued) return res;

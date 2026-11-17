@@ -7,7 +7,7 @@ import { sessionFor, type Who } from "@/server/assistant/confirm";
 import { execTool, toolDefs, readback } from "@/server/assistant/tools";
 import { script, PLOT_NOT_SENT, CANT_DO, unwrap } from "@/server/assistant/script";
 import { ensureThread, newThreadId } from "@/server/assistant/threads";
-import { resetEmulators, makeUser, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, TEST_ARTIST, SYS } from "./helpers";
 
 // Stage plots through Roadie and MCP. The ten phrases from junk.stories/32-stage-plots.md (P8) are fixtures here: each one is the
 // tool-call sequence a good model makes for it, run through Roadie's own execTool (so the ask-first policy applies) and checked
@@ -24,7 +24,7 @@ const ids: Record<string, string> = {};
 
 async function setup() {
   const admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
   sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId(), artistId: TEST_ARTIST };
   for (const [key, name, instruments] of [["nora", "Nora", ["vocals", "guitar"]], ["rudy", "Rudy", ["keys"]], ["hugo", "Hugo", ["bass"]], ["iris", "Iris", ["lead guitar"]], ["felix", "Felix", ["drums"]]] as const)
     ids[key] = (await db.create(sys, "musicians", { name, instruments: [...instruments], active: true })).id;
@@ -39,7 +39,7 @@ async function setup() {
 }
 async function sess() {
   const threadId = newThreadId();
-  await ensureThread({ uid: who.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: who.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return { ...sessionFor(who, threadId), artistId: TEST_ARTIST };
 }
 /** One tool call as Roadie runs it. Returns the unwrapped result (or the error / confirm payload) and the whole ToolOut. */
@@ -47,7 +47,7 @@ async function tool(s: Awaited<ReturnType<typeof sess>>, name: string, input: un
   const out = await execTool(s, name, input, noop);
   return { out, data: unwrap(out.output) as Row, confirm: !!(out.output as { needsConfirmation?: boolean }).needsConfirmation, error: (out.output as { error?: { code: string } }).error };
 }
-const plot = async (id: string) => (await db.get("stagePlots", id))! as Row;
+const plot = async (id: string) => (await db.get(SYS, "stagePlots", id))! as Row;
 const mkShow = (venue: string, date: string, extra: Row = {}) => db.create(sys, "shows", {
   date, status: "confirmed", artistId: TEST_ARTIST, billedAs: "full-band", personnel: [], sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false },
   docs: [], times: {}, fields: [], venue: { id: `v-${venue}`, name: venue }, ...extra,
@@ -184,8 +184,8 @@ test('"Use the no-drums plot for the Roots show" -> shows.setStagePlot on that s
   const r = await tool(s, "shows.setStagePlot", { showId: roots, stagePlotId: noDrums });
   assert.equal(r.confirm, false);
   assert.equal(r.error, undefined);
-  assert.equal((await db.get("shows", roots))!.stagePlotId, noDrums);
-  assert.equal((await db.get("shows", tophat))!.stagePlotId, id, "other shows keep theirs");
+  assert.equal((await db.get(SYS, "shows", roots))!.stagePlotId, noDrums);
+  assert.equal((await db.get(SYS, "shows", tophat))!.stagePlotId, id, "other shows keep theirs");
   assert.match(r.out.action!.label, /Picked a stage plot for/);
 });
 
@@ -231,7 +231,7 @@ test('"Give me the engineer link for tonight" -> the show\'s plot, then the link
   const id = await fullBand(s);
   const tonight = await mkShow("Top Hat", "2099-03-12", { stagePlotId: id });
   // Roadie finds tonight's show (context.now / search), reads its stagePlotId, then asks for that plot's link.
-  assert.equal((await db.get("shows", tonight))!.stagePlotId, id);
+  assert.equal((await db.get(SYS, "shows", tonight))!.stagePlotId, id);
   if (registry["stagePlots.engineerLink"]) {
     // member-readable read: never asks; works whether or not the link is on (the other agent's command decides what it returns)
     assert.ok(registry["stagePlots.engineerLink"].roles.includes("member"));

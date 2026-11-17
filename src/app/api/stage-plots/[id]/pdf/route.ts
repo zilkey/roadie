@@ -11,8 +11,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const ctx = await authenticate(req.headers.get("authorization"), req.headers.get(ARTIST_HEADER));
     const { id } = await params;
-    const plot = await db.get("stagePlots", id);
-    if (!plot || plot.deletedAt || (plot.artistId && plot.artistId !== ctx.artistId)) throw new AppError("not_found", `Stage plot ${id} not found`, 404);
-    return await plotPdfResponse(plot, req);
+    const plot = await db.get(ctx, "stagePlots", id);
+    if (!plot || plot.deletedAt) throw new AppError("not_found", `Stage plot ${id} not found`, 404);
+    return await plotPdfResponse(ctx, plot, req);
   } catch (e) { return failResponse(e); }
 }

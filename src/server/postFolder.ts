@@ -7,6 +7,7 @@
  * Each function takes the DriveService to use, so a command makes one client (as the band account) and passes it along.
  */
 import { db } from "./db";
+import type { Ctx } from "./ctx";
 import { AppError } from "./errors";
 import { IntegrationError, type DriveFile, type DriveListOpts, type DriveService } from "./integrations";
 import { FOLDER_MIME } from "./integrations/drive";
@@ -44,8 +45,8 @@ export async function uniqueName(drive: DriveService, parentId: string, base: st
 }
 
 /** The artist's Socials folder and its Posts/ folder (when Set up has made it). */
-export async function socialsOf(artistId: string): Promise<{ socialsId: string; postsId?: string }> {
-  const a = await db.get("artists", artistId);
+export async function socialsOf(ctx: Ctx): Promise<{ socialsId: string; postsId?: string }> {
+  const a = await db.get(ctx, "artists", ctx.artistId);
   const socialsId = a?.postsFolderId as string | undefined;
   if (!socialsId) throw new AppError("no_posts_folder", NO_SOCIALS_FOLDER, 400);
   return { socialsId, ...(a?.postFoldersId ? { postsId: a.postFoldersId as string } : {}) };
@@ -58,8 +59,8 @@ export interface InboxFolder { id: string; name: string; parentId: string }
  * direct subfolders have it as parentId. Posts/ is skipped by its id once Set up has saved it, and by its name directly in
  * Socials before that.
  */
-export async function inboxFolders(drive: DriveService, artistId: string): Promise<InboxFolder[]> {
-  const { socialsId, postsId } = await socialsOf(artistId);
+export async function inboxFolders(ctx: Ctx, drive: DriveService): Promise<InboxFolder[]> {
+  const { socialsId, postsId } = await socialsOf(ctx);
   const out: InboxFolder[] = [];
   const seen = new Set([socialsId]);
   let level = [socialsId];

@@ -6,7 +6,6 @@ import { appUrl } from "../availability";
 import { db } from "../db";
 import { AppError } from "../errors";
 import { printPrefs } from "../prefs";
-import { callerArtistId } from "../venues";
 import { defineCommand } from "./types";
 import { driveClient } from "../integrations";
 import { bandmates, chartsFolderId } from "../music";
@@ -37,17 +36,17 @@ export const setlistsPrintLink = defineCommand({
     ...PrintOptions.partial().shape,
   }).refine((i) => !!i.setlistId !== !!i.showId, "Give exactly one of setlistId or showId"),
   async run(ctx, { setlistId, showId, ...explicit }) {
-    const artistId = await callerArtistId(ctx);
-    const artist = artistId ? await db.get("artists", artistId) : null;
+    const artistId = ctx.artistId;
+    const artist = await db.get(ctx, "artists", artistId);
     if (!artist || artist.deletedAt || typeof artist.slug !== "string") throw new AppError("invalid_input", "Which artist? Open one first", 400);
     const id = (setlistId ?? showId)!;
-    const doc = setlistId ? await db.get("setlistTemplates", id) : await db.get("setlists", id);
+    const doc = setlistId ? await db.get(ctx, "setlistTemplates", id) : await db.get(ctx, "setlists", id);
     if (!doc || doc.deletedAt) throw new AppError("not_found", setlistId ? `Setlist template ${id} not found` : `Show ${id} has no setlist`, 404);
     if (showId) {
-      const show = await db.get("shows", id);
-      if (!show || show.deletedAt || (show.artistId && show.artistId !== artistId)) throw new AppError("not_found", `Show ${id} not found`, 404);
+      const show = await db.get(ctx, "shows", id);
+      if (!show || show.deletedAt) throw new AppError("not_found", `Show ${id} not found`, 404);
     }
-    const saved = await printPrefs(ctx.uid, artistId!);
+    const saved = await printPrefs(ctx.uid, artistId);
     const defined = Object.fromEntries(Object.entries(explicit).filter(([, v]) => v !== undefined));
     const merged = defaultPrintOptions(setCount((doc.items ?? []) as { type?: string }[]), { ...saved, ...defined });
     // Only fields that still print: song fields deleted or taken off "In setlists" since they were saved are dropped.
@@ -68,24 +67,24 @@ export const setlistsPdf = defineCommand({
   input: z.strictObject({ setlistId: z.string().min(1).optional(), showId: z.string().min(1).optional() })
     .refine((i) => !!i.setlistId !== !!i.showId, "Give exactly one of setlistId or showId"),
   async run(ctx, { setlistId, showId }) {
-    const artistId = await callerArtistId(ctx);
+    const artistId = ctx.artistId;
     const id = (setlistId ?? showId)!;
-    const doc = setlistId ? await db.get("setlistTemplates", id) : await db.get("setlists", id);
+    const doc = setlistId ? await db.get(ctx, "setlistTemplates", id) : await db.get(ctx, "setlists", id);
     if (!doc || doc.deletedAt) throw new AppError("not_found", setlistId ? `Setlist template ${id} not found` : `Show ${id} has no setlist`, 404);
     let title = String(doc.name ?? "Setlist");
     if (showId) {
-      const show = await db.get("shows", id);
-      if (!show || show.deletedAt || (show.artistId && show.artistId !== artistId)) throw new AppError("not_found", `Show ${id} not found`, 404);
+      const show = await db.get(ctx, "shows", id);
+      if (!show || show.deletedAt) throw new AppError("not_found", `Show ${id} not found`, 404);
       title = showFolderName(show as never);
     }
-    const parent = await chartsFolderId(artistId ?? undefined);
+    const parent = await chartsFolderId(artistId);
     if (!parent) throw new AppError("no_charts_folder", NO_CHARTS_FOLDER, 400);
-    const drive = driveClient({ artistId: artistId ?? undefined });
-    const files = (await db.list("files")).filter((f) => f.songId);
+    const drive = driveClient({ artistId });
+    const files = (await db.list(ctx, "files")).filter((f) => f.songId);
     const pdf = await buildSetlistPdf(drive, (doc.items ?? []) as never, files, title);
     if (!pdf.pages.length) throw new AppError("no_charts", "None of these songs has a Google Doc or PDF chart the band's Google account can open, so there is nothing to put in a PDF", 400);
     const name = `${title.replace(/[/\\]/g, "-").trim()}.pdf`;
-    const { file, folder } = await saveSetlistPdf(drive, parent, name, pdf.bytes, (await bandmates()).map((m) => m.email));
+    const { file, folder } = await saveSetlistPdf(drive, parent, name, pdf.bytes, (await bandmates(ctx)).map((m) => m.email));
     return { url: file.webViewLink, name: file.name, folder: { name: folder.name, url: folder.webViewLink }, pages: pdf.pages, skipped: pdf.skipped };
   },
 });

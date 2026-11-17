@@ -11,9 +11,10 @@ import { buildSearchItems, searchItems, isActive, todayStr, followUpFor, QUIET_D
 import { statsMovement, type StatLike } from "@/lib/stats";
 import { DEFAULT_TRANSITION_SEC, setlistTotal, transitionOf } from "@/lib/music";
 import { bandFolderId, bandmates } from "../music";
-import { callerArtistId, notesByVenue, privateOf, withNotes } from "../venues";
+import { notesByVenue, privateOf, withNotes } from "../venues";
 import { bandNotesBy, withBandNote } from "../bandNotes";
 import { dateStr, isNotedKind } from "@/schema";
+import { pathOf } from "@/schema/owners";
 import { isOff, publicShowName, showName, type ShowPlaceLike } from "@/lib/shows";
 
 const READ = ["admin", "mcp"] as const;
@@ -31,20 +32,20 @@ export const search = defineCommand({
   input: strict({ q: z.string().min(1), kinds: z.array(z.enum(SEARCH_KINDS)).optional(), limit: z.number().int().min(1).max(100).default(25) }),
   async run(ctx, i) {
     const [allVenues, promoters, festivals, contacts, editions, pitches] = await Promise.all(
-      ["venues", "promoters", "festivals", "contacts", "editions", "pitches"].map((c) => db.list(c)),
+      ["venues", "promoters", "festivals", "contacts", "editions", "pitches"].map((c) => db.list(ctx, c)),
     );
     // The shared directory with this band's notes laid over it (their contacts are searchable); a room the band archived is hidden.
-    const notes = ctx.role === "member" ? new Map() : await notesByVenue(await callerArtistId(ctx));
+    const notes = ctx.role === "member" ? new Map() : await notesByVenue(ctx);
     const venues = allVenues.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
     // Festivals and promoters with this band's contacts on them (their contactIds are the band's notes); only this band's contacts.
-    const artistId = await callerArtistId(ctx);
-    const [fNotes, pNotes] = await Promise.all([bandNotesBy("festivals", artistId), bandNotesBy("promoters", artistId)]);
+    const artistId = ctx.artistId;
+    const [fNotes, pNotes] = await Promise.all([bandNotesBy(ctx, "festivals"), bandNotesBy(ctx, "promoters")]);
     const items = buildSearchItems({
-      venues, contacts: contacts.filter((c) => inArtist(ctx, "contacts", c)),
+      venues, contacts,
       promoters: promoters.map((p) => withBandNote("promoters", p, pNotes.get(p.id))), festivals: festivals.map((f) => withBandNote("festivals", f, fNotes.get(f.id))),
     } as never) as { kind: string; id: string; name: string; sub: string; haystack: string }[];
     for (const e of editions) items.push({ kind: "edition", id: e.id, name: `${e.festivalName} ${e.label}`, sub: ["Festival year", e.appDeadline?.date && `deadline ${e.appDeadline.date}`].filter(Boolean).join(" · "), haystack: `${e.festivalName} ${e.label} ${e.year}` });
-    for (const p of pitches.filter((p) => inArtist(ctx, "pitches", p))) items.push({ kind: "pitch", id: p.id, name: p.target.name, sub: `Pitch · ${p.status}`, haystack: `${p.target.name} ${p.status} ${p.notes ?? ""}` });
+    for (const p of pitches) items.push({ kind: "pitch", id: p.id, name: p.target.name, sub: `Pitch · ${p.status}`, haystack: `${p.target.name} ${p.status} ${p.notes ?? ""}` });
     const want = new Set<string>(i.kinds ?? SEARCH_KINDS);
     const hits = searchItems(items as never, i.q).filter((x) => want.has(x.kind)).slice(0, i.limit);
     return { count: hits.length, results: hits.map(({ kind, id, name, sub }) => ({ kind, id, name, sub })) };
@@ -81,20 +82,8 @@ function withLength(d: Doc, show?: Doc | null): Doc {
   return { ...d, totalSec: setlistTotal(d.items ?? [], transitionSec), transitionSec };
 }
 
-/**
- * Records that say whose they are (an artist itself; shows and pitches carry artistId) are only visible from that artist.
- * Everything else isn't partitioned by artist yet (one band per project today), so it is visible to every member.
- */
-function inArtist(ctx: { artistId?: string }, kind: string, d: Record<string, unknown>) {
-  // Booking campaigns (#82) are admins' only, like the rules: never through MCP, never another band's.
-  if (kind === "campaigns") return (ctx as { role?: string }).role === "admin" && (!ctx.artistId || d.artistId === ctx.artistId);
-  if (!ctx.artistId) return true;
-  if (kind === "artists") return d.id === ctx.artistId;
-  if (kind === "shows" || kind === "pitches" || kind === "tours") return !d.artistId || d.artistId === ctx.artistId;
-  // Contacts are one band's own: never another band's.
-  if (kind === "contacts") return d.artistId === ctx.artistId;
-  return true;
-}
+/** Booking campaigns (#82) are admins' only, like the rules: never through MCP. Every read is scoped to the ctx's artist by db.ts. */
+const mayRead = (ctx: { role: string }, kind: string) => kind !== "campaigns" || ctx.role === "admin";
 
 export const recordsGet = defineCommand({
   name: "records.get", roles: [...READ],
@@ -104,25 +93,25 @@ export const recordsGet = defineCommand({
     "A setlist's or template's totalSec is its full length: songs + breaks + transitionSec between each two songs in a row (a setlist uses its show's transitionSec, a template 30); quote that as the setlist's length.",
   input: strict({ kind: kindEnum, id: z.string().min(1) }),
   async run(ctx, i) {
-    const d = await db.get(i.kind, i.id);
-    if (!d || d.deletedAt || !inArtist(ctx, i.kind, d)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
+    const d = await db.get(ctx, i.kind, i.id);
+    if (!d || d.deletedAt || !mayRead(ctx, i.kind)) throw new AppError("not_found", `${i.kind}/${i.id} not found`, 404);
     const kind = i.kind;
     const out: Record<string, unknown> = isNotedKind(kind)
-      ? present(ctx, kind, withBandNote(kind, d, (await bandNotesBy(kind, await callerArtistId(ctx))).get(d.id)))
-      : kind === "setlists" ? withLength(d, await db.get("shows", d.id))
+      ? present(ctx, kind, withBandNote(kind, d, (await bandNotesBy(ctx, kind)).get(d.id)))
+      : kind === "setlists" ? withLength(d, await db.get(ctx, "shows", d.id))
       : kind === "setlistTemplates" ? withLength(d)
       : present(ctx, kind, d);
     if (i.kind === "venues") {
       // The shared room plus this band's private notes (loadInNotes, notes, contactIds, promoterIds). Never another band's.
-      const note = (await notesByVenue(await callerArtistId(ctx))).get(d.id) ?? null;
+      const note = (await notesByVenue(ctx)).get(d.id) ?? null;
       Object.assign(out, withNotes(d, note));
       if (note?.deletedAt) out.archived = true;
     }
     if (i.kind === "pitches") {
-      out.activity = (await db.list(`pitches/${i.id}/activity`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
-      out.comments = (await db.list(`pitches/${i.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+      out.activity = (await db.list(ctx, pathOf("activity", { artistId: ctx.artistId, parent: { kind: "pitches", id: i.id } }))).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+      out.comments = (await db.list(ctx, pathOf("comments", { artistId: ctx.artistId, parent: { kind: "pitches", id: i.id } }))).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
     }
-    if (i.kind === "shows") out.comments = (await db.list(`shows/${i.id}/comments`)).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
+    if (i.kind === "shows") out.comments = (await db.list(ctx, pathOf("comments", { artistId: ctx.artistId, parent: { kind: "shows", id: i.id } }))).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis());
     return out;
   },
 });
@@ -146,18 +135,18 @@ export const recordsList = defineCommand({
     missing: z.array(z.string().min(1)).optional(), fields: z.array(z.string().min(1)).optional(),
   }),
   async run(ctx, i) {
-    let rows = (await db.list(i.kind)).filter((d) => inArtist(ctx, i.kind, d));
+    let rows = mayRead(ctx, i.kind) ? await db.list(ctx, i.kind) : [];
     if (i.kind === "venues") {
-      const notes = await notesByVenue(await callerArtistId(ctx));
+      const notes = await notesByVenue(ctx);
       rows = rows.filter((v) => !notes.get(v.id)?.deletedAt).map((v) => withNotes(v, notes.get(v.id) ?? null));
     }
     const kind = i.kind;
     if (isNotedKind(kind)) {
-      const notes = await bandNotesBy(kind, await callerArtistId(ctx));
+      const notes = await bandNotesBy(ctx, kind);
       rows = rows.map((d) => withBandNote(kind, d, notes.get(d.id)));
     }
     if (i.kind === "setlists") {
-      const shows = new Map((await db.list("shows")).map((s) => [s.id, s]));
+      const shows = new Map((await db.list(ctx, "shows")).map((s) => [s.id, s]));
       rows = rows.map((d) => withLength(d, shows.get(d.id) ?? null));
     }
     if (i.kind === "setlistTemplates") rows = rows.map((d) => withLength(d));
@@ -185,21 +174,21 @@ export const pitchesNeedingFollowUp = defineCommand({
   input: strict({ quietDays: z.number().int().min(1).default(QUIET_DAYS), today: dateStr.optional() }),
   async run(ctx, i) {
     const today = i.today ?? todayStr();
-    const pitches = (await db.list("pitches")).filter((p) => isActive(p.status) && inArtist(ctx, "pitches", p));
-    const contacts = new Map((await db.list("contacts")).filter((c) => inArtist(ctx, "contacts", c)).map((c) => [c.id, c]));
-    const artistId = await callerArtistId(ctx);
+    const pitches = (await db.list(ctx, "pitches")).filter((p) => isActive(p.status));
+    const contacts = new Map((await db.list(ctx, "contacts")).map((c) => [c.id, c]));
+    const artistId = ctx.artistId;
     const out = [];
     for (const p of pitches) {
       const f = followUpFor(p as unknown as FollowUpPitchLike, today, i.quietDays);
       if (!f) continue;
       const { reasons, daysSinceContact: quiet } = f;
       const kind = p.target.kind as string;
-      const target = await db.get(kind === "venue" ? "venues" : kind === "promoter" ? "promoters" : "editions", p.target.id);
+      const target = await db.get(ctx, kind === "venue" ? "venues" : kind === "promoter" ? "promoters" : "editions", p.target.id);
       // The band's contacts at the place: a venue's from its venueNotes, a promoter's or festival's (an edition's are its festival's) from the band's notes.
-      let contactIds: string[] = kind === "venue" && target ? privateOf((await notesByVenue(artistId)).get(target.id) ?? target).contactIds
-        : kind === "promoter" && target ? withBandNote("promoters", target, (await bandNotesBy("promoters", artistId)).get(target.id)).contactIds ?? [] : [];
-      const festival = kind === "edition" && target?.festivalId ? await db.get("festivals", target.festivalId) : null;
-      if (festival) contactIds = withBandNote("festivals", festival, (await bandNotesBy("festivals", artistId)).get(festival.id)).contactIds ?? [];
+      let contactIds: string[] = kind === "venue" && target ? privateOf((await notesByVenue(ctx)).get(target.id) ?? target).contactIds
+        : kind === "promoter" && target ? withBandNote("promoters", target, (await bandNotesBy(ctx, "promoters")).get(target.id)).contactIds ?? [] : [];
+      const festival = kind === "edition" && target?.festivalId ? await db.get(ctx, "festivals", target.festivalId) : null;
+      if (festival) contactIds = withBandNote("festivals", festival, (await bandNotesBy(ctx, "festivals")).get(festival.id)).contactIds ?? [];
       out.push({
         id: p.id, target: p.target, status: p.status, nextStep: p.nextStep ?? null, daysSinceContact: quiet ?? null, reasons,
         people: contactIds.map((c) => contacts.get(c)).filter(Boolean).map((c) => ({ id: c!.id, name: c!.name, title: c!.title, emails: c!.emails })),
@@ -219,7 +208,7 @@ export const songsMissingFiles = defineCommand({
     "who cannot open it, or it sits outside the band folder. Follow up with drive.search, files.attach, files.shareWithBand, files.copyToBand.",
   input: strict({}),
   async run(ctx) {
-    const [songs, files, mates, folder] = await Promise.all([db.list("songs"), db.list("files"), bandmates(), bandFolderId(ctx.artistId)]);
+    const [songs, files, mates, folder] = await Promise.all([db.list(ctx, "songs"), db.list(ctx, "files"), bandmates(ctx), bandFolderId(ctx.artistId)]);
     const name = new Map(mates.map((m) => [m.id, m.name]));
     const live = songs.filter((s) => s.status !== "retired" && s.status !== "writing");
     const byTitle = new Map(songs.map((s) => [s.id, s.title as string]));
@@ -250,8 +239,8 @@ export const availabilityCheck = defineCommand({
     "For each date: shows already on it (holds and confirmed), 'Can you play?' questions with who answered what and who has not, and a verdict " +
     "(conflict = a confirmed or hold show that day; asked = a question is open; free = nothing). Use before pitching dates.",
   input: strict({ dates: z.array(dateStr).min(1).max(60) }),
-  async run(_ctx, i) {
-    const [shows, asks, musicians] = await Promise.all([db.list("shows"), db.list("availability"), db.list("musicians")]);
+  async run(ctx, i) {
+    const [shows, asks, musicians] = await Promise.all([db.list(ctx, "shows"), db.list(ctx, "availability"), db.list(ctx, "musicians")]);
     const name = new Map(musicians.map((m) => [m.id, m.name as string]));
     return {
       dates: [...new Set(i.dates)].sort().map((date) => {
@@ -285,7 +274,7 @@ export const statsMovementCmd = defineCommand({
   }),
   async run(ctx, i) {
     const today = i.today ?? todayStr();
-    const [snaps, shows] = await Promise.all([db.list("statSnapshots"), db.list("shows")]);
+    const [snaps, shows] = await Promise.all([db.list(ctx, "statSnapshots"), db.list(ctx, "shows")]);
     const s = snaps as unknown as StatLike[];
     const events = [
       ...i.releases.map((r) => ({ type: "release", name: r.name, date: r.date })),
@@ -311,7 +300,7 @@ export const historyMyRuns = defineCommand({
   name: "history.myRuns", roles: [...READ],
   description: "Your recent runs (newest first) with how many changes each made, so you can pick one for history.undoRun.",
   input: strict({ limit: z.number().int().min(1).max(100).default(20) }),
-  run: async (ctx, i) => ({ runs: await runsOf(ctx.uid, i.limit), currentRunId: ctx.runId }),
+  run: async (ctx, i) => ({ runs: await runsOf(ctx, i.limit), currentRunId: ctx.runId }),
 });
 
 export const aiCommands = [

@@ -274,10 +274,10 @@ type ActRow = Record<string, unknown> & { id: string; name: string; links?: Part
 export const sameName = (hits: SpotifyHit[], name: string) => { const k = actKey(name); return hits.filter((h) => actKey(h.name) === k); };
 
 /** Where the act has played, for the search: "played Aggie Theatre in Fort Collins, Bluebird Theater in Denver". */
-async function playedHint(id: string): Promise<string> {
-  const events = await db.list("venueEvents", (q) => q.where("actIds", "array-contains", id));
+async function playedHint(ctx: Ctx, id: string): Promise<string> {
+  const events = await db.list(ctx, "venueEvents", (q) => q.where("actIds", "array-contains", id));
   const venueIds = [...new Set(events.map((e) => e.venueId as string))].slice(0, 3);
-  const venues = (await Promise.all(venueIds.map((v) => db.get("venues", v)))).filter(Boolean);
+  const venues = (await Promise.all(venueIds.map((v) => db.get(ctx, "venues", v)))).filter(Boolean);
   const rooms = venues.map((v) => `${v!.name}${v!.address?.city ? ` in ${v!.address.city}${v!.address.state ? `, ${v!.address.state}` : ""}` : ""}`);
   return rooms.length ? `played ${rooms.join("; ")}` : "";
 }
@@ -312,7 +312,7 @@ const what = (patch: Record<string, unknown>, act: ActRow) => {
  * null means none of them (the candidates are cleared, the web facts stay).
  */
 export async function lookUpAct(ctx: Ctx, id: string, opts: { spotifyId?: string | null; now?: Date } = {}): Promise<LookupResult> {
-  const act = (await db.get("acts", id)) as ActRow | null;
+  const act = (await db.get(ctx, "acts", id)) as ActRow | null;
   if (!act || act.deletedAt) throw new AppError("not_found", "No act with that id", 404);
   const now = (opts.now ?? new Date()).toISOString();
 
@@ -325,11 +325,11 @@ export async function lookUpAct(ctx: Ctx, id: string, opts: { spotifyId?: string
       patch.sources = [...((act.sources as unknown[] | undefined) ?? []), { url: hit.url, checkedAt: now }];
     }
     const found = what(patch, act);
-    await run(ctx, (w) => w.asSystem(() => w.update("acts", id, patch)));
+    await run(ctx, (w) => w.system(() => w.update("acts", id, patch)));
     return { id, name: act.name, state: found.length ? "found" : "nothing", found, sources: ((patch.sources ?? act.sources) as unknown[] | undefined)?.length ?? 0 };
   }
 
-  const hint = await playedHint(id);
+  const hint = await playedHint(ctx, id);
   const [web, spotify] = await Promise.allSettled([webFacts(act.name, hint), spotifyCatalog().searchArtists(act.name)]);
   if (web.status === "rejected" && spotify.status === "rejected") {
     console.error("acts.lookup", web.reason, spotify.reason);
@@ -380,6 +380,6 @@ export async function lookUpAct(ctx: Ctx, id: string, opts: { spotifyId?: string
     lookupCandidates: candidates ?? null,
   };
   const found = what(patch, act);
-  await run(ctx, (w) => w.asSystem(() => w.update("acts", id, patch)));
+  await run(ctx, (w) => w.system(() => w.update("acts", id, patch)));
   return { id, name: act.name, state: candidates ? "pick" : found.length ? "found" : "nothing", found, ...(candidates ? { candidates: candidates.length } : {}), sources: sources.length };
 }

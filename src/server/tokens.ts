@@ -4,12 +4,13 @@
  * membership; this only finds the token and the artist it names.
  */
 import { db, type Doc } from "./db";
+import { systemCtx } from "./ctx";
 
 export type TokenKind = "mcpTokens" | "shortcutTokens";
 
 /** The live (not soft-deleted) token stored under `hash`, and the artist it is bound to (null for an older MCP key that names none). */
 export async function resolveToken(kind: TokenKind, hash: string): Promise<{ token: Doc; artistId: string | null } | null> {
-  const token = await db.get(kind, hash);
+  const token = await db.get(systemCtx("resolve token"), kind, hash);
   if (!token || token.deletedAt) return null;
   return { token, artistId: typeof token.artistId === "string" && token.artistId ? token.artistId : null };
 }

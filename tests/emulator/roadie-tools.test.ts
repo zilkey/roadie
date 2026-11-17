@@ -15,7 +15,7 @@ import { execTool, undoInThread, type Emit } from "@/server/assistant/tools";
 import { contextNow, pageList, pageRecord, searchAll, tonightDate } from "@/server/assistant/context";
 import { ensureThread, getRuns, newThreadId, PENDING_TTL_MS } from "@/server/assistant/threads";
 import type { AssistantAction, AssistantEvent } from "@/schema/assistant";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -38,8 +38,8 @@ const noop: Emit = () => {};
 beforeEach(async () => {
   await resetEmulators();
   admin = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
-  who = { uid: admin.uid, role: "admin", name: "Rudy" };
-  sys = { uid: admin.uid, role: "admin", via: "app", runId: newRunId() };
+  who = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", name: "Rudy" };
+  sys = { uid: admin.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const mus = (await db.create(sys, "musicians", { name: "Nora", instruments: [], active: true })).id;
   const artist = (await db.create(sys, "artists", {
     slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {},
@@ -53,7 +53,7 @@ beforeEach(async () => {
 
 async function thread() {
   const threadId = newThreadId();
-  await ensureThread({ uid: admin.uid, threadId, pageContext: { route: "calendar" }, at: new Date() });
+  await ensureThread({ uid: admin.uid, artistId: TEST_ARTIST, threadId, pageContext: { route: "calendar" }, at: new Date() });
   return threadId;
 }
 const sess = async (over: Partial<ReturnType<typeof sessionFor>> = {}) => ({ ...sessionFor(who, await thread()), ...over });
@@ -65,8 +65,8 @@ async function chat(message: string, threadId?: string, pageContext: { route: st
   assert.equal(done.type, "done", JSON.stringify(events.at(-1)));
   return { events, threadId: done.threadId, text: events.flatMap((e) => (e.type === "text" ? [e.delta] : [])).join("").trim() };
 }
-const status = async () => (await db.get("shows", showId))!.status;
-const expenses = async () => (await db.list("expenses")).filter((e) => !e.deletedAt);
+const status = async () => (await db.get(SYS, "shows", showId))!.status;
+const expenses = async () => (await db.list(SYS, "expenses")).filter((e) => !e.deletedAt);
 
 test("a tool call goes through the command gate signed as Roadie, with the thread and the message's run id", async () => {
   const s = await sess();
@@ -98,7 +98,7 @@ test("a tool call goes through the command gate signed as Roadie, with the threa
 
 test("a member (or any non-admin) can't use any of it", async () => {
   const m = await makeUser("m@example.com", "member");
-  const ms = { ...sessionFor({ uid: m.uid, role: "member", name: "M" }, await thread()) };
+  const ms = { ...sessionFor({ uid: m.uid, artistId: TEST_ARTIST, role: "member", name: "M" }, await thread()) };
   for (const [name, input] of [["expenses.add", { amount: 100, what: "x", category: "other" }], ["search", { q: "a" }], ["context.now", {}], ["history.undoRun", {}], ["shows.update", { id: showId, patch: {} }]] as const) {
     const out = await execTool(ms, name, input, noop);
     assert.equal((out.output as { error: { code: string } }).error.code, "forbidden", name);
@@ -109,7 +109,7 @@ test("a member (or any non-admin) can't use any of it", async () => {
   assert.equal((await handleConfirm(`Bearer ${m.token}`, { threadId: "t", pendingId: "p", decision: "yes" })).status, 403);
   assert.equal((await handleUndo(`Bearer ${m.token}`, { threadId: "t", runId: "r" })).status, 403);
   // search and context ask the command layer, which says no to a member
-  const mctx: Ctx = { uid: m.uid, role: "member", via: "assistant", runId: newRunId() };
+  const mctx: Ctx = { uid: m.uid, artistId: TEST_ARTIST, role: "member", via: "assistant", runId: newRunId() };
   await assert.rejects(searchAll(mctx, { q: "hi" }), /may not run/);
   await assert.rejects(contextNow(mctx, { uid: m.uid, name: "M", role: "member" }), /may not run/);
 });
@@ -127,9 +127,9 @@ test("confirm-required commands don't run without a yes, even when the model ask
   assert.match(first.action!.label, /Deep End/);
   assert.equal(await status(), "hold");
   // other confirm-required commands are refused the same way
-  const rm = await execTool(s, "venues.remove", { id: (await db.get("shows", showId))!.venue.id }, noop);
+  const rm = await execTool(s, "venues.remove", { id: (await db.get(SYS, "shows", showId))!.venue.id }, noop);
   assert.equal((rm.output as { needsConfirmation: boolean }).needsConfirmation, true);
-  assert.equal((await db.list("venues")).filter((v) => !v.deletedAt).length, 1);
+  assert.equal((await db.list(SYS, "venues")).filter((v) => !v.deletedAt).length, 1);
 
   // the request has no place for input: extra fields are refused
   const res = await handleConfirm(`Bearer ${admin.token}`, { threadId: s.threadId, pendingId: pid, decision: "yes", command: "shows.remove", input: { id: "other" } });
@@ -138,7 +138,7 @@ test("confirm-required commands don't run without a yes, even when the model ask
 
   const ans = await answerPending(who, { threadId: s.threadId, pendingId: pid, decision: "yes" });
   assert.equal(ans.status, "done");
-  const show = (await db.get("shows", showId))!;
+  const show = (await db.get(SYS, "shows", showId))!;
   assert.equal(show.status, "canceled");
   assert.equal(show.via, "assistant");
   const runs = await getRuns(s.threadId);
@@ -152,7 +152,7 @@ test("cancel discards the pending action; someone else's thread is invisible", a
   const s = await sess();
   const pid = ((await execTool(s, "shows.cancel", { id: showId }, noop)).output as { pendingId: string }).pendingId;
   const other = await makeUser("o@example.com", "admin");
-  await assert.rejects(answerPending({ uid: other.uid, role: "admin", name: "O" }, { threadId: s.threadId, pendingId: pid, decision: "yes" }), /No such conversation/);
+  await assert.rejects(answerPending({ uid: other.uid, artistId: TEST_ARTIST, role: "admin", name: "O" }, { threadId: s.threadId, pendingId: pid, decision: "yes" }), /No such conversation/);
   assert.equal((await answerPending(who, { threadId: s.threadId, pendingId: pid, decision: "cancel" })).status, "canceled");
   assert.equal(await status(), "hold");
   await assert.rejects(answerPending(who, { threadId: s.threadId, pendingId: pid, decision: "yes" }), /already/);
@@ -236,7 +236,7 @@ test("canned model: add $50 gas, move load-in, show me, pay everyone, cancel, in
   assert.equal((await expenses())[0].category, "gas");
 
   const mv = await chat("move load-in at Deep End to 4:30");
-  const show = (await db.get("shows", showId))!;
+  const show = (await db.get(SYS, "shows", showId))!;
   assert.equal(show.times.loadIn, "16:30");
   assert.equal(show.times.set, "21:15"); // the rest of times is kept
   assert.equal(show.via, "assistant");
@@ -260,7 +260,7 @@ test("canned model: add $50 gas, move load-in, show me, pay everyone, cancel, in
   const inv = await chat("invite Mae");
   assert.match(inv.text, /can't do that/);
   assert.equal(inv.events.some((e) => e.type === "action" || e.type === "readback" || e.type === "confirm"), false);
-  assert.equal((await db.list("users")).length, 1);
+  assert.equal((await db.list(SYS, "users")).length, 1);
 });
 
 test("a bad route or record id fails safely; a good record opens", async () => {
@@ -353,8 +353,8 @@ test("paying someone back is one card with their name and total; yes pays exactl
   const later = await add(700, "Picks"); // logged after the card: not part of what was shown
   const ans = await answerPending(who, { threadId: s.threadId, pendingId: (out.output as { pendingId: string }).pendingId, decision: "yes" });
   assert.equal(ans.status, "done");
-  for (const x of owed) assert.ok((await db.get("expenses", x.id))!.paidBackAt, x.id);
-  assert.equal((await db.get("expenses", later.id))!.paidBackAt, undefined);
+  for (const x of owed) assert.ok((await db.get(SYS, "expenses", x.id))!.paidBackAt, x.id);
+  assert.equal((await db.get(SYS, "expenses", later.id))!.paidBackAt, undefined);
   await assert.rejects(registry["expenses.payPerson"].run(sys, { userId: felix.uid, ids: [owed[0].id] }), (e: { code?: string }) => e.code === "not_found");
 });
 
@@ -362,7 +362,7 @@ test("money cards name the person, project and show; income.add asks and yes lan
   const felix = await makeUser("felix@example.com", "member", { name: "Felix Brandt" });
   await db.create(sys, "musicians", { name: "Felix Brandt", instruments: [], active: true, userId: felix.uid });
   // Creating the show already made the Band default project (ensureDefaultProject): reuse it rather than add a second default.
-  const band = (await db.list("projects")).find((p) => p.isDefault && !p.deletedAt) ?? await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true });
+  const band = (await db.list(SYS, "projects")).find((p) => p.isDefault && !p.deletedAt) ?? await db.create(sys, "projects", { artistId: TEST_ARTIST, kind: "band", name: "Band", status: "open", isDefault: true });
   const s = await sess();
   const card = async (name: string, input: Record<string, unknown>) => {
     const events: AssistantEvent[] = [];
@@ -375,7 +375,7 @@ test("money cards name the person, project and show; income.add asks and yes lan
   assert.equal(paid.summary, "We paid Felix Brandt $100.00 for the Deep End show (Venmo)");
   const ans = await answerPending(who, { threadId: s.threadId, pendingId: (owed.out.output as { pendingId: string }).pendingId, decision: "yes" });
   assert.equal(ans.status, "done");
-  const [inc] = await db.list("income");
+  const [inc] = await db.list(SYS, "income");
   assert.equal(inc.receivedAt, undefined);
   assert.equal(inc.projectId, band.id);
   assert.equal(inc.showId, showId);

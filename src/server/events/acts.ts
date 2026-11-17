@@ -6,7 +6,7 @@
 import { actKey, type Act } from "@/schema";
 import { cleanActName } from "@/lib/acts";
 import { db, run } from "../db";
-import { importCtx, type Ctx } from "../ctx";
+import { systemCtx, type AnyCtx } from "../ctx";
 
 const IN_LIMIT = 30;
 /** Creates per write unit: each is the doc plus its history entry, well under a transaction's 500 writes. */
@@ -19,7 +19,7 @@ export async function actsByKey(keys: string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   const uniq = [...new Set(keys)];
   for (let i = 0; i < uniq.length; i += IN_LIMIT) {
-    for (const a of await db.list("acts", (q) => q.where("matchKey", "in", uniq.slice(i, i + IN_LIMIT)))) {
+    for (const a of await db.list(systemCtx("acts by key"), "acts", (q) => q.where("matchKey", "in", uniq.slice(i, i + IN_LIMIT)))) {
       if (!out.has(a.matchKey as string)) out.set(a.matchKey as string, a.id);
     }
   }
@@ -28,7 +28,7 @@ export async function actsByKey(keys: string[]): Promise<Map<string, string>> {
 
 /** Keys that are a band on Roadie itself: a tenant isn't an act on its own Acts list. */
 async function ownKeys(): Promise<Set<string>> {
-  const names = (await db.list("artists")).map((a) => String(a.name ?? "")); // "Ingrid Avison Band" is billed as "Ingrid Avison" too
+  const names = (await db.list(systemCtx("own act keys"), "artists")).map((a) => String(a.name ?? "")); // "Ingrid Avison Band" is billed as "Ingrid Avison" too
   return new Set(names.flatMap((n) => [actKey(n), actKey(n.replace(/\s+band$/i, ""))]).filter(Boolean));
 }
 
@@ -36,7 +36,7 @@ async function ownKeys(): Promise<Set<string>> {
  * Set `actId` on every act in these bills and `actIds` on each, creating acts for new names (unless `create` is false).
  * Changes the drafts in place.
  */
-export async function linkActs<E extends { acts: Act[]; actIds?: string[] }>(events: E[], opts: { create?: boolean; ctx?: Ctx } = {}): Promise<LinkResult> {
+export async function linkActs<E extends { acts: Act[]; actIds?: string[] }>(events: E[], opts: { create?: boolean; ctx?: AnyCtx } = {}): Promise<LinkResult> {
   const dropped = new Map<string, string>();
   const named = new Map<string, string>(); // key -> clean name (first seen)
   const keyOf = new Map<string, string>(); // raw name -> key
@@ -53,7 +53,7 @@ export async function linkActs<E extends { acts: Act[]; actIds?: string[] }>(eve
   const missing = [...named].filter(([k]) => !ids.has(k));
   let created = 0;
   if (opts.create !== false && missing.length) {
-    const ctx = opts.ctx ?? importCtx("venue-calendars");
+    const ctx = opts.ctx ?? systemCtx("venue-calendars");
     for (let i = 0; i < missing.length; i += CREATE_CHUNK) {
       await run(ctx, async (w) => {
         for (const [key, name] of missing.slice(i, i + CREATE_CHUNK)) {

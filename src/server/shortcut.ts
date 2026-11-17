@@ -6,7 +6,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { hashToken } from "./availability";
-import { newRunId, type Ctx } from "./ctx";
+import { artistCtx, systemCtx, type Ctx } from "./ctx";
 import { db, touchLastUsed } from "./db";
 import { resolveToken } from "./tokens";
 import { AppError } from "./errors";
@@ -17,7 +17,6 @@ export const isShortcutToken = (raw: string | null | undefined) => !!raw && raw.
 
 /** A new token for this admin in this artist; their previous live one is revoked. The raw token is returned once. */
 export async function createShortcutToken(ctx: Ctx): Promise<{ token: string; id: string }> {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
   await revokeShortcutTokens(ctx);
   const token = `${SHORTCUT_PREFIX}${randomBytes(32).toString("base64url")}`;
   const id = hashToken(token);
@@ -29,10 +28,10 @@ export async function createShortcutToken(ctx: Ctx): Promise<{ token: string; id
 export async function liveShortcutToken(ctx: Ctx) {
   return (await liveTokens(ctx)).sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())[0] ?? null;
 }
-/** One where() only (no composite index needed); the artist is filtered here. */
+/** This artist's (db.ts scopes it) tokens of the caller. */
 async function liveTokens(ctx: Ctx) {
-  const mine = await db.list("shortcutTokens", (q) => q.where("userId", "==", ctx.uid));
-  return mine.filter((t) => t.artistId === ctx.artistId && !t.revokedAt);
+  const mine = await db.list(ctx, "shortcutTokens", (q) => q.where("userId", "==", ctx.uid));
+  return mine.filter((t) => !t.revokedAt);
 }
 
 /** Revoke every live token of the caller in this artist. */
@@ -61,10 +60,10 @@ export async function authenticateShortcut(raw: string | null | undefined): Prom
   if (!found?.artistId) throw new AppError("unauthenticated", "Unknown token. Make a new one on Settings > Google and update the Shortcut.", 401);
   const t = found.token;
   if (t.revokedAt) throw new AppError("unauthenticated", "This token was replaced or revoked. Make a new one on Settings > Google and update the Shortcut.", 401);
-  const u = await db.get("users", t.userId);
+  const u = await db.get(systemCtx("shortcut token"), "users", t.userId);
   if (!u || u.deletedAt) throw new AppError("forbidden", "Account is not active", 403);
   const m = ((u.artists ?? []) as Membership[]).find((x) => x.artistId === found.artistId);
   if (!m || m.role !== "admin") throw new AppError("forbidden", "Only admins can add recordings", 403);
   await touchLastUsed(hash, new Date(), "shortcutTokens");
-  return { uid: u.id, role: "admin", artistId: found.artistId, musicianId: m.musicianId ?? (u.musicianId as string | undefined), via: "shortcut", runId: newRunId() };
+  return artistCtx({ uid: u.id, role: "admin", artistId: found.artistId, ...(m.musicianId ? { musicianId: m.musicianId } : {}), via: "shortcut" });
 }

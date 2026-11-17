@@ -14,7 +14,7 @@ import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
 import { projectTotals } from "@/lib/money";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -36,7 +36,7 @@ const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
   return (await x.run(c, x.input.parse(input))) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 };
 const code = (p: Promise<unknown>, c: string) => assert.rejects(p, (e: any) => e.code === c); // eslint-disable-line @typescript-eslint/no-explicit-any
-const entriesOf = async (tourId: string) => (await db.list(`tours/${tourId}/entries`)).sort((a, b) => (a.date ?? "") < (b.date ?? "") ? -1 : (a.date ?? "") > (b.date ?? "") ? 1 : a.position - b.position);
+const entriesOf = async (tourId: string) => (await db.list(SYS, `tours/${tourId}/entries`)).sort((a, b) => (a.date ?? "") < (b.date ?? "") ? -1 : (a.date ?? "") > (b.date ?? "") ? 1 : a.position - b.position);
 const DENVER = { name: "Denver", address: "Denver, CO, USA", lat: 39.7392, lng: -104.9903 };
 const SLC = { name: "Salt Lake City", address: "Salt Lake City, UT, USA", lat: 40.7608, lng: -111.891 };
 
@@ -61,17 +61,17 @@ test("tours.create: Money goes to must be an open project, and a tour never make
   await cmd("projects.close", { id: duo });
   await code(newTour(), "invalid_state");
   await cmd("projects.reopen", { id: duo });
-  const before = (await db.list("projects")).length;
+  const before = (await db.list(SYS, "projects")).length;
   const r = await newTour({ personnel: ["m1"] });
-  const t = (await db.get("tours", r.id))!;
+  const t = (await db.get(SYS, "tours", r.id))!;
   assert.equal(t.projectId, duo);
   assert.equal(t.status, "planning");
   assert.equal(t.artistId, TEST_ARTIST);
   assert.deepEqual(t.personnel, ["m1"]);
-  assert.equal((await db.list("projects")).length, before);
+  assert.equal((await db.list(SYS, "projects")).length, before);
   await code(cmd("tours.update", { id: r.id, patch: { projectId: "nope" } }), "not_found");
   await cmd("tours.update", { id: r.id, patch: { status: "booked", notes: "Van rental", startDate: null } });
-  const u = (await db.get("tours", r.id))!;
+  const u = (await db.get(SYS, "tours", r.id))!;
   assert.equal(u.status, "booked");
   assert.equal(u.startDate, undefined);
 });
@@ -91,7 +91,7 @@ test("entries: + between two entries writes the midpoint; a drive gets its miles
   await cmd("tours.entries.move", { tourId: t, id: b, before: a });
   assert.deepEqual((await entriesOf(t)).map((e) => e.id), [b, a, d.id]);
   await cmd("tours.entries.update", { tourId: t, id: d.id, patch: { date: "2026-11-06", to: null } });
-  const moved = (await db.get(`tours/${t}/entries`, d.id))!;
+  const moved = (await db.get(SYS, `tours/${t}/entries`, d.id))!;
   assert.equal(moved.date, "2026-11-06");
   assert.equal(moved.miles, undefined, "no To, no miles");
   await code(cmd("tours.entries.move", { tourId: t, id: a, date: null }), "invalid_input");
@@ -104,32 +104,32 @@ test("tours.addPitch: one option per date; no dates is the bucket; a date added 
   assert.equal(r.entryIds.length, 2);
   const opts = (await entriesOf(t)).filter((e) => e.pitchId === p);
   assert.deepEqual(opts.map((e) => [e.kind, e.date, e.visibility]), [["option", "2026-11-06", "admins"], ["option", "2026-11-07", "admins"]]);
-  assert.equal((await db.get("pitches", p))!.tourId, t);
+  assert.equal((await db.get(SYS, "pitches", p))!.tourId, t);
   // Again: nothing doubles.
   assert.deepEqual((await cmd("tours.addPitch", { tourId: t, pitchId: p })).entryIds.sort(), r.entryIds.sort());
 
   // By venue, with no pitch yet and no dates: flagged onto the Pitch List and into the bucket.
   const byVenue = await cmd("tours.addPitch", { tourId: t, venueId: muse });
   const bucketId = byVenue.entryIds[0];
-  const bucket = (await db.get(`tours/${t}/entries`, bucketId))!;
+  const bucket = (await db.get(SYS, `tours/${t}/entries`, bucketId))!;
   assert.equal(bucket.date, undefined);
-  assert.equal((await db.get("pitches", byVenue.pitchId))!.status, "toPitch");
+  assert.equal((await db.get(SYS, "pitches", byVenue.pitchId))!.status, "toPitch");
   // "Add Muse for the 8th": the same entry gets the date.
   const later = await cmd("tours.addPitch", { tourId: t, venueId: muse, dates: ["2026-11-08"] });
   assert.equal(later.pitchId, byVenue.pitchId);
   assert.deepEqual(later.entryIds, [bucketId]);
-  assert.equal((await db.get(`tours/${t}/entries`, bucketId))!.date, "2026-11-08");
-  assert.deepEqual((await db.get("pitches", byVenue.pitchId))!.dates, ["2026-11-08"]);
+  assert.equal((await db.get(SYS, `tours/${t}/entries`, bucketId))!.date, "2026-11-08");
+  assert.deepEqual((await db.get(SYS, "pitches", byVenue.pitchId))!.dates, ["2026-11-08"]);
 
   // Moving an option moves the pitch's date; removing one drops it; the last one gone takes the pitch off the tour.
   const six = opts[0].id, seven = opts[1].id;
   await cmd("tours.entries.move", { tourId: t, id: six, date: "2026-11-05" });
-  assert.deepEqual((await db.get("pitches", p))!.dates, ["2026-11-05", "2026-11-07"]);
+  assert.deepEqual((await db.get(SYS, "pitches", p))!.dates, ["2026-11-05", "2026-11-07"]);
   await code(cmd("tours.entries.move", { tourId: t, id: six, date: "2026-11-07" }), "invalid_input");
   await cmd("tours.entries.remove", { tourId: t, id: six });
-  assert.deepEqual((await db.get("pitches", p))!.dates, ["2026-11-07"]);
+  assert.deepEqual((await db.get(SYS, "pitches", p))!.dates, ["2026-11-07"]);
   await cmd("tours.entries.remove", { tourId: t, id: seven });
-  assert.equal((await db.get("pitches", p))!.tourId, undefined);
+  assert.equal((await db.get(SYS, "pitches", p))!.tourId, undefined);
 });
 
 async function showWithMoney(date = "2026-11-05") {
@@ -138,38 +138,38 @@ async function showWithMoney(date = "2026-11-05") {
   await cmd("payouts.add", { to: { name: "Sub" }, kind: "pay", amount: 10000, showId: s });
   return s;
 }
-const moneyOf = async (showId: string) => (await Promise.all(["income", "expenses", "payouts"].map((c) => db.list(c, (q) => q.where("showId", "==", showId))))).flat();
+const moneyOf = async (showId: string) => (await Promise.all(["income", "expenses", "payouts"].map((c) => db.list(SYS, c, (q) => q.where("showId", "==", showId))))).flat();
 
 test("addShow and removeItem tag and untag the show and its money, and never touch a projectId", async () => {
   const t = (await newTour()).id;
   const s = await showWithMoney();
   assert.ok((await moneyOf(s)).every((x) => x.projectId === band));
   const r = await cmd("tours.addShow", { tourId: t, showId: s });
-  assert.equal((await db.get("shows", s))!.tourId, t);
-  assert.equal((await db.get("shows", s))!.projectId, band, "the show keeps its project, not the tour's Duo");
+  assert.equal((await db.get(SYS, "shows", s))!.tourId, t);
+  assert.equal((await db.get(SYS, "shows", s))!.projectId, band, "the show keeps its project, not the tour's Duo");
   const money = await moneyOf(s);
   assert.equal(money.length, 3);
   assert.ok(money.every((x) => x.tourId === t && x.projectId === band));
-  const e = (await db.get(`tours/${t}/entries`, r.entryId))!;
+  const e = (await db.get(SYS, `tours/${t}/entries`, r.entryId))!;
   assert.deepEqual([e.kind, e.showId, e.date, e.visibility], ["show", s, "2026-11-05", "band"]);
   assert.equal((await cmd("tours.addShow", { tourId: t, showId: s })).existing, true);
   // Money added later on the show copies its tour; a tourEntryId has to be one of the tour's.
   const inc = (await cmd("income.add", { amount: 3000, category: "merch", from: "Merch table", showId: s })).id;
-  assert.equal((await db.get("income", inc))!.tourId, t);
+  assert.equal((await db.get(SYS, "income", inc))!.tourId, t);
   const other = (await cmd("tours.create", { name: "Other", projectId: band })).id;
   const otherEntry = (await cmd("tours.entries.add", { tourId: other, kind: "note", date: "2026-12-01", text: "x" })).id;
   await code(cmd("expenses.add", { amount: 100, what: "x", category: "food", tourId: t, tourEntryId: otherEntry }), "not_found");
   const pinned = (await cmd("expenses.add", { amount: 4500, what: "Gas", category: "gas", tourId: t, tourEntryId: r.entryId })).id;
-  assert.equal((await db.get("expenses", pinned))!.projectId, duo, "money added from the tour starts on its Money goes to");
+  assert.equal((await db.get(SYS, "expenses", pinned))!.projectId, duo, "money added from the tour starts on its Money goes to");
   // A show's date change carries its entry along.
   await cmd("shows.update", { id: s, patch: { date: "2026-11-06" } });
-  assert.equal((await db.get(`tours/${t}/entries`, r.entryId))!.date, "2026-11-06");
+  assert.equal((await db.get(SYS, `tours/${t}/entries`, r.entryId))!.date, "2026-11-06");
 
   await cmd("tours.removeItem", { tourId: t, showId: s });
-  assert.equal((await db.get("shows", s))!.tourId, undefined);
+  assert.equal((await db.get(SYS, "shows", s))!.tourId, undefined);
   assert.ok((await moneyOf(s)).every((x) => x.tourId === undefined && x.projectId === band));
-  assert.equal((await db.get(`tours/${t}/entries`, r.entryId))!.deletedAt !== null, true);
-  const p = (await db.get("expenses", pinned))!;
+  assert.equal((await db.get(SYS, `tours/${t}/entries`, r.entryId))!.deletedAt !== null, true);
+  const p = (await db.get(SYS, "expenses", pinned))!;
   assert.equal(p.tourId, t, "money on the tour but not the show keeps its tag");
   assert.equal(p.tourEntryId, undefined, "pinned to the show's entry: back to the whole tour");
 });
@@ -183,9 +183,9 @@ test("tours.book: the option becomes the show (same id), its other dates go, and
   const opt = (await entriesOf(t)).find((e) => e.pitchId === p && e.date === "2026-11-06")!;
   const r = await cmd("tours.book", { tourId: t, entryId: opt.id, date: "2026-11-06", others: "tellBooked", addStay: true });
   assert.equal(r.entryId, opt.id);
-  const show = (await db.get("shows", r.showId))!;
+  const show = (await db.get(SYS, "shows", r.showId))!;
   assert.deepEqual([show.date, show.tourId, show.venue.id, show.projectId], ["2026-11-06", t, velour, band]);
-  const pitch = (await db.get("pitches", p))!;
+  const pitch = (await db.get(SYS, "pitches", p))!;
   assert.equal(pitch.status, "booked");
   assert.deepEqual(pitch.showIds, [r.showId]);
   assert.deepEqual(pitch.dates, ["2026-11-06"]);
@@ -194,7 +194,7 @@ test("tours.book: the option becomes the show (same id), its other dates go, and
   assert.deepEqual([booked.kind, booked.showId, booked.pitchId, booked.visibility], ["show", r.showId, undefined, "band"]);
   assert.ok(!live.some((e) => e.kind === "option"), "the 7th went, and Muse's option that day too");
   assert.deepEqual(r.dropped, [q]);
-  const other = (await db.get("pitches", q))!;
+  const other = (await db.get(SYS, "pitches", q))!;
   assert.deepEqual(other.dates, []);
   assert.equal(other.tourId, undefined);
   assert.match(other.nextStep.text, /booked on Fri Nov 6/);
@@ -210,7 +210,7 @@ test("tours.summary: totals are this tour's records the incomeSoFar way, by day,
   const next = (await cmd("shows.create", { date: "2026-11-08", venueId: velour, deal: { deal: "guarantee", guarantee: 30000 } })).id;
   await cmd("tours.addShow", { tourId: t, showId: played });
   await cmd("tours.addShow", { tourId: t, showId: next });
-  const inc = (await db.list("income", (q) => q.where("showId", "==", played)))[0];
+  const inc = (await db.list(SYS, "income", (q) => q.where("showId", "==", played)))[0];
   await cmd("income.setReceived", { id: inc.id, receivedAt: "2026-11-05" });
   await cmd("expenses.add", { amount: 6000, what: "Motel", category: "lodging", tourId: t, date: "2026-11-06" });
   await cmd("expenses.add", { amount: 99900, what: "Not the tour's", category: "gear" });
@@ -267,7 +267,7 @@ test("Undo of tours.addShow puts the show, its money and the plan back in one go
   assert.ok((await moneyOf(s)).every((x) => x.tourId === t));
   const rep = await undoRun(ctx, c.runId);
   assert.equal(rep.failed.length, 0);
-  assert.equal((await db.get("shows", s))!.tourId, undefined);
+  assert.equal((await db.get(SYS, "shows", s))!.tourId, undefined);
   assert.ok((await moneyOf(s)).every((x) => x.tourId === undefined && x.projectId === band));
   assert.equal((await entriesOf(t)).length, 0);
 });
@@ -278,10 +278,10 @@ test("tours.remove: the tags come off shows, pitches and money, the plan goes, t
   await cmd("tours.addShow", { tourId: t, showId: s });
   const p = (await cmd("tours.addPitch", { tourId: t, venueId: velour, dates: ["2026-11-07"] })).pitchId;
   await cmd("tours.remove", { id: t });
-  assert.ok((await db.get("tours", t))!.deletedAt);
-  assert.equal((await db.get("shows", s))!.tourId, undefined);
-  assert.equal((await db.get("pitches", p))!.tourId, undefined);
-  assert.deepEqual((await db.get("pitches", p))!.dates, ["2026-11-07"]);
+  assert.ok((await db.get(SYS, "tours", t))!.deletedAt);
+  assert.equal((await db.get(SYS, "shows", s))!.tourId, undefined);
+  assert.equal((await db.get(SYS, "pitches", p))!.tourId, undefined);
+  assert.deepEqual((await db.get(SYS, "pitches", p))!.dates, ["2026-11-07"]);
   assert.ok((await moneyOf(s)).every((x) => x.tourId === undefined && x.projectId === band));
   assert.equal((await entriesOf(t)).length, 0);
 });
@@ -299,7 +299,7 @@ test("tour totals count only tagged records across two projects, and those recor
   assert.equal(s.totals.inReceived, 50000);
   assert.equal(s.totals.outPaid, 4000 + 5000 + 10000);
   assert.equal(s.totals.outOwed, 0);
-  const all = Object.fromEntries(await Promise.all(["income", "expenses", "payouts"].map(async (c) => [c, await db.list(c)])));
+  const all = Object.fromEntries(await Promise.all(["income", "expenses", "payouts"].map(async (c) => [c, await db.list(SYS, c)])));
   const mine = (id: string) => projectTotals({ projectId: id, defaultProjectId: band, income: all.income as never, expenses: all.expenses as never, payouts: all.payouts as never });
   assert.equal(mine(duo).inReceived, 20000);
   assert.equal(mine(duo).outPaid, 4000 + 10000);

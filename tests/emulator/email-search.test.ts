@@ -8,7 +8,7 @@ import { startAll } from "../../fakes/run-all";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeUser, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -28,7 +28,7 @@ beforeEach(async () => {
   await resetEmulators();
   await fetch(`${gmailUrl}/__reset`, { method: "POST" });
   const uid = (await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" })).uid;
-  ctx = { uid, role: "admin", via: "app", runId: newRunId() };
+  ctx = { uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   await db.create(ctx, "artists", { slug: "nora-quill-band", name: "Nora Quill Band", driveFolderId: "", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
@@ -94,9 +94,9 @@ test("email.suggest finds what was sent outside Roadie, best first; linking it t
 
   // Linked to this pitch: no longer suggested here. Linked to the venue alone, it says so.
   await cmd("email.link", { threadId: toRosa.threadId, target: { kind: "venue", id: venueId }, pitchId });
-  const t = await db.get("emailThreads", `${TEST_ARTIST}__${toRosa.threadId}`);
+  const t = await db.get(SYS, "emailThreads", `${TEST_ARTIST}__${toRosa.threadId}`);
   assert.ok(t?.firstDate, "the thread keeps the date it started");
-  assert.equal((await db.list(`pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1, "the reply is on the timeline");
+  assert.equal((await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1, "the reply is on the timeline");
   assert.deepEqual((await cmd("email.suggest", { pitchId })).hits.map((h: any) => h.threadId), [bySubject.threadId, byText.threadId]);
 
   await sendRaw({ from: "rudy@example.com", to: ["v@velour.example"], subject: "Velour and Pine Hollow Lounge", body: "Both rooms" });

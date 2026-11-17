@@ -17,10 +17,7 @@ import { IntegrationError, useRealGoogle } from "../integrations";
 import { sheetsClient, type SheetsInfo } from "../integrations/sheets";
 import { moneySheetPref, setMoneySheetPref, writeTable, type MoneySheetPref } from "../moneySheet";
 
-const artistOf = (ctx: Ctx) => {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 /** The caller's own Google can reach Sheets: the local fake (DRIVE_BASE_URL set), or the real API with their own Drive grant. */
 async function sheetsReady(uid: string): Promise<boolean> {
   if (!useRealGoogle(process.env.DRIVE_BASE_URL)) return !!process.env.DRIVE_BASE_URL;
@@ -86,20 +83,17 @@ export const googleClearMoneySheet = defineCommand({
 
 /** Everything the two tables are built from, for one artist. */
 async function sheetInput(ctx: Ctx, artistId: string, pref: MoneySheetPref): Promise<MoneySheetInput> {
-  const byArtist = (q: FirebaseFirestore.Query) => q.where("artistId", "==", artistId);
   const [artist, income, payouts, projects, shows, expenses, users, musicians] = await Promise.all([
-    db.get("artists", artistId), db.list("income", byArtist), db.list("payouts", byArtist), db.list("projects", byArtist), db.list("shows", byArtist),
-    db.list("expenses"), db.list("users"), db.list("musicians"),
+    db.get(ctx, "artists", artistId), db.list(ctx, "income"), db.list(ctx, "payouts"), db.list(ctx, "projects"), db.list(ctx, "shows"),
+    db.list(ctx, "expenses"), db.list(ctx, "users", (q) => q.where("artistIds", "array-contains", ctx.artistId)), db.list(ctx, "musicians"),
   ]);
-  const projectIds = new Set(projects.map((p) => p.id));
   const def = defaultProject(projects as unknown as { id: string; kind: string; name: string; status: string; isDefault?: boolean }[]);
   const name = (uid: string) => (users.find((u) => u.id === uid)?.name as string | undefined) ?? (musicians.find((m) => m.userId === uid)?.name as string | undefined) ?? "Someone";
   return {
     whose: pref.whose, uid: ctx.uid,
     income: income as unknown as MoneySheetInput["income"],
     payouts: payouts as unknown as MoneySheetInput["payouts"],
-    // Expenses carry no artistId: theirs are the ones on this artist's projects (or on none, which is the default project).
-    expenses: expenses.filter((x) => !x.projectId || projectIds.has(x.projectId as string)) as unknown as MoneySheetInput["expenses"],
+    expenses: expenses as unknown as MoneySheetInput["expenses"],
     shows: shows.map((s) => ({ id: s.id, date: s.date as string | undefined, name: showName(s as Parameters<typeof showName>[0]) })),
     projects: projects.map((p) => ({ id: p.id, name: p.name as string })),
     defaultProjectId: def?.id,

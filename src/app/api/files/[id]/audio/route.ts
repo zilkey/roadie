@@ -18,8 +18,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const ctx = await authenticate(req.headers.get("authorization"), req.headers.get(ARTIST_HEADER));
     const { id } = await params;
-    const file = await db.get("files", id);
-    if (!file || file.deletedAt || (file.artistId && file.artistId !== ctx.artistId)) throw new AppError("not_found", "File not found", 404);
+    const file = await db.get(ctx, "files", id);
+    if (!file || file.deletedAt) throw new AppError("not_found", "File not found", 404);
     if (!file.driveFileId) throw new AppError("not_drive", "Only Drive files play here", 400);
     if (!String(file.mimeType ?? "").startsWith("audio/")) throw new AppError("not_audio", "That file isn't audio", 400);
     const res = await driveClient({ artistId: ctx.artistId }).download(file.driveFileId as string, req.headers.get("range"));

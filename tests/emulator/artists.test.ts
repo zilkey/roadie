@@ -7,10 +7,12 @@ import { startSession } from "@/server/session";
 import { adminAuth, firestore } from "@/server/admin";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
+import { acceptInvite } from "@/server/commands/invites";
+import { authenticatePerson } from "@/server/session";
 import { hashToken } from "@/server/availability";
 import { registry } from "@/server/commands/registry";
 import { authenticateToken, mcpCtx } from "../../mcp/auth";
-import { readySession, resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
+import { readySession, resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -37,7 +39,7 @@ test("artists.create: slug from the name, unique (suffixes when free-picked, 409
   // an invalid slug is a validation error
   assert.equal((await create(band("Other", { slug: "Not Valid" }))).status, 400);
   // the creator is an admin of each new artist (and keeps their first one)
-  const me = (await db.get("users", admin.uid))!;
+  const me = (await db.get(SYS, "users", admin.uid))!;
   assert.deepEqual(me.artists, [
     { artistId: TEST_ARTIST, role: "admin" }, { artistId: result(a).id, role: "admin", mcpAccess: false }, { artistId: result(b).id, role: "admin", mcpAccess: false },
   ]);
@@ -56,11 +58,11 @@ test("artists.update: slug is validated, unique among artists, and only for the 
   assert.equal((taken.json as Err).error.code, "slug_taken");
   assert.equal((await set(TEST_ARTIST, "test-band")).status, 200); // its own slug is fine
   assert.equal((await set(TEST_ARTIST, "the-test-band")).status, 200);
-  assert.equal((await db.get("artists", TEST_ARTIST))!.slug, "the-test-band");
+  assert.equal((await db.get(SYS, "artists", TEST_ARTIST))!.slug, "the-test-band");
   // you can't edit an artist you aren't working in
   assert.equal((await set("other", "mine-now")).status, 403);
   // a soft-deleted artist still holds its slug
-  await db.softDelete(importCtx(), "artists", "other");
+  await db.softDelete(importCtx("other"), "artists", "other");
   assert.equal((await set(TEST_ARTIST, "other-band")).status, 409);
 });
 
@@ -117,23 +119,26 @@ test("users.*: per artist. Adding someone from another artist joins them; removi
   await makeArtist("Band B", "band-b", "b");
   const anna = await makeUser("anna@example.com", "admin", { artistId: "a" });
   const ben = await makeUser("ben@example.com", "admin", { artistId: "b" });
+  // Anna already belongs to A, so B's add is an invite she accepts (tenancy phase 4); accepting joins her.
   const added = await dispatch("users.add", bearer(ben.token), { email: "anna@example.com", name: "Anna", role: "member" });
   assert.equal(added.status, 200);
-  assert.equal(result(added).id, anna.uid);
-  assert.deepEqual((await db.get("users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "member" }]);
+  assert.equal(result<{ invited?: boolean }>(added).invited, true);
+  assert.deepEqual((await db.get(SYS, "users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }]);
+  await acceptInvite(await authenticatePerson(bearer(anna.token)), result(added).id);
+  assert.deepEqual((await db.get(SYS, "users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "member" }]);
   assert.deepEqual((await adminAuth().getUser(anna.uid)).customClaims!.artists, { a: "admin", b: "member" });
   // adding again in the same artist is a duplicate
   assert.equal((await dispatch("users.add", bearer(ben.token), { email: "anna@example.com", name: "Anna", role: "member" })).status, 409);
   // a role change in B leaves A alone
   assert.equal((await dispatch("users.update", bearer(ben.token), { id: anna.uid, patch: { role: "admin" } })).status, 200);
-  assert.deepEqual((await db.get("users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "admin", mcpAccess: false }]);
+  assert.deepEqual((await db.get(SYS, "users", anna.uid))!.artists, [{ artistId: "a", role: "admin" }, { artistId: "b", role: "admin", mcpAccess: false }]);
   // B can't touch someone who isn't in B
   const carl = await makeUser("carl@example.com", "member", { artistId: "a" });
   assert.equal((await dispatch("users.update", bearer(ben.token), { id: carl.uid, patch: { role: "admin" } })).status, 404);
   assert.equal((await dispatch("users.remove", bearer(ben.token), { id: carl.uid })).status, 404);
   // removing Anna from B keeps her login and her place in A
   assert.equal((await dispatch("users.remove", bearer(ben.token), { id: anna.uid })).status, 200);
-  const after = (await db.get("users", anna.uid))!;
+  const after = (await db.get(SYS, "users", anna.uid))!;
   assert.equal(after.deletedAt, null);
   assert.deepEqual(after.artists, [{ artistId: "a", role: "admin" }]);
   assert.equal((await dispatch("musicians.create", bearer(await idToken(anna.uid)), { name: "x", instruments: [] }, "b")).status, 403);
@@ -143,10 +148,10 @@ test("users.*: per artist. Adding someone from another artist joins them; removi
 test("records.get / records.list: artist docs and other artists' shows and pitches stay in their artist", async () => {
   await makeArtist("Band A", "band-a", "a");
   await makeArtist("Band B", "band-b", "b");
-  const v = await db.create(importCtx(), "venues", venue("Deep End"));
-  const mine = await db.create(importCtx(), "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
-  const theirs = await db.create(importCtx(), "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "b", personnel: [], showIds: [] });
-  const ctx = { ...importCtx(), via: "app" as const, artistId: "a" };
+  const v = await db.create(SYS, "venues", venue("Deep End"));
+  const mine = await db.create(SYS, "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
+  const theirs = await db.create(SYS, "pitches", { target: { kind: "venue", id: v.id, name: "Deep End" }, status: "toPitch", artistId: "b", personnel: [], showIds: [] });
+  const ctx = { ...importCtx("a"), via: "app" as const };
   const get = (kind: string, id: string) => registry["records.get"].run(ctx, { kind, id });
   await get("pitches", mine.id);
   await assert.rejects(get("pitches", theirs.id), (e: { status: number }) => e.status === 404);
@@ -156,20 +161,24 @@ test("records.get / records.list: artist docs and other artists' shows and pitch
   assert.deepEqual(list.rows.map((r) => r.id), [mine.id]);
 });
 
-test("MCP keys work on one artist: the one they name, or the person's only one", async () => {
+test("MCP keys work on one artist: the one they name; a key that names none is refused", async () => {
   await makeArtist("Band A", "band-a", "a");
   await makeArtist("Band B", "band-b", "b");
   const key = async (userId: string, artistId?: string) => {
     const token = `btk_${randomBytes(32).toString("base64url")}`;
-    await db.create(importCtx(), "mcpTokens", { userId, label: "k", ...(artistId ? { artistId } : {}) }, { id: hashToken(token) });
+    // A key with no artist can't be made through the Writer any more (mcpTokens.artistId is required): write the old shape directly.
+    if (!artistId) await firestore().collection("mcpTokens").doc(hashToken(token)).set({ userId, label: "k" });
+    else await db.create(importCtx(artistId), "mcpTokens", { userId, label: "k", artistId }, { id: hashToken(token) });
     return token;
   };
   const solo = await makeUser("solo@example.com", "ai", { artistId: "a" });
-  const who = await authenticateToken(await key(solo.uid));
+  // The "person's only artist" fallback was removed in phase 4: a key names its artist or is refused.
+  await assert.rejects(authenticateToken(await key(solo.uid)), (e: { status: number }) => e.status === 403);
+  const who = await authenticateToken(await key(solo.uid, "a"));
   assert.equal(who.artistId, "a");
   assert.equal(mcpCtx(who, "r1").artistId, "a");
   const multi = await makeUser("multi@example.com", "ai", { artists: [{ artistId: "a", role: "ai" }, { artistId: "b", role: "admin" }] });
-  await db.update(importCtx(), "users", multi.uid, { artists: [{ artistId: "a", role: "ai" }, { artistId: "b", role: "admin", mcpAccess: true }] });
+  await db.update(SYS, "users", multi.uid, { artists: [{ artistId: "a", role: "ai" }, { artistId: "b", role: "admin", mcpAccess: true }] });
   await assert.rejects(authenticateToken(await key(multi.uid)), (e: { status: number }) => e.status === 403);
   assert.equal((await authenticateToken(await key(multi.uid, "b"))).artistId, "b");
   await assert.rejects(authenticateToken(await key(solo.uid, "b")), (e: { status: number }) => e.status === 403);

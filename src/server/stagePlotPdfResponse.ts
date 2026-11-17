@@ -1,4 +1,5 @@
 import type { Doc } from "./db";
+import type { Ctx } from "./ctx";
 import { AppError } from "./errors";
 import { sheetContext } from "./stagePlotSheet";
 import { buildStagePlotPdf, plotFileName } from "./stagePlotPdf";
@@ -11,8 +12,8 @@ export const failResponse = (e: unknown) => {
 };
 
 /** The PDF for a plot document, as an HTTP response. Never cached: it is always the latest version. */
-export async function plotPdfResponse(doc: Doc, req: Request): Promise<Response> {
-  const ctx = await sheetContext(doc);
+export async function plotPdfResponse(c: Ctx, doc: Doc, req: Request): Promise<Response> {
+  const ctx = await sheetContext(c, doc);
   const pdf = await buildStagePlotPdf({ ...ctx, paper: parsePaper(new URL(req.url).searchParams.get("paper")) });
   return new Response(new Uint8Array(pdf), {
     headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="${plotFileName(ctx.plot)}"`, "cache-control": "no-store" },

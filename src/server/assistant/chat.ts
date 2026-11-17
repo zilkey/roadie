@@ -6,7 +6,7 @@ import { AppError, invalid } from "../errors";
 import { ChatRequest, StopRequest, type AssistantAction, type AssistantEvent, type ToolTrace } from "@/schema/assistant";
 import { getChatFlow } from "./flow";
 import type { Session } from "./run";
-import { clearStop, ensureThread, replyIdFor, requestStop, saveTurn, stopRequested, threadFor } from "./threads";
+import { clearStop, ensureThread, replyIdFor, requestStop, saveTurn, stopRequested, threadFor, threadOf } from "./threads";
 
 const sse = (e: AssistantEvent) => `data: ${JSON.stringify(e)}\n\n`;
 export const DROPPED = "Roadie dropped a cable. Try again.";
@@ -28,17 +28,17 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     const req = parsed.data;
 
     // The caller's own thread, a new one under the id the browser picked, or (missing or foreign) a fresh one.
-    const { threadId, history } = await threadFor(ctx.uid, req.threadId);
+    const { threadId, history } = await threadFor(ctx.uid, req.threadId, ctx.artistId);
     const userAt = new Date();
     const enc = new TextEncoder();
-    const user = await db.get("users", ctx.uid);
+    const user = await db.get(ctx, "users", ctx.uid);
     await ensureThread({ uid: ctx.uid, threadId, pageContext: req.pageContext, at: userAt, artistId: ctx.artistId, via: ctx.via });
     // A new conversation is the one the panel opens from now on. Recorded here, by the request that started it, so a
     // reload straight after sending (or a Stop) still finds it, whatever became of the browser's own save.
     if (!history) await setOpenThread(ctx, threadId, req.sentAt ?? userAt.getTime()).catch((e) => console.error(e));
     // One run id per user message: every write Roadie makes for it shares it, so one Undo reverses the message.
     const session: Omit<Session, "model"> = {
-      uid: ctx.uid, role: ctx.role, ...(ctx.artistId ? { artistId: ctx.artistId } : {}), musicianId: ctx.musicianId, name: (user?.name as string | undefined) ?? "Someone",
+      uid: ctx.uid, role: ctx.role, artistId: ctx.artistId, musicianId: ctx.musicianId, name: (user?.name as string | undefined) ?? "Someone",
       threadId, runId: newRunId(), replyId: await replyIdFor(threadId, req.replyId), ...(req.voice ? { voice: true } : {}),
     };
 
@@ -99,6 +99,9 @@ export async function handleStop(authHeader: string | null, body: unknown, artis
     if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     const parsed = StopRequest.safeParse(body ?? {});
     if (!parsed.success) throw invalid(parsed.error);
+    // A stop can arrive before the thread exists; once it does, it must be in this artist.
+    const t = await threadOf(parsed.data.threadId);
+    if (t && (t.ownerUid !== ctx.uid || t.artistId !== ctx.artistId)) throw new AppError("not_found", "No such conversation", 404);
     await requestStop(ctx.uid, parsed.data.threadId, parsed.data.replyId);
     return Response.json({ ok: true });
   } catch (e) {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { registry } from "@/server/commands/registry";
 import { db } from "@/server/db";
 import { newRunId, type Ctx } from "@/server/ctx";
-import { resetEmulators, makeUser, venue, TEST_ARTIST, approveTestEditors, makePlatformAdmins } from "./helpers";
+import { resetEmulators, makeUser, venue, TEST_ARTIST, approveTestEditors, makePlatformAdmins, SYS } from "./helpers";
 
 let ctx: Ctx;
 
@@ -12,7 +12,7 @@ beforeEach(async () => {
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy Smith" });
   await approveTestEditors(u.uid);
   await makePlatformAdmins(u.uid); // renames and removes venue types for every band
-  ctx = { uid: u.uid, role: "admin", via: "app", runId: newRunId() };
+  ctx = { uid: u.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
 });
 
 const cmd = async (name: string, input: unknown, c: Ctx = ctx) => {
@@ -24,7 +24,7 @@ const fails = (p: Promise<unknown>, status: number, re: RegExp) => assert.reject
 test("venue types: the built-ins come first, Other adds one for everyone, the same name twice is one type", async () => {
   const winery = await cmd("venueTypes.add", { label: "Winery" });
   assert.equal(winery.id, "winery");
-  const live = (await db.list("venueTypes")).map((t) => t.id).sort();
+  const live = (await db.list(SYS, "venueTypes")).map((t) => t.id).sort();
   assert.deepEqual(live, ["bar", "brewery", "club", "house", "listening", "outdoor", "theater", "winery"]);
   assert.deepEqual(await cmd("venueTypes.add", { label: " winery " }), { id: "winery", existing: true });
   // "Listening Room" is the built-in "listening" (its label), not a new key.
@@ -44,17 +44,17 @@ test("venue types: rename keeps the key (its venues keep it); remove is refused 
   await cmd("venueTypes.add", { label: "Winery" });
   const v = await cmd("venues.create", venue("Ten Bears", "Laporte", { type: "winery" }));
   await cmd("venueTypes.rename", { id: "winery", label: "Winery / vineyard" });
-  assert.equal((await db.get("venueTypes", "winery"))!.label, "Winery / vineyard");
-  assert.equal((await db.get("venues", v.id))!.type, "winery");
+  assert.equal((await db.get(SYS, "venueTypes", "winery"))!.label, "Winery / vineyard");
+  assert.equal((await db.get(SYS, "venues", v.id))!.type, "winery");
   await fails(cmd("venueTypes.rename", { id: "winery", label: "brewery" }), 409, /already a type called Brewery/);
 
   await fails(cmd("venueTypes.remove", { id: "winery" }), 409, /1 venue has this type/);
   await cmd("venues.update", { id: v.id, patch: { type: "bar" } });
   await cmd("venueTypes.remove", { id: "winery" });
-  assert.equal((await db.list("venueTypes")).some((t) => t.id === "winery"), false);
+  assert.equal((await db.list(SYS, "venueTypes")).some((t) => t.id === "winery"), false);
   // Adding it again brings the same key back.
   assert.equal((await cmd("venueTypes.add", { label: "Winery" })).id, "winery");
-  assert.equal((await db.get("venueTypes", "winery"))!.deletedAt, null);
+  assert.equal((await db.get(SYS, "venueTypes", "winery"))!.deletedAt, null);
 });
 
 test("festivals: create needs a town", async () => {

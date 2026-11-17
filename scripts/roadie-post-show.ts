@@ -16,7 +16,7 @@
  * the phone in her other hand, and the turn is saved to the thread exactly as the app saves it, so the next turn's
  * history is what production would send.
  */
-import { importCtx, newRunId } from "../src/server/ctx";
+import { importCtx } from "../src/server/ctx";
 import { db } from "../src/server/db";
 import { registry } from "../src/server/commands/registry";
 import { addDays } from "../src/lib/shows";
@@ -169,7 +169,7 @@ export const POST_SHOW: PostShowScenario[] = [
 type Call = (name: string, input: unknown) => Promise<{ id: string }>;
 /** Seed one conversation's world into a fresh band. Returns the show ids by key. */
 export async function seedWorld(kind: WorldKind, artistId: string, member: { uid: string }): Promise<Partial<Record<ShowKey, string>>> {
-  const sys = importCtx("import", newRunId(), artistId);
+  const sys = importCtx(artistId);
   const call: Call = async (name, input) => (await registry[name].run(sys, registry[name].input.parse(input))) as { id: string };
   if (kind === "payouts") {
     await db.create(sys, "musicians", { name: "Theo Park", instruments: ["drums"], active: true, userId: member.uid });
@@ -196,11 +196,12 @@ const usd = (c: number) => `$${(c / 100).toFixed(c % 100 ? 2 : 0)}`;
 
 /** Everything recorded for the band: income and payouts (live ones), and each show's deal. */
 export async function recorded(artistId: string, shows: Partial<Record<ShowKey, string>>) {
-  const live = (rows: Row[]) => rows.filter((r) => r.artistId === artistId && !r.deletedAt);
-  const income = live(await db.list("income", (q) => q.where("artistId", "==", artistId)));
-  const payouts = live(await db.list("payouts", (q) => q.where("artistId", "==", artistId)));
+  const ctx = importCtx(artistId);
+  const live = (rows: Row[]) => rows.filter((r) => !r.deletedAt);
+  const income = live(await db.list(ctx, "income"));
+  const payouts = live(await db.list(ctx, "payouts"));
   const deals: Partial<Record<ShowKey, Row>> = {};
-  for (const [k, id] of Object.entries(shows)) deals[k as ShowKey] = ((await db.get("showDeals", id!)) ?? {}) as Row;
+  for (const [k, id] of Object.entries(shows)) deals[k as ShowKey] = ((await db.get(ctx, "showDeals", id!)) ?? {}) as Row;
   return { income, payouts, deals };
 }
 

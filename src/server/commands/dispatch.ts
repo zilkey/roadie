@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { adminAuth } from "../admin";
-import { newRunId, type Ctx } from "../ctx";
+import { artistCtx, systemCtx, type Ctx } from "../ctx";
 import { db } from "../db";
 import { AppError, invalid } from "../errors";
 import { completeMutation, claimMutation, releaseMutation, MUTATION_ID } from "../mutations";
@@ -40,7 +40,7 @@ export async function authenticate(authHeader: string | null, artistHeader?: str
   } catch {
     throw new AppError("unauthenticated", "Invalid or expired token", 401);
   }
-  const user = await db.get("users", decoded.uid);
+  const user = await db.get(systemCtx("authenticate"), "users", decoded.uid);
   if (!user || user.deletedAt) throw new AppError("forbidden", "Account is not active", 403);
   const app = ((user.artists ?? []) as Membership[]).filter((x) => x.role === "admin" || x.role === "member");
   if (!app.length) throw new AppError("forbidden", "No role on this account", 403);
@@ -50,7 +50,19 @@ export async function authenticate(authHeader: string | null, artistHeader?: str
     if (wanted) throw new AppError("not_a_member", "You're not a member of this artist", 403);
     throw new AppError("artist_required", "Say which artist this is for", 400);
   }
-  return { uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, musicianId: mine.musicianId ?? (user.musicianId as string | undefined), via: "app", runId: newRunId() };
+  // ctx.musicianId is the caller's musician in THIS artist (their membership's), never another artist's.
+  return artistCtx({ uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, ...(mine.musicianId ? { musicianId: mine.musicianId } : {}), via: "app" });
+}
+
+/**
+ * `_meta.runId` joins a run the caller started (the welcome page sends one across several users.add calls). Accepted when the run
+ * has no history yet (run ids are random UUIDs, so they can't be guessed before use). Otherwise every entry must be the caller's,
+ * and every artist-scoped, non-derived entry this artist's (tenancy plan D3).
+ */
+export async function assertMayJoinRun(ctx: Ctx, runId: string) {
+  const entries = await db.listGroup(systemCtx("join run"), "history", (q) => q.where("runId", "==", runId).limit(200));
+  const foreign = entries.some((e) => e.actor?.uid !== ctx.uid || (!e.derived && typeof e.artistId === "string" && e.artistId !== ctx.artistId));
+  if (foreign) throw new AppError("forbidden", "That run isn't yours", 403);
 }
 
 export interface Executed { result: unknown; runId: string; revs: Record<string, number>; repeated?: boolean }
@@ -70,11 +82,14 @@ export async function execute(ctx: Ctx, name: string, body: unknown): Promise<Ex
   if (!parsed.success) throw invalid(parsed.error);
   const m = meta.data;
   if (m.autosave) ctx.autosave = true;
-  if (m.runId) ctx.runId = m.runId;
+  if (m.runId) {
+    await assertMayJoinRun(ctx, m.runId);
+    ctx.runId = m.runId;
+  }
   if (m.baseRev !== undefined && typeof input.id === "string") ctx.baseRev = { id: input.id, rev: m.baseRev };
   ctx.touched = {};
   if (m.clientMutationId) {
-    const prior = await claimMutation(ctx.uid, m.clientMutationId, name);
+    const prior = await claimMutation(ctx.uid, m.clientMutationId, name, ctx.artistId);
     if (prior) return { ...(prior as Executed), repeated: true };
   }
   let out: Executed;

@@ -1,4 +1,4 @@
-import { plotByToken } from "@/server/stagePlotShare";
+import { publicPlot } from "@/server/stagePlotShare";
 import { failResponse, plotPdfResponse } from "@/server/stagePlotPdfResponse";
 
 export const runtime = "nodejs";
@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; token: string }> }) {
   try {
     const { id, token } = await params;
-    return await plotPdfResponse(await plotByToken(id, token), req);
+    const { ctx, plot } = await publicPlot(id, token);
+    return await plotPdfResponse(ctx, plot, req);
   } catch (e) { return failResponse(e); }
 }

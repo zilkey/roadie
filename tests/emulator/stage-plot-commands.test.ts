@@ -4,12 +4,12 @@ import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { plotByToken } from "@/server/stagePlotShare";
-import { resetEmulators, makeUser, makeArtist, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, TEST_ARTIST, SYS } from "./helpers";
 
 beforeEach(resetEmulators);
 type Out = { status: number; json: { result: any } };
 const call = (tok: string, name: string, body: unknown) => dispatch(name, `Bearer ${tok}`, body, TEST_ARTIST) as Promise<Out>;
-const sys = importCtx();
+const sys = importCtx(TEST_ARTIST);
 
 async function setup() {
   await makeArtist("Nora Quill Band", "nora-quill-band");
@@ -85,12 +85,12 @@ test("move is ONE write across inputs, gear and mixes; x null unplaces", async (
   await call(rudy.token, "stagePlots.setMixCount", { id, count: 1 });
   const g = await call(rudy.token, "stagePlots.addItems", { id, items: [{ type: "kit", x: 12, y: 3 }] });
   const p = await get(rudy.token, id);
-  const before = (await db.history("stagePlots", id)).length;
+  const before = (await db.history(SYS, "stagePlots", id)).length;
   const r = await call(rudy.token, "stagePlots.move", { id, moves: [
     { id: p.inputs[0].id, x: 11, y: 3 }, { id: p.inputs[1].id, x: 12, y: 3 }, { id: g.json.result.ids[0], x: 13, rot: 90 }, { id: p.monitors[0].id, x: 2, y: 8 },
   ] });
   assert.equal(r.status, 200, JSON.stringify(r.json));
-  assert.equal((await db.history("stagePlots", id)).length, before + 1, "one history entry");
+  assert.equal((await db.history(SYS, "stagePlots", id)).length, before + 1, "one history entry");
   const q = await get(rudy.token, id);
   assert.deepEqual([q.inputs[0].x, q.inputs[1].x, q.items[0].x, q.items[0].rot, q.monitors[0].y], [11, 12, 13, 90, 8]);
   assert.deepEqual(q.notPlaced, [3, 4, 5, 6, 7, 8]);
@@ -139,12 +139,12 @@ test("shows.setStagePlot picks by hand; staleShows lists upcoming shows that nee
   let s = await stale();
   assert.deepEqual(s.shows.map((x: any) => [x.showId, x.reason, x.suggestPlotId]), [[upcoming.id, "noPlot", id]]);
   assert.equal((await call(rudy.token, "shows.setStagePlot", { showId: upcoming.id, stagePlotId: id })).status, 200);
-  assert.equal((await db.get("shows", upcoming.id))!.stagePlotId, id);
+  assert.equal((await db.get(SYS, "shows", upcoming.id))!.stagePlotId, id);
   assert.equal((await stale()).count, 0);
   assert.equal((await call(rudy.token, "shows.setStagePlot", { showId: upcoming.id, stagePlotId: "nope" })).status, 404);
   // removing the plot clears the pick and the show is flagged again
   await call(rudy.token, "stagePlots.remove", { id });
-  assert.equal((await db.get("shows", upcoming.id))!.stagePlotId, undefined);
+  assert.equal((await db.get(SYS, "shows", upcoming.id))!.stagePlotId, undefined);
   assert.equal((await call(rudy.token, "stagePlots.get", { id })).status, 404);
   s = await stale();
   assert.equal(s.count, 0, "with the only plot gone there is nothing to suggest");
@@ -159,10 +159,10 @@ test("engineer link: one stable url while on, hash on the plot, plain token only
   assert.equal(on.on, true);
   assert.match(on.url, new RegExp(`/plot/${id}/[A-Za-z0-9_-]{20,}$`));
   const token1 = on.url.split("/").pop() as string;
-  const raw = (await db.get("stagePlots", id))!;
+  const raw = (await db.get(SYS, "stagePlots", id))!;
   assert.equal(raw.share.on, true);
   assert.ok(raw.share.tokenHash && !JSON.stringify(raw).includes(token1), "the plot document holds only a hash");
-  assert.equal((await db.get("stagePlotTokens", id))!.token, token1, "the plain token is in the server-only collection");
+  assert.equal((await db.get(SYS, "stagePlotTokens", id))!.token, token1, "the plain token is in the server-only collection");
   for (const who of [rudy, hugo]) assert.deepEqual((await get(who.token, id)).share, { on: true }, "reads never carry the hash");
 
   // members can read the same url to copy it; they cannot turn it on or off
@@ -171,34 +171,34 @@ test("engineer link: one stable url while on, hash on the plot, plain token only
   assert.equal((await call(hugo.token, "stagePlots.shareLink", { id })).status, 403);
   assert.equal((await call(hugo.token, "stagePlots.shareOff", { id })).status, 403);
 
-  const view = await plotByToken(id, token1);
+  const view = await plotByToken(sys, id, token1);
   assert.equal(view.name, "Full band");
   assert.equal(view.share, undefined);
-  await assert.rejects(plotByToken(id, "wrong"), /not valid/);
-  await assert.rejects(plotByToken("nope", token1), /not valid/);
+  await assert.rejects(plotByToken(sys, id, "wrong"), /not valid/);
+  await assert.rejects(plotByToken(sys, "nope", token1), /not valid/);
 
   // asking again returns the same link and changes nothing
   const again = (await call(rudy.token, "stagePlots.shareLink", { id })).json.result;
   assert.deepEqual([again.alreadyOn, again.url], [true, on.url]);
-  await plotByToken(id, token1);
+  await plotByToken(sys, id, token1);
 
   assert.equal((await call(rudy.token, "stagePlots.shareOff", { id })).json.result.on, false);
-  await assert.rejects(plotByToken(id, token1), /not valid/);
-  assert.equal(await db.get("stagePlotTokens", id), null, "the token is deleted");
+  await assert.rejects(plotByToken(sys, id, token1), /not valid/);
+  assert.equal(await db.get(SYS, "stagePlotTokens", id), null, "the token is deleted");
   assert.deepEqual(await link(hugo.token), { id, on: false, url: null });
   const second = (await call(rudy.token, "stagePlots.shareLink", { id })).json.result;
   const token2 = second.url.split("/").pop() as string;
   assert.notEqual(token2, token1);
-  await assert.rejects(plotByToken(id, token1), /not valid/);
-  await plotByToken(id, token2);
+  await assert.rejects(plotByToken(sys, id, token1), /not valid/);
+  await plotByToken(sys, id, token2);
   const rotated = (await call(rudy.token, "stagePlots.shareLink", { id, rotate: true })).json.result;
   assert.notEqual(rotated.url, second.url);
-  await assert.rejects(plotByToken(id, token2), /not valid/);
-  await plotByToken(id, rotated.url.split("/").pop());
+  await assert.rejects(plotByToken(sys, id, token2), /not valid/);
+  await plotByToken(sys, id, rotated.url.split("/").pop());
   assert.equal((await link(hugo.token)).url, rotated.url);
 
   // archiving the plot kills the link and the stored token
   await call(rudy.token, "stagePlots.remove", { id });
-  await assert.rejects(plotByToken(id, rotated.url.split("/").pop()), /not valid/);
-  assert.equal(await db.get("stagePlotTokens", id), null);
+  await assert.rejects(plotByToken(sys, id, rotated.url.split("/").pop()), /not valid/);
+  assert.equal(await db.get(SYS, "stagePlotTokens", id), null);
 });

@@ -9,7 +9,7 @@ import { db, run } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { undoRun } from "@/server/undo";
 import { revokeEditor } from "@/server/platform";
-import { resetEmulators, makeUser, venue, approveTestEditors, makePlatformAdmins } from "./helpers";
+import { resetEmulators, makeUser, venue, approveTestEditors, makePlatformAdmins, SYS, TEST_ARTIST } from "./helpers";
 
 const BAND = "test-artist", OTHER = "other-artist";
 let stranger: Ctx, editor: Ctx, platform: Ctx;
@@ -34,16 +34,16 @@ const cmd = async (name: string, input: unknown, c: Ctx) => {
 const refused = (p: Promise<unknown>) => assert.rejects(p, (e: any) => e.status === 403 && e.code === "not_approved" && /Only approved editors can change shared/.test(e.message));
 const forbidden = (p: Promise<unknown>) => assert.rejects(p, (e: any) => e.status === 403 && e.code === "forbidden");
 /** A venue someone else (an import) put in the directory. */
-const seeded = async (name = "Gothic Theatre", city = "Englewood") => (await db.create(importCtx("seed"), "venues", venue(name, city))).id;
+const seeded = async (name = "Gothic Theatre", city = "Englewood") => (await db.create(importCtx(TEST_ARTIST, "seed"), "venues", venue(name, city))).id;
 
 test("an unapproved admin creates a venue and edits it, but can't edit someone else's", async () => {
   const mine = (await cmd("venues.create", venue("Olga's Room", "Boulder"), stranger)).id;
   await cmd("venues.update", { id: mine, patch: { capacity: 60 } }, stranger);
-  assert.equal((await db.get("venues", mine))!.capacity, 60);
+  assert.equal((await db.get(SYS, "venues", mine))!.capacity, 60);
 
   const theirs = await seeded();
   await refused(cmd("venues.update", { id: theirs, patch: { capacity: 999 } }, stranger));
-  assert.equal((await db.get("venues", theirs))!.capacity, undefined);
+  assert.equal((await db.get(SYS, "venues", theirs))!.capacity, undefined);
   // Sending what's already there changes nothing, so it isn't refused (autosave forms resend unchanged fields).
   assert.deepEqual(await cmd("venues.update", { id: theirs, patch: { name: "Gothic Theatre" } }, stranger), { id: theirs, changed: false });
 });
@@ -52,35 +52,35 @@ test("a deduping create links to the existing venue without filling its shared f
   const theirs = await seeded();
   const r = await cmd("venues.create", venue("Gothic Theatre", "Englewood", { capacity: 1100, website: "gothic.example" }), stranger);
   assert.deepEqual({ id: r.id, merged: r.merged }, { id: theirs, merged: true });
-  const v = (await db.get("venues", theirs))!;
+  const v = (await db.get(SYS, "venues", theirs))!;
   assert.equal(v.capacity, undefined);
   assert.equal(v.website, undefined);
   // An approved editor's create fills the gaps (and adopts it).
   await cmd("venues.create", venue("Gothic Theatre", "Englewood", { capacity: 1100 }), editor);
-  assert.equal((await db.get("venues", theirs))!.capacity, 1100);
+  assert.equal((await db.get(SYS, "venues", theirs))!.capacity, 1100);
 });
 
 test("the creator loses the right once an approved editor adopts it, and can't undo their create past that", async () => {
   const created = fresh(stranger);
   const id = (await registry["venues.create"].run(created, venue("Lost Lake", "Denver") as never) as { id: string }).id;
   await cmd("venues.update", { id, patch: { capacity: 150 } }, editor);
-  const v = (await db.get("venues", id))!;
+  const v = (await db.get(SYS, "venues", id))!;
   assert.ok(v.adoptedAt, "an approved editor's first change adopts it");
   assert.equal(v.createdBy, stranger.uid);
   await refused(cmd("venues.update", { id, patch: { capacity: 20 } }, stranger));
   const report = await undoRun(fresh(stranger), created.runId, { ownerUid: stranger.uid });
   assert.equal(report.failed.length, 1);
   assert.match(report.failed[0].reason ?? "", /Only approved editors can change shared venues/);
-  assert.equal((await db.get("venues", id))!.deletedAt, null);
+  assert.equal((await db.get(SYS, "venues", id))!.deletedAt, null);
 });
 
 test("an unapproved admin still writes their own band's venue notes", async () => {
   const theirs = await seeded();
   await cmd("venues.update", { id: theirs, patch: { loadInNotes: "Alley door", notes: "Ask for Sam" } }, stranger);
-  const note = await db.get("venueNotes", `${OTHER}__${theirs}`);
+  const note = await db.get(SYS, "venueNotes", `${OTHER}__${theirs}`);
   assert.equal(note?.loadInNotes, "Alley door");
   // and their notes on a festival they can't edit
-  const f = (await db.create(importCtx("seed"), "festivals", { name: "Folks Fest", type: "festival", address: { city: "Lyons", state: "CO" } })).id;
+  const f = (await db.create(importCtx(TEST_ARTIST, "seed"), "festivals", { name: "Folks Fest", type: "festival", address: { city: "Lyons", state: "CO" } })).id;
   await cmd("festivals.update", { id: f, patch: { notes: "Apply in January" } }, stranger);
   await refused(cmd("festivals.update", { id: f, patch: { website: "folks.example" } }, stranger));
 });
@@ -90,7 +90,7 @@ test("after approval they can edit; after revoke they can't", async () => {
   await refused(cmd("venues.update", { id: theirs, patch: { capacity: 500 } }, stranger));
   await approveTestEditors(stranger.uid);
   await cmd("venues.update", { id: theirs, patch: { capacity: 500 } }, stranger);
-  assert.equal((await db.get("venues", theirs))!.capacity, 500);
+  assert.equal((await db.get(SYS, "venues", theirs))!.capacity, 500);
   await revokeEditor(stranger.uid, "test");
   await refused(cmd("venues.update", { id: theirs, patch: { capacity: 501 } }, stranger));
 });
@@ -103,28 +103,29 @@ test("system writes still work: a rename's copies, act lookups, imports", async 
     sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   })).id;
   await cmd("venues.update", { id: theirs, patch: { name: "The Gothic" } }, editor);
-  assert.equal((await db.get("shows", show))!.venue.name, "The Gothic");
+  assert.equal((await db.get(SYS, "shows", show))!.venue.name, "The Gothic");
   // An act a venue calendar added: a lookup fills it as the system, not as the person.
-  const act = (await db.create(importCtx("venue-calendars"), "acts", { name: "Big Thief" })).id;
-  await run(fresh(stranger), (w) => w.asSystem(() => w.update("acts", act, { hometown: "Brooklyn, NY" })));
-  assert.equal((await db.get("acts", act))!.hometown, "Brooklyn, NY");
+  const act = (await db.create(importCtx(TEST_ARTIST, "venue-calendars"), "acts", { name: "Big Thief" })).id;
+  await run(fresh(stranger), (w) => w.system(() => w.update("acts", act, { hometown: "Brooklyn, NY" })));
+  assert.equal((await db.get(SYS, "acts", act))!.hometown, "Brooklyn, NY");
   await refused(cmd("acts.update", { id: act, patch: { hometown: "Somewhere" } }, stranger));
-  // Imports (linkActs) write as "import".
-  await db.update(importCtx(), "acts", act, { description: "Indie rock" });
+  // Imports (linkActs) run as the system now; an artist's import ctx is no longer exempt.
+  await db.update(SYS, "acts", act, { description: "Indie rock" });
+  await refused(db.update(importCtx(TEST_ARTIST), "acts", act, { description: "Pop" }));
 });
 
 test("a festival rename by its unapproved creator still updates editions others created (hooks)", async () => {
   const f = (await cmd("festivals.create", { name: "Olga Fest", type: "festival", address: { city: "Lyons", state: "CO" } }, stranger)).id;
   const ed = (await cmd("editions.create", { festivalId: f, year: 2027, label: "2027" }, editor)).id;
   await cmd("festivals.update", { id: f, patch: { name: "Olga's Fest" } }, stranger);
-  assert.equal((await db.get("editions", ed))!.festivalName, "Olga's Fest");
+  assert.equal((await db.get(SYS, "editions", ed))!.festivalName, "Olga's Fest");
 });
 
 test("merge and remove on shared kinds need a platform admin", async () => {
   const a = await seeded("Bluebird", "Denver"), b = await seeded("Bluebird Theater", "Denver");
   await forbidden(cmd("venues.mergeInto", { from: a, into: b }, editor));
   await cmd("venues.mergeInto", { from: a, into: b }, platform);
-  assert.equal((await db.get("venues", a))!.mergedInto, b);
+  assert.equal((await db.get(SYS, "venues", a))!.mergedInto, b);
 
   const f = (await cmd("festivals.create", { name: "Planet Bluegrass", type: "festival", address: { city: "Lyons", state: "CO" } }, editor)).id;
   const ed = (await cmd("editions.create", { festivalId: f, year: 2027, label: "2027" }, editor)).id;
@@ -138,8 +139,8 @@ test("merge and remove on shared kinds need a platform admin", async () => {
   await cmd("festivals.remove", { id: f }, platform);
   await cmd("promoters.remove", { id: p }, platform);
   await cmd("venueTypes.rename", { id: "winery", label: "Vineyard" }, platform);
-  assert.ok((await db.get("festivals", f))!.deletedAt);
-  assert.ok((await db.get("editions", ed))!.deletedAt);
+  assert.ok((await db.get(SYS, "festivals", f))!.deletedAt);
+  assert.ok((await db.get(SYS, "editions", ed))!.deletedAt);
   // A venue's archive is this band's own list, not the shared room: any admin still can.
   await cmd("venues.remove", { id: b }, editor);
 });

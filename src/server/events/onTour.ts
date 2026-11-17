@@ -6,21 +6,22 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { firestore } from "../admin";
 import { db, type Doc } from "../db";
+import type { AnyCtx } from "../ctx";
 import { isColorado, tourStops } from "@/lib/venueEvents";
 import type { Act } from "@/schema";
 
 const BATCH = 400;
 
-export async function markTours(actIds: string[], today: string): Promise<{ marked: number; changed: number }> {
+export async function markTours(ctx: AnyCtx, actIds: string[], today: string): Promise<{ marked: number; changed: number }> {
   const states = new Map<string, string | undefined>();
   const stateOf = async (venueId: string) => {
-    if (!states.has(venueId)) states.set(venueId, ((await db.get("venues", venueId))?.address as { state?: string } | undefined)?.state);
+    if (!states.has(venueId)) states.set(venueId, ((await db.get(ctx, "venues", venueId))?.address as { state?: string } | undefined)?.state);
     return states.get(venueId);
   };
   const want = new Map<string, number>();
   const seen = new Map<string, Doc>();
   for (const actId of new Set(actIds)) {
-    const evs = await db.list("venueEvents", (q) => q.where("actIds", "array-contains", actId), { includeDeleted: true });
+    const evs = await db.list(ctx, "venueEvents", (q) => q.where("actIds", "array-contains", actId), { includeDeleted: true });
     const heads = evs.filter((e) => (e.acts as Act[]).some((a) => a.actId === actId && a.role === "headliner"));
     const live: Doc[] = [];
     for (const e of heads) {

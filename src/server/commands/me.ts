@@ -42,8 +42,8 @@ export const peopleUpdateDriving = defineCommand({
     "userId is whose (context.now band[].userId, or a records.get user). " + PATCH_DESC + " The reply is what is now saved (with each car's id). Undoable with history.undoRun.",
   input: z.strictObject({ userId: z.string().min(1), ...drivingPatch }),
   async run(ctx, { userId, ...patch }): Promise<DrivingSettings> {
-    const u = await db.get("users", userId);
-    if (!u || u.deletedAt || (ctx.artistId && !((u.artists ?? []) as Membership[]).some((m) => m.artistId === ctx.artistId)))
+    const u = await db.get(ctx, "users", userId);
+    if (!u || u.deletedAt || !((u.artists ?? []) as Membership[]).some((m) => m.artistId === ctx.artistId))
       throw new AppError("not_found", "Not a member of this band", 404);
     return updateDriving(ctx, userId, patch);
   },

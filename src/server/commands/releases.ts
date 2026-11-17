@@ -6,11 +6,12 @@ import { AppError } from "../errors";
 import type { Ctx } from "../ctx";
 import { driveClient, type DriveFile } from "../integrations";
 import { findOrMakeFolder } from "../driveFolders";
-import { bandFolders, bandmates, inspect, sharingOf } from "../music";
+import { assertInBandFolder, bandFolders, bandmates, inspect, sharingOf } from "../music";
 import { releaseKind, trackStatus, trackCredit, fileKind, dateStr, driveRef } from "@/schema";
 import { guessReleaseKind, guessVersion, sidesFor, sortTracks, trackReached } from "@/lib/releases";
 import { providerFor } from "@/lib/music";
 import { artistFor } from "./projects";
+import { pathOf } from "@/schema/owners";
 import { chosenFolder } from "./google";
 
 // Releases (#12): a release is a record next to Songs: an ordered tracklist built from songs (releases/{id}/tracks), the files
@@ -19,7 +20,7 @@ import { chosenFolder } from "./google";
 // Songs are untouched: charts and demos stay on the song; a track points at its song.
 
 const id1 = z.string().min(1);
-export const tracksPath = (releaseId: string) => `releases/${releaseId}/tracks`;
+export const tracksPath = (artistId: string, releaseId: string) => pathOf("tracks", { artistId, parent: { kind: "releases", id: releaseId } });
 export const RELEASES_FOLDER_NAME = "Releases";
 export const NO_BAND_FOLDER = "Choose the band folder on Settings > Google first: the release folder goes inside it";
 export const NO_RELEASES_FOLDER = "Choose the Releases folder on Settings > Google first: a new release folder goes inside it";
@@ -27,15 +28,14 @@ export const NO_RELEASES_FOLDER = "Choose the Releases folder on Settings > Goog
 async function requireRelease(w: Writer, id: string): Promise<Doc> {
   const a = await w.get("releases", id);
   if (!a || a.deletedAt) throw new AppError("not_found", "Release not found", 404);
-  if (w.ctx.artistId && a.artistId !== w.ctx.artistId) throw new AppError("not_found", "Release not found", 404);
   return a;
 }
 /** The release's live tracks in order. `pending` sees tracks this run has just written. */
 export async function liveTracks(w: Writer, releaseId: string, pending = false): Promise<Doc[]> {
-  return sortTracks((await w.query(tracksPath(releaseId), undefined, { pending })) as (Doc & { position: number })[]);
+  return sortTracks((await w.query(tracksPath(w.ctx.artistId, releaseId), undefined, { pending })) as (Doc & { position: number })[]);
 }
 async function requireTrack(w: Writer, releaseId: string, id: string): Promise<Doc> {
-  const t = await w.get(tracksPath(releaseId), id);
+  const t = await w.get(tracksPath(w.ctx.artistId, releaseId), id);
   if (!t || t.deletedAt) throw new AppError("not_found", "Track not found", 404);
   return t;
 }
@@ -52,7 +52,7 @@ async function liveSong(w: Writer, id: string): Promise<Doc> {
 export async function requireTrackOnProject(w: Writer, projectId: string | undefined, trackId: string): Promise<Doc> {
   const release = projectId ? (await w.query("releases", (q) => q.where("projectId", "==", projectId)))[0] : undefined;
   if (!release) throw new AppError("invalid_input", "That project has no release, so there is no track to put this on", 400);
-  const t = await w.get(tracksPath(release.id), trackId);
+  const t = await w.get(tracksPath(w.ctx.artistId, release.id), trackId);
   if (!t || t.deletedAt) throw new AppError("not_found", "Track not found on that release", 404);
   return t;
 }
@@ -70,7 +70,7 @@ async function appendTracks(w: Writer, releaseId: string, songIds: string[], sid
     const s = await liveSong(w, songId);
     position++;
     const sideOf = side ?? (last?.side as string | undefined);
-    const r = await w.create(tracksPath(releaseId), {
+    const r = await w.create(tracksPath(w.ctx.artistId, releaseId), {
       releaseId, position, songId, title: s.title as string, status: "tracking", credits: [],
       ...(sideOf ? { side: sideOf } : {}), ...(s.lengthSec != null ? { lengthSec: s.lengthSec as number } : {}),
     });
@@ -94,7 +94,7 @@ export async function renumber(w: Writer, releaseId: string, ordered: Doc[], kee
     const patch: Record<string, unknown> = {};
     if (t.position !== i + 1) patch.position = i + 1;
     if ((t.side ?? undefined) !== sides[i]) patch.side = sides[i] ?? null;
-    if (Object.keys(patch).length) await w.update(tracksPath(releaseId), t.id, patch);
+    if (Object.keys(patch).length) await w.update(tracksPath(w.ctx.artistId, releaseId), t.id, patch);
   }
 }
 
@@ -111,12 +111,12 @@ export const releasesCreate = defineCommand({
   }),
   async run(ctx, i) {
     // The chosen folder is checked with Drive before anything is written: a link to a file or a folder Drive can't see is refused.
-    const chosen = i.driveFolderId ? await chosenFolder(artistIdOf(ctx), i.driveFolderId) : null;
+    const chosen = i.driveFolderId ? await chosenFolder(ctx.artistId, i.driveFolderId) : null;
     const r = await run(ctx, async (w) => {
-      const artist = await artistFor(w);
-      const project = await w.create("projects", { artistId: artist.id, kind: "release", name: i.title, status: "open" });
+      await artistFor(w);
+      const project = await w.create("projects", { kind: "release", name: i.title, status: "open" });
       const release = await w.create("releases", {
-        artistId: artist.id, title: i.title, kind: i.kind, projectId: project.id, ...(i.releaseDate ? { releaseDate: i.releaseDate } : {}), ...(chosen ? { driveFolderId: chosen.id, driveFolderName: chosen.name } : {}),
+        title: i.title, kind: i.kind, projectId: project.id, ...(i.releaseDate ? { releaseDate: i.releaseDate } : {}), ...(chosen ? { driveFolderId: chosen.id, driveFolderName: chosen.name } : {}),
       });
       const songIds = [...(i.setlistId ? await setlistSongIds(w, i.setlistId) : []), ...i.songIds];
       const tracks = await appendTracks(w, release.id, songIds);
@@ -153,7 +153,7 @@ export const releasesRemove = defineCommand({
   input: z.strictObject({ id: id1 }),
   run: (ctx, { id }) => run(ctx, async (w) => {
     const a = await requireRelease(w, id);
-    for (const t of await liveTracks(w, id)) await w.softDelete(tracksPath(id), t.id);
+    for (const t of await liveTracks(w, id)) await w.softDelete(tracksPath(w.ctx.artistId, id), t.id);
     for (const f of await w.query("files", (q) => q.where("releaseId", "==", id))) await w.softDelete("files", f.id);
     const project = await w.get("projects", a.projectId as string);
     if (project && !project.deletedAt && project.status !== "closed") await w.update("projects", project.id, { status: "closed" });
@@ -188,7 +188,7 @@ export const releaseTracksUpdate = defineCommand({
     await requireTrack(w, releaseId, id);
     const p: Record<string, unknown> = { ...patch };
     if (p.isrc === "") p.isrc = null;
-    return w.update(tracksPath(releaseId), id, p);
+    return w.update(tracksPath(w.ctx.artistId, releaseId), id, p);
   }),
 });
 
@@ -200,7 +200,7 @@ export const releaseTracksRemove = defineCommand({
     await requireRelease(w, releaseId);
     await requireTrack(w, releaseId, id);
     for (const f of await w.query("files", (q) => q.where("releaseTrackId", "==", id))) await w.softDelete("files", f.id);
-    const r = await w.softDelete(tracksPath(releaseId), id);
+    const r = await w.softDelete(tracksPath(w.ctx.artistId, releaseId), id);
     await renumber(w, releaseId, (await liveTracks(w, releaseId)).filter((t) => t.id !== id));
     return r;
   }),
@@ -235,7 +235,7 @@ export const releaseTracksSideBreak = defineCommand({
       if (remove) breaks.delete(at); else breaks.add(at);
     } else breaks.clear();
     const sides = sidesFor(have.length, [...breaks]);
-    for (const [i, t] of have.entries()) if ((t.side ?? undefined) !== sides[i]) await w.update(tracksPath(releaseId), t.id, { side: sides[i] ?? null });
+    for (const [i, t] of have.entries()) if ((t.side ?? undefined) !== sides[i]) await w.update(tracksPath(w.ctx.artistId, releaseId), t.id, { side: sides[i] ?? null });
     return { releaseId, sides: [...new Set(sides.filter(Boolean))] };
   }),
 });
@@ -248,15 +248,15 @@ const AttachFile = z.union([AttachDrive, AttachLink]);
 type Attach = z.infer<typeof AttachFile>;
 
 /** The folders a release file counts as "in the band folder" under: the band's, plus the release's own. */
-async function releaseFolders(artistId: string | undefined, release: Doc) {
+async function releaseFolders(artistId: string, release: Doc) {
   const { all } = await bandFolders(artistId);
   return release.driveFolderId ? [...all, release.driveFolderId as string] : all;
 }
 
 /** File docs for the attachments, looked up in Drive (links get no Drive facts). Kind: given, else guessed from the name; version: given, else from the name. */
-async function buildReleaseFileDocs(artistId: string | undefined, release: Doc, trackId: string | undefined, files: Attach[]) {
-  const [mates, folders] = await Promise.all([bandmates(), releaseFolders(artistId, release)]);
-  const drive = driveClient({ artistId });
+async function buildReleaseFileDocs(ctx: Ctx, release: Doc, trackId: string | undefined, files: Attach[]) {
+  const [mates, folders] = await Promise.all([bandmates(ctx), releaseFolders(ctx.artistId, release)]);
+  const drive = driveClient({ artistId: ctx.artistId });
   const parent = { releaseId: release.id, ...(trackId ? { releaseTrackId: trackId } : {}) };
   const out: Record<string, unknown>[] = [];
   for (const a of files) {
@@ -269,7 +269,7 @@ async function buildReleaseFileDocs(artistId: string | undefined, release: Doc, 
       continue;
     }
     let f: DriveFile;
-    try { f = await drive.get(a.driveFileId); } catch { throw new AppError("not_found", `Drive file ${a.driveFileId} not found`, 404); }
+    f = await assertInBandFolder(ctx, a.driveFileId, drive);
     const ins = await inspect(f, mates, folders, drive);
     const title = a.title?.trim() || f.name;
     const version = a.version ?? guessVersion(f.name);
@@ -288,9 +288,9 @@ export const releaseFilesAttach = defineCommand({
     "kind: mix|master|stems|session|artwork|liner|promo|other, guessed from the name when left out; a mix or master's version (v1, v2...) is read from the name or given. approved:true marks a mix or master signed off (the track becomes mixed / mastered). Returns { ids, skipped }.",
   input: z.strictObject({ releaseId: id1, trackId: id1.optional(), files: z.array(AttachFile).min(1), approved: z.boolean().optional() }),
   async run(ctx, i) {
-    const release = await db.get("releases", i.releaseId);
+    const release = await db.get(ctx, "releases", i.releaseId);
     if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
-    const docs = await buildReleaseFileDocs(ctx.artistId, release, i.trackId, i.files);
+    const docs = await buildReleaseFileDocs(ctx, release, i.trackId, i.files);
     return run(ctx, async (w) => {
       await requireRelease(w, i.releaseId);
       const track = i.trackId ? await requireTrack(w, i.releaseId, i.trackId) : null;
@@ -316,7 +316,7 @@ export const releaseFilesAttach = defineCommand({
 /** An approved mix makes the track mixed, an approved master makes it mastered, unless it is already further along. */
 async function advance(w: Writer, releaseId: string, track: Doc, kind: string) {
   const to = kind === "mix" ? "mixed" : kind === "master" ? "mastered" : null;
-  if (to && !trackReached(track.status as never, to)) { await w.update(tracksPath(releaseId), track.id, { status: to }); track.status = to; }
+  if (to && !trackReached(track.status as never, to)) { await w.update(tracksPath(w.ctx.artistId, releaseId), track.id, { status: to }); track.status = to; }
 }
 
 async function requireReleaseFile(w: Writer, id: string): Promise<Doc> {
@@ -354,22 +354,21 @@ export const releaseFilesNote = defineCommand({
 
 export interface FolderInfo { id: string; name: string; url: string }
 const info = (f: DriveFile): FolderInfo => ({ id: f.id, name: f.name, url: f.webViewLink });
-const artistIdOf = (ctx: Ctx) => { if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400); return ctx.artistId; };
 
 /**
  * "Band folder / Releases / {title}", made (and shared with the band) if it isn't there yet, and remembered on the release:
  * where uploads land. Needs the band folder (Settings > Google).
  */
 export async function ensureReleaseFolder(ctx: Ctx, releaseId: string): Promise<FolderInfo> {
-  const release = await db.get("releases", releaseId);
+  const release = await db.get(ctx, "releases", releaseId);
   if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
   const drive = driveClient({ artistId: ctx.artistId });
   if (release.driveFolderId) {
     try { return info(await drive.get(release.driveFolderId as string)); } catch { /* gone from Drive: make it again */ }
   }
-  const mates = { emails: (await bandmates()).map((m) => m.email) };
+  const mates = { emails: (await bandmates(ctx)).map((m) => m.email) };
   // The Releases folder from Settings > Google; before one was chosen, "Band folder / Releases".
-  let parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
+  let parent = (await db.get(ctx, "artists", ctx.artistId))?.releasesFolderId as string | undefined;
   if (!parent) {
     const { band } = await bandFolders(ctx.artistId);
     if (!band) throw new AppError("no_band_folder", NO_BAND_FOLDER, 400);
@@ -387,11 +386,11 @@ export const releasesFolder = defineCommand({
   input: z.strictObject({ id: id1, name: z.string().trim().min(1).optional() }),
   async run(ctx, { id, name }) {
     if (!name) return ensureReleaseFolder(ctx, id);
-    const release = await db.get("releases", id);
+    const release = await db.get(ctx, "releases", id);
     if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
-    const parent = (await db.get("artists", artistIdOf(ctx)))?.releasesFolderId as string | undefined;
+    const parent = (await db.get(ctx, "artists", ctx.artistId))?.releasesFolderId as string | undefined;
     if (!parent) throw new AppError("no_releases_folder", NO_RELEASES_FOLDER, 400);
-    const own = await findOrMakeFolder(driveClient({ artistId: artistIdOf(ctx) }), parent, name, { emails: (await bandmates()).map((m) => m.email) });
+    const own = await findOrMakeFolder(driveClient({ artistId: ctx.artistId }), parent, name, { emails: (await bandmates(ctx)).map((m) => m.email) });
     await db.update(ctx, "releases", id, { driveFolderId: own.folder.id, driveFolderName: own.folder.name });
     return info(own.folder);
   },
@@ -402,9 +401,10 @@ export const releasesConnectFolder = defineCommand({
   description: "Connect a Drive folder that already exists to a release (folder: an id or a Drive folder link, e.g. from google.findFolders): uploads then land in it. Returns { id, name, url }.",
   input: z.strictObject({ id: id1, folder: z.string().trim().min(1) }),
   async run(ctx, { id, folder }) {
-    const release = await db.get("releases", id);
+    const release = await db.get(ctx, "releases", id);
     if (!release || release.deletedAt) throw new AppError("not_found", "Release not found", 404);
-    const f = await chosenFolder(artistIdOf(ctx), folder);
+    const f = await chosenFolder(ctx.artistId, folder);
+    await assertInBandFolder(ctx, f.id);
     await db.update(ctx, "releases", id, { driveFolderId: f.id, driveFolderName: f.name });
     return info(f);
   },
@@ -416,15 +416,15 @@ export const releaseFilesCopyToFolder = defineCommand({
   input: z.strictObject({ releaseId: id1, ids: z.array(id1).min(1) }),
   async run(ctx, { releaseId, ids }) {
     const folder = await ensureReleaseFolder(ctx, releaseId);
-    const release = (await db.get("releases", releaseId))!;
-    const [mates, folders] = await Promise.all([bandmates(), releaseFolders(ctx.artistId, release)]);
+    const release = (await db.get(ctx, "releases", releaseId))!;
+    const [mates, folders] = await Promise.all([bandmates(ctx), releaseFolders(ctx.artistId, release)]);
     const drive = driveClient({ artistId: ctx.artistId });
-    const files = (await db.list("files", (q) => q.where("releaseId", "==", releaseId))).filter((f) => ids.includes(f.id) && f.driveFileId);
+    const files = (await db.list(ctx, "files", (q) => q.where("releaseId", "==", releaseId))).filter((f) => ids.includes(f.id) && f.driveFileId);
     const updates: { id: string; patch: Record<string, unknown> }[] = [];
     const errors: { id: string; title: string; message: string }[] = [];
     for (const f of files) {
       try {
-        let file = await drive.get(f.driveFileId as string);
+        let file = await assertInBandFolder(ctx, f.driveFileId as string, drive);
         let ins = await inspect(file, mates, folders, drive);
         if (!ins.inBandFolder) {
           const copy = await drive.copy(file.id, { parentId: folder.id, name: file.name });

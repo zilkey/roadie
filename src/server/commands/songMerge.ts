@@ -124,11 +124,11 @@ export const songsMerge = defineCommand({
       const mine = tracks.filter((t) => all.has(t.songId));
       if (!mine.some((t) => gone.has(t.songId))) continue;
       const [stay, ...drop] = mine;
-      for (const t of mine) if (gone.has(t.songId) && t.id === stay.id) await w.update(tracksPath(rel.id), t.id, { songId: keepId });
+      for (const t of mine) if (gone.has(t.songId) && t.id === stay.id) await w.update(tracksPath(w.ctx.artistId, rel.id), t.id, { songId: keepId });
       for (const t of drop) {
         // Its release-only files (mixes, stems...) go to the track that stays rather than with the removed one.
         for (const f of await w.query("files", (q) => q.where("releaseTrackId", "==", t.id))) await w.update("files", f.id, { releaseTrackId: stay.id });
-        await w.softDelete(tracksPath(rel.id), t.id);
+        await w.softDelete(tracksPath(w.ctx.artistId, rel.id), t.id);
         moved.tracksDropped++;
       }
       if (drop.length) await renumber(w, rel.id, tracks.filter((t) => !drop.some((d) => d.id === t.id)));

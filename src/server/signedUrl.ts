@@ -12,6 +12,8 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { AppError } from "./errors";
+import { db, type Doc } from "./db";
+import { systemCtx } from "./ctx";
 
 export type SignedScope = "thumb" | "media";
 const HOUR = 60 * 60_000;
@@ -43,6 +45,16 @@ export function signedOk(scope: SignedScope, artistId: string, id: string, v: st
   if (!exp || !sig || !Number.isInteger(e) || e <= now) return false;
   const want = Buffer.from(mac(scope, artistId, id, v, e)), got = Buffer.from(sig);
   return want.length === got.length && timingSafeEqual(want, got);
+}
+
+/**
+ * The record a signed link is about, only when the signature over its own artist checks out (tenancy plan D3): the record is looked
+ * up through the system view because no ctx exists before the signature is checked. Null for anything else.
+ */
+export async function resolveSigned(scope: SignedScope, kind: "posts", id: string, v: string, exp: string | null, sig: string | null): Promise<Doc | null> {
+  const d = await db.get(systemCtx("signed link"), kind, id);
+  if (!d || d.deletedAt || typeof d.artistId !== "string") return null;
+  return signedOk(scope, d.artistId, id, v, exp, sig) ? d : null;
 }
 
 /** The sizes the thumb route serves (the long edge, px): the grid, the editor's preview, and the HEIC source for posting. */

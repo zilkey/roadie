@@ -33,14 +33,11 @@ import { signMediaUrl } from "../meta/media";
 export const NOT_SET_UP = "Set up the Socials folder in Settings › Google";
 export const NEEDS_CONTENT_MANAGER = "Roadie's Google account needs Content manager on the band's Shared Drive to move photos";
 
-const artistOf = (ctx: Ctx) => {
-  if (!ctx.artistId) throw new AppError("artist_required", "Say which artist this is for", 400);
-  return ctx.artistId;
-};
+const artistOf = (ctx: Ctx) => ctx.artistId;
 
 /** The Socials folder and its Posts/ folder, once Set up has made it; else NOT_SET_UP. */
-export async function setUpSocials(artistId: string): Promise<{ socialsId: string; postsId: string }> {
-  const { socialsId, postsId } = await socialsOf(artistId);
+export async function setUpSocials(ctx: Ctx): Promise<{ socialsId: string; postsId: string }> {
+  const { socialsId, postsId } = await socialsOf(ctx);
   if (!postsId) throw new AppError("posts_not_set_up", NOT_SET_UP, 400);
   return { socialsId, postsId };
 }
@@ -52,12 +49,12 @@ export const postsSetup = defineCommand({
   input: z.strictObject({}),
   async run(ctx) {
     const artistId = artistOf(ctx);
-    const { socialsId } = await socialsOf(artistId);
+    const { socialsId } = await socialsOf(ctx);
     const drive = driveClient({ artistId });
     if (!(await drive.canMoveIn(socialsId))) throw new AppError("drive_permission", NEEDS_CONTENT_MANAGER, 400);
     const socials = await drive.get(socialsId);
     const { folder, made } = await findOrMakeFolder(drive, socialsId, POSTS_FOLDER_NAME);
-    const emails = (await bandmates()).map((m) => m.email);
+    const emails = (await bandmates(ctx)).map((m) => m.email);
     if (emails.length) await drive.share(socialsId, emails, "writer");
     await db.update(ctx, "artists", artistId, { postFoldersId: folder.id });
     return { socials: { id: socials.id, name: socials.name }, posts: { id: folder.id, made }, sharedWithBand: emails.length };
@@ -112,9 +109,9 @@ export const postsPhotos = defineCommand({
   input: z.strictObject({ folder: z.string().min(1).optional() }),
   async run(ctx, { folder }) {
     const artistId = artistOf(ctx);
-    const { socialsId } = await socialsOf(artistId);
+    const { socialsId } = await socialsOf(ctx);
     const drive = driveClient({ artistId });
-    const all = await inboxFolders(drive, artistId);
+    const all = await inboxFolders(ctx, drive);
     let within = [socialsId, ...all.map((f) => f.id)];
     if (folder && folder !== socialsId) {
       if (!all.some((f) => f.id === folder)) throw new AppError("not_in_socials", NOT_IN_SOCIALS, 400);
@@ -160,7 +157,7 @@ export const postsList = defineCommand({
   input: z.strictObject({}),
   async run(ctx) {
     const artistId = artistOf(ctx);
-    const docs = await db.list("posts", (q) => q.where("artistId", "==", artistId));
+    const docs = await db.list(ctx, "posts");
     const rowOf = (d: Record<string, unknown>): PostRow => {
       const media = (d.media as PostMedia[] | undefined) ?? [], first = media[0];
       return {
@@ -246,9 +243,8 @@ type PostDoc = Record<string, unknown> & {
 
 /** The band's live post, or a 404. */
 async function postOf(ctx: Ctx, id: string): Promise<PostDoc> {
-  const artistId = artistOf(ctx);
-  const d = await db.get("posts", id);
-  if (!d || d.deletedAt || d.artistId !== artistId) throw new AppError("not_found", "That post isn't there", 404);
+  const d = await db.get(ctx, "posts", id);
+  if (!d || d.deletedAt) throw new AppError("not_found", "That post isn't there", 404);
   return d as PostDoc;
 }
 
@@ -268,15 +264,15 @@ interface Picked { file: DriveFile; mimeType: string; from: string }
  * The checks createDraft and addToDraft make before anything moves: each file is in the inbox (Socials or a folder under it
  * but not under Posts/), is a photo or video and isn't in the trash. A photo in a post's folder names that post. Nothing changes here.
  */
-async function pickable(drive: DriveService, artistId: string, ids: string[]): Promise<Picked[]> {
-  const { socialsId } = await socialsOf(artistId);
-  const inbox = new Set([socialsId, ...(await inboxFolders(drive, artistId)).map((f) => f.id)]);
+async function pickable(ctx: Ctx, drive: DriveService, ids: string[]): Promise<Picked[]> {
+  const { socialsId } = await socialsOf(ctx);
+  const inbox = new Set([socialsId, ...(await inboxFolders(ctx, drive)).map((f) => f.id)]);
   const holder = new Map<string, Promise<string | undefined>>();
   /** The post whose folder is `folderId` (one query per parent folder). */
   const postIn = (folderId: string) => {
     if (!holder.has(folderId)) {
-      holder.set(folderId, db.list("posts", (q) => q.where("driveFolderId", "==", folderId)).then((rows) => {
-        const p = rows.find((r) => r.artistId === artistId && !r.deletedAt);
+      holder.set(folderId, db.list(ctx, "posts", (q) => q.where("driveFolderId", "==", folderId)).then((rows) => {
+        const p = rows.find((r) => !r.deletedAt);
         return p ? ((p.title as string | undefined) ?? "another post") : undefined;
       }));
     }
@@ -362,7 +358,9 @@ export const postsGet = defineCommand({
     if (fresh.size) {
       const ref = firestore().doc(`posts/${id}`);
       media = await firestore().runTransaction(async (tx) => {
-        const cur = ((await tx.get(ref)).data()?.media ?? []) as PostMedia[];
+        const snap = (await tx.get(ref)).data();
+        if (snap?.artistId !== ctx.artistId) throw new AppError("not_found", "That post isn't there", 404);
+        const cur = (snap.media ?? []) as PostMedia[];
         const next = cur.map((m) => (fresh.has(m.driveFileId) ? { ...m, modifiedTime: fresh.get(m.driveFileId)! } : m));
         tx.update(ref, { media: next });
         return next;
@@ -379,9 +377,9 @@ export const postsCreateDraft = defineCommand({
   input: z.strictObject({ title: z.string().trim().min(1).max(100), driveFileIds: ids }),
   async run(ctx, { title, driveFileIds }) {
     const artistId = artistOf(ctx);
-    const { postsId } = await setUpSocials(artistId);
+    const { postsId } = await setUpSocials(ctx);
     const drive = driveClient({ artistId });
-    const picked = await pickable(drive, artistId, unique(driveFileIds));
+    const picked = await pickable(ctx, drive, unique(driveFileIds));
     const folderName = await uniqueName(drive, postsId, draftFolder(title));
     const folder = await drive.createFolder(folderName, postsId);
     let moved: Awaited<ReturnType<typeof moveAllInto>> | undefined;
@@ -410,7 +408,7 @@ export const postsAddToDraft = defineCommand({
     const want = unique(driveFileIds);
     if (post.media.length + want.length > MAX_PHOTOS) throw new AppError("invalid_input", TOO_MANY, 400);
     const drive = driveClient({ artistId });
-    const picked = await pickable(drive, artistId, want);
+    const picked = await pickable(ctx, drive, want);
     const moved = await moveAllInto(drive, picked, post.driveFolderId);
     try {
       await db.update(ctx, "posts", id, { media: [...post.media, ...moved.media] });
@@ -468,7 +466,7 @@ export const postsUpdateDraft = defineCommand({
     }
     if (media !== post.media) out.media = media;
     if (Object.keys(out).length) await db.update(ctx, "posts", id, out);
-    return db.get("posts", id);
+    return db.get(ctx, "posts", id);
   },
 });
 
@@ -478,7 +476,7 @@ export const postsRename = defineCommand({
   input: z.strictObject({ id: z.string().min(1), title: z.string().trim().min(1).max(100) }),
   async run(ctx, { id, title }) {
     const artistId = artistOf(ctx);
-    const { postsId } = await setUpSocials(artistId);
+    const { postsId } = await setUpSocials(ctx);
     const post = await postOf(ctx, id);
     editable(post);
     const drive = driveClient({ artistId });
@@ -509,7 +507,7 @@ export const postsRemoveFromDraft = defineCommand({
   input: z.strictObject({ id: z.string().min(1), driveFileId: z.string().min(1) }),
   async run(ctx, { id, driveFileId }) {
     const artistId = artistOf(ctx);
-    const { socialsId } = await setUpSocials(artistId);
+    const { socialsId } = await setUpSocials(ctx);
     const post = await postOf(ctx, id);
     editable(post);
     const m = post.media.find((x) => x.driveFileId === driveFileId);
@@ -535,7 +533,7 @@ export const postsDeleteDraft = defineCommand({
   input: z.strictObject({ id: z.string().min(1) }),
   async run(ctx, { id }) {
     const artistId = artistOf(ctx);
-    const { socialsId } = await setUpSocials(artistId);
+    const { socialsId } = await setUpSocials(ctx);
     const post = await postOf(ctx, id);
     editable(post);
     const drive = driveClient({ artistId });
@@ -566,11 +564,11 @@ export const postsDeleteDraft = defineCommand({
 const postedFolder = (postedAt: string, title: string) => `${dateInBandZone(new Date(postedAt))} - ${title}`;
 
 /** Rename a posted post's folder to its posted name; the error's message when Drive refuses. */
-async function tidyFolder(artistId: string, post: { driveFolderId?: string; postedAt?: string; title?: string }): Promise<string | null> {
+async function tidyFolder(ctx: Ctx, post: { driveFolderId?: string; postedAt?: string; title?: string }): Promise<string | null> {
   try {
-    const { postsId } = await setUpSocials(artistId);
+    const { postsId } = await setUpSocials(ctx);
     if (!post.driveFolderId || !post.postedAt) return null;
-    const drive = driveClient({ artistId });
+    const drive = driveClient({ artistId: ctx.artistId });
     const name = await uniqueName(drive, postsId, postedFolder(post.postedAt, post.title ?? "Post"), post.driveFolderId);
     if ((await drive.get(post.driveFolderId)).name !== name) await drive.rename(post.driveFolderId, name);
     return null;
@@ -598,7 +596,7 @@ export const postsPublish = defineCommand({
     // Claim it: a second publish (or a draft edit) is refused while this one runs.
     const post = await db.run(ctx, async (w) => {
       const p = (await w.get("posts", id)) as PostDoc | null;
-      if (!p || p.deletedAt || p.artistId !== artistId) throw new AppError("not_found", "That post isn't there", 404);
+      if (!p || p.deletedAt) throw new AppError("not_found", "That post isn't there", 404);
       editable(p);
       await w.update("posts", id, { status: "publishing", error: null });
       return p;
@@ -665,7 +663,7 @@ export const postsPublish = defineCommand({
       const postedAt = new Date().toISOString();
       await db.update(ctx, "posts", id, { status: "posted", postedAt, instagram: { mediaId: media.id, permalink }, error: null, pending: null });
       // Then Drive: the folder takes the posted name. If Drive refuses, the post is still posted, with Finish tidying Drive.
-      const tidyError = await tidyFolder(artistId, { ...post, postedAt });
+      const tidyError = await tidyFolder(ctx, { ...post, postedAt });
       if (tidyError) {
         await db.update(ctx, "posts", id, { driveTidy: { error: tidyError } });
         return { status: "posted" as const, permalink, driveTidy: { error: tidyError } };
@@ -695,7 +693,7 @@ export const postsTidy = defineCommand({
     const post = await postOf(ctx, id);
     if (post.status !== "posted") throw new AppError("invalid_input", "Only a posted post's folder is tidied", 409);
     if (!post.driveTidy) return { ok: true as const };
-    const error = await tidyFolder(artistId, post as PostDoc & { postedAt?: string });
+    const error = await tidyFolder(ctx, post as PostDoc & { postedAt?: string });
     if (error) throw new AppError("drive_tidy", `Drive still said no: ${error}`, 502);
     await db.update(ctx, "posts", id, { driveTidy: null });
     return { ok: true as const };

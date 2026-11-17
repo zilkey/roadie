@@ -56,7 +56,7 @@ test("help: topics named in words", () => {
   assert.equal(w("what does owed to us mean"), "income");
 });
 
-const ctx: Ctx = { uid: "u1", role: "admin", via: "app", runId: "r1" };
+const ctx: Ctx = { uid: "u1", artistId: "test-artist", role: "admin", via: "app", runId: "r1" };
 const explain = (i: unknown) => registry["help.explain"].run(ctx, registry["help.explain"].input.parse(i)) as Promise<any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 test("help.explain: by topic, by page, and the topic list when nothing fits", async () => {

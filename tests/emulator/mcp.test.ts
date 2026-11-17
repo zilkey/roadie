@@ -17,7 +17,7 @@ import { callTool, toolList } from "../../mcp/tools";
 import { handleMcpRequest, sessionIdFor, SESSION_HEADER } from "../../mcp/web";
 import { approve, authorizationServerMetadata, authorize, login, protectedResourceMetadata, register, resourceMetadataUrl, seal, token as tokenEndpoint } from "../../mcp/oauth";
 import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST, SYS } from "./helpers";
 
 let stop: () => Promise<void>;
 let dir: string;
@@ -35,10 +35,11 @@ after(async () => { await stop(); fs.rmSync(dir, { recursive: true, force: true 
 beforeEach(async () => {
   await resetEmulators();
   await fetch(process.env.GMAIL_BASE_URL + "/__reset", { method: "POST" });
+  await makeArtist("The Test Band", "test-band");
   const u = await makeUser("rudy@example.com", "admin", { name: "Rudy" });
   adminUid = u.uid;
-  await db.update(importCtx(), "users", u.uid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
-  admin = { uid: u.uid, role: "admin", via: "app", runId: newRunId() };
+  await db.update(importCtx(TEST_ARTIST), "users", u.uid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
+  admin = { uid: u.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
 });
 
 const run = async (name: string, input: unknown, c: Ctx = admin) => (await registry[name].run(c, registry[name].input.parse(input))) as Record<string, any>;
@@ -46,10 +47,10 @@ const run = async (name: string, input: unknown, c: Ctx = admin) => (await regis
 const newKey = async (label = "Rudy · Claude") => {
   const token = `btk_${randomBytes(32).toString("base64url")}`;
   const id = hashToken(token);
-  await db.create(importCtx(), "mcpTokens", { userId: adminUid, label }, { id });
+  await db.create(importCtx(TEST_ARTIST), "mcpTokens", { userId: adminUid, label, artistId: TEST_ARTIST }, { id });
   return { token, id };
 };
-const mcpCtx = (uid = adminUid, runId = newRunId()): Ctx => ({ uid, role: "mcp", via: "mcp", runId });
+const mcpCtx = (uid = adminUid, runId = newRunId()): Ctx => ({ uid, artistId: TEST_ARTIST, role: "mcp", via: "mcp", runId });
 const parse = (r: { content: { text: string }[] }) => JSON.parse(r.content[0].text);
 
 // ---------- token auth ----------
@@ -58,22 +59,22 @@ test("token auth: hashed lookup, lastUsedAt, revoked and no-AI-access are refuse
   const { token, id } = await newKey();
   assert.notEqual(id, token);
   assert.match(id, /^[0-9a-f]{64}$/);
-  const doc = (await db.get("mcpTokens", id))!;
+  const doc = (await db.get(SYS, "mcpTokens", id))!;
   assert.equal(JSON.stringify(doc).includes(token), false, "the raw token is never stored");
 
   const who = await authenticateToken(token);
   assert.equal(who.uid, adminUid);
-  assert.ok((await db.get("mcpTokens", id))!.lastUsedAt, "lastUsedAt set");
+  assert.ok((await db.get(SYS, "mcpTokens", id))!.lastUsedAt, "lastUsedAt set");
 
   await assert.rejects(authenticateToken("btk_nope"), (e: any) => e.status === 401);
   await assert.rejects(authenticateToken(undefined), (e: any) => e.status === 401);
 
-  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: false }] });
+  await db.update(importCtx(TEST_ARTIST), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: false }] });
   await assert.rejects(authenticateToken(token), (e: any) => e.status === 403 && /AI access/.test(e.message));
-  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
+  await db.update(importCtx(TEST_ARTIST), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }] });
   await authenticateToken(token);
 
-  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
+  await db.update(importCtx(TEST_ARTIST), "mcpTokens", id, { revokedAt: new Date() });
   await assert.rejects(authenticateToken(token), (e: any) => e.status === 401 && /revoked/.test(e.message));
 });
 
@@ -153,7 +154,7 @@ test("validation errors come back as structured tool errors listing the Zod issu
   assert.ok(paths.includes("name") && paths.includes("address.state") && paths.includes("region"), paths.join(","));
   assert.ok(e.issues.every((i: any) => typeof i.message === "string" && i.code));
   // nothing was written
-  assert.equal((await db.list("venues")).length, 0);
+  assert.equal((await db.list(SYS, "venues")).length, 0);
   // unknown and app-only tools look the same: not a tool
   for (const n of ["pitches.sendEmail", "users.add", "nope"]) {
     const x = await callTool(n, {}, async () => mcpCtx());
@@ -170,7 +171,7 @@ test("a good call returns the result and the session runId; dedupe merges instea
   const b = parse(await call("venues.create", venue("The  Walnut Room", "Denver", { capacity: 400 })));
   assert.equal(b.result.merged, true);
   assert.equal(b.result.id, a.result.id);
-  const h = await db.listGroup("history", (q) => q.where("runId", "==", ctx.runId));
+  const h = await db.listGroup(SYS, "history", (q) => q.where("runId", "==", ctx.runId));
   assert.deepEqual(h.map((x) => x.op).sort(), ["create", "merge"]);
   assert.ok(h.every((x) => x.actor.via === "mcp" && x.actor.uid === adminUid));
 });
@@ -181,7 +182,7 @@ test("MCP can draft an email but never send one", async () => {
   const { id: venueId } = await db.create(admin, "venues", venue("Marisol"));
   const artist = await db.create(admin, "artists", { name: "Nora Quill Band", configurations: [] }).catch(() => null);
   void artist;
-  const p = await db.create(admin, "pitches", { target: { kind: "venue", id: venueId, name: "Marisol" }, status: "toPitch", artistId: "a", personnel: [], showIds: [] });
+  const p = await db.create(admin, "pitches", { target: { kind: "venue", id: venueId, name: "Marisol" }, status: "toPitch", personnel: [], showIds: [] });
   const gmail = gmailClient();
   const before = (await gmail.listMessages()).length;
 
@@ -191,7 +192,7 @@ test("MCP can draft an email but never send one", async () => {
   assert.equal(drafts.length, 1);
   assert.equal(drafts[0].subject, "Hello");
   assert.equal((await gmail.listMessages()).length, before, "nothing was sent");
-  const acts = await db.list(`pitches/${p.id}/activity`);
+  const acts = await db.list(SYS, `pitches/${p.id}/activity`);
   assert.ok(acts.some((a) => a.type === "note" && /drafted \(not sent\)/.test(a.text)));
   assert.ok(!acts.some((a) => a.type === "emailSent"));
 
@@ -242,7 +243,7 @@ test("HTTP: bearer auth, one runId per session, revoking a key stops a live sess
   const a = text(await client.callTool({ name: "venues.create", arguments: venue("Deep End") }));
   const b = text(await client.callTool({ name: "contacts.create", arguments: { name: "Pat Booker", emails: ["pat@example.com"] } }));
   assert.equal(a.runId, b.runId);
-  const hist = await db.listGroup("history", (q) => q.where("runId", "==", a.runId));
+  const hist = await db.listGroup(SYS, "history", (q) => q.where("runId", "==", a.runId));
   assert.equal(hist.length, 2);
 
   const bad2 = await client.callTool({ name: "venues.create", arguments: { name: "x" } });
@@ -252,16 +253,17 @@ test("HTTP: bearer auth, one runId per session, revoking a key stops a live sess
   // undo through MCP: own run only
   const mine = text(await client.callTool({ name: "history.myRuns", arguments: {} }));
   assert.equal(mine.result.runs[0].runId, a.runId);
-  const other = await db.create(importCtx("someone-else", "other-run"), "venues", venue("Not Mine"));
+  const other = await db.create(importCtx(TEST_ARTIST, "someone-else", "other-run"), "venues", venue("Not Mine"));
   const refused = await client.callTool({ name: "history.undoRun", arguments: { runId: "other-run" } });
   assert.equal(refused.isError, true);
-  assert.equal(text(refused).error.code, "forbidden");
-  assert.equal((await db.get("venues", other.id))!.deletedAt, null);
+  // Someone else's run: since phase 4 undo says there is no such run for this caller, rather than naming its owner.
+  assert.equal(text(refused).error.code, "not_found");
+  assert.equal((await db.get(SYS, "venues", other.id))!.deletedAt, null);
   const undone = text(await client.callTool({ name: "history.undoRun", arguments: { runId: a.runId } }));
   assert.equal(undone.result.reverted.length, 2);
   assert.notEqual(undone.result.undoRunId, a.runId);
 
-  await db.update(importCtx(), "mcpTokens", id, { revokedAt: new Date() });
+  await db.update(importCtx(TEST_ARTIST), "mcpTokens", id, { revokedAt: new Date() });
   await assert.rejects(client.callTool({ name: "stats.current", arguments: {} }), /revoked/);
   // and at the tool layer a failed re-check is a structured error too
   const viaTool = await callTool("stats.current", {}, () => authenticateToken(token).then(() => mcpCtx()));
@@ -314,15 +316,15 @@ test("stdio entry: MCP_TOKEN authenticates, tools list, a bad token fails fast",
 });
 
 test("read tools: search, follow-ups, availability, missing files, stats movement", async () => {
-  const ctx = { ...mcpCtx(), artistId: "a" };
+  const ctx = mcpCtx();
   const call = async (n: string, a: unknown) => parse(await callTool(n, a, async () => ctx)).result;
-  const contact = await db.create(admin, "contacts", { artistId: "a", name: "Wren Booker", emails: ["wren@example.com"], phones: [] });
+  const contact = await db.create(admin, "contacts", { name: "Wren Booker", emails: ["wren@example.com"], phones: [] });
   const v = await call("venues.create", venue("Heron Theatre", "Boulder", { contactIds: [contact.id] })); // the contact link is this band's private note
   const p = await db.create(admin, "pitches", {
-    target: { kind: "venue", id: v.id, name: "Heron Theatre" }, status: "pitched", artistId: "a", personnel: [], showIds: [],
+    target: { kind: "venue", id: v.id, name: "Heron Theatre" }, status: "pitched", personnel: [], showIds: [],
     lastContactAt: new Date(Date.now() - 21 * 86_400_000), // clear of the 20-day threshold: exactly 20 floors to 19 once a few ms have passed
   });
-  await db.create(admin, "pitches", { target: { kind: "venue", id: v.id, name: "Other" }, status: "pitched", artistId: "a", personnel: [], showIds: [], lastContactAt: new Date() });
+  await db.create(admin, "pitches", { target: { kind: "venue", id: v.id, name: "Other" }, status: "pitched", personnel: [], showIds: [], lastContactAt: new Date() });
 
   const s = await call("search", { q: "wren" });
   assert.deepEqual(s.results.map((r: any) => r.kind).sort(), ["contact", "venue"], "a venue is found through its people");
@@ -335,7 +337,7 @@ test("read tools: search, follow-ups, availability, missing files, stats movemen
   assert.equal(f.pitches[0].people[0].emails[0], "wren@example.com");
 
   const mk = (date: string, status: string) => ({
-    date, status, venue: { id: v.id, name: "Heron Theatre", city: "Boulder" }, times: { set: "20:00" }, artistId: "a", personnel: [],
+    date, status, venue: { id: v.id, name: "Heron Theatre", city: "Boulder" }, times: { set: "20:00" }, personnel: [],
     sound: { provider: "venueProvided" }, needs: { poster: false, backline: false, merch: false }, docs: [],
   });
   await db.create(admin, "shows", mk("2027-05-01", "confirmed"));
@@ -355,7 +357,7 @@ test("read tools: search, follow-ups, availability, missing files, stats movemen
   // No band folder chosen yet: being outside it isn't reported (the sharing gap still is).
   assert.deepEqual([mf.bandFolderChosen, mf.sharingProblems[0].outsideBandFolder], [false, false]);
   assert.equal(mf.sharingProblems[0].song, "Has File");
-  await db.create(admin, "artists", { name: "Band A", slug: "band-a", configurations: [], links: {}, driveFolderId: "band-folder" }, { id: "a" });
+  await db.update(admin, "artists", TEST_ARTIST, { driveFolderId: "band-folder" });
   mf = await call("songs.missingFiles", {});
   assert.deepEqual([mf.bandFolderChosen, mf.sharingProblems[0].outsideBandFolder], [true, true]);
 
@@ -438,9 +440,8 @@ const useAppUrl = (t: { after: (fn: () => void) => void }) => {
 
 test("OAuth: Claude's connector discovers sign-in, the person signs in to Roadie and picks the artist, and /mcp works", async (t) => {
   useAppUrl(t);
-  await makeArtist("The Test Band", "test-band");
   await makeArtist("Other Band", "other-band", "other-artist");
-  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }, { artistId: "other-artist", role: "member" }] });
+  await db.update(importCtx(TEST_ARTIST), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: true }, { artistId: "other-artist", role: "member" }] });
   const { store, provider } = claudeLike();
 
   // First connect: 401 -> metadata -> registration -> sent to authorize -> our /connect page.
@@ -473,7 +474,7 @@ test("OAuth: Claude's connector discovers sign-in, the person signs in to Roadie
   assert.ok(store.tokens.refresh_token);
 
   // The key is a normal MCP key: stored hashed, for this person and artist, named after the client.
-  const keys = await db.list("mcpTokens", (q) => q.where("userId", "==", adminUid));
+  const keys = await db.list(SYS, "mcpTokens", (q) => q.where("userId", "==", adminUid));
   assert.equal(keys.length, 1);
   assert.equal(keys[0].id, hashToken(store.tokens.access_token));
   assert.equal(keys[0].artistId, TEST_ARTIST);
@@ -502,13 +503,12 @@ test("OAuth: Claude's connector discovers sign-in, the person signs in to Roadie
   await authenticateToken(second.access_token);
 
   // Turning off AI access stops the key and refresh.
-  await db.update(importCtx(), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: false }] });
+  await db.update(importCtx(TEST_ARTIST), "users", adminUid, { artists: [{ artistId: TEST_ARTIST, role: "admin", mcpAccess: false }] });
   assert.equal((await (await tokenReq({ grant_type: "refresh_token", refresh_token: second.refresh_token })).json()).error, "invalid_grant");
 });
 
 test("OAuth: an AI-only login can connect; unknown clients and return addresses get a page; expired requests and codes are refused", async (t) => {
   useAppUrl(t);
-  await makeArtist("The Test Band", "test-band");
   const bot = await makeUser("bot@example.com", "ai", { name: "Band Bot" });
   const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT], client_name: "Claude" }) })).json();
   for (const redirect_uris of [["javascript:alert(1)"], ["http://evil.example/cb"], []]) {
@@ -564,7 +564,6 @@ test("OAuth with Google configured: authorize goes to Google, the callback learn
     for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
   });
   const { GET: googleCallbackRoute } = await import("@/app/api/google/callback/route");
-  await makeArtist("The Test Band", "test-band");
 
   const reg = await (await app("http://app.test/oauth/register", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ redirect_uris: [REDIRECT], client_name: "Claude" }) })).json();
   const verifier = "w".repeat(50);

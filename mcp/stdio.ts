@@ -6,8 +6,8 @@ import { newRunId } from "@/server/ctx";
 /** Key comes from MCP_TOKEN. One process = one session = one runId. */
 export async function runStdio() {
   const raw = process.env.MCP_TOKEN;
-  await authenticateToken(raw); // fail fast with a clear message
+  const id = await authenticateToken(raw); // fail fast with a clear message
   const runId = newRunId();
-  const server = createMcpServer(async () => mcpCtx(await authenticateToken(raw), runId));
+  const server = createMcpServer(async () => mcpCtx(await authenticateToken(raw), runId), id.artistName);
   await server.connect(new StdioServerTransport());
 }

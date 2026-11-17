@@ -25,7 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const file = form.get("file");
     if (!(file instanceof File) || file.size === 0) throw new AppError("invalid_input", "Choose a demo to upload", 400);
 
-    const song = await db.get("songs", id);
+    const song = await db.get(ctx, "songs", id);
     if (!song || song.deletedAt) throw new AppError("not_found", "Song not found", 404);
     const writing = song.status === "writing";
     const folderId = await (writing ? songwritingFolderId : demosFolderId)(ctx.artistId);
@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const folder = await drive.get(folderId);
     const up = await drive.upload({ name: file.name || `${song.title} demo`, mimeType: file.type || "application/octet-stream", parentId: folderId, data: file });
     // The folder is usually shared with the band already; share the file too so it holds without relying on inheritance.
-    await drive.share(up.id, (await bandmates()).map((m) => m.email));
+    await drive.share(up.id, (await bandmates(ctx)).map((m) => m.email));
     const out = await execute(ctx, "files.attach", { songId: id, files: [{ driveFileId: up.id, kind: "demo" }] });
     return Response.json({ ...out, driveFileId: up.id, url: up.webViewLink, folder: { id: folderId, name: folder.name } });
   } catch (e) {
