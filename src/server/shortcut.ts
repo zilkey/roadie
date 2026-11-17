@@ -5,6 +5,7 @@
  * shortcutTokens (sha256, like MCP keys); one live token per admin per artist. The routes are under /api/shortcut.
  */
 import { randomBytes } from "node:crypto";
+import { assertNotSuspended } from "./platform";
 import { hashToken } from "./availability";
 import { artistCtx, systemCtx, type Ctx } from "./ctx";
 import { db, touchLastUsed } from "./db";
@@ -64,6 +65,7 @@ export async function authenticateShortcut(raw: string | null | undefined): Prom
   if (!u || u.deletedAt) throw new AppError("forbidden", "Account is not active", 403);
   const m = ((u.artists ?? []) as Membership[]).find((x) => x.artistId === found.artistId);
   if (!m || m.role !== "admin") throw new AppError("forbidden", "Only admins can add recordings", 403);
+  await assertNotSuspended(found.artistId);
   await touchLastUsed(hash, new Date(), "shortcutTokens");
   return artistCtx({ uid: u.id, role: "admin", artistId: found.artistId, ...(m.musicianId ? { musicianId: m.musicianId } : {}), via: "shortcut" });
 }

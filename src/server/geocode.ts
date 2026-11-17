@@ -7,13 +7,21 @@ import { Timestamp } from "firebase-admin/firestore";
 import { firestore } from "./admin";
 import { orsClient } from "./integrations/ors";
 import { cityLabel } from "@/lib/fans";
+import { AppError } from "./errors";
+import type { Charge } from "./usage";
+
+/** A limit refusal (src/server/usage.ts) is the one error these helpers pass on. */
+const isLimit = (e: unknown) => e instanceof AppError && e.code === "limit_reached";
 
 export interface LatLng { lat: number; lng: number }
 
 const keyOf = (text: string) => createHash("sha256").update(text.replace(/\s+/g, " ").trim().toLowerCase()).digest("hex");
 
-/** Coordinates for free text ("Boise, ID"), or null when ORS is down or knows nothing. Never throws. */
-export async function geocodeText(text: string): Promise<LatLng | null> {
+/**
+ * Coordinates for free text ("Boise, ID"), or null when ORS is down or knows nothing. Never throws, except a limit refusal from
+ * `charge`, which is called only on a cache miss, just before the paid lookup (false: skip it and answer null).
+ */
+export async function geocodeText(text: string, charge?: Charge): Promise<LatLng | null> {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return null;
   try {
@@ -21,22 +29,24 @@ export async function geocodeText(text: string): Promise<LatLng | null> {
     const snap = await ref.get();
     const c = snap.exists ? (snap.data() as Partial<LatLng>) : undefined;
     if (c && typeof c.lat === "number" && typeof c.lng === "number") return { lat: c.lat, lng: c.lng };
+    if (charge && !(await charge())) return null;
     const hit = await orsClient().geocode(t);
     if (!hit) return null;
     await ref.set({ text: t.toLowerCase(), lat: hit.lat, lng: hit.lng, at: Timestamp.now() });
     return hit;
   } catch (e) {
+    if (isLimit(e)) throw e;
     console.error("geocode failed", t, e);
     return null;
   }
 }
 
-export const geocodeCity = (c: { city: string; state?: string }) => geocodeText(cityLabel(c));
+export const geocodeCity = (c: { city: string; state?: string }, charge?: Charge) => geocodeText(cityLabel(c), charge);
 
 export interface ZipPlace { city: string; state?: string; lat: number; lng: number }
 
-/** The town a US zip code is in, behind geocodes/{sha256("zip 80302")}. Null when the lookup fails or knows nothing. Never throws. */
-export async function zipPlace(zip: string): Promise<ZipPlace | null> {
+/** The town a US zip code is in, behind geocodes/{sha256("zip 80302")}. Null when the lookup fails or knows nothing. `charge` as geocodeText. */
+export async function zipPlace(zip: string, charge?: Charge): Promise<ZipPlace | null> {
   try {
     const ref = firestore().doc(`geocodes/${keyOf(`zip ${zip}`)}`);
     const snap = await ref.get();
@@ -44,11 +54,13 @@ export async function zipPlace(zip: string): Promise<ZipPlace | null> {
     if (c && typeof c.city === "string" && typeof c.lat === "number" && typeof c.lng === "number") {
       return { city: c.city, ...(c.state ? { state: c.state } : {}), lat: c.lat, lng: c.lng };
     }
+    if (charge && !(await charge())) return null;
     const hit = await orsClient().zip(zip);
     if (!hit) return null;
     await ref.set({ text: `zip ${zip}`, ...hit, at: Timestamp.now() });
     return hit;
   } catch (e) {
+    if (isLimit(e)) throw e;
     console.error("zip lookup failed", zip, e);
     return null;
   }

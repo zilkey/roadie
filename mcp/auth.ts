@@ -6,6 +6,7 @@ import type { Ctx } from "@/server/ctx";
 import { db, touchLastUsed } from "@/server/db";
 import { resolveToken } from "@/server/tokens";
 import { AppError } from "@/server/errors";
+import { assertNotSuspended } from "@/server/platform";
 import { mcpIn, type Membership } from "@/schema/users";
 
 export interface McpIdentity { uid: string; tokenHash: string; label: string; artistId: string; artistName: string }
@@ -28,6 +29,7 @@ export async function authenticateToken(raw: string | null | undefined): Promise
   if (!mcpIn(u, m.artistId)) throw new AppError("forbidden", "This user does not have AI access in this artist", 403);
   const artist = await db.get(systemCtx("mcp token"), "artists", m.artistId);
   if (!artist || artist.deletedAt) throw new AppError("forbidden", "This key's artist is gone", 403);
+  await assertNotSuspended(m.artistId);
   await touchLastUsed(hash);
   return { uid: u.id, tokenHash: hash, label: t.label, artistId: m.artistId, artistName: artist.name as string };
 }

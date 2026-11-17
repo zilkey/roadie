@@ -1,3 +1,4 @@
+import { spend } from "../usage";
 import { authenticate } from "../commands/dispatch";
 import { setOpenThread } from "../commands/assistant";
 import { db } from "../db";
@@ -25,6 +26,8 @@ export async function handleChat(authHeader: string | null, body: unknown, artis
     if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
     const parsed = ChatRequest.safeParse(body ?? {});
     if (!parsed.success) throw invalid(parsed.error);
+    // One Roadie message a day's limit counts (tenancy phase 9): before any write, so a refused message leaves nothing behind.
+    await spend(ctx, "roadieMessages");
     const req = parsed.data;
 
     // The caller's own thread, a new one under the id the browser picked, or (missing or foreign) a fresh one.

@@ -1,4 +1,4 @@
-import { adminAuth } from "@/server/admin";
+import { adminAuth, firestore } from "@/server/admin";
 import { importCtx, systemCtx } from "@/server/ctx";
 import { db } from "@/server/db";
 import { startSession, syncClaims } from "@/server/session";
@@ -68,4 +68,13 @@ export async function approveTestEditors(...uids: string[]) {
 /** Make people platform admins (platform/admins): merge and remove shared entries, approve editors. */
 export async function makePlatformAdmins(...uids: string[]) {
   await addPlatformAdmins(uids);
+}
+
+/**
+ * Let anyone start artists (tenancy phase 9's checkNewArtist): sign-up open (platform/config) and caps no test reaches
+ * (platform/limits). Tests of the caps themselves live in sign-up.test.ts.
+ */
+export async function allowNewArtists() {
+  await firestore().doc("platform/config").set({ signUpOpen: true });
+  await firestore().doc("platform/limits").set({ newArtistsPerDay: 1000, newArtistsPerPerson: 1000 }, { merge: true });
 }

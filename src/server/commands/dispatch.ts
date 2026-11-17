@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { adminAuth } from "../admin";
+import { assertNotSuspended } from "../platform";
 import { artistCtx, systemCtx, type Ctx } from "../ctx";
 import { db } from "../db";
 import { AppError, invalid } from "../errors";
@@ -50,6 +51,7 @@ export async function authenticate(authHeader: string | null, artistHeader?: str
     if (wanted) throw new AppError("not_a_member", "You're not a member of this artist", 403);
     throw new AppError("artist_required", "Say which artist this is for", 400);
   }
+  await assertNotSuspended(mine.artistId);
   // ctx.musicianId is the caller's musician in THIS artist (their membership's), never another artist's.
   return artistCtx({ uid: decoded.uid, role: mine.role as "admin" | "member", artistId: mine.artistId, ...(mine.musicianId ? { musicianId: mine.musicianId } : {}), via: "app" });
 }

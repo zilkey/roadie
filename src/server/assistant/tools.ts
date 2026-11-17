@@ -4,6 +4,7 @@
  * web.search / web.read, whose guards live in web.ts).
  * Execution is server-side, as the person typing, through `runAs` (same checks as dispatch) with the message's runId.
  */
+import { spend } from "../usage";
 import { z } from "zod";
 import { registry } from "../commands/registry";
 import type { Ctx, Role } from "../ctx";
@@ -525,6 +526,7 @@ async function webSearch(s: Session, input: unknown, w: WebTurn): Promise<ToolOu
   if (w.searches >= MAX_WEB_SEARCHES) throw new AppError("too_many", `That's ${MAX_WEB_SEARCHES} web searches for one message`, 429);
   w.searches++;
   const local = (await searchAll(makeCtx(s), { q: p.data.local ?? p.data.q, limit: 10 })).results;
+  await spend(makeCtx(s), "webLookups");
   const found = await web.search(p.data.q);
   w.tainted = true;
   for (const src of found.sources) allowUrls(w, src.url);

@@ -6,6 +6,7 @@
  * returns an input ready for venues.create plus what it could not find. Social links are never read: they become the
  * venue's instagram field. Web content taints the message (web.ts), so the create that follows always shows a card.
  */
+import { spend } from "../usage";
 import { z as gz } from "genkit";
 import { z } from "zod";
 import { AppError } from "../errors";
@@ -152,6 +153,7 @@ export async function draftVenue(s: Session, raw: unknown, w: WebTurn): Promise<
   };
   if (site) await read(site);
   let answer = "";
+  await spend(makeCtx(s), "webLookups"); // outside the try below: a limit refusal is the answer, not a missing search
   try {
     const found = await web.search(`${i.name}${where ? ` ${where}` : ""} venue address capacity booking`);
     answer = found.answer;

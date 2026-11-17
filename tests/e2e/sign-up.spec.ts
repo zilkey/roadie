@@ -81,5 +81,12 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page,
   // and the band's time zone is the one they picked
   await page.goto("/artists/the-night-owls/admin/artist");
   await expect(page.getByTestId("artist-time-zone")).toHaveValue("America/Chicago");
+  // and it sees only its own records, none of the seeded band's
+  await page.goto("/artists/the-night-owls/songs");
+  await expect(page.getByTestId("page-title")).toBeVisible();
+  await expect(page.getByText("Low Light")).toHaveCount(0);
+  await page.goto("/artists/the-night-owls/shows");
+  await expect(page.getByTestId("page-title")).toBeVisible();
+  await expect(page.getByText("Holiday Inn")).toHaveCount(0);
   await setSignUp(request, false);
 });

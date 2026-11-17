@@ -2,6 +2,7 @@
  * The caller's own stuff (My settings) and the geo typeahead. Driving settings live on the person's users doc
  * (users/{uid}.driving), written through src/server/driving.ts like any other field: history, and history.undoRun puts them back.
  */
+import { spend } from "../usage";
 import { z } from "zod";
 import { geoPoint, fuelGrade, type DrivingSettings } from "@/schema";
 import { defineCommand } from "./types";
@@ -54,7 +55,9 @@ export const geoAutocomplete = defineCommand({
   description: "Address and place typeahead (OpenRouteService through the server; the key never reaches the client). " +
     "Returns suggestions with name, address, lat and lng — what rehearsal locations, home addresses and typed gas trips are saved as. The UI debounces calls at 300 ms.",
   input: z.strictObject({ q: z.string().trim().min(3) }),
-  async run(_ctx, i): Promise<{ suggestions: OrsPlace[] }> {
+  async run(ctx, i): Promise<{ suggestions: OrsPlace[] }> {
+    // Every keystroke batch is a paid call (no cache): past the day's limit, 429 limit_reached.
+    await spend(ctx, "maps");
     // No ORS key (or ORS down): no suggestions rather than an error, so the fields still take typed text and the
     // gas form falls back to a typed amount.
     try {

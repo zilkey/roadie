@@ -12,7 +12,7 @@ import { authenticatePerson } from "@/server/session";
 import { hashToken } from "@/server/availability";
 import { registry } from "@/server/commands/registry";
 import { authenticateToken, mcpCtx } from "../../mcp/auth";
-import { readySession, resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST, SYS } from "./helpers";
+import { readySession, resetEmulators, makeUser, makeArtist, idToken, venue, TEST_ARTIST, SYS, allowNewArtists } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -23,6 +23,7 @@ const band = (name: string, extra: Record<string, unknown> = {}) => ({ name, con
 // ---------- slugs ----------
 
 test("artists.create: slug from the name, unique (suffixes when free-picked, 409 when asked for), creator becomes admin", async () => {
+  await allowNewArtists();
   const admin = await makeUser("a@example.com", "admin");
   const a = await dispatch("artists.create", bearer(admin.token), band("Nora Quill"));
   assert.equal(a.status, 200);

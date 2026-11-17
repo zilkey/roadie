@@ -2,6 +2,7 @@
  * Fans (story 31, F4/F5/F9). Admins see every address; members, and AI callers who are not admins, only counts
  * (fans.counts, fans.near, fans.newSince), never an email, name or row. The public signup lives in src/server/fans.ts.
  */
+import { chargeTo, softChargeTo } from "../usage";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
@@ -76,7 +77,7 @@ export const fansUpdate = defineCommand({
       cities = [];
       for (const c of patch.cities) {
         const had = old.find((o) => sameCity(o, c) && o.lat !== undefined);
-        const hit = had ? { lat: had.lat!, lng: had.lng! } : await geocodeCity(c);
+        const hit = had ? { lat: had.lat!, lng: had.lng! } : await geocodeCity(c, softChargeTo(ctx, "maps"));
         cities = mergeCities(cities, [{ city: c.city, ...(c.state ? { state: c.state.toUpperCase() } : {}), ...(hit ?? {}) }]);
       }
     }
@@ -172,7 +173,7 @@ export const fansNear = defineCommand({
         if (!v || v.deletedAt) throw new AppError("not_found", "Venue not found", 404);
         text = cityLabel({ city: v.address.city, state: v.address.state });
       }
-      const hit = await geocodeText(text);
+      const hit = await geocodeText(text, chargeTo(ctx, "maps"));
       if (!hit) throw new AppError("invalid_input", `Couldn't find "${text}" on the map. Try a city and state, like "Boise, ID".`, 400);
       center = hit; label = text;
     }

@@ -5,7 +5,7 @@ import { pendingInvitesFor } from "./commands/invites";
 import { AppError } from "./errors";
 import { adminOfClaims, artistClaims, mcpIn, musicianClaims, type Membership } from "@/schema/users";
 import { firestore } from "./admin";
-import { SHARED_EDIT_REQUESTS, accessFor } from "./platform";
+import { SHARED_EDIT_REQUESTS, accessFor, suspendedAmong } from "./platform";
 import { DEFAULT_TIME_ZONE } from "@/lib/timezone";
 
 /** One artist the signed-in person can open in the app (admin or member there). */
@@ -40,15 +40,27 @@ export function assertClaimsFit(user: object) {
   if (claimsBytes(claimsFor(user)) > CLAIMS_MAX_BYTES) throw new AppError("too_many_artists", TOO_MANY_ARTISTS, 409);
 }
 
-/** Re-set a user's custom claims from their users doc (none when the doc is gone or soft-deleted). */
+/**
+ * The users doc without memberships in suspended artists (tenancy phase 9): what claims are made from, so a suspended artist drops
+ * out of its members' tokens and browser reads stop at the next token refresh (within an hour).
+ */
+export async function withoutSuspended<T extends object>(user: T): Promise<T> {
+  const ms = ((user as { artists?: Membership[] }).artists ?? []);
+  const off = await suspendedAmong(ms.map((m) => m.artistId));
+  return off.size ? { ...user, artists: ms.filter((m) => !off.has(m.artistId)) } : user;
+}
+
+/** Re-set a user's custom claims from their users doc (none when the doc is gone or soft-deleted; never a suspended artist). */
 export async function syncClaims(uid: string): Promise<void> {
   const user = await db.get(systemCtx("sync claims"), "users", uid);
-  await adminAuth().setCustomUserClaims(uid, user && !user.deletedAt ? claimsFor(user) : {});
+  await adminAuth().setCustomUserClaims(uid, user && !user.deletedAt ? claimsFor(await withoutSuspended(user)) : {});
 }
 
 /** The artists a user can open in the app, with their slug and name (live artists only, sorted by name). */
 export async function artistsFor(user: Doc): Promise<ArtistAccess[]> {
-  const ms = ((user.artists ?? []) as Membership[]).filter((m) => m.role === "admin" || m.role === "member");
+  const all = ((user.artists ?? []) as Membership[]).filter((m) => m.role === "admin" || m.role === "member");
+  const off = await suspendedAmong(all.map((m) => m.artistId));
+  const ms = all.filter((m) => !off.has(m.artistId));
   const sys = systemCtx("artists for");
   const docs = await Promise.all(ms.map((m) => db.get(sys, "artists", m.artistId)));
   return ms.flatMap((m, i) => {
@@ -103,7 +115,7 @@ export async function startSession(authHeader: string | null) {
     await adminAuth().setCustomUserClaims(decoded.uid, { artists: {} });
     return { status: "noBand" as const, uid: decoded.uid, email, name: (user?.name as string | undefined) ?? (typeof decoded.name === "string" && decoded.name.trim() ? decoded.name : email.split("@")[0]), invites };
   }
-  const claims = claimsFor(user);
+  const claims = claimsFor(await withoutSuspended(user));
   await adminAuth().setCustomUserClaims(decoded.uid, claims);
   // Who may change shared directory records (venues, acts…), and who runs Roadie itself (the Platform page).
   const [access, asked] = await Promise.all([accessFor(user.id), firestore().collection(SHARED_EDIT_REQUESTS).doc(user.id).get()]);

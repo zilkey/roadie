@@ -1,3 +1,4 @@
+import { chargeTo, type Charge } from "../usage";
 import { ensureBandsintownItem } from "../bandsintown";
 import { z } from "zod";
 import { defineCommand } from "./types";
@@ -180,12 +181,15 @@ async function dropOption(w: Writer, tourId: string, entry: Doc, o: { nextStep?:
 }
 
 /** Miles and minutes for a drive, from ORS behind routeCache. Outside any transaction (it writes the cache); blank when ORS can't say. */
-export async function driveFacts(from?: { lat: number; lng: number } | null, to?: { lat: number; lng: number } | null): Promise<{ miles: number | null; minutes: number | null }> {
+export async function driveFacts(from: { lat: number; lng: number } | null | undefined, to: { lat: number; lng: number } | null | undefined, charge: Charge): Promise<{ miles: number | null; minutes: number | null }> {
   if (!from || !to) return { miles: null, minutes: null };
   try {
-    const r = await route(from, to, { needMinutes: true });
+    const r = await route(from, to, { needMinutes: true, charge });
     return { miles: Math.round(r.oneWayMiles * 10) / 10, minutes: r.minutes === undefined ? null : Math.round(r.minutes) };
-  } catch { return { miles: null, minutes: null }; }
+  } catch (e) {
+    if (e instanceof AppError && e.code === "limit_reached") throw e;
+    return { miles: null, minutes: null };
+  }
 }
 
 // ---------- reads ----------
@@ -411,7 +415,7 @@ export const toursEntriesAdd = defineCommand({
   async run(ctx, { tourId, kind, date, after, before, visibility, tz, ...fields }) {
     onlyKindFields(kind, fields);
     if (kind === "note" && !fields.text) throw new AppError("invalid_input", "A note needs text", 400);
-    const facts = kind === "drive" ? await driveFacts(fields.from, fields.to) : { miles: null, minutes: null };
+    const facts = kind === "drive" ? await driveFacts(fields.from, fields.to, chargeTo(ctx, "maps")) : { miles: null, minutes: null };
     return run(ctx, async (w) => {
       await requireTour(w, tourId);
       const r = await w.create(entriesPath(w.ctx.artistId, tourId), {
@@ -443,7 +447,7 @@ export const toursEntriesUpdate = defineCommand({
       throw new AppError("invalid_input", kind === "show" ? "A show's date is the show's: change it on the show" : "Move an option with tours.entries.move; options are always admins only", 400);
     }
     const routeChanged = kind === "drive" && ("from" in fields || "to" in fields || (date !== undefined && date !== before.date));
-    const facts = routeChanged ? await driveFacts(fields.from === undefined ? before.from : fields.from, fields.to === undefined ? before.to : fields.to) : null;
+    const facts = routeChanged ? await driveFacts(fields.from === undefined ? before.from : fields.from, fields.to === undefined ? before.to : fields.to, chargeTo(ctx, "maps")) : null;
     return run(ctx, async (w) => {
       await requireTour(w, tourId);
       const cur = await requireEntry(w, tourId, id);

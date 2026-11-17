@@ -95,3 +95,45 @@ export async function approveArtist(artistId: string, by: string, opts: { admins
 export async function addPlatformAdmins(uids: string[]) {
   await firestore().doc(PLATFORM_ADMINS_DOC).set({ uids: FieldValue.arrayUnion(...uids) }, { merge: true });
 }
+
+// ---------- per-artist flags (tenancy phase 9) ----------
+
+/**
+ * `platformArtists/{artistId} {exempt?, suspendedAt?}`: set only by scripts/platform-config.ts, never by an artist's admins (it isn't
+ * on the artist doc, so artists.update can't touch it). Exempt artists have no daily limits (src/server/usage.ts). A suspended
+ * artist's app calls, MCP and Shortcut calls are refused, its fan page is gone, and its members' claims drop it (syncClaims).
+ */
+export const PLATFORM_ARTISTS = "platformArtists";
+export interface ArtistFlags { exempt: boolean; suspended: boolean }
+export const SUSPENDED = "This artist is suspended on Roadie. Write to Roadie's support to ask why.";
+
+export async function artistFlags(artistId: string): Promise<ArtistFlags> {
+  const d = (await firestore().collection(PLATFORM_ARTISTS).doc(artistId).get()).data();
+  return { exempt: d?.exempt === true, suspended: !!d?.suspendedAt };
+}
+
+/** Which of these artists are suspended (one batched read). */
+export async function suspendedAmong(artistIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(artistIds)].filter(Boolean);
+  if (!ids.length) return new Set();
+  const fs = firestore();
+  const snaps = await fs.getAll(...ids.map((id) => fs.collection(PLATFORM_ARTISTS).doc(id)));
+  return new Set(snaps.filter((s) => !!s.data()?.suspendedAt).map((s) => s.id));
+}
+
+/** Refuse a call for a suspended artist (authenticate, MCP, Shortcut). */
+export async function assertNotSuspended(artistId: string) {
+  if ((await artistFlags(artistId)).suspended) throw new AppError("suspended", SUSPENDED, 403);
+}
+
+export async function isPlatformAdminUid(uid: string): Promise<boolean> {
+  const uids = ((await firestore().doc(PLATFORM_ADMINS_DOC).get()).data()?.uids as string[] | undefined) ?? [];
+  return uids.includes(uid);
+}
+
+export async function setArtistFlags(artistId: string, flags: { exempt?: boolean; suspended?: boolean }, by: string) {
+  const patch: Record<string, unknown> = { updatedAt: Timestamp.now(), updatedBy: by };
+  if (flags.exempt !== undefined) patch.exempt = flags.exempt;
+  if (flags.suspended !== undefined) patch.suspendedAt = flags.suspended ? Timestamp.now() : FieldValue.delete();
+  await firestore().collection(PLATFORM_ARTISTS).doc(artistId).set(patch, { merge: true });
+}

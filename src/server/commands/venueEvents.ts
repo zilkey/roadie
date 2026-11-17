@@ -3,6 +3,7 @@
  * band's take on each show. Roadie (the assistant) gets none of these (policy.ts): refreshing reads strangers' pages, and
  * a calendar setting is set up by hand with its preview.
  */
+import { spend } from "../usage";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { SHARED_EDIT_NOTE } from "../platform";
@@ -46,7 +47,8 @@ export const venueEventsRefresh = defineCommand({
   name: "venueEvents.refresh", roles: ["admin", "member"],
   description: "Read a venue's calendar now and update its upcoming shows.",
   input: z.strictObject({ venueId: z.string().min(1) }),
-  run: (_ctx, { venueId }) => refreshVenue(venueId),
+  // A press of Refresh reads the calendar (and may ask the model): one web lookup for the artist (the nightly/system refresh isn't charged).
+  run: async (ctx, { venueId }) => { await spend(ctx, "webLookups"); return refreshVenue(venueId); },
 });
 
 export const venueEventsPreview = defineCommand({
@@ -67,6 +69,7 @@ export const venueEventsSuggest = defineCommand({
     previous: z.strictObject({ item: z.string(), fields: selectorFields, dateFormat: z.string().optional() }).optional(),
   }),
   run: async (ctx, { venueId, url, hint, problems, previous }) => {
+    await spend(ctx, "webLookups");
     const net = new Net();
     const s = await suggestSelectors(url, { net, hint, problems, previous });
     const calendar: VenueCalendar = { type: "selectors", url, item: s.config.item, fields: s.config.fields, ...(s.config.dateFormat ? { dateFormat: s.config.dateFormat } : {}) };

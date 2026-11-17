@@ -2,6 +2,7 @@
  * Acts (issue #77): the bands on venue calendars, shared by every band, and this band's take on each (actNotes: shortlist,
  * relationship, note, contacts; `shortlist` is what the app calls Watch). Roadie gets all of these: finding acts, watching one, noting what they are to us.
  */
+import { isLimit, spend } from "../usage";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { SHARED_EDIT_NOTE } from "../platform";
@@ -121,7 +122,7 @@ export const actsLookup = defineCommand({
     "When several Spotify artists share the name, it stores lookupCandidates and returns state \"pick\": call again with spotifyId (a candidate's id) " +
     "or spotifyId null (none of these). The act page's Look up button; not Roadie's.",
   input: z.strictObject({ id: z.string().min(1), spotifyId: z.string().min(1).nullable().optional() }),
-  run: (ctx, { id, spotifyId }) => lookUpAct(ctx, id, { spotifyId }),
+  run: async (ctx, { id, spotifyId }) => { await spend(ctx, "webLookups"); return lookUpAct(ctx, id, { spotifyId }); },
 });
 
 // Look up is admin-only, not MCP's or Roadie's: it searches the web and Spotify on a click on the act page or the Acts page.
@@ -138,14 +139,19 @@ export const actsLookupShortlist = defineCommand({
     const results: LookupResult[] = [];
     const failed: string[] = [];
     const batch = todo.slice(0, SHORTLIST_LOOKUPS);
-    // Three at a time: quick enough for a click, gentle on the model and Spotify's rate limit.
+    // Three at a time: quick enough for a click, gentle on the model and Spotify's rate limit. Each is a web lookup (daily limit):
+    // past the limit the rest wait for tomorrow (left), unless none was done, which is the limit's 429.
+    let tried = 0;
     for (let i = 0; i < batch.length; i += 3) {
+      const chunk = batch.slice(i, i + 3);
+      try { await spend(ctx, "webLookups", chunk.length); } catch (e) { if (isLimit(e) && tried) break; throw e; }
+      tried += chunk.length;
       const done = await Promise.allSettled(batch.slice(i, i + 3).map((id) => lookUpAct(ctx, id)));
       done.forEach((d, j) => { if (d.status === "fulfilled") results.push(d.value); else { failed.push(batch[i + j]); console.error("acts.lookupShortlist", batch[i + j], d.reason); } });
     }
     return {
       lookedUp: results.length, found: results.filter((r) => r.state === "found").length, pick: results.filter((r) => r.state === "pick").length,
-      nothing: results.filter((r) => r.state === "nothing").length, failed: failed.length, left: Math.max(0, todo.length - batch.length), results,
+      nothing: results.filter((r) => r.state === "nothing").length, failed: failed.length, left: Math.max(0, todo.length - tried), results,
     };
   },
 });
@@ -159,7 +165,7 @@ export const actsFindTeam = defineCommand({
     "a page names them). Saves nothing: the act page's \"Find their team\" button lists people, each with an Add button that saves them " +
     "with a note on how they were found.",
   input: z.strictObject({ id: z.string().min(1) }),
-  run: (ctx, { id }) => findActTeam(ctx, id),
+  run: async (ctx, { id }) => { await spend(ctx, "webLookups"); return findActTeam(ctx, id); },
 });
 
 export const actCommands = [actsFind, actsCreate, actsUpdate, actsShortlist, actsNote, actsLookup, actsLookupShortlist, actsFindTeam];

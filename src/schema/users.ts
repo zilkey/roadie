@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AssistantPrefs } from "./assistant";
 import { DrivingSettings } from "./driving";
-import { entity, serverMask, email, id } from "./common";
+import { entity, serverMask, email, id, ts } from "./common";
 
 /**
  * A role is per artist. "admin" and "member" sign in to the app; "ai" is a login for AI tools only (MCP keys): it can't
@@ -31,6 +31,8 @@ export const User = entity({
   prefs: z.strictObject({ assistant: AssistantPrefs.optional() }).optional(),
   /** Home address and cars, for gas estimates (people.updateDriving / me.updateDriving). */
   driving: DrivingSettings.optional(),
+  /** When this person agreed to the Terms by starting an artist (sign-up). Set only by the server. */
+  acceptedTermsAt: ts.optional(),
 });
 export const UserInput = User.omit({ ...serverMask, artistIds: true });
 export type User = z.infer<typeof User>;

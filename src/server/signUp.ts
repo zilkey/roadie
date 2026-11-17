@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adminAuth, firestore } from "./admin";
+import { adminAuth } from "./admin";
 import { personCtx } from "./ctx";
 import { run } from "./db";
 import { AppError, invalid } from "./errors";
@@ -18,16 +18,9 @@ export const SignUpInput = z.strictObject({
   timeZone: timeZoneName.optional(),
 });
 
-/**
- * Sign-up is closed unless the server-only doc `platform/config` says `signUpOpen: true` (scripts/platform-config.ts sets
- * it, so opening or closing needs no deploy). No doc means closed. Read straight from Firestore: `platform` is not a
- * collection the app models (backup keeps it as server-kept).
- */
-export async function signUpOpen(): Promise<boolean> {
-  const snap = await firestore().doc("platform/config").get();
-  return snap.get("signUpOpen") === true;
-}
-export const INVITE_ONLY = "Roadie is invite-only for now. Ask your band's admin to add you.";
+import { signUpOpen, INVITE_ONLY } from "./signUpFlag";
+import { checkNewArtist } from "./usage";
+export { signUpOpen, INVITE_ONLY };
 
 /**
  * The one write callable without a membership, so it is not in the command registry (Roadie and MCP never see it) and
@@ -66,7 +59,11 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
       if (existing && ((await artistsFor(existing)).length || memberships(existing).some((x) => x.role !== "admin" && x.role !== "member"))) throw new AppError("already_member", "You already belong to a band", 409);
       const others = (await w.query("users", (q) => q.where("email", "==", email))).filter((u) => u.id !== uid);
       if (others.length) throw new AppError("duplicate", "That email is already a user", 409);
-      if (!existing) await w.create("users", { email, name: displayName, artists: [] }, { id: uid });
+      // The caps on new artists (signUpOpen, per day, per person): after the checks above, so a refused person takes no place.
+      await checkNewArtist(ctx);
+      const acceptedTermsAt = w.now; // the form says "By creating a band you agree to the Terms" (myroadie.online/terms)
+      if (!existing) await w.create("users", { email, name: displayName, artists: [], acceptedTermsAt }, { id: uid });
+      else await w.update("users", uid, { acceptedTermsAt });
       // The artist, its starting templates and this person's admin membership: the same steps as artists.create.
       const made = await createArtistFor(w, uid, { name: input.name, slug: input.slug, timeZone: input.timeZone, configurations: [], links: {}, driveFolderId: "" });
       // Then their musician record, in the new artist (tenancy phase 2: the artist first, then the musician).

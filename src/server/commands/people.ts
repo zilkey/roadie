@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { checkNewArtist } from "../usage";
 import { z } from "zod";
 import { defineCommand } from "./types";
 import { patchInput, idInput } from "./util";
@@ -372,7 +373,9 @@ export const artistsCreate = defineCommand({
   async run(ctx, input) {
     // From inside an artist, but the new artist is the person's own: the same steps sign-up takes, as a PersonCtx.
     const me = await db.get(ctx, "users", ctx.uid);
-    const person: PersonCtx = { person: true, uid: ctx.uid, email: (me?.email as string | undefined) ?? "", via: ctx.via, runId: ctx.runId };
+    const person: PersonCtx = { person: true, uid: ctx.uid, email: (me?.email as string | undefined) ?? "", via: ctx.via, runId: ctx.runId, ...(ctx.now ? { now: ctx.now } : {}) };
+    // The same caps as sign-up (signUpOpen, per day, per person), so neither path gets around the other.
+    await checkNewArtist(person);
     const out = await run(person, async (w) => createArtistFor(w, ctx.uid, input));
     if (out.joined) await syncClaims(ctx.uid);
     return { id: out.id, merged: out.merged, slug: out.slug };

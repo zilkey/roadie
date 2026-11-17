@@ -7,7 +7,7 @@ import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { startSession } from "@/server/session";
-import { resetEmulators, makeUser, makeArtist, idToken, readySession, SYS, TEST_ARTIST } from "./helpers";
+import { resetEmulators, makeUser, makeArtist, makePlatformAdmins, idToken, readySession, SYS, TEST_ARTIST } from "./helpers";
 
 /** Sign-up is closed unless platform/config says otherwise (scripts/platform-config.ts). Most tests here open it. */
 const setSignUp = (open: boolean) => firestore().doc("platform/config").set({ signUpOpen: open });
@@ -64,6 +64,7 @@ test("artists.signUp: a stranger gets a user, an artist with its templates, and 
   const user = (await db.get(SYS, "users", p.uid))!;
   assert.equal(user.email, "pat@example.com");
   assert.equal(user.name, "Pat Stranger");
+  assert.ok(user.acceptedTermsAt, "starting an artist records that they agreed to the Terms");
   const [artist] = await db.list(SYS, "artists", (q) => q.where("slug", "==", "the-night-owls"));
   assert.equal(artist.name, "The Night Owls");
   assert.equal(artist.createdBy, p.uid);
@@ -152,4 +153,47 @@ test("artists.signUp: the artist gets the time zone the form sends; one that isn
   assert.equal(r.status, 200);
   const [artist] = await db.list(SYS, "artists", (q) => q.where("slug", "==", "the-night-owls"));
   assert.equal(artist.timeZone, "America/New_York");
+});
+
+// ---------- tenancy phase 9: caps on new artists (checkNewArtist) ----------
+
+const CAP = { code: "new_artist_limit", message: "Roadie isn't taking new artists right now. Try again tomorrow." };
+const setLimits = (l: Record<string, number>) => firestore().doc("platform/limits").set(l);
+
+test("new artists: at most newArtistsPerDay across Roadie (20 by default); past it nothing is written", async () => {
+  await setLimits({ newArtistsPerDay: 2 });
+  const [a, b, c] = [await stranger("a@example.com", "A"), await stranger("b@example.com", "B"), await stranger("c@example.com", "C")];
+  assert.equal((await call(a.token, { name: "One" })).status, 200);
+  assert.equal((await call(b.token, { name: "Two" })).status, 200);
+  const r = await call(c.token, { name: "Three" });
+  assert.equal(r.status, 429);
+  assert.deepEqual(r.json.error, CAP);
+  assert.equal(await db.get(SYS, "users", c.uid), null);
+  assert.equal((await db.list(SYS, "artists")).length, 2);
+  // someone refused for another reason (already in a band) takes no place
+  await setLimits({ newArtistsPerDay: 3 });
+  assert.equal((await call(a.token, { name: "Again" })).json.error.code, "already_member");
+  assert.equal((await call(c.token, { name: "Three" })).status, 200);
+});
+
+test("new artists: artists.create counts too (3 per person per day by default), shares sign-up's switch, and platform admins pass", async () => {
+  const p = await stranger();
+  const made = await call(p.token, { name: "Mine" });
+  assert.equal(made.status, 200);
+  const [mine] = await db.list(SYS, "artists", (q) => q.where("slug", "==", made.json.slug));
+  const create = async (name: string) => dispatch("artists.create", bearer(await idToken(p.uid)), { name, configurations: [] }, mine.id);
+  assert.equal((await create("Second")).status, 200);
+  assert.equal((await create("Third")).status, 200);
+  const fourth = await create("Fourth");
+  assert.equal(fourth.status, 429);
+  assert.deepEqual((fourth.json as Err).error, CAP);
+  // closed sign-up shuts artists.create as well
+  await setSignUp(false);
+  await setLimits({ newArtistsPerPerson: 10 });
+  assert.equal(((await create("Fifth")).json as Err).error.code, "invite_only");
+  // ...except for Roadie's platform admins, who pass every cap
+  await makePlatformAdmins(p.uid);
+  await setLimits({ newArtistsPerPerson: 0, newArtistsPerDay: 0 });
+  assert.equal((await create("Sixth")).status, 200);
+  assert.equal((await db.list(SYS, "artists")).length, 4);
 });

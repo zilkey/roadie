@@ -7,7 +7,7 @@ import { adminAuth } from "@/server/admin";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { AppError } from "@/server/errors";
-import { readySession, resetEmulators, makeUser, idToken, makeArtist, TEST_ARTIST, SYS } from "./helpers";
+import { readySession, resetEmulators, makeUser, idToken, makeArtist, TEST_ARTIST, SYS, allowNewArtists } from "./helpers";
 
 beforeEach(resetEmulators);
 const bearer = (t: string) => `Bearer ${t}`;
@@ -129,6 +129,7 @@ test("session: a removed (soft-deleted) person is still not_invited", async () =
 });
 
 test("artists: configuration ids are assigned", async () => {
+  await allowNewArtists();
   const admin = await makeUser("a@example.com", "admin");
   const r = await dispatch("artists.create", bearer(admin.token), {
     name: "Nora Quill Band",

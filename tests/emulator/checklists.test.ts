@@ -5,7 +5,7 @@ import { db, run } from "@/server/db";
 import { importCtx, newRunId, type Ctx } from "@/server/ctx";
 import { firestore } from "@/server/admin";
 import { seedDefaultTemplates } from "@/server/checklistTemplates";
-import { resetEmulators, makeArtist, makeUser, TEST_ARTIST, SYS } from "./helpers";
+import { resetEmulators, makeArtist, makeUser, TEST_ARTIST, SYS, allowNewArtists } from "./helpers";
 
 beforeEach(resetEmulators);
 
@@ -33,6 +33,7 @@ async function world() {
 }
 
 test("artists.create starts the artist with Promo and Follow Up; the seed helper appends after what is there", async () => {
+  await allowNewArtists();
   const u = await makeUser("rudy@example.com", "admin");
   const ctx: Ctx = { uid: u.uid, artistId: TEST_ARTIST, role: "admin", via: "app", runId: newRunId() };
   const r = await cmd("artists.create", { name: "Fern Valley Trio", configurations: [] }, ctx);

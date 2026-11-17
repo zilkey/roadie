@@ -2,6 +2,7 @@
  * Answering a confirm card, and the Undo on a read-back line. Both run server-side from what the server stored:
  * the pending action's command and input come from the thread, never from the request.
  */
+import { spend, type Meter } from "../usage";
 import { authenticate } from "../commands/dispatch";
 import { db } from "../db";
 import { AppError, invalid } from "../errors";
@@ -119,9 +120,10 @@ export async function undoRunOf(who: Who, req: UndoRequest): Promise<{ undone: n
   return { undone: u.undone.length };
 }
 
-async function who(authHeader: string | null, artistHeader?: string | null): Promise<Who> {
+async function who(authHeader: string | null, artistHeader?: string | null, meter?: Meter): Promise<Who> {
   const ctx = await authenticate(authHeader, artistHeader);
   if (ctx.role !== "admin") throw new AppError("forbidden", "Roadie is for admins", 403);
+  if (meter) await spend(ctx, meter);
   const u = await db.get(ctx, "users", ctx.uid);
   return { uid: ctx.uid, role: ctx.role, artistId: ctx.artistId, musicianId: ctx.musicianId, name: (u?.name as string | undefined) ?? "Someone" };
 }
@@ -136,7 +138,7 @@ async function respond(f: () => Promise<unknown>): Promise<Response> {
 
 /** POST /api/assistant/confirm: admins only. */
 export const handleConfirm = (authHeader: string | null, body: unknown, artistHeader?: string | null) => respond(async () => {
-  const w = await who(authHeader, artistHeader);
+  const w = await who(authHeader, artistHeader, "roadieMessages");
   const p = ConfirmRequest.safeParse(body ?? {}); // strict: there is no place to put input
   if (!p.success) throw invalid(p.error);
   return answerPending(w, p.data);

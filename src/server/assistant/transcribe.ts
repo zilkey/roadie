@@ -2,6 +2,7 @@
  * POST /api/assistant/transcribe: a short mic clip as text, so the person can talk to Roadie or answer a confirm card.
  * The clip goes to the model for this one call and is never stored or logged: only the transcript comes back.
  */
+import { spend } from "../usage";
 import { googleAI, vertexAI } from "@genkit-ai/google-genai";
 import { authenticate } from "../commands/dispatch";
 import { AppError } from "../errors";
@@ -82,6 +83,7 @@ export async function handleTranscribe(authHeader: string | null, form: FormData
     const mode = TranscribeMode.safeParse(form.get("mode"));
     if (!mode.success) throw new AppError("invalid_input", "mode must be message or answer", 400);
     const mimeType = audio.type || "audio/webm";
+    await spend(ctx, "transcriptions");
     const text = await transcribe({ artistId: ctx.artistId, audio: new Uint8Array(await audio.arrayBuffer()), mimeType, uid: ctx.uid, names: mode.data === "message" });
     const body: TranscribeResponse = mode.data === "answer" ? { text, answer: voiceAnswer(text) } : { text };
     return Response.json(body);

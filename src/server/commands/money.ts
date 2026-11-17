@@ -1,3 +1,4 @@
+import { chargeTo, isLimit, spend } from "../usage";
 import { z } from "zod";
 import { dateInZone } from "@/lib/timezone";
 import { zoneOf } from "../zone";
@@ -306,14 +307,16 @@ export const expensesEstimateGas = defineCommand({
     let oneWayMiles: number | undefined, miles: number | undefined;
     if (from && to) {
       // Rounded to 0.01 mi so the frozen numbers (and the form) read like "18.4 mi × 2 = 36.8 mi".
-      try { oneWayMiles = Math.round((await routeMiles(from, to)) * 100) / 100; miles = tripMiles(oneWayMiles, i.roundTrip); } catch { /* degrade to no miles */ }
+      // A limit refusal (tenancy phase 9) is passed on; anything else degrades to no miles.
+      try { oneWayMiles = Math.round((await routeMiles(from, to, chargeTo(ctx, "maps"))) * 100) / 100; miles = tripMiles(oneWayMiles, i.roundTrip); } catch (e) { if (isLimit(e)) throw e; }
     }
     let price: Awaited<ReturnType<typeof priceFor>> = null;
     if (from) {
       try {
+        await spend(ctx, "maps"); // reverse geocoding has no cache: always a paid call
         const place = await orsClient().reverse(from.lat, from.lng);
         price = await priceFor(areaFor(place?.county, place?.state), grade);
-      } catch { /* degrade to the price gap */ }
+      } catch (e) { if (isLimit(e)) throw e; /* degrade to the price gap */ }
     }
     if (from && !price) gaps.add("price");
     const missing = (["car", "mpg", "home", "destination", "price"] as const).filter((g) => gaps.has(g));

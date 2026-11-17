@@ -2,7 +2,9 @@
  * The fan email list (stories 31, F3-F5). The public page talks to `listView` and `signup` (no login: the route files are thin);
  * the fans.* commands use the rest. Fan emails are private to the artist's admins: everything that leaves here for anyone else is a count.
  */
+import { softChargeTo, type Charge } from "./usage";
 import { createHash } from "node:crypto";
+import { artistFlags } from "./platform";
 import { z } from "zod";
 import { firestore } from "./admin";
 import { db, run, type Doc, type Writer } from "./db";
@@ -103,6 +105,8 @@ export async function listArtist(slug: string): Promise<Doc> {
   const [a] = await db.list(systemCtx("fan page slug"), "artists", (q) => q.where("slug", "==", slug).limit(1));
   const features = a?.features as { fans?: boolean } | undefined;
   if (!a || features?.fans !== true) throw new AppError("not_found", "Not found", 404);
+  // A suspended artist's fan page is gone (the same 404, tenancy phase 9).
+  if ((await artistFlags(a.id)).suspended) throw new AppError("not_found", "Not found", 404);
   return a;
 }
 const wordingOf = (a: Doc) => (typeof a.listWording === "string" && a.listWording.trim() ? a.listWording.trim() : DEFAULT_LIST_WORDING);
@@ -167,7 +171,10 @@ export async function listView(slug: string, now: Date = new Date(), previewShow
 // ---------- writing a fan ----------
 
 /** Public writes have no person behind them: a system actor, not a login. History carries the artistId, so only that artist's admins read it. */
-const publicCtx = (artistId: string, now?: Date): Ctx => ({ uid: "public:fans", role: "member", artistId, via: "app", runId: newRunId(), ...(now ? { now } : {}) });
+/** The fan page's lookups count as `publicMaps`, the admins' as `maps`; either way a fan is never refused for it. */
+const mapsCharge = (ctx: Ctx): Charge => softChargeTo(ctx, ctx.uid === PUBLIC_FANS_UID ? "publicMaps" : "maps");
+const PUBLIC_FANS_UID = "public:fans";
+const publicCtx = (artistId: string, now?: Date): Ctx => ({ uid: PUBLIC_FANS_UID, role: "member", artistId, via: "app", runId: newRunId(), ...(now ? { now } : {}) });
 export const fanCtx = publicCtx;
 
 export interface FanWrite {
@@ -184,13 +191,13 @@ export interface FanWrite {
 }
 
 /** Coordinates for the incoming cities: copied from the fan's own matching city, else geocoded. A failed lookup just leaves them off. */
-async function located(existing: CityLike[], incoming: CityLike[]): Promise<CityLike[]> {
+async function located(existing: CityLike[], incoming: CityLike[], charge: Charge): Promise<CityLike[]> {
   const out: CityLike[] = [];
   for (const c of incoming) {
     if (c.lat !== undefined && c.lng !== undefined) { out.push(c); continue; }
     const had = existing.find((e) => sameCity(e, c) && e.lat !== undefined && e.lng !== undefined);
     if (had) { out.push({ ...c, lat: had.lat, lng: had.lng }); continue; }
-    const hit = await geocodeCity(c);
+    const hit = await geocodeCity(c, charge);
     out.push(hit ? { ...c, ...hit } : c);
   }
   return out;
@@ -201,7 +208,8 @@ export async function upsertFan(ctx: Ctx, a: FanWrite): Promise<{ id: string; cr
   const email = a.email.trim().toLowerCase();
   const id = fanId(a.artistId, email);
   const before = await db.get(ctx, "fans", id);
-  const cities = await located((before?.cities ?? []) as CityLike[], a.cities);
+  // Past the day's map limit the fan is still saved, just without coordinates (like a failed lookup). The public page has its own meter.
+  const cities = await located((before?.cities ?? []) as CityLike[], a.cities, mapsCharge(ctx));
   return run(ctx, async (w) => {
     const cur = await w.get("fans", id);
     if (!cur) {
@@ -261,7 +269,7 @@ export async function signup(slug: string, body: SignupBody, now: Date = new Dat
   const show = (await currentShow(ctx, now)) ?? undefined;
   const cities = await citiesFor(ctx, show);
   if (body.zip) {
-    const z = await zipPlace(body.zip);
+    const z = await zipPlace(body.zip, mapsCharge(ctx));
     if (z && !cities.some((c) => sameCity(c, z))) cities.push(z);
   }
   await upsertFan(ctx, {
