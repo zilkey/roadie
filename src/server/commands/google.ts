@@ -126,7 +126,7 @@ export const googleFinishConnect = defineCommand({
     const user = await db.get("users", ctx.uid);
     if (!user) throw new AppError("forbidden", "No user for this account", 403);
     let t;
-    try { t = await exchangeCode(code); } catch (e) {
+    try { t = await exchangeCode(code, state); } catch (e) {
       if (e instanceof GoogleAuthError) throw new AppError("google_error", `Google: ${e.message}`, 502);
       throw e;
     }

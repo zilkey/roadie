@@ -1,12 +1,12 @@
 // Google OAuth state/grants and the Gmail, Drive and Calendar API clients, against a stubbed Google (no emulator).
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { googleGmail, rawMessage } from "@/server/integrations/gmail";
 import { googleDrive } from "@/server/integrations/drive";
 import { googleCalendar } from "@/server/integrations/calendar";
 import { IntegrationError } from "@/server/integrations";
-import { signState, verifyState, featuresOf, FEATURE_SCOPES } from "@/server/google/oauth";
+import { signState, verifyState, featuresOf, FEATURE_SCOPES, authUrl, exchangeCode, pkceVerifier, pkceChallenge, TOKEN_URL } from "@/server/google/oauth";
 import { seal, unseal } from "@/server/google/grants";
 import { inspect, missingFor } from "@/server/music";
 
@@ -56,6 +56,30 @@ test("state: signed, bound to its contents, expires", () => {
     assert.equal(verifyState(`${forged}.${mac}`), null, "changed contents fail the signature");
     assert.equal(verifyState(st, Date.now() + 60 * 60_000), null, "expired");
     assert.equal(verifyState("garbage"), null);
+  } finally { restore(); }
+});
+
+test("PKCE: authUrl sends an S256 challenge of a verifier derived from the state; exchangeCode sends that verifier", async () => {
+  const restore = withGoogleEnv();
+  try {
+    const st = signState({ uid: "u1", artistId: "a1", slug: "band", features: ["gmail"] });
+    const v = pkceVerifier(st);
+    assert.match(v, /^[A-Za-z0-9_-]{43,128}$/, "a valid PKCE verifier (RFC 7636 charset and length)");
+    assert.equal(pkceVerifier(st), v, "stable for the same state");
+    assert.notEqual(pkceVerifier(signState({ uid: "u1", artistId: "a1", slug: "band", features: ["gmail"] })), v, "each flow gets its own");
+    assert.equal(pkceChallenge(v), createHash("sha256").update(v).digest("base64url"));
+    assert.equal(pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"), "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM", "RFC 7636 appendix B");
+
+    const url = new URL(authUrl(st, ["gmail"]));
+    assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+    assert.equal(url.searchParams.get("code_challenge"), pkceChallenge(v));
+    assert.ok(!url.href.includes(v), "the verifier never goes to the browser");
+
+    stubGoogle((s) => (s.url.href === TOKEN_URL ? { json: { access_token: "at", expires_in: 3600, scope: "openid" } } : undefined));
+    await exchangeCode("c", st);
+    const form = new URLSearchParams(seen[0].body as string);
+    assert.equal(form.get("code_verifier"), v);
+    assert.equal(form.get("client_secret"), "shh", "still a confidential client");
   } finally { restore(); }
 });
 

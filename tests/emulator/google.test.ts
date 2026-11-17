@@ -1,6 +1,6 @@
 import { test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { gmailClient } from "@/server/integrations/gmail";
@@ -105,6 +105,11 @@ test("connect: consent URL, finish only for the admin who started it, band accou
 
     stubGoogle((s) => {
       if (s.url.href === TOKEN_URL && new URLSearchParams(s.body as string).get("grant_type") === "authorization_code") {
+        // Like Google: the verifier must hash (S256) to the challenge the consent URL carried.
+        const verifier = new URLSearchParams(s.body as string).get("code_verifier") ?? "";
+        if (url.searchParams.get("code_challenge_method") !== "S256" || createHash("sha256").update(verifier).digest("base64url") !== url.searchParams.get("code_challenge")) {
+          return { status: 400, json: { error: "invalid_grant", error_description: "Missing code verifier." } };
+        }
         return { json: { access_token: "at-1", expires_in: 3600, refresh_token: "1//rt", scope: ["openid", ...FEATURE_SCOPES.gmail, ...FEATURE_SCOPES.calendar].join(" "), id_token: idToken("Rudy.Pike@example.com") } };
       }
       if (s.url.pathname.endsWith("/messages/send")) return { json: { id: "m1", threadId: "t1" } };

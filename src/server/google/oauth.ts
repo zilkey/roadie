@@ -3,11 +3,11 @@
  * account on Settings > Google, choosing which features it's for; only those scopes are asked for, added to what they
  * granted before (include_granted_scopes). Config, all server-only:
  * - GOOGLE_OAUTH_CLIENT_ID: the OAuth web client. Its presence switches the Google clients from the fakes to the real APIs.
- * - GOOGLE_OAUTH_CLIENT_SECRET (secret): also the HMAC key for the `state` parameter.
+ * - GOOGLE_OAUTH_CLIENT_SECRET (secret): also the HMAC key for the `state` parameter and the PKCE verifier.
  * - GOOGLE_TOKEN_KEY (secret): 32 bytes, base64; encrypts refresh tokens at rest (grants.ts).
  * The redirect URI is APP_URL + /api/google/callback; register it on the OAuth client.
  */
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { appUrl } from "@/lib/app-url";
 import { AppError } from "../errors";
 
@@ -76,6 +76,13 @@ export function verifyState(state: string, now = Date.now()): OAuthState | null 
   } catch { return null; }
 }
 
+// ---------- PKCE (S256), stateless: the verifier is derived from the state on the server and never reaches the browser ----------
+
+/** 43 base64url characters (32 bytes), the PKCE verifier for this state. Only the server can make it: it's keyed by the client secret. */
+export const pkceVerifier = (state: string) => createHmac("sha256", clientCreds().secret).update(`pkce:${state}`).digest("base64url");
+/** The S256 code_challenge for a verifier: base64url(sha256(verifier)). */
+export const pkceChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
+
 // ---------- the Google endpoints ----------
 
 export function authUrl(state: string, features: GoogleFeature[], loginHint?: string): string {
@@ -84,6 +91,7 @@ export function authUrl(state: string, features: GoogleFeature[], loginHint?: st
     client_id: clientCreds().id, redirect_uri: redirectUri(), response_type: "code", scope: scopes.join(" "),
     // offline + consent: Google returns a refresh token every time, covering everything granted so far.
     access_type: "offline", prompt: "consent", include_granted_scopes: "true", state,
+    code_challenge: pkceChallenge(pkceVerifier(state)), code_challenge_method: "S256",
     ...(loginHint ? { login_hint: loginHint } : {}),
   });
   return `${AUTH_URL}?${q}`;
@@ -106,7 +114,9 @@ export class GoogleAuthError extends Error {
   constructor(public code: string, description?: string) { super(description ? `${code}: ${description}` : code); }
 }
 
-export const exchangeCode = (code: string) => tokenCall({ code, redirect_uri: redirectUri(), grant_type: "authorization_code" });
+/** Trade the callback's code for tokens. `state` is the one the flow started with; it yields the PKCE verifier. */
+export const exchangeCode = (code: string, state: string) =>
+  tokenCall({ code, code_verifier: pkceVerifier(state), redirect_uri: redirectUri(), grant_type: "authorization_code" });
 export const refreshAccess = (refreshToken: string) => tokenCall({ refresh_token: refreshToken, grant_type: "refresh_token" });
 
 /** Revoke a grant at Google. Best effort: an already revoked or expired token is fine. */

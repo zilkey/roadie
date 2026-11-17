@@ -22,7 +22,7 @@ import { authenticateToken, mintKey } from "./auth";
 import { adminAuth } from "@/server/admin";
 import { db } from "@/server/db";
 import { mcpIn, type Membership } from "@/schema/users";
-import { AUTH_URL, exchangeCode, googleConfigured, redirectUri } from "@/server/google/oauth";
+import { AUTH_URL, exchangeCode, googleConfigured, pkceChallenge, pkceVerifier, redirectUri } from "@/server/google/oauth";
 import { sessionSecret } from "./secret";
 
 const CODE_TTL_MS = 5 * 60_000;
@@ -172,9 +172,12 @@ export async function authorize(req: Request): Promise<Response> {
  */
 function signInUrl(sealedReq: string, hint?: string): string {
   if (!googleConfigured()) return `${issuer()}/connect?req=${sealedReq}`;
+  const state = seal({ t: "login", q: sealedReq, e: Date.now() + REQ_TTL_MS });
   const q = new URLSearchParams({
     client_id: process.env.GOOGLE_OAUTH_CLIENT_ID!, redirect_uri: redirectUri(), response_type: "code", scope: "openid email",
-    prompt: "select_account", state: seal({ t: "login", q: sealedReq, e: Date.now() + REQ_TTL_MS }), ...(hint ? { login_hint: hint } : {}),
+    prompt: "select_account", state, ...(hint ? { login_hint: hint } : {}),
+    // PKCE (S256); the callback derives the same verifier from the state (exchangeCode).
+    code_challenge: pkceChallenge(pkceVerifier(state)), code_challenge_method: "S256",
   });
   return `${AUTH_URL}?${q}`;
 }
@@ -202,7 +205,7 @@ export async function googleCallback(q: URLSearchParams): Promise<Response> {
   if (q.get("error")) return redirect(withParams(r.r, { error: "access_denied", error_description: "Google sign-in was cancelled", state: r.s }));
   let claims: { email?: string; email_verified?: boolean };
   try {
-    const t = await exchangeCode(q.get("code") ?? "");
+    const t = await exchangeCode(q.get("code") ?? "", q.get("state") ?? "");
     claims = JSON.parse(Buffer.from(t.id_token?.split(".")[1] ?? "", "base64url").toString("utf8"));
   } catch (e) {
     console.error(e);

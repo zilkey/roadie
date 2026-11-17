@@ -545,8 +545,15 @@ test("OAuth with Google configured: authorize goes to Google, the callback learn
   process.env.GOOGLE_OAUTH_CLIENT_SECRET = "test-secret";
   const realFetch = globalThis.fetch;
   let googleEmail = "rudy@example.com";
+  let googleChallenge = "";
+  const sha = (await import("node:crypto")).createHash;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).startsWith("https://oauth2.googleapis.com/token")) {
+      // Like Google: the PKCE verifier must hash (S256) to the challenge the sign-in URL carried.
+      const verifier = new URLSearchParams(String(init?.body)).get("code_verifier") ?? "";
+      if (!googleChallenge || sha("sha256").update(verifier).digest("base64url") !== googleChallenge) {
+        return new Response(JSON.stringify({ error: "invalid_grant", error_description: "Missing code verifier." }), { status: 400, headers: { "content-type": "application/json" } });
+      }
       const idt = `x.${Buffer.from(JSON.stringify({ email: googleEmail, email_verified: true })).toString("base64url")}.y`;
       return new Response(JSON.stringify({ access_token: "g", expires_in: 3600, scope: "openid email", id_token: idt }), { headers: { "content-type": "application/json" } });
     }
@@ -569,6 +576,8 @@ test("OAuth with Google configured: authorize goes to Google, the callback learn
     assert.equal(g.origin, "https://accounts.google.com");
     assert.equal(g.searchParams.get("redirect_uri"), "http://app.test/api/google/callback");
     assert.equal(g.searchParams.get("scope"), "openid email");
+    assert.equal(g.searchParams.get("code_challenge_method"), "S256");
+    googleChallenge = g.searchParams.get("code_challenge")!;
     return g.searchParams.get("state")!;
   };
   const back = async (q: Record<string, string>) => {
