@@ -155,7 +155,7 @@ Not renamed yet: the npm package and the emulator project id.
 ### 4.1 Rules and indexes
 
 ```sh
-npx firebase deploy --only firestore --project roadie-prod-iab
+npm run deploy:firestore   # as the project service account, whoever is logged in
 ```
 
 This deploys rules, indexes and TTL policies together. Then check Console → Firestore → TTL to confirm the policies are active (see `docs/BACKLOG.md`, "Before or at go-live").

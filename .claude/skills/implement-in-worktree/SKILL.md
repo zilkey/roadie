@@ -151,8 +151,8 @@ git push origin HEAD:main               # App Hosting deploys every push to main
 
 - If the push is rejected because main moved, go back to step 5: fetch, rebase, rerun the suites if anything changed,
   squash again, push.
-- If `firestore.rules`, `firestore.indexes.json` or TTL settings changed, deploy them too:
-  `npx firebase deploy --only firestore --project roadie-prod-iab`.
+- If `firestore.rules`, `firestore.indexes.json` or TTL settings changed, deploy them too: `npm run deploy:firestore`
+  (always as the project's service account; it checks its permissions first and says what to grant if one is missing).
 - Confirm it's live: `npm run rollouts -- $(git rev-parse HEAD)` waits up to 20 minutes for App Hosting's rollout of
   that commit and exits 1 unless it SUCCEEDED (cloud: prefix `GOOGLE_APPLICATION_CREDENTIALS="$TMPDIR/gcp.json"` from
   AGENTS.md). Run it in the background. If the rollout failed, read the error it prints, fix, and ship again.

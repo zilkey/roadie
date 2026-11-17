@@ -11,7 +11,7 @@ One ordered checklist. Everything below is manual; nothing has been run against 
 ## 2. Firestore, rules and indexes
 
 - [ ] Console > Firestore Database > Create database, **production mode**, a US region (e.g. `us-central1` or `nam5`; it cannot be changed later).
-- [ ] Deploy rules and indexes: `npx firebase deploy --only firestore --project roadie-prod-iab`.
+- [ ] Deploy rules and indexes: `npm run deploy:firestore` (as the project service account; it says what to grant if a permission is missing).
 - [ ] After the first real use, watch for "query requires an index" errors in the browser console. The member ledger query (`payeeUserId ==`, `kind in [...]`, `deletedAt ==`) may want one; click the link in the error, then copy the result into `firestore.indexes.json` and redeploy.
 
 ## 3. Authentication (Google sign-in)

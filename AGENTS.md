@@ -22,7 +22,9 @@ Jeff asks for something and walks away. When he comes back it should be done and
 2. **Build in a worktree.** Use the `implement-in-worktree` skill for every change, docs and config included.
 3. **Done means live.** Push the squashed commit to `main` (`git push origin HEAD:main`). App Hosting deploys every
    push to `main`. If `firestore.rules`, `firestore.indexes.json` or TTL settings changed, also run
-   `npx firebase deploy --only firestore --project roadie-prod-iab` (in cloud sessions, with the key as below). Then
+   `npm run deploy:firestore` (local or cloud, no setup: it always deploys as the project's service account, never as
+   whoever is logged in, and says exactly what to grant if a permission is missing; don't call `firebase deploy`
+   directly). Then
    confirm it's live: `npm run rollouts -- <sha>` waits for that commit's App Hosting rollout and fails unless it
    SUCCEEDED. If it failed, fix it and push again. Never
    stop at a feature branch or a pull request unless Jeff asks for one. A cloud session is allowed to push to `main`.
