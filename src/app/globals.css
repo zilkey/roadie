@@ -482,15 +482,28 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 /* The section label, and the row holding it plus a section-level action ("+ Add from Drive"). */
 .sg-lbl { font-size: 0.8125rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .sg-sech { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-/* Details: a definition list that reflows from one column on a phone to as many as fit. */
+/* Details (releases, tracks): a definition list that reflows from one column on a phone to as many as fit. */
 .sg-dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px 24px; }
 .sg-dl > div { display: grid; gap: 4px; min-width: 0; align-content: start; } /* A tall neighbour (help text) must not push this cell's value down. */
 .sg-dl dd { margin: 0; font-size: 1rem; font-weight: 700; }
-/* A field's help text under its value: small, muted, regular weight (not the value's bold). */
-.sg-dl .sg-help { margin: 2px 0 0; font-weight: 400; line-height: 1.35; }
-/* A full-width row (Notes) inside the details grid. */
-.sg-dl > .sg-wide { grid-column: 1 / -1; }
-.sg-dl .sg-note { font-size: 0.9375rem; font-weight: 400; white-space: pre-wrap; }
+/* Song details: rounded boxes side by side (one column on a phone), each a list of label | value rows split by faint lines.
+   A wide box spans the row; .sf-cols pairs its rows into two columns (once the boxes have room) with a light line between them. */
+.sf-grid { container-type: inline-size; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; align-items: start; }
+.sf-box { margin: 0; padding: 4px 20px; gap: 0; display: block; }
+.sf-wide { grid-column: 1 / -1; }
+.sf-row { display: grid; grid-template-columns: 124px minmax(0, 1fr); align-items: start; gap: 12px; padding: 6px 0; border-top: 1px solid var(--divider); }
+.sf-box > .sf-row:first-child { border-top: 0; }
+@container (min-width: 680px) {
+  .sf-cols { display: grid; grid-template-columns: 1fr 1fr; }
+  .sf-cols > .sf-row:nth-child(odd) { padding-right: 20px; }
+  .sf-cols > .sf-row:nth-child(even) { padding-left: 20px; border-left: 1px solid var(--divider); }
+  .sf-cols > .sf-row:nth-child(2) { border-top: 0; }
+}
+.sf-row dt { min-height: 44px; display: flex; align-items: center; }
+.sf-row dd { margin: 0; min-height: 44px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; font-size: 1rem; font-weight: 700; min-width: 0; }
+.sf-row dd > .select { width: 100%; }
+.sf-help { margin: 2px 0 4px; font-weight: 400; line-height: 1.35; }
+.sf-note { font-size: 0.9375rem; font-weight: 400; white-space: pre-wrap; }
 /* A Google Doc's text (lyrics, a chord sheet) as the doc has it: monospace, its own line breaks and spaces, so chords stay over the words. */
 .doc-text { display: grid; gap: 1.5em; margin: 0; font-family: var(--f-mono); font-size: 0.875rem; line-height: 1.5; }
 .doc-text pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }

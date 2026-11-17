@@ -173,47 +173,57 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <section className="sg-sec" aria-labelledby="song-details-h">
         <h2 id="song-details-h" className="sg-lbl">Details</h2>
         {/* No page-wide Edit: each value is its own control for admins (saved on blur or Enter, Escape reverts); members see plain text. */}
-        <dl className="card sg-dl" data-testid="song-fields">
-          {/* Status lives with the other facts. Admins pick it here and it saves at once, with the usual Saved + Undo toast. */}
-          <div><dt className="lbl">Status</dt><dd>{admin
-            ? <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
-                onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
-                {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-              </select>
-            : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}</dd></div>
-          {admin && <div><dt className="lbl">Title</dt><dd><InlineValue testid="field-title" label="Title" kind="text" value={text("title", song.title)} canEdit
-            validate={(v) => (v ? null : "A song needs a title")} onSave={(v) => save("title", v, { title: v })} error={as.error} /></dd></div>}
-          {admin && <div><dt className="lbl">Short title</dt><dd><InlineValue testid="field-short-title" label="Short title" kind="text" value={text("shortTitle", song.shortTitle)} canEdit
-            onSave={(v) => save("shortTitle", v, { shortTitle: v || null })} error={as.error} /></dd></div>}
-          <div><dt className="lbl">Key</dt><dd><InlineValue testid="field-key" label="Key" kind="text" value={text("key", song.key)} canEdit={admin}
-            onSave={(v) => save("key", v, { key: v || null })} error={as.error} /></dd></div>
-          <div><dt className="lbl">BPM</dt><dd><InlineValue testid="field-bpm" label="BPM" kind="text" inputMode="numeric" value={text("bpm", song.bpm)} canEdit={admin}
-            validate={(v) => (v === "" || Number.isFinite(Number(v)) ? null : "BPM is a number")}
-            onSave={(v) => save("bpm", v, { bpm: v === "" ? null : Number(v) })} error={as.error} /></dd></div>
-          <div><dt className="lbl">Length</dt><dd><InlineValue testid="field-length" label="Length" kind="text" placeholder="3:52" value={mine.length ?? fmtLen(song.lengthSec)} canEdit={admin}
-            validate={(v) => (v === "" || parseLen(v) !== undefined ? null : "Length looks like 3:52")}
-            onSave={(v) => save("length", v, { lengthSec: v === "" ? null : parseLen(v) })} error={as.error} /></dd></div>
-          <div><dt className="lbl">Written by</dt><dd><InlineValue testid="field-writers" label="Written by" kind="text" value={text("writers", song.writers)} canEdit={admin}
-            onSave={(v) => save("writers", v, { writers: v || null })} error={as.error} /></dd></div>
-          <div data-testid="last-rehearsed">
-            <dt className="lbl">Last rehearsed</dt>
-            <dd>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</dd>
-          </div>
-          {/* The artist's own per-song facts ("Nora plays", "Capo"), in the artist's order; an unfilled one still holds its place. */}
-          {defs.map((d) => (
-            <div key={d.id}>
-              <dt className="lbl">{d.label}</dt>
-              <dd><InlineValue testid={`field-${d.id}`} label={d.label} kind="text" value={fieldVal(d.id)} canEdit={admin}
-                onSave={(v) => saveField(d.id, v)} error={as.error} />
-                {d.description && <p className="s sg-help" data-testid={`field-help-${d.id}`}>{d.description}</p>}</dd>
+        {/* Rounded boxes side by side, each a list of label | value rows: the song itself, its history, then the artist's own fields. */}
+        <div className="sf-grid" data-testid="song-fields">
+          <dl className="card sf-box">
+            {admin && <div className="sf-row"><dt className="lbl">Title</dt><dd><InlineValue testid="field-title" label="Title" kind="text" value={text("title", song.title)} canEdit
+              validate={(v) => (v ? null : "A song needs a title")} onSave={(v) => save("title", v, { title: v })} error={as.error} /></dd></div>}
+            {admin && <div className="sf-row"><dt className="lbl">Short title</dt><dd><InlineValue testid="field-short-title" label="Short title" kind="text" value={text("shortTitle", song.shortTitle)} canEdit
+              onSave={(v) => save("shortTitle", v, { shortTitle: v || null })} error={as.error} /></dd></div>}
+            {/* Admins pick the status here and it saves at once, with the usual Saved + Undo toast. */}
+            <div className="sf-row"><dt className="lbl">Status</dt><dd>{admin
+              ? <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
+                  onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
+                  {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                </select>
+              : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}</dd></div>
+            <div className="sf-row"><dt className="lbl">BPM</dt><dd><InlineValue testid="field-bpm" label="BPM" kind="text" inputMode="numeric" value={text("bpm", song.bpm)} canEdit={admin}
+              validate={(v) => (v === "" || Number.isFinite(Number(v)) ? null : "BPM is a number")}
+              onSave={(v) => save("bpm", v, { bpm: v === "" ? null : Number(v) })} error={as.error} /></dd></div>
+            <div className="sf-row"><dt className="lbl">Key</dt><dd><InlineValue testid="field-key" label="Key" kind="text" value={text("key", song.key)} canEdit={admin}
+              onSave={(v) => save("key", v, { key: v || null })} error={as.error} /></dd></div>
+          </dl>
+          <dl className="card sf-box">
+            <div className="sf-row"><dt className="lbl">Length</dt><dd><InlineValue testid="field-length" label="Length" kind="text" placeholder="3:52" value={mine.length ?? fmtLen(song.lengthSec)} canEdit={admin}
+              validate={(v) => (v === "" || parseLen(v) !== undefined ? null : "Length looks like 3:52")}
+              onSave={(v) => save("length", v, { lengthSec: v === "" ? null : parseLen(v) })} error={as.error} /></dd></div>
+            <div className="sf-row"><dt className="lbl">Written by</dt><dd><InlineValue testid="field-writers" label="Written by" kind="text" value={text("writers", song.writers)} canEdit={admin}
+              onSave={(v) => save("writers", v, { writers: v || null })} error={as.error} /></dd></div>
+            <div className="sf-row" data-testid="last-rehearsed">
+              <dt className="lbl">Last rehearsed</dt>
+              <dd>{last ? `${fmtDay(last)} · ${daysAgoLabel(last, today)}` : "Not rehearsed yet"}</dd>
             </div>
-          ))}
-          {(admin || song.notes) && <div className="sg-wide"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}
-            className="sg-note" onSave={(v) => save("notes", v, { notes: v || null })} error={as.error} /></dd></div>}
-          {(admin || song.defaultTransition) && <div className="sg-wide"><dt className="lbl">Default transition</dt><dd><InlineValue testid="field-default-transition" label="Default transition" kind="textarea" value={text("defaultTransition", song.defaultTransition)} canEdit={admin}
-            className="sg-note" onSave={(v) => save("defaultTransition", v, { defaultTransition: v.trim() || null })} error={as.error} />
-            <p className="s sg-help">Added to this song's transition note when it's put on a setlist by hand. Set it from a setlist with Make default transition.</p></dd></div>}
-        </dl>
+          </dl>
+          {/* The artist's own per-song facts ("Nora plays", "Capo"), in the artist's order, flowing into two columns; an unfilled one still holds its place. */}
+          {defs.length > 0 && <dl className="card sf-box sf-wide sf-cols" data-testid="song-custom-fields">
+            {defs.map((d) => (
+              <div key={d.id} className="sf-row">
+                <dt className="lbl">{d.label}</dt>
+                <dd><InlineValue testid={`field-${d.id}`} label={d.label} kind="text" value={fieldVal(d.id)} canEdit={admin}
+                  onSave={(v) => saveField(d.id, v)} error={as.error} />
+                  {d.description && <p className="s sf-help" data-testid={`field-help-${d.id}`}>{d.description}</p>}</dd>
+              </div>
+            ))}
+          </dl>}
+          {/* Free text: the song's notes and its default transition (what it brings to a setlist's transition note). */}
+          {(admin || song.notes || song.defaultTransition) && <dl className="card sf-box sf-wide">
+            {(admin || song.notes) && <div className="sf-row"><dt className="lbl">Notes</dt><dd><InlineValue testid="field-notes" label="Notes" kind="textarea" value={text("notes", song.notes)} canEdit={admin}
+              className="sf-note" onSave={(v) => save("notes", v, { notes: v || null })} error={as.error} /></dd></div>}
+            {(admin || song.defaultTransition) && <div className="sf-row"><dt className="lbl">Default transition</dt><dd><InlineValue testid="field-default-transition" label="Default transition" kind="textarea" value={text("defaultTransition", song.defaultTransition)} canEdit={admin}
+              className="sf-note" onSave={(v) => save("defaultTransition", v, { defaultTransition: v.trim() || null })} error={as.error} />
+              <p className="s sf-help">Added to this song's transition note when it's put on a setlist by hand. Set it from a setlist with Make default transition.</p></dd></div>}
+          </dl>}
+        </div>
       </section>
 
       {/* The song's to-dos: named lists like a show's (song templates). Members tick and add items; lists are admins'. */}
