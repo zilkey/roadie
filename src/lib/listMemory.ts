@@ -42,7 +42,9 @@ export function useListMemory(pages: number, setPages: (n: number) => void, read
       else steppedBackDone(); // nowhere to go back to on this list
     }
     if (target.current) restoring(true);
-    const save = () => { places.set(here(), { y: window.scrollY, pages: pagesNow.current }); };
+    // Not while the list is being put back: a scroll then (the window resized, the page still short, the browser's
+    // own restore) isn't the person's, and would save the first page over the place this list is reopening.
+    const save = () => { if (target.current || steppedBack()) return; places.set(here(), { y: window.scrollY, pages: pagesNow.current }); };
     window.addEventListener("scroll", save, { passive: true });
     return () => { window.removeEventListener("scroll", save); if (target.current) restoring(false); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

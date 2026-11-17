@@ -66,7 +66,9 @@ function LineupsEditor() {
     const v = cfgDraft.value;
     const r = await call("artists.update", { id: artist!.id, patch: { configurations: [...cfgs, { name: v.name.trim(), billingName: v.billingName.trim() || name, musicianIds: v.musicianIds ?? [] }] } },
       { clientMutationId: cfgMutation.current, clearDraft: cfgDraft.draftId });
-    if (r) { await cfgDraft.clear({ reset: true }); cfgMutation.current = newMutationId(); setForm(null); }
+    // Close the new-configuration form, but only that: on a slow server the new row shows (live) before this answer,
+    // and an Edit opened on it meanwhile must stay open.
+    if (r) { await cfgDraft.clear({ reset: true }); cfgMutation.current = newMutationId(); setForm((f) => (f && f.kind === "edit" ? f : null)); }
   }
   const keyOf = (c: Cfg, i: number) => c.id ?? String(i);
   const cur = form === undefined ? (hasDraft ? { kind: "new" as const } : null) : form;

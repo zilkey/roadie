@@ -220,3 +220,31 @@ test("Lineups: a remove made while the last edit is still saving survives a relo
   await expect(page.getByTestId("config-trio")).toBeVisible();
   await expect(row).toHaveCount(0);
 });
+
+test("Lineups: an Edit opened on a new configuration before its add has answered stays open", async ({ page }) => {
+  const stamp = String(Date.now() % 100000);
+  const NAME = `Quick E2E ${stamp}`, ID = `quick-e2e-${stamp}`;
+  await openSettings(page);
+  // A slow answer: the new row shows (live data) well before the add's response arrives.
+  let answered = false;
+  await page.route("**/api/commands/artists.update", async (r) => {
+    const res = await r.fetch();
+    await new Promise((done) => setTimeout(done, 2000));
+    await r.fulfill({ response: res });
+    answered = true;
+  });
+  await page.getByTestId("add-config").click();
+  await page.getByTestId("new-config-name").fill(NAME);
+  await page.getByTestId("new-config-add").click();
+  await page.getByTestId(`config-edit-${ID}`).click();
+  const edit = page.getByTestId("edit-config");
+  await expect(edit).toBeVisible();
+  expect(answered).toBe(false);
+  await page.unrouteAll({ behavior: "wait" }); // lets the held answer through
+  expect(answered).toBe(true);
+  await page.waitForTimeout(300);
+  await expect(edit).toBeVisible(); // the add's answer closed it before
+  await edit.getByTestId("edit-config-done").click();
+  await expect(edit).toHaveCount(0);
+  await removeConfig(page, ID, NAME);
+});

@@ -22,7 +22,17 @@ export function canGoBack(s: string[]): boolean {
  * still loading, a loading screen first), and it must still know it was stepped back to. Going anywhere else drops it.
  */
 let popped: string | null = null;
-if (typeof window !== "undefined") window.addEventListener("popstate", () => { popped = window.location.pathname; });
+// Where it is told matters: Chrome draws the page it steps to before `popstate` fires (Next renders it from its own
+// history state), so a list mounting then wouldn't know. The Navigation API's `navigate` event (type "traverse") comes
+// first; `popstate` is the fallback for browsers without it, in the capture phase so it runs before Next's own listener.
+if (typeof window !== "undefined") {
+  const nav = (window as unknown as { navigation?: EventTarget }).navigation;
+  nav?.addEventListener("navigate", (e) => {
+    const ev = e as Event & { navigationType?: string; destination?: { url: string } };
+    if (ev.navigationType === "traverse" && ev.destination) popped = new URL(ev.destination.url).pathname;
+  });
+  window.addEventListener("popstate", () => { popped = window.location.pathname; }, { capture: true });
+}
 /**
  * Whether the page on screen was reached by a back or forward step. Reading it doesn't clear it: the first instance to
  * read it may be thrown away (a loading screen, a remount) before it does anything, and the one that stays must still
