@@ -1,8 +1,19 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
+import { FIRESTORE } from "./env";
+
+/** platform/config.signUpOpen, written as the emulator's owner (no client may write it; scripts/platform-config.ts does in prod). */
+async function setSignUp(api: APIRequestContext, open: boolean) {
+  const res = await api.patch(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/platform/config`, {
+    headers: { authorization: "Bearer owner" }, data: { fields: { signUpOpen: { booleanValue: open } } },
+  });
+  expect(res.ok()).toBe(true);
+}
 
 // The dev "stranger" (stranger@example.com) is a Google account on no band's list. This is the only spec that signs in as
 // them: starting a band changes who they are, so it all happens in one test.
-test("a stranger signs in, starts a band, and ends up its admin", async ({ page }) => {
+test("a stranger signs in, starts a band, and ends up its admin", async ({ page, request }) => {
+  // Sign-up is closed until platform/config opens it; the seed has no such doc. Opened below, closed again at the end.
+  await setSignUp(request, false);
   await page.goto("/signin");
   await page.getByTestId("dev-stranger").click();
 
@@ -22,6 +33,11 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page 
   await expect(page.getByTestId("band-name-error")).toBeVisible();
   await page.getByTestId("band-name").fill("The Night Owls");
   await expect(page.getByTestId("band-slug-preview")).toHaveText("the-night-owls");
+  // closed: the form says so and nothing is made
+  await page.getByTestId("create-band").click();
+  await expect(page.getByTestId("error")).toHaveText("Roadie is invite-only for now. Ask your band's admin to add you.");
+  await expect(page).toHaveURL(/\/start-band$/);
+  await setSignUp(request, true);
   // a taken slug is refused under the field (the seeded band already has this one)
   await page.getByTestId("slug-change").click();
   await page.getByTestId("band-slug").fill("nora-quill-band");
@@ -56,4 +72,5 @@ test("a stranger signs in, starts a band, and ends up its admin", async ({ page 
   const row = page.getByTestId("person-row-stranger@example.com");
   await expect(row).toBeVisible();
   await expect(row.locator(".chip").first()).toHaveText("Admin");
+  await setSignUp(request, false);
 });

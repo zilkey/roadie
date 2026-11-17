@@ -10,9 +10,14 @@ const onCustomDomain = !!canonical && !new RegExp(`^${OLD_HOSTS}$`).test(canonic
 const site = process.env.SITE_URL ? new URL(process.env.SITE_URL) : null;
 const SITE_PATHS = "(?!privacy$|terms$|_next/|opengraph-image|[^/]+\\.[A-Za-z0-9]+$).+";
 
+// One id per build, so open tabs can tell a deploy happened (/api/version, src/lib/useNewVersion.ts). Set on process.env
+// too, so Next's worker processes (which load this file again) inherit the same value instead of making their own.
+process.env.NEXT_PUBLIC_BUILD_ID ||= `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 // NEXT_DIST_DIR: the e2e run builds into its own folder so it can run next to `npm run dev` (Next allows one dev server per folder).
 const config: NextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  env: { NEXT_PUBLIC_BUILD_ID: process.env.NEXT_PUBLIC_BUILD_ID },
   // The e2e servers (.next-test-<n>) skip Next's upgrade reminder: under a coding agent it stops `next dev` once and only
   // lets a prompt retry through, which an unattended test run never gets, so no test would run. Normal dev keeps it.
   ...(process.env.NEXT_DIST_DIR?.startsWith(".next-test") ? { experimental: { agentUpgrade: false as const } } : {}),

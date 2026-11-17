@@ -2,13 +2,16 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/sign-up/route";
-import { adminAuth } from "@/server/admin";
+import { adminAuth, firestore } from "@/server/admin";
+import { dispatch } from "@/server/commands/dispatch";
 import { db } from "@/server/db";
 import { importCtx } from "@/server/ctx";
 import { startSession } from "@/server/session";
 import { resetEmulators, makeUser, makeArtist, idToken, readySession } from "./helpers";
 
-beforeEach(resetEmulators);
+/** Sign-up is closed unless platform/config says otherwise (scripts/platform-config.ts). Most tests here open it. */
+const setSignUp = (open: boolean) => firestore().doc("platform/config").set({ signUpOpen: open });
+beforeEach(async () => { await resetEmulators(); await setSignUp(true); });
 const bearer = (t: string) => `Bearer ${t}`;
 type Err = { error: { code: string; message: string; issues?: { path: string; message: string }[] } };
 async function stranger(email = "pat@example.com", name = "Pat Stranger") {
@@ -19,6 +22,39 @@ const call = async (token: string | null, body: unknown) => {
   const res = await POST(new NextRequest("http://localhost/api/sign-up", { method: "POST", headers: token ? { authorization: bearer(token) } : {}, body: JSON.stringify(body) }));
   return { status: res.status, json: (await res.json()) as { slug: string } & Err };
 };
+
+test("artists.signUp: closed by default (no platform/config) and when signUpOpen isn't true: invite_only, nothing written", async () => {
+  const p = await stranger();
+  for (const close of [() => firestore().doc("platform/config").delete(), () => setSignUp(false), () => firestore().doc("platform/config").set({ signUpOpen: "yes" })]) {
+    await close();
+    const r = await call(p.token, { name: "The Night Owls" });
+    assert.equal(r.status, 403);
+    assert.deepEqual(r.json.error, { code: "invite_only", message: "Roadie is invite-only for now. Ask your band's admin to add you." });
+  }
+  // checked before the token, so even an anonymous caller learns only that
+  assert.equal((await call(null, { name: "X" })).json.error.code, "invite_only");
+  assert.equal(await db.get("users", p.uid), null);
+  assert.equal((await db.list("artists")).length, 0);
+  // opening it again needs no deploy
+  await setSignUp(true);
+  assert.equal((await call(p.token, { name: "The Night Owls" })).status, 200);
+});
+
+test("closed sign-up: someone an admin added with users.add still signs in to the band the first time", async () => {
+  await setSignUp(false);
+  await makeArtist("Test Band", "test-band");
+  const admin = await makeUser("a@example.com", "admin");
+  const r = await dispatch("users.add", bearer(admin.token), { email: "new@example.com", name: "New Person", role: "member" });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const { id } = (r.json as { result: { id: string } }).result;
+  // their first Google sign-in: the Auth account users.add made
+  const uid = (await adminAuth().getUserByEmail("new@example.com")).uid;
+  assert.equal(uid, id);
+  const s = await readySession(bearer(await idToken(uid)));
+  assert.deepEqual(s.artists, [{ artistId: "test-artist", slug: "test-band", name: "Test Band", role: "member" }]);
+  // and Start a band stays shut for them too
+  assert.equal((await call(await idToken(uid), { name: "Mine" })).json.error.code, "invite_only");
+});
 
 test("artists.signUp: a stranger gets a user, an artist with its templates, and an admin membership", async () => {
   const p = await stranger();

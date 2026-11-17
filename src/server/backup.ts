@@ -98,12 +98,12 @@ export const ARCHIVED_COLLECTIONS = new Set(["ledger"]);
 /**
  * What the server keeps straight in Firestore, not through db.ts, so it has no common fields, no history and no entry in `collections`:
  * Roadie's threads (with their messages and pending actions), each person's prefs, the Google and Meta connections, stage plot share
- * links, and the route, geocode and fuel price caches; and, under a person, users/{uid}/private (driving settings before they moved onto
+ * links, platform-wide settings (platform/config: is sign-up open), and the route, geocode and fuel price caches; and, under a person, users/{uid}/private (driving settings before they moved onto
  * users/{uid}.driving; kept so older backups still restore). A backup carries
  * them and restore writes them back as they are, not validated. A collection the server starts keeping this way goes here (or in
  * NOT_BACKED_UP): one in neither list fails the restore with "no schema for collection", on purpose.
  */
-export const SERVER_KEPT = new Set(["assistantThreads", "userPrefs", "googleGrants", "metaConnections", "stagePlotTokens", "routeCache", "geocodes", "fuelPrices", "venueEvents", "venueEventSources"]);
+export const SERVER_KEPT = new Set(["assistantThreads", "userPrefs", "googleGrants", "metaConnections", "stagePlotTokens", "routeCache", "geocodes", "fuelPrices", "venueEvents", "venueEventSources", "platform"]);
 const SERVER_KEPT_UNDER: Record<string, Set<string>> = { users: new Set(["private"]) };
 /** Restored as it is: an archived or server-kept top-level collection (and everything under it), or a server-kept sub-collection. */
 export const isUnvalidated = (parts: string[]) =>

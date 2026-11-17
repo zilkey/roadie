@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adminAuth } from "./admin";
+import { adminAuth, firestore } from "./admin";
 import { newRunId, type Ctx } from "./ctx";
 import { run } from "./db";
 import { AppError, invalid } from "./errors";
@@ -17,12 +17,25 @@ export const SignUpInput = z.strictObject({
 });
 
 /**
+ * Sign-up is closed unless the server-only doc `platform/config` says `signUpOpen: true` (scripts/platform-config.ts sets
+ * it, so opening or closing needs no deploy). No doc means closed. Read straight from Firestore: `platform` is not a
+ * collection the app models (backup keeps it as server-kept).
+ */
+export async function signUpOpen(): Promise<boolean> {
+  const snap = await firestore().doc("platform/config").get();
+  return snap.get("signUpOpen") === true;
+}
+export const INVITE_ONLY = "Roadie is invite-only for now. Ask your band's admin to add you.";
+
+/**
  * The one write callable without a membership, so it is not in the command registry (Roadie and MCP never see it) and
  * `authenticate` is not used: all it needs is a verified Google ID token. The caller becomes the admin of a new artist.
  * Refuses anyone who already has a membership (they use artists.create from inside the app). Every write goes through
  * run(), so History records it like any command.
  */
 export async function signUp(authHeader: string | null, body: unknown): Promise<{ slug: string; id: string; runId: string }> {
+  // Checked first, before the token and before any write: while closed, nobody gets further than this.
+  if (!(await signUpOpen())) throw new AppError("invite_only", INVITE_ONLY, 403);
   const m = /^Bearer (.+)$/.exec(authHeader ?? "");
   if (!m) throw new AppError("unauthenticated", "Missing bearer token", 401);
   let decoded;
