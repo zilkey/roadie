@@ -4,6 +4,7 @@ import { APP, AUTH, FIRESTORE, A, ARTIST_SLUG } from "./env";
 import { SEED, fmtLongYear, fmtPitchDate, mmmD, monthOf } from "./dates";
 import { addDays } from "../../src/lib/shows";
 import { dayLabel, fmtTourDates } from "../../src/lib/tours";
+import { settledBox } from "./settle";
 
 // The tour runs from three days before the Creamery pitch's first date to the day after its second, whatever today is.
 // Every day below is derived from START; the span can cross a month or a year, so nothing here assumes one calendar month.
@@ -194,6 +195,10 @@ test.describe.serial("tours", () => {
     const day = page.getByTestId(`plan-day-${D_SWALLOW}`);
     // The tray is sticky, so it stays beside the day while the day scrolls into view.
     await day.scrollIntoViewIfNeeded();
+    // Only once the plan has filled in and the tray has filtered: stats and pitches arriving above the days, or the
+    // tray's list still changing, move the day or the item mid-drag otherwise.
+    await settledBox(day.locator(".tp-dlist"));
+    await settledBox(item);
     await item.dragTo(day.locator(".tp-dlist"));
     await expect(day.locator('[data-kind="option"]')).toContainText("Swallow Hill Music");
     await close();
@@ -260,7 +265,10 @@ test.describe.serial("tours", () => {
     const day = page.getByTestId(`plan-day-${CREAMERY}`);
     await page.getByTestId("tray-search").fill("Marisol");
     const item = page.getByTestId("tray-items").locator("li").filter({ hasText: "Marisol' Other Side" });
+    await expect(item).toBeVisible();
     await day.scrollIntoViewIfNeeded();
+    await settledBox(day.locator(".tp-dlist"));
+    await settledBox(item);
     await item.dragTo(day.locator(".tp-dlist"));
     await expect(day.locator('[data-kind="option"]')).toHaveCount(2);
 

@@ -73,9 +73,13 @@ export function ChecklistCard({ host, list, admin, templateLive, autoFocusAdd }:
     const label = text.trim();
     if (!label) return;
     setText("");
+    const form = addRef.current?.form;
     const r = await call("checklists.addItem", { ...base, label, ownerId: owner || null });
     if (!r) setText(label);
-    addRef.current?.focus();
+    // Back to the box for the next one, unless the person has moved on meanwhile (the new row can show before the
+    // save answers, and a click on it to edit must keep its editor): only from the form itself, or from nowhere.
+    const at = document.activeElement;
+    if (!at || at === document.body || (form && form.contains(at))) addRef.current?.focus();
   }
 
   return (

@@ -1,5 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
-import { A } from "./env";
+import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { A, APP, AUTH, FIRESTORE, ARTIST_SLUG } from "./env";
 
 const ARTIST = "Nora Quill Band";
 
@@ -8,7 +8,24 @@ async function signInAs(page: Page, key: string) {
   await page.getByTestId(`dev-${key}`).click();
 }
 
+/**
+ * Drops Rudy's unsaved Lineups draft, if an earlier test left one (a page closed before its last save's draft was
+ * cleared): opening the page would restore it and replay it over what this test does.
+ */
+async function clearLineupsDraft(request: APIRequestContext) {
+  const t = await request.post(`http://${AUTH}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo`, {
+    data: { postBody: `id_token=${encodeURIComponent(JSON.stringify({ sub: "dev-rudy", email: "rudy@example.com", email_verified: true, name: "Rudy" }))}&providerId=google.com`, requestUri: "http://localhost", returnIdpSignInMethod: true, returnSecureToken: true },
+  });
+  const token = ((await t.json()) as { idToken: string }).idToken;
+  const a = await request.get(`http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/artists`, { headers: { authorization: "Bearer owner" } });
+  const docs = ((await a.json()) as { documents: { name: string; fields: { slug?: { stringValue: string } } }[] }).documents;
+  const artistId = docs.find((x) => x.fields.slug?.stringValue === ARTIST_SLUG)!.name.split("/").pop()!;
+  const r = await request.post(`${APP}/api/commands/drafts.clear`, { data: { path: `artists/${artistId}#lineups` }, headers: { authorization: `Bearer ${token}`, "x-artist-id": artistId } });
+  expect(r.ok(), await r.text()).toBeTruthy();
+}
+
 async function openSettings(page: Page) {
+  await clearLineupsDraft(page.request);
   await signInAs(page, "rudy");
   await expect(page).toHaveURL(/\/calendar$/);
   await page.goto(A("/admin/lineups"));

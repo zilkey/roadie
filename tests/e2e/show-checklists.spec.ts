@@ -108,3 +108,43 @@ test("an admin adds a list from a template, works its to-dos in place, renames a
   await page.getByTestId(`checklist-${id}-menu-delete`).click();
   await expect(card(page, "E2E Follow-up")).toHaveCount(0);
 });
+
+test("a to-do clicked to edit before its save has answered keeps its editor (the add box doesn't take focus back)", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await openDeepEnd(page);
+  await clearLeftovers(page);
+  await page.getByTestId("new-list-actions").click();
+  await page.getByRole("menuitem", { name: "Follow Up", exact: true }).click();
+  const c = card(page, "Follow Up");
+  await expect(c).toBeVisible();
+  const id = await listId(c);
+  try {
+    // A slow answer: the new row shows (live data) well before the add's response arrives.
+    let answered = false;
+    await page.route("**/api/commands/checklists.addItem", async (r) => {
+      const res = await r.fetch();
+      await new Promise((done) => setTimeout(done, 2000));
+      await r.fulfill({ response: res });
+      answered = true;
+    });
+    const add = c.getByTestId(`checklist-add-${id}`);
+    await add.fill("Call the sound tech");
+    await add.press("Enter");
+    await c.getByText("Call the sound tech").click();
+    const input = c.getByTestId("checklist-edit-input");
+    await expect(input).toBeFocused();
+    expect(answered).toBe(false);
+    await expect.poll(() => answered).toBe(true);
+    await page.waitForTimeout(300); // the answer's own work (it used to pull focus back here)
+    await expect(input).toBeFocused();
+    await input.fill("Call the sound tech at 4");
+    await input.press("Enter");
+    await expect(c.getByText("Call the sound tech at 4")).toBeVisible();
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    page.once("dialog", (d) => void d.accept());
+    await page.getByTestId(`checklist-${id}-actions`).click();
+    await page.getByTestId(`checklist-${id}-menu-delete`).click();
+    await expect(page.getByTestId(`checklist-${id}`)).toHaveCount(0);
+  }
+});

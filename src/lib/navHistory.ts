@@ -23,12 +23,15 @@ export function canGoBack(s: string[]): boolean {
  */
 let popped: string | null = null;
 if (typeof window !== "undefined") window.addEventListener("popstate", () => { popped = window.location.pathname; });
-/** Whether the page now mounting was reached by a back or forward step; reading it clears it. Read it in a mount effect. */
-export function takeSteppedBack(): boolean {
-  const p = popped !== null && popped === window.location.pathname;
-  popped = null;
-  return p;
+/**
+ * Whether the page on screen was reached by a back or forward step. Reading it doesn't clear it: the first instance to
+ * read it may be thrown away (a loading screen, a remount) before it does anything, and the one that stays must still
+ * see it. The page clears it with `steppedBackDone` once it has put itself back.
+ */
+export function steppedBack(): boolean {
+  return popped !== null && popped === window.location.pathname;
 }
+export function steppedBackDone() { popped = null; }
 
 /** Create forms (".../new") are never a place to go back to: they leave by router.replace, so they are not recorded. */
 export function recordPath(path: string) {

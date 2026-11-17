@@ -5,7 +5,7 @@
  * or the browser's), not when the list is opened afresh.
  */
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { takeSteppedBack } from "@/lib/navHistory";
+import { steppedBack, steppedBackDone } from "@/lib/navHistory";
 
 /** How long a step back waits for the page to grow tall enough to reach the list's place. */
 const RESTORE_MAX_MS = 10_000;
@@ -36,9 +36,10 @@ export function useListMemory(pages: number, setPages: (n: number) => void, read
   // the person, or a test, and then put back under them. The mark follows the pending target, not the step: a remount
   // (React's development double mount) has already used the step but still has the restore to do.
   useLayoutEffect(() => {
-    if (!target.current) {
-      const p = takeSteppedBack() ? places.get(here()) : undefined;
+    if (!target.current && steppedBack()) {
+      const p = places.get(here());
       if (p) { target.current = p; if (p.pages !== pages) setPages(p.pages); }
+      else steppedBackDone(); // nowhere to go back to on this list
     }
     if (target.current) restoring(true);
     const save = () => { places.set(here(), { y: window.scrollY, pages: pagesNow.current }); };
@@ -56,6 +57,7 @@ export function useListMemory(pages: number, setPages: (n: number) => void, read
     if (!ready || target.current === null || pages < target.current.pages) return;
     const { y } = target.current;
     target.current = null;
+    steppedBackDone();
     const root = document.documentElement;
     const inputs = ["wheel", "touchstart", "keydown", "mousedown"] as const;
     let frame = 0, done = false;

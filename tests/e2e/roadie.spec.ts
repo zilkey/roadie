@@ -1,6 +1,7 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { A, openTab } from "./env";
 import { day } from "./dates";
+import { settledBox } from "./settle";
 
 async function signInAs(page: Page, key: string) {
   await page.goto("/signin");
@@ -39,18 +40,6 @@ test("admin: panel on the right, canned reply, survives navigation and reload", 
   await expect(page.getByTestId("roadie-msg-assistant").first()).toContainText("Roadie here");
 });
 
-/** The handle's box once the panel has stopped moving (it takes its saved width a beat after load): dragging from a stale box misses it. */
-async function settledBox(handle: Locator) {
-  let last = "";
-  await expect(async () => {
-    const b = await handle.boundingBox();
-    const now = JSON.stringify(b);
-    const same = b !== null && now === last;
-    last = now;
-    expect(same).toBeTruthy();
-  }).toPass({ intervals: [150, 150, 150, 300, 300], timeout: 10_000 });
-  return (await handle.boundingBox())!;
-}
 
 test("admin: drag or arrow-key the panel's edge; the width is saved, clamped to half the window, and snaps to the rail", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });

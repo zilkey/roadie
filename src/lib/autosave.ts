@@ -71,6 +71,8 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
   // the edits after it were made on top of it (sent against the rev it will make). Opening the record again replays it
   // first under the same clientMutationId (it lands once), so those edits never conflict with this person's own save.
   const sending = useRef<Job | null>(null);
+  /** Every field changed on this visit: a draft restored late (a slow read) never overwrites them. */
+  const touched = useRef(new Set<string>());
   const persist = useCallback(() => {
     const c = chRef.current; if (!c) return;
     const s = sending.current;
@@ -79,7 +81,7 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
   }, []);
 
   useEffect(() => {
-    if (seenId.current !== id) { seenId.current = id; baseRev.current = 0; pending.current = {}; unsaved.current = {}; retry.current = null; held.current = null; }
+    if (seenId.current !== id) { seenId.current = id; baseRev.current = 0; pending.current = {}; unsaved.current = {}; retry.current = null; held.current = null; touched.current.clear(); }
     baseRev.current = Math.max(baseRev.current, rev ?? 0);
   }, [id, rev]);
 
@@ -139,6 +141,7 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
 
   const patch = useCallback((p: Record<string, unknown>, o: { now?: boolean } = {}) => {
     if (!Object.keys(p).length) return;
+    for (const k of Object.keys(p)) touched.current.add(k);
     pending.current = { ...pending.current, ...p };
     if (!Object.keys(unsaved.current).length) unsavedRev.current = baseRev.current;
     unsaved.current = { ...unsaved.current, ...p };
@@ -163,17 +166,21 @@ export function useAutosave({ command, id, rev, scope, delay = AUTOSAVE_MS, onUs
     let live = true;
     void openDraft(uid, path).then((d) => {
       if (!live || !d || !Object.keys(d.values).length) return;
+      // What this visit hasn't changed yet. The draft can arrive after the person has started editing (a slow read): their
+      // newer edits win, and only the rest is restored and shown.
+      const fresh = Object.fromEntries(Object.entries(d.values).filter(([k]) => !touched.current.has(k)));
       ch.adopt();
+      if (!Object.keys(fresh).length && !d.sending) { persist(); return; } // all of it superseded on this visit
       if (!Object.keys(unsaved.current).length) { if (d.rev !== undefined) baseRev.current = d.rev; unsavedRev.current = baseRev.current; }
-      pending.current = { ...d.values, ...pending.current };
-      unsaved.current = { ...d.values, ...unsaved.current };
+      pending.current = { ...fresh, ...pending.current };
+      unsaved.current = { ...fresh, ...unsaved.current };
       // A save that was on its way when the draft was written goes first (once: the server knows its clientMutationId).
       if (d.sending && !retry.current) retry.current = { patch: d.sending.patch, mutationId: d.sending.mutationId, replay: true };
-      setEdits((e) => ({ ...Object.fromEntries(Object.entries(d.values).filter(([, v]) => typeof v === "string" || v === null).map(([k, v]) => [k, (v as string | null) ?? ""])), ...e }));
-      setRestored(d.values);
+      setEdits((e) => ({ ...Object.fromEntries(Object.entries(fresh).filter(([, v]) => typeof v === "string" || v === null).map(([k, v]) => [k, (v as string | null) ?? ""])), ...e }));
+      setRestored(fresh);
       setStatus("saving");
       persist();
-      cfg.current.onRestore?.(d.values);
+      if (Object.keys(fresh).length) cfg.current.onRestore?.(fresh);
       void drain();
     });
     return () => { live = false; };
