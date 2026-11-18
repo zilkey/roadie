@@ -123,7 +123,7 @@ dialog.dlg::backdrop { background: var(--backdrop); }
 .btn.danger { background: var(--danger-soft); color: var(--danger); }
 .btn.danger:hover:not(:disabled) { filter: brightness(.96); border-color: var(--danger); }
 .btn.sm { min-height: 32px; padding: 0 11px; font-size: 0.8125rem; border-radius: 9px; }
-.tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: none; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; overscroll-behavior: none; border-bottom: 1px solid var(--border); scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs [role="tab"] { flex-shrink: 0; background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1.5px; padding: 8px 14px; min-height: var(--ctl-h); font: inherit; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .tabs [role="tab"]:hover { color: var(--ink); }
