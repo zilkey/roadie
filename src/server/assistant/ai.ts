@@ -33,6 +33,12 @@ export const modelLabel = (env: NodeJS.ProcessEnv = process.env) => {
   return env.ROADIE_GEMINI_MODEL ?? (mode === "vertex" ? "gemini-3.5-flash" : "gemini-flash-latest");
 };
 
+/** Gemini's thinking level for Roadie's chat steps (ROADIE_GEMINI_THINKING=LOW|MEDIUM|HIGH|MINIMAL); unset leaves the model's default. */
+export const geminiThinking = (env: NodeJS.ProcessEnv = process.env) => {
+  const t = env.ROADIE_GEMINI_THINKING?.toUpperCase();
+  return t === "MINIMAL" || t === "LOW" || t === "MEDIUM" || t === "HIGH" ? t : undefined;
+};
+
 /** The user's last typed message and the tool calls made (and answered) since, rebuilt from the conversation. */
 function lastTurn(req: GenerateRequest) {
   const msgs = req.messages;

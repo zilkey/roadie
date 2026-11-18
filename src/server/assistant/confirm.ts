@@ -11,7 +11,7 @@ import { ConfirmRequest, UndoRequest, type CardField } from "@/schema/assistant"
 import { isEligible, voiceConfirmable } from "./policy";
 import { modelLabel } from "./ai";
 import type { Session } from "./run";
-import { runCommandTool, seePitch, SEE_PITCH, undoInThread } from "./tools";
+import { runCommandTool, savedId, seePitch, SEE_PITCH, undoInThread } from "./tools";
 import { newTypeLabel, setPath } from "./card";
 import { makeCtx, runAs } from "./run";
 import { addAssistantMessage, claimPending, getPending, newMessageId, threadOf, patchMessageAction, setPending, type Pending } from "./threads";
@@ -71,7 +71,7 @@ export async function answerPending(who: Who, req: ConfirmRequest, now = new Dat
     const see = seePitch(pending.command, r.result);
     await addAssistantMessage({
       id: resultId, threadId: req.threadId, text: see ? `Done. ${SEE_PITCH}` : "Done.", pageContext: HERE,
-      actions: [...(r.wrote ? [{ kind: "readback" as const, label: r.label!, runId: r.runId }] : []), ...(see ? [see] : [])],
+      actions: [...(r.wrote ? [{ kind: "readback" as const, label: r.label!, runId: r.runId, ...savedId(r.result) }] : []), ...(see ? [see] : [])],
     });
     return { status: "done", runId: r.wrote ? r.runId : undefined, label: r.label };
   } catch (e) {

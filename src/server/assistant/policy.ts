@@ -12,6 +12,8 @@ import { postKind } from "@/lib/photos";
 /** Commands Roadie never gets (spec: "What Roadie won't do"). Prefix entries end in a dot. */
 export const EXCLUDED: readonly string[] = [
   "users.",           // invites, access, roles
+  "invites.",         // pending invites: access, like users.*
+  "sharedEditors.",   // who may edit a shared venue: access (2026-11-18: these had slipped into Roadie's core tools)
   "mcpTokens.",       // AI keys (commands removed; guard against future re-addition)
   "google.",          // connecting someone's own Google account is an access change only they make
   "meta.",            // connecting the band's Instagram & Facebook: the same

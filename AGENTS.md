@@ -34,9 +34,10 @@ Jeff asks for something and walks away. When he comes back it should be done and
    `mcp__ccd_session_mgmt__set_session_title` with `session_id: "self"`, a deferred tool: load it with ToolSearch).
    In a local session, also say "√ Live" on the first line of the final message.
 5. **Real AI models need a yes, except the quick checks.** Jeff cares more about time than cost. `npm run
-   check:roadie:vertex` and `npm run check:roadie` each make one call that takes seconds, so they're pre-approved. Run
-   one before pushing whenever a change touches what Roadie or MCP offers the model (commands, tool schemas or
-   descriptions, `src/server/assistant/`, `mcp/`). Anything longer that calls a real model needs Jeff's yes in the
+   check:roadie:vertex`, `npm run check:roadie:claude` and `npm run check:roadie` each take seconds (the Claude one makes
+   three small calls with the dev key), so they're pre-approved. Run one before pushing whenever a change touches what
+   Roadie or MCP offers the model (commands, tool schemas or descriptions, `src/server/assistant/`, `mcp/`); while Roadie's
+   chat runs on Claude (`ROADIE_CHAT_MODEL` in `apphosting.yaml`), run the Claude one too. Anything longer that calls a real model needs Jeff's yes in the
    upfront questions: `npm run eval:roadie`, `npm run check:acts:vertex`, `npm run dev:vertex`, or `ROADIE_MODEL`
    set to anything but `fake`. If you don't have a yes, skip it and say so.
 6. **Tests are free; run them.** Typecheck, `npm test` and `npm run e2e` run on the emulators and fakes. Run them in

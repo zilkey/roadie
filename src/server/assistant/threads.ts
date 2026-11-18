@@ -18,12 +18,12 @@ export async function loadHistory(uid: string, threadId: string, limit = 20): Pr
   // broke every later message in the thread. Its action labels stand in for it, and anything still empty is left out.
   return msgs.docs.reverse().flatMap((d): Turn[] => {
     const m = d.data();
-    const acts = (m.actions as { kind?: string; label?: string; status?: string; undone?: boolean }[] | undefined) ?? [];
+    const acts = (m.actions as { kind?: string; label?: string; status?: string; undone?: boolean; params?: { id?: string } }[] | undefined) ?? [];
     const labels = acts.map((a) => a.label).filter(Boolean);
     // What was saved and what is still waiting on a card goes with the words (#69): without it "I missed a ten" or
     // "no that's it" made Roadie enter the same money again, because "Tap Yes" and "Done." name no amount.
     const outcomes = acts.flatMap((a) => (!a.label ? [] : a.kind === "confirm" ? [`[Card: ${a.label}: ${CARD_STATE[a.status ?? "pending"] ?? a.status}]`]
-      : a.kind === "readback" ? [`[${a.undone ? "Undone" : "Saved"}: ${a.label}]`] : []));
+      : a.kind === "readback" ? [`[${a.undone ? "Undone" : "Saved"}: ${a.label}${a.params?.id ? ` (id ${a.params.id})` : ""}]`] : []));
     const said = String(m.text ?? "").trim();
     const text = said ? [said, ...outcomes].join(" ") : outcomes.length ? [...acts.filter((a) => a.kind !== "confirm" && a.kind !== "readback").map((a) => a.label).filter(Boolean), ...outcomes].join(" ") : labels.join(". ");
     // A reply that failed: say so plainly, so the next message picks the request back up instead of thinking it's done.

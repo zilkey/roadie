@@ -25,6 +25,13 @@ env:
   # Roadie on Vertex AI with the backend's service account (needs the Vertex AI User role); no API key.
   - variable: ROADIE_MODEL
     value: vertex
+  # Roadie's chat on Claude Sonnet 5.5 (docs/designs/sonnet/): faster than Gemini and at least as accurate on the eval.
+  # Transcription, web search and look-ups stay on Gemini (above); a message Claude fails on finishes on Gemini.
+  # Rollback: delete ROADIE_CHAT_MODEL and push. The key is the prod one (.secrets/claude-prod.txt); the dev key is for evals.
+  - variable: ROADIE_CHAT_MODEL
+    value: claude
+  - variable: ANTHROPIC_API_KEY
+    secret: ANTHROPIC_API_KEY
   # Signs MCP session ids (mcp/web.ts) so every instance agrees (created per docs/MCP.md).
   - variable: MCP_SESSION_SECRET
     secret: MCP_SESSION_SECRET

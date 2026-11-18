@@ -286,13 +286,19 @@ test("Shows list: Played Net column matches the show page's Net card; members ha
   await expect(page.getByTestId("shows-net").first()).toBeVisible();
   const row = page.getByTestId("shows-row").filter({ has: page.locator('[data-testid="shows-net"]:not(:has(.dash))') }).first();
   const id = await row.getAttribute("data-id");
-  const listed = (await row.getByTestId("shows-net").innerText()).trim();
-  await page.goto(A(`/shows/${id}`));
-  await page.getByTestId("show-tab-finances").click();
-  const card = (await page.getByTestId("net-net").innerText()).trim(); // "$1,234.56": the list shows whole dollars
-  const cents = Math.round(parseFloat(card.replace(/[$,]/g, "")) * 100);
-  const dollars = `${cents < 0 ? "-" : ""}$${Math.round(Math.abs(cents) / 100).toLocaleString("en-US")}`;
-  expect(listed).toBe(dollars);
+  // The seeded played show is shared: show-finances.spec edits its expenses in another worker, so the money can change
+  // between reading the list and reading the card (2026-11-18: $0 listed, -$16 on the card a moment later). Read both
+  // again until a pair agrees; a real mismatch never does.
+  await expect(async () => {
+    await page.goto(A("/shows#played"));
+    const listed = (await page.locator(`[data-testid="shows-row"][data-id="${id}"]`).getByTestId("shows-net").innerText()).trim();
+    await page.goto(A(`/shows/${id}`));
+    await page.getByTestId("show-tab-finances").click();
+    const card = (await page.getByTestId("net-net").innerText()).trim(); // "$1,234.56": the list shows whole dollars
+    const cents = Math.round(parseFloat(card.replace(/[$,]/g, "")) * 100);
+    const dollars = `${cents < 0 ? "-" : ""}$${Math.round(Math.abs(cents) / 100).toLocaleString("en-US")}`;
+    expect(listed).toBe(dollars);
+  }).toPass({ timeout: 20_000 });
 
   const hugo = await as(browser, "hugo");
   await hugo.page.goto(A("/shows#played"));

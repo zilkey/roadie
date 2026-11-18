@@ -19,7 +19,8 @@
  */
 import { getChatFlow } from "../src/server/assistant/flow";
 import { ensureThread, newMessageId, newThreadId } from "../src/server/assistant/threads";
-import { modelLabel, modelMode } from "../src/server/assistant/ai";
+import { geminiThinking, modelLabel, modelMode } from "../src/server/assistant/ai";
+import { claudeEffort, claudeModel, claudeThinking } from "../src/server/assistant/claude";
 import { importCtx, newRunId, systemCtx } from "../src/server/ctx";
 import { db } from "../src/server/db";
 import { registry } from "../src/server/commands/registry";
@@ -36,6 +37,10 @@ import { checkRecorded, describe, POST_SHOW, recorded, seedWorld, type PostShowS
 interface Check { calls?: RegExp[]; noCalls?: RegExp[]; cards?: number; text?: RegExp; noText?: RegExp; noAsk?: boolean; args?: [RegExp, RegExp][]; noArgs?: [RegExp, RegExp][]; cardVoice?: boolean; cardText?: RegExp }
 interface Turn extends Check { say: string; yes?: boolean }
 interface Scenario { name: string; route?: string; voice?: boolean; turns: Turn[]; postShow?: PostShowScenario }
+/** How long each turn took, start to final output: the eval prints the median and p90 so models and payloads can be compared. */
+const TIMES: number[] = [];
+/** Every turn's model usage (calls, tokens, fallbacks), added up at the end. */
+const USAGE = { turns: 0, calls: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0, fellBack: 0 };
 
 const SOFAR =
   "Add SoFar as a venue in Fort Collins and Denver and Colorado Springs\n\n" +
@@ -75,7 +80,8 @@ const SCENARIOS: Scenario[] = [
   { name: "new-type", turns: [{ say: 'add a new venue type option called "supper club"', calls: [/venueTypes\.add/], noText: REFUSES }] },
   { name: "contact-add", turns: [{ say: "add Sam Rivera, sam@rivera.example, as a contact", calls: [/contacts\.create/], noText: REFUSES }] },
   { name: "expense", turns: [{ say: "log $12 for gas", calls: [/expenses\.add/], noText: REFUSES }] },
-  { name: "stage-plot-group", turns: [{ say: "who still needs the new stage plot?", calls: [/tools\.load/, /stagePlots\.staleShows/], noText: REFUSES }] },
+  // "stage plot" in the message already offers the group (groupsFor), so tools.load is optional here; the point is the right tool.
+  { name: "stage-plot-group", turns: [{ say: "who still needs the new stage plot?", calls: [/stagePlots\.staleShows/], noText: REFUSES }] },
   // Money (#39). The eval band has Felix (a bandmate with a sign-in), the Band and Lighthouse video projects, and Friday's show at Pine Hollow (see seedMoney).
   { name: "money-we-owe-gas", turns: [{ say: "we owe Felix $42 for gas", calls: [/expenses\.add/], noCalls: [/payouts\./], noText: REFUSES }] },
   { name: "money-we-paid-felix", turns: [{ say: "we paid Felix $100 for Friday's show", calls: [/payouts\.add/], noCalls: [/expenses\.add/], noText: REFUSES }] },
@@ -218,15 +224,24 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
   const failures: string[] = [];
   for (const [n, t] of sc.turns.entries()) {
     const session = { uid: who.uid, role: "admin" as const, artistId: who.artistId, name: "Eval admin", threadId, runId: newRunId(), replyId: newMessageId(), ...(sc.voice ? { voice: true } : {}) };
+    const began = Date.now();
     const { stream, output } = flow.stream({ message: t.say, history, pageContext, session });
     for await (const _ of stream as AsyncIterable<AssistantEvent>) { /* drain */ }
-    const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean; trace?: ToolTrace[] };
+    const out = (await output) as { text: string; actions: AssistantAction[]; failed?: boolean; trace?: ToolTrace[]; usage?: { calls: number; inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; outputTokens: number; fellBack?: { atStep: number; reason: string } } };
+    TIMES.push(Date.now() - began);
+    const u = out.usage;
+    if (u) {
+      USAGE.turns++; USAGE.calls += u.calls; USAGE.inputTokens += u.inputTokens; USAGE.cacheReadTokens += u.cacheReadTokens; USAGE.cacheWriteTokens += u.cacheWriteTokens; USAGE.outputTokens += u.outputTokens;
+      if (u.fellBack) USAGE.fellBack++;
+    }
     const trace = out.trace ?? [];
     const names = trace.map((x) => x.name);
     const cards = out.actions.filter((a) => a.kind === "confirm").length;
     const asks = out.actions.filter((a) => a.kind === "reply").length;
     const where = `turn ${n + 1}`;
     if (out.failed) failures.push(`${where}: the model call failed`);
+    // A turn Claude handed to Gemini isn't Claude's pass.
+    if (u?.fellBack) failures.push(`${where}: fell back to Gemini at step ${u.fellBack.atStep}: ${u.fellBack.reason}`);
     let at = 0;
     for (const re of t.calls ?? []) { const i = names.findIndex((x, k) => k >= at && re.test(x)); if (i < 0) failures.push(`${where}: expected a call ${re} (calls: ${names.join(", ") || "none"})`); else at = i + 1; }
     for (const re of t.noCalls ?? []) if (names.some((x) => re.test(x))) failures.push(`${where}: unexpected call ${re}`);
@@ -245,8 +260,15 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
     if (t.text && !t.text.test(out.text)) failures.push(`${where}: reply doesn't match ${t.text}`);
     if (t.noText && t.noText.test(out.text)) failures.push(`${where}: reply matches ${t.noText}: "${out.text.slice(0, 160)}"`);
     const bad = trace.filter((x) => !x.ok).map((x) => `${x.name}: ${x.error}`);
-    console.log(`  ${where}: "${t.say.slice(0, 60).replace(/\n/g, " ")}"\n    calls: ${names.join(", ") || "none"}${bad.length ? `\n    errors: ${bad.join(" | ")}` : ""}\n    cards: ${cards}, asks: ${asks}\n    reply: ${out.text.replace(/\n/g, " ").slice(0, 300)}`);
-    if (!post) { history.push({ role: "user", text: t.say }, { role: "assistant", text: out.text || out.actions.map((a) => a.label).join(". ") }); continue; }
+    console.log(`  ${where}: "${t.say.slice(0, 60).replace(/\n/g, " ")}" (${((Date.now() - began) / 1000).toFixed(1)}s${u ? `, ${u.calls} model calls, ${u.inputTokens + u.cacheReadTokens + u.cacheWriteTokens} in (${u.cacheReadTokens} cached), ${u.outputTokens} out` : ""})\n    calls: ${names.join(", ") || "none"}${bad.length ? `\n    errors: ${bad.join(" | ")}` : ""}\n    cards: ${cards}, asks: ${asks}\n    reply: ${out.text.replace(/\n/g, " ").slice(0, 300)}`);
+    // Every scenario's next turn reads its history back from the thread, as the app does: a reply's "[Saved: …]" and card
+    // lines go with its words. (Until 2026-11-18 the plain scenarios passed only the reply text, so "move it to the 25th"
+    // read as if the rehearsal had never been added.) Only the post-show scenarios tap Yes on cards.
+    if (!post) {
+      await saveTurn({ threadId, replyId: session.replyId, pageContext, userText: t.say, replyText: out.text, actions: out.actions, userAt: new Date(), failed: !!out.failed, trace });
+      history = ((await loadHistory(who.uid, threadId)) ?? []) as typeof history; if (process.env.ROADIE_EVAL_SHOW_HISTORY) console.log("    history:", JSON.stringify(history));
+      continue;
+    }
     // As the app does: the turn is saved to the thread, she taps Yes on each card, and the next turn's history is read back from the thread.
     for (const x of trace) if (/^(income|payouts|shows\.afterShow)/.test(x.name)) console.log(`    ${x.name} ${x.input}`);
     for (const a of out.actions) if (a.kind === "confirm") console.log(`    card: ${a.label}`);
@@ -276,7 +298,7 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
   if (modelMode() === "fake" && !dry) { console.error("ROADIE_MODEL is fake: set ROADIE_MODEL=vertex (or gemini with GEMINI_API_KEY)."); process.exit(2); }
   const only = process.argv.slice(2);
   const picked = only.length === 1 && only[0] === "post-show" ? SCENARIOS.filter((s) => s.postShow) : only.length ? SCENARIOS.filter((s) => only.includes(s.name)) : SCENARIOS;
-  console.log(`Roadie eval: ${picked.length} scenario(s) on ${modelLabel()} (${modelMode()})${dry ? " DRY RUN on the canned model: this checks the harness, not Roadie" : ""}`);
+  console.log(`Roadie eval: ${picked.length} scenario(s) on ${claudeModel() ? `${claudeModel()} (effort ${claudeEffort()}, thinking ${claudeThinking().type})` : `${modelLabel()} (${modelMode()}${geminiThinking() ? `, thinking ${geminiThinking()}` : ""})`}${dry ? " DRY RUN on the canned model: this checks the harness, not Roadie" : ""}`);
   const who = picked.some((s) => !s.postShow) ? await band() : undefined;
   const results: [string, string[]][] = [];
   for (const sc of picked) {
@@ -287,5 +309,8 @@ async function runScenario(sc: Scenario, shared: { uid: string; artistId: string
   let failed = 0;
   for (const [name, f] of results) { if (f.length) failed++; console.log(`${f.length ? "FAIL" : "ok  "} ${name}${f.length ? `\n     ${f.join("\n     ")}` : ""}`); }
   console.log(`\n${results.length - failed}/${results.length} passed`);
+  const ts = [...TIMES].sort((a, b) => a - b);
+  console.log(`model: ${USAGE.calls} calls over ${USAGE.turns} turns; input ${USAGE.inputTokens + USAGE.cacheReadTokens + USAGE.cacheWriteTokens} tokens (${USAGE.cacheReadTokens} cache reads, ${USAGE.cacheWriteTokens} cache writes), output ${USAGE.outputTokens}; fell back to Gemini on ${USAGE.fellBack} turn(s)`);
+  if (ts.length) console.log(`reply time over ${ts.length} turns: median ${(ts[ts.length >> 1] / 1000).toFixed(1)}s, p90 ${(ts[Math.floor(ts.length * 0.9)] / 1000).toFixed(1)}s, total ${(ts.reduce((a, b) => a + b, 0) / 1000).toFixed(0)}s`);
   process.exit(failed ? 1 : 0);
 })();

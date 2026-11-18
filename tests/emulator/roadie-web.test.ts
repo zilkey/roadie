@@ -164,5 +164,6 @@ test("pitching offers a See the pitch button, whether it runs straight away or a
   assert.equal(asked.also, undefined); // nothing to see until they say yes
   await answerPending(who, { threadId: s.threadId, pendingId: (asked.output as { pendingId: string }).pendingId, decision: "yes" });
   const last = (await loadHistory(admin.uid, s.threadId))!.at(-1)!;
-  assert.equal(last.text, `Done. ${SEE_PITCH} [Saved: Added to the Pitch List: Orange Peel]`); // what was saved goes with the words (#69)
+  // What was saved goes with the words (#69), with its id so "change that" acts on it.
+  assert.match(last.text, new RegExp(`^Done\\. ${SEE_PITCH.replace("?", "\\?")} \\[Saved: Added to the Pitch List: Orange Peel \\(id \\w+\\)\\]$`));
 });
