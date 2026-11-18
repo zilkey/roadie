@@ -13,7 +13,7 @@ import { useAutosave } from "@/lib/autosave";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type SongStatus } from "@/lib/music";
+import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
@@ -86,6 +86,14 @@ function FileLine({ file, m, admin }: { file: FileRow; m: ReturnType<typeof useM
         <span className="sg-rowa">
           {audio ? <PlayToggle file={file} open={open} onOpen={setOpen} />
             : inline && <button className="btn ghost sm" onClick={() => setOpen(!open)} aria-expanded={open} data-testid="file-play">{open ? "Hide" : "Play"}</button>}
+          {/* The kind is guessed from the name when a file is added; an admin can correct it here (a Google Doc reads
+              inline at the bottom only as Lyrics or Charts). */}
+          {admin && (
+            <select className="select !w-auto" aria-label={`Kind of ${file.title}`} value={file.kind} disabled={busy} data-testid="file-kind"
+              onChange={(e) => call("files.update", { id: file.id, patch: { kind: e.target.value as FileKind } })}>
+              {(KIND_ORDER.includes(file.kind) ? KIND_ORDER : [...KIND_ORDER, file.kind]).map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+            </select>
+          )}
           <a className="btn ghost sm" href={file.url} target="_blank" rel="noreferrer" data-testid="file-open">{inline && !audio ? where : provider === "web" ? "Open link" : `Open in ${where}`}</a>
           {admin && <button className="btn danger sm" disabled={busy} onClick={() => confirm(`Remove ${file.title} from this song? ${isDrive ? "The Drive file stays put." : "The link itself is untouched."}`) && call("files.remove", { id: file.id })} data-testid="file-remove">Remove</button>}
         </span>
