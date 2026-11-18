@@ -452,6 +452,7 @@ async function fillMoney(s: Session, name: string, input: unknown): Promise<{ in
       // The card names the project the add will really land on: the same resolution the command runs.
       if (!projectId) projectId = await landingProject(makeCtx(s), add, out as LandingInput);
     }
+    if (name === "income.addMany" && typeof i.showId === "string") projectId = await landingProject(makeCtx(s), "income.add", { showId: i.showId });
     before.project = projectId ? ((await l.get("projects", projectId))?.name ?? "the project")
       : ((await runAs(makeCtx(s), "records.list", { kind: "projects", limit: 200 })).result as { rows: Row[] }).rows.find((p) => p.isDefault)?.name ?? "the project";
     return { input: out, before };

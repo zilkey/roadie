@@ -969,3 +969,11 @@ dialog.tp-sheet::backdrop { background: var(--backdrop); }
   .tax-line .tax-detail { display: none; }
   .tax-form { border-color: #000; }
 }
+
+/* My money: one table on wide screens, stacked rows under 640px. The total row is pinned first and tinted gold. */
+.my-money-table tr.my-money-total td { background: var(--admin-bg); border-bottom: 1px solid var(--admin-border); }
+.my-money-table tr.my-money-click { cursor: pointer; }
+.my-money-table tr.my-money-click:hover td { background: var(--empty); }
+.my-money-list { display: none; }
+.my-money-item { gap: 4px; }
+@media (max-width: 639px) { .my-money-list { display: grid; } .my-money-wide { display: none; } }

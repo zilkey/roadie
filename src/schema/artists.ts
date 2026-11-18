@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { entity, serverMask, id, timeZoneName } from "./common";
+import { entity, serverMask, id, timeZoneName, incomeCategory, paymentMethod } from "./common";
 import { slug } from "./normalize";
 
 /** URL name of an artist: /artists/{slug}/... Lowercase words joined by single hyphens ("nora-quill"). Unique (artists.create/update check). */
@@ -26,6 +26,13 @@ export const Configuration = z.strictObject({
  */
 export const ExpenseProject = z.strictObject({ userId: id, projectId: id.optional(), visibleProjectIds: z.array(id).optional() });
 export type ExpenseProject = z.infer<typeof ExpenseProject>;
+/** One line of the show Quick entry (Settings › Money): what came in and how. from blank = the venue for guarantee/door, else the category's name. */
+export const QuickEntryRow = z.strictObject({
+  id, category: incomeCategory, method: paymentMethod, from: z.string().trim().min(1).optional(), askWhatFor: z.boolean().optional(),
+});
+export type QuickEntryRow = z.infer<typeof QuickEntryRow>;
+/** The lines every show's Finances tab offers to fill in at once. Wrapped so per-lineup templates can join later. */
+export const ShowQuickEntry = z.strictObject({ rows: z.array(QuickEntryRow).max(20) });
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({
   id,
@@ -247,6 +254,8 @@ export const Artist = entity({
    * Each person's default project for their own expenses (Settings › Money), at most one entry per person. Used when the expense has no
    * show, rehearsal or tour project; a person with no entry (or whose project is closed) gets the artist's default project.
    */
+  /** The show Quick entry template (artists.setShowQuickEntry): the income lines the show page's Quick entry card offers. */
+  showQuickEntry: ShowQuickEntry.optional(),
   expenseProjects: z.array(ExpenseProject).refine((xs) => new Set(xs.map((x) => x.userId)).size === xs.length, "One entry per person").optional(),
   /** Ordered; the song page lists a song's values in this order. Changed only by artists.addSongField & co (removing one strips its values from songs). */
   songFields: z.array(SongField).default([]),

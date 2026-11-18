@@ -25,6 +25,7 @@ import { bandsintownItemOf, useBandsintownAutoCheck } from "@/components/shows/c
 import { SongTodosCard } from "@/components/shows/page/SongTodosCard";
 import { Comments } from "@/components/shows/page/Comments";
 import { MoneyInCard, MoneyOutCard } from "@/components/money/MoneyCards";
+import { QuickEntryCard } from "@/components/money/QuickEntryCard";
 import { ExpensesCard } from "@/components/shows/page/ExpensesCard";
 import { ProjectCard } from "@/components/shows/page/ProjectCard";
 import { NetCard } from "@/components/shows/page/NetCard";
@@ -105,6 +106,7 @@ function ShowView({ show }: { show: ShowRow }) {
             {tab === "finances" && <>
               {admin && <ProjectCard show={show} />}
               {admin && <MoneyInCard context={{ kind: "show", showId: show.id, projectId: show.projectId }} />}
+              {admin && <QuickEntryCard show={show} />}
               {admin && <MoneyOutCard context={{ kind: "show", showId: show.id, projectId: show.projectId }} splitEvenly />}
               {!admin && <ExpensesCard show={show} admin={admin} />}
             </>}

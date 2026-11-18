@@ -28,6 +28,8 @@ export const Income = entity({
   notes: z.string().optional(),
   /** On income that was copied off a deal's old income[] lines (src/schema/shows.ts): `${showId}:${line.id}`. Nothing sets it any more. */
   sourceKey: z.string().optional(),
+  /** income.addMany's request id: a repeated Add (double press, retry) finds these and writes nothing new. */
+  requestId: z.string().optional(),
 });
 export const IncomeInput = Income.omit(serverMask);
 export type Income = z.infer<typeof Income>;

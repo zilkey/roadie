@@ -53,7 +53,7 @@ export function refusal(name: string, input: unknown): string | undefined {
 export const ALWAYS_CONFIRM: readonly string[] = [
   "pitches.sendEmail", "email.send", "availability.ask", "availability.remind",                      // sends
   "expenses.setPaidBack", "expenses.payPerson", "expenses.markPaid",                                         // money
-  "income.add", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
+  "income.add", "income.addMany", "income.update", "income.setReceived", "payouts.add", "payouts.update", "payouts.markPaid",   // money in and out (*.remove asks too)
   "projects.create", "projects.update", "projects.close", "projects.reopen",                                 // what the money is for
   "shows.cancel", "shows.drop", "shows.setStatus", "shows.calendar", "rehearsals.calendar", // cancels, leaves the app
   "files.shareWithBand", "files.copyToBand", "drive.fix", "releases.files.copyToFolder",   // changes Drive sharing
@@ -179,6 +179,12 @@ const SUMMARY: Record<string, (i: Record<string, any>, before?: Before) => strin
   "income.add": (i, b) => {
     const amt = formatCents(Number(i.amount) || 0), cat = INCOME_LABEL[i.category]?.toLowerCase() ?? i.category;
     return i.receivedAt ? `${i.from} paid us ${amt} (${cat}${i.method ? `, ${METHOD_LABEL[i.method] ?? i.method}` : ""}, ${b?.project ?? "the project"})` : `${i.from} owes us ${amt} (${cat}, owed)`;
+  },
+  "income.addMany": (i, b) => {
+    const lines = (Array.isArray(i.lines) ? i.lines : []) as { amount?: number; category?: string; method?: string }[];
+    const total = lines.reduce((n, l) => n + (Number(l.amount) || 0), 0);
+    const each = lines.map((l) => `${INCOME_LABEL[l.category ?? ""] ?? l.category} ${METHOD_LABEL[l.method ?? ""] ?? l.method ?? ""} ${formatCents(Number(l.amount) || 0)}`.replace(/\s+/g, " ")).join(", ");
+    return `Add ${lines.length} line${lines.length === 1 ? "" : "s"}${b?.show ? ` to ${b.show}` : ""}, ${formatCents(total)} in all (${each}; ${b?.project ?? "the show's project"})`;
   },
   "income.update": (i, b) => `Change the ${b?.from ? `${b.from} ` : ""}income${b?.amount ? ` of ${formatCents(b.amount)}` : ""}: ${Object.keys(i.patch ?? {}).join(", ")}`,
   "income.setReceived": (i, b) => `Mark ${b?.from ?? "the"} income${b?.amount ? ` of ${formatCents(b.amount)}` : ""} as received${i.receivedAt ? ` on ${i.receivedAt}` : ""}${i.method ? ` (${METHOD_LABEL[i.method] ?? i.method})` : ""}`,

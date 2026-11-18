@@ -218,6 +218,37 @@ test("member projects (#86): admins limit what a member files to; a show's own p
   const r = await cmd("rehearsals.setExpenses", { id: rid, lines: [{ what: "Room", amount: 4000, payBack: true }] }, mctx);
   assert.equal(await project(r.added[0]), duo);
 });
+test("quick entry (#86): the template saves in order; addMany writes all lines on the show's project, marks the booked guarantee, and a repeat writes nothing", async () => {
+  assert.ok(!registry["artists.setShowQuickEntry"].roles.includes("member"));
+  const rows = [{ id: "g1", category: "guarantee", method: "check" }, { id: "t1", category: "tips", method: "venmo" }, { id: "m1", category: "merch", method: "cash", askWhatFor: true }];
+  await cmd("artists.setShowQuickEntry", { rows });
+  assert.deepEqual(((await db.get(SYS, "artists", TEST_ARTIST)) as any).showQuickEntry, { rows });
+  await code(cmd("artists.setShowQuickEntry", { rows: [rows[0], rows[0]] }), "invalid_input");
+
+  const s = await mkShow({ projectId: duo });
+  const booked = (await db.create(ctx, "income", { artistId: TEST_ARTIST, date: "2026-11-10", amount: 30000, category: "guarantee", from: "Deep End", projectId: duo, showId: s })).id;
+  const lines = [
+    { amount: 32000, category: "guarantee", method: "check" },
+    { amount: 4000, category: "tips", method: "venmo" },
+    { amount: 6000, category: "merch", method: "cash", notes: "2 shirts", received: false },
+  ];
+  const r = await cmd("income.addMany", { showId: s, lines, requestId: "req-quick-1" });
+  assert.equal(r.ids.length, 3);
+  assert.equal(r.ids[0], booked);
+  const all = (await db.list(SYS, "income")).filter((x: any) => x.showId === s && !x.deletedAt) as any[];
+  assert.equal(all.length, 3);
+  const by = (c: string) => all.find((x) => x.category === c);
+  assert.deepEqual([by("guarantee").amount, by("guarantee").method, !!by("guarantee").receivedAt, by("guarantee").receivedBy], [32000, "check", true, ctx.uid]);
+  assert.deepEqual([by("tips").from, by("tips").projectId, by("tips").date, !!by("tips").receivedAt], ["Tips", duo, "2026-11-10", true]);
+  assert.deepEqual([by("merch").notes, by("merch").receivedAt, by("merch").from], ["2 shirts", undefined, "Merch"]);
+  assert.equal((await dealTotals(s)).income, 42000);
+  // The same request again (a double press): nothing new.
+  assert.deepEqual((await cmd("income.addMany", { showId: s, lines, requestId: "req-quick-1" })).ids.sort(), r.ids.sort());
+  assert.equal((await db.list(SYS, "income")).filter((x: any) => x.showId === s && !x.deletedAt).length, 3);
+  // A closed show project refuses the whole Add.
+  await cmd("projects.close", { id: duo });
+  await code(cmd("income.addMany", { showId: s, lines: [{ amount: 100, category: "tips", method: "cash" }] }), "invalid_state");
+});
 test("expenses: default project, the show's project, admin on behalf, member refused", async () => {
   const s = await mkShow({ projectId: duo });
   const a = await cmd("expenses.add", { amount: 1000, what: "strings", category: "gear" });

@@ -29,7 +29,7 @@ async function addExpense(page: Page, what: string) {
 /** The open band's Money page shows this band's expense (on the project) and none of the other band's. */
 async function expectOnlyThisBand(page: Page, mine: (typeof BANDS)[number], other: (typeof BANDS)[number]) {
   const main = page.locator("main");
-  const row = page.getByTestId("my-expenses").locator('[data-testid^="my-expense-"]', { hasText: mine.what });
+  const row = page.getByTestId("my-money-table").locator('[data-testid^="my-money-row-"]', { hasText: mine.what });
   await expect(row).toContainText(mine.project);
   await expect(row).toContainText("$18.00");
   await expect(main).not.toContainText(other.what);
@@ -91,7 +91,7 @@ test.describe("on a phone", () => {
     await expect(page.getByTestId("add-expense-link").first()).toBeVisible();
     await expect(page.locator("main")).not.toContainText(noraWhat);
     await addExpense(page, fernWhat);
-    const row = page.getByTestId("my-expenses").locator('[data-testid^="my-expense-"]', { hasText: fernWhat });
+    const row = page.getByTestId("my-money-table").locator('[data-testid^="my-money-row-"]', { hasText: fernWhat });
     await expect(row).toContainText(fern.project);
     await expect(page.locator("main")).not.toContainText(noraWhat);
   });

@@ -22,6 +22,10 @@ test("an admin limits a member to one project; the member sees no Project field 
   const felixRow = a.locator('[data-testid^="expense-project-row-"]', { hasText: "Felix" });
   const chips = felixRow.locator('[data-testid^="visible-projects-"]');
   await expect(chips).toBeVisible();
+  // Start from no limit, so a retry after a failed run doesn't toggle the chip back off.
+  const all = chips.getByRole("button", { name: "All projects" });
+  if ((await all.getAttribute("aria-pressed")) !== "true") await all.click();
+  await expect(all).toHaveAttribute("aria-pressed", "true");
   const tour = chips.getByRole("button", { name: "Spring West Tour" });
   await tour.click();
   await expect(tour).toHaveAttribute("aria-pressed", "true");
@@ -37,7 +41,7 @@ test("an admin limits a member to one project; the member sees no Project field 
   await p.getByTestId("expense-what").fill(WHAT);
   await p.getByTestId("exp-save").click();
   await expect(p).toHaveURL(/\/money$/);
-  await expect(p.getByTestId("my-expenses").locator('[data-testid^="my-expense-"]', { hasText: WHAT })).toContainText("Spring West Tour");
+  await expect(p.getByTestId("my-money-table").locator('[data-testid^="my-money-row-"]', { hasText: WHAT })).toContainText("Spring West Tour");
 
   // Put Felix back on every project.
   await chips.getByRole("button", { name: "All projects" }).click();

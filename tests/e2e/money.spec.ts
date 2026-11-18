@@ -31,9 +31,9 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await expect(p.getByTestId("expense-receipt")).toHaveValue(/^http/);
   await p.getByTestId("exp-save").click();
   await expect(p).toHaveURL(/\/money$/);
-  const mine = p.locator('[data-testid^="expense-"]', { hasText: WHAT }).first();
+  const mine = p.getByTestId("my-money-table").locator('[data-testid^="my-money-row-"]', { hasText: WHAT });
   await expect(mine).toContainText("$64.00");
-  await expect(mine).toContainText("waiting");
+  await expect(mine).toContainText("Owed to you");
 
   await signInAs(page, "rudy");
   await openTab(page, "money");
@@ -45,10 +45,10 @@ test("member adds an expense (receipt from Drive search); admin marks it paid ba
   await expect(owe).not.toContainText(WHAT);
 
   await p.reload();
-  const card = p.locator('[data-testid^="expense-"]', { hasText: WHAT }).first();
-  await expect(card).toContainText("paid back");
-  await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Remove" })).toHaveCount(0);
+  const card = p.getByTestId("my-money-table").locator('[data-testid^="my-money-row-"]', { hasText: WHAT });
+  await expect(card).toContainText("Paid back");
+  await card.click();
+  await expect(p.getByTestId("expense-editor")).toHaveCount(0); // paid back: read-only, no editor
   await iris.close();
 });
 

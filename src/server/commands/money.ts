@@ -11,9 +11,9 @@ import { gasCents, tripMiles } from "../gas/math";
 import { routeMiles } from "../gas/route";
 import { areaFor, priceFor } from "../gas/price";
 import { requireContact } from "../venues";
-import { expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind, type DrivingSettings } from "@/schema";
+import { QuickEntryRow, expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind, type DrivingSettings } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
-import { canFileTo, isOwedBill, memberProjectsOf, owesBack, type MemberProjects } from "@/lib/money";
+import { canFileTo, INCOME_LABEL, isOwedBill, memberProjectsOf, owesBack, type MemberProjects } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 import { requireTrackOnProject } from "./releases";
 import { requireEntryOnTour, requireTourFor } from "./tours";
@@ -565,6 +565,74 @@ export const incomeAdd = defineCommand({
   }),
 });
 
+const QuickLine = z.strictObject({
+  amount: z.number().int().positive(), category: incomeCategory, method: paymentMethod,
+  /** Who it came from; left out = the venue's name for a guarantee or door, else the category's name ("Tips"). */
+  from: z.string().trim().min(1).optional(),
+  /** "What for" (merch: "8 shirts, 2 CDs"), saved as the income's notes. */
+  notes: z.string().trim().min(1).optional(),
+  /** false = still owed to us. Default: received today. */
+  received: z.boolean().optional(),
+});
+export const incomeAddMany = defineCommand({
+  name: "income.addMany", roles: ["admin", "mcp"],
+  description: "A show's Quick entry: several income lines for one show at once (the show page's Quick entry card; artists.showQuickEntry has the band's usual lines). " +
+    "showId; lines [{ amount (cents), category, method, from? (default: the venue for guarantee/door, else the category's name), notes? (what for), received? (default true: received today) }]. " +
+    "All lines are written together or none: dated the show's date, on the show's project, tour tag copied. A guarantee line on a show with an owed guarantee marks that one received (with this method and amount) instead of adding a second. " +
+    "receivedBy (an admin's uid) is whose account it landed in (default: you, in the app). requestId makes a repeat safe: the same id again writes nothing. Returns { ids }.",
+  input: z.strictObject({ showId: id1, lines: z.array(QuickLine).min(1).max(20), receivedBy: id1.optional(), requestId: z.string().min(8).max(80).optional() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    if (i.requestId) {
+      const done = (await w.query("income", (q) => q.where("requestId", "==", i.requestId))).filter((x) => !x.deletedAt);
+      if (done.length) return { ids: done.map((x) => x.id) };
+    }
+    const show = await liveShow(w, i.showId);
+    const projectId = await projectFor(w, { show });
+    const artistId = (await artistFor(w, show.artistId as string | undefined)).id;
+    if (i.receivedBy) await requirePayer(w, i.receivedBy);
+    const today = await todayOf(ctx);
+    const by = i.receivedBy ?? (ctx.role === "admin" ? ctx.uid : undefined);
+    const tour = await tourTagFor(w, { show });
+    const venue = (show.venue as { name?: string } | undefined)?.name;
+    // The booked guarantee (owed, on this show) is marked received by the first guarantee line, never doubled.
+    const owed = (await w.query("income", (q) => q.where("showId", "==", i.showId)))
+      .filter((x) => !x.deletedAt && x.category === "guarantee" && !x.receivedAt);
+    const ids: string[] = [];
+    for (const l of i.lines) {
+      const received = l.received !== false;
+      const got = received ? { receivedAt: today, ...(by ? { receivedBy: by } : {}) } : {};
+      const extra = { ...(i.requestId ? { requestId: i.requestId } : {}), ...(l.notes ? { notes: l.notes } : {}) };
+      const booked = l.category === "guarantee" ? owed.shift() : undefined;
+      if (booked) {
+        await w.update("income", booked.id, { amount: l.amount, method: l.method, ...got, ...extra });
+        ids.push(booked.id);
+        continue;
+      }
+      const from = l.from ?? ((l.category === "guarantee" || l.category === "door") && venue ? venue : INCOME_LABEL[l.category] ?? l.category);
+      const r = await w.create("income", {
+        amount: l.amount, category: l.category, method: l.method, from, showId: i.showId, artistId, projectId,
+        date: (show.date as string | undefined) ?? today, ...tour, ...got, ...extra,
+      });
+      ids.push(r.id);
+    }
+    const rows = await Promise.all(ids.map((id) => w.get("income", id)));
+    await refreshDealTotals(w, i.showId, { income: rows.filter((x): x is Doc => !!x) });
+    return { ids };
+  }),
+});
+
+export const artistsSetShowQuickEntry = defineCommand({
+  name: "artists.setShowQuickEntry", roles: ["admin"],
+  description: "Set the band's show Quick entry lines (Settings › Money), in order: rows [{ id (short, stable), category, method, from? (blank: the venue for guarantee/door, else the category's name), askWhatFor? }]. Up to 20. Returns { ok }.",
+  input: z.strictObject({ rows: z.array(QuickEntryRow).max(20) }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    if (new Set(i.rows.map((r) => r.id)).size !== i.rows.length) throw new AppError("invalid_input", "Each row needs its own id", 400);
+    const artist = await artistFor(w);
+    await w.update("artists", artist.id, { showQuickEntry: { rows: i.rows } });
+    return { ok: true };
+  }),
+});
+
 export const incomeUpdate = defineCommand({
   name: "income.update", roles: ["admin", "mcp"],
   description: "Fix an income record (id from records.list income or context.now): amount, category, from, date, projectId (an open project), showId (null clears), method / receivedAt / notes / tourId / tourEntryId (null clears). receivedAt:null = not received after all.",
@@ -709,4 +777,4 @@ export const payoutsMarkPaid = defineCommand({
   }),
 });
 
-export const moneyCommands = [incomeAdd, incomeUpdate, incomeRemove, incomeSetReceived, incomeAssign, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
+export const moneyCommands = [incomeAdd, incomeAddMany, artistsSetShowQuickEntry, incomeUpdate, incomeRemove, incomeSetReceived, incomeAssign, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
