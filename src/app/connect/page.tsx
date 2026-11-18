@@ -183,7 +183,7 @@ export default function Connect() {
               <fieldset className="grid gap-2">
                 <legend className="lbl mb-1">Which artist?</legend>
                 {info.artists.map((a) => (
-                  <label key={a.artistId} className={`card flex items-center gap-3 ${a.ai ? "" : "opacity-60"}`}>
+                  <label key={a.artistId} className="opt">
                     <input type="radio" name="artist" value={a.artistId} checked={picked === a.artistId} disabled={!a.ai} onChange={() => setPicked(a.artistId)} data-testid={`connect-artist-${a.artistId}`} />
                     <span className="grid"><b>{a.name}</b>{!a.ai && <span className="s">No AI access here</span>}</span>
                   </label>
