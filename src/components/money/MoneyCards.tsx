@@ -15,7 +15,7 @@ import { MoneyOutModal } from "./MoneyOutModal";
 import type { MoneyCardProps, MoneyContext, MoneyDefaults } from "./modals";
 
 /**
- * Money in and Money out, the admin's two money cards on a show (Finances), rehearsal, release (Money) and release
+ * Money in and Money out, the admin's two money cards on a show (its Money tab), rehearsal, release (Money) and release
  * track. Members keep their own expenses card. Each lists the records on its context and opens the matching modal
  * (MoneyInModal / MoneyOutModal) with that context.
  *

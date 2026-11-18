@@ -46,7 +46,7 @@ function Page() {
 }
 
 /**
- * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Promotion / Finances. The checklists are a 360px column on the right from lg up
+ * "[venue] · [date]" (a festival edition's show: "[edition] [date]") with the status pill; tabs Show Details / Setlist / Promotion / Money. The checklists are a 360px column on the right from lg up
  * (on every tab, the setlist's too: they are the show's to-dos), and stack under the tab's cards, above Comments, below that.
  * Comments stay in the main column. Admins get a ⋮ menu top right with Archive show (Preview as band member is in the account menu). There is no page-level Edit:
  * values edit where they sit, and only real forms flip.
@@ -86,7 +86,7 @@ function ShowView({ show }: { show: ShowRow }) {
         <ErrorBox error={error} />
       </header>
 
-      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["promotion", "Promotion"], ["finances", "Finances"]]} />
+      <Tabs<Tab> testid="show-tab" value={tab} onChange={setTab} options={[["details", "Show Details"], ["setlist", "Setlist"], ["promotion", "Promotion"], ["finances", "Money"]]} />
 
       <div className="show-cols">
         <div className="show-main">

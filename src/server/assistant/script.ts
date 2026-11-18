@@ -207,7 +207,7 @@ function first(t: string, page?: Page, raw = t): Scripted {
   }
 
   if (/\bpay (everyone|everybody|the band|all)\b/.test(t)) {
-    return { text: "Roadie doesn't track payouts right now. Enter the show's income on its Finances tab." };
+    return { text: "Roadie doesn't track payouts right now. Enter the show's income on its Money tab." };
   }
 
   const go = GO.exec(t);

@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { CAL, GMAIL, A } from "./env";
+import { CAL, GMAIL, A, FIRESTORE } from "./env";
 import { SEED, day, fmtPitchDate, mmmD } from "./dates";
 import { addDays } from "../../src/lib/shows";
 
@@ -301,3 +301,26 @@ test("Shows list: Played Net column matches the show page's Net card; members ha
   await hugo.close();
 });
 
+
+test("Shows list: totals come from the show's money, even when its stored totals are missing (imported shows)", async ({ page, request }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/shows#played"));
+  const row = page.getByTestId("shows-row").filter({ has: page.locator("td.num:nth-child(4):not(:has(.dash))") }).first();
+  await expect(row).toBeVisible();
+  const id = (await row.getAttribute("data-id"))!;
+  const cells = async () => [await row.locator("td.num").nth(0).innerText(), await row.locator("td.num").nth(1).innerText(), await row.getByTestId("shows-net").innerText()];
+  const before = await cells();
+  // Drop showDeals/{id}.totals the way an import leaves it, then put it back.
+  const url = `http://${FIRESTORE}/v1/projects/demo-band-tracker/databases/(default)/documents/showDeals/${id}`;
+  const owner = { authorization: "Bearer owner" };
+  const saved = ((await (await request.get(url, { headers: owner })).json()) as { fields: Record<string, unknown> }).fields;
+  try {
+    expect((await request.patch(`${url}?updateMask.fieldPaths=totals`, { headers: owner, data: { fields: {} } })).ok()).toBeTruthy();
+    await page.reload();
+    const again = page.getByTestId("shows-row").and(page.locator(`[data-id="${id}"]`));
+    await expect(again.getByTestId("shows-net")).toHaveText(before[2]!);
+    expect([await again.locator("td.num").nth(0).innerText(), await again.locator("td.num").nth(1).innerText()]).toEqual(before.slice(0, 2));
+  } finally {
+    if (saved.totals) await request.patch(`${url}?updateMask.fieldPaths=totals`, { headers: owner, data: { fields: { totals: saved.totals } } });
+  }
+});

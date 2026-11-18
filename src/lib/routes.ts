@@ -15,7 +15,7 @@ export const ROUTES = {
   showsDropped: { title: "Dropped shows", path: "/shows#dropped" },
   show: { title: "Show", path: "/shows/:id", params: ["id"] },
   showSetlist: { title: "Show setlist", path: "/shows/:id?tab=setlist", params: ["id"] },
-  showFinances: { title: "Show finances", path: "/shows/:id?tab=finances", params: ["id"] },
+  showFinances: { title: "Show money", path: "/shows/:id?tab=finances", params: ["id"] },
   showAfter: { title: "After the show", path: "/shows/:id/after", params: ["id"] },
   newShow: { title: "New show", path: "/shows/new" },
   booking: { title: "Booking", path: "/booking" },

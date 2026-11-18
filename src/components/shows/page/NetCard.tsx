@@ -7,9 +7,10 @@ import { AdminOnlyBadge, ShowCard } from "./kit";
 /** This show's money (admins only), summed from the show's own income, payout and expense records. */
 export function NetCard({ show }: { show: ShowRow }) {
   const where: [string, "==", string][] = [["showId", "==", show.id]];
-  const income = useCollection<IncomeLike>("income", { where }).rows ?? [];
-  const payouts = useCollection<PayoutLike>("payouts", { where }).rows ?? [];
-  const expenses = useCollection<ExpenseLike>("expenses", { where }).rows ?? [];
+  const inc = useCollection<IncomeLike>("income", { where }).rows;
+  const pay = useCollection<PayoutLike>("payouts", { where }).rows;
+  const exp = useCollection<ExpenseLike>("expenses", { where }).rows;
+  const income = inc ?? [], payouts = pay ?? [], expenses = exp ?? [];
   const projects = useCollection<ProjectLike>("projects").rows ?? [];
   const pid = show.projectId ?? defaultProject(projects)?.id;
   const name = projects.find((p) => p.id === pid)?.name ?? "General";
@@ -19,6 +20,8 @@ export function NetCard({ show }: { show: ShowRow }) {
   const row = (label: string, v: string, testid: string, bold?: boolean) => (
     <div className={`money-row${bold ? " font-bold" : ""}`}><span>{label}</span><span data-testid={testid}>{v}</span></div>
   );
+  // Until all three have loaded, no numbers: a $0 that isn't true yet is worse than a blank card.
+  if (!inc || !pay || !exp) return <ShowCard title="This show" testid="net-card" badge={<AdminOnlyBadge />}>{null}</ShowCard>;
   return (
     <ShowCard title="This show" testid="net-card" badge={<AdminOnlyBadge />}>
       {row("In", formatCents(t.income), "net-in")}

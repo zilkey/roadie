@@ -10,9 +10,11 @@ import { roleIn, type Income, type User } from "@/schema";
 import type { QuickEntryRow } from "@/schema/artists";
 
 /**
- * Quick entry (show Finances tab, admins only): the artist's template of income lines (Settings › Money) filled in at once after a show.
+ * Quick entry (show Money tab, admins only): the artist's template of income lines (Settings › Money) filled in at once after a show.
  * Each line has an amount, a "What for" when the row asks, and Received (ticked; unticked = still owed). Add writes the lines with income.addMany
  * on the show's project. The draft is kept per show in localStorage until Add or Cancel, so leaving the page and coming back restores it.
+ * Add and Cancel both close the card (show.quickEntryClosed); a closed card is one line with "Open quick entry". Who got it starts on the
+ * band's setting (Settings › Money), else you.
  * The booked guarantee, if still owed, pre-fills the first Guarantee row: Add marks that one received instead of adding a second.
  */
 interface Draft { amounts: Record<string, string>; what: Record<string, string>; received: Record<string, boolean>; requestId: string }
@@ -28,7 +30,7 @@ function load(k: string): Draft {
 const shortDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const plain = (c: number) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
 
-export function QuickEntryCard({ show }: { show: { id: string; date: string; status: string; projectId?: string } }) {
+export function QuickEntryCard({ show }: { show: { id: string; date: string; status: string; projectId?: string; quickEntryClosed?: boolean } }) {
   const { artistId, doc } = useArtist();
   const me = useProfile();
   const income = useCollection<Income>("income", { where: [["showId", "==", show.id]] }).rows;
@@ -44,7 +46,8 @@ export function QuickEntryCard({ show }: { show: { id: string; date: string; sta
   const template = doc?.showQuickEntry?.rows ?? [];
   const projectName = projects.find((p) => p.id === (show.projectId ?? defaultProject(projects)?.id))?.name ?? "the default project";
   const admins = users.filter((u) => roleIn(u, artistId) === "admin").sort((a, b) => a.name.localeCompare(b.name));
-  const whoVal = who || (admins.some((u) => u.id === me.userId) ? me.userId : admins[0]?.id ?? "");
+  const usual = doc?.showQuickEntry?.receivedBy;
+  const whoVal = who || [usual, me.userId].find((id) => admins.some((u) => u.id === id)) || admins[0]?.id || "";
 
   const head = (
     <span className="s">Goes on <b>{projectName}</b>, the show&apos;s project · dated {shortDate(show.date)}</span>
@@ -56,6 +59,13 @@ export function QuickEntryCard({ show }: { show: { id: string; date: string; sta
     return shell(
       <p className="s">Set up the lines you fill in after every show (guarantee, tips, merch, cash or Venmo), and they&apos;ll show here.{" "}
         <Link href="/admin/money" data-testid="qe-setup-link">Set up quick entry</Link></p>,
+    );
+  }
+  if (show.quickEntryClosed) {
+    return shell(
+      <button type="button" className="btn outline" disabled={busy} onClick={() => void call("shows.setQuickEntryOpen", { showId: show.id, open: true })} data-testid="qe-open">
+        Open quick entry
+      </button>,
     );
   }
   if (!draft || !doc || income === null) return shell(null);
@@ -76,6 +86,9 @@ export function QuickEntryCard({ show }: { show: { id: string; date: string; sta
   const clear = () => {
     try { window.localStorage.removeItem(k); } catch { /* ignore */ }
     setDraft(fresh());
+  };
+  const cancel = async () => {
+    if (await call("shows.setQuickEntryOpen", { showId: show.id, open: false })) clear();
   };
   const already = (r: QuickEntryRow) => income.filter((x) => !x.deletedAt && x.category === r.category && x.method === r.method).reduce((n, x) => n + x.amount, 0);
 
@@ -123,7 +136,7 @@ export function QuickEntryCard({ show }: { show: { id: string; date: string; sta
         </label>
         <span className="s">{filled.length} {filled.length === 1 ? "line" : "lines"} · {formatCents(total)}</span>
         <span className="flex items-center gap-2">
-          <button type="button" className="btn outline" onClick={clear} data-testid="qe-cancel">Cancel</button>
+          <button type="button" className="btn outline" disabled={busy} onClick={() => void cancel()} data-testid="qe-cancel">Cancel</button>
           <button type="button" className="btn acc" disabled={busy || filled.length === 0 || badAmount || missingWhat} onClick={() => void add()} data-testid="qe-add">
             Add {filled.length} {filled.length === 1 ? "line" : "lines"}
           </button>

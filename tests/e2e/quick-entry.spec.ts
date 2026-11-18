@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { A, APP, AUTH, FIRESTORE, ARTIST_SLUG } from "./env";
 
-// The show Quick entry template (Settings › Money) and its card on a show's Finances tab. Every test works on a show made here
+// The show Quick entry template (Settings › Money) and its card on a show's Money tab. Every test works on a show made here
 // (no other spec counts its money lines) and the template is set at the start of each, so the tests don't depend on order.
 test.describe.configure({ mode: "serial" });
 
@@ -67,6 +67,14 @@ async function openFinances(page: Page) {
   await page.goto(A(`/shows/${showId}?tab=finances`));
   await expect(page.getByTestId("show-page")).toBeVisible();
 }
+/** Add and Cancel close the card for the show; earlier tests leave it closed. */
+async function openCard(page: Page) {
+  await openFinances(page);
+  const card = page.getByTestId("quick-entry");
+  await expect(card.getByTestId("qe-open").or(card.locator('[data-testid^="qe-line-"]').first())).toBeVisible();
+  if (await card.getByTestId("qe-open").isVisible()) await card.getByTestId("qe-open").click();
+  await expect(card.locator('[data-testid^="qe-line-"]').first()).toBeVisible();
+}
 const line = (page: Page, i: number) => page.getByTestId("quick-entry").locator('[data-testid^="qe-line-"]').nth(i);
 const amount = (page: Page, i: number) => line(page, i).locator('[data-testid^="qe-amount-"]');
 const what = (page: Page, i: number) => line(page, i).locator('[data-testid^="qe-what-"]');
@@ -124,24 +132,52 @@ test("set up three rows in settings, fill two on a show, the draft survives leav
   await expect(lines).toHaveCount(2);
   await expect(lines.filter({ hasText: "Tips" })).toContainText("$40.00");
   await expect(lines.filter({ hasText: "Merch" })).toContainText("$60.00");
+  // Add closes the card; it stays closed after a reload until it's opened again.
+  await expect(card.getByTestId("qe-open")).toBeVisible();
+  await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(0);
+  await page.reload();
+  await expect(card.getByTestId("qe-open")).toBeVisible();
+  await card.getByTestId("qe-open").click();
   await expect(amount(page, 1)).toHaveValue("");
   await expect(amount(page, 2)).toHaveValue("");
   await expect(what(page, 2)).toHaveValue("");
   await expect(line(page, 1).locator('[data-testid^="qe-note-"]')).toContainText("already has $40.00 on this show");
 });
 
-test("Cancel clears the draft", async ({ page }) => {
+test("Cancel closes the card and clears the draft; Open quick entry brings it back empty", async ({ page }) => {
   await setTemplate(ROWS);
   await signIn(page, "rudy");
-  await openFinances(page);
+  await openCard(page);
   await amount(page, 1).fill("25");
   await page.reload();
   await expect(amount(page, 1)).toHaveValue("25");
+  const card = page.getByTestId("quick-entry");
   await page.getByTestId("qe-cancel").click();
-  await expect(amount(page, 1)).toHaveValue("");
+  await expect(card.getByTestId("qe-open")).toBeVisible();
   await page.reload();
-  await expect(page.getByTestId("quick-entry").locator('[data-testid^="qe-line-"]')).toHaveCount(3);
+  await expect(card.getByTestId("qe-open")).toBeVisible();
+  await card.getByTestId("qe-open").click();
+  await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(3);
   await expect(amount(page, 1)).toHaveValue("");
+});
+
+test("Who gets it in Settings starts the card's Who got it on that admin, still changeable", async ({ page }) => {
+  await setTemplate(ROWS);
+  await signIn(page, "rudy");
+  await page.goto(A("/admin/money"));
+  const pick = page.getByTestId("quick-entry-settings").getByTestId("qe-who-default");
+  await expect(pick).toHaveValue("");
+  const options = await pick.locator("option").evaluateAll((os) => os.map((o) => ({ value: (o as HTMLOptionElement).value, text: o.textContent ?? "" })));
+  const target = options.filter((o) => o.value).at(-1)!;
+  await pick.selectOption(target.value);
+  await page.reload();
+  await expect(page.getByTestId("quick-entry-settings").getByTestId("qe-who-default")).toHaveValue(target.value);
+  await openCard(page);
+  await expect(page.getByTestId("qe-who")).toHaveValue(target.value);
+  await page.goto(A("/admin/money"));
+  await page.getByTestId("quick-entry-settings").getByTestId("qe-who-default").selectOption("");
+  await page.reload();
+  await expect(page.getByTestId("quick-entry-settings").getByTestId("qe-who-default")).toHaveValue("");
 });
 
 test("with no template the card links to the setup", async ({ page }) => {

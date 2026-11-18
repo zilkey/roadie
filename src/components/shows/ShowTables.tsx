@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "@/lib/artist";
-import { useDocs } from "@/lib/firestore-hooks";
+import { useCollection } from "@/lib/firestore-hooks";
+import { showTotals } from "@/lib/money";
 import { fmtDur, fmtLong, fmtTime, showName, type ShowFilter } from "@/lib/shows";
 import { fmtDuration } from "@/lib/duration";
 import { setlistTotal, transitionOf } from "@/lib/music";
-import type { ShowDeal, ShowField, Setlist } from "@/schema";
+import type { Expense, Income, Payout, ShowField, Setlist } from "@/schema";
 import type { Row } from "@/lib/firestore-hooks";
 import type { ShowRow } from "./common";
 
@@ -82,13 +83,25 @@ function Upcoming({ shows, setlists, cf }: { shows: ShowRow[]; setlists: Row<Set
 function Played({ shows, admin, cf }: { shows: ShowRow[]; admin: boolean; cf: ShowField[] }) {
   const [n, setN] = useState(PAGE);
   const rows = shows.slice(0, n);
-  // Admins only (rules make showDeals admin-only): one read per row on screen.
-  const deals = useDocs<ShowDeal>("showDeals", rows.map((s) => s.id), { skip: !admin });
+  // Admins only: summed live from the band's income, payouts and expenses (not showDeals.totals, which only shows with a
+  // booked deal have, and imported money never refreshed). Same math as the show page's Net card: income - paid out - expenses.
+  const income = useCollection<Income>("income", { skip: !admin }).rows;
+  const payouts = useCollection<Payout>("payouts", { skip: !admin }).rows;
+  const expenses = useCollection<Expense>("expenses", { skip: !admin }).rows;
+  const byShow = useMemo(() => {
+    const m = new Map<string, { income: Income[]; payouts: Payout[]; expenses: Expense[] }>();
+    const at = (id: string) => m.get(id) ?? (m.set(id, { income: [], payouts: [], expenses: [] }), m.get(id)!);
+    for (const x of income ?? []) if (x.showId) at(x.showId).income.push(x);
+    for (const x of payouts ?? []) if (x.showId) at(x.showId).payouts.push(x);
+    for (const x of expenses ?? []) if (x.showId) at(x.showId).expenses.push(x);
+    return new Map([...m].map(([id, v]) => [id, showTotals(v)]));
+  }, [income, payouts, expenses]);
   if (!shows.length) return <Empty tab="played">Nothing yet.</Empty>;
-  const totals = (id: string) => deals.byId.get(id)?.totals;
+  const loaded = !!income && !!payouts && !!expenses;
+  // Nothing recorded on a show -> dashes, not $0.
+  const totals = (id: string) => (loaded ? byShow.get(id) : undefined);
   const sum = (k: "income" | "expenses") => rows.reduce((a, s) => a + (totals(s.id)?.[k] ?? 0), 0);
-  // Same math as showTotals() / the show page's Net card: income - paid out - expenses. No totals doc yet -> no Net.
-  const netOf = (id: string) => { const t = totals(id); return t ? t.income - (t.paidOut ?? 0) - t.expenses : undefined; };
+  const netOf = (id: string) => totals(id)?.net;
   const netSum = rows.reduce((a, s) => a + (netOf(s.id) ?? 0), 0);
   const foot = (
     <div className="show-foot" data-testid="shows-totals">

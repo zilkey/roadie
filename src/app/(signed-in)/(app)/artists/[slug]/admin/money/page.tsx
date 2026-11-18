@@ -74,7 +74,7 @@ function MoneySettings() {
           })}
         </div>
       )}
-      {doc && <QuickEntrySettings rows={doc.showQuickEntry?.rows ?? []} />}
+      {doc && <QuickEntrySettings rows={doc.showQuickEntry?.rows ?? []} receivedBy={doc.showQuickEntry?.receivedBy} />}
       <ErrorBox error={error} />
     </div>
   );
@@ -85,8 +85,12 @@ const METHODS = Object.entries(METHOD_LABEL) as [QuickEntryRow["method"], string
 const newId = () => crypto.randomUUID().slice(0, 8);
 
 /** The show Quick entry template: one line per row, in order. Every change saves the whole list; the From box saves on blur. */
-function QuickEntrySettings({ rows: saved }: { rows: QuickEntryRow[] }) {
+function QuickEntrySettings({ rows: saved, receivedBy }: { rows: QuickEntryRow[]; receivedBy?: string }) {
   const { call, error, busy } = useCommand();
+  const { artistId } = useArtist();
+  const admins = (useCollection<User>("users").rows ?? []).filter((u) => roleIn(u, artistId) === "admin").sort((a, b) => a.name.localeCompare(b.name));
+  const [who, setWho] = useState<string | null>(null);
+  useEffect(() => setWho(null), [receivedBy]);
   // What was just changed shows at once; the saved list takes over again when it arrives.
   const [local, setLocal] = useState<QuickEntryRow[] | null>(null);
   useEffect(() => setLocal(null), [saved]);
@@ -111,7 +115,14 @@ function QuickEntrySettings({ rows: saved }: { rows: QuickEntryRow[] }) {
   return (
     <div className="card" data-testid="quick-entry-settings">
       <span className="lbl">Show quick entry</span>
-      <p className="s mb-2">The lines you fill in after every show. They show on each show&apos;s Finances tab, in this order. Changes save as you go.</p>
+      <p className="s mb-2">The lines you fill in after every show. They show on each show&apos;s Money tab, in this order. Changes save as you go.</p>
+      <label className="flex items-center gap-2 s mb-2">Who gets it
+        <select className="select !w-auto" value={who ?? receivedBy ?? ""} disabled={busy} data-testid="qe-who-default"
+          onChange={(e) => { const v = e.target.value; setWho(v); void call("artists.setShowQuickEntry", { rows, receivedBy: v || null }); }}>
+          <option value="">Whoever adds it</option>
+          {admins.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+      </label>
       {rows.map((r, i) => (
         <div key={r.id} className="money-row items-center flex-wrap gap-2" data-testid={`qe-row-${r.id}`}>
           <button type="button" className="btn ghost sm" aria-label="Move up" disabled={busy || i === 0} onClick={() => void move(i, -1)} data-testid={`qe-up-${r.id}`}>↑</button>

@@ -92,6 +92,7 @@ test("My money is one table: a pinned total, sorting, no reimbursement row, and 
   const rows = table.locator('[data-testid^="my-money-row-"]');
   await expect(rows.filter({ hasText: PAID }).getByTestId(/my-money-status-/)).toContainText("Paid back");
   await expect(rows.filter({ hasText: /Reimbursement/i })).toHaveCount(0);
+  await expect(rows.filter({ hasText: OPEN }).getByTestId(/my-money-status-/)).toContainText("Owed to you"); // the table has the new row before counting
   // The total is the sum of what is still owed back.
   const owedRows = rows.filter({ has: p.locator('[data-testid^="my-money-status-"]', { hasText: "Owed to you" }) });
   await expect(p.getByTestId("my-money-total-count")).toContainText(`${await owedRows.count()} expense`);

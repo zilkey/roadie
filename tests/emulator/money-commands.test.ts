@@ -267,6 +267,21 @@ test("quick entry (#86): the template saves in order; addMany writes all lines o
   assert.deepEqual([by("tips").from, by("tips").projectId, by("tips").date, !!by("tips").receivedAt], ["Tips", duo, "2026-11-10", true]);
   assert.deepEqual([by("merch").notes, by("merch").receivedAt, by("merch").from], ["2 shirts", undefined, "Merch"]);
   assert.equal((await dealTotals(s)).income, 42000);
+  // Add closes the show's card; shows.setQuickEntryOpen (app only) opens and closes it.
+  const closed = async () => ((await db.get(SYS, "shows", s)) as any).quickEntryClosed;
+  assert.equal(await closed(), true);
+  assert.deepEqual(registry["shows.setQuickEntryOpen"].roles, ["admin"]);
+  await cmd("shows.setQuickEntryOpen", { showId: s, open: true });
+  assert.equal(await closed(), false);
+  await cmd("shows.setQuickEntryOpen", { showId: s, open: false });
+  assert.equal(await closed(), true);
+  // Who gets it: saved with the rows, kept when only the rows change, null clears it.
+  const qe = async () => ((await db.get(SYS, "artists", TEST_ARTIST)) as any).showQuickEntry;
+  await cmd("artists.setShowQuickEntry", { rows, receivedBy: ctx.uid });
+  await cmd("artists.setShowQuickEntry", { rows: rows.slice(0, 2) });
+  assert.deepEqual(await qe(), { rows: rows.slice(0, 2), receivedBy: ctx.uid });
+  await cmd("artists.setShowQuickEntry", { rows, receivedBy: null });
+  assert.deepEqual(await qe(), { rows });
   // The same request again (a double press): nothing new.
   assert.deepEqual((await cmd("income.addMany", { showId: s, lines, requestId: "req-quick-1" })).ids.sort(), r.ids.sort());
   assert.equal((await db.list(SYS, "income")).filter((x: any) => x.showId === s && !x.deletedAt).length, 3);

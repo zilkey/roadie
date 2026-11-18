@@ -588,7 +588,7 @@ export const incomeAddMany = defineCommand({
   description: "A show's Quick entry: several income lines for one show at once (the show page's Quick entry card; artists.showQuickEntry has the band's usual lines). " +
     "showId; lines [{ amount (cents), category, method, from? (default: the venue for guarantee/door, else the category's name), notes? (what for), received? (default true: received today) }]. " +
     "All lines are written together or none: dated the show's date, on the show's project, tour tag copied. A guarantee line on a show with an owed guarantee marks that one received (with this method and amount) instead of adding a second. " +
-    "receivedBy (an admin's uid) is whose account it landed in (default: you, in the app). requestId makes a repeat safe: the same id again writes nothing. Returns { ids }.",
+    "receivedBy (an admin's uid) is whose account it landed in (default: you, in the app). requestId makes a repeat safe: the same id again writes nothing. Closes the show's Quick entry card. Returns { ids }.",
   input: z.strictObject({ showId: id1, lines: z.array(QuickLine).min(1).max(20), receivedBy: id1.optional(), requestId: z.string().min(8).max(80).optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     if (i.requestId) {
@@ -626,18 +626,33 @@ export const incomeAddMany = defineCommand({
     }
     const rows = await Promise.all(ids.map((id) => w.get("income", id)));
     await refreshDealTotals(w, i.showId, { income: rows.filter((x): x is Doc => !!x) });
+    await w.update("shows", i.showId, { quickEntryClosed: true });
     return { ids };
   }),
 });
 
 export const artistsSetShowQuickEntry = defineCommand({
   name: "artists.setShowQuickEntry", roles: ["admin"],
-  description: "Set the band's show Quick entry lines (Settings › Money), in order: rows [{ id (short, stable), category, method, from? (blank: the venue for guarantee/door, else the category's name), askWhatFor? }]. Up to 20. Returns { ok }.",
-  input: z.strictObject({ rows: z.array(QuickEntryRow).max(20) }),
+  description: "Set the band's show Quick entry lines (Settings › Money), in order: rows [{ id (short, stable), category, method, from? (blank: the venue for guarantee/door, else the category's name), askWhatFor? }]. Up to 20. receivedBy: the admin the card starts on for Who got it (null = whoever adds it; left out = unchanged). Returns { ok }.",
+  input: z.strictObject({ rows: z.array(QuickEntryRow).max(20), receivedBy: id1.nullable().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     if (new Set(i.rows.map((r) => r.id)).size !== i.rows.length) throw new AppError("invalid_input", "Each row needs its own id", 400);
+    if (i.receivedBy) await requirePayer(w, i.receivedBy);
     const artist = await artistFor(w);
-    await w.update("artists", artist.id, { showQuickEntry: { rows: i.rows } });
+    const by = i.receivedBy === undefined ? (artist.showQuickEntry as { receivedBy?: string } | undefined)?.receivedBy : i.receivedBy ?? undefined;
+    await w.update("artists", artist.id, { showQuickEntry: { rows: i.rows, ...(by ? { receivedBy: by } : {}) } });
+    return { ok: true };
+  }),
+});
+
+/** Opens or closes a show's Quick entry card (the Money tab). App only: Add closes it too. */
+export const showsSetQuickEntryOpen = defineCommand({
+  name: "shows.setQuickEntryOpen", roles: ["admin"],
+  description: "Open (open: true) or close a show's Quick entry card on its Money tab. Returns { ok }.",
+  input: z.strictObject({ showId: id1, open: z.boolean() }),
+  run: (ctx, i) => run(ctx, async (w) => {
+    await liveShow(w, i.showId);
+    await w.update("shows", i.showId, { quickEntryClosed: !i.open });
     return { ok: true };
   }),
 });
@@ -786,4 +801,4 @@ export const payoutsMarkPaid = defineCommand({
   }),
 });
 
-export const moneyCommands = [incomeAdd, incomeAddMany, artistsSetShowQuickEntry, incomeUpdate, incomeRemove, incomeSetReceived, incomeAssign, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];
+export const moneyCommands = [incomeAdd, incomeAddMany, artistsSetShowQuickEntry, showsSetQuickEntryOpen, incomeUpdate, incomeRemove, incomeSetReceived, incomeAssign, payoutsAdd, payoutsUpdate, payoutsRemove, payoutsMarkPaid, expensesAdd, expensesUpdate, expensesRemove, expensesSetPaidBack, expensesMarkPaid, expensesPayPerson, expensesEstimateGas, showsSetExpenses, rehearsalsSetExpenses, receiptsSearch];

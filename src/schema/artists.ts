@@ -32,8 +32,9 @@ export const QuickEntryRow = z.strictObject({
   id, category: incomeCategory, method: paymentMethod, from: z.string().trim().min(1).optional(), askWhatFor: z.boolean().optional(),
 });
 export type QuickEntryRow = z.infer<typeof QuickEntryRow>;
-/** The lines every show's Finances tab offers to fill in at once. Wrapped so per-lineup templates can join later. */
-export const ShowQuickEntry = z.strictObject({ rows: z.array(QuickEntryRow).max(20) });
+/** The lines every show's Money tab offers to fill in at once. Wrapped so per-lineup templates can join later. */
+/** receivedBy: the admin whose account the lines usually land in (Settings › Money "Who gets it"); the card starts on them. Missing = whoever adds it. */
+export const ShowQuickEntry = z.strictObject({ rows: z.array(QuickEntryRow).max(20), receivedBy: id.optional() });
 /** One of the artist's own per-song facts ("Capo", "Tuning"): defined once here, filled in per song (Song.fields, keyed by this id so a rename keeps the values). */
 export const SongField = z.strictObject({
   id,

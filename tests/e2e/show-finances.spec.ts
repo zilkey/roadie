@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { A } from "./env";
 
-test("Finances tab: seeded income, project select and Net; the seeded expense is a Money out line", async ({ page }) => {
+test("Money tab: seeded income, project select and Net; the seeded expense is a Money out line", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-rudy").click();
   await expect(page).toHaveURL(/\/calendar$/);
@@ -41,7 +41,7 @@ test("Finances tab: seeded income, project select and Net; the seeded expense is
   await expect(page.getByTestId("net-card")).toBeVisible();
 });
 
-test("Finances tab: a member edits their own expense in place; the full form opens for the show and returns to it on Save", async ({ page }) => {
+test("Money tab: a member edits their own expense in place; the full form opens for the show and returns to it on Save", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-hugo").click();
   await expect(page).toHaveURL(/\/calendar$/);
@@ -88,7 +88,7 @@ async function openShow(page: import("@playwright/test").Page, key: string, tab:
   await page.getByTestId("show-tab-finances").click();
 }
 
-test("Finances tab: Split evenly proposes one row per player without pay, Add payouts creates them; Money in opens its modal", async ({ page }) => {
+test("Money tab: Split evenly proposes one row per player without pay, Add payouts creates them; Money in opens its modal", async ({ page }) => {
   await openShow(page, "dev-rudy", "played", "Creamery Arts Center");
   const card = page.getByTestId("paid-out");
   // Other specs run in parallel against this database and may add payouts on this show, so compare row ids, not counts.
@@ -117,7 +117,7 @@ test("Finances tab: Split evenly proposes one row per player without pay, Add pa
   await expect(page.getByTestId("money-in-modal")).toBeVisible();
 });
 
-test("Finances tab: an admin opens a Money out line, the amount autosaves, Done closes and the card shows it", async ({ page }) => {
+test("Money tab: an admin opens a Money out line, the amount autosaves, Done closes and the card shows it", async ({ page }) => {
   await page.goto("/signin");
   await page.getByTestId("dev-rudy").click();
   await expect(page).toHaveURL(/\/calendar$/);
