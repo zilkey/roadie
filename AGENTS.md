@@ -58,6 +58,11 @@ GCLOUD_PROJECT=roadie-prod-iab GOOGLE_APPLICATION_CREDENTIALS="$TMPDIR/gcp.json"
 
 Dry-run first wherever the script has one, and never commit the key file.
 
+The environment also has `ANTHROPIC_API_KEY_DEV` (the Claude dev key, the one in `.secrets/claude-dev.txt` locally) and
+`ANTHROPIC_API_KEY_PROD`. `npm run check:roadie:claude` and `npm run eval:roadie` use `ANTHROPIC_API_KEY_DEV` when it's
+set, so they need no setup in a cloud session. Never use the prod key for checks or evals: it's kept separate so live
+usage can be measured on its own. Prod itself reads the `ANTHROPIC_API_KEY` secret from Secret Manager.
+
 ## Issues go in roadie-issues
 
 Never open issues in `zilkey/roadie`; issues are turned off there. File every issue for Roadie in `zilkey/roadie-issues`

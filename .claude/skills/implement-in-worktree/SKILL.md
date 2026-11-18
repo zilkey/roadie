@@ -139,8 +139,9 @@ including gitignored folders like `.secrets/`.
 ## 6. Check the real model, if the change reaches it
 
 If the change touches what Roadie or MCP offers the model (commands, tool schemas or descriptions,
-`src/server/assistant/`, `mcp/`), run `npm run check:roadie:vertex` once (one call, seconds, pre-approved). In a cloud
-session, prefix it with the key from AGENTS.md. Run slower real-model runs (`npm run eval:roadie`) only if Jeff said
+`src/server/assistant/`, `mcp/`), run `npm run check:roadie:vertex` once (one call, seconds, pre-approved), and `npm run
+check:roadie:claude` too while Roadie's chat runs on Claude. In a cloud session, prefix the Vertex one with the key from
+AGENTS.md; the Claude one reads `ANTHROPIC_API_KEY_DEV` from the environment. Run slower real-model runs (`npm run eval:roadie`) only if Jeff said
 yes upfront.
 
 ## 7. Ship it: push main (this deploys)
