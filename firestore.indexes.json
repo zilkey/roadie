@@ -42,6 +42,7 @@
     { "collectionGroup": "mutations", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "unsubmittedDrafts", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "assistantStops", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
+    { "collectionGroup": "usage", "fieldPath": "expiresAt", "ttl": true, "indexes": [] },
     { "collectionGroup": "history", "fieldPath": "runId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "history", "fieldPath": "createdAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },
     { "collectionGroup": "tracks", "fieldPath": "artistId", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION" }, { "order": "DESCENDING", "queryScope": "COLLECTION" }, { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }, { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }] },

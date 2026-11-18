@@ -58,7 +58,8 @@ export function StartBandForm({ termsUrl }: { termsUrl: string }) {
       const ce = err as CommandError;
       const fields = Object.fromEntries((ce.issues ?? []).map((i) => [i.path, i.message]));
       // Sign-up closed (platform/config): the server's own words, "Roadie is invite-only for now. Ask your band's admin to add you."
-      if (ce.code === "invite_only") setError(ce.message);
+      // Too many tries (429 sign_up_throttled) or the daily cap on new bands (429 new_artist_limit): the server's words too.
+      if (ce.code === "invite_only" || ce.status === 429) setError(ce.message);
       else if (ce.code === "slug_taken") { setChanging(true); setErrs({ slug: "Already taken" }); }
       else if (Object.keys(fields).length) { setErrs(fields); if (fields.slug) setChanging(true); }
       else setError(ce.message ?? "Something went wrong");

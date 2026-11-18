@@ -18,8 +18,9 @@ async function stranger(email = "pat@example.com", name = "Pat Stranger") {
   const u = await adminAuth().createUser({ email, emailVerified: true, displayName: name });
   return { uid: u.uid, token: await idToken(u.uid) };
 }
-const call = async (token: string | null, body: unknown) => {
-  const res = await POST(new NextRequest("http://localhost/api/sign-up", { method: "POST", headers: token ? { authorization: bearer(token) } : {}, body: JSON.stringify(body) }));
+const call = async (token: string | null, body: unknown, xff?: string) => {
+  const headers: Record<string, string> = { ...(token ? { authorization: bearer(token) } : {}), ...(xff ? { "x-forwarded-for": xff } : {}) };
+  const res = await POST(new NextRequest("http://localhost/api/sign-up", { method: "POST", headers, body: JSON.stringify(body) }));
   return { status: res.status, json: (await res.json()) as { slug: string } & Err };
 };
 
@@ -196,4 +197,45 @@ test("new artists: artists.create counts too (3 per person per day by default), 
   await setLimits({ newArtistsPerPerson: 0, newArtistsPerDay: 0 });
   assert.equal((await create("Sixth")).status, 200);
   assert.equal((await db.list(SYS, "artists")).length, 4);
+});
+
+test("artists.signUp: tries per Google account per hour are throttled, failed ones included (#32)", async () => {
+  await firestore().doc("platform/limits").set({ signUpTriesPerPerson: 2 });
+  const p = await stranger();
+  // two bad tries (a blank name) use up the hour
+  for (let i = 0; i < 2; i++) assert.equal((await call(p.token, { name: "" })).status, 400);
+  const r = await call(p.token, { name: "The Night Owls" });
+  assert.equal(r.status, 429);
+  assert.deepEqual(r.json.error, { code: "sign_up_throttled", message: "Too many tries at starting a band. Wait an hour and try again." });
+  assert.equal((await db.list(SYS, "artists")).length, 0);
+  // someone else is not held up by it
+  const q = await stranger("sam@example.com", "Sam");
+  assert.equal((await call(q.token, { name: "Other Band" })).status, 200);
+  // the counter doc expires a day on (TTL on usage.expiresAt) and keeps no address
+  const docs = (await firestore().collection("usage").get()).docs.filter((d) => d.id.startsWith("signUp_"));
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].get(`byUid.${p.uid}`), 3);
+  assert.ok(docs[0].get("expiresAt").toMillis() > Date.now() + 23 * 3600_000);
+});
+
+test("artists.signUp: tries per IP per hour are throttled before the token is looked at (#32)", async () => {
+  await firestore().doc("platform/limits").set({ signUpTriesPerIp: 2 });
+  const xff = "203.0.113.7, 35.191.0.1";
+  for (let i = 0; i < 2; i++) assert.equal((await call(null, { name: "X" }, xff)).status, 401);
+  // the third, even with a good token, is refused
+  const p = await stranger();
+  assert.equal((await call(p.token, { name: "The Night Owls" }, xff)).json.error.code, "sign_up_throttled");
+  // a made-up address prepended by the client doesn't get round it
+  assert.equal((await call(p.token, { name: "The Night Owls" }, `1.2.3.4, ${xff}`)).status, 429);
+  // another address is fine, and the stored key is a hash, not the address
+  assert.equal((await call(p.token, { name: "The Night Owls" }, "198.51.100.2, 35.191.0.1")).status, 200);
+  const doc = (await firestore().collection("usage").get()).docs.find((d) => d.id.startsWith("signUp_"))!;
+  assert.ok(!JSON.stringify(doc.data()).includes("203.0.113.7"));
+});
+
+test("artists.signUp: platform admins aren't throttled per account (#32)", async () => {
+  await firestore().doc("platform/limits").set({ signUpTriesPerPerson: 1 });
+  const p = await stranger();
+  await makePlatformAdmins(p.uid);
+  for (let i = 0; i < 3; i++) assert.equal((await call(p.token, { name: "" })).status, 400);
 });

@@ -9,6 +9,7 @@
  *   ... platform-config.ts unsuspend <artistId>
  *   ... platform-config.ts limit <name> <n>                  # platform/limits: roadieMessages webLookups transcriptions maps
  *                                                            #   publicMaps newArtistsPerDay newArtistsPerPerson
+ *                                                            #   signUpTriesPerPerson signUpTriesPerIp (per hour)
  *   ... platform-config.ts usage <artistId> [yyyy-mm-dd]     # that artist's counters (default: the last 7 days)
  *
  * Refuses to run without GCLOUD_PROJECT (so it can't silently hit the demo project).

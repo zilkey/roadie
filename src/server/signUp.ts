@@ -19,7 +19,7 @@ export const SignUpInput = z.strictObject({
 });
 
 import { signUpOpen, INVITE_ONLY } from "./signUpFlag";
-import { checkNewArtist } from "./usage";
+import { checkNewArtist, checkSignUpTry, clientIp } from "./usage";
 import { noticeNewArtist } from "./newArtistNotice";
 export { signUpOpen, INVITE_ONLY };
 
@@ -29,9 +29,12 @@ export { signUpOpen, INVITE_ONLY };
  * Refuses anyone who already has a membership (they use artists.create from inside the app). Every write goes through
  * run(), so History records it like any command.
  */
-export async function signUp(authHeader: string | null, body: unknown): Promise<{ slug: string; id: string; runId: string }> {
+export async function signUp(authHeader: string | null, body: unknown, forwardedFor: string | null = null): Promise<{ slug: string; id: string; runId: string }> {
   // Checked first, before the token and before any write: while closed, nobody gets further than this.
   if (!(await signUpOpen())) throw new AppError("invite_only", INVITE_ONLY, 403);
+  // Then the tries: per IP before the token is even looked at, per Google account once it is (zilkey/roadie-issues#32).
+  const ip = clientIp(forwardedFor);
+  if (ip) await checkSignUpTry({ ip });
   const m = /^Bearer (.+)$/.exec(authHeader ?? "");
   if (!m) throw new AppError("unauthenticated", "Missing bearer token", 401);
   let decoded;
@@ -43,6 +46,7 @@ export async function signUp(authHeader: string | null, body: unknown): Promise<
   const email = decoded.email?.trim().toLowerCase();
   if (!email || decoded.email_verified === false) throw new AppError("unauthenticated", "A verified email is required", 401);
   const uid = decoded.uid;
+  await checkSignUpTry({ uid });
   const parsed = SignUpInput.safeParse(body ?? {});
   if (!parsed.success) throw invalid(parsed.error);
   const input = parsed.data;

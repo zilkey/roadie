@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { slug } = await signUp(req.headers.get("authorization"), body);
+    const { slug } = await signUp(req.headers.get("authorization"), body, req.headers.get("x-forwarded-for"));
     return Response.json({ slug });
   } catch (e) {
     if (e instanceof AppError) return Response.json(e.toJSON(), { status: e.status });

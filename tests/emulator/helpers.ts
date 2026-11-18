@@ -76,5 +76,5 @@ export async function makePlatformAdmins(...uids: string[]) {
  */
 export async function allowNewArtists() {
   await firestore().doc("platform/config").set({ signUpOpen: true });
-  await firestore().doc("platform/limits").set({ newArtistsPerDay: 1000, newArtistsPerPerson: 1000 }, { merge: true });
+  await firestore().doc("platform/limits").set({ newArtistsPerDay: 1000, newArtistsPerPerson: 1000, signUpTriesPerPerson: 1000, signUpTriesPerIp: 1000 }, { merge: true });
 }

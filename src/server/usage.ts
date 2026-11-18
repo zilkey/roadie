@@ -4,12 +4,15 @@
  * - `usage/{artistId}_{yyyy-mm-dd}` (date in the artist's own zone): counters `roadieMessages`, `webLookups`, `transcriptions`,
  *   `maps`, `publicMaps`. `spend(ctx, meter)` adds to one, refusing with 429 `limit_reached` once the day's limit is used.
  * - `usage/platform_{yyyy-mm-dd}` (UTC date): `newArtists` and `newArtistsBy.{uid}`, for `checkNewArtist`.
+ * - `usage/signUp_{yyyy-mm-ddThh}` (UTC hour): `byUid.{uid}` and `byIp.{hash}`, for `checkSignUpTry`. `expiresAt` (a day
+ *   on) lets the TTL policy on usage.expiresAt delete them.
  * - `platform/limits`: the limits, changed by `scripts/platform-config.ts` (no deploy). A field it doesn't set uses DEFAULT_LIMITS.
  *
  * Charged at the command or route layer, where the ctx is, and only when the paid call is really made (a cache hit costs
  * nothing): the map helpers take a `charge` they call just before going out. Exempt artists (platformArtists/{id}.exempt) and
  * SystemCtx jobs are never limited; system calls are logged. All of it is server-only (no client rule; SERVER_KEPT in backups).
  */
+import { createHash } from "node:crypto";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { firestore } from "./admin";
 import { AppError } from "./errors";
@@ -28,11 +31,16 @@ export interface Limits extends Record<Meter, number> {
   newArtistsPerDay: number;
   /** New artists one person may start per day (UTC day). */
   newArtistsPerPerson: number;
+  /** Tries at POST /api/sign-up per Google account per hour, failed ones included (checkSignUpTry). */
+  signUpTriesPerPerson: number;
+  /** Tries at POST /api/sign-up per IP address per hour; looser, since a household or office shares one. */
+  signUpTriesPerIp: number;
 }
 /** Q8's defaults. */
 export const DEFAULT_LIMITS: Limits = {
   roadieMessages: 300, webLookups: 100, transcriptions: 30, maps: 1000, publicMaps: 200,
   newArtistsPerDay: 20, newArtistsPerPerson: 3,
+  signUpTriesPerPerson: 10, signUpTriesPerIp: 30,
 };
 export const LIMITS_DOC = "platform/limits";
 export const USAGE = "usage";
@@ -135,4 +143,44 @@ export async function checkNewArtist(ctx: PersonCtx | ArtistCtx): Promise<void> 
     }
     tx.set(ref, { date, newArtists: FieldValue.increment(1), newArtistsBy: { [ctx.uid]: FieldValue.increment(1) }, updatedAt: Timestamp.fromDate(now) }, { merge: true });
   });
+}
+
+// ---------- sign-up tries ----------
+
+export const SIGN_UP_THROTTLED = "Too many tries at starting a band. Wait an hour and try again.";
+export const signUpTriesId = (now: Date) => `signUp_${now.toISOString().slice(0, 13)}`;
+
+/**
+ * The caller's IP from X-Forwarded-For, or null when there is none (local dev, tests). Google's load balancer appends
+ * "<client>, <load balancer>" to whatever the client sent, so the client is the second from the right; anything further
+ * left came from the client and can be made up. With one entry, that one.
+ */
+export function clientIp(xff: string | null): string | null {
+  const parts = (xff ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  return parts.length === 1 ? parts[0] : parts[parts.length - 2];
+}
+
+/** The IP as stored: a short hash, never the address itself. */
+export const ipKey = (ip: string) => createHash("sha256").update(ip).digest("hex").slice(0, 16);
+
+/**
+ * Count one try at POST /api/sign-up against `who` (an IP before the token is checked, the uid after) for this UTC hour,
+ * and refuse with 429 `sign_up_throttled` once it passes the limit. Every try counts, failed ones too: that's the point.
+ */
+export async function checkSignUpTry(who: { ip: string } | { uid: string }, now = new Date()): Promise<void> {
+  if ("uid" in who && (await isPlatformAdminUid(who.uid))) return;
+  const limits = await readLimits();
+  const [field, key, limit] = "ip" in who ? ["byIp", ipKey(who.ip), limits.signUpTriesPerIp] : ["byUid", who.uid, limits.signUpTriesPerPerson];
+  const ref = firestore().collection(USAGE).doc(signUpTriesId(now));
+  const used = await firestore().runTransaction(async (tx) => {
+    const d = (await tx.get(ref)).data() ?? {};
+    const n = Number((d[field] as Record<string, number> | undefined)?.[key] ?? 0);
+    tx.set(ref, { [field]: { [key]: FieldValue.increment(1) }, updatedAt: Timestamp.fromDate(now), expiresAt: Timestamp.fromMillis(now.getTime() + 86_400_000) }, { merge: true });
+    return n + 1;
+  });
+  if (used > limit) {
+    console.warn(JSON.stringify({ event: "artists.signUpThrottled", [field]: key, used, limit }));
+    throw new AppError("sign_up_throttled", SIGN_UP_THROTTLED, 429);
+  }
 }
