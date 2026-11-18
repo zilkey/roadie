@@ -163,7 +163,9 @@ test("Stop: while Roadie works, Send becomes Stop; tapping it ends the reply, ma
   await page.getByTestId("roadie-new").click();
   // Sent (the message and the Stop leave the browser as keepalive requests, so a reload after this can't lose them).
   const sent = (path: string) => page.waitForRequest((r) => r.url().endsWith(`/api/assistant/${path}`) && r.method() === "POST");
-  const chat = sent("chat"), stopped = sent("stop");
+  // The Stop is awaited until the server has answered it: the reload below can cut it off while the dev server is still
+  // compiling the route (its first call in this shard), and then the slow fake reply runs its full 20 seconds.
+  const chat = sent("chat"), stopped = page.waitForResponse((r) => r.url().endsWith("/api/assistant/stop") && r.request().method() === "POST");
   await ask(page, "find me a venue in Boise [fake: slow]");
   await expect(page.getByTestId("roadie-vamp")).toBeVisible();
   await expect(page.getByTestId("roadie-send")).toHaveCount(0);

@@ -104,6 +104,9 @@ test("set up three rows in settings, fill two on a show, the draft survives leav
   await openFinances(page);
   const card = page.getByTestId("quick-entry");
   await expect(card.getByTestId("admin-only")).toBeVisible();
+  // A show older than a week starts closed.
+  await expect(card.getByTestId("qe-open")).toBeVisible();
+  await card.getByTestId("qe-open").click();
   await expect(card).toContainText("Goes on");
   await expect(card).toContainText("Mar 14");
   await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(3);
@@ -178,6 +181,33 @@ test("Who gets it in Settings starts the card's Who got it on that admin, still 
   await page.getByTestId("quick-entry-settings").getByTestId("qe-who-default").selectOption("");
   await page.reload();
   await expect(page.getByTestId("quick-entry-settings").getByTestId("qe-who-default")).toHaveValue("");
+});
+
+test("the card starts open for a show from the last week and closed for an upcoming one", async ({ page }) => {
+  await setTemplate(ROWS);
+  // The seeded band's zone is America/Denver; the days are relative to its today, so they never go stale.
+  const day = (n: number) => {
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver" }).format(new Date());
+    return new Date(Date.parse(`${today}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  };
+  const { id: recent } = await cmd<{ id: string }>("shows.create", { date: day(-2), status: "confirmed", place: { city: "Quickville" } });
+  const { id: upcoming } = await cmd<{ id: string }>("shows.create", { date: day(10), status: "confirmed", place: { city: "Quickville" } });
+  try {
+    await signIn(page, "rudy");
+    const card = page.getByTestId("quick-entry");
+    await page.goto(A(`/shows/${recent}?tab=finances`));
+    await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(3);
+    await expect(card.getByTestId("qe-open")).toHaveCount(0);
+    await page.goto(A(`/shows/${upcoming}?tab=finances`));
+    await expect(card.getByTestId("qe-open")).toBeVisible();
+    await card.getByTestId("qe-open").click();
+    await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(3);
+    await page.reload();
+    await expect(card.locator('[data-testid^="qe-line-"]')).toHaveCount(3);
+  } finally {
+    await cmd("shows.remove", { id: recent });
+    await cmd("shows.remove", { id: upcoming });
+  }
 });
 
 test("with no template the card links to the setup", async ({ page }) => {

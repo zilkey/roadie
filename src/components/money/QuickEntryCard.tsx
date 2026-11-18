@@ -2,10 +2,11 @@
 import { useEffect, useState } from "react";
 import { useCollection } from "@/lib/firestore-hooks";
 import { ErrorBox, useCommand } from "@/components/ui";
-import { useArtist, Link } from "@/lib/artist";
+import { useArtist, useZone, Link } from "@/lib/artist";
+import { todayStr } from "@/lib/booking";
 import { useProfile } from "@/lib/auth";
 import { AdminOnlyBadge, ShowCard } from "@/components/shows/page/kit";
-import { INCOME_LABEL, METHOD_LABEL, defaultProject, formatCents, parseDollars, type ProjectLike } from "@/lib/money";
+import { INCOME_LABEL, METHOD_LABEL, defaultProject, formatCents, parseDollars, quickEntryOpen, type ProjectLike } from "@/lib/money";
 import { roleIn, type Income, type User } from "@/schema";
 import type { QuickEntryRow } from "@/schema/artists";
 
@@ -13,7 +14,8 @@ import type { QuickEntryRow } from "@/schema/artists";
  * Quick entry (show Money tab, admins only): the artist's template of income lines (Settings › Money) filled in at once after a show.
  * Each line has an amount, a "What for" when the row asks, and Received (ticked; unticked = still owed). Add writes the lines with income.addMany
  * on the show's project. The draft is kept per show in localStorage until Add or Cancel, so leaving the page and coming back restores it.
- * Add and Cancel both close the card (show.quickEntryClosed); a closed card is one line with "Open quick entry". Who got it starts on the
+ * Add and Cancel both close the card (show.quickEntryClosed); until one of them or Open is pressed, the card starts open only
+ * for a show from the last week, closed for upcoming and older shows (quickEntryOpen). A closed card is one line with "Open quick entry". Who got it starts on the
  * band's setting (Settings › Money), else you.
  * The booked guarantee, if still owed, pre-fills the first Guarantee row: Add marks that one received instead of adding a second.
  */
@@ -33,6 +35,7 @@ const plain = (c: number) => (c % 100 ? (c / 100).toFixed(2) : String(c / 100));
 export function QuickEntryCard({ show }: { show: { id: string; date: string; status: string; projectId?: string; quickEntryClosed?: boolean } }) {
   const { artistId, doc } = useArtist();
   const me = useProfile();
+  const zone = useZone();
   const income = useCollection<Income>("income", { where: [["showId", "==", show.id]] }).rows;
   const projects = useCollection<ProjectLike>("projects").rows ?? [];
   const users = useCollection<User>("users").rows ?? [];
@@ -61,7 +64,7 @@ export function QuickEntryCard({ show }: { show: { id: string; date: string; sta
         <Link href="/admin/money" data-testid="qe-setup-link">Set up quick entry</Link></p>,
     );
   }
-  if (show.quickEntryClosed) {
+  if (!quickEntryOpen(show, todayStr(zone))) {
     return shell(
       <button type="button" className="btn outline" disabled={busy} onClick={() => void call("shows.setQuickEntryOpen", { showId: show.id, open: true })} data-testid="qe-open">
         Open quick entry

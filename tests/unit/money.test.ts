@@ -122,3 +122,15 @@ test("csv parsing: monthly rows, quotes, thousands separators, bad lines", () =>
   assert.deepEqual(fixture.errors, []);
   assert.equal(fixture.rows.length, 6);
 });
+
+test("Quick entry starts open only for shows from the last week; an explicit open/close stands", async () => {
+  const { quickEntryOpen } = await import("@/lib/money");
+  const today = "2026-11-18";
+  assert.equal(quickEntryOpen({ date: "2026-11-18" }, today), true);
+  assert.equal(quickEntryOpen({ date: "2026-11-11" }, today), true);
+  assert.equal(quickEntryOpen({ date: "2026-11-10" }, today), false);
+  assert.equal(quickEntryOpen({ date: "2026-11-19" }, today), false);
+  assert.equal(quickEntryOpen({ date: "2026-03-14", quickEntryClosed: false }, today), true);
+  assert.equal(quickEntryOpen({ date: "2026-11-19", quickEntryClosed: false }, today), true);
+  assert.equal(quickEntryOpen({ date: "2026-11-15", quickEntryClosed: true }, today), false);
+});

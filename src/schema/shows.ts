@@ -67,7 +67,7 @@ export const Show = entity({
   billedAs: id.optional(),
   /** The project (projects/{id}) this show's money belongs to: its configuration's defaultProjectId at creation, changed by an admin. Missing only when the artist had no default project at creation. */
   projectId: id.optional(),
-  /** The Money tab's Quick entry card is closed: set by Add (income.addMany) and Cancel, cleared by reopening it (shows.setQuickEntryOpen). Missing = open. */
+  /** The Money tab's Quick entry card is closed: set by Add (income.addMany) and Cancel, cleared by reopening it (shows.setQuickEntryOpen). Missing = open only for a show from the last week (quickEntryOpen). */
   quickEntryClosed: z.boolean().optional(),
   /** The tour this show is on (tours/{id}): a tag, set by tours.addShow / tours.book. The show keeps its own project. */
   tourId: id.optional(),

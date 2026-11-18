@@ -1,3 +1,5 @@
+import { addDays } from "./shows";
+
 /** Money is integer cents everywhere. */
 export const dollarsToCents = (d: number | string) => Math.round(Number(d) * 100);
 export function formatCents(c: number): string {
@@ -241,3 +243,10 @@ export function splitEvenly(total: number, n: number): number[] {
 }
 /** Every category label in one map (income and expense). */
 export const CATEGORY_LABEL: Record<string, string> = { ...INCOME_LABEL, ...EXPENSE_LABEL, door: "Door split", payout: "Paid out" };
+
+/**
+ * Is a show's Quick entry card open? Once someone opens or closes it (Open quick entry, Add, Cancel) that choice stands.
+ * Until then it starts open only for a show from the last week (today back 7 days): upcoming shows and older ones start closed.
+ */
+export const quickEntryOpen = (show: { date: string; quickEntryClosed?: boolean }, today: string) =>
+  show.quickEntryClosed !== undefined ? !show.quickEntryClosed : show.date <= today && show.date >= addDays(today, -7);
