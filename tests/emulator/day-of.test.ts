@@ -17,24 +17,26 @@ test("dayOf.dismiss: stored in the caller's prefs per artist, per show or rehear
   const rudy = await makeUser("rudy@example.com", "admin");
   const hugo = await makeUser("hugo@example.com", "member");
   const fs = firestore();
-  await fs.doc("shows/s1").set({ date: "2026-11-10", status: "confirmed", artistId: TEST_ARTIST, times: { loadIn: "17:00" }, deletedAt: null });
-  await fs.doc("shows/other").set({ date: "2026-11-10", status: "confirmed", artistId: "another-artist", times: {}, deletedAt: null });
-  await fs.doc("shows/gone").set({ date: "2026-11-10", status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: new Date() });
-  await fs.doc("rehearsals/r1").set({ artistId: TEST_ARTIST, date: "2026-11-10", startTime: "19:00", personnel: [], songs: [], deletedAt: null });
+  // Today in the band's zone: dismissals older than a week are pruned, so a fixed date stops working once it is past.
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver" }).format(new Date());
+  await fs.doc("shows/s1").set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: { loadIn: "17:00" }, deletedAt: null });
+  await fs.doc("shows/other").set({ date: day, status: "confirmed", artistId: "another-artist", times: {}, deletedAt: null });
+  await fs.doc("shows/gone").set({ date: day, status: "confirmed", artistId: TEST_ARTIST, times: {}, deletedAt: new Date() });
+  await fs.doc("rehearsals/r1").set({ artistId: TEST_ARTIST, date: day, startTime: "19:00", personnel: [], songs: [], deletedAt: null });
   const call = (tok: string, body: unknown) => dispatch("dayOf.dismiss", `Bearer ${tok}`, body, TEST_ARTIST);
 
   const res = await call(rudy.token, { kind: "show", id: "s1" });
   assert.equal(res.status, 200);
-  assert.deepEqual((res.json as { result: unknown }).result, { dismissed: "show:s1:2026-11-10" });
-  assert.deepEqual(await dayOfDismissed(rudy.uid, TEST_ARTIST), ["show:s1:2026-11-10"]);
+  assert.deepEqual((res.json as { result: unknown }).result, { dismissed: `show:s1:${day}` });
+  assert.deepEqual(await dayOfDismissed(rudy.uid, TEST_ARTIST), [`show:s1:${day}`]);
   assert.deepEqual(await dayOfDismissed(hugo.uid, TEST_ARTIST), [], "Hugo still sees it");
 
   // A member can hide theirs too; twice is once; the rehearsal is its own row.
   assert.equal((await call(hugo.token, { kind: "rehearsal", id: "r1" })).status, 200);
   await call(hugo.token, { kind: "rehearsal", id: "r1" });
-  assert.deepEqual(await dayOfDismissed(hugo.uid, TEST_ARTIST), ["rehearsal:r1:2026-11-10"]);
+  assert.deepEqual(await dayOfDismissed(hugo.uid, TEST_ARTIST), [`rehearsal:r1:${day}`]);
   await call(rudy.token, { kind: "rehearsal", id: "r1" });
-  assert.deepEqual(await dayOfDismissed(rudy.uid, TEST_ARTIST), ["show:s1:2026-11-10", "rehearsal:r1:2026-11-10"]);
+  assert.deepEqual(await dayOfDismissed(rudy.uid, TEST_ARTIST), [`show:s1:${day}`, `rehearsal:r1:${day}`]);
   assert.deepEqual(await dayOfDismissed(rudy.uid, "another-artist"), [], "kept per artist");
 
   // Nothing is written on the show, and the other prefs stay.

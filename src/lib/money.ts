@@ -45,8 +45,10 @@ export const projectOf = (x: { projectId?: string }, defaultProjectId: string | 
 export const defaultProject = <P extends ProjectLike>(projects: readonly P[]) => projects.find((p) => p.isDefault && !p.deletedAt);
 
 /** A person's own expense projects on one artist (Artist.expenseProjects): their default and, when admins limit it, what they can file to. */
-export type MemberProjects = { userId: string; projectId?: string; visibleProjectIds?: string[] };
+export type MemberProjects = { userId: string; projectId?: string; visibleProjectIds?: string[]; payBack?: boolean };
 export const memberProjectsOf = (list: readonly MemberProjects[] | undefined, userId: string | undefined) => list?.find((x) => x.userId === userId);
+/** Does this person's expense start as one the band pays back? Yes unless an admin turned it off for them (Settings › Money). */
+export const paysBackByDefault = (m: MemberProjects | undefined) => m?.payBack !== false;
 /** May this person file an expense to this project? No list = any project; their own default always. */
 export const canFileTo = (m: MemberProjects | undefined, projectId: string) =>
   !m?.visibleProjectIds || m.visibleProjectIds.includes(projectId) || m.projectId === projectId;

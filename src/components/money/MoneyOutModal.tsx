@@ -376,9 +376,9 @@ function OutForm({ onClose, defaults: given }: { onClose(): void; defaults?: Mon
     if (!canSave || !cents) return;
     const receipt = link.trim() ? { receipt: { driveFileId: fileIdOf(link.trim()), url: link.trim() } } : {};
     if (gasOn) {
-      // The member page's gas expense, logged for the driver: always paid back.
+      // The member page's gas expense, logged for the driver: paid back unless the driver covers their own (Settings › Money).
       if (!(await call("expenses.add", {
-        amount: cents, what: whatText, category: "gas", projectId: ps.projectId, userId: gas.driverId, payBack: true, date: when,
+        amount: cents, what: whatText, category: "gas", projectId: ps.projectId, userId: gas.driverId, date: when,
         ...(ps.showId ? { showId: ps.showId } : {}), ...rehearsal, ...track, ...tp.payload, ...receipt, ...gas.payload(cents),
       }))) return;
     } else if (reimburse) {

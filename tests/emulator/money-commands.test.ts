@@ -218,6 +218,31 @@ test("member projects (#86): admins limit what a member files to; a show's own p
   const r = await cmd("rehearsals.setExpenses", { id: rid, lines: [{ what: "Room", amount: 4000, payBack: true }] }, mctx);
   assert.equal(await project(r.added[0]), duo);
 });
+test("pay-back default (Settings › Money): off for a person, their new expenses (gas too) start not paid back; an explicit payBack wins", async () => {
+  const entry = async () => ((await db.get(SYS, "artists", TEST_ARTIST)) as any).expenseProjects?.find((x: any) => x.userId === ctx.uid);
+  const pb = async (id: string) => ((await db.get(SYS, "expenses", id)) as any).payBack;
+  // Nobody set: paid back, as before (non-gas leaves the field out; gas says true).
+  assert.equal(await pb((await cmd("expenses.add", { amount: 500, what: "Strings", category: "gear" })).id), undefined);
+  assert.equal(await pb((await cmd("expenses.add", { amount: 500, what: "Gas", category: "gas" })).id), true);
+  await cmd("artists.setMemberProjects", { userId: ctx.uid, payBack: false });
+  assert.deepEqual(await entry(), { userId: ctx.uid, payBack: false });
+  assert.equal(await pb((await cmd("expenses.add", { amount: 959, what: "Show clothes", category: "other" })).id), false);
+  assert.equal(await pb((await cmd("expenses.add", { amount: 500, what: "Gas", category: "gas" })).id), false);
+  assert.equal(await pb((await cmd("expenses.add", { amount: 500, what: "Cables", category: "gear", payBack: true })).id), true);
+  // Logged by an admin for the person (userId): the payer's default, not the caller's.
+  assert.equal(await pb((await cmd("expenses.add", { amount: 500, what: "Picks", category: "gear", userId: memberUid })).id), undefined);
+  // setExpenses lines follow it too; an existing line left without payBack is unchanged.
+  const rid = (await db.create(ctx, "rehearsals", { date: "2026-11-12", artistId: TEST_ARTIST, personnel: [], songs: [] })).id;
+  const r = await cmd("rehearsals.setExpenses", { id: rid, lines: [{ what: "Room", amount: 4000 }] });
+  assert.equal(await pb(r.added[0]), false);
+  await cmd("rehearsals.setExpenses", { id: rid, lines: [{ id: r.added[0], what: "Room A", amount: 4000 }] });
+  assert.equal(await pb(r.added[0]), false);
+  // Keeps the rest of the entry; true puts it back and an empty entry is dropped.
+  await cmd("artists.setMemberProjects", { userId: ctx.uid, projectId: duo });
+  assert.deepEqual(await entry(), { userId: ctx.uid, projectId: duo, payBack: false });
+  await cmd("artists.setMemberProjects", { userId: ctx.uid, payBack: true, projectId: null });
+  assert.equal(await entry(), undefined);
+});
 test("quick entry (#86): the template saves in order; addMany writes all lines on the show's project, marks the booked guarantee, and a repeat writes nothing", async () => {
   assert.ok(!registry["artists.setShowQuickEntry"].roles.includes("member"));
   const rows = [{ id: "g1", category: "guarantee", method: "check" }, { id: "t1", category: "tips", method: "venmo" }, { id: "m1", category: "merch", method: "cash", askWhatFor: true }];

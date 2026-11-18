@@ -22,9 +22,10 @@ export const Configuration = z.strictObject({
 /** Where one person's own expenses go when no show, rehearsal or tour decides (Settings › Money). */
 /**
  * One person's projects for their own expenses: projectId is their default; visibleProjectIds (admins set it) is the projects they can
- * file to. No list = every open project. Their default is always one of them.
+ * file to. No list = every open project. Their default is always one of them. payBack false: their expenses (gas too) start as
+ * not paid back (the band's admins covering their own costs); missing = paid back. One expense can still say otherwise.
  */
-export const ExpenseProject = z.strictObject({ userId: id, projectId: id.optional(), visibleProjectIds: z.array(id).optional() });
+export const ExpenseProject = z.strictObject({ userId: id, projectId: id.optional(), visibleProjectIds: z.array(id).optional(), payBack: z.boolean().optional() });
 export type ExpenseProject = z.infer<typeof ExpenseProject>;
 /** One line of the show Quick entry (Settings › Money): what came in and how. from blank = the venue for guarantee/door, else the category's name. */
 export const QuickEntryRow = z.strictObject({

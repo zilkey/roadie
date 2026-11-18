@@ -4,6 +4,7 @@ import { AppError } from "../errors";
 import { defineCommand } from "./types";
 import { idInput } from "./util";
 import { projectKind, cents } from "@/schema";
+import type { MemberProjects } from "@/lib/money";
 
 /** The artist a call is for: the one given, else the one this call is for (ctx.artistId). */
 export async function artistFor(w: Writer, artistId = w.ctx.artistId): Promise<Doc> {
@@ -126,37 +127,42 @@ export const projectsRemove = defineCommand({
     const r = await w.softDelete("projects", id);
     // Nobody keeps a removed project as their default or in their list.
     const a = await w.get("artists", p.artistId as string);
-    const list = (a?.expenseProjects ?? []) as { userId: string; projectId?: string; visibleProjectIds?: string[] }[];
+    const list = (a?.expenseProjects ?? []) as MemberProjects[];
     if (list.some((x) => x.projectId === id || x.visibleProjectIds?.includes(id))) {
       const next = list.map((x) => {
         const { projectId, visibleProjectIds, ...rest } = x;
         const vis = visibleProjectIds?.filter((v) => v !== id);
         return { ...rest, ...(projectId && projectId !== id ? { projectId } : {}), ...(vis?.length ? { visibleProjectIds: vis } : {}) };
-      }).filter((x) => x.projectId || x.visibleProjectIds);
+      }).filter(keepEntry);
       await w.update("artists", a!.id, { expenseProjects: next });
     }
     return r;
   }),
 });
 
+/** An entry that says anything beyond the defaults is kept; an empty one is dropped. */
+const keepEntry = (x: MemberProjects) => !!(x.projectId || x.visibleProjectIds || x.payBack === false);
+
 export const artistsSetMemberProjects = defineCommand({
   name: "artists.setMemberProjects", roles: ["admin"],
   description: "Set one person's projects for their own expenses (Settings › Money): projectId is their default project (null: the artist's default), " +
     "visibleProjectIds the projects they can file expenses to (null or left empty: every open project). Their default is always one they can file to. " +
+    "payBack false: their new expenses, gas included, start as not paid back (they cover their own); true puts it back (the band pays them back). " +
     "An expense they add from a show, rehearsal or tour can still go on that record's project. Returns { ok }.",
-  input: z.strictObject({ userId: z.string().min(1), projectId: z.string().min(1).nullable().optional(), visibleProjectIds: z.array(z.string().min(1)).nullable().optional() }),
+  input: z.strictObject({ userId: z.string().min(1), projectId: z.string().min(1).nullable().optional(), visibleProjectIds: z.array(z.string().min(1)).nullable().optional(), payBack: z.boolean().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {
     const artist = await artistFor(w);
     const u = await w.get("users", i.userId);
     if (!u || u.deletedAt || !((u.artists ?? []) as { artistId: string }[]).some((m) => m.artistId === artist.id)) throw new AppError("not_found", "That person isn't in this band", 404);
     for (const pid of [i.projectId, ...(i.visibleProjectIds ?? [])]) if (pid) await requireProject(w, pid);
-    const list = (artist.expenseProjects ?? []) as { userId: string; projectId?: string; visibleProjectIds?: string[] }[];
+    const list = (artist.expenseProjects ?? []) as MemberProjects[];
     const cur = list.find((x) => x.userId === i.userId) ?? { userId: i.userId };
     const projectId = i.projectId === undefined ? cur.projectId : i.projectId ?? undefined;
     const vis = i.visibleProjectIds === undefined ? cur.visibleProjectIds : i.visibleProjectIds?.length ? [...new Set(i.visibleProjectIds)] : undefined;
-    const entry = { userId: i.userId, ...(projectId ? { projectId } : {}), ...(vis ? { visibleProjectIds: vis } : {}) };
+    const payBack = i.payBack === undefined ? cur.payBack : i.payBack ? undefined : false;
+    const entry: MemberProjects = { userId: i.userId, ...(projectId ? { projectId } : {}), ...(vis ? { visibleProjectIds: vis } : {}), ...(payBack === false ? { payBack } : {}) };
     const rest = list.filter((x) => x.userId !== i.userId);
-    await w.update("artists", artist.id, { expenseProjects: entry.projectId || entry.visibleProjectIds ? [...rest, entry] : rest });
+    await w.update("artists", artist.id, { expenseProjects: keepEntry(entry) ? [...rest, entry] : rest });
     return { ok: true };
   }),
 });

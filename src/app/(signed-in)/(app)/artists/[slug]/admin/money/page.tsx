@@ -4,7 +4,7 @@ import { ErrorBox, PageTitle, PickChip, Select, useCommand } from "@/components/
 import { useArtist } from "@/lib/artist";
 import { useCollection } from "@/lib/firestore-hooks";
 import { useEffect, useState } from "react";
-import { INCOME_LABEL, METHOD_LABEL, defaultProject } from "@/lib/money";
+import { INCOME_LABEL, METHOD_LABEL, defaultProject, paysBackByDefault } from "@/lib/money";
 import { roleIn, type Project, type User } from "@/schema";
 import type { QuickEntryRow } from "@/schema/artists";
 
@@ -26,6 +26,7 @@ function MoneySettings() {
   const listOf = (uid: string) => current.find((x) => x.userId === uid)?.visibleProjectIds;
   const fileable = all.filter((p) => p.status === "open" && !p.deletedAt).sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault) || a.name.localeCompare(b.name));
 
+  const paysBack = (uid: string) => paysBackByDefault(current.find((x) => x.userId === uid));
   async function set(userId: string, projectId: string) {
     await call("artists.setMemberProjects", { userId, projectId: projectId || null });
   }
@@ -36,7 +37,7 @@ function MoneySettings() {
 
   return (
     <div className="grid gap-5">
-      <PageTitle title="Money" sub="Pick where each person's own expenses go when they aren't added from a show, rehearsal or tour, and which projects they can file expenses to (everyone starts with all open projects)." />
+      <PageTitle title="Money" sub="Pick where each person's own expenses go when they aren't added from a show, rehearsal or tour, which projects they can file expenses to (everyone starts with all open projects), and whether the band pays them back by default." />
       {users.rows !== null && projects.rows !== null && doc && (
         <div className="card" data-testid="expense-projects">
           <span className="lbl">Default project and projects they can file to</span>
@@ -50,6 +51,9 @@ function MoneySettings() {
                 <span>{u.name}</span>
                 <Select className="!w-auto" label={`Default project for ${u.name}`} testid={`expense-project-for-${u.id}`} value={cur} disabled={busy}
                   placeholder={def ? `${def.name} (the default)` : "The default project"} options={options} onChange={(v) => void set(u.id, v)} />
+                <label className="flex items-center gap-1.5 s">
+                  <input type="checkbox" checked={paysBack(u.id)} disabled={busy} onChange={(e) => void call("artists.setMemberProjects", { userId: u.id, payBack: e.target.checked })} data-testid={`expense-payback-for-${u.id}`} /> Paid back by default
+                </label>
                 <div className="flex flex-wrap gap-1.5 basis-full" role="group" aria-label={`Projects ${u.name} can file to`} data-testid={`visible-projects-${u.id}`}>
                   <PickChip on={!list} onToggle={() => { if (list) void setVisible(u.id, []); }} testid={`visible-project-${u.id}-all`}>All projects</PickChip>
                   {fileable.map((p) => {

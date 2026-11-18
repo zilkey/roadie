@@ -15,7 +15,7 @@ import { DEFAULT_PX, fromSaved, type PanelWidth } from "@/lib/roadie-width";
 export type Width = PanelWidth;
 export interface ChatMsg { id: string; role: "user" | "assistant"; text: string; actions: AssistantAction[]; stopped?: boolean }
 /** `replyId` is where the server will save the reply (from its first event); `stopped` once the person tapped Stop. */
-export interface Pending { text: string; reply: string; actions: AssistantAction[]; doneId?: string; error?: string; replyId?: string; stopped?: boolean }
+export interface Pending { text: string; reply: string; actions: AssistantAction[]; doneId?: string; error?: string; replyId?: string; stopped?: boolean; status?: string }
 
 const WIDTH_KEY = "roadie.width";
 const readWidth = (): Width => { try { return fromSaved(localStorage.getItem(WIDTH_KEY)); } catch { return DEFAULT_PX; } };
@@ -116,7 +116,7 @@ export function useRoadie(onNavigated?: () => void) {
   const inFlight = useRef<InFlight | null>(null);
   /** Applies one event to the visible `pending` and to `acc`, the finished turn that `send` returns. */
   const apply = useCallback((e: AssistantEvent, acc: Turn) => {
-    const add = (a: AssistantAction) => { acc.actions.push(a); setPending((p) => p && { ...p, actions: [...p.actions, a] }); };
+    const add = (a: AssistantAction) => { acc.actions.push(a); setPending((p) => p && { ...p, actions: [...p.actions, a], status: undefined }); };
     if (e.type === "start") {
       // Where the reply will be saved: switch to its conversation now, so a Stop still shows the saved copy.
       if (e.threadId !== threadId) {
@@ -124,7 +124,8 @@ export function useRoadie(onNavigated?: () => void) {
         saveThread(e.threadId);
       }
       setPending((p) => p && { ...p, replyId: e.messageId });
-    } else if (e.type === "text") { acc.reply += e.delta; setPending((p) => p && { ...p, reply: p.reply + e.delta }); }
+    } else if (e.type === "text") { acc.reply += e.delta; setPending((p) => p && { ...p, reply: p.reply + e.delta, status: undefined }); }
+    else if (e.type === "status") setPending((p) => p && { ...p, status: e.label || undefined });
     else if (e.type === "action") add({ kind: "action", label: e.label });
     else if (e.type === "readback") add({ kind: "readback", label: e.label, runId: e.runId });
     else if (e.type === "confirm") add({ kind: "confirm", label: e.summary, pendingId: e.pendingId, command: e.command, status: "pending", ...(e.fields ? { fields: e.fields } : {}), ...(e.voice ? { voice: true } : {}) });

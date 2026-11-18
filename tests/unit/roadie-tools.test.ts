@@ -61,3 +61,16 @@ test("the money commands are tools, showDeals.setIncome is gone, and every schem
   assert.ok((pay.inputJsonSchema.properties as Record<string, unknown>).to);
   assert.ok((defs.find((t) => t.name === "expenses.add")!.inputJsonSchema.properties as Record<string, unknown>).projectId);
 });
+
+test("tool schemas: no boolean enum or const (Vertex rejects a boolean enum, e.g. from z.literal(false), with a 400 for every message)", () => {
+  const bad: string[] = [];
+  const walk = (v: unknown, at: string) => {
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    if (Array.isArray(o.enum) && o.enum.some((x) => typeof x === "boolean")) bad.push(at);
+    if (typeof o.const === "boolean") bad.push(`${at}.const`);
+    for (const [k, x] of Object.entries(o)) walk(x, `${at}.${k}`);
+  };
+  for (const role of ["admin", "member"] as const) for (const d of toolDefs(role)) walk(d.inputJsonSchema, `${role}:${d.name}`);
+  assert.deepEqual(bad, []);
+});

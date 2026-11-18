@@ -176,7 +176,8 @@ function Chat({ messages, pending, busy, send, stop, on, notice, voice, autoFocu
             <>
               <Bubble role="user" text={pending.text} on={on} />
               <Bubble role="assistant" text={pending.reply} actions={pending.actions} on={on} live={!busy} stopped={pending.stopped} />
-              {busy && !pending.reply && !pending.actions.length && <div className="s italic" role="status" data-testid="roadie-vamp">{vamp.replace(/(…|\.{3})\s*$/, "")}<span className="roadie-dots" aria-hidden><span>.</span><span>.</span><span>.</span></span></div>}
+              {busy && pending.status && <div className="s italic" role="status" data-testid="roadie-status">{pending.status}</div>}
+              {busy && !pending.status && !pending.reply && !pending.actions.length && <div className="s italic" role="status" data-testid="roadie-vamp">{vamp.replace(/(…|\.{3})\s*$/, "")}<span className="roadie-dots" aria-hidden><span>.</span><span>.</span><span>.</span></span></div>}
               {pending.error && <div className="text-sm text-warn" data-testid="roadie-error">{pending.error}</div>}
             </>
           )}

@@ -1,6 +1,9 @@
 import { z, type MessageData } from "genkit";
 import type { AssistantAction, AssistantEvent, PageContext, ToolTrace } from "@/schema/assistant";
-import { getAi, modelLabel, untilStopped, withModelRetry } from "./ai";
+import { getAi, MODEL_WAITS, modelLabel, untilStopped, withModelRetry } from "./ai";
+
+/** Shown while the model keeps answering "busy" and Roadie waits to try again. */
+export const BUSY = "The AI service is busy. Still trying…";
 import { contextNow, pageList, pageRecord } from "./context";
 import { claimsChange, cleanMessages, requestShape, withoutThoughts } from "./guard";
 import { makeCtx, type Session } from "./run";
@@ -157,10 +160,17 @@ export function getChatFlow() {
         const acted = () => actions.some((a) => a.kind !== "action" || !/^(Couldn't|No page|No \w+ with)/.test(a.label));
         const generate = async () => {
           let words = "";
-          const ask = (msgs: MessageData[]) => untilStopped(withModelRetry(() => ai.generate({
-            model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true, abortSignal,
-            onChunk: (c) => { if (c.text) words += c.text; },
-          })), abortSignal);
+          // The model is busy (429/503): after the first quick retry, say so, so the person isn't left watching dots.
+          // An empty status clears the note once the model answers.
+          const ask = async (msgs: MessageData[]) => {
+            let told = false;
+            const res = await untilStopped(withModelRetry(() => ai.generate({
+              model: model as never, system: sys, messages: msgs, tools: offered(), returnToolRequests: true, abortSignal,
+              onChunk: (c) => { if (c.text) words += c.text; },
+            }), MODEL_WAITS, (i) => { if (i >= 1 && !told) { told = true; sendChunk({ type: "status", label: BUSY }); } }), abortSignal);
+            if (told) sendChunk({ type: "status", label: "" });
+            return res;
+          };
           try {
             return { res: await ask(cleanMessages(messages)), words };
           } catch (e) {

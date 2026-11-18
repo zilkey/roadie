@@ -119,6 +119,8 @@ export type AssistantEvent =
   | { type: "readback"; label: string; runId: string }
   | { type: "confirm"; pendingId: string; command: string; summary: string; fields?: CardField[]; voice?: boolean }
   | { type: "done"; threadId: string; messageId?: string }
+  /** A passing note while Roadie waits (the model is busy): shown in place of the waiting dots until more arrives; an empty label clears it. */
+  | { type: "status"; label: string }
   /** threadId and messageId when the turn was saved anyway, so a retry continues the same conversation. */
   | { type: "error"; message: string; threadId?: string; messageId?: string };
 

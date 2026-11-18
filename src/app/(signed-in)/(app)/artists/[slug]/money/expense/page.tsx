@@ -12,7 +12,7 @@ import { DraftNote } from "@/components/drafts/UnfinishedCard";
 import { useDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { useCollection, useDoc, type Row } from "@/lib/firestore-hooks";
-import { defaultProject, dollarsToCents, EXPENSE_LABEL, canFileTo, fileableProjects, formatCents, memberProjectsOf, parseDollars } from "@/lib/money";
+import { defaultProject, dollarsToCents, EXPENSE_LABEL, canFileTo, fileableProjects, formatCents, memberProjectsOf, parseDollars, paysBackByDefault } from "@/lib/money";
 import { fmtLong, isOff, showName } from "@/lib/shows";
 import { useTourEntries } from "@/components/tours/money";
 import type { Release, Project, Rehearsal, Show, Tour, User } from "@/schema";
@@ -60,7 +60,7 @@ function AddExpense() {
     tourId ? draftPath.newUnder("tours", tourId, "expenses") : fromShow ? draftPath.newUnder("shows", fromShow, "expenses") : rehearsalId ? draftPath.newUnder("rehearsals", rehearsalId, "expenses")
       : fromProject ? draftPath.newUnder("projects", fromProject, "expenses") : draftPath.newIn("expenses"),
     {
-      amount: "", amountEdited: false, what: "", cat: rehearsalId || fromShow ? "gas" : "gear", showId: fromShow, projectId: fromProject, tourEntryId: sp.get("tourEntryId") ?? "", link: "", payBack: true,
+      amount: "", amountEdited: false, what: "", cat: rehearsalId || fromShow ? "gas" : "gear", showId: fromShow, projectId: fromProject, tourEntryId: sp.get("tourEntryId") ?? "", link: "", payBack: undefined as boolean | undefined,
     },
     { title: (v) => `New expense · ${v.what || (v.amount ? `$${v.amount}` : "")}`.replace(/ · $/, "") });
   const mutationId = useRef(newMutationId());
@@ -74,8 +74,8 @@ function AddExpense() {
     draft.setValue((d) => (d.cat === "gear" && !d.what && !d.amount ? { ...d, cat: "gas" } : d));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.ready, tourEntries.byId]);
-  // Gas is always paid back; anything else is the person's choice.
-  const payBack = isGas || draft.value.payBack !== false;
+  // Until ticked or unticked here, the person's own default (Settings › Money: admins who cover their own costs start unticked).
+  const payBack = draft.value.payBack ?? paysBackByDefault(memberProjectsOf(artistDoc?.expenseProjects, me.uid));
   const patch = (p: Partial<typeof draft.value>) => draft.setValue((d) => ({ ...d, ...p }));
   const [showReceipt, setShowReceipt] = useState(false);
   const [q, setQ] = useState("");
@@ -188,8 +188,7 @@ function AddExpense() {
           ))}
         </> : <button type="button" className="btn ghost sm justify-self-start" onClick={() => setShowReceipt(true)} data-testid="expense-add-receipt">Add receipt</button>}
 
-        {isGas ? <span className="s">Gas is always paid back.</span>
-          : <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => patch({ payBack: e.target.checked })} data-testid="expense-payback" /><span>The band should pay me back</span></label>}
+        <label className="flex items-center gap-2"><input type="checkbox" checked={payBack} onChange={(e) => patch({ payBack: e.target.checked })} data-testid="expense-payback" /><span>The band should pay me back</span></label>
         <span className="s">You can edit or remove it on My money until it's been paid back.</span>
         <ErrorBox error={error} />
         <DraftNote restoredAt={draft.restoredAt} status={draft.status} onStartOver={() => void draft.clear({ reset: true })} />

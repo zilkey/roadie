@@ -13,7 +13,7 @@ import { areaFor, priceFor } from "../gas/price";
 import { requireContact } from "../venues";
 import { QuickEntryRow, expenseCategory, incomeCategory, paymentMethod, payoutKind, driveRef, expenseGasBase, geoPoint, fuelGrade, roleIn, type FuelAreaKind, type DrivingSettings } from "@/schema";
 import { refreshDealTotals } from "../dealTotals";
-import { canFileTo, INCOME_LABEL, isOwedBill, memberProjectsOf, owesBack, type MemberProjects } from "@/lib/money";
+import { canFileTo, INCOME_LABEL, isOwedBill, memberProjectsOf, owesBack, paysBackByDefault, type MemberProjects } from "@/lib/money";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
 import { requireTrackOnProject } from "./releases";
 import { requireEntryOnTour, requireTourFor } from "./tours";
@@ -99,6 +99,12 @@ const refresh = (w: Writer, ...showIds: unknown[]) => Promise.all([...new Set(sh
  * tour's "Money goes to" (a tourId with no show), else the payer's own default project (expenses only), else the default for
  * the show's artist and billedAs. Throws when there is nowhere to put it.
  */
+/** Whether a new expense this person paid starts as paid back: their Settings › Money choice (paid back unless turned off). */
+async function payBackDefault(w: Writer, userId: string): Promise<boolean> {
+  const artist = await artistFor(w);
+  return paysBackByDefault(memberProjectsOf(artist.expenseProjects as MemberProjects[] | undefined, userId));
+}
+
 async function projectFor(w: Writer, o: { projectId?: string; show?: Doc | null; rehearsal?: Doc | null; tourId?: string; payerId?: string }): Promise<string> {
   if (o.projectId) return (await requireOpenProject(w, o.projectId)).id;
   if (o.show?.projectId) return (await requireOpenProject(w, o.show.projectId as string)).id;
@@ -211,11 +217,11 @@ const GasIn = expenseGasBase.omit({ overridden: true });
 
 export const expensesAdd = defineCommand({
   name: "expenses.add", roles: ["admin", "member", "mcp"],
-  description: "Add an expense: amount in cents, what it was for (a short title), notes (optional: the details, shown under the title), category, optional showId or rehearsalId and receipt (Drive link), payBack (default true: the band owes it back). " +
+  description: "Add an expense: amount in cents, what it was for (a short title), notes (optional: the details, shown under the title), category, optional showId or rehearsalId and receipt (Drive link), payBack (whether the band owes it back; leave it out to use the payer's own default from Settings › Money, which is usually yes). " +
     "userId is who paid, from their own account (a user id from context.now band[].userId), defaulting to the speaker. Members add their own; admins may pass userId (\"For\") to log one for a bandmate — gas then uses that person's saved home and MPG (see expenses.estimateGas). " +
     "to is who was paid (the vendor): exactly one of { contactId }, { musicianId }, { userId } or { name }; the server copies the name. owed:true (admins) is a bill nobody has paid yet (\"we owe Woodshed $60\"): no payer, nothing to pay back; expenses.markPaid settles it with the payer and the date. " +
     "category: gear|gas|travel|lodging|food|recording|mixing|mastering|pressing|artwork|photo|video|space|marketing|fees|other (gas is fuel; travel is flights, tolls, parking). projectId (from context.now projects) defaults to the show's project, else the rehearsal's, else the payer's own default project (Settings › Money), else the default project. " +
-    "A gas expense (category gas) carries the frozen estimate in `gas` and is paid back unless payBack is false (the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, carName, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source, areaKind, carId, cars and homeAddress). The start and end addresses are kept on the expense as they were that day: send fromText for a typed start (with fromKind home the server copies the payer's saved home into fromText), and to with its address (a rehearsal's location is filled in when to.address is missing). carName is filled from the payer's car when the estimate used one. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else): saveMpg puts gas.mpg on the car carId (the estimate's carId), else their only car, else a new car named \"Car\"; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
+    "A gas expense (category gas) carries the frozen estimate in `gas` and follows the same payBack rule (false: the driver covers their own gas): gas is { fromKind: home|typed, fromText (typed only), to: { name, address, lat, lng }, oneWayMiles, roundTrip, miles, mpg, carName, grade, priceMilli, priceArea, priceWeek, seriesId, estimateCents }, copied from expenses.estimateGas (leave out its source, areaKind, carId, cars and homeAddress). The start and end addresses are kept on the expense as they were that day: send fromText for a typed start (with fromKind home the server copies the payer's saved home into fromText), and to with its address (a rehearsal's location is filled in when to.address is missing). carName is filled from the payer's car when the estimate used one. saveMpg / saveAsHome write the PAYER's settings (userId, else the caller; only admins can name someone else): saveMpg puts gas.mpg on the car carId (the estimate's carId), else their only car, else a new car named \"Car\"; setAsRehearsalLocation (admins) also sets the rehearsal's location from the typed To. " +
     "Money for a record goes on the release's project (records.get releases: projectId); releaseTrackId (one of its tracks) pins it to one track (\"mix v4 revisions\"). " + TOUR_DESC,
   input: z.strictObject({
     amount: z.number().int().positive(), what: z.string().trim().min(1), notes: z.string().trim().min(1).optional(), category: expenseCategory, date: dateStr.optional(),
@@ -247,14 +253,16 @@ export const expensesAdd = defineCommand({
     const projectId = await projectFor(w, { projectId: i.projectId, show, rehearsal, tourId: i.tourId, payerId: i.owed ? undefined : userId });
     if (i.releaseTrackId) await requireTrackOnProject(w, projectId, i.releaseTrackId);
     const tour = await tourTagFor(w, { tourId: i.tourId, tourEntryId: i.tourEntryId, show });
-    const { userId: _u, projectId: _p, gas, saveMpg, saveAsHome, setAsRehearsalLocation, carId, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;
+    // Left out: the payer's own default (Settings › Money). Admins who cover their own costs start at not paid back.
+    const payBack = i.owed ? false : i.payBack ?? await payBackDefault(w, userId);
+    const { userId: _u, projectId: _p, payBack: _pb, gas, saveMpg, saveAsHome, setAsRehearsalLocation, carId, to, owed, tourId: _t, tourEntryId: _te, ...rest } = i;
     const r = await w.create("expenses", {
       ...rest, ...tour, userId, date: i.date ?? await todayOf(ctx), ...(projectId ? { projectId } : {}),
       ...(to ? { to: await resolveTo(w, to) } : {}),
       // An open bill has no payer yet, so there is nothing to pay anyone back for.
       ...(owed ? { owed: true, payBack: false } : {}),
-      // Gas is paid back to whoever drove unless the caller says not (payBack:false: they cover their own).
-      ...(!owed && i.category === "gas" && i.payBack !== false ? { payBack: true } : {}),
+      // Gas always says which; anything else is stored only when it isn't the usual pay-back.
+      ...(!owed && (i.category === "gas" || i.payBack !== undefined || !payBack) ? { payBack } : {}),
       ...(gas ? { gas: { ...(await gasSnapshot(gas, u, rehearsal, carId)), overridden: i.amount !== gas.estimateCents } } : {}),
     });
     if (i.showId) await refreshDealTotals(w, i.showId, { expenses: [(await w.get("expenses", r.id))!] });
@@ -458,7 +466,8 @@ export const expensesPayPerson = defineCommand({
 
 const ExpenseLine = z.strictObject({
   id: z.string().min(1).optional(), what: z.string().trim().min(1), amount: z.number().int().positive(), userId: z.string().min(1).optional(),
-  payBack: z.boolean().default(true), receipt: driveRef.nullable().optional(),
+  /** New lines: left out = the payer's default (Settings › Money). Existing lines: left out = unchanged. */
+  payBack: z.boolean().optional(), receipt: driveRef.nullable().optional(),
 });
 type ExpenseTarget = { kind: "shows" | "rehearsals"; id: string };
 const targetKey = (t: ExpenseTarget) => (t.kind === "shows" ? "showId" : "rehearsalId");
@@ -481,8 +490,8 @@ function setExpensesFor(ctx: Ctx, target: ExpenseTarget, lines: z.infer<typeof E
         const u = await w.get("users", userId);
         if (!u || u.deletedAt) throw new AppError("not_found", "User not found", 404);
         const projectId = await projectFor(w, { show: target.kind === "shows" ? rec : null, rehearsal: target.kind === "rehearsals" ? rec : null, payerId: userId });
-        const { id: _i, receipt, ...rest } = l;
-        out.added.push((await w.create("expenses", { ...rest, userId, ...(receipt ? { receipt } : {}), category: "other", date: await todayOf(ctx), ...(projectId ? { projectId } : {}), ...(rec.tourId ? { tourId: rec.tourId } : {}), [key]: target.id })).id);
+        const { id: _i, receipt, payBack, ...rest } = l;
+        out.added.push((await w.create("expenses", { ...rest, payBack: payBack ?? await payBackDefault(w, userId), userId, ...(receipt ? { receipt } : {}), category: "other", date: await todayOf(ctx), ...(projectId ? { projectId } : {}), ...(rec.tourId ? { tourId: rec.tourId } : {}), [key]: target.id })).id);
         continue;
       }
       const x = byId.get(l.id);

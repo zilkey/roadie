@@ -102,7 +102,8 @@ export function getAi(): Promise<{ ai: Genkit; model: unknown }> {
  * Vertex answers 429 RESOURCE_EXHAUSTED (and the odd 503) under load with no fixed quota to raise: the right answer is a
  * short wait and another go. Seen 2026-10-29 in the eval: one 429 inside a venue lookup failed the whole tool, and in
  * prod at 07:08 the same day: three 429s in seven seconds outlasted two waits, so the person saw "dropped a cable" and
- * the retry a minute later worked. The waits now cover about half a minute.
+ * the retry a minute later worked. 2026-11-18 07:31: 429s for 47 seconds outlasted waits of half a minute, so they now cover
+ * about a minute and a half, and `onWait` lets a chat say it is still trying instead of going quiet.
  */
 /**
  * Settles with `call`, or rejects as soon as `signal` fires. Genkit 1.43 neither passes the signal to the model nor
@@ -117,12 +118,14 @@ export function untilStopped<T>(call: Promise<T>, signal: AbortSignal): Promise<
   });
 }
 
-export async function withModelRetry<T>(call: () => Promise<T>, waits = [1500, 4000, 8000, 15000]): Promise<T> {
+export const MODEL_WAITS = [1500, 4000, 8000, 15000, 25000, 35000];
+export async function withModelRetry<T>(call: () => Promise<T>, waits = MODEL_WAITS, onWait?: (attempt: number) => void): Promise<T> {
   for (let i = 0; ; i++) {
     try { return await call(); } catch (e) {
       const status = (e as { status?: string }).status;
       if (i >= waits.length || (status !== "RESOURCE_EXHAUSTED" && status !== "UNAVAILABLE")) throw e;
       console.warn(JSON.stringify({ roadieModelRetry: status, wait: waits[i] }));
+      onWait?.(i);
       await new Promise((r) => setTimeout(r, waits[i]));
     }
   }
