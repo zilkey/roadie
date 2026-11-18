@@ -63,8 +63,9 @@ async function main() {
       process.exit(1);
     }
 
-    // The service account only: no `firebase login` token, no gcloud defaults.
-    const env = { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: key.file, FIREBASE_TOKEN: "", CLOUDSDK_CONFIG: fs.mkdtempSync(path.join(os.tmpdir(), "roadie-gcloud-")) };
+    // The service account only: no `firebase login` token, no gcloud defaults. The Firebase CLI reads its stored login from
+    // $XDG_CONFIG_HOME/configstore and prefers it, even an expired one ("credentials are no longer valid"), over the key.
+    const env = { ...process.env, GOOGLE_APPLICATION_CREDENTIALS: key.file, FIREBASE_TOKEN: "", CLOUDSDK_CONFIG: fs.mkdtempSync(path.join(os.tmpdir(), "roadie-gcloud-")), XDG_CONFIG_HOME: fs.mkdtempSync(path.join(os.tmpdir(), "roadie-xdg-")) };
     const run = spawnSync("npx", ["firebase", "deploy", "--only", "firestore", "--project", PROJECT, "--non-interactive"], { env, stdio: "inherit" });
     if (run.status !== 0) process.exit(run.status ?? 1);
 
