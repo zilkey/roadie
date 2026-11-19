@@ -32,7 +32,7 @@ test("Writing tab: add a song in the Writing phase and upload audio to the Songw
   await page.getByTestId("song-title").fill("Porch Light");
   await page.getByTestId("save-song").click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  await expect(page.getByTestId("song-status-select")).toHaveValue("writing");
+  await expect(page.getByTestId("song-status")).toHaveText("Writing");
   await expect(page.getByTestId("song-upload-demo")).toContainText("Upload audio");
   await page.getByTestId("song-upload-demo-input").setInputFiles({ name: "Porch Light work tape.m4a", mimeType: "audio/mp4", buffer: Buffer.from("not really audio") });
   await expect(page.getByTestId("song-upload-demo-done")).toHaveText("Uploaded to Songwriting.");
@@ -53,13 +53,15 @@ test("a song moving from Writing into Learning is celebrated", async ({ page }) 
   await page.getByTestId("add-song-btn").click();
   await page.getByTestId("song-title").fill("Night Shift");
   await page.getByTestId("save-song").click();
-  await expect(page.getByTestId("song-status-select")).toHaveValue("writing");
+  await expect(page.getByTestId("song-status")).toHaveText("Writing");
   await expect(page.getByTestId("celebration")).toHaveCount(0);
 
-  // the status dropdown sits at the top right, outside Edit, and lists no Ideas
-  await expect(page.getByTestId("song-status-select").locator("option")).toHaveText(["Playing", "Learning", "Writing", "Retired"]);
-  await page.getByTestId("song-status-select").selectOption("learning");
-  await expect(page.getByTestId("song-status-select")).toHaveValue("learning");
+  // the status is a pill by the title; it changes from More, which lists the four statuses (no Ideas) with the current one ticked
+  await page.getByTestId("song-actions").click();
+  await expect(page.getByTestId("song-menu").getByRole("menuitemradio")).toHaveText([/Playing$/, /Learning$/, /Writing$/, /Retired$/]);
+  await expect(page.getByTestId("song-menu-status-writing")).toHaveAttribute("aria-checked", "true");
+  await page.getByTestId("song-menu-status-learning").click();
+  await expect(page.getByTestId("song-status")).toHaveText("Learning");
   await expect(page.getByTestId("celebration-title")).toHaveText("Out of the writing room!");
   await expect(page.getByTestId("celebration-text")).toHaveText("Night Shift is now Learning");
 });
@@ -110,17 +112,33 @@ test("add a song and attach files picked from a Drive search", async ({ page }) 
   // it shows up in the list with its key and length in their own columns
   await page.getByTestId("back").click();
   await page.getByTestId("songs-filter").fill("last train");
-  const row = page.getByTestId("songs-list").locator("tbody tr").filter({ hasText: "Last Train" }).first();
+  // exactly this song's row: the seed has a "Last Train to Lyons" too
+  const row = page.getByTestId("songs-list").locator("tbody tr").filter({ has: page.getByRole("link", { name: "Last Train", exact: true }) });
   await expect(row).toContainText("E");
   await expect(row).toContainText("4:17");
 
   // archive from the song's actions menu
   await row.getByRole("link").first().click();
   await expect(page.getByTestId("song-page")).toBeVisible();
-  page.once("dialog", (d) => d.accept());
+  // Archive explains itself first, with what the song is on, and offers Retired instead
   await page.getByTestId("song-actions").click();
   await page.getByTestId("song-menu-archive").click();
+  const dlg = page.getByTestId("archive-song-dialog");
+  await expect(dlg.getByTestId("archive-what")).toContainText("Nothing it's already on changes");
+  await expect(dlg.getByTestId("archive-refs")).toContainText("files");
+  await dlg.getByTestId("archive-retire").click();
+  await expect(dlg).toBeHidden();
+  await expect(page.getByTestId("song-status")).toHaveText("Retired");
+  await expect(page.getByTestId("save-status")).toHaveAttribute("data-state", "saved");
+  // a Retired song isn't offered Retired again; Archive hides it from the list
+  await page.getByTestId("song-actions").click();
+  await page.getByTestId("song-menu-archive").click();
+  await expect(dlg.getByTestId("archive-retire")).toHaveCount(0);
+  await dlg.getByTestId("archive-confirm").click();
   await expect(page).toHaveURL(/\/songs$/);
+  await page.getByTestId("songs-filter").fill("last train");
+  await expect(page.getByTestId("songs-list").getByRole("link", { name: "Last Train to Lyons", exact: true })).toBeVisible();
+  await expect(page.getByTestId("songs-list").getByRole("link", { name: "Last Train", exact: true })).toHaveCount(0);
 });
 
 test("build a setlist template, then seed a show's setlist from it against the set length", async ({ page }) => {

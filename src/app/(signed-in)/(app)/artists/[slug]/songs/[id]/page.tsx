@@ -10,10 +10,10 @@ import { SaveStatus } from "@/components/SaveStatus";
 import { InlineValue } from "@/components/InlineValue";
 import { celebrateSong } from "@/components/Celebrate";
 import { useAutosave } from "@/lib/autosave";
-import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
+import { Dialog, ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { useProfile } from "@/lib/auth";
 import { todayStr } from "@/lib/booking";
-import { daysAgoLabel, fmtLen, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
+import { daysAgoLabel, fmtLen, refsLabel, songRefs, STATUS_LABEL, KIND_LABEL, KIND_ORDER, lastRehearsed, parseLen, playerFor, playsInline, PROVIDER_LABEL, providerFor, STATUS_ORDER, type FileKind, type SongStatus } from "@/lib/music";
 import { FileIcon, Missing, fmtDay, useMusic, type FileRow, type SongRow } from "@/components/music/common";
 import { DrivePicker, NoBandFolder, NoChartsFolder, type Pick } from "@/components/music/DrivePicker";
 import { Upload } from "@/components/music/Upload";
@@ -121,6 +121,9 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
   // The picked status shows at once; once the saved song catches up, it shows the song's again.
   const [status, setStatus] = useState<SongStatus | null>(null);
   useEffect(() => setStatus(null), [song.status]);
+  const shown = status ?? song.status;
+  const setStatusTo = (s: SongStatus) => { if (s === shown) return; setStatus(s); as.patch({ status: s }, { now: true }); };
+  const [archiving, setArchiving] = useState(false);
   // Celebrate when the saved status leaves Writing (into anything but Retired), whoever changed it while this page is open.
   const was = useRef({ id: song.id, status: song.status });
   useEffect(() => {
@@ -171,13 +174,22 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       <PageTitle
         back={<BackLink mode="back" href={song.status === "writing" ? "/songs?seg=writing" : "/songs"} label="All songs" />}
         title={song.title}
-        pill={<Metronome id={song.id} bpm={song.bpm} title={song.title} />}
+        pill={<>
+          {/* The status reads beside the title for everyone; admins change it from More. */}
+          <span className={`pill${shown === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[shown]}</span>
+          <Metronome id={song.id} bpm={song.bpm} title={song.title} />
+        </>}
         sub={[song.key, song.bpm ? `${song.bpm} bpm` : null, song.lengthSec ? fmtLen(song.lengthSec) : null].filter(Boolean).join(" · ") || undefined}
         actions={admin ? <>
           {/* Conflicts and failed saves still surface here; the plain Saved tick sits beside each value. */}
           <SaveStatus {...as.statusProps} />
           <Menu label="More actions" testid="song" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>}
-            items={[{ key: "archive", label: "Archive song", danger: true, disabled: busy, onSelect: async () => { if (confirm(`Archive ${song.title}?`) && (await call("songs.remove", { id: song.id }))) router.push("/songs"); } }]} />
+            items={[
+              // The status is a choice in the menu: picking one saves at once, with the usual Saved + Undo toast.
+              ...STATUS_ORDER.map((s) => ({ key: `status-${s}`, label: STATUS_LABEL[s], checked: shown === s, onSelect: () => setStatusTo(s) })),
+              { key: "archive", label: "Archive song…", danger: true, divider: true, disabled: busy, onSelect: () => setArchiving(true) },
+            ]} />
+          {archiving && <ArchiveSongDialog song={song} m={m} onClose={() => setArchiving(false)} onRetire={() => { setArchiving(false); setStatusTo("retired"); }} />}
         </> : undefined} />
       <section className="sg-sec" aria-labelledby="song-details-h">
         <h2 id="song-details-h" className="sg-lbl">Details</h2>
@@ -189,13 +201,6 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
               validate={(v) => (v ? null : "A song needs a title")} onSave={(v) => save("title", v, { title: v })} error={as.error} /></dd></div>}
             {admin && <div className="sf-row"><dt className="lbl">Short title</dt><dd><InlineValue testid="field-short-title" label="Short title" kind="text" value={text("shortTitle", song.shortTitle)} canEdit
               onSave={(v) => save("shortTitle", v, { shortTitle: v || null })} error={as.error} /></dd></div>}
-            {/* Admins pick the status here and it saves at once, with the usual Saved + Undo toast. */}
-            <div className="sf-row"><dt className="lbl">Status</dt><dd>{admin
-              ? <select className="select" aria-label="Status" value={status ?? song.status} data-testid="song-status-select"
-                  onChange={(e) => { setStatus(e.target.value as SongStatus); as.patch({ status: e.target.value }, { now: true }); }}>
-                  {STATUS_ORDER.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-                </select>
-              : <span className={`pill${song.status === "active" ? " ok" : ""}`} data-testid="song-status">{STATUS_LABEL[song.status]}</span>}</dd></div>
             <div className="sf-row"><dt className="lbl">BPM</dt><dd><InlineValue testid="field-bpm" label="BPM" kind="text" inputMode="numeric" value={text("bpm", song.bpm)} canEdit={admin}
               validate={(v) => (v === "" || Number.isFinite(Number(v)) ? null : "BPM is a number")}
               onSave={(v) => save("bpm", v, { bpm: v === "" ? null : Number(v) })} error={as.error} /></dd></div>
@@ -302,6 +307,40 @@ function SongView({ song, m }: { song: SongRow; m: ReturnType<typeof useMusic> }
       ))}
       <ErrorBox error={error} />
     </div>
+  );
+}
+
+/**
+ * Archive, said plainly before it happens. Archiving hides the song: it leaves the Songs list and every song picker, and
+ * its page stops opening. Nothing that already names it changes: setlists and templates keep it under its saved title,
+ * rehearsals and releases keep it, its files stay attached and Drive is untouched. Activity can undo it. Retired is the
+ * gentler choice for a song the band just doesn't play any more, so it's offered here too.
+ */
+function ArchiveSongDialog({ song, m, onClose, onRetire }: { song: SongRow; m: ReturnType<typeof useMusic>; onClose(): void; onRetire(): void }) {
+  const router = useRouter();
+  const { call, error, busy } = useCommand();
+  const tracks = useCollection<ReleaseTrack>("tracks", { group: true, where: [["songId", "==", song.id]] });
+  const refs = songRefs(song.id, { files: m.files, lists: [...m.setlists, ...m.templates], rehearsals: m.rehearsals, tracks: tracks.rows ?? [] });
+  const used = refs.setlists + refs.rehearsals + refs.releases + refs.files > 0;
+  async function archive() {
+    if (await call("songs.remove", { id: song.id })) router.push("/songs");
+  }
+  return (
+    <Dialog open onClose={onClose} title={`Archive ${song.title}?`} testid="archive-song-dialog">
+      <div className="grid gap-2 text-sm" data-testid="archive-what">
+        <p>Archiving hides the song. It disappears from the Songs list and from the song pickers on setlists and rehearsals, and its page won&apos;t open.</p>
+        <p><b>Nothing it&apos;s already on changes.</b> Setlists and templates keep it under its name, rehearsals and releases keep it, and its files stay attached (nothing is deleted from Drive).</p>
+        <p className="s" data-testid="archive-refs">{tracks.loading ? "Counting…" : used ? `It's on: ${refsLabel(refs)}.` : "Nothing is attached to it yet."}</p>
+        <p className="s">Changed your mind later? Undo it from Artist settings &gt; Activity.</p>
+        {song.status !== "retired" && <p className="s">If the band just doesn&apos;t play it any more, mark it <b>Retired</b> instead: it stays in the Songs list and can still be added to a setlist.</p>}
+      </div>
+      <ErrorBox error={error} />
+      <div className="flex flex-wrap gap-2">
+        <button className="btn danger" disabled={busy} onClick={archive} data-testid="archive-confirm">Archive</button>
+        {song.status !== "retired" && <button className="btn outline" disabled={busy} onClick={onRetire} data-testid="archive-retire">Mark Retired instead</button>}
+        <button className="btn ghost" onClick={onClose} data-testid="archive-cancel">Cancel</button>
+      </div>
+    </Dialog>
   );
 }
 

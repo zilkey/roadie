@@ -70,7 +70,8 @@ function rehPatch(a: RehForm, b: RehForm): Record<string, unknown> {
   return p;
 }
 
-const titleOf = (m: Music, sid: string) => m.songs.find((s) => s.id === sid)?.title ?? "Song";
+/** A song's title: the library's, else the title the rehearsal saved (an archived song keeps its name here), else "Song". */
+const titleOf = (m: Music, sid: string, saved?: { songId: string; title: string }[]) => m.songs.find((s) => s.id === sid)?.title ?? saved?.find((s) => s.songId === sid)?.title ?? "Song";
 
 // ---------- location ----------
 
@@ -289,17 +290,17 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
           {ranIds.length === 0 ? <div className="d-muted">No songs yet.{admin ? " Import a setlist or add songs above." : ""}</div> : (
             <ol className="m-0 grid list-none p-0" data-testid="rehearsal-songs">
               {ranIds.map((sid, i) => (
-                <li key={sid} className="d-row !flex-nowrap" data-testid={`reh-song-row-${titleOf(m, sid)}`}>
+                <li key={sid} className="d-row !flex-nowrap" data-testid={`reh-song-row-${titleOf(m, sid, existing.songs)}`}>
                   <Link href={`/rehearsals/${existing.id}/songs/${sid}`} className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3" data-testid="reh-song-open">
                     <span className="w-5 shrink-0 text-sm d-muted">{i + 1}</span>
                     <span className="grid min-w-0 flex-1">
-                      <span className="truncate font-semibold">{titleOf(m, sid)}</span>
+                      <span className="truncate font-semibold">{titleOf(m, sid, existing.songs)}</span>
                       {form.ran[sid] && <span className="whitespace-pre-wrap text-sm d-muted" data-testid="reh-song-note">{form.ran[sid]}</span>}
                     </span>
                     <span aria-hidden className="shrink-0 text-xl d-muted">›</span>
                   </Link>
-                  <Metronome id={sid} bpm={m.songs.find((s) => s.id === sid)?.bpm} title={titleOf(m, sid)} />
-                  {admin && <button type="button" aria-label={`Remove ${titleOf(m, sid)}`} className="min-h-[44px] min-w-[44px] shrink-0 border-0 bg-transparent text-lg s" disabled={busy}
+                  <Metronome id={sid} bpm={m.songs.find((s) => s.id === sid)?.bpm} title={titleOf(m, sid, existing.songs)} />
+                  {admin && <button type="button" aria-label={`Remove ${titleOf(m, sid, existing.songs)}`} className="min-h-[44px] min-w-[44px] shrink-0 border-0 bg-transparent text-lg s" disabled={busy}
                     onClick={() => removeSong(sid)} data-testid="reh-song-remove">×</button>}
                 </li>
               ))}
@@ -326,7 +327,7 @@ function ExistingRehearsal({ id, m, admin }: { id: string; m: Music; admin: bool
               <button type="button" className="btn acc justify-self-start" disabled={busy || picks.length === 0} data-testid="reh-attach" onClick={async () => { if (await call("files.attach", { rehearsalId: existing.id, files: picks })) { setAdding(false); setPicks([]); } }}>Attach {picks.length || ""} recording{picks.length === 1 ? "" : "s"}</button>
             </div>
           )}
-          {admin && <NewRecordings rehearsalId={existing.id} songs={ranIds.map((sid) => ({ id: sid, title: titleOf(m, sid) }))} />}
+          {admin && <NewRecordings rehearsalId={existing.id} songs={ranIds.map((sid) => ({ id: sid, title: titleOf(m, sid, existing.songs) }))} />}
           <div className="grid" data-testid="rehearsal-files">
             {files.map((f: FileRow) => (
               <RecordingRow key={f.id} file={f}

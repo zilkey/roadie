@@ -9,11 +9,14 @@ export interface MenuItem {
   disabled?: boolean; hint?: string; danger?: boolean;
   /** Draw a divider above this item. */
   divider?: boolean;
+  /** One of a set of choices (a song's status): the row is a menuitemradio, ticked when true. */
+  checked?: boolean;
 }
 
 /**
  * A "⋯" actions menu. The trigger is a 44px icon button, or an outline button holding `trigger` (e.g. "More ▾" in a page header), restyled by `triggerClass`; the list is role=menu with role=menuitem rows.
  * Closes on Escape (focus returns to the trigger) and on a click outside; arrow keys, Home and End move between items.
+ * Items with `checked` set are radio choices (role=menuitemradio, a ✓ on the ticked one).
  * Test ids: `${testid}-actions` (trigger), `${testid}-menu`, `${testid}-menu-${item.key}`.
  */
 export function Menu({ label, testid, items, trigger, triggerClass }: { label: string; testid: string; items: MenuItem[]; trigger?: React.ReactNode; triggerClass?: string }) {
@@ -21,7 +24,7 @@ export function Menu({ label, testid, items, trigger, triggerClass }: { label: s
   const root = useRef<HTMLDivElement>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const id = useId();
-  const enabled = () => Array.from(root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
+  const enabled = () => Array.from(root.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])') ?? []);
 
   useEffect(() => {
     if (!open) return;
@@ -51,9 +54,10 @@ export function Menu({ label, testid, items, trigger, triggerClass }: { label: s
           {items.map((it) => (
             <div key={it.key} role="none">
               {it.divider && <div className="menu-sep" role="separator" />}
-              <button type="button" role="menuitem" className={`menu-item${it.danger ? " danger" : ""}`} aria-disabled={it.disabled || undefined} tabIndex={-1}
+              <button type="button" role={it.checked === undefined ? "menuitem" : "menuitemradio"} aria-checked={it.checked} className={`menu-item${it.danger ? " danger" : ""}`} aria-disabled={it.disabled || undefined} tabIndex={-1}
                 title={it.disabled ? it.hint : undefined} data-testid={it.testid ?? `${testid}-menu-${it.key}`}
                 onClick={() => { if (it.disabled) return; setOpen(false); btn.current?.focus(); it.onSelect(); }}>
+                {it.checked !== undefined && <span aria-hidden className="w-4 text-center">{it.checked ? "✓" : ""}</span>}
                 {it.icon}
                 <span className="grid text-left"><span>{it.label}</span>{it.disabled && it.hint && <span className="s">{it.hint}</span>}</span>
               </button>
