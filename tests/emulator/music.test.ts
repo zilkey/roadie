@@ -44,10 +44,10 @@ beforeEach(async () => {
   await db.create(ctx, "artists", { timeZone: "America/Denver", name: "Band", slug: "band", driveFolderId: "fake-band-folder", chartsFolderId: "fake-folder-charts", links: {}, configurations: [] }, { id: TEST_ARTIST });
 });
 
-test("drive.search returns audio/video/Docs/Word with who can't open each", async () => {
+test("drive.search returns audio/video/Docs/Word/PDF with who can't open each; a pasted link finds that one file", async () => {
   const r = await cmd("drive.search", { q: "Sundial" });
   const names = r.files.map((f: any) => f.name).sort();
-  assert.deepEqual(names, ["Sundial chart Bb.docx", "Sundial demo.m4a", "Sundial lyrics"]); // no pdf
+  assert.deepEqual(names, ["Sundial chart Bb.docx", "Sundial chart D.pdf", "Sundial demo.m4a", "Sundial lyrics"]);
   const lyrics = r.files.find((f: any) => f.name === "Sundial lyrics");
   assert.equal(lyrics.inBandFolder, false);
   assert.deepEqual([...lyrics.missing].sort(), [ids.hugo, ids.felix].sort()); // nora owns it, rudy + iris have it; sam (no email) and the inactive one are not members
@@ -55,12 +55,19 @@ test("drive.search returns audio/video/Docs/Word with who can't open each", asyn
   assert.equal(demo.inBandFolder, true);
   assert.deepEqual(demo.missing, []);
   assert.equal(demo.kind, "demo");
-  assert.equal(r.files.find((f: any) => f.name.includes("chart")).key, "Bb");
+  assert.equal(r.files.find((f: any) => f.name === "Sundial chart Bb.docx").key, "Bb");
+  // a PDF is a chart, its key from the name
+  const pdf = r.files.find((f: any) => f.name === "Sundial chart D.pdf");
+  assert.deepEqual([pdf.kind, pdf.key], ["chart", "D"]);
+  // a pasted Drive link gives just that file, whatever its type; one the band account can't see is a plain not_found
+  const linked = await cmd("drive.search", { q: "https://drive.google.com/file/d/fake-photo-roots/view?usp=sharing" });
+  assert.deepEqual(linked.files.map((f: any) => f.name), ["Roots Music Project stage.jpg"]);
+  await assert.rejects(cmd("drive.search", { q: "https://docs.google.com/document/d/not-a-real-file-id/edit" }), { code: "not_found" });
 });
 
 test("songs.create attaches picked files with kind, key, owner, inBandFolder and sharing", async () => {
   const hits = (await cmd("drive.search", { q: "Sundial" })).files as any[];
-  const pick = hits.filter((f) => f.name !== "Sundial demo.m4a");
+  const pick = hits.filter((f) => f.name !== "Sundial demo.m4a" && f.mimeType !== "application/pdf");
   const { id, fileIds } = await cmd("songs.create", { title: "Sundial", key: "Bb", lengthSec: 198, status: "active", files: pick.map((f) => ({ driveFileId: f.driveFileId, kind: f.kind, key: f.key ?? undefined })) });
   assert.equal(fileIds.length, 2);
   const files = await db.list(SYS, "files", (q) => q.where("songId", "==", id));

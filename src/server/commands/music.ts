@@ -6,10 +6,11 @@ import type { Ctx } from "../ctx";
 import { AppError } from "../errors";
 import { driveClient, type DriveFile } from "../integrations";
 import { FOLDER_MIME } from "../integrations/drive";
+import { IntegrationError } from "../integrations/http";
 import { calendarLink, calendarPreview, calendarRemove, calendarSend, deleteEvent } from "../calendarSync";
 import { assertInBandFolder, bandFolders, bandmates, inspect, sharingOf, type Bandmate } from "../music";
 import { readDocText } from "../docText";
-import { guessKey, guessKind, isAttachable, isGoogleDoc, providerFor, setlistTotal, transitionOf } from "@/lib/music";
+import { driveIdFromUrl, guessKey, guessKind, isAttachable, isGoogleDoc, providerFor, setlistTotal, transitionOf } from "@/lib/music";
 import { showName, type ShowPlaceLike } from "@/lib/shows";
 import { SongInput, dateStr, timeStr, rehearsalLocation } from "@/schema";
 import { artistFor, defaultProjectIdFor, requireOpenProject } from "./projects";
@@ -67,13 +68,15 @@ async function writeFiles(w: Writer, docs: Record<string, unknown>[]) {
 export const driveSearch = defineCommand({
   name: "drive.search",
   roles: ["admin", "mcp"],
-  description: "Search Drive for audio, video, Docs and Word files matching a song title (all:true: any kind of file but folders, for release artwork, PDFs and the like). Each hit says which band members can't open it and whether it is in the band folder.",
+  description: "Search Drive for audio, video, Docs, Word and PDF files matching a song title (all:true: any kind of file but folders, for release artwork and the like). q can also be a Drive or Docs link: that one file comes back, whatever its type. Each hit says which band members can't open it and whether it is in the band folder.",
   input: z.strictObject({ q: z.string().min(1), all: z.boolean().optional() }),
   async run(ctx, { q, all }) {
     const drive = driveClient({ artistId: ctx.artistId });
-    const [hits, mates, { all: folder }] = await Promise.all([drive.search({ q }), bandmates(ctx), bandFolders(ctx.artistId)]);
+    // A pasted link names the file outright, so it isn't filtered by type (a folder still isn't a file).
+    const linked = driveIdFromUrl(q);
+    const [hits, mates, { all: folder }] = await Promise.all([linked ? linkedFile(drive, linked) : drive.search({ q }), bandmates(ctx), bandFolders(ctx.artistId)]);
     const out = [];
-    for (const f of hits.filter((h) => (all ? h.mimeType !== FOLDER_MIME : isAttachable(h.mimeType)))) {
+    for (const f of hits.filter((h) => (all || linked ? h.mimeType !== FOLDER_MIME : isAttachable(h.mimeType)))) {
       const ins = await inspect(f, mates, folder, drive);
       const kind = guessKind(f.name, f.mimeType);
       out.push({
@@ -84,6 +87,16 @@ export const driveSearch = defineCommand({
     return { files: out, bandmates: mates };
   },
 });
+
+/** The one file a pasted link names, or a plain error when the band's Google account can't see it. */
+async function linkedFile(drive: ReturnType<typeof driveClient>, id: string): Promise<DriveFile[]> {
+  try { return [await drive.get(id)]; } catch (e) {
+    if (e instanceof IntegrationError && (e.status === 404 || e.status === 403)) {
+      throw new AppError("not_found", "Roadie can't open that Drive link. Share the file with the band's Google account, or search by name.", 404);
+    }
+    throw e;
+  }
+}
 
 export const filesAttach = defineCommand({
   name: "files.attach",

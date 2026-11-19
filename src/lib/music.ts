@@ -14,8 +14,8 @@ export function mimeGroup(mime?: string): MimeGroup {
   if (mime === "application/pdf") return "pdf";
   return "other";
 }
-/** Drive search only offers audio, video, Docs and Word files. */
-export const isAttachable = (mime?: string) => ["audio", "video", "doc"].includes(mimeGroup(mime));
+/** Drive search only offers audio, video, Docs, Word and PDF files. */
+export const isAttachable = (mime?: string) => ["audio", "video", "doc", "pdf"].includes(mimeGroup(mime));
 
 
 export type Provider = "drive" | "spotify" | "youtube" | "web";
@@ -29,6 +29,18 @@ export function providerFor(url: string): Provider {
   if (is("youtube.com") || is("youtu.be")) return "youtube";
   if (is("drive.google.com") || is("docs.google.com")) return "drive";
   return "web";
+}
+
+/**
+ * The file id in a pasted Drive or Docs link (…/d/<id>/…, …/file/d/<id>, open?id=<id>), or null when it isn't one.
+ * Folder links are not files, so they give null too.
+ */
+export function driveIdFromUrl(text: string): string | null {
+  let u: URL;
+  try { u = new URL(text.trim()); } catch { return null; }
+  if (providerFor(u.href) !== "drive" || u.pathname.includes("/folders/")) return null;
+  const id = /\/d\/([\w-]{10,})/.exec(u.pathname)?.[1] ?? u.searchParams.get("id");
+  return id && /^[\w-]{10,}$/.test(id) ? id : null;
 }
 
 export type SongStatus = "active" | "learning" | "retired" | "writing";
@@ -69,6 +81,8 @@ export function guessKind(name: string, mime?: string, provider?: Provider): Fil
   if (g === "video") return "recording";
   if (/\blive\b/.test(n)) return "recording";
   if (g === "audio") return "demo";
+  // A PDF on a song is almost always a chart (lead sheet, score export).
+  if (g === "pdf") return "chart";
   // A streaming link is usually a released/recorded track, not a demo.
   if (provider === "spotify" || provider === "youtube") return "recording";
   return "other";

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ErrorBox, useCommand } from "@/components/ui";
 import { FileIcon } from "./common";
-import { KIND_LABEL, KIND_ORDER, type FileKind } from "@/lib/music";
+import { KIND_LABEL, KIND_ORDER, driveIdFromUrl, type FileKind } from "@/lib/music";
 import { Link, useMaybeArtist } from "@/lib/artist";
 
 export interface Hit {
@@ -16,7 +16,7 @@ interface Mate { id: string; name: string; email: string }
  * Search Drive, tick files, set kind and key, and fix sharing gaps before attaching.
  * `syncWith` follows another field (the song title). The parent reads picks through onChange.
  */
-export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, single = false, placeholder = "Search Drive by song title…", onChange, onPickHits, testid = "picker" }: {
+export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_ORDER, all = false, single = false, placeholder = "Search Drive by song title, or paste a Drive link…", onChange, onPickHits, testid = "picker" }: {
   syncWith?: string; exclude?: string[]; defaultKind?: FileKind;
   /** The kinds the picked file can be (a release's or a track's kinds instead of a song's). */
   kinds?: readonly FileKind[];
@@ -41,12 +41,17 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
   const [mates, setMates] = useState<Mate[]>([]);
   const [sel, setSel] = useState<Record<string, { kind: FileKind; key: string }>>({});
   const searchSeq = useRef(0);
+  // The text being searched right now (Drive takes a few seconds), or null when idle.
+  const [searching, setSearching] = useState<string | null>(null);
 
   async function search(text: string) {
     if (!text.trim()) { setHits(null); return; }
     const n = ++searchSeq.current;
+    setSearching(text.trim());
     const r = await call<{ files: Hit[]; bandmates: Mate[] }>("drive.search", { q: text.trim(), ...(all ? { all: true } : {}) });
-    if (!r || n !== searchSeq.current) return;
+    if (n !== searchSeq.current) return;
+    setSearching(null);
+    if (!r) return;
     setHits(r.files.filter((f) => !exclude.includes(f.driveFileId)));
     setMates(r.bandmates);
     setSel({});
@@ -94,15 +99,22 @@ export function DrivePicker({ syncWith, exclude = [], defaultKind, kinds = KIND_
     <div className="grid gap-2" data-testid={testid}>
       <span className="lbl">Found in Drive</span>
       <div className="flex gap-2">
-        <input className="input" placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} data-testid="drive-q" aria-label="Search Drive"
+        <input className="input" placeholder={placeholder} value={q}
+          // A pasted Drive link finds that file straight away, no Search press needed.
+          onChange={(e) => { setQ(e.target.value); if (driveIdFromUrl(e.target.value)) search(e.target.value); }} data-testid="drive-q" aria-label="Search Drive"
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); search(q); } }} />
         <button className="btn ghost" type="button" disabled={busy} onClick={() => search(q)} data-testid="drive-search">Search</button>
       </div>
-      {hits && hits.length === 0 && <span className="s" data-testid="drive-empty">{all ? "No files match." : "No audio, video, Docs or Word files match."}</span>}
+      {searching !== null && (
+        <span className="s" role="status" data-testid="drive-searching">
+          Searching Drive for &ldquo;{searching}&rdquo;<span className="roadie-dots" aria-hidden><span>.</span><span>.</span><span>.</span></span>
+        </span>
+      )}
+      {searching === null && hits && hits.length === 0 && <span className="s" data-testid="drive-empty">{all ? "No files match." : "No audio, video, Docs, Word or PDF files match."}</span>}
       {(hits ?? []).map((h) => {
         const on = sel[h.driveFileId];
         return (
-          <div key={h.driveFileId} className="grid gap-1.5 rounded-lg border border-line p-2" data-testid={`hit-${h.name}`}>
+          <div key={h.driveFileId} className={`grid gap-1.5 rounded-lg border border-line p-2 transition-opacity${searching !== null ? " opacity-50" : ""}`} data-testid={`hit-${h.name}`}>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={!!on} onChange={() => toggle(h)} data-testid="hit-check" aria-label={`Pick ${h.name}`} />
               <FileIcon mime={h.mimeType} />

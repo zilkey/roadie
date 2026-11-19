@@ -1,7 +1,7 @@
 // Music helpers: file kinds and keys, lengths, setlist totals and transitions, tempo strip, player choice, file groups (no emulator).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bpmStrip, guessKey, guessKind, fileGroup, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
+import { bpmStrip, driveIdFromUrl, guessKey, guessKind, fileGroup, lastRehearsed, move, parseLen, fmtLen, playerFor, playsInline, fmtTransition, setlistSlack, setlistTotal, transitionCount, transitionOf } from "@/lib/music";
 
 test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => {
   assert.equal(guessKind("Glass Coast chart F#m.docx"), "chart");
@@ -9,6 +9,8 @@ test("pure helpers: kinds, keys, lengths, player choice, last rehearsed", () => 
   assert.equal(guessKind("Rehearsal 2026-10-18 full run.wav", "audio/wav"), "rehearsal");
   assert.equal(guessKind("Glass Coast demo v3.m4a", "audio/mp4"), "demo");
   assert.equal(guessKind("Glass Coast live Roots.mp4", "video/mp4"), "recording");
+  assert.equal(guessKind("Glass Coast.pdf", "application/pdf"), "chart");
+  assert.equal(guessKind("Glass Coast lyrics.pdf", "application/pdf"), "lyrics");
   assert.equal(guessKey("Glass Coast chart F#m.docx"), "F#m");
   assert.equal(guessKey("Weathervane chart d.docx"), "D");
   assert.equal(guessKey("Weathervane demo.m4a"), undefined);
@@ -60,4 +62,13 @@ test("fileGroup falls back to the file's kind when the mimeType is missing", () 
   assert.equal(fileGroup({ kind: "other" }), "other");
   assert.equal(fileGroup({ mimeType: "application/pdf", kind: "demo" }), "pdf");
   assert.equal(fileGroup({ mimeType: "video/mp4", kind: "chart" }), "video");
+});
+
+test("driveIdFromUrl: file and doc links give the id; folders, other sites and plain text give null", () => {
+  assert.equal(driveIdFromUrl("https://drive.google.com/file/d/1AbC_def-GHIjkl/view?usp=sharing"), "1AbC_def-GHIjkl");
+  assert.equal(driveIdFromUrl(" https://docs.google.com/document/d/1AbC_def-GHIjkl/edit#heading=h.x "), "1AbC_def-GHIjkl");
+  assert.equal(driveIdFromUrl("https://drive.google.com/open?id=1AbC_def-GHIjkl"), "1AbC_def-GHIjkl");
+  assert.equal(driveIdFromUrl("https://drive.google.com/drive/folders/1AbC_def-GHIjkl"), null);
+  assert.equal(driveIdFromUrl("https://example.com/d/1AbC_def-GHIjkl"), null);
+  assert.equal(driveIdFromUrl("Wild Mother"), null);
 });

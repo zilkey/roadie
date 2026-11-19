@@ -67,22 +67,36 @@ test("a song moving from Writing into Learning is celebrated", async ({ page }) 
 test("add a song and attach files picked from a Drive search", async ({ page }) => {
   await signInAs(page, "rudy");
   await newSong(page, "Last Train");
-  // typing the title searches Drive: audio, video, Docs and Word only (no pdf)
+  // typing the title searches Drive: audio, video, Docs, Word and PDF, with a loading line while it looks
   await expect(page.getByTestId("hit-Last Train to Lyons demo.m4a")).toBeVisible();
+  await expect(page.getByTestId("drive-searching")).toHaveCount(0);
+  await expect(page.getByTestId("hit-Last Train to Lyons chart G.pdf").getByTestId("icon-pdf")).toBeVisible();
+  // pasting a Drive link finds that one file, any type (a photo here), without pressing Search
+  const picker = page.getByTestId("picker");
+  await picker.getByTestId("drive-q").fill("https://drive.google.com/file/d/fake-photo-roots/view?usp=sharing");
+  await expect(picker.getByTestId("hit-Roots Music Project stage.jpg")).toBeVisible();
+  await expect(picker.locator('[data-testid^="hit-Last Train"]')).toHaveCount(0);
+  // a link the band account can't open says so
+  await picker.getByTestId("drive-q").fill("https://docs.google.com/document/d/not-a-real-file-id/edit");
+  await expect(picker.getByTestId("error")).toContainText("can't open that Drive link");
+  await picker.getByTestId("drive-q").fill("Last Train to Lyons");
+  await picker.getByTestId("drive-search").click();
   await expect(page.getByTestId("hit-Last Train to Lyons chart E.docx")).toBeVisible();
   await expect(page.getByTestId("hit-Last Train to Lyons lyrics")).toBeVisible();
   await expect(page.getByTestId("hit-Last Train to Lyons demo.m4a").getByTestId("icon-audio")).toBeVisible();
   await expect(page.getByTestId("hit-Last Train to Lyons chart E.docx").getByTestId("icon-doc")).toBeVisible();
 
   // pick several at once; kind and key are guessed
-  for (const n of ["demo.m4a", "chart E.docx", "lyrics"]) await page.getByTestId(`hit-Last Train to Lyons ${n}`).getByTestId("hit-check").check();
+  for (const n of ["demo.m4a", "chart E.docx", "chart G.pdf", "lyrics"]) await page.getByTestId(`hit-Last Train to Lyons ${n}`).getByTestId("hit-check").check();
   await page.getByTestId("song-key").fill("E");
   await page.getByTestId("song-length").fill("4:17");
   await page.getByTestId("save-song").click();
 
   await expect(page.getByTestId("song-page")).toBeVisible();
   await expect(page.getByTestId("page-title")).toHaveText("Last Train");
-  await expect(page.getByTestId("files-chart").getByTestId("file-label")).toHaveText("Chart in E");
+  // a PDF is a chart too, with its key guessed from the name
+  await expect(page.getByTestId("files-chart").getByTestId("file-label")).toHaveCount(2);
+  for (const label of ["Chart in E", "Chart in G"]) await expect(page.getByTestId("files-chart").getByTestId("file-label").filter({ hasText: label })).toBeVisible();
   await expect(page.getByTestId("files-demo")).toContainText("Last Train to Lyons demo.m4a");
   await expect(page.getByTestId("files-lyrics")).toBeVisible();
   // a wrong guess is fixed on the row: the demo becomes a recording and moves to Recordings
