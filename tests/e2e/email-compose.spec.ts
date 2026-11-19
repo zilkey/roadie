@@ -162,3 +162,34 @@ test("compose: a bare address stays bare on Not now, Move to Pitched, and Cancel
   await expect(page.getByTestId("status")).toHaveValue("pitched");
   await expect(page.getByTestId("timeline").getByTestId("tl-emailSent")).toContainText(subject);
 });
+
+test("compose: ⌘/Ctrl+B, I, U and K format the message like Gmail", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await openPitch(page, "Pine Hollow Lounge");
+  await page.getByTestId("email-new").click();
+  await expect(page.getByTestId("compose-page")).toBeVisible();
+  const body = page.getByTestId("email-body");
+  await body.click();
+  await page.keyboard.press("ControlOrMeta+b");
+  await page.keyboard.type("loud");
+  await page.keyboard.press("ControlOrMeta+b");
+  await page.keyboard.type(" plain ");
+  await page.keyboard.press("ControlOrMeta+i");
+  await page.keyboard.type("lean");
+  await page.keyboard.press("ControlOrMeta+i");
+  await page.keyboard.type(" ");
+  await page.keyboard.press("ControlOrMeta+u");
+  await page.keyboard.type("under");
+  await page.keyboard.press("ControlOrMeta+u");
+  await page.keyboard.type(" see roadie");
+  // select "roadie" and link it with ⌘K
+  for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowLeft");
+  page.once("dialog", (d) => d.accept("myroadie.online"));
+  await page.keyboard.press("ControlOrMeta+k");
+  await expect(body.locator("b, strong")).toHaveText("loud");
+  await expect(body.locator("i, em")).toHaveText("lean");
+  await expect(body.locator("u")).toHaveText("under");
+  await expect(body.locator("a")).toHaveAttribute("href", "https://myroadie.online");
+  await expect(body.locator("a")).toHaveText("roadie");
+  await expect(page.getByRole("button", { name: "Insert link" })).toHaveAttribute("title", /Insert link \((⌘|Ctrl\+)K\)/);
+});

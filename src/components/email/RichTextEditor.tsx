@@ -18,6 +18,15 @@ function linkTarget(v: string): string | null {
   return null;
 }
 
+/** The keyboard shortcut for each toolbar action, Gmail's: ⌘/Ctrl + B, I, U, K, and Shift+7 / Shift+8 for the lists. */
+const KEYS: Record<string, string> = { bold: "B", italic: "I", underline: "U", link: "K", ol: "Shift+7", ul: "Shift+8", clear: "\\" };
+function shortcutAction(e: React.KeyboardEvent): string | null {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey) return null;
+  if (e.shiftKey) return e.code === "Digit7" ? "ol" : e.code === "Digit8" ? "ul" : null;
+  const k = e.key.toLowerCase();
+  return k === "b" ? "bold" : k === "i" ? "italic" : k === "u" ? "underline" : k === "k" ? "link" : k === "\\" ? "clear" : null;
+}
+
 const TOOLS = [
   ["Bold", "bold", <path key="b" d="M6 4h7a3.5 3.5 0 0 1 0 7H6zM6 11h8a3.5 3.5 0 0 1 0 7H6z" />],
   ["Italic", "italic", <path key="i" d="M10 4h8M6 20h8M15 4 9 20" />],
@@ -32,7 +41,7 @@ const TOOLS = [
  * A small rich text field for mail: bold, italic, underline, links, lists. `value` and `onChange` are HTML (sanitized by
  * sanitizeHtml: only p, br, div, b, strong, i, em, u, a, ul, ol, li, blockquote survive); "" when the field is empty.
  * Pasted content is sanitized the same way, so bold, italic and underline pasted from Gmail or Google Docs (often spans
- * with a style) stay. Enter starts a new paragraph.
+ * with a style) stay. Enter starts a new paragraph. ⌘/Ctrl + B, I, U and K (link), Shift+7/8 (lists) and \\ (clear) work like Gmail.
  */
 export function RichTextEditor({ value, onChange, placeholder, testid }: {
   value: string; onChange(html: string): void; placeholder?: string; testid?: string;
@@ -40,6 +49,8 @@ export function RichTextEditor({ value, onChange, placeholder, testid }: {
   const ref = useRef<HTMLDivElement>(null);
   const emitted = useRef<string | null>(null); // the last HTML this editor reported, so typing doesn't reset the caret
   const [empty, setEmpty] = useState(isBlank(value));
+  const [mod, setMod] = useState("Ctrl+"); // the shortcut prefix shown in the toolbar tips: ⌘ on a Mac
+  useEffect(() => { if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)) setMod("⌘"); }, []);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -87,6 +98,13 @@ export function RichTextEditor({ value, onChange, placeholder, testid }: {
     report();
   }
 
+  function onKeyDown(e: React.KeyboardEvent) {
+    const action = shortcutAction(e);
+    if (!action) return;
+    e.preventDefault(); // the browser's own ⌘B/⌘K (bookmarks, search bar) would otherwise win, or skip report()
+    run(action);
+  }
+
   function onPaste(e: React.ClipboardEvent) {
     e.preventDefault();
     const html = e.clipboardData.getData("text/html");
@@ -99,7 +117,7 @@ export function RichTextEditor({ value, onChange, placeholder, testid }: {
     <div className="rte">
       <div className="rte-bar" role="toolbar" aria-label="Formatting">
         {TOOLS.map(([label, action, icon]) => (
-          <button key={action} type="button" className="rte-btn" aria-label={label} title={label}
+          <button key={action} type="button" className="rte-btn" aria-label={label} title={`${label} (${mod}${KEYS[action]})`} aria-keyshortcuts={`Control+${KEYS[action]} Meta+${KEYS[action]}`}
             onMouseDown={(e) => e.preventDefault()} onClick={() => run(action)}>
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{icon}</svg>
           </button>
@@ -108,7 +126,7 @@ export function RichTextEditor({ value, onChange, placeholder, testid }: {
       <div className="rte-field">
         {empty && placeholder && <div className="rte-placeholder" aria-hidden="true">{placeholder}</div>}
         <div ref={ref} className="rte-body" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label={placeholder || "Message"}
-          data-testid={testid} onInput={report} onBlur={report} onPaste={onPaste} />
+          data-testid={testid} onInput={report} onBlur={report} onPaste={onPaste} onKeyDown={onKeyDown} />
       </div>
     </div>
   );
