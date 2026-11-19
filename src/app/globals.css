@@ -11,7 +11,7 @@
   --success-bg: #e3f4ea; --success-text: #146c43; --success-dot: #1f8a55;
   --admin-bg: #fdf6e7; --admin-border: #efdcb2; --admin-label: #7a5200;
   --admin-empty: #fffdf8; --admin-empty-border: #d9c28f;
-  --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #d6336c; --quiet: #FFF6CC;
+  --danger: #A8281A; --danger-soft: #FBE1DD; --pitched: #1f8a55; --quiet: #FFF6CC;
   --unfinished: #fff6dc; --unfinished-text: #3d3a2e; --owed-text: #6e5410;
   --alt-bg: #ffe9d9; --alt-border: #f2b78c; --alt-text: #8f3d00;
   --shadow: rgb(28 27 34 / .14); --backdrop: rgb(28 27 34 / .5);
@@ -33,7 +33,7 @@
     --success-bg: #13301f; --success-text: #6fd39a; --success-dot: #3fb874;
     --admin-bg: #2b2312; --admin-border: #4a3c1c; --admin-label: #e7b85a;
     --admin-empty: #241d0f; --admin-empty-border: #5c4a22;
-    --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #f06595; --quiet: #3A3418;
+    --danger: #FF9C90; --danger-soft: #4A2326; --pitched: #3fb874; --quiet: #3A3418;
     --unfinished: #2e2814; --unfinished-text: #ecdfb8; --owed-text: #e7c870;
     --alt-bg: #3a2416; --alt-border: #6e4223; --alt-text: #ffb07a;
     --shadow: rgb(0 0 0 / .45); --backdrop: rgb(0 0 0 / .6);
@@ -321,7 +321,7 @@ fieldset.sec { margin: 0; }
 .song-table .nm { font-weight: 700; color: var(--ink); text-decoration: none; }
 .song-table .nm:hover { color: var(--accent-text); }
 .song-table .lyr a { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; font-weight: 700; color: var(--accent-text); text-decoration: none; }
-/* The list flag: a bare icon button (no box), 44x44. Hollow accent = not pitched; filled pink = on the Pitch List. */
+/* The list flag: a bare icon button (no box), 44x44. Hollow accent = not pitched; filled green = on the Pitch List. */
 .flag-ic { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; padding: 0; background: transparent; color: var(--accent-text); cursor: pointer; border-radius: 10px; }
 .flag-ic[data-flagged="1"] { color: var(--pitched); }
 .flag-ic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
