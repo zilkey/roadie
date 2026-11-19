@@ -223,7 +223,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
   async function send() {
     await draft.settle();
     const r = await call<{ id: string }>("email.send", { ...payload(), ...(canMark ? { markPitched } : {}) }, { clientMutationId: sendId.current, clearDraft: draft.draftId });
-    if (r?.id) { await draft.clear(); if (queue.length) nextInQueue(); else router.push(`/booking/email/${r.id}`); }
+    if (r?.id) { await draft.clear(); if (queue.length) nextInQueue(); else router.replace(`/booking/email/${r.id}`); } // replace: back from the thread skips this spent form
   }
   async function saveDraft() {
     setDrafted(false);
@@ -242,7 +242,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
 
   return (
     <div className="show-page" data-testid="compose-page">
-      <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined, campaign) : []), ...(thread ? [{ label: thread.subject || "Thread", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
+      <PageTitle back={<Crumbs items={[...(place ? placeTrail(place.kind, place.id, place.name, pitchId ?? undefined, campaign) : []), ...(thread ? [{ label: "Email", href: `/booking/email/${thread.id}` }] : []), { label: thread ? "Reply" : "New email" }]} back={<BackLink href={back} label={backLabel} />} />} title={thread ? "Reply" : "New email"}
         sub={thread ? <>Reply on {thread.subject} · from {artist?.bookingMail?.email ?? profile.email}</> : <>Starts a thread on {place?.name ?? "…"} · from {artist?.bookingMail?.email ?? profile.email}</>}
         actions={place?.kind === "act" ? undefined : <Link href={`/booking/email/search?${query}`} className="btn ghost" data-testid="reply-instead">Reply to one they sent instead</Link>} />
       {queue.length > 0 && (

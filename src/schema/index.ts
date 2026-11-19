@@ -100,6 +100,8 @@ export interface CollectionDef {
   immutable?: boolean;
   /** Append-only: create only. */
   appendOnly?: boolean;
+  /** An append-only kind whose entries may still be soft-deleted (never edited): a pitch's timeline entries for a thread taken off it. */
+  removable?: boolean;
 }
 
 /** Keyed by "kind": the collection id, or the sub-collection name (comments, activity). */
@@ -123,7 +125,7 @@ export const collections: Record<string, CollectionDef> = {
   actNotes: { input: ActNoteInput },
   pitches: { input: PitchInput },
   comments: { input: CommentInput },
-  activity: { input: ActivityInput, appendOnly: true },
+  activity: { input: ActivityInput, appendOnly: true, removable: true },
   emailTemplates: { input: EmailTemplateInput },
   emailThreads: { input: EmailThreadInput },
   shows: { input: ShowInput },

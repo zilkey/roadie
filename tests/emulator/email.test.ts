@@ -265,6 +265,51 @@ test("S8 (#82): one email covers several pitches: each logged once, replies reac
   assert.equal((await cmd("email.sync", { target: { kind: "venue", id: v2 } })).added, 1);
 });
 
+test("a bounced send comes off one pitch: its entries leave that timeline, Last contact steps back, sync keeps it off, a relink puts it back", async () => {
+  const { venueId: v1, pitchId: p1 } = await pineHollow();
+  const v2 = (await cmd("venues.create", venue("Southern Sun"))).id as string;
+  const p2 = (await cmd("pitches.flag", { kind: "venue", id: v2 })).id as string;
+  // An earlier email on p1 in its own thread: its entries stay, and Last contact steps back to it.
+  const good = await cmd("pitches.sendEmail", { id: p1, to: ["rosa@pinehollow.example"], subject: "Hello", body: "Hi Rosa" });
+  const goodAt = ((await db.get(SYS, "pitches", p1))!.lastContactAt as { toMillis(): number }).toMillis();
+  await new Promise((r) => setTimeout(r, 20));
+  const bad = await cmd("pitches.sendEmail", { id: p1, pitchIds: [p2], to: ["typo@pinehollow.example"], subject: "Spring", body: "Hi", markPitched: true });
+  await gmailClient().simulateReply!(bad.threadId, { from: "mailer-daemon@googlemail.com", body: "Address not found" });
+  await cmd("email.sync", { target: { kind: "venue", id: v1 } });
+  const id = emailThreadId(TEST_ARTIST, bad.threadId);
+  const onP1 = async () => (await db.list(SYS, `pitches/${p1}/activity`)).filter((a) => a.gmail?.threadId === bad.threadId).length;
+  assert.equal(await onP1(), 2, "the send and the bounce");
+
+  await assert.rejects(cmd("email.unlink", { id, pitchId: "nope" }), /isn't on that pitch/);
+  const r = await cmd("email.unlink", { id, pitchId: p1 });
+  assert.equal(r.removed, 2);
+  const t = await thread(bad.threadId);
+  assert.equal(t.deletedAt, null, "it stays on the place");
+  assert.deepEqual([t.pitchId, t.pitchIds, t.removedPitchIds], [p2, undefined, [p1]]);
+  assert.equal(await onP1(), 0);
+  assert.equal((await db.list(SYS, `pitches/${p1}/activity`)).filter((a) => a.gmail?.threadId === good.threadId).length, 1, "the other thread's entry stays");
+  const p1doc = (await db.get(SYS, "pitches", p1))!;
+  assert.equal(p1doc.status, "pitched", "status stays");
+  assert.equal((p1doc.lastContactAt as { toMillis(): number }).toMillis(), goodAt);
+  assert.equal((await db.list(SYS, `pitches/${p2}/activity`)).filter((a) => a.gmail?.threadId === bad.threadId).length, 2, "the other pitch keeps its entries");
+
+  // A new reply and a sync: nothing comes back to p1.
+  await gmailClient().simulateReply!(bad.threadId, { from: "mailer-daemon@googlemail.com", body: "Still not found" });
+  await cmd("email.sync", { target: { kind: "venue", id: v1 } });
+  assert.equal(await onP1(), 0);
+
+  // Off the last pitch too: no pitch left, nothing to step back to.
+  await cmd("email.unlink", { id, pitchId: p2 });
+  const t2 = await thread(bad.threadId);
+  assert.deepEqual([t2.pitchId, t2.pitchIds, [...t2.removedPitchIds].sort()], [undefined, undefined, [p1, p2].sort()]);
+  assert.equal((await db.get(SYS, "pitches", p2))!.lastContactAt, undefined);
+
+  // Linking it to p1 on purpose puts it back there and clears that mark only.
+  await cmd("email.link", { threadId: bad.threadId, target: { kind: "venue", id: v1 }, pitchId: p1 });
+  const t3 = await thread(bad.threadId);
+  assert.deepEqual([t3.pitchId, t3.removedPitchIds], [p1, [p2]]);
+});
+
 test("ingest adds the people on a place's mail as the band's contacts, linked to the place: names from Gmail, no robots, no band, no repeats", async () => {
   const { venueId, pitchId } = await pineHollow();
   const linked = async () => {

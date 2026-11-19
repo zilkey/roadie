@@ -1,12 +1,14 @@
 "use client";
-import { Crumbs, campaignCrumb, placeTrail } from "@/components/booking/BookingNav";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Crumbs, campaignCrumb, placeTrail, sectionCrumb, type Crumb } from "@/components/booking/BookingNav";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
-import Link, { useArtist, useArtistRouter as useRouter, useZone } from "@/lib/artist";
+import Link, { useArtist, useArtistRouter as useRouter, useHref, useZone } from "@/lib/artist";
+import { previousPath, subscribeNav } from "@/lib/navHistory";
 import { AdminOnly } from "@/components/Guard";
 import { ErrorBox, PageTitle, useCommand } from "@/components/ui";
 import { Menu } from "@/components/Menu";
-import { BackLink, hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { hrefFor, useBooking, useNotFound } from "@/components/booking/common";
+import { BackLink } from "@/components/BackLink";
 import { RichTextEditor } from "@/components/email/RichTextEditor";
 import { SignatureBlock, useSignature } from "@/components/email/SignatureBlock";
 import { useProfile } from "@/lib/auth";
@@ -39,6 +41,8 @@ function ThreadPage() {
   const artist = useArtist().doc;
   const profile = useProfile();
   const { call, error, busy } = useCommand();
+  const full = useHref();
+  const prev = useSyncExternalStore(subscribeNav, previousPath, () => undefined);
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [sentBy, setSentBy] = useState<Record<string, string>>({}); // Gmail message id → the admin who wrote it from Roadie
   const [fresh, setFresh] = useState<boolean | null>(null); // "New" is decided before opening the thread marks it seen
@@ -64,25 +68,24 @@ function ThreadPage() {
   if (nf || !t) return nf;
 
   const pitch = t.pitchId ? b.pitches.find((p) => p.id === t.pitchId) : undefined;
-  const campaign = pitch ? campaignCrumb(b.campaigns.find((c) => c.id === pitch.campaignId), isActive(pitch.status)) : undefined;
-  const placeHref = hrefFor(t.target.kind, t.target.id);
-  const backHref = t.pitchId ? `/booking/pitches/${t.pitchId}` : placeHref;
-  const placeWord = t.target.kind === "festival" ? "Festival" : t.target.kind === "promoter" ? "Promoter" : t.target.kind === "act" ? "Act" : "Venue";
+  const trail = threadTrail(t, b, prev, full);
+  const parent = trail[trail.length - 1];
   const cell = pitch ? pitchCellText(pitch, artist?.configurations ?? []) : null;
-  const names = t.participants.map((a) => nameOf(a));
+  const subject = t.subject || "(no subject)";
 
   return (
     <div className="show-page" data-testid="thread-page">
-      <PageTitle back={<Crumbs items={[...placeTrail(t.target.kind, t.target.id, t.target.name, t.pitchId ?? undefined, campaign), { label: t.subject || "(no subject)" }]} back={<BackLink mode="back" href={backHref} label={`${t.pitchId ? "Pitch" : placeWord} · ${t.target.name}`} />} />} title={t.subject || "(no subject)"}
+      <PageTitle back={<Crumbs fixed items={[...trail, { label: "Email" }]} back={<BackLink href={parent.href!} label={parent.label} />} />} title="Email Thread"
         sub={<>
-          {t.messageCount} message{t.messageCount === 1 ? "" : "s"}{names.length > 0 && <> · {names.join(", ")}</>}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="min-w-0 truncate" title={subject} data-testid="thread-subject">{subject}</span>
+            <span aria-hidden>·</span>
+            <a className="shrink-0 whitespace-nowrap font-semibold underline" href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(t.threadId)}`} target="_blank" rel="noopener noreferrer" data-testid="open-in-gmail">Open in Gmail ↗</a>
+          </span>
           {pitch && cell && <Link href={`/booking/pitches/${pitch.id}`} className="s block font-semibold underline" data-testid="thread-pitch">Pitch: {cell.config}, {cell.dates}</Link>}
         </>}
-        actions={<div className="flex items-center gap-2">
-          <a className="btn" href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(t.threadId)}`} target="_blank" rel="noopener noreferrer" data-testid="open-in-gmail">Open in Gmail ↗</a>
-          <Menu label="More actions" testid="thread" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "unlink", label: `Unlink from ${t.target.name}`, danger: true,
-            onSelect: async () => { if (confirm(`Take this thread off ${t.target.name}? The pitch's activity keeps its entries.`) && (await call("email.unlink", { id }))) router.replace(backHref); } }]} />
-        </div>} />
+        actions={<Menu label="More actions" testid="thread" trigger={<span className="px-2 text-sm font-semibold">More ▾</span>} items={[{ key: "unlink", label: `Unlink from ${t.target.name}`, danger: true,
+          onSelect: async () => { if (confirm(`Take this thread off ${t.target.name}? The pitch's activity keeps its entries.`) && (await call("email.unlink", { id }))) router.replace(parent.href!); } }]} />} />
       <p className="s" data-testid="thread-private">Only {artist?.name ?? "your band"} sees this · sent and received from {t.account}</p>
       <ErrorBox error={error} />
       <CoversCard t={t} />
@@ -94,6 +97,26 @@ function ThreadPage() {
       {messages !== null && <ReplyCard t={t} messages={messages} nameOf={nameOf} busy={busy} onSent={load} />}
     </div>
   );
+}
+
+/**
+ * The trail down to this thread, by where it was opened from: a pitch page → Campaigns › that pitch's campaign (or Ongoing)
+ * › the pitch, as on the pitch page; its place's page (or a covered pitch's edition page) → that section › the place. Opened
+ * from anywhere else, or on a fresh load: its first pitch's trail, else its place's.
+ */
+function threadTrail(t: Row<EmailThread>, b: ReturnType<typeof useBooking>, prev: string | undefined, full: (href: string) => string): Crumb[] {
+  const covered = threadPitchIds(t).map((id) => b.pitches.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
+  const placeHref = hrefFor(t.target.kind, t.target.id);
+  const place = placeTrail(t.target.kind, t.target.id, t.target.name);
+  const pitchTrail = (p: (typeof b.pitches)[number]) =>
+    placeTrail(p.target.kind, p.target.id, p.target.name, p.id, campaignCrumb(b.campaigns.find((c) => c.id === p.campaignId), isActive(p.status)));
+  if (prev === full(placeHref)) return place;
+  // Any pitch page counts, not only one the thread covers: its Email card lists every thread of the place.
+  const fromPitch = b.pitches.find((p) => prev === full(`/booking/pitches/${p.id}`));
+  if (fromPitch) return pitchTrail(fromPitch);
+  const fromEdition = b.pitches.find((p) => p.target.kind === "edition" && prev === full(hrefFor("edition", p.target.id)));
+  if (fromEdition) return [sectionCrumb("festival"), { label: t.target.name, href: placeHref }, { label: fromEdition.target.name, href: hrefFor("edition", fromEdition.target.id) }];
+  return covered[0] ? pitchTrail(covered[0]) : place;
 }
 
 function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Message; n: number; last: boolean; isNew: boolean; account: string; sentBy?: string; nameOf(a: string, fromName?: string): string }) {
@@ -241,6 +264,9 @@ function CoversCard({ t }: { t: Row<EmailThread> }) {
   const on = ids.map((id) => b.pitches.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => !!p);
   const more = b.pitches.filter((p) => isActive(p.status) && !ids.includes(p.id)).sort((x, y) => x.target.name.localeCompare(y.target.name));
   const target = { kind: t.target.kind === "act" ? "act" : t.target.kind, id: t.target.id } as { kind: "venue" | "promoter" | "festival" | "act"; id: string };
+  async function remove(pitchId: string, name: string) {
+    if (confirm(`Take this email off ${name}? Its entries come off that pitch's timeline (a bounced send, say). It stays on ${t.target.name}.`)) await call("email.unlink", { id: t.id, pitchId });
+  }
   async function add(pitchId: string) {
     if (!pitchId) return;
     setAdding(pitchId);
@@ -255,6 +281,8 @@ function CoversCard({ t }: { t: Row<EmailThread> }) {
           {on.map((p) => (
             <li key={p.id} className="flex flex-wrap items-center gap-2" data-testid={`covers-${p.id}`}>
               <Link href={`/booking/pitches/${p.id}`} className="font-semibold">{p.target.name}</Link><StatusChip status={p.status} />
+              <button type="button" className="btn sm ghost" disabled={busy} aria-label={`Take this email off ${p.target.name}`} title={`Take this email off ${p.target.name}`} data-testid={`covers-remove-${p.id}`}
+                onClick={() => void remove(p.id, p.target.name)}>×</button>
             </li>
           ))}
         </ul>

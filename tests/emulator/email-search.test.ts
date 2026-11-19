@@ -98,6 +98,9 @@ test("email.suggest finds what was sent outside Roadie, best first; linking it t
   assert.ok(t?.firstDate, "the thread keeps the date it started");
   assert.equal((await db.list(SYS, `pitches/${pitchId}/activity`)).filter((a) => a.type === "emailReply").length, 1, "the reply is on the timeline");
   assert.deepEqual((await cmd("email.suggest", { pitchId })).hits.map((h: any) => h.threadId), [bySubject.threadId, byText.threadId]);
+  // Taken off the pitch (a bounce): still not suggested here, though it has no pitch now.
+  await cmd("email.unlink", { id: `${TEST_ARTIST}__${toRosa.threadId}`, pitchId });
+  assert.deepEqual((await cmd("email.suggest", { pitchId })).hits.map((h: any) => h.threadId), [bySubject.threadId, byText.threadId]);
 
   await sendRaw({ from: "rudy@example.com", to: ["v@velour.example"], subject: "Velour and Pine Hollow Lounge", body: "Both rooms" });
   await cmd("email.link", { threadId: bySubject.threadId, target: { kind: "venue", id: other.id }, pitchId: velourPitch });

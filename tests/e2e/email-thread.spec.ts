@@ -75,10 +75,11 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
 
   await card.getByTestId(`thread-${linked.id}`).click();
   await expect(page.getByTestId("thread-page")).toBeVisible();
-  await expect(page.getByTestId("page-title")).toHaveText(subject);
-  await expect(page.getByTestId("crumb-1")).toHaveText("Campaigns"); // Booking › Campaigns › the pitch › this thread (#82)
-  await expect(page.getByTestId("crumb-current")).toHaveText(subject);
-  await expect(page.getByTestId("thread-page")).toContainText("2 messages · Rosa Jackson");
+  await expect(page.getByTestId("page-title")).toHaveText("Email Thread");
+  await expect(page.getByTestId("crumb-1")).toHaveText("Campaigns"); // came from the pitch: Booking › Campaigns › campaign › the pitch › Email
+  await expect(page.getByTestId("crumb-3")).toHaveText("Pine Hollow Lounge");
+  await expect(page.getByTestId("crumb-current")).toHaveText("Email");
+  await expect(page.getByTestId("thread-subject")).toHaveText(subject); // the subject, small, beside Open in Gmail
   await expect(page.getByTestId("thread-private")).toContainText("sent and received from rudy@example.com");
   await expect(page.getByTestId("open-in-gmail")).toHaveAttribute("href", new RegExp(`#all/${first.threadId}$`));
 
@@ -112,6 +113,39 @@ test("a linked thread opens as a page, reads like mail, and replies inline", asy
   await page.getByTestId("crumb-3").click();
   await expect(page.getByTestId(`thread-count-${linked.id}`)).toHaveText("3");
   await expect(page.getByTestId(`thread-new-${linked.id}`)).toHaveCount(0);
+});
+
+test("opened from the venue page, the crumbs go back to the venue; a bounce comes off the pitch and stays off", async ({ page, request }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-pitches").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
+  const pitchId = page.url().split("/").pop()!.split("?")[0];
+  const venueId = (await page.getByTestId("venue-page").getAttribute("data-record-id"))!;
+  const subject = `Bounced ${Date.now()}`;
+  const sent = await cmd<{ threadId: string }>("pitches.sendEmail", { id: pitchId, to: ["typo@pinehollow.example"], subject, body: "Hi" });
+  const id = `${artistId}__${sent.threadId}`;
+
+  await page.goto(A(`/booking/venues/${venueId}?tab=pitch`));
+  await expect(page.getByTestId("pitch-activity-card")).toContainText(subject);
+  await page.getByTestId("pitch-email-card").getByTestId(`thread-${id}`).click();
+  await expect(page.getByTestId("thread-page")).toBeVisible();
+  await expect(page.getByTestId("crumb-1")).toHaveText("Venues");
+  await expect(page.getByTestId("crumb-2")).toHaveText("Pine Hollow Lounge");
+  await expect(page.getByTestId("crumb-current")).toHaveText("Email");
+
+  // Take it off the pitch: gone from This email covers, and from the pitch's Email card and timeline, after a reload too.
+  await expect(page.getByTestId(`covers-${pitchId}`)).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId(`covers-remove-${pitchId}`).click();
+  await expect(page.getByTestId(`covers-${pitchId}`)).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("thread-covers")).toContainText("No pitch yet.");
+  await page.goto(A(`/booking/pitches/${pitchId}`));
+  await expect(page.getByTestId("pitch-email-card")).toBeVisible();
+  await expect(page.getByTestId(`thread-${id}`)).toHaveCount(0);
+  await expect(page.getByTestId("pitch-activity-card")).not.toContainText(subject);
 });
 
 test("unlinking a thread takes it off the place and returns to the pitch", async ({ page, request }) => {

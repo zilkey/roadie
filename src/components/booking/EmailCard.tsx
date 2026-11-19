@@ -15,7 +15,8 @@ const short = (iso: string, zone: string) => new Date(iso).toLocaleDateString("e
 
 /**
  * The Email card on a pitch: the Gmail threads of the pitch's place (venue, promoter or festival), newest first. Threads
- * belong to the place, so they stay when the pitch closes. New email opens the compose page for this pitch.
+ * belong to the place, so they stay when the pitch closes; one taken off this pitch (a bounce) is left out. New email opens the
+ * compose page for this pitch.
  */
 export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "promoter" | "edition"; id: string }; pitchId: string }) {
   const { artistId, timeZone: zone } = useArtist();
@@ -30,7 +31,7 @@ export function EmailCard({ target, pitchId }: { target: { kind: "venue" | "prom
     return e ? { kind: "festival" as const, id: e.festivalId } : null;
   }, [target.kind, target.id, b.editions]);
   const { rows } = useCollection<EmailThread>("emailThreads", { where: [["artistId", "==", artistId], ["target.id", "==", place?.id ?? ""]], skip: !place });
-  const threads = useMemo(() => (rows ?? []).filter((t) => t.target.kind === place?.kind).sort((x, y) => y.lastDate.localeCompare(x.lastDate)), [rows, place?.kind]);
+  const threads = useMemo(() => (rows ?? []).filter((t) => t.target.kind === place?.kind && !t.removedPitchIds?.includes(pitchId)).sort((x, y) => y.lastDate.localeCompare(x.lastDate)), [rows, place?.kind, pitchId]);
 
   const newest = threads.reduce((m, t) => Math.max(m, checkedAt(t)), 0);
   const word = place?.kind === "festival" ? "festival" : place?.kind === "promoter" ? "promoter" : "venue";

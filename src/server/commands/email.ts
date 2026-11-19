@@ -108,7 +108,11 @@ async function upsertThread(w: Writer, a: { artistId: string; account: string; t
   } else {
     if (existing.deletedAt) await w.restore("emailThreads", id);
     const grew = all.length > had.length;
-    await w.update("emailThreads", id, { ...sum, syncedAt: w.now, ...(a.place ? { target: a.place } : {}), ...(grew ? pitches : {}) });
+    // Linking or sending to a pitch the thread was taken off puts it back on that pitch for good.
+    const wasOff = (existing.removedPitchIds ?? []) as string[];
+    const stillOff = wasOff.filter((p) => !(a.pitchIds ?? []).includes(p));
+    const unmark = stillOff.length < wasOff.length ? { removedPitchIds: stillOff.length ? stillOff : null } : {};
+    await w.update("emailThreads", id, { ...sum, syncedAt: w.now, ...(a.place ? { target: a.place } : {}), ...(grew ? pitches : {}), ...unmark });
   }
   const place = a.place ?? (existing?.target as Place | undefined);
   if (place) await addThreadPeople(w, { artistId: a.artistId, account: a.account, place, messages: a.thread.messages });
@@ -358,9 +362,47 @@ export const emailLink = defineCommand({
   },
 });
 
+/** The timeline entries that count as contact (what sets a pitch's lastContactAt); notes and status moves don't. */
+const CONTACT_TYPES = new Set(["emailSent", "emailReply", "call", "email", "visit"]);
+const millis = (v: unknown) => (v && typeof (v as { toMillis?: unknown }).toMillis === "function" ? (v as { toMillis(): number }).toMillis() : 0);
+
+/**
+ * Take a thread off one pitch (a bounced send): the pitch leaves the thread's pitches and is marked removed, so nothing counts
+ * the thread as that pitch's email again until it is linked or sent there anew. That thread's entries come off the pitch's
+ * timeline (other threads' stay), and Last contact goes back to the newest contact left. The thread stays on its place.
+ */
+export async function takeThreadOffPitch(ctx: Ctx, id: string, pitchId: string) {
+  return run(ctx, async (w) => {
+    const d = await w.get("emailThreads", id);
+    if (!d || d.deletedAt) throw new AppError("not_found", "Thread not found", 404);
+    const had = threadPitchIds(d as { pitchId?: string; pitchIds?: string[] });
+    if (!had.includes(pitchId)) throw new AppError("not_found", "This email isn't on that pitch", 404);
+    const left = had.filter((p) => p !== pitchId);
+    const off = [...new Set([...((d.removedPitchIds ?? []) as string[]), pitchId])];
+    await w.update("emailThreads", id, {
+      pitchId: left.includes(d.pitchId as string) ? d.pitchId : (left[0] ?? null), pitchIds: left.length > 1 ? left : null, removedPitchIds: off,
+    });
+    const pitch = await w.get("pitches", pitchId);
+    if (!pitch || pitch.deletedAt) return { id, removed: 0 };
+    const path = activityOf(w.ctx.artistId, pitchId);
+    const acts = await w.query(path);
+    const gone = acts.filter((a) => a.gmail?.threadId === d.threadId);
+    for (const a of gone) await w.softDelete(path, a.id);
+    if (gone.length) {
+      const last = Math.max(0, ...acts.filter((a) => !gone.includes(a) && CONTACT_TYPES.has(a.type as string)).map((a) => millis(a.createdAt)));
+      await w.update("pitches", pitchId, { lastContactAt: last ? new Date(last) : null });
+    }
+    return { id, removed: gone.length };
+  });
+}
+
 export const emailUnlink = defineCommand({
-  name: "email.unlink", roles: ["admin"], input: idInput, description: "Take a thread off its place. The timeline entries stay.",
-  async run(ctx, { id }) { await ownThread(ctx, id); return db.softDelete(ctx, "emailThreads", id); },
+  name: "email.unlink", roles: ["admin"], input: z.strictObject({ id: z.string().min(1), pitchId: z.string().min(1).optional() }),
+  description: "Take a thread off its place; the timeline entries stay. With pitchId, take it off that one pitch only (a bounced send): it stays on the place, its entries come off that pitch's timeline and Last contact goes back to the newest contact left.",
+  async run(ctx, { id, pitchId }) {
+    if (pitchId) return takeThreadOffPitch(ctx, id, pitchId);
+    await ownThread(ctx, id); return db.softDelete(ctx, "emailThreads", id);
+  },
 });
 
 export const emailSync = defineCommand({
@@ -546,7 +588,7 @@ export function rankSuggestions(hits: ThreadHit[], messages: MailMessage[], addr
 
 export const emailSuggest = defineCommand({
   name: "email.suggest", roles: ["admin"],
-  description: "Find sent emails: the threads the booking mailbox (or the caller's own Gmail) sent that look like this pitch's, to the place's contacts or naming the place. Read only. Returns {account, hits}: the mailbox searched and at most 3 threads, best first, each with why it matched. Threads already on this pitch are left out; elsewhere names the place a thread is already linked to.",
+  description: "Find sent emails: the threads the booking mailbox (or the caller's own Gmail) sent that look like this pitch's, to the place's contacts or naming the place. Read only. Returns {account, hits}: the mailbox searched and at most 3 threads, best first, each with why it matched. Threads already on this pitch, or taken off it, are left out; elsewhere names the place a thread is already linked to.",
   input: z.strictObject({ pitchId: z.string().min(1) }),
   async run(ctx, { pitchId }) {
     const pitch = await requirePitchDoc(ctx, pitchId);
@@ -561,6 +603,7 @@ export const emailSuggest = defineCommand({
       const d = await db.get(ctx, "emailThreads", emailThreadId(artistId, h.threadId));
       const live = d && !d.deletedAt ? d : null;
       if (live && threadPitchIds(live as { pitchId?: string; pitchIds?: string[] }).includes(pitchId)) continue;
+      if (live && ((live.removedPitchIds ?? []) as string[]).includes(pitchId)) continue; // taken off this pitch on purpose
       const elsewhere = live && live.target.id !== place.id ? (live.target.name as string) : undefined;
       out.push({ ...h, ...(live ? { linkedId: live.id } : {}), ...(elsewhere ? { elsewhere } : {}) });
       if (out.length === SUGGEST_THREADS) break;

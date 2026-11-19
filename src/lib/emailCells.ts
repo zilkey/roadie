@@ -3,7 +3,7 @@
  * emailThreads (one query) plus the pitch. No activity reads.
  *
  * A pitch's threads: those that name it (`pitchIds ?? [pitchId]`, S8), else the threads on its place started since the pitch
- * was (an old pitch's mail stays with the old pitch). The initial email is the first of them; a follow-up is the latest
+ * was (an old pitch's mail stays with the old pitch), but never one taken off this pitch (`removedPitchIds`). The initial email is the first of them; a follow-up is the latest
  * email after it: a reply we sent in the same thread (Roadie only knows the last message, so a sent last message in a
  * thread of 2+ counts), or a later thread of its own, which is marked "new thread". When the last message in came from
  * them, no follow-up is needed. When none was sent, the follow-up is due by followUpFor's rule (the To Dos one).
@@ -12,7 +12,7 @@ import { followUpFor, type FollowUpPitchLike } from "./booking";
 
 export interface ThreadLike {
   id: string; subject: string; firstDate?: string; lastDate: string; lastDirection: "sent" | "received" | string; messageCount: number;
-  target: { kind: string; id: string }; pitchId?: string; pitchIds?: string[];
+  target: { kind: string; id: string }; pitchId?: string; pitchIds?: string[]; /** Pitches it was taken off (a bounce): never theirs. */ removedPitchIds?: string[];
   createdAt?: { toMillis(): number }; lastSeenAt?: { toMillis(): number } | null;
 }
 export interface CellPitch extends FollowUpPitchLike {
@@ -41,7 +41,7 @@ const newReplyOn = (t: ThreadLike) => t.lastDirection === "received" && (!t.last
 export function emailCells(p: CellPitch, threads: readonly ThreadLike[], placeId: string, today: string, zone: string): EmailCells {
   const named = threads.filter((t) => pitchIdsOf(t).includes(p.id));
   const since = p.createdAt?.toMillis?.() ?? 0;
-  const mine = (named.length ? named : threads.filter((t) => t.target.id === placeId && pitchIdsOf(t).length === 0 && ms(t) >= since)).slice().sort((a, b) => ms(a) - ms(b));
+  const mine = (named.length ? named : threads.filter((t) => t.target.id === placeId && pitchIdsOf(t).length === 0 && !t.removedPitchIds?.includes(p.id) && ms(t) >= since)).slice().sort((a, b) => ms(a) - ms(b));
   const out: EmailCells = { newReply: mine.some(newReplyOn), threads: mine.map((t) => t.id) };
   if (!mine.length) {
     // No thread in Roadie, yet the pitch may have been pitched by hand or before Roadie: the To Dos rule still says when it's owed.

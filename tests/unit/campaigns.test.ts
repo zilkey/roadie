@@ -95,6 +95,9 @@ test("emailCells: initial email, follow-up (same thread or a new one), replied, 
   // No thread names the pitch: the place's threads since the pitch began; older mail and another pitch's threads don't count.
   c = emailCells(p, [t("old", { createdAt: at("2026-01-01T00:00:00Z") }), t("other", { pitchId: "p0" }), t("new", {})], "v1", today, DEN);
   assert.deepEqual(c.threads, ["new"]);
+  // A thread taken off this pitch (a bounce) never counts as its email, even with no pitch left on it.
+  c = emailCells(p, [t("bounce", { removedPitchIds: ["p1"] }), t("new", {})], "v1", today, DEN);
+  assert.deepEqual(c.threads, ["new"]);
   // A thread linked long after it was sent (Find sent emails) dates from its first message, not from when Roadie got it.
   c = emailCells(p, [t("late", { pitchId: "p1", firstDate: "2026-10-03T12:00:00Z", createdAt: at("2026-11-12T00:00:00Z") })], "v1", today, DEN);
   assert.equal(c.initial?.date, "2026-10-03");

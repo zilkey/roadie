@@ -717,7 +717,7 @@ export class Writer<C extends AnyCtx = Ctx> {
   async softDelete(path: string, id: string) {
     path = splitPath(path).logical;
     const kind = kindOf(path);
-    if (def(kind).immutable || def(kind).appendOnly) throw new AppError("immutable", `${kind} documents are never deleted`, 409);
+    if (def(kind).immutable || (def(kind).appendOnly && !def(kind).removable)) throw new AppError("immutable", `${kind} documents are never deleted`, 409);
     const existing = await this.get(path, id);
     if (!existing) throw new AppError("not_found", `${path}/${id} not found`, 404);
     if (existing.deletedAt) return { id, changed: false };

@@ -19,6 +19,11 @@ export const EmailThread = entity({
    * (threadPitchIds); written as a union, never shrunk by a send or link. No backfill: older threads have pitchId only.
    */
   pitchIds: z.array(id).optional(),
+  /**
+   * Pitches someone took this thread off (a bounced send): it no longer counts as their email anywhere (the pitch's Email card,
+   * its campaign cells, Find sent emails) until it is linked or sent to that pitch again, which clears the mark.
+   */
+  removedPitchIds: z.array(id).optional(),
   subject: z.string(),
   /** First ~160 characters of the last message's text, quoted part stripped. */
   snippet: z.string(),
