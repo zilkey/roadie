@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Dialog, ErrorBox } from "@/components/ui";
 import { DialogClose, DialogFoot } from "@/components/booking/AddContactDialog";
 
-export interface PickItem { id: string; name: string; /** The muted line under the name (a kind, a city). */ sub?: string }
+export interface PickItem { id: string; name: string; /** The muted line under the name (a kind, a city). */ sub?: string; /** Higher comes first (suggestions); ties go A to Z. */ rank?: number }
 
 /**
  * The plus behind a list card that links existing records ("Works with", "Venues they book"): the "Already in …" half of
@@ -34,7 +34,7 @@ function Picker({ findLabel, placeholder, items, addLabel, busy, onPick, onCance
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const hits = items
     .filter((x) => words.every((w) => `${x.name} ${x.sub ?? ""}`.toLowerCase().includes(w)))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0) || a.name.localeCompare(b.name))
     .slice(0, 8);
   return (
     <>

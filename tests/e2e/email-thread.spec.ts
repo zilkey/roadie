@@ -155,6 +155,37 @@ test("opened from the venue page, the crumbs go back to the venue; a bounce come
   await expect(page.getByTestId("pitch-activity-card")).not.toContainText(subject);
 });
 
+test("the + on This email covers suggests the pitch whose contact is on the email, and adds it", async ({ page }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-pitches").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
+  const pitchId = page.url().split("/").pop()!.split("?")[0];
+  // Desmond (Heron Theatre's contact) only cc'd, so he doesn't become a Pine Hollow contact.
+  const sent = await cmd<{ threadId: string }>("pitches.sendEmail", { id: pitchId, to: ["rosa@pinehollow.example"], cc: ["desmond@herontheatre.example"], subject: `Both rooms ${Date.now()}`, body: "Hi" });
+  await page.goto(A(`/booking/email/${artistId}__${sent.threadId}`));
+  await expect(page.getByTestId(`covers-${pitchId}`)).toBeVisible();
+
+  await page.getByTestId("thread-covers-add").click();
+  const first = page.getByTestId("covers-pick-hits").locator("button").first();
+  await expect(first).toContainText("Heron Theatre");
+  await expect(first).toContainText("Desmond Webb is on this email");
+  const heronId = (await first.getAttribute("data-testid"))!.replace("covers-pick-hit-", "");
+  await page.getByTestId("covers-pick-find").fill("bluebird");
+  await expect(page.getByTestId("covers-pick-hits")).toContainText("Bluebird Room"); // anything else is a search away
+  await page.getByTestId("covers-pick-find").fill("heron");
+  await page.getByTestId(`covers-pick-hit-${heronId}`).click();
+  await page.getByTestId("covers-pick-submit").click();
+  await expect(page.getByTestId("covers-pick-dialog")).toBeHidden();
+  await expect(page.getByTestId(`covers-${heronId}`)).toContainText("Heron Theatre");
+
+  // Leave Heron Theatre as it was for the other specs.
+  page.once("dialog", (d) => d.accept());
+  await page.getByTestId(`covers-remove-${heronId}`).click();
+  await expect(page.getByTestId(`covers-${heronId}`)).toHaveCount(0);
+});
+
 test("unlinking a thread takes it off the place and returns to the pitch", async ({ page, request }) => {
   await signInAs(page, "rudy");
   await page.goto(A("/booking"));
