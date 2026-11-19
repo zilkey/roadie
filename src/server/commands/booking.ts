@@ -435,7 +435,7 @@ export const pitchesUpdate = defineCommand({
 });
 
 export const pitchesMove = defineCommand({
-  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline. Statuses: idea = Future Pitch, a place we might pitch later; toPitch = To Pitch, on the list, not sent; pitched = we sent it, waiting to hear back; talking; booked; declined = they said no; dropped = we stopped. " +
+  name: "pitches.move", roles: [...ROLES], description: "Move a pitch to another status and log it on the timeline. Statuses: idea = Future Pitch, a place we might pitch later; toPitch = To Pitch, on the list, not sent; pitched = we sent it, waiting to hear back; talking; booked; declined = They Declined, they said no; dropped = We Declined, we stopped. " +
     "Moving to pitched/talking records contact now (how \"I pitched X today\" is logged). booked alone creates no show: use shows.create with pitchId (\"Booked it\").",
   input: z.strictObject({ id: z.string().min(1), status: pitchStatus, text: z.string().optional() }),
   run: (ctx, i) => run(ctx, async (w) => {

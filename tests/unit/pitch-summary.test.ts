@@ -9,10 +9,10 @@ test("outcome: booked became a show", () => {
   assert.equal(pitchOutcome(pitch("booked")), "Became a show");
 });
 test("outcome: declined", () => {
-  assert.equal(pitchOutcome(pitch("declined")), "Declined");
+  assert.equal(pitchOutcome(pitch("declined")), "They Declined");
 });
 test("outcome: dropped", () => {
-  assert.equal(pitchOutcome(pitch("dropped")), "Dropped");
+  assert.equal(pitchOutcome(pitch("dropped")), "We Declined");
 });
 test("outcome: any status with shows became a show", () => {
   assert.equal(pitchOutcome({ status: "declined", showIds: ["s1"] }), "Became a show");

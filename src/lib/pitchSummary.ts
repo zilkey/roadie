@@ -9,7 +9,7 @@ type Stamped = { lastContactAt?: unknown; createdAt?: unknown };
 
 /** How a finished pitch ended, as the card says it. */
 export const pitchOutcome = (p: Ended) =>
-  p.status === "booked" || p.showIds.length > 0 ? "Became a show" : p.status === "declined" ? "Declined" : "Dropped";
+  p.status === "booked" || p.showIds.length > 0 ? "Became a show" : p.status === "declined" ? "They Declined" : "We Declined";
 /** When a past pitch happened: its last contact, else when it was made. */
 export const pitchWhen = (p: Stamped) => ms(p.lastContactAt) || ms(p.createdAt);
 /** Pitches that ended, newest first. */

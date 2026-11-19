@@ -6,7 +6,7 @@ export const STATUSES = ["idea", "toPitch", "pitched", "talking", "booked", "dec
 export type Status = (typeof STATUSES)[number];
 export const STATUS_LABEL: Record<Status, string> = {
   idea: "Future Pitch", toPitch: "To Pitch", pitched: "Pitched", talking: "Talking",
-  booked: "Booked", declined: "Declined", dropped: "Dropped",
+  booked: "Booked", declined: "They Declined", dropped: "We Declined",
 };
 /** Statuses that mean the effort is still going: a flag on the target shows as filled. */
 export const ACTIVE_STATUSES: Status[] = ["idea", "toPitch", "pitched", "talking"];
