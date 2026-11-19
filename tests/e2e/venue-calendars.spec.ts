@@ -132,6 +132,16 @@ test("Pitch this: one click adds the show to the venue's pitch; the filled flag 
   await expect(dlg).toBeHidden();
   await expect(take).toHaveAttribute("data-pitched", "1");
 
+  // Hide Flagged: off by default; on drops the flagged show and rides in the URL; off brings it back
+  const hideFlagged = page.getByTestId("calendar-filter-hide-flagged");
+  await expect(hideFlagged).not.toBeChecked();
+  await hideFlagged.check();
+  await expect(trio).toHaveCount(0);
+  await expect(page).toHaveURL(/[?&]flagged=hide/);
+  await hideFlagged.uncheck();
+  await expect(trio).toHaveCount(1);
+  await expect(page).not.toHaveURL(/flagged=/);
+
   // the pitch has the show's date and a note on its timeline
   await flag.click();
   await dlg.getByTestId("unpitch-open").click();
@@ -171,6 +181,7 @@ test("the filters add up, read on past hidden shows and are remembered", async (
   // the default: likely opener slots, "not a fit" hidden, any genre, anywhere, all times; only the trio (support still to be announced)
   await expect(page.getByTestId("calendar-filter-show")).toHaveValue("likely");
   await expect(page.getByTestId("calendar-filter-hide")).toBeChecked();
+  await expect(page.getByTestId("calendar-filter-hide-flagged")).not.toBeChecked();
   await expect(page.getByTestId("calendar-filter-genre")).toHaveText("Any genre");
   await expect(page.getByTestId("calendar-filter-region")).toHaveValue("");
   await expect(page.getByTestId("calendar-filter-when")).toHaveValue("any");

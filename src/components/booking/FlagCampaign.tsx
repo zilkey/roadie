@@ -104,15 +104,18 @@ export function FlagCampaignProvider({ children }: { children: React.ReactNode }
   );
 }
 
-/** The quiet "Flags go to" menu on Venues, Festivals & series and Venue calendars. Hidden when no campaign is active. */
-export function FlagCampaignSelect() {
+/**
+ * The quiet "Flags go to" menu on Venues, Festivals & series and Venue calendars. Hidden when no campaign is active. `quiet` (at
+ * the end of Venue calendars' filter row) reads "New flags go to" with a borderless menu, so it doesn't look like a filter.
+ */
+export function FlagCampaignSelect({ quiet = false }: { quiet?: boolean } = {}) {
   const f = useFlagCampaign();
   if (!f.active.length) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
     <label className="flex items-center gap-2 text-sm" data-testid="flag-campaign">
-      <span className="s font-semibold whitespace-nowrap">Flags go to</span>
-      <select className="select !w-auto max-w-[16rem]" value={f.chosen ?? ""} aria-label="Campaign new pitches go to" data-testid="flag-campaign-select"
+      <span className="s font-semibold whitespace-nowrap">{quiet ? "New flags go to" : "Flags go to"}</span>
+      <select className={`select !w-auto max-w-[16rem]${quiet ? " quiet" : ""}`} value={f.chosen ?? ""} aria-label="Campaign new pitches go to" data-testid="flag-campaign-select"
         onChange={(e) => f.choose((e.target.value || undefined) as CampaignKey | undefined)}>
         <option value="">Ask on the first flag</option>
         <option value={ONGOING}>Ongoing</option>

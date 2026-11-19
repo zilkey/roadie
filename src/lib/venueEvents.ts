@@ -214,14 +214,15 @@ export const SHOW_CHANCE: [ShowChance, string][] = [["likely", "Likely needs an 
  * The show filters both lists share. They add up: a show is listed only when it passes every one.
  * `genres` are the main act's (headliner's) genres to keep, any of them; none picked is no genre filter.
  */
-export interface ShowFilter { show: ShowChance; hideNotFit: boolean; genres: string[]; when: CalendarWhen }
-export const DEFAULT_SHOW_FILTER: ShowFilter = { show: "likely", hideNotFit: true, genres: [], when: "any" };
+export interface ShowFilter { show: ShowChance; hideNotFit: boolean; hideFlagged: boolean; genres: string[]; when: CalendarWhen }
+export const DEFAULT_SHOW_FILTER: ShowFilter = { show: "likely", hideNotFit: true, hideFlagged: false, genres: [], when: "any" };
 /** A remembered filter, with anything unknown (an older shape) back to the default. */
 export function readShowFilter(v: unknown): ShowFilter {
   const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
   return {
     show: SHOW_CHANCE.some(([k]) => k === o.show) ? o.show as ShowChance : DEFAULT_SHOW_FILTER.show,
     hideNotFit: typeof o.hideNotFit === "boolean" ? o.hideNotFit : DEFAULT_SHOW_FILTER.hideNotFit,
+    hideFlagged: typeof o.hideFlagged === "boolean" ? o.hideFlagged : DEFAULT_SHOW_FILTER.hideFlagged,
     genres: Array.isArray(o.genres) ? o.genres.filter((g): g is string => typeof g === "string" && !!g) : [],
     when: CALENDAR_WHEN.some(([k]) => k === o.when) ? o.when as CalendarWhen : DEFAULT_SHOW_FILTER.when,
   };
@@ -229,21 +230,23 @@ export function readShowFilter(v: unknown): ShowFilter {
 
 /**
  * The show filters in a URL, so a link sends the exact list: ?show=all (likely is the default and leaves it out), ?notfit=show
- * (hiding them is the default), ?genre= once per genre and ?when=3m|6m. Anything unknown is the default.
+ * (hiding them is the default), ?flagged=hide (showing them is the default), ?genre= once per genre and ?when=3m|6m. Anything
+ * unknown is the default.
  */
 export function showFilterFromParams(p: URLSearchParams): ShowFilter {
-  return readShowFilter({ show: p.get("show"), hideNotFit: p.get("notfit") !== "show", genres: p.getAll("genre"), when: p.get("when") });
+  return readShowFilter({ show: p.get("show"), hideNotFit: p.get("notfit") !== "show", hideFlagged: p.get("flagged") === "hide", genres: p.getAll("genre"), when: p.get("when") });
 }
 /** Write `f` into `u` (dropping what's there), leaving the defaults out. */
 export function showFilterToParams(u: URLSearchParams, f: ShowFilter): URLSearchParams {
   for (const k of SHOW_FILTER_PARAMS) u.delete(k);
   if (f.show !== DEFAULT_SHOW_FILTER.show) u.set("show", f.show);
   if (!f.hideNotFit) u.set("notfit", "show");
+  if (f.hideFlagged) u.set("flagged", "hide");
   for (const g of f.genres) u.append("genre", g);
   if (f.when !== DEFAULT_SHOW_FILTER.when) u.set("when", f.when);
   return u;
 }
-export const SHOW_FILTER_PARAMS = ["show", "notfit", "genre", "when"] as const;
+export const SHOW_FILTER_PARAMS = ["show", "notfit", "flagged", "genre", "when"] as const;
 
 /**
  * Whether a picked genre covers one of theirs: every word of the pick is in it, so "indie" covers "indie folk" and "indie rock",
@@ -257,10 +260,14 @@ export const genresMatch = (picked: readonly string[], theirs: readonly string[]
 export const headlinerGenres = (e: Pick<VenueEvent, "acts">, acts: ReadonlyMap<string, readonly string[] | undefined>) =>
   e.acts.filter((a) => a.role === "headliner" && a.actId).flatMap((a) => acts.get(a.actId!) ?? []);
 
-/** Whether a show passes the filters. `chance` is asked last (it's the dearest), and only when the filter needs it. */
-export function showListed(e: Pick<VenueEvent, "acts" | "date">, f: ShowFilter, x: { from: string; take?: string; acts: ReadonlyMap<string, readonly string[] | undefined>; chance(): OpenerChance }): boolean {
+/**
+ * Whether a show passes the filters. `flagged` is whether it's on an open pitch (its flag is filled). `chance` is asked last (it's
+ * the dearest), and only when the filter needs it.
+ */
+export function showListed(e: Pick<VenueEvent, "acts" | "date">, f: ShowFilter, x: { from: string; take?: string; flagged?: boolean; acts: ReadonlyMap<string, readonly string[] | undefined>; chance(): OpenerChance }): boolean {
   if (e.date < x.from) return false;
   if (f.hideNotFit && x.take === "notFit") return false;
+  if (f.hideFlagged && x.flagged) return false;
   if (!genresMatch(f.genres, headlinerGenres(e, x.acts))) return false;
   if (f.show === "likely" && x.chance() !== "likely") return false;
   return true;

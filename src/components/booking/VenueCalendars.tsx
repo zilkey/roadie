@@ -3,9 +3,10 @@
  * Booking's Venue calendars tab: every venue's upcoming shows (venueEvents, issue #60) in one list, furthest out first (an
  * opener slot six months out is likelier to land than one in a few days), to find opener slots to pitch. Each row's pieces are the
  * venue Events tab's (VenueEventBits); the venue name opens that venue's Events tab. The filters are the Events tab's
- * (ShowFilterBar: Likely needs an opener or All shows, Hide "not a fit", the main act's genres, When) plus a region, with the
- * opener disclaimer under them. They add up, and they ride in the URL so a link sends the exact list (the Acts tab's way):
- * ?show=, ?notfit=, ?genre= and ?when= (showFilterToParams) and ?region=, defaults left out. They're written with
+ * (ShowFilterBar: Likely needs an opener or All shows, the main act's genres, When, Hide Flagged and Hide Not a fit) plus a
+ * region, with "New flags go to" at the row's end and the opener disclaimer under the table. They add up, and they ride in the
+ * URL so a link sends the exact list (the Acts tab's way): ?show=, ?notfit=, ?flagged=, ?genre= and ?when= (showFilterToParams)
+ * and ?region=, defaults left out. They're written with
  * history.replaceState, which the App Router picks up without a navigation. Back from a venue's page steps back to that URL, and
  * useListMemory opens as many pages as were open and scrolls back to where it was.
  *
@@ -25,6 +26,7 @@ import { useOurGenres } from "@/components/booking/useOurGenres";
 import { useSearchParams } from "next/navigation";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
 import { FlagCampaignSelect } from "@/components/booking/FlagCampaign";
+import { isActive } from "@/lib/booking";
 import { useListMemory } from "@/lib/listMemory";
 import { ShowFilterBar } from "@/components/booking/ShowFilters";
 import { eventTime, fmtEventDay, genreOptions, isUpcoming, latestFirst, nextCalendarLimit, openerChance, showActLinks, showFilterFromParams, showFilterToParams, showListed, titleSaysMore, whenFrom, type ShowFilter } from "@/lib/venueEvents";
@@ -83,12 +85,15 @@ export function VenueCalendars() {
   const actLineups = useMemo(() => new Map((acts.rows ?? []).map((a) => [a.id, a as LineupAct])), [acts.rows]);
   const genres = useMemo(() => (ours.length ? { ours, acts: actGenres } : null), [ours, actGenres]);
   const genreChoices = useMemo(() => genreOptions(ours, actGenres.values()), [ours, actGenres]);
+  // The open pitches' ids: a show is flagged when its take points at one (the filled flag).
+  const openPitches = useMemo(() => new Set(b.pitches.filter((p) => isActive(p.status)).map((p) => p.id)), [b.pitches]);
   const fKey = JSON.stringify(f);
   const rows = useMemo(() => upcoming.filter((e) => {
     if (f.region && venues.get(e.venueId)?.region !== f.region) return false;
-    return showListed(e, f, { from, take: takes.get(e.id)?.take, acts: actGenres, chance: () => openerChance(e, records.get(e.venueId), today, genres).chance });
+    const take = takes.get(e.id);
+    return showListed(e, f, { from, take: take?.take, flagged: !!take?.pitchId && openPitches.has(take.pitchId), acts: actGenres, chance: () => openerChance(e, records.get(e.venueId), today, genres).chance });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [upcoming, fKey, from, takes, records, venues, today, genres, actGenres]);
+  }), [upcoming, fKey, from, takes, openPitches, records, venues, today, genres, actGenres]);
   const since = useLastLooked();
   // The limit the server answered `raw` for. A new limit keeps the last rows on screen until its snapshot lands, and its first
   // snapshot may come from the cache with only the last read's shows: that one must not count, or it reads as "that's all" (the
@@ -124,14 +129,12 @@ export function VenueCalendars() {
   return (
     <div className="grid min-w-0 gap-3" data-testid="venue-calendars">
       <div className="grid gap-1.5">
-        <ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake testid="calendar-filter">
+        <ShowFilterBar f={f} onChange={change} genres={genreChoices} canTake testid="calendar-filter" trailing={<FlagCampaignSelect quiet />}>
           <select className="select" value={f.region} onChange={(e) => change({ region: e.target.value as Region | "" })} aria-label="Region" data-testid="calendar-filter-region">
             <option value="">Anywhere</option>
             {(Object.keys(REGION_LABEL) as Region[]).map((r) => <option key={r} value={r}>{REGION_LABEL[r]}</option>)}
           </select>
-          <FlagCampaignSelect />
         </ShowFilterBar>
-        <p className="s" data-testid="opener-disclaimer">Opener chance is {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover a badge for why.</p>
       </div>
       <ErrorBox error={events.error ?? acts.error} />
       {raw && readAll && upcoming.length === 0 && f.when === "any" && <div className="empty" data-testid="venue-calendars-empty"><span>No upcoming shows on any venue&apos;s calendar yet. Set a venue&apos;s calendar up on its Events tab.</span></div>}
@@ -140,6 +143,7 @@ export function VenueCalendars() {
         <CalendarShowsTable shows={shown} venues={venues} takes={takes} pitches={b.pitches} records={records} today={today} genres={genres} actGenres={actGenres} actLinks={actLinks} actLineups={actLineups} since={since} />
       )}
       {(!raw || filling) && !events.error && <span className="s" data-testid="venue-calendars-loading">Loading…</span>}
+      <p className="s" data-testid="opener-disclaimer">Opener chance is {OPENER_DISCLAIMER.charAt(0).toLowerCase() + OPENER_DISCLAIMER.slice(1)} Hover a badge for why.</p>
       {shown.length > 0 && !settling && <p className="s" data-testid="table-caption">Every venue&apos;s upcoming shows, furthest out first, read from its own calendar. A venue&apos;s name opens its Events tab, where Refresh reads the calendar again.</p>}
       {hasMore && !filling && (
         <button type="button" className="btn ghost justify-self-center" onClick={() => { setPages((n) => n + 1); if (rows.length <= want + CALENDARS_PAGE) setLimit((n) => n + CALENDARS_PAGE); }} data-testid="venue-calendars-more">

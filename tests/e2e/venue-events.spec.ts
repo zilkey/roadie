@@ -143,6 +143,7 @@ test("a member sees the shows but cannot set a take or change the source", async
   await signInAs(page, "hugo");
   await page.goto(`${bluebirdUrl}?tab=events`);
   await expect(page.getByTestId("venue-events-filter-hide")).toHaveCount(0); // members have no takes to hide by
+  await expect(page.getByTestId("venue-events-filter-hide-flagged")).toHaveCount(0); // nor flags
   await allShows(page);
   await expect(shows(page)).toHaveCount(3);
   await expect(shows(page).filter({ hasText: "Headline Example Trio" }).getByTestId("venue-event-chance")).toBeVisible();

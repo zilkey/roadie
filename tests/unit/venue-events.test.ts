@@ -637,16 +637,16 @@ describe("show filters", () => {
     assert.deepEqual(rows.map((r) => `${r.date} ${r.start ?? ""}`.trim()), ["2027-06-01", "2027-01-01 21:00", "2027-01-01 19:00", "2026-12-01"]);
   });
   test("the default: likely only, not-a-fit hidden, any genre, all times", () => {
-    assert.deepEqual(DEFAULT_SHOW_FILTER, { show: "likely", hideNotFit: true, genres: [], when: "any" });
+    assert.deepEqual(DEFAULT_SHOW_FILTER, { show: "likely", hideNotFit: true, hideFlagged: false, genres: [], when: "any" });
     assert.deepEqual(readShowFilter({ show: "hide", when: "1m", genres: ["indie", 3] }), { ...DEFAULT_SHOW_FILTER, genres: ["indie"] });
   });
   test("in the URL: defaults left out, the rest round-trips, anything unknown is the default", () => {
     assert.equal(showFilterToParams(new URLSearchParams("tab=x&show=all"), DEFAULT_SHOW_FILTER).toString(), "tab=x");
-    const f = { show: "all" as const, hideNotFit: false, genres: ["indie", "folk rock"], when: "6m" as const };
+    const f = { show: "all" as const, hideNotFit: false, hideFlagged: true, genres: ["indie", "folk rock"], when: "6m" as const };
     const u = showFilterToParams(new URLSearchParams("region=denver"), f);
-    assert.equal(u.toString(), "region=denver&show=all&notfit=show&genre=indie&genre=folk+rock&when=6m");
+    assert.equal(u.toString(), "region=denver&show=all&notfit=show&flagged=hide&genre=indie&genre=folk+rock&when=6m");
     assert.deepEqual(showFilterFromParams(u), f);
-    assert.deepEqual(showFilterFromParams(new URLSearchParams("show=hide&when=1m&notfit=yes")), DEFAULT_SHOW_FILTER);
+    assert.deepEqual(showFilterFromParams(new URLSearchParams("show=hide&when=1m&notfit=yes&flagged=yes")), DEFAULT_SHOW_FILTER);
   });
   test("the filters add up: likely, not hidden, the main act's genre and far enough out", () => {
     const f = { ...DEFAULT_SHOW_FILTER, genres: ["indie"] };
@@ -655,6 +655,9 @@ describe("show filters", () => {
     assert.equal(showListed(ev("2027-01-01"), { ...f, show: "all" }, x({ chance: () => "maybe" })), true);
     assert.equal(showListed(ev("2027-01-01"), f, x({ take: "notFit" })), false);
     assert.equal(showListed(ev("2027-01-01"), { ...f, hideNotFit: false }, x({ take: "notFit" })), true);
+    assert.equal(showListed(ev("2027-01-01"), f, x({ flagged: true })), true); // flagged shows stay by default
+    assert.equal(showListed(ev("2027-01-01"), { ...f, hideFlagged: true }, x({ flagged: true })), false);
+    assert.equal(showListed(ev("2027-01-01"), { ...f, hideFlagged: true }, x({ flagged: false })), true);
     // the support act's genre doesn't count: only the main act's
     assert.equal(showListed(ev("2027-01-01", "a2"), { ...f, genres: ["indie rock"] }, x()), false);
     assert.equal(showListed(ev("2027-01-01", "a2"), { ...f, genres: ["indie", "metal"] }, x()), true);

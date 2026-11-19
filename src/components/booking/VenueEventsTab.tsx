@@ -15,6 +15,7 @@ import { CardGroup, DetailCard } from "@/components/booking/DetailCards";
 import { BOOKS_OPENERS_LABEL, CALENDAR_LABEL, booksOpeners, byWhen, calendarHref, eventTime, fmtClock, fmtEventDay, fmtEventYear, genreOptions, isUpcoming, latestFirst, openerChance, showListed, titleSaysMore, whenFrom, type OpenerCtx, type ShowFilter } from "@/lib/venueEvents";
 import { ShowFilterBar, useShowFilter } from "@/components/booking/ShowFilters";
 import { CalendarShowsTable } from "@/components/booking/CalendarShowsTable";
+import { isActive } from "@/lib/booking";
 import { useOurGenres } from "@/components/booking/useOurGenres";
 import { ActName, EventActs, EventBadges, EventPoster, OpenerNote, ShowActions, TicketLink, type Ev, type LineupAct, type RoomRecord } from "@/components/booking/VenueEventBits";
 import { dateInZone } from "@/lib/timezone";
@@ -60,7 +61,9 @@ export function VenueEventsTab({ venue, admin, canEditShared = true }: { venue: 
   const [f, setF] = useShowFilter("venueEventsShows", {});
   const change = (patch: Partial<ShowFilter>) => setF({ ...f, ...patch });
   const from = whenFrom(today, f.when);
-  const shown = upcoming.filter((e) => showListed(e, { ...f, hideNotFit: admin && f.hideNotFit }, { from, take: takes.get(e.id)?.take, acts: actGenres, chance: () => openerChance(e, health, today, genres).chance }));
+  const openPitches = new Set((pitches.rows ?? []).filter((p) => isActive(p.status)).map((p) => p.id));
+  const shown = upcoming.filter((e) => showListed(e, { ...f, hideNotFit: admin && f.hideNotFit, hideFlagged: admin && f.hideFlagged }, {
+    from, take: takes.get(e.id)?.take, flagged: !!takes.get(e.id)?.pitchId && openPitches.has(takes.get(e.id)!.pitchId!), acts: actGenres, chance: () => openerChance(e, health, today, genres).chance }));
 
   return (
     <>
