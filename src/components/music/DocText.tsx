@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { runCommandQuiet } from "@/lib/commands";
 import { useProfile } from "@/lib/auth";
 import { isGoogleDoc } from "@/lib/music";
@@ -28,6 +28,7 @@ export function DocText({ file }: { file: FileRow }) {
   const fix = useCommand();
   const [res, setRes] = useState<Result | null>(null);
   const [tries, setTries] = useState(0);
+  const [full, setFull] = useState(false);
   useEffect(() => {
     let live = true;
     runCommandQuiet<Result>("files.docText", { id: file.id })
@@ -65,8 +66,77 @@ export function DocText({ file }: { file: FileRow }) {
   return (
     <div className="grid gap-2">
       <DocView content={content} />
-      <div>{open}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn ghost sm" onClick={() => setFull(true)} data-testid="doc-fullscreen">Full screen</button>
+        {open}
+      </div>
+      <DocFullScreen title={file.title} content={content} open={full} onClose={() => setFull(false)} />
     </div>
+  );
+}
+
+const SIZES = [1, 1.25, 1.5, 1.75, 2, 2.5, 3]; // rem
+const SIZE_KEY = "roadie.docFullScreenSize";
+
+/**
+ * The doc over the whole screen, for reading on a stand: bigger text (A− / A+, remembered on this device), the browser's
+ * own full screen where it has one (a phone without it still gets the whole window), and the screen kept awake while it's
+ * up. Escape, Done, or leaving the browser's full screen closes it.
+ */
+function DocFullScreen({ title, content, open, onClose }: { title: string; content: DocContent; open: boolean; onClose(): void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [size, setSize] = useState(1);
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
+  useEffect(() => {
+    try { const i = SIZES.indexOf(Number(window.localStorage.getItem(SIZE_KEY))); if (i >= 0) setSize(i); } catch { /* storage blocked: default size */ }
+  }, []);
+  const pick = (i: number) => {
+    setSize(i);
+    try { window.localStorage.setItem(SIZE_KEY, String(SIZES[i])); } catch { /* storage blocked: this visit only */ }
+  };
+
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (!open) { if (d.open) d.close(); return; }
+    if (!d.open) d.showModal();
+    let wake: { release(): Promise<void> } | undefined;
+    let wentFull = false;
+    const onFs = () => { if (wentFull && !document.fullscreenElement) close.current(); };
+    document.addEventListener("fullscreenchange", onFs);
+    const root = document.documentElement;
+    if (root.requestFullscreen && !document.fullscreenElement) {
+      root.requestFullscreen().then(() => { wentFull = true; }).catch(() => { /* not allowed here: the dialog still fills the window */ });
+    }
+    const nav = navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<{ release(): Promise<void> }> } };
+    nav.wakeLock?.request("screen").then((w) => { wake = w; }).catch(() => { /* no wake lock: the screen may dim */ });
+    return () => {
+      document.removeEventListener("fullscreenchange", onFs);
+      if (wentFull && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      wake?.release().catch(() => {});
+    };
+  }, [open]);
+
+  const bar = "btn ghost sm";
+  return (
+    <dialog ref={ref} aria-label={title} data-testid="doc-fullscreen-view"
+      className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none border-0 bg-[var(--bg)] p-0 text-[var(--ink)] backdrop:bg-[var(--bg)]"
+      onCancel={(e) => { e.preventDefault(); onClose(); }}>
+      {open && (
+        <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
+          <div className="flex items-center gap-2 border-b border-[var(--line)] px-3 py-2">
+            <span className="min-w-0 flex-1 truncate font-bold" data-testid="doc-fullscreen-title">{title}</span>
+            <button type="button" className={bar} aria-label="Smaller text" disabled={size === 0} onClick={() => pick(size - 1)} data-testid="doc-fullscreen-smaller">A−</button>
+            <button type="button" className={bar} aria-label="Bigger text" disabled={size === SIZES.length - 1} onClick={() => pick(size + 1)} data-testid="doc-fullscreen-bigger">A+</button>
+            <button type="button" className="btn sm" onClick={onClose} data-testid="doc-fullscreen-close" autoFocus>Done</button>
+          </div>
+          <div className="doc-full overflow-auto px-4 py-4 sm:px-8" style={{ "--doc-size": `${SIZES[size]}rem` } as React.CSSProperties} data-testid="doc-fullscreen-body">
+            <DocView content={content} />
+          </div>
+        </div>
+      )}
+    </dialog>
   );
 }
 

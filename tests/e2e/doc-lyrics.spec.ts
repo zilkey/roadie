@@ -47,6 +47,40 @@ test("the song page shows its Google Doc lyrics at the bottom, chords kept over 
   await close();
 });
 
+test("Full screen shows the lyrics over the whole page, with bigger text that stays picked", async ({ browser }) => {
+  const { page, close } = await as(browser, "hugo");
+  await openGlassCoast(page);
+  const card = page.getByTestId("doc-card");
+  await expect(card.getByTestId("doc-text")).toContainText("Salt on the window");
+  await card.getByTestId("doc-fullscreen").click();
+  const view = page.getByTestId("doc-fullscreen-view");
+  await expect(view).toBeVisible();
+  await expect(view.getByTestId("doc-fullscreen-title")).toHaveText("Glass Coast lyrics");
+  const text = view.getByTestId("doc-text");
+  expect(await text.textContent()).toContain("F#m          D            A\nSalt on the window");
+  // it covers the window
+  const box = await view.boundingBox();
+  const vp = page.viewportSize()!;
+  expect(box!.width).toBe(vp.width);
+  expect(box!.height).toBe(vp.height);
+  // A+ makes the text bigger, and the size is remembered next time
+  const px = async () => parseFloat(await text.evaluate((el) => getComputedStyle(el).fontSize));
+  const before = await px();
+  await view.getByTestId("doc-fullscreen-bigger").click();
+  await expect.poll(px).toBeGreaterThan(before);
+  const bigger = await px();
+  await page.keyboard.press("Escape");
+  await expect(view).toBeHidden();
+  await card.getByTestId("doc-fullscreen").click();
+  await expect(view).toBeVisible();
+  expect(await px()).toBe(bigger);
+  await view.getByTestId("doc-fullscreen-smaller").click();
+  await expect.poll(px).toBe(before);
+  await view.getByTestId("doc-fullscreen-close").click();
+  await expect(view).toBeHidden();
+  await close();
+});
+
 test("the rehearsal song page shows the lyrics at the bottom too", async ({ browser }) => {
   const { page, close } = await as(browser, "rudy");
   await page.goto(A("/rehearsals"));

@@ -508,6 +508,8 @@ textarea.grow { resize: none; overflow: hidden; field-sizing: content; }
 .doc-text { display: grid; gap: 1.5em; margin: 0; font-family: "DM Mono", var(--f-mono); font-size: 0.875rem; line-height: 1.5; }
 .doc-text pre { margin: 0; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 .doc-text strong { font-weight: 700; color: var(--ink); }
+/* The doc's full-screen view: the reader picks the size (A− / A+). */
+.doc-full .doc-text { font-size: var(--doc-size, 1rem); }
 /* A doc table (labels | lyrics): side by side, the first column right-aligned like the doc; on a phone each row stacks, left-aligned. */
 .doc-table { border-collapse: collapse; width: auto; max-width: 100%; }
 .doc-table td { vertical-align: top; padding: 0 0 1em 1.5em; text-align: left; }
