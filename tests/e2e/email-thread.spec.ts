@@ -133,3 +133,54 @@ test("unlinking a thread takes it off the place and returns to the pitch", async
   await expect(page).toHaveURL(new RegExp(`/booking/pitches/${pitchId}$`));
   await expect(page.getByTestId("pitch-email-card")).not.toContainText(subject);
 });
+
+test("formatting shows on the thread, and a formatted paste into the reply is sent with it", async ({ page, request }) => {
+  await signInAs(page, "rudy");
+  await page.goto(A("/booking"));
+  await page.getByTestId("booking-seg-pitches").click();
+  await page.getByTestId("pitch-list").locator("tr", { hasText: "Pine Hollow Lounge" }).locator("[data-testid^='flag-'][data-flagged='1']").click();
+  await expect(page.getByTestId(/^pitch-(page|body)$/)).toBeVisible();
+  const pitchId = page.url().split("/").pop()!.split("?")[0];
+  const venueId = (await page.getByTestId("venue-page").getAttribute("data-record-id"))!;
+
+  // A Gmail-style HTML reply: formatting, a link, a script that must not run, and Gmail's quote block.
+  const subject = `Formatted ${Date.now()}`;
+  const m = (await (await request.post(`${GMAIL}/messages/receive`, {
+    data: { from: "rosa@pinehollow.example", to: ["rudy@example.com"], subject,
+      body: "Load-in is at 5. Parking: https://pinehollow.example/parking\n\nOn Mon, Rudy wrote:\n> Hi",
+      html: '<div dir="ltr">Load-in is <b>at 5</b>, <i>sharp</i>. <span style="text-decoration:underline">Bring cables.</span> <a href="https://pinehollow.example/parking">Parking</a><script>window.__pwned = 1</script></div><div class="gmail_quote"><div class="gmail_attr">On Mon, Rudy wrote:</div><blockquote class="gmail_quote">Hi</blockquote></div>' },
+  })).json()) as { threadId: string };
+  const linked = await cmd<{ id: string }>("email.link", { threadId: m.threadId, target: { kind: "venue", id: venueId }, pitchId });
+  await page.goto(A(`/booking/email/${linked.id}`));
+
+  const html = page.getByTestId("msg-html-0");
+  await expect(html.locator("b")).toHaveText("at 5");
+  await expect(html.locator("i")).toHaveText("sharp");
+  await expect(html.locator("u")).toHaveText("Bring cables.");
+  await expect(html.getByRole("link", { name: "Parking" })).toHaveAttribute("target", "_blank");
+  await expect(html).not.toContainText("On Mon, Rudy wrote");
+  expect(await page.evaluate(() => (window as { __pwned?: number }).__pwned)).toBeUndefined();
+  await page.getByTestId("quote-toggle-0").click();
+  await expect(page.getByTestId("quote-0")).toContainText("On Mon, Rudy wrote:");
+
+  // Paste what Google Docs puts on the clipboard: formatting on spans inside a <b style="font-weight:normal"> wrapper.
+  const body = page.getByTestId("reply-body");
+  await body.click();
+  await body.evaluate((el) => {
+    const dt = new DataTransfer();
+    dt.setData("text/html", '<b style="font-weight:normal" id="docs-internal-guid-1"><p dir="ltr"><span style="font-weight:700">See you</span> <span style="font-style:italic">at</span> <span style="text-decoration:underline">five</span></p></b>');
+    dt.setData("text/plain", "See you at five");
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(body.locator("b")).toHaveText("See you");
+  await expect(body.locator("u")).toHaveText("five");
+  await page.getByTestId("reply-send").click();
+  await expect(page.getByTestId("reply-note")).toHaveText("Sent");
+
+  const sent = (await (await request.get(`${GMAIL}/messages?account=rudy@example.com`)).json()) as { threadId: string; direction: string; html?: string }[];
+  const mine = sent.find((x) => x.threadId === m.threadId && x.direction === "sent");
+  expect(mine?.html).toContain("<b>See you</b>");
+  expect(mine?.html).toContain("<i>at</i>");
+  expect(mine?.html).toContain("<u>five</u>");
+  await expect(page.getByTestId("msg-html-1").locator("b")).toHaveText("See you");
+});

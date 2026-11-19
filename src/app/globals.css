@@ -654,6 +654,7 @@ mark { background: var(--quiet); color: inherit; }
 .rte-body ul { list-style: disc; padding-left: 1.5em; margin: 0 0 .75em; }
 .rte-body ol { list-style: decimal; padding-left: 1.5em; margin: 0 0 .75em; }
 .rte-body a { color: var(--accent-text); text-decoration: underline; }
+.rte-body blockquote { margin: 0 0 .75em; padding-left: 12px; border-left: 3px solid var(--line); }
 .rte-placeholder { position: absolute; top: 10px; left: 12px; right: 12px; color: var(--muted); pointer-events: none; line-height: 1.5; }
 .sig-box { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 12px 14px; border: 1px dashed var(--empty-border); border-radius: 10px; background: var(--empty); }
 .sig-body { flex: 1 1 220px; min-width: 0; line-height: 1.5; overflow-wrap: anywhere; }
@@ -671,6 +672,12 @@ mark { background: var(--quiet); color: inherit; }
 .msg-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .msg-body p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 .75em; line-height: 1.5; }
 .msg-body a { color: var(--accent-text); text-decoration: underline; }
+.msg-html { overflow-wrap: anywhere; line-height: 1.5; }
+.msg-html p { white-space: normal; }
+.msg-html ul { list-style: disc; padding-left: 1.5em; margin: 0 0 .75em; }
+.msg-html ol { list-style: decimal; padding-left: 1.5em; margin: 0 0 .75em; }
+.msg-html blockquote { margin: 0 0 .75em; padding-left: 12px; border-left: 3px solid var(--line); }
+.msg-quote.msg-html { white-space: normal; }
 .msg-quote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); font-size: 0.875rem; }
 .quote-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--muted); font-weight: 700; cursor: pointer; }
 .reply-card { display: grid; gap: 10px; padding: 14px; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--panel); }

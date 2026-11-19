@@ -40,6 +40,8 @@ export function useRoadie(onNavigated?: () => void) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
   const loaded = useRef(false);
+  /** A conversation was chosen here (New chat, a reply's conversation) before the saved one arrived: the saved one mustn't undo it. */
+  const chosen = useRef(false);
   /**
    * Every save of the panel's prefs (width and open conversation), one at a time and in the order made. Sent side by
    * side they can land the wrong way round: "New chat" (none) after the first reply's conversation opens an empty panel
@@ -51,7 +53,7 @@ export function useRoadie(onNavigated?: () => void) {
     prefSaves.current = prefSaves.current.then(() => runCommand("assistant.setPrefs", p)).catch(() => {});
   }, []);
   // Stamped with when it was chosen: the chat request records a new conversation too, and the newer choice wins.
-  const saveThread = useCallback((id: string | null) => savePrefs({ threadId: id, at: Date.now() }), [savePrefs]);
+  const saveThread = useCallback((id: string | null) => { chosen.current = true; savePrefs({ threadId: id, at: Date.now() }); }, [savePrefs]);
 
   useEffect(() => { setWidthState(readWidth()); }, []);
   // Take the saved width and conversation once, when the users doc first arrives.
@@ -60,7 +62,7 @@ export function useRoadie(onNavigated?: () => void) {
     loaded.current = true;
     const a = prefs.doc?.prefs?.assistant;
     if (a?.width !== undefined) setWidthState(fromSaved(a.width));
-    if (a?.threadId) setThreadId(a.threadId);
+    if (a?.threadId && !chosen.current) setThreadId(a.threadId);
   }, [prefs.loading, prefs.doc]);
 
   // `save: false` while a drag or a held arrow key is still moving; the last call saves.
@@ -165,6 +167,7 @@ export function useRoadie(onNavigated?: () => void) {
     if (!message || (pending && !pending.doneId && !pending.error && !pending.stopped)) return null;
     // A new conversation gets its id here, not from the server's first event: a Stop tapped before that event
     // arrives still knows which conversation the stopped turn is saved in (the server takes the id if it is free).
+    chosen.current = true; // this message's conversation stands, even if the saved one arrives after it
     const thread = (opts?.fresh ? undefined : threadId) ?? doc(collection(clientDb(), pathOf("assistantThreads", { artistId }))).id;
     if (opts?.fresh) setThreadId(undefined);
     // The reply's id, picked here too: a Stop names the turn even before the server has answered.

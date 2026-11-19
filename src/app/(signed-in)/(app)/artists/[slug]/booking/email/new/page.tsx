@@ -20,7 +20,7 @@ import { PersonalTouches } from "@/components/booking/PersonalTouches";
 
 const escapeHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 import { buildTemplateContext, fillTemplate, isActive, unfilledFields } from "@/lib/booking";
-import { htmlToText, textToHtml } from "@/lib/email-html";
+import { fillTemplateHtml, htmlToText, textToHtml } from "@/lib/email-html";
 import { fieldsInWords, nameFromAddress, parseTarget } from "@/lib/email-compose";
 import { ROLE_LABEL, rolesOf, roleFirst, type ContactRole } from "@/lib/venues";
 import { statsTemplateFields } from "@/lib/stats";
@@ -144,7 +144,7 @@ function ComposeForm({ thread }: { thread: Row<EmailThread> | null }) {
     if (dirty && !confirm("Replace what you've written with this template?")) return;
     const ctx = context();
     // A follow-up in the queue replies in its thread: the template fills the message, the subject stays "Re: …".
-    const next = { subject: thread ? subject : fillTemplate(t.subject, ctx), html: textToHtml(fillTemplate(t.body, ctx)) };
+    const next = { subject: thread ? subject : fillTemplate(t.subject, ctx), html: t.html ? fillTemplateHtml(t.html, ctx) : textToHtml(fillTemplate(t.body, ctx)) };
     applied.current = next;
     set({ tpl: id, ...next });
   }

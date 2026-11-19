@@ -12,14 +12,15 @@ import { SignatureBlock, useSignature } from "@/components/email/SignatureBlock"
 import { useProfile } from "@/lib/auth";
 import { useDoc, type Row } from "@/lib/firestore-hooks";
 import { linkify } from "@/lib/linkify";
-import { htmlToText } from "@/lib/email-html";
+import { htmlToText, sanitizeHtml } from "@/lib/email-html";
 import { initialsOf, paragraphsOf, previewOf, replyRecipients, splitQuoted } from "@/lib/email-text";
 import { pitchCellText } from "@/lib/booking";
 import { hasNewReply, threadPitchIds, type EmailThread } from "@/schema";
 import { StatusChip } from "@/components/booking/common";
 import { isActive } from "@/lib/booking";
 
-type Message = { id: string; threadId: string; direction: "sent" | "received"; from: string; fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string };
+type Message = { id: string; threadId: string; direction: "sent" | "received"; from: string; fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
+  /** The message as formatted (sanitized on the server, quote split off); missing when the page shows the plain text. */ html?: string; quotedHtml?: string };
 
 const shortDate = (iso: string, zone: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: zone });
 const longDate = (iso: string, zone: string) => new Date(iso).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: zone });
@@ -102,6 +103,9 @@ function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Messag
   const sent = m.direction === "sent";
   const who = nameOf(m.from, m.fromName);
   const { text, quoted } = splitQuoted(m.body);
+  // Sanitized again here, so the page never trusts HTML it didn't clean itself.
+  const html = useMemo(() => (m.html ? sanitizeHtml(m.html, { newTab: true }) : null), [m.html]);
+  const quotedHtml = useMemo(() => (m.html && m.quotedHtml ? sanitizeHtml(m.quotedHtml, { newTab: true }) : ""), [m.html, m.quotedHtml]);
   const toText = m.to.map((a) => (a.toLowerCase() === account.toLowerCase() ? "me" : nameOf(a))).join(", ");
   return (
     <article className={`msg${sent ? " me" : ""}`} data-testid={`msg-${n}`} data-direction={m.direction}>
@@ -118,13 +122,17 @@ function MessageView({ m, n, last, isNew, account, sentBy, nameOf }: { m: Messag
       </button>
       {open && (
         <div className="msg-body" data-testid={`msg-body-${n}`}>
-          {paragraphsOf(text).map((p, i) => (
-            <p key={i}>{linkify(p).map((s, j) => (s.href ? <a key={j} href={s.href} target="_blank" rel="noopener noreferrer">{s.text}</a> : s.text))}</p>
-          ))}
-          {quoted && (
+          {html !== null
+            ? <div className="msg-html" data-testid={`msg-html-${n}`} dangerouslySetInnerHTML={{ __html: html }} />
+            : paragraphsOf(text).map((p, i) => (
+              <p key={i}>{linkify(p).map((s, j) => (s.href ? <a key={j} href={s.href} target="_blank" rel="noopener noreferrer">{s.text}</a> : s.text))}</p>
+            ))}
+          {(quotedHtml || quoted) && (
             <>
               <button type="button" className="quote-toggle" aria-label="Show quoted text" aria-expanded={quoteOpen} onClick={() => setQuoteOpen(!quoteOpen)} data-testid={`quote-toggle-${n}`}>···</button>
-              {quoteOpen && <blockquote className="msg-quote mt-2" data-testid={`quote-${n}`}>{quoted}</blockquote>}
+              {quoteOpen && (quotedHtml
+                ? <blockquote className="msg-quote msg-html mt-2" data-testid={`quote-${n}`} dangerouslySetInnerHTML={{ __html: quotedHtml }} />
+                : <blockquote className="msg-quote mt-2" data-testid={`quote-${n}`}>{quoted}</blockquote>)}
             </>
           )}
         </div>

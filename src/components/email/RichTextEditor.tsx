@@ -21,6 +21,7 @@ function linkTarget(v: string): string | null {
 const TOOLS = [
   ["Bold", "bold", <path key="b" d="M6 4h7a3.5 3.5 0 0 1 0 7H6zM6 11h8a3.5 3.5 0 0 1 0 7H6z" />],
   ["Italic", "italic", <path key="i" d="M10 4h8M6 20h8M15 4 9 20" />],
+  ["Underline", "underline", <path key="un" d="M7 4v7a5 5 0 0 0 10 0V4M5 20h14" />],
   ["Insert link", "link", <path key="l" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />],
   ["Bulleted list", "ul", <path key="u" d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />],
   ["Numbered list", "ol", <path key="o" d="M10 6h10M10 12h10M10 18h10M4 5l1.5-1V9M3.5 14.5c0-1 2.5-1 2.5 0S3.5 16 3.5 17.5H6" />],
@@ -28,9 +29,10 @@ const TOOLS = [
 ] as const;
 
 /**
- * A small rich text field for mail: bold, italic, links, lists. `value` and `onChange` are HTML (sanitized by
- * sanitizeHtml: only p, br, div, b, strong, i, em, u, a, ul, ol, li survive); "" when the field is empty. Pasted content is
- * sanitized the same way. Enter starts a new paragraph.
+ * A small rich text field for mail: bold, italic, underline, links, lists. `value` and `onChange` are HTML (sanitized by
+ * sanitizeHtml: only p, br, div, b, strong, i, em, u, a, ul, ol, li, blockquote survive); "" when the field is empty.
+ * Pasted content is sanitized the same way, so bold, italic and underline pasted from Gmail or Google Docs (often spans
+ * with a style) stay. Enter starts a new paragraph.
  */
 export function RichTextEditor({ value, onChange, placeholder, testid }: {
   value: string; onChange(html: string): void; placeholder?: string; testid?: string;
@@ -77,6 +79,7 @@ export function RichTextEditor({ value, onChange, placeholder, testid }: {
     ref.current?.focus();
     if (action === "bold") exec("bold");
     else if (action === "italic") exec("italic");
+    else if (action === "underline") exec("underline");
     else if (action === "ul") exec("insertUnorderedList");
     else if (action === "ol") exec("insertOrderedList");
     else if (action === "clear") { exec("removeFormat"); exec("unlink"); }

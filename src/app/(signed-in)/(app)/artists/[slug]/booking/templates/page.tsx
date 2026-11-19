@@ -12,12 +12,16 @@ import { useDraft, useHasDraft } from "@/lib/drafts";
 import { newMutationId } from "@/lib/commands";
 import { TEMPLATE_FIELDS } from "@/lib/booking";
 import type { EmailTemplate } from "@/schema";
+import { RichTextEditor } from "@/components/email/RichTextEditor";
+import { htmlToText, sanitizeHtml, textToHtml } from "@/lib/email-html";
 
 export default function Page() { return <AdminOnly><Templates /></AdminOnly>; }
 
 const KINDS = [["venue", "Venues"], ["promoter", "Promoters"], ["edition", "Festival years"]] as const;
-type T = Pick<EmailTemplate, "name" | "subject" | "body" | "targetKinds">;
-const blank: T = { name: "", subject: "", body: "", targetKinds: [] };
+type T = Pick<EmailTemplate, "name" | "subject" | "body" | "html" | "targetKinds">;
+const blank: T = { name: "", subject: "", body: "", html: "", targetKinds: [] };
+/** What the message editor starts from: the formatted html, or the plain body of a template written before formatting. */
+const htmlOf = (t: Pick<T, "body" | "html">) => t.html || textToHtml(t.body);
 
 function Templates() {
   const { rows } = useCollection<EmailTemplate>("emailTemplates");
@@ -54,7 +58,9 @@ function TemplateCard({ t, onEdit, onDelete }: { t: Row<EmailTemplate>; onEdit()
         <span className="flex gap-2"><button className="btn ghost sm" onClick={onEdit} data-testid="template-edit">Edit</button><button className="btn danger sm" onClick={onDelete}>Delete</button></span>
       </div>
       <span className="s">{t.subject}</span>
-      <pre className="s whitespace-pre-wrap font-sans">{t.body}</pre>
+      {t.html
+        ? <div className="s msg-html" data-testid="template-preview" dangerouslySetInnerHTML={{ __html: sanitizeHtml(t.html, { newTab: true }) }} />
+        : <pre className="s whitespace-pre-wrap font-sans" data-testid="template-preview">{t.body}</pre>}
     </div>
   );
 }
@@ -77,13 +83,15 @@ function TemplateEditor({ t, onDone }: { t: Row<EmailTemplate>; onDone(): void }
   const as = useAutosave({ command: "emailTemplates.update", id: t.id, rev: t.rev, title: t.name });
   const [name, setName] = useState<string | null>(null); // a name being typed (it may not be saved while empty)
   useEffect(() => { if (name !== null && name === t.name) setName(null); }, [t.name, name]);
+  const [html, setHtml] = useState<string | null>(null); // the message as typed; the editor keeps its caret while saves land
   const keep = (s: string) => s;
   return (
     <form className="card" data-testid="template-form" onSubmit={(e) => e.preventDefault()}>
       <input className="input" placeholder="Name (e.g. First pitch)" value={name ?? t.name} data-testid="template-name"
         onChange={(e) => { const v = e.target.value; setName(v); if (v.trim()) as.patch({ name: v }); else as.hold("Name is required"); }} onBlur={() => void as.flush()} />
       <input className="input" placeholder="Subject" data-testid="template-subject" {...as.bind("subject", t.subject, { toPatch: keep })} />
-      <textarea className="input" rows={7} placeholder="Message" data-testid="template-body" {...as.bind("body", t.body, { toPatch: keep })} />
+      <RichTextEditor value={html ?? htmlOf(t)} placeholder="Message" testid="template-body"
+        onChange={(h) => { setHtml(h); as.patch({ html: h }); }} />
       <Kinds value={t.targetKinds} onChange={(targetKinds) => as.patch({ targetKinds }, { now: true })} />
       <div className="flex items-center gap-2"><SaveStatus {...as.statusProps} /><button type="button" className="btn ghost sm" onClick={onDone} data-testid="template-done">Done</button></div>
     </form>
@@ -107,7 +115,7 @@ function NewTemplate({ onDone }: { onDone(): void }) {
     <form className="card" data-testid="template-form" onSubmit={add}>
       <input className="input" placeholder="Name (e.g. First pitch)" required value={v.name} onChange={(e) => d.setValue({ ...v, name: e.target.value })} data-testid="template-name" />
       <input className="input" placeholder="Subject" value={v.subject} onChange={(e) => d.setValue({ ...v, subject: e.target.value })} data-testid="template-subject" />
-      <textarea className="input" rows={7} placeholder="Message" value={v.body} onChange={(e) => d.setValue({ ...v, body: e.target.value })} data-testid="template-body" />
+      <RichTextEditor value={htmlOf(v)} placeholder="Message" testid="template-body" onChange={(h) => d.setValue({ ...v, html: h, body: htmlToText(h) })} />
       <Kinds value={v.targetKinds} onChange={(targetKinds) => d.setValue({ ...v, targetKinds })} />
       <DraftNote restoredAt={d.restoredAt} status={d.status} onStartOver={() => void d.clear({ reset: true })} />
       <div className="flex gap-2"><button className="btn acc" disabled={busy} data-testid="template-save">Create template</button><button type="button" className="btn ghost" onClick={onDone}>Close</button></div>

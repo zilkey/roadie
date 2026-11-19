@@ -46,10 +46,10 @@ const routes: Route<GmailState>[] = [
     const inThread = body.threadId ? need(s.messages.find((m) => m.threadId === body.threadId), "Thread") : undefined;
     const m: GMessage = {
       id: `m${++s.seq}`, threadId: inThread ? inThread.threadId : `t${++s.seq}`, account: inThread ? inThread.account : to[0], direction: "received",
-      from: String(body.from).toLowerCase(), fromName: body.fromName ?? "", to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", date: new Date().toISOString(),
+      from: String(body.from).toLowerCase(), fromName: body.fromName ?? "", to, cc: list(body.cc), subject: body.subject, body: body.body ?? "", ...(body.html ? { html: String(body.html) } : {}), date: new Date().toISOString(),
     };
     s.messages.push(m);
-    return m;
+    return { json: m }; // wrapped: see /messages/send
   }],
   ["GET", "/threads", ({ query }, s) => threadsOf(s, query.get("account") ?? undefined)],
   ["GET", "/threads/:id", ({ params }, s) => need(threadsOf(s).find((t) => t.id === params.id), "Thread")],
@@ -73,10 +73,10 @@ const routes: Route<GmailState>[] = [
       id: `m${++s.seq}`, threadId: params.id, account: lastSent.account, direction: "received",
       from: body.from || lastSent.to[0] || "someone@example.com", fromName: body.fromName ?? "", to: [lastSent.account], cc: [],
       subject: msgs[0].subject.startsWith("Re:") ? msgs[0].subject : `Re: ${msgs[0].subject}`,
-      body: body.body || "Thanks for reaching out. We would love to have you play. What dates are you thinking?", date: new Date().toISOString(),
+      body: body.body || "Thanks for reaching out. We would love to have you play. What dates are you thinking?", ...(body.html ? { html: String(body.html) } : {}), date: new Date().toISOString(),
     };
     s.messages.push(m);
-    return m;
+    return { json: m }; // wrapped: see /messages/send
   }],
 ];
 

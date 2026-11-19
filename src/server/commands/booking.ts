@@ -7,6 +7,7 @@ import type { Ctx } from "../ctx";
 import { checkPitchReplies, draftMail, placeOfPitch, requirePitchDoc, sendMail } from "./email";
 import { pathOf } from "@/schema/owners";
 import { isActive, sortedDates } from "@/lib/booking";
+import { htmlToText, sanitizeHtml } from "@/lib/email-html";
 import { archiveNote, artistIdOf, requireContact, ensureNote, hasPrivate, isPrivateField, noteOf, privateOf, refusePrivate, setContactRoles, sharedOf, writeNote } from "../venues";
 import { CONTACT_ROLES } from "@/lib/venues";
 import { bandNoteOf, bandNotesBy, createNoted, setVenuePromoters, updateNoted, withBandNote, writeBandNote } from "../bandNotes";
@@ -477,12 +478,20 @@ export const pitchesRemove = defineCommand({
 
 export const templatesCreate = defineCommand({
   name: "emailTemplates.create", roles: ["admin", "mcp"], input: EmailTemplateInput.omit({ artistId: true }).extend({ targetKinds: arr(EmailTemplateInput.shape.targetKinds) }),
-  description: "Add an email template. Use {{venue.name}}, {{contact.firstName}}, {{user.name}}, {{artist.name}} etc.",
-  run: (ctx, input) => db.create(ctx, "emailTemplates", input),
+  description: "Add an email template. Use {{venue.name}}, {{contact.firstName}}, {{user.name}}, {{artist.name}} etc. Write the message in body as plain text; html is for the app's formatted editor.",
+  run: (ctx, input) => db.create(ctx, "emailTemplates", templateBody(input)),
 });
+/** A template's body follows its html (sanitized) when html is given; a new plain `body` alone drops the old html. */
+function templateBody<T extends { body?: string; html?: string }>(v: T): T {
+  if (v.html !== undefined) {
+    const html = sanitizeHtml(v.html);
+    return { ...v, html, body: htmlToText(html) };
+  }
+  return v.body !== undefined ? { ...v, html: "" } : v;
+}
 export const templatesUpdate = defineCommand({
   name: "emailTemplates.update", roles: ["admin", "mcp"], input: patchInput(EmailTemplateInput.omit({ artistId: true })), description: "Edit an email template.",
-  run: (ctx, { id, patch }) => db.update(ctx, "emailTemplates", id, patch as Record<string, unknown>),
+  run: (ctx, { id, patch }) => db.update(ctx, "emailTemplates", id, templateBody(patch as { body?: string; html?: string }) as Record<string, unknown>),
 });
 export const templatesRemove = defineCommand({
   name: "emailTemplates.remove", roles: ["admin"], input: idInput, description: "Delete an email template.",

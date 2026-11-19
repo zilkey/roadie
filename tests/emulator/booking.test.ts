@@ -408,6 +408,15 @@ test("email templates CRUD and admin-only access over the command API", async ()
   await cmd("emailTemplates.update", { id: t.id, patch: { subject: "Hello {{venue.name}}" } });
   assert.equal((await db.get(SYS, "emailTemplates", t.id))!.subject, "Hello {{venue.name}}");
   assert.deepEqual((await db.get(SYS, "emailTemplates", t.id))!.targetKinds, []);
+  // Formatted: html is sanitized and the plain body follows it; a plain body alone (Roadie, MCP) drops the old html.
+  await cmd("emailTemplates.update", { id: t.id, patch: { html: '<p>Hi <b onclick="x()">{{contact.firstName}}</b></p><script>x</script>' } });
+  let saved = (await db.get(SYS, "emailTemplates", t.id))!;
+  assert.equal(saved.html, "<p>Hi <b>{{contact.firstName}}</b></p>");
+  assert.equal(saved.body, "Hi {{contact.firstName}}");
+  await cmd("emailTemplates.update", { id: t.id, patch: { body: "Hello {{contact.firstName}}" } });
+  saved = (await db.get(SYS, "emailTemplates", t.id))!;
+  assert.equal(saved.html, "");
+  assert.equal(saved.body, "Hello {{contact.firstName}}");
   await cmd("emailTemplates.remove", { id: t.id });
   assert.equal((await db.list(SYS, "emailTemplates")).length, 0);
   const member = await makeUser("m@example.com", "member");

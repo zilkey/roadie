@@ -309,9 +309,20 @@ test("Email templates: create one and edit it", async ({ page }) => {
   await page.getByTestId("template-new").click();
   await page.getByTestId("template-name").fill(`Tpl ${stamp}`);
   await page.getByTestId("template-subject").fill("Hello");
+  // The message keeps its formatting: bold from the toolbar.
+  await page.getByTestId("template-body").click();
+  await page.keyboard.type("Hi ");
+  await page.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type("{{contact.firstName}}");
+  await page.getByRole("button", { name: "Bold" }).click();
+  await page.keyboard.type(", ");
+  await page.getByRole("button", { name: "Underline" }).click();
+  await page.keyboard.type("see you");
   await page.getByTestId("template-save").click();
   const card = page.getByTestId(`template-Tpl ${stamp}`);
   await expect(card).toContainText("Hello");
+  await expect(card.getByTestId("template-preview").locator("b")).toHaveText("{{contact.firstName}}");
+  await expect(card.getByTestId("template-preview").locator("u")).toHaveText("see you");
   await card.getByTestId("template-edit").click();
   await page.getByTestId("template-list").getByTestId("template-subject").fill("Hello again"); // scoped: the add form may still be closing
   await expect(page.getByTestId("save-status")).toHaveText("Saved");

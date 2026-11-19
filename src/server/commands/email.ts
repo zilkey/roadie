@@ -13,7 +13,7 @@ import { gmailClient, IntegrationError } from "../integrations";
 import type { MailMessage, MailThread } from "../integrations/gmail";
 import { unfilledFields } from "@/lib/booking";
 import { snippetOf } from "@/lib/email-text";
-import { sanitizeHtml, htmlToText } from "@/lib/email-html";
+import { displayHtml, sanitizeHtml, htmlToText } from "@/lib/email-html";
 import { signatureOf, nameFromAddress } from "@/lib/email-signature";
 import { e164 } from "@/schema/normalize";
 import { BAND_NOTES, bandNoteId, emailThreadId, threadPitchIds, venueNoteId, email as emailSchema } from "@/schema";
@@ -378,7 +378,9 @@ export const emailThread = defineCommand({
     const d = await ownThread(ctx, id);
     const t = await gmailClient().getThread(d.threadId, d.account).catch(gmailFail);
     await db.update(ctx, "emailThreads", id, { lastSeenAt: new Date() });
-    return { thread: plain({ ...d, lastSeenAt: new Date() }), messages: t.messages, sentBy: await sentByNames(ctx, d) };
+    // Each message's HTML part, sanitized and with its quote split off; plain text only when there's no usable HTML.
+    const messages = t.messages.map(({ html, ...m }) => ({ ...m, ...(displayHtml(html, m.body) ?? {}) }));
+    return { thread: plain({ ...d, lastSeenAt: new Date() }), messages, sentBy: await sentByNames(ctx, d) };
   },
 });
 

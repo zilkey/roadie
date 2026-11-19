@@ -12,7 +12,7 @@ import { accessTokenForEmail } from "../google/grants";
 export interface MailInput { account: string; to: string[]; cc?: string[]; subject: string; body: string; /** Sent as multipart/alternative next to `body` (the plain text). Sanitize it first (src/lib/email-html.ts). */ html?: string; threadId?: string }
 export interface MailMessage {
   id: string; threadId: string; account: string; direction: "sent" | "received";
-  from: string; /** Display name from the From header, "" when none. */ fromName: string; to: string[]; cc: string[]; subject: string; body: string; date: string;
+  from: string; /** Display name from the From header, "" when none. */ fromName: string; to: string[]; cc: string[]; subject: string; body: string; /** The text/html part as sent (not sanitized), when there is one. */ html?: string; date: string;
 }
 export interface MailDraft { id: string; account: string; to: string[]; cc: string[]; subject: string; body: string; threadId?: string; date: string }
 export interface MailThread { id: string; subject: string; messages: MailMessage[]; lastDate: string }
@@ -73,10 +73,13 @@ const decode = (data?: string) => (data ? Buffer.from(data, "base64url").toStrin
 /** Header text: plain ASCII as is, anything else as an RFC 2047 encoded word. Line breaks are dropped (no header injection). */
 const headerText = (v: string) => { const s = v.replace(/[\r\n]+/g, " "); return /^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s).toString("base64")}?=`; };
 
+const findPart = (part: GPart, type: string): GPart | undefined =>
+  part.mimeType === type && part.body?.data ? part : part.parts?.map((x) => findPart(x, type)).find(Boolean);
+const htmlOf = (p: GPart | undefined) => { const h = p && findPart(p, "text/html"); return h ? decode(h.body?.data) : undefined; };
+
 function textOf(p: GPart | undefined): string {
   if (!p) return "";
-  const find = (part: GPart, type: string): GPart | undefined =>
-    part.mimeType === type && part.body?.data ? part : part.parts?.map((x) => find(x, type)).find(Boolean);
+  const find = findPart;
   const plain = find(p, "text/plain");
   if (plain) return decode(plain.body?.data);
   const html = find(p, "text/html");
@@ -88,7 +91,7 @@ function toMessage(m: GMessage, account: string): MailMessage {
   return {
     id: m.id, threadId: m.threadId, account, direction: m.labelIds?.includes("SENT") ? "sent" : "received",
     from: addresses(header(p, "from"))[0] ?? "", fromName: displayName(header(p, "from")), to: addresses(header(p, "to")), cc: addresses(header(p, "cc")),
-    subject: header(p, "subject"), body: textOf(p), date: new Date(Number(m.internalDate ?? Date.now())).toISOString(),
+    subject: header(p, "subject"), body: textOf(p), ...(htmlOf(p) ? { html: htmlOf(p) } : {}), date: new Date(Number(m.internalDate ?? Date.now())).toISOString(),
   };
 }
 

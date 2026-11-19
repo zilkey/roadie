@@ -1,11 +1,13 @@
 /**
  * Small, hand-written HTML helpers for outgoing mail: a sanitizer with an allowlist, an HTML -> plain text alternative,
  * and plain text -> HTML paragraphs. Used on the server (before sending, on the Gmail signature) and in the editor
- * (on paste). Nothing here renders received HTML: Roadie shows the plain text part of what strangers send.
+ * (on paste), and on mail read from Gmail before the thread page shows it.
  */
 import { linkify } from "./linkify";
+import { splitQuoted } from "./email-text";
+import { fillTemplate, type TemplateContext } from "./booking";
 
-const ALLOWED = new Set(["p", "br", "div", "b", "strong", "i", "em", "u", "a", "ul", "ol", "li"]);
+const ALLOWED = new Set(["p", "br", "div", "b", "strong", "i", "em", "u", "a", "ul", "ol", "li", "blockquote"]);
 /** Tags whose contents are code or hidden text, not words: dropped whole rather than unwrapped. */
 const DROP_WITH_CONTENT = new Set(["script", "style", "noscript", "template", "iframe", "object", "embed", "head", "title", "textarea", "select"]);
 
@@ -61,39 +63,76 @@ function safeHref(attrs: string): string | null {
   return /^(https?:|mailto:)/i.test(v) ? raw.trim() : null;
 }
 
+/** Elements that never have contents or a close tag. */
+const VOID = new Set(["img", "hr", "input", "meta", "link", "col", "wbr", "area", "base", "source", "track", "param", "embed", "keygen"]);
+
+/** The style="" value of a tag's attributes, lowercased, "" when none. */
+function styleOf(attrs: string): string {
+  const m = /(?:^|[\s/])style\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(attrs);
+  return decodeEntities(m?.[1] ?? m?.[2] ?? m?.[3] ?? "").toLowerCase();
+}
+/** Bold, italic and underline that a style="" asks for: how Google Docs, Gmail and Outlook mark formatting on spans. */
+function styledFormats(style: string): ("b" | "i" | "u")[] {
+  const out: ("b" | "i" | "u")[] = [];
+  const weight = /(?:^|;)\s*font-weight\s*:\s*([a-z0-9]+)/.exec(style)?.[1];
+  if (weight && (weight === "bold" || weight === "bolder" || Number(weight) >= 600)) out.push("b");
+  if (/(?:^|;)\s*font-style\s*:\s*(italic|oblique)/.test(style)) out.push("i");
+  if (/(?:^|;)\s*text-decoration(?:-line)?\s*:[^;]*underline/.test(style)) out.push("u");
+  return out;
+}
+/** style="font-weight:normal" (or 400 and below): Google Docs wraps a whole paste in <b style="font-weight:normal">. */
+const notBold = (style: string) => /(?:^|;)\s*font-weight\s*:\s*(normal|lighter|[1-4]00)\b/.test(style);
+const notItalic = (style: string) => /(?:^|;)\s*font-style\s*:\s*normal\b/.test(style);
+
 /**
- * Keeps p, br, div, b, strong, i, em, u, a, ul, ol and li. `a` keeps only `href` (http, https or mailto) and gets
- * rel="noopener". Every other tag is unwrapped (its text stays), script/style-like elements go with their contents,
- * all other attributes are dropped, and unclosed tags are closed.
+ * Keeps p, br, div, b, strong, i, em, u, a, ul, ol, li and blockquote. `a` keeps only `href` (http, https or mailto) and
+ * gets rel="noopener" (with `newTab`, target="_blank" and rel="noopener noreferrer"). Bold, italic and underline set by
+ * style="" on any tag (Google Docs, Gmail, Outlook) become b, i and u; h1-h6 become a bold paragraph; table rows become
+ * lines. Every other tag is unwrapped (its text stays), script/style-like elements go with their contents, all other
+ * attributes are dropped, and unclosed tags are closed.
  */
-export function sanitizeHtml(html: string): string {
-  const stack: string[] = [];
+export function sanitizeHtml(html: string, opts: { newTab?: boolean } = {}): string {
+  /** An open element: its name, and what to write when it closes ("" for an unwrapped one). */
+  const stack: { name: string; close: string; link?: boolean }[] = [];
   let out = "";
+  const linkOpen = opts.newTab ? ' target="_blank" rel="noopener noreferrer"' : ' rel="noopener"';
   for (const tok of tokenize(html ?? "")) {
     if (tok.t === "text") { out += escText(decodeEntities(tok.v)); continue; }
-    if (!ALLOWED.has(tok.name)) continue;
+    const name = tok.name;
     if (tok.t === "open") {
-      if (tok.name === "br") { out += "<br>"; continue; }
-      if (tok.name === "a") {
+      if (name === "br") { out += "<br>"; continue; }
+      if (VOID.has(name) || DROP_WITH_CONTENT.has(name)) continue;
+      const style = styleOf(tok.attrs);
+      if (name === "a") {
         const href = safeHref(tok.attrs);
-        if (!href || stack.includes("a")) { stack.push("a:skip"); continue; }
-        stack.push("a");
-        out += `<a href="${escAttr(href)}" rel="noopener">`;
+        if (!href || stack.some((f) => f.link)) { stack.push({ name, close: "" }); continue; }
+        stack.push({ name, close: "</a>", link: true });
+        out += `<a href="${escAttr(href)}"${linkOpen}>`;
         continue;
       }
-      stack.push(tok.name);
-      out += `<${tok.name}>`;
+      let open = "";
+      let close = "";
+      if (/^h[1-6]$/.test(name)) { open = "<p><b>"; close = "</b></p>"; }
+      else if (name === "tr") { open = "<div>"; close = "</div>"; }
+      else if (name === "td" || name === "th") close = " ";
+      else if ((name === "b" || name === "strong") && notBold(style)) { /* a wrapper, not bold */ }
+      else if ((name === "i" || name === "em") && notItalic(style)) { /* a wrapper, not italic */ }
+      else if (ALLOWED.has(name)) { open = `<${name}>`; close = `</${name}>`; }
+      const extra = styledFormats(style).filter((f) => !open.includes(`<${f}>`) && !(f === "b" && name === "strong") && !(f === "i" && name === "em"));
+      open += extra.map((f) => `<${f}>`).join("");
+      close = extra.reverse().map((f) => `</${f}>`).join("") + close;
+      if (tok.selfClose && !ALLOWED.has(name)) continue;
+      out += open;
+      stack.push({ name, close });
     } else {
-      if (tok.name === "br") continue;
-      const idx = Math.max(stack.lastIndexOf(tok.name), tok.name === "a" ? stack.lastIndexOf("a:skip") : -1);
+      if (name === "br") continue;
+      let idx = -1;
+      for (let k = stack.length - 1; k >= 0; k--) if (stack[k].name === name) { idx = k; break; }
       if (idx < 0) continue;
-      while (stack.length > idx) {
-        const n = stack.pop()!;
-        if (n !== "a:skip") out += `</${n}>`;
-      }
+      while (stack.length > idx) out += stack.pop()!.close;
     }
   }
-  while (stack.length) { const n = stack.pop()!; if (n !== "a:skip") out += `</${n}>`; }
+  while (stack.length) out += stack.pop()!.close;
   return out;
 }
 
@@ -112,11 +151,11 @@ export function htmlToText(html: string): string {
     if (tok.t === "open") {
       if (tok.name === "br") out += "\n";
       else if (tok.name === "p") newline(2);
-      else if (tok.name === "div" || tok.name === "ul" || tok.name === "ol") newline(1);
+      else if (tok.name === "div" || tok.name === "ul" || tok.name === "ol" || tok.name === "blockquote") newline(1);
       else if (tok.name === "li") { newline(1); out += "- "; }
       else if (tok.name === "a") { hrefs.push(safeHref(tok.attrs)); linkStart.push(out.length); }
     } else if (tok.name === "p") newline(2);
-    else if (["div", "ul", "ol", "li"].includes(tok.name)) newline(1);
+    else if (["div", "ul", "ol", "li", "blockquote"].includes(tok.name)) newline(1);
     else if (tok.name === "a") {
       const href = hrefs.pop();
       const from = linkStart.pop() ?? out.length;
@@ -132,4 +171,42 @@ export function htmlToText(html: string): string {
 export function textToHtml(text: string): string {
   return (text ?? "").replace(/\r\n?/g, "\n").split(/\n[ \t]*\n+/).map((p) => p.replace(/^\n+|\n+$/g, "")).filter((p) => p.trim())
     .map((p) => `<p>${p.split("\n").map((line) => linkify(line).map((s) => (s.href ? `<a href="${escAttr(s.href)}" rel="noopener">${escText(s.text)}</a>` : escText(s.text))).join("")).join("<br>")}</p>`).join("");
+}
+
+/** Where mail programs start the quoted earlier message in HTML: Gmail, Apple Mail, Outlook, Yahoo. */
+const QUOTE_STARTS = [
+  /<div\b[^>]*\bclass\s*=\s*["'][^"']*\bgmail_quote\b/i,
+  /<blockquote\b[^>]*\bclass\s*=\s*["'][^"']*\bgmail_quote\b/i,
+  /<blockquote\b[^>]*\btype\s*=\s*["']?cite\b/i,
+  /<div\b[^>]*\bid\s*=\s*["']?(?:divRplyFwdMsg|appendonsend)\b/i,
+  /<div\b[^>]*\bclass\s*=\s*["'][^"']*\byahoo_quoted\b/i,
+];
+
+/** Raw message HTML cut where the quoted earlier message starts; `quoted` is "" when no quote marker is found. */
+export function splitQuotedHtml(html: string): { html: string; quoted: string } {
+  const at = Math.min(...QUOTE_STARTS.map((re) => re.exec(html)?.index ?? Infinity));
+  return Number.isFinite(at) ? { html: html.slice(0, at), quoted: html.slice(at) } : { html, quoted: "" };
+}
+
+/**
+ * A message's HTML part ready for the thread page: sanitized (links open in a new tab), with the quoted part split off.
+ * null when there is no HTML, it has no words, or the plain text has a quote the HTML doesn't mark (the page then shows the
+ * plain text, which it knows how to split).
+ */
+export function displayHtml(html: string | undefined, plain: string): { html: string; quotedHtml: string } | null {
+  if (!html?.trim()) return null;
+  const parts = splitQuotedHtml(html);
+  const main = sanitizeHtml(parts.html, { newTab: true });
+  if (!htmlToText(main)) return null;
+  if (!parts.quoted && splitQuoted(plain).quoted) return null;
+  return { html: main, quotedHtml: parts.quoted ? sanitizeHtml(parts.quoted, { newTab: true }) : "" };
+}
+
+/** A template's HTML with its {{fields}} filled in: values are escaped, and a URL value becomes a link. */
+export function fillTemplateHtml(html: string, ctx: TemplateContext): string {
+  const safe: TemplateContext = {};
+  for (const [k, v] of Object.entries(ctx)) {
+    safe[k] = v && linkify(v).map((s) => (s.href ? `<a href="${escAttr(s.href)}" rel="noopener">${escText(s.text)}</a>` : escText(s.text))).join("");
+  }
+  return sanitizeHtml(fillTemplate(html, safe));
 }
